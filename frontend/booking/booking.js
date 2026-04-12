@@ -1533,7 +1533,7 @@ function selectGroup(groupKey) {
 
 async function selectProduct(productId) {
   clearSubmitResult();
-  state.activeStep = 3;
+  state.activeStep = 2;
   state.selectedProduct = (state.init?.products || []).find((item) => item.id === productId) || null;
   state.selectedGroup = state.selectedProduct?.g || state.selectedGroup;
   state.selectedDate = '';
@@ -1563,6 +1563,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   syncConsentVisibility();
   await refreshQuote();
+  refreshStepLocks();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
   setBanner(getCopy().initSuccess, 'success');
