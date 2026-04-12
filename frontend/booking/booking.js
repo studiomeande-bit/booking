@@ -209,6 +209,7 @@ const els = {
   generalPeople: document.getElementById('generalPeople'),
   optionGrid: document.getElementById('optionGrid'),
   bgField: document.getElementById('bgField'),
+  bgHelp: document.getElementById('bgHelp'),
   bgGrid: document.getElementById('bgGrid'),
   calendarHint: document.getElementById('calendarHint'),
   monthLabel: document.getElementById('monthLabel'),
@@ -316,10 +317,12 @@ function renderSurveyChips() {
 }
 
 function renderAgeChips() {
+  const isPb = state.selectedProduct?.id === 'pb';
   els.ageGrid.innerHTML = AGE_META.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.ageGroup === item.key ? ' subtle-selected' : '';
-    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}">${escapeHtml(label)}</button>`;
+    const disabled = isPb && item.key === 'baby';
+    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
   }).join('');
   els.ageGrid.querySelectorAll('[data-age]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -347,7 +350,30 @@ function renderBabyTypeChips() {
   });
 }
 
+function getBgSelectionLimit(product) {
+  if (!product || (product.g !== 'prof' && product.g !== 'stud')) return 0;
+  const desc = `${product.descKo || ''}\n${product.descEn || ''}\n${product.descDe || ''}`;
+  if (/제한 없음|Unlimited|unlimited|unbegrenzt/i.test(desc)) return -1;
+  const match = desc.match(/(\d+)\s*(개|배경|background|backgrounds|Hintergrund|Hintergründe)/i);
+  if (match) return Number(match[1]) || 1;
+  return 1;
+}
+
 function renderBgChips() {
+  const limit = getBgSelectionLimit(state.selectedProduct);
+  if (limit === -1) {
+    els.bgHelp.textContent = state.lang === 'en'
+      ? 'This package supports unlimited background selections.'
+      : state.lang === 'de'
+        ? 'Dieses Paket unterstützt unbegrenzte Hintergrundauswahl.'
+        : '이 상품은 배경 선택 개수 제한이 없습니다.';
+  } else {
+    els.bgHelp.textContent = state.lang === 'en'
+      ? `You can select up to ${Math.max(limit, 1)} background${limit > 1 ? 's' : ''}.`
+      : state.lang === 'de'
+        ? `Sie können bis zu ${Math.max(limit, 1)} Hintergründe wählen.`
+        : `이 상품은 최대 ${Math.max(limit, 1)}개의 배경을 선택할 수 있습니다.`;
+  }
   els.bgGrid.innerHTML = BG_META.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.bgColors.includes(item.key) ? ' subtle-selected' : '';
@@ -358,7 +384,18 @@ function renderBgChips() {
       const key = button.dataset.bg;
       const idx = state.bgColors.indexOf(key);
       if (idx >= 0) state.bgColors.splice(idx, 1);
-      else state.bgColors.push(key);
+      else if (limit === 1) state.bgColors = [key];
+      else if (limit > 1 && state.bgColors.length >= limit) {
+        setBanner(
+          state.lang === 'en'
+            ? `You can only choose ${limit} backgrounds for this package.`
+            : state.lang === 'de'
+              ? `Für dieses Paket können nur ${limit} Hintergründe gewählt werden.`
+              : `이 상품은 배경을 ${limit}개까지만 선택할 수 있습니다.`,
+          'error'
+        );
+        return;
+      } else state.bgColors.push(key);
       renderBgChips();
       renderReview();
     });
@@ -471,7 +508,7 @@ function renderGeneralPanel() {
     syncConditionalFields();
     return;
   }
-  const showPeople = product.t === 'group' || product.t === 'snap';
+  const showPeople = !(product.g === 'prof' || product.g === 'wed' || product.g === 'biz');
   els.peopleField.classList.toggle('hidden', !showPeople);
   renderAgeChips();
   renderBabyTypeChips();
@@ -503,7 +540,7 @@ function syncConditionalFields() {
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
-  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.ageGroup === 'baby'));
+  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
 }
 
@@ -706,10 +743,10 @@ function renderReview() {
   }
   if (state.selectedProduct.g === 'prof') {
     const ageLabel = AGE_META.find((item) => item.key === state.ageGroup)?.label[state.lang] || AGE_META.find((item) => item.key === state.ageGroup)?.label.ko || state.ageGroup;
-    rows.push([copy.reviewPeople, ageLabel]);
+    rows.push([state.lang === 'en' ? 'Age Group' : state.lang === 'de' ? 'Altersgruppe' : '연령대', ageLabel]);
     if (state.ageGroup === 'baby') {
       const babyTypeLabel = BABY_TYPE_META.find((item) => item.key === state.babyType)?.label[state.lang] || BABY_TYPE_META.find((item) => item.key === state.babyType)?.label.ko || state.babyType;
-      rows.push(['Baby Type', babyTypeLabel]);
+      rows.push([state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류', babyTypeLabel]);
     }
   }
   if (state.optionKeys.length) {
@@ -734,7 +771,7 @@ function renderReview() {
       .filter(Boolean)
       .map((item) => item.label[state.lang] || item.label.ko)
       .join(', ');
-    rows.push(['Background', bgLabels]);
+    rows.push([state.lang === 'en' ? 'Background' : state.lang === 'de' ? 'Hintergrund' : '배경', bgLabels]);
   }
   const memo = String(els.form.elements.memo?.value || '').trim();
   if (memo) rows.push([copy.reviewMemo, memo]);
