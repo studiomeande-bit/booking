@@ -575,10 +575,53 @@ function wireEvents() {
   els.prevMonthBtn.addEventListener('click', () => changeMonth(-1));
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
-  els.wizardButtons.step1Next?.addEventListener('click', () => goToStep(2));
+  els.wizardButtons.step1Next?.addEventListener('click', () => {
+    if (!state.selectedGroup) {
+      setBanner(
+        state.lang === 'en'
+          ? 'Please choose a shoot category first.'
+          : state.lang === 'de'
+            ? 'Bitte wählen Sie zuerst eine Aufnahmekategorie.'
+            : '촬영 종류를 먼저 선택해 주세요.',
+        'error'
+      );
+      return;
+    }
+    goToStep(2);
+  });
   els.wizardButtons.step2Back?.addEventListener('click', () => goToStep(1));
   els.wizardButtons.step2Next?.addEventListener('click', async () => {
-    if (!state.selectedProduct || getMaxUnlockedStep() < 3) return;
+    if (!state.selectedProduct) {
+      setBanner(
+        state.lang === 'en'
+          ? 'Please choose a package first.'
+          : state.lang === 'de'
+            ? 'Bitte wählen Sie zuerst ein Paket.'
+            : '세부 상품을 먼저 선택해 주세요.',
+        'error'
+      );
+      return;
+    }
+    if (state.selectedProduct.g === 'pass' && !state.selectedCountries.length) {
+      setBanner(getCopy().countryRequired, 'error');
+      return;
+    }
+    if (state.selectedProduct.g === 'pass' && state.selectedCountries.includes('OTHER') && !String(els.form.elements.otherCountry?.value || '').trim()) {
+      setBanner(
+        state.lang === 'en'
+          ? 'Please enter the other country name.'
+          : state.lang === 'de'
+            ? 'Bitte geben Sie den Namen des anderen Landes ein.'
+            : '기타 국가명을 입력해 주세요.',
+        'error'
+      );
+      return;
+    }
+    if ((state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') && !String(els.locationInput?.value || '').trim()) {
+      setBanner(getCopy().locationRequired, 'error');
+      return;
+    }
+    if (getMaxUnlockedStep() < 3) return;
     goToStep(3);
     await refreshQuote();
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
@@ -586,7 +629,31 @@ function wireEvents() {
     await loadCalendar();
   });
   els.wizardButtons.step3Back?.addEventListener('click', () => goToStep(2));
-  els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(5));
+  els.wizardButtons.step3Next?.addEventListener('click', () => {
+    if (!state.selectedDate) {
+      setBanner(
+        state.lang === 'en'
+          ? 'Please choose a date first.'
+          : state.lang === 'de'
+            ? 'Bitte wählen Sie zuerst ein Datum.'
+            : '날짜를 먼저 선택해 주세요.',
+        'error'
+      );
+      return;
+    }
+    if (!state.selectedSlot) {
+      setBanner(
+        state.lang === 'en'
+          ? 'Please choose an available time first.'
+          : state.lang === 'de'
+            ? 'Bitte wählen Sie zuerst eine verfügbare Uhrzeit.'
+            : '예약 가능한 시간을 먼저 선택해 주세요.',
+        'error'
+      );
+      return;
+    }
+    goToStep(5);
+  });
   els.wizardButtons.step5Back?.addEventListener('click', () => goToStep(3));
   els.form.elements.otherCountry?.addEventListener('input', async () => {
     await handleQuoteInputChange();
