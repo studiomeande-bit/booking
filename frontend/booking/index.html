@@ -48,6 +48,14 @@
       <div id="generalPanel" class="detail-box hidden">
         <div class="detail-title">추가 설정</div>
         <p class="detail-copy">인원이나 옵션을 선택하면 예상 금액과 예약 시간이 다시 계산됩니다.</p>
+        <div id="ageField" class="hidden-field form-block">
+          <span class="block-label">촬영 대상 연령</span>
+          <div id="ageGrid" class="survey-grid"></div>
+        </div>
+        <div id="babyTypeField" class="hidden-field form-block">
+          <span class="block-label">촬영 종류</span>
+          <div id="babyTypeGrid" class="survey-grid"></div>
+        </div>
         <label id="peopleField" class="inline-field hidden">
           <span>인원</span>
           <select id="generalPeople">
@@ -59,6 +67,10 @@
           </select>
         </label>
         <div id="optionGrid" class="chip-grid"></div>
+        <div id="bgField" class="hidden-field form-block">
+          <span class="block-label">배경 선택</span>
+          <div id="bgGrid" class="survey-grid"></div>
+        </div>
       </div>
     </section>
 

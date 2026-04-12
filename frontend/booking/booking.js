@@ -21,7 +21,7 @@ const GROUP_META = {
 
 const OPTION_META = {
   dog: {
-    groups: ['stud', 'snap', 'wed'],
+    groups: ['stud'],
     label: { ko: '반려동물 (+€15)', en: 'Pet (+€15)', de: 'Haustier (+€15)' }
   },
   bg: {
@@ -33,6 +33,27 @@ const OPTION_META = {
     label: { ko: '의상 추가 (+€20)', en: 'Extra outfit (+€20)', de: 'Extra Outfit (+€20)' }
   }
 };
+
+const AGE_META = [
+  { key: 'adult', label: { ko: '성인', en: 'Adult', de: 'Erwachsene' } },
+  { key: 'kids', label: { ko: '키즈 (-€10)', en: 'Kids (-€10)', de: 'Kinder (-€10)' } },
+  { key: 'baby', label: { ko: '영유아', en: 'Infant', de: 'Kleinkind' } },
+  { key: 'senior', label: { ko: '시니어', en: 'Senior', de: 'Senior' } }
+];
+
+const BABY_TYPE_META = [
+  { key: 'baekil', label: { ko: '백일', en: '100 Days', de: '100 Tage' } },
+  { key: 'dol', label: { ko: '돌', en: '1st Birthday', de: '1. Geburtstag' } }
+];
+
+const BG_META = [
+  { key: 'white', color: '#f6f4ef', label: { ko: '화이트', en: 'White', de: 'Weiß' } },
+  { key: 'grey', color: '#d9d9d6', label: { ko: '그레이', en: 'Grey', de: 'Grau' } },
+  { key: 'black', color: '#2d2a26', label: { ko: '블랙', en: 'Black', de: 'Schwarz' } },
+  { key: 'beige', color: '#d9c3a3', label: { ko: '베이지', en: 'Beige', de: 'Beige' } },
+  { key: 'pink', color: '#efc9d1', label: { ko: '핑크', en: 'Pink', de: 'Pink' } },
+  { key: 'sky', color: '#c9dff2', label: { ko: '하늘색', en: 'Sky Blue', de: 'Himmelblau' } }
+];
 
 const SURVEY_META = [
   { key: 'clean', icon: '🪴', label: { ko: '깔끔/모던', en: 'Clean / Modern', de: 'Sauber / Modern' } },
@@ -161,6 +182,9 @@ const state = {
   selectedCountries: [],
   optionKeys: [],
   surveyKeys: [],
+  ageGroup: 'adult',
+  babyType: 'baekil',
+  bgColors: [],
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -177,9 +201,15 @@ const els = {
   passportPeople: document.getElementById('passportPeople'),
   passportHint: document.getElementById('passportHint'),
   generalPanel: document.getElementById('generalPanel'),
+  ageField: document.getElementById('ageField'),
+  ageGrid: document.getElementById('ageGrid'),
+  babyTypeField: document.getElementById('babyTypeField'),
+  babyTypeGrid: document.getElementById('babyTypeGrid'),
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
   optionGrid: document.getElementById('optionGrid'),
+  bgField: document.getElementById('bgField'),
+  bgGrid: document.getElementById('bgGrid'),
   calendarHint: document.getElementById('calendarHint'),
   monthLabel: document.getElementById('monthLabel'),
   calendarGrid: document.getElementById('calendarGrid'),
@@ -285,6 +315,56 @@ function renderSurveyChips() {
   });
 }
 
+function renderAgeChips() {
+  els.ageGrid.innerHTML = AGE_META.map((item) => {
+    const label = item.label[state.lang] || item.label.ko;
+    const selected = state.ageGroup === item.key ? ' subtle-selected' : '';
+    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}">${escapeHtml(label)}</button>`;
+  }).join('');
+  els.ageGrid.querySelectorAll('[data-age]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.ageGroup = button.dataset.age;
+      if (state.ageGroup !== 'baby') state.babyType = 'baekil';
+      renderAgeChips();
+      renderBabyTypeChips();
+      handleQuoteInputChange();
+    });
+  });
+}
+
+function renderBabyTypeChips() {
+  els.babyTypeGrid.innerHTML = BABY_TYPE_META.map((item) => {
+    const label = item.label[state.lang] || item.label.ko;
+    const selected = state.babyType === item.key ? ' subtle-selected' : '';
+    return `<button type="button" class="survey-chip${selected}" data-baby-type="${item.key}">${escapeHtml(label)}</button>`;
+  }).join('');
+  els.babyTypeGrid.querySelectorAll('[data-baby-type]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.babyType = button.dataset.babyType;
+      renderBabyTypeChips();
+      renderReview();
+    });
+  });
+}
+
+function renderBgChips() {
+  els.bgGrid.innerHTML = BG_META.map((item) => {
+    const label = item.label[state.lang] || item.label.ko;
+    const selected = state.bgColors.includes(item.key) ? ' subtle-selected' : '';
+    return `<button type="button" class="survey-chip${selected}" data-bg="${item.key}"><span class="bg-chip-preview" style="background:${item.color};${item.key==='black' ? 'border-color:#555;' : ''}"></span>${escapeHtml(label)}</button>`;
+  }).join('');
+  els.bgGrid.querySelectorAll('[data-bg]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.bg;
+      const idx = state.bgColors.indexOf(key);
+      if (idx >= 0) state.bgColors.splice(idx, 1);
+      else state.bgColors.push(key);
+      renderBgChips();
+      renderReview();
+    });
+  });
+}
+
 function getProductLabel(product) {
   if (!product) return '';
   if (state.lang === 'en') return product.nameEn || product.nameKo;
@@ -353,6 +433,9 @@ async function selectProduct(productId) {
     state.selectedCountries = [];
   }
   state.surveyKeys = [];
+  state.ageGroup = 'adult';
+  state.babyType = 'baekil';
+  state.bgColors = [];
   els.form.reset();
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
@@ -360,6 +443,9 @@ async function selectProduct(productId) {
   renderProducts(state.init?.products || []);
   renderPassportPanel();
   renderSurveyChips();
+  renderAgeChips();
+  renderBabyTypeChips();
+  renderBgChips();
   renderGeneralPanel();
   await refreshQuote();
   if (!state.selectedProduct) return;
@@ -387,6 +473,9 @@ function renderGeneralPanel() {
   }
   const showPeople = product.t === 'group' || product.t === 'snap';
   els.peopleField.classList.toggle('hidden', !showPeople);
+  renderAgeChips();
+  renderBabyTypeChips();
+  renderBgChips();
   const options = Object.entries(OPTION_META)
     .filter(([, meta]) => meta.groups.includes(product.g))
     .map(([key, meta]) => {
@@ -413,6 +502,9 @@ function syncConditionalFields() {
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
+  els.ageField.classList.toggle('hidden-field', group !== 'prof');
+  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.ageGroup === 'baby'));
+  els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
 }
 
 function getQuoteRequest() {
@@ -426,7 +518,10 @@ function getQuoteRequest() {
     otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
     marketing: els.form.elements.marketing?.checked || false,
-    isReturn: false
+    isReturn: false,
+    ageGroup: product.g === 'prof' ? state.ageGroup : 'adult',
+    babyType: product.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
+    bgColors: [...state.bgColors]
   };
 }
 
@@ -485,7 +580,11 @@ function renderProductDetail() {
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
     <div class="detail-copy">${escapeHtml(desc)}</div>
-    <div class="detail-price">€${price} · ${getDisplayDuration()}분</div>
+    <div class="price-hero">
+      <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
+      <div class="price-hero-value">€${price}</div>
+      <div class="price-hero-copy">${getDisplayDuration()}분</div>
+    </div>
   `;
 }
 
@@ -605,6 +704,14 @@ function renderReview() {
   } else if (!els.peopleField.classList.contains('hidden')) {
     rows.push([copy.reviewPeople, `${els.generalPeople.value}명`]);
   }
+  if (state.selectedProduct.g === 'prof') {
+    const ageLabel = AGE_META.find((item) => item.key === state.ageGroup)?.label[state.lang] || AGE_META.find((item) => item.key === state.ageGroup)?.label.ko || state.ageGroup;
+    rows.push([copy.reviewPeople, ageLabel]);
+    if (state.ageGroup === 'baby') {
+      const babyTypeLabel = BABY_TYPE_META.find((item) => item.key === state.babyType)?.label[state.lang] || BABY_TYPE_META.find((item) => item.key === state.babyType)?.label.ko || state.babyType;
+      rows.push(['Baby Type', babyTypeLabel]);
+    }
+  }
   if (state.optionKeys.length) {
     const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
     rows.push([copy.reviewOptions, optionLabels]);
@@ -621,6 +728,14 @@ function renderReview() {
   if (location) rows.push([copy.reviewLocation, location]);
   const businessDetails = String(els.form.elements.businessDetails?.value || '').trim();
   if (businessDetails) rows.push([copy.reviewBusiness, businessDetails]);
+  if (state.bgColors.length) {
+    const bgLabels = state.bgColors
+      .map((key) => BG_META.find((item) => item.key === key))
+      .filter(Boolean)
+      .map((item) => item.label[state.lang] || item.label.ko)
+      .join(', ');
+    rows.push(['Background', bgLabels]);
+  }
   const memo = String(els.form.elements.memo?.value || '').trim();
   if (memo) rows.push([copy.reviewMemo, memo]);
   rows.push([copy.reviewMarketing, els.form.elements.marketing?.checked ? copy.yes : copy.no]);
@@ -680,7 +795,9 @@ async function onSubmit(event) {
     marketing: formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
     aiConsent: formData.get('aiConsent') === 'on',
-    bgColors: [],
+    ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
+    babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
+    bgColors: [...state.bgColors],
     passAddon: false,
     passAddonPeople: 1
   };

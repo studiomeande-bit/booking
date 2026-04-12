@@ -344,6 +344,43 @@ h1 {
   border-color: #20394f;
   color: #fff;
 }
+.survey-chip.subtle-selected {
+  background: #2d2a26;
+  border-color: #2d2a26;
+  color: #fff;
+}
+.bg-chip-preview {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.08);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.price-hero {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #2d2a26, #51473b);
+  color: #fff;
+}
+.price-hero-label {
+  font-size: 12px;
+  opacity: .7;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.price-hero-value {
+  margin-top: 6px;
+  font-size: 30px;
+  font-weight: 800;
+}
+.price-hero-copy {
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: .8;
+}
 .consent-box {
   padding: 16px;
   border: 1px solid #e5dccf;
