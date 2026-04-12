@@ -96,7 +96,7 @@ function handlePublicApiRequest_(route,method,e){
       const totalDur=asNumber_(p.totalDur);
       const itemGroup=String(p.itemGroup||'').trim();
       if(!itemGroup||!isFinite(year)||!isFinite(month)||!isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT','Missing calendar batch parameters');
-      return jsonOk_(getCalendarBatch(year,month,totalDur,itemGroup));
+      return jsonOk_(getPublicCalendarBatch_(year,month,totalDur,itemGroup));
     }
     if(route==='booking'){
       if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking');
@@ -398,6 +398,16 @@ function getCalendarBatch(year,month,totalDur,itemGroup) {
     const y=d.getFullYear(), m=d.getMonth();
     try{out[`${y}_${m}`]=getUnavailableDays(y,m,totalDur,itemGroup);}catch(e){out[`${y}_${m}`]=[];}
   }
+  return out;
+}
+
+function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
+  const d=new Date(year,month,1);
+  const y=d.getFullYear();
+  const m=d.getMonth();
+  const key=`${y}_${m}`;
+  const out={};
+  out[key]=getUnavailableDays(y,m,totalDur,itemGroup);
   return out;
 }
 
