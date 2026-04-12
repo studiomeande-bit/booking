@@ -1856,6 +1856,7 @@ function updateSubmitState() {
   const name = String(formData.get('name') || '').trim();
   const phone = String(formData.get('phone') || '').trim();
   const email = String(formData.get('email') || '').trim();
+  const emailOk = /\S+@\S+\.\S+/.test(email);
   const isPass = product.g === 'pass';
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
@@ -1865,7 +1866,7 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !(product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
-  els.submitBtn.disabled = !(name && phone && email && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && babyNameOk && reshootingOk);
+  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && babyNameOk && reshootingOk);
 }
 
 function clearCalendarSelection() {
