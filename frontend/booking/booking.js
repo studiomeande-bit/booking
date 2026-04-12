@@ -655,9 +655,11 @@ function syncSelectAllRequired() {
 
 function syncConsentVisibility() {
   const isPass = state.selectedGroup === 'pass' || state.selectedProduct?.g === 'pass';
+  const consentBox = document.getElementById('consentBox');
   const marketingRow = document.getElementById('marketingRow');
   const aiRow = document.getElementById('aiRow');
   const selectAllRow = document.getElementById('selectAllRow');
+  if (consentBox) consentBox.classList.toggle('pass-mode', isPass);
   const toggleRow = (row, hidden) => {
     if (!row) return;
     row.classList.toggle('hidden-field', hidden);

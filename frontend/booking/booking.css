@@ -219,6 +219,11 @@ h1 {
 .hidden-field {
   display: none !important;
 }
+.consent-box.pass-mode #selectAllRow,
+.consent-box.pass-mode #aiRow,
+.consent-box.pass-mode #marketingRow {
+  display: none !important;
+}
 .inline-field.hidden {
   display: none;
 }
