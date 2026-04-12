@@ -222,6 +222,7 @@ const els = {
   form: document.getElementById('bookingForm'),
   otherCountryField: document.getElementById('otherCountryField'),
   locationField: document.getElementById('locationField'),
+  locationInfo: document.getElementById('locationInfo'),
   locationInput: document.getElementById('locationInput'),
   businessField: document.getElementById('businessField'),
   businessInput: document.getElementById('businessInput'),
@@ -305,6 +306,13 @@ function applyCopy() {
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
+  if (els.locationInfo) {
+    els.locationInfo.textContent = state.lang === 'en'
+      ? 'Shoots within 50 km of Frankfurt are included in the base price. Additional travel costs may apply outside this area.'
+      : state.lang === 'de'
+        ? 'Aufnahmen im Umkreis von 50 km um Frankfurt sind im Grundpreis enthalten. Außerhalb dieses Radius können zusätzliche Fahrtkosten anfallen.'
+        : '프랑크푸르트 기준 50km 이내 촬영은 기본 비용에 포함됩니다. 이외 지역은 왕복 유류비가 추가될 수 있습니다.';
+  }
   renderWeekdayHeader();
 }
 
@@ -346,15 +354,26 @@ function renderSurveyChips() {
 
 function renderAgeChips() {
   const isPb = state.selectedProduct?.id === 'pb';
+  const isPbus = state.selectedProduct?.id === 'pbus';
+  const isPp = state.selectedProduct?.id === 'pp';
   els.ageGrid.innerHTML = AGE_META.map((item) => {
     let label = item.label[state.lang] || item.label.ko;
     const disabled = isPb && item.key === 'baby';
+    if (item.key === 'kids') {
+      label += ' · -€10';
+    }
     if (isPb && item.key === 'senior') {
       label += state.lang === 'en'
         ? ' · Weekday Free'
         : state.lang === 'de'
           ? ' · Werktags kostenlos'
           : ' · 평일 무료';
+    } else if ((isPbus || isPp) && item.key === 'senior') {
+      label += state.lang === 'en'
+        ? ' · Weekday -€50'
+        : state.lang === 'de'
+          ? ' · Werktags -50€'
+          : ' · 평일 -50€';
     }
     if (disabled) {
       label += state.lang === 'en'
@@ -629,10 +648,16 @@ function getProductPolicyNote(product) {
   }
   if (product.id === 'pbus' || product.id === 'pp') {
     return state.lang === 'en'
-      ? 'Senior weekday discounts apply after selecting the date.'
+      ? (product.id === 'pp'
+        ? 'Profile Professional seniors get -€50 on weekdays and -€30 on Saturdays after selecting the date.'
+        : 'Profile Business seniors get -€50 on weekdays after selecting the date.')
       : state.lang === 'de'
-        ? 'Seniorenrabatte an Werktagen werden nach Auswahl des Datums angewendet.'
-        : '프로필 Business / Professional의 시니어 할인은 날짜 선택 후 적용됩니다.';
+        ? (product.id === 'pp'
+          ? 'Für Senioren gilt bei Profile Professional nach Datumswahl werktags -50€ und samstags -30€.'
+          : 'Für Senioren gilt bei Profile Business nach Datumswahl werktags -50€.')
+        : (product.id === 'pp'
+          ? '프로필 Professional은 날짜 선택 후 시니어 평일 -50€, 토요일 -30€가 적용됩니다.'
+          : '프로필 Business는 날짜 선택 후 시니어 평일 -50€가 적용됩니다.');
   }
   return '';
 }
