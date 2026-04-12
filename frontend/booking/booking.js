@@ -2676,9 +2676,17 @@ function getSuccessGuideHtml(payload) {
   if (product.g === 'pass') {
     sections.push(`
       <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? '[예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영' : 'Passport / Visa Shoot Guide'}</h4>
+        <h4 class="result-guide-title">${isKo ? (hasBabyBirthday ? '👶 영유아 여권 / 비자사진 촬영 조건 안내' : '[예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영') : 'Passport / Visa Shoot Guide'}</h4>
         <div class="result-guide-body">
-          ${isKo ? `
+          ${isKo ? (hasBabyBirthday ? `
+            <p>아기는 눕힌 상태에서 밝은 단색 배경으로 촬영하며, 한국 여권과 독일 비자 규정을 함께 맞춰 진행합니다.</p>
+            <ul>
+              <li>얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.</li>
+              <li>보호자 손, 옷, 그림자는 사진에 보이면 안 되며 흰색 의상은 피해주세요.</li>
+              <li>안경, 모자, 머리띠는 착용할 수 없습니다.</li>
+              <li>영유아는 성인보다 규정이 일부 완화 적용되며, 자연스러운 표정도 허용 범위 안에서 촬영합니다.</li>
+            </ul>
+          ` : `
             <p>고객님, 예약을 환영합니다. 독일의 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.</p>
             <h5>⚠️ [필독] 눈썹 노출 및 반려 주의</h5>
             <ul>
@@ -2696,18 +2704,16 @@ function getSuccessGuideHtml(payload) {
               <li>촬영일로부터 6개월 사용 가능합니다.</li>
               <li>사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.</li>
             </ul>
-            <h5>👶 영유아 촬영 시</h5>
-            <ul>
-              <li>아기를 눕힌 상태에서 촬영하며, 눈은 떠 있어야 하고 손이나 그림자가 얼굴을 가리면 안 됩니다.</li>
-              <li>보호자 손, 옷, 그림자는 사진에 보이면 안 되며 흰색 의상은 피해주세요.</li>
-              <li>안경, 모자, 머리띠는 착용할 수 없습니다.</li>
-            </ul>
-          ` : `
+          `) : `
             <p>Please review the biometric passport / visa photo requirements before your visit.</p>
             <ul>
-              <li>Keep eyebrows fully visible and avoid reflective glasses.</li>
-              <li>Neutral expression, closed mouth, and clear lenses only.</li>
-              <li>Infants are photographed lying down and no caregiver hands or shadows may appear.</li>
+              ${hasBabyBirthday
+                ? `<li>Infants are photographed lying down on a bright plain background.</li>
+                   <li>No caregiver hands, clothes, or shadows may appear in the frame.</li>
+                   <li>Eyes should stay open and white outfits or hair accessories are not recommended.</li>`
+                : `<li>Keep eyebrows fully visible and avoid reflective glasses.</li>
+                   <li>Neutral expression, closed mouth, and clear lenses only.</li>
+                   <li>Infants are photographed lying down and no caregiver hands or shadows may appear.</li>`}
             </ul>
           `}
         </div>
@@ -2771,6 +2777,13 @@ function getSuccessGuideHtml(payload) {
         <div class="result-guide-body">
           ${isKo ? `
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> 기준으로 예약이 접수되었습니다.</p>
+            <h5>선택 내용</h5>
+            <ul>
+              <li>촬영 유형: ${escapeHtml(state.businessMode === 'video' ? '행사 영상' : '행사 사진')}</li>
+              <li>촬영 시간: ${escapeHtml(String(state.businessHours || 2))}시간</li>
+              ${state.businessMode === 'video' ? `<li>편집 옵션: ${escapeHtml((BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko) || state.businessVideoEdit)}</li>` : ''}
+              ${state.businessAddonKeys.length ? `<li>추가 요청: ${escapeHtml(state.businessAddonKeys.map((key) => BUSINESS_ADDON_META.find((item) => item.key === key)?.label.ko || key).join(', '))}</li>` : ''}
+            </ul>
             <h5>제공 방식</h5>
             <ul>
               <li>행사 사진은 촬영 시간별 투명한 가격으로 진행되며 JPG 원본과 기본 색보정본이 제공됩니다.</li>
@@ -2786,6 +2799,7 @@ function getSuccessGuideHtml(payload) {
           ` : `
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> has been requested.</p>
             <ul>
+              <li>${state.businessMode === 'video' ? 'Video production' : 'Event photography'} · ${escapeHtml(String(state.businessHours || 2))}${isKo ? '시간' : ' hours'}</li>
               <li>We will review the event purpose, timeline, deliverables, and any optional requests.</li>
               <li>SNS short-form, rush delivery, and branding requests are confirmed after internal review.</li>
               <li>We may contact you again to coordinate timing, location flow, and delivery expectations.</li>

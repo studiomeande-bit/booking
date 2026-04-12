@@ -1306,6 +1306,44 @@ function _getDirectionHtml(lang){
   return`<b>📍 오시는 길</b><br><b>주소:</b> Holzweg-passage 3, 61440 Oberursel<br>${ml}<br><br>도착하시면 <b>2층</b>에 스튜디오가 있습니다! <b>ALIN / Das Boots 간판 밑 문</b>으로 들어와 계단을 올라오세요. 찾기 어려우시면 연락 주세요, 바로 내려가겠습니다! 😊<br><br><b>🅿️ 주차 안내</b> (전용 주차장 없음)<br>• <a href="${PARKING_1}" style="color:#2563eb;">City Parkhaus</a> — 지하주차장<br>• <a href="${PARKING_2}" style="color:#2563eb;">Parkhaus Altstadt</a> — 지하주차장<br>• <a href="${PARKING_3}" style="color:#2563eb;">Rathausparkplatz</a> — 지상 주차장<br><br><b>💳 결제 안내:</b> 카드 및 현금 결제 모두 가능합니다. 인보이스 발행 필요 시 방문 전 말씀해 주세요.`;
 }
 
+function _getBusinessGuideHtml(lang,quote){
+  const L=lang||'ko';
+  const mode=String((quote&&quote.businessMode)||'photo');
+  const hours=Number((quote&&quote.businessHours)||2);
+  const edit=String((quote&&quote.businessVideoEdit)||'raw');
+  const addOns=((quote&&quote.businessAddonKeys)||[]).filter(Boolean);
+  const editKo={raw:'촬영만 (원본 제공)',basic:'기본 편집 (2~5분)',full:'풀 편집 (10분 이상)'};
+  const editEn={raw:'raw footage only',basic:'basic edit (2–5 min)',full:'full edit (10+ min)'};
+  const editDe={raw:'nur Aufnahme / Rohmaterial',basic:'Basisschnitt (2–5 Min.)',full:'Vollschnitt (10+ Min.)'};
+  const addOnKo={sns:'SNS 숏폼 요청',rush:'긴급 납품 요청',branding:'자막/로고/BGM 요청'};
+  const addOnEn={sns:'SNS short-form request',rush:'rush delivery request',branding:'subtitle / logo / BGM request'};
+  const addOnDe={sns:'SNS Kurzformat-Anfrage',rush:'Express-Lieferung Anfrage',branding:'Untertitel / Logo / BGM Anfrage'};
+  const addOnLabel=L==='en'
+    ? addOns.map(k=>addOnEn[k]||k).join(', ')
+    : L==='de'
+      ? addOns.map(k=>addOnDe[k]||k).join(', ')
+      : addOns.map(k=>addOnKo[k]||k).join(', ');
+  if(L==='en'){
+    const packageLine=mode==='video'
+      ? `Selected package: <b>Event video · ${hours} hours · ${editEn[edit]||edit}</b>`
+      : `Selected package: <b>Event photo · ${hours} hours</b>`;
+    const addLine=addOnLabel?`<br>Optional requests: ${addOnLabel}.`:'';
+    return `<b>📸 Corporate / Event Booking Guide</b><br>${packageLine}<br><br><b>Included</b><br>• Photo packages include JPG originals with basic color correction.<br>• Video packages follow the selected level exactly: shoot only, basic highlight edit, or full edit.<br>• SNS short-form, rush delivery, and branding requests are reviewed after booking depending on scope and schedule.${addLine}<br><br><b>After booking</b><br>• We review the event purpose, timeline, location flow, and expected deliverables.<br>• If needed, we will contact you again to confirm movement flow, branding needs, and delivery schedule.`;
+  }
+  if(L==='de'){
+    const packageLine=mode==='video'
+      ? `Gewähltes Paket: <b>Event Video · ${hours} Stunden · ${editDe[edit]||edit}</b>`
+      : `Gewähltes Paket: <b>Event Foto · ${hours} Stunden</b>`;
+    const addLine=addOnLabel?`<br>Zusatzwünsche: ${addOnLabel}.`:'';
+    return `<b>📸 Firmen / Event Buchungshinweise</b><br>${packageLine}<br><br><b>Leistungsumfang</b><br>• Fotopakete enthalten JPG-Originale mit grundlegender Farbkorrektur.<br>• Videopakete werden entsprechend der gewählten Stufe umgesetzt: nur Aufnahme, Basisschnitt oder Vollschnitt.<br>• Express-Lieferung, SNS-Kurzformate und Branding-Wünsche werden je nach Umfang geprüft.${addLine}<br><br><b>Nächster Schritt</b><br>• Wir prüfen Zweck, Zeitplan, Ablauf vor Ort und benötigte Ergebnisse.<br>• Bei Bedarf melden wir uns erneut zur Abstimmung von Ablauf, Branding und Lieferterminen.`;
+  }
+  const packageLine=mode==='video'
+    ? `선택 패키지: <b>행사 영상 · ${hours}시간 · ${editKo[edit]||edit}</b>`
+    : `선택 패키지: <b>행사 사진 · ${hours}시간</b>`;
+  const addLine=addOnLabel?`<br>추가 요청: ${addOnLabel}`:'';
+  return `<b>📸 이벤트 스냅 / 영상 예약 안내</b><br>${packageLine}<br><br><b>제공 사항</b><br>• 사진 패키지는 JPG 원본과 기본 색보정본이 제공됩니다.<br>• 영상 패키지는 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.<br>• SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 일정과 범위에 따라 별도 검토 후 안내드립니다.${addLine}<br><br><b>예약 후 진행</b><br>• 행사 목적, 시작/종료 시간, 장소, 예상 인원, 필요한 결과물을 기준으로 최종 내용을 확인합니다.<br>• 필요 시 이메일 또는 전화로 동선, 납품 일정, 추가 요청을 다시 조율합니다.`;
+}
+
 function _getSignatureHtml(){
   return`<hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0;"><div style="font-size:12px;color:#64748b;line-height:1.9;">
 감사합니다!<br>
@@ -1323,12 +1361,18 @@ USt-IdNr: DE440009941
 
 /* ====== 촬영 안내 이메일 (다국어) ====== */
 // (문서 3의 _getGuideHtml 그대로 유지 - 이미 완전 다국어)
-function _getGuideHtml(itemGroup,lang,surveyKeys){
+function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
   const sk=(surveyKeys||[]),isBaby=sk.includes('baby'),L=lang||'ko';
   if(itemGroup==='pass'){
-    if(L==='en')return`<b>📸 [Booking Guide] Passport & Visa Photo</b><br>Welcome! We photograph according to German E-passbild and Korean passport regulations.<br><br><b>⚠️ Eyebrows must be fully visible</b><br>• Bangs covering the eyebrow line often lead to rejection.<br>• Ears visible is recommended for a cleaner face contour.<br><br><b>📋 Before your visit</b><br>• Avoid white or pale pastel tops.<br>• Glasses are not recommended. Only clear lenses are allowed.<br>• Neutral expression, closed mouth, no visible teeth.<br><br><b>✅ Validity & size</b><br>• Valid for 6 months from the shoot date.<br>• 35mm × 45mm, face height 32–36mm.<br><br><b>👶 Infant notes</b><br>• Infants are photographed lying down.<br>• Eyes should be open and no caregiver hands or shadows may appear.`;
-    if(L==='de')return`<b>📸 [Buchungshinweise] Passfoto & Visum</b><br>Wir fotografieren nach den deutschen E-passbild- und koreanischen Passvorgaben.<br><br><b>⚠️ Augenbrauen vollständig sichtbar</b><br>• Ein Pony über der Augenbrauenlinie führt oft zur Ablehnung.<br>• Sichtbare Ohren sind empfohlen.<br><br><b>📋 Vor dem Termin</b><br>• Keine weißen oder sehr hellen Pastelltöne tragen.<br>• Brille möglichst abnehmen. Nur klare Kontaktlinsen sind erlaubt.<br>• Neutraler Gesichtsausdruck, geschlossener Mund, keine Zähne sichtbar.<br><br><b>✅ Gültigkeit & Format</b><br>• 6 Monate ab Aufnahmedatum gültig.<br>• 35mm × 45mm, Gesichtshöhe 32–36mm.<br><br><b>👶 Hinweise für Kleinkinder</b><br>• Aufnahme im Liegen, Augen offen.<br>• Hände, Schatten oder Kleidung der Begleitperson dürfen nicht sichtbar sein.`;
-    return`<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.<br><br><b>👶 영유아 촬영 시</b><br>• 아기를 눕힌 상태에서 촬영하며, 눈을 떠야 하고 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자는 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.`;
+    if(L==='en')return isBaby
+      ? `<b>📸 Infant Passport / Visa Photo Guide</b><br>• Infants are photographed lying down on a bright plain background.<br>• Eyes should stay open and no caregiver hands, clothes, or shadows may appear in the frame.<br>• White outfits, hats, glasses, and hair accessories are not recommended.<br>• Korean passport and German visa standards are handled in the same shoot.`
+      : `<b>📸 Passport & Visa Photo Guide</b><br>Welcome! We photograph according to German E-passbild and Korean passport regulations.<br><br><b>⚠️ Eyebrows must be fully visible</b><br>• Bangs covering the eyebrow line often lead to rejection.<br>• Ears visible is recommended for a cleaner face contour.<br><br><b>📋 Before your visit</b><br>• Avoid white or pale pastel tops.<br>• Glasses are not recommended. Only clear lenses are allowed.<br>• Neutral expression, closed mouth, no visible teeth.<br><br><b>✅ Validity & size</b><br>• Valid for 6 months from the shoot date.<br>• 35mm × 45mm, face height 32–36mm.`;
+    if(L==='de')return isBaby
+      ? `<b>📸 Hinweise für Baby-Pass / Visumfoto</b><br>• Babys werden im Liegen vor hellem einfarbigem Hintergrund fotografiert.<br>• Die Augen sollten offen sein und Hände, Kleidung oder Schatten der Begleitperson dürfen nicht sichtbar sein.<br>• Weiße Kleidung, Mützen, Brillen und Haaraccessoires bitte vermeiden.<br>• Koreanischer Pass und deutsches Visum können mit denselben Aufnahmen vorbereitet werden.`
+      : `<b>📸 Buchungshinweise Passfoto & Visum</b><br>Wir fotografieren nach den deutschen E-passbild- und koreanischen Passvorgaben.<br><br><b>⚠️ Augenbrauen vollständig sichtbar</b><br>• Ein Pony über der Augenbrauenlinie führt oft zur Ablehnung.<br>• Sichtbare Ohren sind empfohlen.<br><br><b>📋 Vor dem Termin</b><br>• Keine weißen oder sehr hellen Pastelltöne tragen.<br>• Brille möglichst abnehmen. Nur klare Kontaktlinsen sind erlaubt.<br>• Neutraler Gesichtsausdruck, geschlossener Mund, keine Zähne sichtbar.<br><br><b>✅ Gültigkeit & Format</b><br>• 6 Monate ab Aufnahmedatum gültig.<br>• 35mm × 45mm, Gesichtshöhe 32–36mm.`;
+    return isBaby
+      ? `<b>👶 영유아 여권 / 비자사진 촬영 조건 안내</b><br>• 아기를 눕힌 상태에서 밝은 단색 배경으로 촬영합니다.<br>• 얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자가 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.<br>• 영유아는 성인보다 규정이 일부 완화 적용되며 한국 여권과 독일 비자에 함께 사용할 수 있도록 촬영합니다.`
+      : `<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.`;
   }
   const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• 한복 시: 흰색 이너 필수<br>• ⭐ 돌상 무료 셋팅 (100€ 이상 패키지)`:'';
   const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• Hanbok: white inner required<br>• ⭐ Free birthday table (packages €100+)`:'';
@@ -1354,9 +1398,7 @@ function _getGuideHtml(itemGroup,lang,surveyKeys){
     return`<b>📸 프리웨딩 촬영 전 안내사항 (예약 확정 후)</b><br><br><b>1) 촬영 목적/무드 사전 공유</b><br>원하시는 분위기와 사용 목적에 따라 촬영 구도와 보정 톤이 달라집니다. 레퍼런스 사진 1~5장이나 선호하는 색감이 있다면 미리 공유해 주세요.<br><br><b>2) 일정/로케이션(동선) 확인</b><br>• 촬영 날짜, 시작/종료 시간<br>• 장소명과 이동 동선<br>• 우천·강풍 시 대체 장소 여부<br>※ 야외 촬영은 보통 해 질 무렵 골든아워 시간대 결과가 가장 좋습니다.<br><br><b>3) 복장 가이드</b><br>• 크림/베이지/화이트 또는 네이비/블랙처럼 톤을 맞추면 훨씬 고급스럽게 보입니다.<br>• 큰 로고, 강한 패턴, 잔줄무늬는 피해주세요.<br>• 가능하다면 포멀 1벌 + 캐주얼 1벌처럼 2벌 구성을 추천드립니다.<br><br><b>4) 준비물 체크리스트</b><br>• 신부: 누브라/테이프, 누드톤 속옷, 여분 스타킹<br>• 신랑: 검정/네이비 양말, 벨트, 가능 시 셔츠 여분<br>• 이동용 편한 신발, 물, 간단 간식, 부케/반지/청첩장 같은 소품<br><br><b>5) 헤어·메이크업 안내</b><br>야외 촬영은 바람과 습기 영향이 있으니 헤어 스프레이, 핀, 수정 메이크업 용품을 함께 준비해 주세요. 원하시면 출장 헤어·메이크업 연결도 가능합니다.<br><br><b>6) 도착 권장 시간</b><br>촬영 시작 10~15분 전 도착을 권장드립니다. 지각 시 다음 일정에 따라 촬영 구성이 일부 조정될 수 있습니다.<br><br><b>7) 촬영 진행 방식</b><br>포즈, 표정, 시선은 모두 디렉션해 드리며, 핵심 컷부터 디테일 컷 순으로 자연스럽게 진행합니다.<br><br><b>8) 결과물/보정 관련 안내</b><br>밝은 톤 또는 무드 톤으로 맞춤 보정해 드리며, 제공 장수와 원본 제공 여부는 예약하신 패키지 기준으로 진행됩니다.`;
   }
   if(itemGroup==='biz'){
-    if(L==='en')return`<b>📸 Corporate / Event Booking Guide</b><br>• The selected package has been received and will be reviewed internally before final confirmation.<br>• Photo packages include JPG originals with basic color correction.<br>• Video packages follow the selected level: raw footage, basic edit, or full edit.<br>• SNS short-form, rush delivery, and subtitle/logo/BGM requests are reviewed after booking.`;
-    if(L==='de')return`<b>📸 Firmen-/Event-Buchungshinweise</b><br>• Das gewählte Paket ist eingegangen und wird vor der finalen Bestätigung intern geprüft.<br>• Fotopakete enthalten JPG-Originale mit grundlegender Farbkorrektur.<br>• Videopakete folgen der gewählten Stufe: Rohmaterial, Basis-Schnitt oder Vollschnitt.<br>• SNS-Kurzformat, Express-Lieferung und Untertitel/Logo/BGM werden nach der Buchung einzeln geprüft.`;
-    return`<b>📸 기업/행사 촬영 안내</b><br>• 선택하신 패키지 기준으로 예약이 접수되며, 내부 검토 후 최종 확정이 진행됩니다.<br>• 사진 패키지는 JPG 원본과 기본 색보정본이 제공됩니다.<br>• 영상 패키지는 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.<br>• SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 예약 접수 후 개별 검토 후 안내드립니다.`;
+    return _getBusinessGuideHtml(L,quote||{});
   }
   if(L==='en')return`<b>📸 Shoot Notes</b><br>Your session is confirmed. Share preferred mood or reference images in advance.<br>Contact: studio.mean.de@gmail.com`;
   if(L==='de')return`<b>📸 Shooting-Hinweise</b><br>Ihr Termin ist bestätigt. Stimmung oder Referenzbilder bitte im Voraus mitteilen.<br>Kontakt: studio.mean.de@gmail.com`;
@@ -1434,7 +1476,7 @@ function sendAdminNotificationEmail_(data,quote,koName,eventId,surveyStr,memo,is
 function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,eventId){
   const lang=request.lang||'ko';const T=EMAIL_I18N[lang]||EMAIL_I18N.ko;
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
-  const guide=_getGuideHtml(quote.itemGroup,lang,request.surveyKeys||[]);
+  const guide=_getGuideHtml(quote.itemGroup,lang,request.surveyKeys||[],quote);
   const priceHtml=quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`;
   const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Rabatt:'};
   const discHtml=[quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
@@ -1462,7 +1504,7 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const {obj:dt}=parseDateSafe_(timeRaw);
   const formattedTime=Utilities.formatDate(dt,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const allCountries=(passCountries||[]).join(', ');
-  const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[]);
+  const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup});
   const dep=parseInt(depositAmount)||0;
   const bal=parseInt(balanceAmount)||0;
   const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
