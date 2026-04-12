@@ -187,6 +187,19 @@ h1 {
   font-size: 18px;
   line-height: 1.25;
 }
+.product-badge {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .product-meta {
   margin-top: 12px;
   color: var(--muted);

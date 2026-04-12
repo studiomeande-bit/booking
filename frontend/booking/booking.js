@@ -1136,6 +1136,25 @@ function getProductPolicyNote(product) {
   return '';
 }
 
+function isEventPeriodActive() {
+  const settings = state.init?.settings || {};
+  if (!settings.eventRate || !settings.eventStart || !settings.eventEnd) return false;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  return todayStr >= String(settings.eventStart) && todayStr <= String(settings.eventEnd);
+}
+
+function getEventPeriodLabel() {
+  const settings = state.init?.settings || {};
+  const rate = Number(settings.eventRate || 0);
+  if (!rate || !isEventPeriodActive()) return '';
+  return state.lang === 'en'
+    ? `Event ${rate}% Off`
+    : state.lang === 'de'
+      ? `Aktion ${rate}% Rabatt`
+      : `이벤트 ${rate}% 할인`;
+}
+
 function getAppliedDiscountNote() {
   const item = state.selectedProduct;
   if (!item || !state.quote) return '';
@@ -1221,8 +1240,12 @@ function renderProducts(products) {
   const cards = (products || []).map((product) => {
     const duration = Number(product.d || 0);
     const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
+    const eventBadge = getEventPeriodLabel()
+      ? `<div class="product-badge">${escapeHtml(getEventPeriodLabel())}</div>`
+      : '';
     return `
       <button type="button" class="product-card${selected}" data-id="${escapeHtml(product.id)}">
+        ${eventBadge}
         <h3>${escapeHtml(getProductLabel(product))}</h3>
         <div class="product-meta">
           <div>${escapeHtml(product.nameEn || '')}</div>
