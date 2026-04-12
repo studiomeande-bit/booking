@@ -1825,22 +1825,20 @@ async function loadSlotsForDate(dateKey) {
   const token = ++state.slotRequestToken;
   const duration = getCalendarDuration();
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
-  let slots = state.slotCache.get(slotKey) || [];
-  if (!slots.length) {
-    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
-    els.slotGrid.classList.add('empty-state');
-    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
-    try {
-      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
-      if (token !== state.slotRequestToken) return;
-      state.slotCache.set(slotKey, slots);
-    } catch (error) {
-      if (token !== state.slotRequestToken) return;
-      console.error(error);
-      els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
-      renderSlots([]);
-      return;
-    }
+  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+  els.slotGrid.classList.add('empty-state');
+  els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
+  let slots = [];
+  try {
+    slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
+    if (token !== state.slotRequestToken) return;
+    state.slotCache.set(slotKey, slots);
+  } catch (error) {
+    if (token !== state.slotRequestToken) return;
+    console.error(error);
+    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
+    renderSlots([]);
+    return;
   }
   if (token !== state.slotRequestToken) return;
   els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
@@ -2018,6 +2016,7 @@ function updateSubmitState() {
 
 function clearCalendarSelection() {
   clearSubmitResult();
+  state.slotRequestToken += 1;
   state.selectedDate = '';
   state.selectedSlot = '';
   els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotHintEmpty}</div>`;
