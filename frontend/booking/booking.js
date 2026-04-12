@@ -577,7 +577,13 @@ function wireEvents() {
   els.form.addEventListener('submit', onSubmit);
   els.wizardButtons.step1Next?.addEventListener('click', () => goToStep(2));
   els.wizardButtons.step2Back?.addEventListener('click', () => goToStep(1));
-  els.wizardButtons.step2Next?.addEventListener('click', () => goToStep(3));
+  els.wizardButtons.step2Next?.addEventListener('click', async () => {
+    if (!state.selectedProduct) return;
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
+    setBanner(getCopy().loadCalendar, 'loading');
+    await loadCalendar();
+    goToStep(3);
+  });
   els.wizardButtons.step3Back?.addEventListener('click', () => goToStep(2));
   els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(4));
   els.wizardButtons.step4Back?.addEventListener('click', () => goToStep(3));
@@ -862,10 +868,17 @@ function syncStepPanels() {
 function getMaxUnlockedStep() {
   const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
+  const isPass = state.selectedProduct?.g === 'pass';
+  const hasRequiredStep2 = !hasProduct ? false : (
+    (isPass
+      ? state.selectedCountries.length > 0 && (!state.selectedCountries.includes('OTHER') || !!String(els.form.elements.otherCountry?.value || '').trim())
+      : !((state.selectedProduct?.g === 'snap' || state.selectedProduct?.g === 'wed') && !String(els.locationInput?.value || '').trim()))
+  );
   const hasDate = !!state.selectedDate;
   const hasSlot = !!state.selectedSlot;
   if (!hasGroup) return 1;
   if (!hasProduct) return 2;
+  if (!hasRequiredStep2) return 2;
   if (!hasDate) return 3;
   if (!hasSlot) return 4;
   return 5;
@@ -1542,9 +1555,7 @@ async function selectProduct(productId) {
   await refreshQuote();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
-  setBanner(getCopy().loadCalendar, 'loading');
-  await loadCalendar();
-  goToStep(3);
+  setBanner(getCopy().initSuccess, 'success');
 }
 
 function renderPassportPanel() {
@@ -1779,7 +1790,7 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
   });
-  return batch?.[`${year}_${month}`] || null;
+  return batch?.[`${year}_${month}`] || Object.values(batch || {})[0] || null;
 }
 
 async function prefetchNextCalendarMonth() {
