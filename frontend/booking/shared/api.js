@@ -1,7 +1,21 @@
 import { CONFIG } from './config.js';
 
+let resolvedApiBaseUrl = '';
+
+function setResolvedApiBaseUrl(url) {
+  if (!url) return;
+  try {
+    const parsed = new URL(url);
+    parsed.search = '';
+    parsed.hash = '';
+    resolvedApiBaseUrl = parsed.toString();
+  } catch {
+    resolvedApiBaseUrl = '';
+  }
+}
+
 function buildUrl(route, params = {}) {
-  const base = new URL(CONFIG.apiBaseUrl);
+  const base = new URL(resolvedApiBaseUrl || CONFIG.apiBaseUrl);
   base.searchParams.set('api', route);
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
@@ -26,11 +40,13 @@ async function parseJsonResponse(response) {
 
 export async function fetchInitData() {
   const response = await fetch(buildUrl('init'));
+  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
   const response = await fetch(buildUrl('calendar-batch', { year, month, totalDur, itemGroup }));
+  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 

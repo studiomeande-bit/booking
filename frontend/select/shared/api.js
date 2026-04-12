@@ -1,7 +1,21 @@
 import { CONFIG } from './config.js';
 
+let resolvedApiBaseUrl = '';
+
+function setResolvedApiBaseUrl(url) {
+  if (!url) return;
+  try {
+    const parsed = new URL(url);
+    parsed.search = '';
+    parsed.hash = '';
+    resolvedApiBaseUrl = parsed.toString();
+  } catch {
+    resolvedApiBaseUrl = '';
+  }
+}
+
 function buildUrl(route, params = {}) {
-  const base = new URL(CONFIG.apiBaseUrl);
+  const base = new URL(resolvedApiBaseUrl || CONFIG.apiBaseUrl);
   base.searchParams.set('api', route);
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
@@ -26,6 +40,7 @@ async function parseJsonResponse(response) {
 
 export async function fetchSelectSession(sessionId) {
   const response = await fetch(buildUrl('select-session', { id: sessionId }));
+  setResolvedApiBaseUrl(response.url);
   const text = await response.text();
   let payload;
   try {

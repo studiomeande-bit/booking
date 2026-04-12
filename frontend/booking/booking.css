@@ -663,6 +663,25 @@ h1 {
   font-size: 13px;
   line-height: 1.65;
 }
+.result-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+.result-action-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 11px 16px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.result-action-btn:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 8px 16px rgba(45, 42, 38, 0.08);
+}
 .honeypot {
   position: absolute;
   left: -9999px;
@@ -703,6 +722,8 @@ h1 {
   .chip-grid { display: grid; grid-template-columns: 1fr 1fr; }
   .chip-btn { width: 100%; text-align: center; padding: 12px 10px; font-size: 13px; }
   .result-grid { grid-template-columns: 1fr; }
+  .result-actions { justify-content: stretch; }
+  .result-action-btn { width: 100%; }
   .wizard-nav,
   .wizard-actions {
     flex-direction: column;

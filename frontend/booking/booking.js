@@ -194,6 +194,7 @@ const COPY = {
     submitCardPrice: '예상 금액',
     submitCardNote: '메일이 보이지 않으면 스팸함도 함께 확인해 주세요.',
     submitCardReturn: '재방문 할인 대상 예약으로 접수되었습니다.',
+    submitCardAction: '새 예약 시작',
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
@@ -286,6 +287,7 @@ const COPY = {
     submitCardPrice: 'Estimated price',
     submitCardNote: 'If you do not see the email, please check your spam folder as well.',
     submitCardReturn: 'This booking was received as an eligible return-customer reservation.',
+    submitCardAction: 'Start another booking',
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
@@ -378,6 +380,7 @@ const COPY = {
     submitCardPrice: 'Geschätzter Preis',
     submitCardNote: 'Falls keine E-Mail sichtbar ist, prüfen Sie bitte auch den Spam-Ordner.',
     submitCardReturn: 'Diese Buchung wurde als berechtigte Stammkunden-Reservierung erfasst.',
+    submitCardAction: 'Neue Buchung starten',
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
@@ -674,6 +677,7 @@ function applyCopy() {
   els.passportHint.textContent = copy.passportHint;
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
+  els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   els.submitBtn.textContent = copy.submitLabel;
   const prevLabel = state.lang === 'en' ? 'Back' : state.lang === 'de' ? 'Zurück' : '이전';
   const nextLabel = state.lang === 'en' ? 'Next' : state.lang === 'de' ? 'Weiter' : '다음';
@@ -1747,7 +1751,7 @@ async function loadCalendar() {
   const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
   let batch = state.calendarCache.get(cacheKey);
-  els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth);
+  els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   if (!batch) {
     try {
       batch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
@@ -1826,8 +1830,6 @@ async function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.activeStep = 4;
   state.selectedSlot = '';
-  await refreshQuote();
-  renderSeniorWarning();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
   const slots = state.slotCache.get(slotKey) || [];
@@ -1836,6 +1838,18 @@ async function selectDate(dateKey) {
   renderReview();
   syncStepPanels();
   goToStep(4);
+  const previousDuration = getCalendarDuration();
+  await refreshQuote();
+  renderSeniorWarning();
+  const nextDuration = getCalendarDuration();
+  if (previousDuration !== nextDuration) {
+    await loadCalendar();
+    renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${nextDuration}`));
+    const nextSlotKey = `${dateKey}_${state.selectedProduct.g}_${nextDuration}`;
+    renderSlots(state.slotCache.get(nextSlotKey) || []);
+  } else {
+    renderReview();
+  }
 }
 
 function renderSlots(slots) {
@@ -2105,6 +2119,44 @@ function clearSubmitResult() {
   els.resultBox.innerHTML = '';
 }
 
+function resetBookingFlow() {
+  clearSubmitResult();
+  state.activeStep = 1;
+  state.selectedGroup = '';
+  state.selectedProduct = null;
+  state.selectedDate = '';
+  state.selectedSlot = '';
+  state.selectedCountries = [];
+  state.optionKeys = [];
+  state.surveyKeys = [];
+  state.ageGroup = 'adult';
+  state.babyType = 'baekil';
+  state.bgColors = [];
+  state.quote = null;
+  state.returnEligible = false;
+  state.returnNoticeToken += 1;
+  if (state.returnNoticeTimer) clearTimeout(state.returnNoticeTimer);
+  els.form.reset();
+  els.generalPeople.value = '1';
+  els.passportPeople.value = '1';
+  if (els.passAddonPeople) els.passAddonPeople.value = '1';
+  renderGroups();
+  renderProducts([]);
+  renderPassportPanel();
+  renderPassportCountries();
+  renderSurveyChips();
+  renderAgeChips();
+  renderBabyTypeChips();
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
+  clearCalendarSelection();
+  syncConsentVisibility();
+  syncStepPanels();
+  setBanner(getCopy().initSuccess, 'success');
+  els.stepPanels.step1?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function renderSubmitResult(payload, result) {
   const copy = getCopy();
   const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
@@ -2137,5 +2189,9 @@ function renderSubmitResult(payload, result) {
     </div>
     ${returnNote}
     <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
+    <div class="result-actions">
+      <button type="button" id="resultResetBtn" class="result-action-btn">${escapeHtml(copy.submitCardAction)}</button>
+    </div>
   `;
+  document.getElementById('resultResetBtn')?.addEventListener('click', resetBookingFlow);
 }
