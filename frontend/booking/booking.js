@@ -173,9 +173,9 @@ const COPY = {
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
-    step3Title: '3. 날짜 선택',
+    step3Title: '3. 날짜 및 시간 선택',
     step4Title: '4. 시간 선택',
-    step5Title: '5. 예약 정보',
+    step5Title: '4. 예약 정보',
     groupHelp: '먼저 촬영 종류를 선택해 주세요.',
     initSuccess: '촬영 종류를 선택해 주세요.',
     loadCalendar: '달력을 불러오는 중입니다.',
@@ -266,9 +266,9 @@ const COPY = {
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
-    step3Title: '3. Select Date',
+    step3Title: '3. Select Date & Time',
     step4Title: '4. Select Time',
-    step5Title: '5. Booking Details',
+    step5Title: '4. Booking Details',
     groupHelp: 'Choose the main category first.',
     initSuccess: 'Please choose your shoot type.',
     loadCalendar: 'Loading the calendar.',
@@ -359,9 +359,9 @@ const COPY = {
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
-    step3Title: '3. Datum wählen',
+    step3Title: '3. Datum & Uhrzeit wählen',
     step4Title: '4. Uhrzeit wählen',
-    step5Title: '5. Buchungsdaten',
+    step5Title: '4. Buchungsdaten',
     groupHelp: 'Wählen Sie zuerst die Hauptkategorie.',
     initSuccess: 'Bitte wählen Sie die gewünschte Aufnahmeart.',
     loadCalendar: 'Kalender wird geladen.',
@@ -537,15 +537,12 @@ const els = {
     step2Next: document.getElementById('step2NextBtn'),
     step3Back: document.getElementById('step3BackBtn'),
     step3Next: document.getElementById('step3NextBtn'),
-    step4Back: document.getElementById('step4BackBtn'),
-    step4Next: document.getElementById('step4NextBtn'),
     step5Back: document.getElementById('step5BackBtn')
   },
   stepPanels: {
     step1: document.getElementById('stepPanel1'),
     step2: document.getElementById('stepPanel2'),
     step3: document.getElementById('stepPanel3'),
-    step4: document.getElementById('stepPanel4'),
     step5: document.getElementById('stepPanel5')
   }
 };
@@ -587,10 +584,8 @@ function wireEvents() {
     goToStep(3);
   });
   els.wizardButtons.step3Back?.addEventListener('click', () => goToStep(2));
-  els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(4));
-  els.wizardButtons.step4Back?.addEventListener('click', () => goToStep(3));
-  els.wizardButtons.step4Next?.addEventListener('click', () => goToStep(5));
-  els.wizardButtons.step5Back?.addEventListener('click', () => goToStep(4));
+  els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(5));
+  els.wizardButtons.step5Back?.addEventListener('click', () => goToStep(3));
   els.form.elements.otherCountry?.addEventListener('input', async () => {
     await handleQuoteInputChange();
     refreshStepLocks();
@@ -695,8 +690,6 @@ function applyCopy() {
   setText('step2NextBtn', nextLabel);
   setText('step3BackBtn', prevLabel);
   setText('step3NextBtn', nextLabel);
-  setText('step4BackBtn', prevLabel);
-  setText('step4NextBtn', nextLabel);
   setText('step5BackBtn', prevLabel);
   els.slotHint.textContent = state.selectedDate ? els.slotHint.textContent : copy.slotHintEmpty;
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
@@ -863,6 +856,7 @@ function syncStepPanels() {
   if (state.activeStep > maxStep) state.activeStep = maxStep;
   Object.entries(els.stepPanels).forEach(([key, panel]) => {
     const step = Number(key.replace('step', ''));
+    if (!panel) return;
     panel.classList.toggle('hidden-step', step !== state.activeStep || step > maxStep);
   });
   updateWizardButtons(maxStep);
@@ -887,8 +881,7 @@ function getMaxUnlockedStep() {
   if (!hasGroup) return 1;
   if (!hasProduct) return 2;
   if (!hasRequiredStep2) return 2;
-  if (!hasDate) return 3;
-  if (!hasSlot) return 4;
+  if (!hasDate || !hasSlot) return 3;
   return 5;
 }
 
@@ -903,8 +896,7 @@ function goToStep(step) {
 function updateWizardButtons(maxStep) {
   if (els.wizardButtons.step1Next) els.wizardButtons.step1Next.disabled = maxStep < 2;
   if (els.wizardButtons.step2Next) els.wizardButtons.step2Next.disabled = maxStep < 3;
-  if (els.wizardButtons.step3Next) els.wizardButtons.step3Next.disabled = maxStep < 4;
-  if (els.wizardButtons.step4Next) els.wizardButtons.step4Next.disabled = maxStep < 5;
+  if (els.wizardButtons.step3Next) els.wizardButtons.step3Next.disabled = maxStep < 5;
 }
 
 function renderSurveyChips() {
@@ -1850,7 +1842,7 @@ function renderCalendar(data) {
 
 async function selectDate(dateKey) {
   state.selectedDate = dateKey;
-  state.activeStep = 4;
+  state.activeStep = 3;
   state.selectedSlot = '';
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
@@ -1872,7 +1864,7 @@ async function selectDate(dateKey) {
   renderSlots(slots);
   renderReview();
   syncStepPanels();
-  goToStep(4);
+  goToStep(3);
   const previousDuration = getCalendarDuration();
   await refreshQuote();
   renderSeniorWarning();
