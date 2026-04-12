@@ -1367,6 +1367,7 @@ function renderProducts(products) {
 }
 
 function selectGroup(groupKey) {
+  clearSubmitResult();
   state.selectedGroup = groupKey;
   state.selectedProduct = null;
   state.selectedDate = '';
@@ -1399,6 +1400,7 @@ function selectGroup(groupKey) {
 }
 
 async function selectProduct(productId) {
+  clearSubmitResult();
   state.selectedProduct = (state.init?.products || []).find((item) => item.id === productId) || null;
   state.selectedGroup = state.selectedProduct?.g || state.selectedGroup;
   state.selectedDate = '';
@@ -1838,6 +1840,7 @@ function updateSubmitState() {
 }
 
 function clearCalendarSelection() {
+  clearSubmitResult();
   state.selectedDate = '';
   state.selectedSlot = '';
   els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotHintEmpty}</div>`;
@@ -1944,12 +1947,7 @@ async function onSubmit(event) {
   els.submitBtn.textContent = getCopy().submitLoading;
   try {
     const result = await submitBooking(payload, payload.requestId);
-    els.resultBox.hidden = false;
-    els.resultBox.textContent = state.lang === 'en'
-      ? `Booking request submitted.\n\nName: ${payload.name}\nEmail: ${payload.email}\nDate: ${payload.date} ${payload.time}\nPackage: ${getProductLabel(state.selectedProduct)}`
-      : state.lang === 'de'
-        ? `Buchungsanfrage wurde gesendet.\n\nName: ${payload.name}\nE-Mail: ${payload.email}\nTermin: ${payload.date} ${payload.time}\nPaket: ${getProductLabel(state.selectedProduct)}`
-        : `예약 신청이 접수되었습니다.\n\n이름: ${payload.name}\n이메일: ${payload.email}\n일시: ${payload.date} ${payload.time}\n상품: ${getProductLabel(state.selectedProduct)}`;
+    renderSubmitResult(payload);
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();
     state.selectedSlot = '';
@@ -1969,4 +1967,38 @@ async function onSubmit(event) {
 function setBanner(message, variant) {
   els.banner.textContent = message;
   els.banner.className = `banner ${variant}`;
+}
+
+function clearSubmitResult() {
+  if (!els.resultBox) return;
+  els.resultBox.hidden = true;
+  els.resultBox.innerHTML = '';
+}
+
+function renderSubmitResult(payload) {
+  const copy = getCopy();
+  els.resultBox.hidden = false;
+  els.resultBox.innerHTML = `
+    <h3>${escapeHtml(copy.submitCardTitle)}</h3>
+    <p>${escapeHtml(copy.submitCardCopy)}</p>
+    <div class="result-grid">
+      <div class="result-item">
+        <strong>${escapeHtml(copy.submitCardName)}</strong>
+        <span>${escapeHtml(payload.name)}</span>
+      </div>
+      <div class="result-item">
+        <strong>${escapeHtml(copy.submitCardEmail)}</strong>
+        <span>${escapeHtml(payload.email)}</span>
+      </div>
+      <div class="result-item">
+        <strong>${escapeHtml(copy.submitCardDateTime)}</strong>
+        <span>${escapeHtml(`${payload.date} ${payload.time}`)}</span>
+      </div>
+      <div class="result-item">
+        <strong>${escapeHtml(copy.submitCardProduct)}</strong>
+        <span>${escapeHtml(getProductLabel(state.selectedProduct))}</span>
+      </div>
+    </div>
+    <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
+  `;
 }
