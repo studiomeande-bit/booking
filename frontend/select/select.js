@@ -25,17 +25,22 @@ const state = {
   prints: [],
   marketing: '',
   editMode: false,
-  step: 0
+  step: 0,
+  submitted: false
 };
 
 const els = {
+  loadingScreen: document.getElementById('loadingScreen'),
   banner: document.getElementById('statusBanner'),
   errorPanel: document.getElementById('errorPanel'),
   errorMessage: document.getElementById('errorMessage'),
   appPanel: document.getElementById('appPanel'),
+  successPanel: document.getElementById('successPanel'),
+  progressRow: document.querySelector('.progress-row'),
   sessionSummary: document.getElementById('sessionSummary'),
   packageSummary: document.getElementById('packageSummary'),
   driveLink: document.getElementById('driveLink'),
+  successDriveLink: document.getElementById('successDriveLink'),
   welcomeTitle: document.getElementById('welcomeTitle'),
   welcomeSub: document.getElementById('welcomeSub'),
   startBtn: document.getElementById('startBtn'),
@@ -56,7 +61,13 @@ const els = {
   reviewTotal: document.getElementById('reviewTotal'),
   submitHint: document.getElementById('submitHint'),
   submitBtn: document.getElementById('submitBtn'),
-  resultBox: document.getElementById('resultBox'),
+  successTitle: document.getElementById('successTitle'),
+  successCopy: document.getElementById('successCopy'),
+  successName: document.getElementById('successName'),
+  successProduct: document.getElementById('successProduct'),
+  successPhotoCount: document.getElementById('successPhotoCount'),
+  successTotal: document.getElementById('successTotal'),
+  successGuide: document.getElementById('successGuide'),
   stepPanels: Array.from(document.querySelectorAll('.step-panel')),
   stepDots: [0, 1, 2, 3].map((index) => document.getElementById(`dot${index}`)),
   navButtons: Array.from(document.querySelectorAll('[data-go]'))
@@ -81,12 +92,14 @@ async function boot() {
     renderPrints();
     updatePhotoCounter();
     updateReview();
+    updateSubmitState();
     showApp();
     setBanner(state.editMode ? '기존 제출 내용을 불러왔습니다. 수정 후 다시 제출할 수 있습니다.' : '셀렉 세션을 불러왔습니다.', 'success');
   } catch (error) {
     console.error(error);
     showError(error.message);
   }
+  hideLoading();
 }
 
 function wireEvents() {
@@ -107,12 +120,21 @@ function showError(message) {
   els.errorPanel.classList.remove('hidden');
   els.errorMessage.textContent = message;
   els.appPanel.classList.add('hidden');
+  els.successPanel.classList.add('hidden');
+  hideLoading();
 }
 
 function showApp() {
   els.errorPanel.classList.add('hidden');
   els.appPanel.classList.remove('hidden');
+  els.successPanel.classList.add('hidden');
+  els.progressRow.classList.remove('hidden');
+  els.stepPanels.forEach((panel, index) => panel.classList.toggle('hidden', index !== 0));
   goStep(0);
+}
+
+function hideLoading() {
+  els.loadingScreen.classList.add('hidden');
 }
 
 function hydrateSession(session) {
@@ -227,6 +249,7 @@ function syncMarketingUi() {
   if (state.session?.bookingMarketing === 'Y') {
     els.marketingBox.querySelector('.detail-copy').textContent = '예약 단계에서 이미 마케팅 활용에 동의한 상태입니다.';
   }
+  updateSubmitState();
 }
 
 function getQuotaMap() {
@@ -479,6 +502,7 @@ function updateReview() {
 
   els.reviewMarketing.textContent = state.marketing === 'Y' ? '동의' : '미동의';
   els.reviewTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
+  updateSubmitState();
 }
 
 function validateStep1() {
@@ -510,13 +534,28 @@ function validateStep2() {
 function goStep(step) {
   if (step === 2 && !validateStep1()) return;
   if (step === 3 && !validateStep2()) return;
+  if (state.submitted) return;
   state.step = step;
+  els.progressRow.classList.remove('hidden');
   els.stepPanels.forEach((panel) => panel.classList.toggle('active', Number(panel.dataset.step) === step));
+  els.stepPanels.forEach((panel) => panel.classList.remove('hidden'));
   els.stepDots.forEach((dot, index) => {
     dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
   });
   if (step === 3) updateReview();
   globalThis.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function canSubmit() {
+  if (!state.marketing) return false;
+  if (!state.photos.length) return false;
+  if (state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())) return false;
+  if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+  return true;
+}
+
+function updateSubmitState() {
+  els.submitBtn.disabled = !canSubmit() || state.submitted;
 }
 
 async function onSubmit() {
@@ -541,19 +580,45 @@ async function onSubmit() {
     const result = state.editMode
       ? await updateSelect(state.sessionId, payload, requestId)
       : await submitSelect(state.sessionId, payload, requestId);
-    els.resultBox.hidden = false;
-    els.resultBox.textContent = JSON.stringify(result, null, 2);
     setBanner(state.editMode ? '수정 제출이 완료됐습니다.' : '셀렉 제출이 완료됐습니다.', 'success');
+    renderSuccess(result);
   } catch (error) {
     console.error(error);
     setBanner(`셀렉 제출 실패: ${error.message}`, 'error');
   } finally {
-    els.submitBtn.disabled = false;
-    els.submitBtn.textContent = state.editMode ? '수정 제출' : '제출';
+    if (!state.submitted) {
+      els.submitBtn.disabled = false;
+      els.submitBtn.textContent = state.editMode ? '수정 제출' : '제출';
+    }
   }
 }
 
 function setBanner(message, variant) {
   els.banner.textContent = message;
   els.banner.className = `banner ${variant}`;
+}
+
+function renderSuccess(result) {
+  state.submitted = true;
+  els.progressRow.classList.add('hidden');
+  els.stepPanels.forEach((panel) => panel.classList.add('hidden'));
+  els.successPanel.classList.remove('hidden');
+  els.successTitle.textContent = state.editMode ? '셀렉 수정이 완료되었습니다.' : '셀렉 제출이 완료되었습니다.';
+  els.successCopy.textContent = calcTotal() > 0
+    ? '추가 비용이 포함된 선택 내용이 저장되었습니다. 인보이스와 함께 후속 안내를 보내드립니다.'
+    : '선택 내용이 정상적으로 저장되었습니다. 담당자가 순서대로 확인한 뒤 안내를 보내드립니다.';
+  els.successName.textContent = state.session?.name || '-';
+  els.successProduct.textContent = state.session?.product || '-';
+  els.successPhotoCount.textContent = `${state.photos.length}장`;
+  els.successTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
+  els.successGuide.innerHTML = `
+    <div class="detail-title">선택 요약</div>
+    <div class="guide-copy">보정 선택 ${state.photos.length}장 · 추가 인화 ${state.prints.length}건 · 마케팅 동의 ${state.marketing === 'Y' ? '동의' : '미동의'}</div>
+    ${result?.invoiceNumber ? `<div class="guide-copy">추가 비용 인보이스: <b>${escapeHtml(result.invoiceNumber)}</b></div>` : ''}
+  `;
+  if (state.session?.driveLink) {
+    els.successDriveLink.href = state.session.driveLink;
+    els.successDriveLink.classList.remove('hidden');
+  }
+  globalThis.scrollTo({ top: 0, behavior: 'smooth' });
 }

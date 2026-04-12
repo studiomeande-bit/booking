@@ -25,6 +25,7 @@ Updated: 2026-04-13 Europe/Berlin
   - `frontend/select/index.html`
   - `frontend/select/select.js`
   - `frontend/select/select.css`
+  - `frontend/select/studio-mean-logo.png`
 - Apps Script backend/admin:
   - `appscript/Code.gs`
   - `appscript/Admin.html`
@@ -53,6 +54,13 @@ Updated: 2026-04-13 Europe/Berlin
   - 폰트 두께 완화
   - 카드/버튼/완료 화면 스타일 정리
   - 실제 업로드된 PNG 로고 연결
+- select도 운영형으로 마감 중
+  - 로딩 오버레이 추가
+  - PNG 로고 적용
+  - raw JSON 결과 제거
+  - 제출 완료 전용 성공 화면 추가
+  - 추가 비용/인보이스 요약 카드 추가
+  - 제출 가능 상태에 따라 버튼 활성/비활성 제어
 
 ## Booking Rules Implemented
 
@@ -125,6 +133,7 @@ Updated: 2026-04-13 Europe/Berlin
 - 실 세션 링크 검증
 - 기존 제출 복원 / 수정 제출
 - 추가 인화 / 추가 보정 UI 최종 점검
+- 성공 화면 / 모바일 가독성 최종 검토
 
 ## Resume Order
 
@@ -132,4 +141,4 @@ Updated: 2026-04-13 Europe/Berlin
 2. `git log --oneline -10`
 3. `frontend/booking/booking.js`
 4. `appscript/Code.gs`
-5. Continue with booking final parity, then end-to-end verification, then select parity
+5. Continue with booking final parity, then end-to-end verification, then select parity/mobile verification

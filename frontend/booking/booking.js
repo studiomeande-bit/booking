@@ -1739,6 +1739,47 @@ function getProductGuideList(product) {
   return [];
 }
 
+function renderBusinessPricingTable() {
+  const mode = state.businessMode || 'photo';
+  const edit = state.businessVideoEdit || 'raw';
+  const tableKey = mode === 'video' ? `video_${edit}` : 'photo';
+  const selectedHours = Number(state.businessHours || 2);
+  const title = state.lang === 'en'
+    ? 'Price Table'
+    : state.lang === 'de'
+      ? 'Preistabelle'
+      : '가격표';
+  const unit = state.lang === 'en'
+    ? 'h'
+    : state.lang === 'de'
+      ? 'Std.'
+      : '시간';
+  const hoursLabel = state.lang === 'en'
+    ? 'Coverage'
+    : state.lang === 'de'
+      ? 'Zeit'
+      : '촬영 시간';
+  const priceLabel = state.lang === 'en'
+    ? 'Price'
+    : state.lang === 'de'
+      ? 'Preis'
+      : '가격';
+  const rates = BUSINESS_HOURS_META.map((hours) => {
+    const selected = hours === selectedHours ? ' selected' : '';
+    const price = BUSINESS_PRICE_META[tableKey]?.[hours] || 0;
+    return `<div class="biz-rate-row${selected}"><span>${hours}${unit}</span><strong>€${price}</strong></div>`;
+  }).join('');
+  return `
+    <section class="biz-rate-card">
+      <div class="biz-rate-header">
+        <span>${escapeHtml(title)}</span>
+        <span>${escapeHtml(hoursLabel)} / ${escapeHtml(priceLabel)}</span>
+      </div>
+      <div class="biz-rate-grid">${rates}</div>
+    </section>
+  `;
+}
+
 function getVisitGuideList(product) {
   if (!product) return [];
   if (product.g === 'pass' || product.g === 'prof' || product.g === 'stud') {
@@ -2161,10 +2202,35 @@ function renderProductDetail() {
             : '현재 이 상품에는 이벤트 할인가가 적용되고 있습니다.'}
       </div>`
     : '';
+  const businessSummary = business ? `
+    <section class="biz-summary-card">
+      <div class="biz-summary-title">${state.lang === 'en' ? 'Current Selection' : state.lang === 'de' ? 'Aktuelle Auswahl' : '현재 선택'}</div>
+      <div class="biz-summary-grid">
+        <div class="biz-summary-item">
+          <span>${escapeHtml(getCopy().bizModeLabel)}</span>
+          <strong>${escapeHtml(BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label[state.lang] || BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label.ko || state.businessMode)}</strong>
+        </div>
+        <div class="biz-summary-item">
+          <span>${escapeHtml(getCopy().bizHoursLabel)}</span>
+          <strong>${escapeHtml(String(state.businessHours || 2))}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}</strong>
+        </div>
+        ${state.businessMode === 'video' ? `<div class="biz-summary-item">
+          <span>${escapeHtml(getCopy().bizEditLabel)}</span>
+          <strong>${escapeHtml(BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label[state.lang] || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko || state.businessVideoEdit)}</strong>
+        </div>` : ''}
+        ${state.businessAddonKeys.length ? `<div class="biz-summary-item full">
+          <span>${escapeHtml(getCopy().bizAddonLabel)}</span>
+          <strong>${escapeHtml(state.businessAddonKeys.map((key) => BUSINESS_ADDON_META.find((item) => item.key === key)?.label[state.lang] || BUSINESS_ADDON_META.find((item) => item.key === key)?.label.ko || key).join(', '))}</strong>
+        </div>` : ''}
+      </div>
+    </section>
+    ${renderBusinessPricingTable()}
+  ` : '';
   els.productDetail.className = 'detail-box';
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
     <div class="detail-copy">${escapeHtml(desc)}</div>
+    ${businessSummary}
     ${eventBadge}
     <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
@@ -2407,6 +2473,11 @@ function renderReview() {
   const businessDetails = String(els.businessInput?.value || '').trim();
   if (state.selectedProduct.g === 'biz') {
     rows.push([copy.reviewBusinessPackage, state.quote?.businessLabel || getBusinessSelection().label]);
+    rows.push([copy.bizModeLabel, BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label[state.lang] || BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label.ko || state.businessMode]);
+    rows.push([copy.bizHoursLabel, `${state.businessHours || 2}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`]);
+    if (state.businessMode === 'video') {
+      rows.push([copy.bizEditLabel, BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label[state.lang] || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko || state.businessVideoEdit]);
+    }
     if (state.businessAddonKeys.length) {
       const addonLabels = state.businessAddonKeys
         .map((key) => BUSINESS_ADDON_META.find((item) => item.key === key))
