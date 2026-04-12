@@ -140,17 +140,24 @@
         <h2 id="step3Title">3. 날짜 및 시간 선택</h2>
         <p id="calendarHint">상품을 먼저 선택하세요.</p>
       </div>
-      <div class="calendar-toolbar">
-        <button type="button" id="prevMonthBtn" class="ghost-btn">이전 달</button>
-        <strong id="monthLabel">-</strong>
-        <button type="button" id="nextMonthBtn" class="ghost-btn">다음 달</button>
+      <div class="calendar-stage">
+        <div class="calendar-main">
+          <div class="calendar-toolbar">
+            <button type="button" id="prevMonthBtn" class="ghost-btn">이전 달</button>
+            <strong id="monthLabel">-</strong>
+            <button type="button" id="nextMonthBtn" class="ghost-btn">다음 달</button>
+          </div>
+          <div id="calendarWeekdays" class="calendar-weekdays"></div>
+          <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
+        </div>
+        <aside class="slot-panel">
+          <div class="slot-panel-head">
+            <div class="slot-panel-title">Available Times</div>
+            <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
+          </div>
+          <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
+        </aside>
       </div>
-      <div id="calendarWeekdays" class="calendar-weekdays"></div>
-      <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
-      <div class="panel-head" style="margin-top:20px;">
-        <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
-      </div>
-      <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
       <div class="wizard-nav">
         <div id="wizardProgress3" class="wizard-progress">3 / 4</div>
         <div class="wizard-actions">

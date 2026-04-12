@@ -470,6 +470,7 @@ const state = {
   returnNoticeTimer: null,
   returnNoticeToken: 0,
   quoteToken: 0,
+  calendarRequestToken: 0,
   slotRequestToken: 0,
   quote: null,
   calendarCache: new Map(),
@@ -1696,7 +1697,7 @@ async function handleQuoteInputChange() {
   const nextDuration = getCalendarDuration();
   const shouldReloadCalendar = !state.selectedDate || prevDuration !== nextDuration;
   if (shouldReloadCalendar) clearCalendarSelection();
-  if (state.selectedProduct && shouldReloadCalendar) {
+  if (state.selectedProduct && shouldReloadCalendar && state.activeStep >= 3) {
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
@@ -1769,6 +1770,7 @@ function renderProductDetail() {
 
 async function loadCalendar() {
   if (!state.selectedProduct) return;
+  const token = ++state.calendarRequestToken;
   const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
   let batch = state.calendarCache.get(cacheKey);
@@ -1776,14 +1778,17 @@ async function loadCalendar() {
   if (!batch) {
     try {
       const monthBatch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
+      if (token !== state.calendarRequestToken) return;
       batch = state.calendarCache.get(cacheKey) || monthBatch;
     } catch (error) {
+      if (token !== state.calendarRequestToken) return;
       console.error(error);
       setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
       els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(error.message)}</div>`;
       return;
     }
   }
+  if (token !== state.calendarRequestToken) return;
   renderCalendar(batch);
   setBanner(getCopy().calendarLoaded, 'success');
   prefetchNextCalendarMonth();
@@ -1816,6 +1821,32 @@ async function prefetchNextCalendarMonth() {
   }
 }
 
+async function loadSlotsForDate(dateKey) {
+  const token = ++state.slotRequestToken;
+  const duration = getCalendarDuration();
+  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
+  let slots = state.slotCache.get(slotKey) || [];
+  if (!slots.length) {
+    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+    els.slotGrid.classList.add('empty-state');
+    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
+    try {
+      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
+      if (token !== state.slotRequestToken) return;
+      state.slotCache.set(slotKey, slots);
+    } catch (error) {
+      if (token !== state.slotRequestToken) return;
+      console.error(error);
+      els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
+      renderSlots([]);
+      return;
+    }
+  }
+  if (token !== state.slotRequestToken) return;
+  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
+  renderSlots(slots);
+}
+
 function renderCalendar(data) {
   const safeData = data && typeof data === 'object' ? data : {};
   const unavailSource = Array.isArray(safeData.unavail) ? safeData.unavail : [];
@@ -1842,35 +1873,14 @@ function renderCalendar(data) {
 }
 
 async function selectDate(dateKey) {
-  const token = ++state.slotRequestToken;
   state.selectedDate = dateKey;
   state.activeStep = 3;
   state.selectedSlot = '';
   await refreshQuote();
-  if (token !== state.slotRequestToken) return;
   renderSeniorWarning();
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
-  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
-  let slots = state.slotCache.get(slotKey) || [];
-  if (!slots.length) {
-    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
-    els.slotGrid.classList.add('empty-state');
-    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
-    try {
-      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
-      if (token !== state.slotRequestToken) return;
-      state.slotCache.set(slotKey, slots);
-    } catch (error) {
-      if (token !== state.slotRequestToken) return;
-      console.error(error);
-      els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
-      renderSlots([]);
-      return;
-    }
-  }
-  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
-  renderSlots(slots);
+  await loadSlotsForDate(dateKey);
   renderReview();
   syncStepPanels();
   goToStep(3);
@@ -2016,12 +2026,16 @@ function clearCalendarSelection() {
   syncStepPanels();
 }
 
-function changeMonth(offset) {
+async function changeMonth(offset) {
   const next = new Date(state.calendarYear, state.calendarMonth + offset, 1);
   state.calendarYear = next.getFullYear();
   state.calendarMonth = next.getMonth();
   clearCalendarSelection();
-  if (state.selectedProduct) loadCalendar();
+  if (state.selectedProduct && state.activeStep >= 3) {
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
+    setBanner(getCopy().loadCalendar, 'loading');
+    await loadCalendar();
+  }
 }
 
 async function onSubmit(event) {

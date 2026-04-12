@@ -334,6 +334,34 @@ h1 {
   gap: 12px;
   margin-top: 20px;
 }
+.calendar-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+.calendar-main,
+.slot-panel {
+  min-width: 0;
+}
+.slot-panel {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fcfaf6;
+}
+.slot-panel-head {
+  display: grid;
+  gap: 8px;
+}
+.slot-panel-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #8a7f72;
+}
 .ghost-btn,
 .submit-btn {
   border: 0;
@@ -396,7 +424,8 @@ h1 {
   border-color: #2d2a26;
 }
 .slot-grid {
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
 }
 .slot-btn {
   padding: 14px 12px;
@@ -707,6 +736,7 @@ h1 {
   .product-card h3 { font-size: 17px; }
   .product-meta { font-size: 12px; }
   .survey-grid { grid-template-columns: 1fr; }
+  .calendar-stage { grid-template-columns: 1fr; }
   .calendar-weekdays,
   .calendar-grid { gap: 6px; }
   .calendar-toolbar {
@@ -743,6 +773,7 @@ h1 {
   .panel-head h2 { font-size: 19px; }
   .calendar-weekday { font-size: 11px; }
   .calendar-cell { min-height: 40px; font-size: 13px; }
+  .slot-panel { padding: 14px; }
   .slot-grid { grid-template-columns: 1fr; }
   .chip-grid { grid-template-columns: 1fr; }
   .group-grid { grid-template-columns: 1fr; }
