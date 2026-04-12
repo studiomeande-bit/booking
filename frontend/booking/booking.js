@@ -629,6 +629,7 @@ function applyCopy() {
   renderPeopleOptions();
   renderWeekdayHeader();
   renderReturnNotice();
+  syncConsentVisibility();
   syncSelectAllRequired();
 }
 
@@ -640,7 +641,7 @@ function setText(id, value) {
 function toggleAllRequired(event) {
   const checked = !!event?.target?.checked;
   if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
-  if (state.selectedProduct?.g !== 'pass' && els.form.elements.aiConsent) els.form.elements.aiConsent.checked = checked;
+  if (state.selectedGroup !== 'pass' && els.form.elements.aiConsent) els.form.elements.aiConsent.checked = checked;
   syncSelectAllRequired();
 }
 
@@ -648,8 +649,21 @@ function syncSelectAllRequired() {
   const el = document.getElementById('selectAllRequired');
   if (!el) return;
   const gdpr = !!els.form.elements.gdprConsent?.checked;
-  const ai = state.selectedProduct?.g === 'pass' ? true : !!els.form.elements.aiConsent?.checked;
+  const ai = state.selectedGroup === 'pass' ? true : !!els.form.elements.aiConsent?.checked;
   el.checked = gdpr && ai;
+}
+
+function syncConsentVisibility() {
+  const isPass = state.selectedGroup === 'pass';
+  const marketingRow = els.form.elements.marketing?.closest('.consent-row');
+  const aiRow = els.form.elements.aiConsent?.closest('.consent-row');
+  if (marketingRow) marketingRow.style.display = isPass ? 'none' : '';
+  if (aiRow) aiRow.style.display = isPass ? 'none' : '';
+  if (isPass) {
+    if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
+    if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = false;
+  }
+  syncSelectAllRequired();
 }
 
 function renderReturnNotice() {
@@ -1335,6 +1349,7 @@ function selectGroup(groupKey) {
   renderReview();
   clearCalendarSelection();
   syncStepPanels();
+  syncConsentVisibility();
 }
 
 async function selectProduct(productId) {
@@ -1365,6 +1380,7 @@ async function selectProduct(productId) {
   renderBgChips();
   renderGeneralPanel();
   syncStepPanels();
+  syncConsentVisibility();
   await refreshQuote();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
@@ -1399,11 +1415,6 @@ function renderGeneralPanel() {
       ? `+€${state.quote?.passAddonPrice || getPreviewQuote()?.passAddonPrice || 0}`
       : '';
   }
-  if (els.form.elements.marketing) {
-    const marketingRow = els.form.elements.marketing.closest('.consent-row');
-    if (marketingRow) marketingRow.style.display = product.g === 'pass' ? 'none' : '';
-    if (product.g === 'pass') els.form.elements.marketing.checked = false;
-  }
   renderAgeChips();
   renderBabyTypeChips();
   renderBgChips();
@@ -1426,6 +1437,7 @@ function renderGeneralPanel() {
     });
   });
   syncConditionalFields();
+  syncConsentVisibility();
 }
 
 function syncConditionalFields() {
