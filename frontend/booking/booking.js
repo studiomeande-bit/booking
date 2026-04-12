@@ -212,9 +212,17 @@ const els = {
   seniorWarning: document.getElementById('seniorWarning'),
   babyTypeField: document.getElementById('babyTypeField'),
   babyTypeGrid: document.getElementById('babyTypeGrid'),
+  reshootingField: document.getElementById('reshootingField'),
+  reshootingConsent: document.getElementById('reshootingConsent'),
+  reshootingText: document.getElementById('reshootingText'),
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
   optionGrid: document.getElementById('optionGrid'),
+  passAddonField: document.getElementById('passAddonField'),
+  passAddonToggle: document.getElementById('passAddonToggle'),
+  passAddonPeopleField: document.getElementById('passAddonPeopleField'),
+  passAddonPeople: document.getElementById('passAddonPeople'),
+  passAddonPriceTag: document.getElementById('passAddonPriceTag'),
   bgField: document.getElementById('bgField'),
   bgHelp: document.getElementById('bgHelp'),
   bgGrid: document.getElementById('bgGrid'),
@@ -283,6 +291,11 @@ function wireEvents() {
     handleQuoteInputChange();
   });
   els.generalPeople.addEventListener('change', handleQuoteInputChange);
+  els.passAddonToggle?.addEventListener('change', () => {
+    els.passAddonPeopleField?.classList.toggle('hidden-field', !els.passAddonToggle.checked);
+    handleQuoteInputChange();
+  });
+  els.passAddonPeople?.addEventListener('change', handleQuoteInputChange);
   els.langButtons.forEach((button) => {
     button.addEventListener('click', () => {
       state.lang = button.dataset.lang;
@@ -323,6 +336,13 @@ function applyCopy() {
       : state.lang === 'de'
         ? 'Aufnahmen im Umkreis von 50 km um Frankfurt sind im Grundpreis enthalten. Außerhalb dieses Radius können zusätzliche Fahrtkosten anfallen.'
         : '프랑크푸르트 기준 50km 이내 촬영은 기본 비용에 포함됩니다. 이외 지역은 왕복 유류비가 추가될 수 있습니다.';
+  }
+  if (els.reshootingText) {
+    els.reshootingText.textContent = state.lang === 'en'
+      ? 'Reshooting Policy (Required) — If the child cannot continue due to shyness or condition issues, a reshoot may be arranged within 4 weeks at 30% of the original shoot fee.'
+      : state.lang === 'de'
+        ? 'Nachshooting-Einwilligung (Pflicht) — Wenn das Kind am Drehtag wegen Schüchternheit oder Verfassung nicht normal mitmachen kann, kann innerhalb von 4 Wochen ein Nachshooting für 30% des Ursprungspreises vereinbart werden.'
+        : '재촬영 약관 동의 (필수) — 촬영 당일 아이의 낯가림이나 컨디션 난조로 정상 진행이 어려울 경우, 원 촬영 비용의 30%를 추가 지불하고 4주 이내 재촬영 일정을 잡을 수 있습니다.';
   }
   renderWeekdayHeader();
 }
@@ -515,6 +535,16 @@ function getPreviewQuote() {
     marketingDiscount = 50;
     total -= 50;
   }
+  let passAddonDur = 0;
+  let passAddonPrice = 0;
+  const passAddon = (item.g === 'prof' || item.g === 'stud') && !!els.passAddonToggle?.checked;
+  const passAddonPeople = Number(els.passAddonPeople?.value || 1);
+  if (passAddon) {
+    const passItem = (state.init?.products || []).find((prod) => prod.g === 'pass');
+    passAddonPrice = Number(passItem?.p || 0) * passAddonPeople;
+    total += passAddonPrice;
+    passAddonDur = ([0, 15, 20, 30, 40][Math.min(passAddonPeople, 4)] || 40);
+  }
 
   const duration = item.t === 'passport'
     ? ([0, 15, 20, 30, 40][Math.min(people, 4)] || 40)
@@ -528,9 +558,13 @@ function getPreviewQuote() {
     totalPrice: Math.max(0, total),
     duration,
     prep,
-    totalDuration: duration + prep,
+    totalDuration: duration + prep + passAddonDur,
     product: item,
     marketingDiscount,
+    passAddon,
+    passAddonPeople,
+    passAddonDur,
+    passAddonPrice,
     passCountries,
     otherCountry,
     totalCountries,
@@ -778,6 +812,13 @@ function getAppliedDiscountNote() {
         ? 'Rabatt für Marketing-Einwilligung -50€ angewendet.'
         : '마케팅 동의 할인 -€50이 적용되었습니다.';
   }
+  if ((item.g === 'prof' || item.g === 'stud') && els.passAddonToggle?.checked) {
+    return state.lang === 'en'
+      ? `Passport add-on applied (+€${state.quote.passAddonPrice || 0}).`
+      : state.lang === 'de'
+        ? `Passfoto-Zusatz wurde angewendet (+€${state.quote.passAddonPrice || 0}).`
+        : `여권 추가촬영이 적용되었습니다 (+€${state.quote.passAddonPrice || 0}).`;
+  }
   return '';
 }
 
@@ -884,6 +925,14 @@ function renderGeneralPanel() {
   }
   const showPeople = !(product.g === 'prof' || product.g === 'wed' || product.g === 'biz');
   els.peopleField.classList.toggle('hidden', !showPeople);
+  const showPassAddon = product.g === 'prof' || product.g === 'stud';
+  els.passAddonField.classList.toggle('hidden-field', !showPassAddon);
+  els.passAddonPeopleField.classList.toggle('hidden-field', !(showPassAddon && els.passAddonToggle?.checked));
+  if (els.passAddonPriceTag) {
+    els.passAddonPriceTag.textContent = showPassAddon && els.passAddonToggle?.checked
+      ? `+€${state.quote?.passAddonPrice || getPreviewQuote()?.passAddonPrice || 0}`
+      : '';
+  }
   renderAgeChips();
   renderBabyTypeChips();
   renderBgChips();
@@ -915,6 +964,7 @@ function syncConditionalFields() {
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
   els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
+  els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
 }
 
@@ -932,7 +982,9 @@ function getQuoteRequest() {
     isReturn: false,
     ageGroup: product.g === 'prof' ? state.ageGroup : 'adult',
     babyType: product.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
-    bgColors: [...state.bgColors]
+    bgColors: [...state.bgColors],
+    passAddon: (product.g === 'prof' || product.g === 'stud') && !!els.passAddonToggle?.checked,
+    passAddonPeople: Number(els.passAddonPeople?.value || 1)
   };
 }
 
@@ -1224,8 +1276,8 @@ async function onSubmit(event) {
     ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
     babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
-    passAddon: false,
-    passAddonPeople: 1
+    passAddon: (state.selectedProduct.g === 'prof' || state.selectedProduct.g === 'stud') && !!els.passAddonToggle?.checked,
+    passAddonPeople: Number(els.passAddonPeople?.value || 1)
   };
   if (!payload.name || !payload.phone || !payload.email) {
     setBanner(getCopy().invalidForm, 'error');
@@ -1241,6 +1293,17 @@ async function onSubmit(event) {
   }
   if (!payload.gdprConsent || !payload.aiConsent) {
     setBanner(getCopy().consentRequired, 'error');
+    return;
+  }
+  if (state.selectedProduct.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby') && !els.reshootingConsent?.checked) {
+    setBanner(
+      state.lang === 'en'
+        ? 'Please agree to the reshooting policy.'
+        : state.lang === 'de'
+          ? 'Bitte stimmen Sie der Nachshooting-Richtlinie zu.'
+          : '재촬영 약관에 동의해 주세요.',
+      'error'
+    );
     return;
   }
   els.submitBtn.disabled = true;

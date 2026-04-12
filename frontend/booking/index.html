@@ -64,6 +64,13 @@
           <span class="block-label">촬영 종류</span>
           <div id="babyTypeGrid" class="survey-grid"></div>
         </div>
+        <div id="reshootingField" class="hidden-field detail-box">
+          <div class="detail-title">재촬영 약관 동의</div>
+          <label class="checkbox-row consent-row" style="margin-top:10px;">
+            <input type="checkbox" id="reshootingConsent">
+            <span id="reshootingText">촬영 당일 아이의 컨디션 이슈가 있으면 재촬영 정책에 동의합니다.</span>
+          </label>
+        </div>
         <label id="peopleField" class="inline-field hidden">
           <span>인원</span>
           <select id="generalPeople">
@@ -75,6 +82,23 @@
           </select>
         </label>
         <div id="optionGrid" class="chip-grid"></div>
+        <div id="passAddonField" class="hidden-field detail-box">
+          <div class="detail-title">여권사진 추가 촬영</div>
+          <label class="checkbox-row consent-row" style="margin-top:10px;">
+            <input type="checkbox" id="passAddonToggle">
+            <span>프로필/스튜디오와 함께 여권사진을 추가합니다.</span>
+          </label>
+          <label id="passAddonPeopleField" class="inline-field hidden-field">
+            <span>여권 인원</span>
+            <select id="passAddonPeople">
+              <option value="1">1명 (+15분)</option>
+              <option value="2">2명 (+20분)</option>
+              <option value="3">3명 (+30분)</option>
+              <option value="4">4명 (+40분)</option>
+            </select>
+          </label>
+          <div id="passAddonPriceTag" class="muted-copy"></div>
+        </div>
         <label id="locationField" class="hidden-field inline-field">
           <span>희망 촬영 장소</span>
           <p id="locationInfo" class="muted-copy">프랑크푸르트 기준 50km 이내 촬영은 기본 비용에 포함됩니다. 이외 지역은 왕복 유류비가 추가될 수 있습니다.</p>
