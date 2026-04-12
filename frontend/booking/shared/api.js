@@ -1,25 +1,7 @@
 import { CONFIG } from './config.js';
 
-let resolvedApiBaseUrl = '';
-
-function setResolvedApiBaseUrl(url) {
-  if (!url) return;
-  try {
-    const parsed = new URL(url);
-    const preserved = new URL(`${parsed.origin}${parsed.pathname}`);
-    ['user_content_key', 'lib'].forEach((key) => {
-      const value = parsed.searchParams.get(key);
-      if (value) preserved.searchParams.set(key, value);
-    });
-    parsed.hash = '';
-    resolvedApiBaseUrl = preserved.toString();
-  } catch {
-    resolvedApiBaseUrl = '';
-  }
-}
-
 function buildUrl(route, params = {}) {
-  const base = new URL(resolvedApiBaseUrl || CONFIG.apiBaseUrl);
+  const base = new URL(CONFIG.apiBaseUrl);
   base.searchParams.set('api', route);
   base.searchParams.set('_ts', String(Date.now()));
   Object.entries(params).forEach(([key, value]) => {
@@ -52,36 +34,30 @@ async function parseJsonResponse(response) {
 
 export async function fetchInitData() {
   const response = await fetch(buildUrl('init'), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
   const response = await fetch(buildUrl('calendar-batch', { year, month, totalDur, itemGroup }), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchSlots({ date, totalDur, itemGroup }) {
   const response = await fetch(buildUrl('slots', { date, totalDur, itemGroup }), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchQuote(data) {
   const response = await fetch(buildPayloadUrl('quote', data), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchReturnEligibility(data) {
   const response = await fetch(buildPayloadUrl('return-check', data), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function submitBooking(data, requestId) {
   const response = await fetch(buildPayloadUrl('booking', data, { requestId }), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }

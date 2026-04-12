@@ -1,25 +1,7 @@
 import { CONFIG } from './config.js';
 
-let resolvedApiBaseUrl = '';
-
-function setResolvedApiBaseUrl(url) {
-  if (!url) return;
-  try {
-    const parsed = new URL(url);
-    const preserved = new URL(`${parsed.origin}${parsed.pathname}`);
-    ['user_content_key', 'lib'].forEach((key) => {
-      const value = parsed.searchParams.get(key);
-      if (value) preserved.searchParams.set(key, value);
-    });
-    parsed.hash = '';
-    resolvedApiBaseUrl = preserved.toString();
-  } catch {
-    resolvedApiBaseUrl = '';
-  }
-}
-
 function buildUrl(route, params = {}) {
-  const base = new URL(resolvedApiBaseUrl || CONFIG.apiBaseUrl);
+  const base = new URL(CONFIG.apiBaseUrl);
   base.searchParams.set('api', route);
   base.searchParams.set('_ts', String(Date.now()));
   Object.entries(params).forEach(([key, value]) => {
@@ -45,7 +27,6 @@ async function parseJsonResponse(response) {
 
 export async function fetchSelectSession(sessionId) {
   const response = await fetch(buildUrl('select-session', { id: sessionId }), { cache: 'no-store' });
-  setResolvedApiBaseUrl(response.url);
   const text = await response.text();
   let payload;
   try {
