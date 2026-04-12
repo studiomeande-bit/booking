@@ -366,6 +366,13 @@ h1 {
   border-color: #2d2a26;
   color: #fff;
 }
+.survey-chip:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+  background: #f1ede7;
+  border-color: #dfd6c9;
+  color: #8a8074;
+}
 .bg-chip-preview {
   display: inline-block;
   width: 18px;

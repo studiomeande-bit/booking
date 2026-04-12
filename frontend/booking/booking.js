@@ -343,10 +343,26 @@ function renderSurveyChips() {
 }
 
 function renderAgeChips() {
+  const isPb = state.selectedProduct?.id === 'pb';
   els.ageGrid.innerHTML = AGE_META.map((item) => {
-    const label = item.label[state.lang] || item.label.ko;
+    let label = item.label[state.lang] || item.label.ko;
+    const disabled = isPb && item.key === 'baby';
+    if (isPb && item.key === 'senior') {
+      label += state.lang === 'en'
+        ? ' · Weekday Free'
+        : state.lang === 'de'
+          ? ' · Werktags kostenlos'
+          : ' · 평일 무료';
+    }
+    if (disabled) {
+      label += state.lang === 'en'
+        ? ' · Not available'
+        : state.lang === 'de'
+          ? ' · Nicht verfügbar'
+          : ' · 선택 불가';
+    }
     const selected = state.ageGroup === item.key ? ' subtle-selected' : '';
-    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}">${escapeHtml(label)}</button>`;
+    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
   }).join('');
   els.ageGrid.querySelectorAll('[data-age]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -357,6 +373,85 @@ function renderAgeChips() {
       handleQuoteInputChange();
     });
   });
+}
+
+function getPreviewQuote() {
+  const item = state.selectedProduct;
+  if (!item) return null;
+  const people = getPeopleCount();
+  const optionKeys = [...state.optionKeys];
+  const passCountries = item.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [];
+  const otherCountry = item.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '';
+  const totalCountries = passCountries.length + (otherCountry ? 1 : 0);
+  let total = Number(item.p || 0);
+
+  if (item.t === 'passport') total = (total + Math.max(totalCountries - 1, 0) * 5) * people;
+  else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
+  else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
+  else if (item.t === 'snap' && people === 1) total -= 30;
+
+  const optMeta = { dog: 15, bg: 20, outfit: 20 };
+  optionKeys.forEach((key) => {
+    if (optMeta[key]) total += optMeta[key];
+  });
+
+  const ageGroup = item.g === 'prof' ? state.ageGroup : 'adult';
+  let seniorFree = false;
+  let seniorDiscApplied = false;
+
+  if (item.g === 'prof') {
+    if (ageGroup === 'kids') total = Math.max(0, total - 10);
+    else if (ageGroup === 'senior' && state.selectedDate) {
+      const d = new Date(`${state.selectedDate}T12:00:00`);
+      const day = d.getDay();
+      if (item.id === 'pb') {
+        if (day >= 2 && day <= 5) {
+          seniorFree = true;
+          total = 0;
+        }
+      } else if (item.id === 'pbus' || item.id === 'pp') {
+        if (day >= 2 && day <= 5) {
+          total = Math.max(0, total - 50);
+          seniorDiscApplied = true;
+        } else if (day === 6 && item.id === 'pp') {
+          total = Math.max(0, total - 30);
+          seniorDiscApplied = true;
+        }
+      }
+    }
+  }
+
+  if (!seniorFree && !seniorDiscApplied && Number(item.discountRate || 0) > 0) {
+    total -= Math.round(total * (Number(item.discountRate || 0) / 100));
+  }
+
+  let marketingDiscount = 0;
+  const marketing = els.form.elements.marketing?.checked || false;
+  if (item.g === 'wed' && marketing) {
+    marketingDiscount = 50;
+    total -= 50;
+  }
+
+  const duration = item.t === 'passport'
+    ? ([0, 15, 20, 30, 40][Math.min(people, 4)] || 40)
+    : Number(item.d || 0);
+  const prep = Number(item.prep || 0);
+  return {
+    itemId: item.id,
+    itemGroup: item.g,
+    itemType: item.t,
+    people,
+    totalPrice: Math.max(0, total),
+    duration,
+    prep,
+    totalDuration: duration + prep,
+    product: item,
+    marketingDiscount,
+    passCountries,
+    otherCountry,
+    totalCountries,
+    optionKeys
+  };
 }
 
 function renderBabyTypeChips() {
@@ -676,11 +771,14 @@ function getQuoteRequest() {
 
 async function refreshQuote() {
   if (!state.selectedProduct) return;
+  state.quote = getPreviewQuote();
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
   try {
     state.quote = await fetchQuote(getQuoteRequest());
   } catch (error) {
     console.error(error);
-    state.quote = null;
   }
   renderGeneralPanel();
   renderProductDetail();
