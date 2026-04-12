@@ -16,8 +16,10 @@ This repository is the new split structure for the Studio mean reservation platf
 ## Current status
 
 - Existing Apps Script production files were copied into `appscript/`
-- Frontend split has not been implemented yet
-- Customer pages still need to be rebuilt to remove Apps Script HTML/runtime dependencies
+- Public JSON API routing has been added to `appscript/Code.gs`
+- Booking frontend now has a first static API-driven scaffold in `frontend/booking/`
+- Select frontend is still pending full migration
+- Admin ERP remains in Apps Script and is intentionally kept separate
 
 ## Production references
 
@@ -37,3 +39,12 @@ This repository is the new split structure for the Studio mean reservation platf
 
 - Frontend: GitHub `main` push -> Netlify auto deploy
 - Apps Script: `clasp push` + `clasp deploy`
+
+## Current API routes
+
+- `GET /exec/api/init`
+- `GET /exec/api/calendar-batch?year=YYYY&month=M&totalDur=NN&itemGroup=GROUP`
+- `POST /exec/api/booking`
+- `GET /exec/api/select-session?id=SESSION_ID`
+- `POST /exec/api/select-submit`
+- `POST /exec/api/select-update`

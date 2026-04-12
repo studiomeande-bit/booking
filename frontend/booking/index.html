@@ -1,14 +1,81 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Studio mean Booking</title>
+  <link rel="stylesheet" href="./booking.css">
 </head>
 <body>
-  <main>
-    <h1>Studio mean Booking</h1>
-    <p>Frontend split scaffold created. Booking UI migration pending.</p>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Studio mean</p>
+      <h1>예약 시스템 분리 작업 중</h1>
+      <p class="lede">이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 상품 조회, 날짜/시간 조회, 예약 제출 경로를 먼저 분리합니다.</p>
+      <div id="statusBanner" class="banner loading">초기 데이터를 불러오는 중입니다.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>1. 상품 선택</h2>
+        <p>Apps Script `getInitDataCustomer()`를 JSON API로 호출합니다.</p>
+      </div>
+      <div id="productGrid" class="product-grid"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>2. 날짜 선택</h2>
+        <p id="calendarHint">상품을 먼저 선택하세요.</p>
+      </div>
+      <div class="calendar-toolbar">
+        <button type="button" id="prevMonthBtn" class="ghost-btn">이전 달</button>
+        <strong id="monthLabel">-</strong>
+        <button type="button" id="nextMonthBtn" class="ghost-btn">다음 달</button>
+      </div>
+      <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>3. 시간 선택</h2>
+        <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
+      </div>
+      <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>4. 고객 정보</h2>
+        <p>현재 단계는 기본 예약 제출 경로만 연결합니다.</p>
+      </div>
+      <form id="bookingForm" class="booking-form">
+        <label>
+          <span>이름</span>
+          <input name="name" autocomplete="name" required>
+        </label>
+        <label>
+          <span>연락처</span>
+          <input name="phone" autocomplete="tel" required>
+        </label>
+        <label>
+          <span>이메일</span>
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>
+          <span>주소</span>
+          <input name="address" autocomplete="street-address">
+        </label>
+        <label>
+          <span>요청사항</span>
+          <textarea name="memo" rows="4"></textarea>
+        </label>
+        <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
+        <button id="submitBtn" type="submit" class="submit-btn" disabled>예약 제출</button>
+      </form>
+      <pre id="resultBox" class="result-box" hidden></pre>
+    </section>
   </main>
+  <script type="module" src="./booking.js"></script>
 </body>
 </html>

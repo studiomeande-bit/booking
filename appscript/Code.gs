@@ -31,33 +31,160 @@ const CONFIG = {
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
 };
+const PUBLIC_API_CONFIG = {
+  ALLOWED_ORIGINS: [
+    'https://booking.studio-mean.com',
+    'https://select.studio-mean.com',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ],
+  REQUEST_ID_TTL_SEC: 60 * 10,
+  HONEYPOT_FIELD: 'website'
+};
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
 function doGet(e) {
   e = e||{parameter:{}}; const p = e.parameter||{};
-  if (p.action==='temp_invoice_test' && p.key==='SM_INTERNAL_TEST_20260412') {
-    return ContentService
-      .createTextOutput(JSON.stringify(tempInvoiceMailFlowTest()))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  const apiRoute=getPublicApiRoute_(e);
+  if(apiRoute) return handlePublicApiRequest_(apiRoute,'get',e);
   if (p.action==='confirm'||p.action==='cancel'||p.action==='customer_cancel'||p.action==='approve_retouch'||p.action==='revise_retouch'||p.action==='customer_reschedule') return handleActionRoute_(p);
-  const page = (p.p||'index').toLowerCase();
-  if(page==='index'){
-    const tmpl=HtmlService.createTemplateFromFile('index');
-    tmpl.bootData=JSON.stringify(getInitDataCustomer());
-    return tmpl.evaluate()
-      .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
-      .setTitle(CONFIG.APP_TITLE)
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-  if(page==='select'){const tmpl=HtmlService.createTemplateFromFile('select');tmpl.sessionId=p.id||'';return tmpl.evaluate().addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no').setTitle('Studio mean — Photo Selection').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);}
-  if(page==='select_preview') return HtmlService.createHtmlOutputFromFile('select_preview').addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no').setTitle('Studio mean — Preview').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  const safePage = {index:true,admin:true}[page]?page:'index';
-  return HtmlService.createHtmlOutputFromFile(safePage)
+  const page = (p.p||'admin').toLowerCase();
+  if(page==='index') return renderFrontendMovedPage_('booking');
+  if(page==='select'||page==='select_preview') return renderFrontendMovedPage_('select');
+  return HtmlService.createHtmlOutputFromFile('Admin')
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
-    .setTitle(page==='admin'?CONFIG.APP_TITLE+' ERP':CONFIG.APP_TITLE)
+    .setTitle(CONFIG.APP_TITLE+' ERP')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function doPost(e){
+  const apiRoute=getPublicApiRoute_(e||{});
+  if(apiRoute) return handlePublicApiRequest_(apiRoute,'post',e||{});
+  return jsonError_('NOT_FOUND','Unsupported route');
+}
+
+function renderFrontendMovedPage_(target){
+  const targetUrl=target==='select'?'https://select.studio-mean.com':'https://booking.studio-mean.com';
+  const title=target==='select'?'Photo Selection moved':'Booking moved';
+  const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f3ed;color:#2d2a26;margin:0;padding:32px}.card{max-width:560px;margin:10vh auto;background:#fff;border:1px solid #e8dfcf;border-radius:18px;padding:28px;box-shadow:0 20px 50px rgba(45,42,38,.08)}h1{margin:0 0 12px;font-size:28px}p{line-height:1.7;color:#5b554e}.btn{display:inline-block;margin-top:14px;background:#2d2a26;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}</style></head><body><div class="card"><h1>${title}</h1><p>The customer page is now served from a dedicated frontend domain.</p><p>Moved to: <b>${targetUrl}</b></p><a class="btn" href="${targetUrl}">Open page</a></div></body></html>`;
+  return HtmlService.createHtmlOutput(html)
+    .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
+    .setTitle(CONFIG.APP_TITLE);
+}
+
+function getPublicApiRoute_(e){
+  const p=(e&&e.parameter)||{};
+  const rawPath=String((e&&e.pathInfo)||'').replace(/^\/+/,'').toLowerCase();
+  if(rawPath.indexOf('api/')===0) return rawPath.slice(4);
+  const api=String(p.api||'').trim().toLowerCase();
+  return api||'';
+}
+
+function handlePublicApiRequest_(route,method,e){
+  try{
+    assertPublicOrigin_(e);
+    if(route==='init'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/init');
+      return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
+    }
+    if(route==='calendar-batch'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/calendar-batch');
+      const p=(e&&e.parameter)||{};
+      const year=asNumber_(p.year);
+      const month=asNumber_(p.month);
+      const totalDur=asNumber_(p.totalDur);
+      const itemGroup=String(p.itemGroup||'').trim();
+      if(!itemGroup||!isFinite(year)||!isFinite(month)||!isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT','Missing calendar batch parameters');
+      return jsonOk_(getCalendarBatch(year,month,totalDur,itemGroup));
+    }
+    if(route==='booking'){
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking');
+      const body=parsePublicJsonBody_(e);
+      const payload=body.data||body;
+      assertPublicBookingPayload_(payload,body);
+      const result=processForm(payload);
+      if(!result||!result.ok) return jsonError_('BOOKING_FAILED',(result&&result.message)||'Booking failed');
+      return jsonOk_(result);
+    }
+    if(route==='select-session'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-session');
+      const p=(e&&e.parameter)||{};
+      const sessionId=String(p.id||'').trim();
+      if(!sessionId) return jsonError_('INVALID_SESSION','Missing session id');
+      return jsonOk_(getSelectSession(sessionId));
+    }
+    if(route==='select-submit'){
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-submit');
+      const body=parsePublicJsonBody_(e);
+      const payload=body.data||body;
+      assertPublicRequestId_(body.requestId||payload.requestId);
+      return jsonOk_(submitPhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
+    }
+    if(route==='select-update'){
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-update');
+      const body=parsePublicJsonBody_(e);
+      const payload=body.data||body;
+      assertPublicRequestId_(body.requestId||payload.requestId);
+      return jsonOk_(updatePhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
+    }
+    return jsonError_('NOT_FOUND','Unknown API route');
+  }catch(err){
+    return jsonError_('API_ERROR',err&&err.message?err.message:String(err));
+  }
+}
+
+function sanitizeInitDataForApi_(data){
+  return {
+    products:data&&data.products||[],
+    settings:data&&data.settings||{},
+    serverTime:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss")
+  };
+}
+
+function parsePublicJsonBody_(e){
+  const body=String((e&&e.postData&&e.postData.contents)||'').trim();
+  if(!body) return {};
+  try{return JSON.parse(body);}catch(err){throw new Error('Invalid JSON body');}
+}
+
+function assertPublicBookingPayload_(payload,body){
+  const honeypotField=PUBLIC_API_CONFIG.HONEYPOT_FIELD;
+  if(String((payload&&payload[honeypotField])||(body&&body[honeypotField])||'').trim()) throw new Error('Spam submission detected');
+  assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
+  if(!payload||!payload.name||!payload.phone||!payload.email||!payload.date||!payload.time) throw new Error('Missing required booking fields');
+}
+
+function assertPublicRequestId_(requestId){
+  const id=String(requestId||'').trim();
+  if(!id) throw new Error('Missing requestId');
+  const cache=CacheService.getScriptCache();
+  const key='public_req_'+id;
+  if(cache.get(key)) throw new Error('Duplicate submission');
+  cache.put(key,'1',PUBLIC_API_CONFIG.REQUEST_ID_TTL_SEC);
+}
+
+function assertPublicOrigin_(e){
+  const headers=(e&&e.headers)||{};
+  const origin=String(headers.origin||headers.Origin||'').trim();
+  if(origin&&PUBLIC_API_CONFIG.ALLOWED_ORIGINS.indexOf(origin)===-1) throw new Error('Origin not allowed');
+}
+
+function jsonOk_(data){
+  return ContentService
+    .createTextOutput(JSON.stringify({ok:true,data:data||{}}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonError_(code,message){
+  return ContentService
+    .createTextOutput(JSON.stringify({ok:false,error:{code:code||'ERROR',message:message||'Unexpected error'}}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function asNumber_(value){
+  const n=Number(value);
+  return isFinite(n)?n:NaN;
 }
 
 function getDbSheet() { return ensureSheets_().bookingSheet; }
@@ -3168,57 +3295,6 @@ function getInvoiceList(token){
   return {ok:true, invoices};
 }
 
-function tempInvoiceMailFlowTest(){
-  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyyMMdd_HHmmss');
-  const testNumber=`TEST-${stamp}`;
-  const payload={
-    type:'수기',
-    customInvNumber:testNumber,
-    customerName:'TEST DELETE',
-    customerEmail:CONFIG.ADMIN_EMAIL,
-    customerPhone:'+49 176 6093 9400',
-    customerAddress:'Holzwegpassage 3\n61440 Oberursel',
-    memo:'temporary e2e test - delete immediately',
-    sendMail:true,
-    mailLang:'de',
-    mailSubject:`[Studio mean] Rechnung {{invoiceNumber}}`,
-    mailBody:`Hallo TEST DELETE,\n\nDies ist ein interner Testversand.\nRechnungsnummer: {{invoiceNumber}}\nGesamtbetrag: €1.00\n\nBitte ignorieren.\nStudio mean`,
-    items:[{productId:'',description:'Internal E2E Test',qty:1,unitGross:1}]
-  };
-  let invoiceNumber='';
-  let pdfFileId='';
-  let pdfUrl='';
-  try{
-    const created=createInvoiceRecord_(payload);
-    invoiceNumber=created.invoiceNumber||testNumber;
-    const {invoiceSheet}=ensureSheets_();
-    const rows=invoiceSheet.getDataRange().getValues();
-    const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'')===invoiceNumber);
-    if(idx!==-1){
-      const rowIndex=idx+2;
-      pdfFileId=String(invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).getValue()||'');
-      pdfUrl=String(invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).getValue()||'');
-      invoiceSheet.deleteRow(rowIndex);
-    }
-    if(pdfFileId){
-      try{DriveApp.getFileById(pdfFileId).setTrashed(true);}catch(e){}
-    }
-    return {ok:true, invoiceNumber, pdfFileId, pdfUrl, mailSentAt:created.mailSentAt||''};
-  }catch(e){
-    try{
-      if(invoiceNumber){
-        const {invoiceSheet}=ensureSheets_();
-        const rows=invoiceSheet.getDataRange().getValues();
-        const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'')===invoiceNumber);
-        if(idx!==-1) invoiceSheet.deleteRow(idx+2);
-      }
-    }catch(_){}
-    if(pdfFileId){
-      try{DriveApp.getFileById(pdfFileId).setTrashed(true);}catch(_){}
-    }
-    return {ok:false,message:e.message,invoiceNumber,pdfFileId,pdfUrl};
-  }
-}
 
 /* ====== B2: 자동 리마인더 트리거 ====== */
 function installDailyTrigger(){
