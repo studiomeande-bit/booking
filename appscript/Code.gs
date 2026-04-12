@@ -110,6 +110,15 @@ function handlePublicApiRequest_(route,method,e){
       if(!itemGroup||!isFinite(year)||!isFinite(month)||!isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT','Missing calendar batch parameters');
       return jsonOk_(getPublicCalendarBatch_(year,month,totalDur,itemGroup));
     }
+    if(route==='slots'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/slots');
+      const p=(e&&e.parameter)||{};
+      const date=String(p.date||'').trim();
+      const totalDur=asNumber_(p.totalDur);
+      const itemGroup=String(p.itemGroup||'').trim();
+      if(!date||!itemGroup||!isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT','Missing slot parameters');
+      return jsonOk_(getPublicSlots_(date,totalDur,itemGroup));
+    }
     if(route==='quote'){
       if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/quote');
       const request=getPublicPayloadFromRequest_(e);
@@ -450,8 +459,12 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const m=d.getMonth();
   const key=`${y}_${m}`;
   const out={};
-  out[key]=getUnavailableDays(y,m,totalDur,itemGroup);
+  out[key]=getUnavailableDays(y,m,totalDur,itemGroup,true);
   return out;
+}
+
+function getPublicSlots_(dateStr,totalDur,itemGroup){
+  return getAvailableSlots(dateStr,totalDur,itemGroup);
 }
 
 function getInitDataAdmin(token){assertAdmin_(token);const d=getInitDataCustomer();return{dashboard:getDashboardData_(),products:d.products,settings:d.settings};}
@@ -1142,7 +1155,7 @@ function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation){
   return slots;
 }
 
-function getUnavailableDays(year,month,totalDur,itemGroup){
+function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
   const ver=getCalCacheVer_(),cacheKey=`unavail_v8_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
@@ -1153,8 +1166,9 @@ function getUnavailableDays(year,month,totalDur,itemGroup){
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
     if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){unavail.push(dStr);continue;}
-    const daySlots=computeSlots_(dStr,events,totalDur,itemGroup);
-    if(!daySlots.length){unavail.push(dStr);}else{
+    const daySlots=lightMode?null:computeSlots_(dStr,events,totalDur,itemGroup);
+    const hasSlots=lightMode?hasAnySlot_(dStr,events,totalDur,itemGroup):!!daySlots.length;
+    if(!hasSlots){unavail.push(dStr);}else if(daySlots){
       slotCounts[dStr]=daySlots.length;
       slotsByDate[dStr]=daySlots;
       const sKey=`slots_v7_${ver}_${dStr}_${itemGroup}_${totalDur}`;
@@ -1164,6 +1178,19 @@ function getUnavailableDays(year,month,totalDur,itemGroup){
   const result={unavail,slotCounts,slotsByDate};
   try{cache.put(cacheKey,JSON.stringify(result),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
   return result;
+}
+
+function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation){
+  const now=new Date().getTime(),loc=newLocation||'';
+  return getTimeBlocksForDate_(dateStr,itemGroup).some(b=>{
+    const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
+    const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
+    for(let t=bs;t<be;t+=15*60000){
+      if(t<=now||t+totalDur*60000>be) continue;
+      if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)) return true;
+    }
+    return false;
+  });
 }
 
 function getAvailableSlots(dateStr,totalDur,itemGroup){

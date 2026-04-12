@@ -61,6 +61,12 @@ export async function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
   return parseJsonResponse(response);
 }
 
+export async function fetchSlots({ date, totalDur, itemGroup }) {
+  const response = await fetch(buildUrl('slots', { date, totalDur, itemGroup }));
+  setResolvedApiBaseUrl(response.url);
+  return parseJsonResponse(response);
+}
+
 export async function fetchQuote(data) {
   const response = await fetch(buildPayloadUrl('quote', data));
   setResolvedApiBaseUrl(response.url);

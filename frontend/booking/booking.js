@@ -1,4 +1,4 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, submitBooking } from './shared/api.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, submitBooking } from './shared/api.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from './shared/utils.js';
 
 const COUNTRY_OPTIONS = [
@@ -1778,9 +1778,6 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
   Object.entries(batch || {}).forEach(([monthKey, data]) => {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
-    Object.entries(data?.slotsByDate || {}).forEach(([dateKey, slots]) => {
-      state.slotCache.set(`${dateKey}_${itemGroup}_${duration}`, slots);
-    });
   });
   return batch;
 }
@@ -1832,7 +1829,20 @@ async function selectDate(dateKey) {
   state.selectedSlot = '';
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
-  const slots = state.slotCache.get(slotKey) || [];
+  let slots = state.slotCache.get(slotKey) || [];
+  if (!slots.length) {
+    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+    renderSlots([]);
+    try {
+      slots = await fetchSlots({ date: dateKey, totalDur: getCalendarDuration(), itemGroup: state.selectedProduct.g });
+      state.slotCache.set(slotKey, slots);
+    } catch (error) {
+      console.error(error);
+      els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
+      renderSlots([]);
+      return;
+    }
+  }
   els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
   renderSlots(slots);
   renderReview();
