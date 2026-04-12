@@ -668,7 +668,7 @@ function wireEvents() {
   els.form.elements.address?.addEventListener('input', refreshStepLocks);
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.reshootingConsent?.addEventListener('change', refreshStepLocks);
-  document.getElementById('selectAllRequired')?.addEventListener('change', () => { toggleAllRequired(); refreshStepLocks(); });
+  document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.memo?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });

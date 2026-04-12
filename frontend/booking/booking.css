@@ -462,11 +462,13 @@ h1 {
   align-items: flex-start;
   gap: 10px;
   padding: 2px 2px 2px 4px;
+  cursor: pointer;
 }
 .checkbox-row input {
   width: 18px !important;
   height: 18px;
   margin: 2px 0 0;
+  cursor: pointer;
 }
 .booking-form label:last-of-type,
 .submit-btn,
