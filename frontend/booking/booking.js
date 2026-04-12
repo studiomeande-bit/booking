@@ -785,10 +785,13 @@ function renderReturnNotice() {
     try {
       const result = await fetchReturnEligibility({ name, phone, email });
       if (token !== state.returnNoticeToken) return;
-      state.returnEligible = !!result?.eligible;
+      const nextEligible = !!result?.eligible;
+      const changed = state.returnEligible !== nextEligible;
+      state.returnEligible = nextEligible;
       if (!state.returnEligible) {
         box.classList.add('hidden-field');
         box.textContent = '';
+        if (changed && state.selectedProduct) await refreshQuote();
         return;
       }
       box.classList.remove('hidden-field');
@@ -797,11 +800,14 @@ function renderReturnNotice() {
         : state.lang === 'de'
           ? 'Der Stammkundenrabatt ist verfügbar, wenn Sie nach dem heutigen Shooting erneut buchen.'
           : '오늘 촬영을 마친 뒤 같은 날 재예약하는 경우, 재방문 할인이 자동 적용됩니다.';
+      if (changed && state.selectedProduct) await refreshQuote();
     } catch (error) {
       if (token !== state.returnNoticeToken) return;
+      const changed = state.returnEligible;
       state.returnEligible = false;
       box.classList.add('hidden-field');
       box.textContent = '';
+      if (changed && state.selectedProduct) await refreshQuote();
     }
   }, 350);
 }
@@ -1634,7 +1640,7 @@ function getQuoteRequest() {
     otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
     marketing: els.form.elements.marketing?.checked || false,
-    isReturn: false,
+    isReturn: state.returnEligible,
     ageGroup: product.g === 'prof' ? state.ageGroup : 'adult',
     babyType: product.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
@@ -2008,6 +2014,7 @@ async function onSubmit(event) {
     marketing: !isPass && formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
     aiConsent: isPass ? true : formData.get('aiConsent') === 'on',
+    isReturn: state.returnEligible,
     ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
     babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
