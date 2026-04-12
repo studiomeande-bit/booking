@@ -98,6 +98,13 @@ function handlePublicApiRequest_(route,method,e){
       if(!itemGroup||!isFinite(year)||!isFinite(month)||!isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT','Missing calendar batch parameters');
       return jsonOk_(getPublicCalendarBatch_(year,month,totalDur,itemGroup));
     }
+    if(route==='quote'){
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/quote');
+      const body=parsePublicJsonBody_(e);
+      const payload=body.data||body;
+      if(!payload||!payload.itemId) return jsonError_('INVALID_ARGUMENT','Missing quote parameters');
+      return jsonOk_(calculateQuote_(payload));
+    }
     if(route==='booking'){
       if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking');
       const body=parsePublicJsonBody_(e);

@@ -34,6 +34,15 @@ export async function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
   return parseJsonResponse(response);
 }
 
+export async function fetchQuote(data) {
+  const response = await fetch(buildUrl('quote'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return parseJsonResponse(response);
+}
+
 export async function submitBooking(data, requestId) {
   const response = await fetch(buildUrl('booking'), {
     method: 'POST',

@@ -136,6 +136,9 @@ h1 {
 .detail-box.hidden {
   display: none;
 }
+.inline-field.hidden {
+  display: none;
+}
 .detail-title {
   font-size: 15px;
   font-weight: 800;
@@ -171,6 +174,10 @@ h1 {
   background: #2d2a26;
   border-color: #2d2a26;
   color: #fff;
+}
+.chip-btn.toggle-chip.selected {
+  background: #20394f;
+  border-color: #20394f;
 }
 .inline-field {
   display: grid;

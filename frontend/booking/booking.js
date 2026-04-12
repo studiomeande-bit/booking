@@ -1,4 +1,4 @@
-import { fetchCalendarBatch, fetchInitData, submitBooking } from './shared/api.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, submitBooking } from './shared/api.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from './shared/utils.js';
 
 const COUNTRY_OPTIONS = [
@@ -17,6 +17,21 @@ const GROUP_META = {
   snap: { icon: '🌿', label: { ko: '야외스냅', en: 'Outdoor', de: 'Outdoor' } },
   wed: { icon: '💍', label: { ko: '프리웨딩', en: 'Pre-Wedding', de: 'Pre-Wedding' } },
   biz: { icon: '🎬', label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' } }
+};
+
+const OPTION_META = {
+  dog: {
+    groups: ['stud', 'snap', 'wed'],
+    label: { ko: '반려동물 (+€15)', en: 'Pet (+€15)', de: 'Haustier (+€15)' }
+  },
+  bg: {
+    groups: ['prof', 'stud'],
+    label: { ko: '배경 추가 (+€20)', en: 'Extra background (+€20)', de: 'Zusätzlicher Hintergrund (+€20)' }
+  },
+  outfit: {
+    groups: ['prof', 'stud'],
+    label: { ko: '의상 추가 (+€20)', en: 'Extra outfit (+€20)', de: 'Extra Outfit (+€20)' }
+  }
 };
 
 const COPY = {
@@ -109,6 +124,8 @@ const state = {
   selectedDate: '',
   selectedSlot: '',
   selectedCountries: [],
+  optionKeys: [],
+  quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
 };
@@ -123,6 +140,10 @@ const els = {
   passportCountries: document.getElementById('passportCountries'),
   passportPeople: document.getElementById('passportPeople'),
   passportHint: document.getElementById('passportHint'),
+  generalPanel: document.getElementById('generalPanel'),
+  peopleField: document.getElementById('peopleField'),
+  generalPeople: document.getElementById('generalPeople'),
+  optionGrid: document.getElementById('optionGrid'),
   calendarHint: document.getElementById('calendarHint'),
   monthLabel: document.getElementById('monthLabel'),
   calendarGrid: document.getElementById('calendarGrid'),
@@ -162,10 +183,9 @@ function wireEvents() {
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
   els.passportPeople.addEventListener('change', () => {
-    clearCalendarSelection();
-    renderProductDetail();
-    renderReview();
+    handleQuoteInputChange();
   });
+  els.generalPeople.addEventListener('change', handleQuoteInputChange);
   els.langButtons.forEach((button) => {
     button.addEventListener('click', () => {
       state.lang = button.dataset.lang;
@@ -173,6 +193,7 @@ function wireEvents() {
       applyCopy();
       renderProducts(state.init?.products || []);
       renderPassportCountries();
+      renderGeneralPanel();
       renderProductDetail();
       renderReview();
       if (state.selectedProduct) {
@@ -213,24 +234,15 @@ function getProductDescription(product) {
 }
 
 function getDisplayDuration() {
+  if (state.quote?.totalDuration) return Number(state.quote.totalDuration) || 0;
   if (!state.selectedProduct) return 0;
-  let duration = Number(state.selectedProduct.d || 0) + Number(state.selectedProduct.prep || 0);
-  if (state.selectedProduct.g === 'pass') {
-    const people = Number(els.passportPeople.value || 1);
-    const passDur = [0, 15, 20, 30, 40, 50];
-    duration = passDur[people] || 50;
-  }
-  return duration;
+  return Number(state.selectedProduct.d || 0) + Number(state.selectedProduct.prep || 0);
 }
 
 function getEstimatedPrice() {
+  if (state.quote?.totalPrice !== undefined) return Number(state.quote.totalPrice) || 0;
   if (!state.selectedProduct) return 0;
-  let price = Number(state.selectedProduct.p || 0);
-  if (state.selectedProduct.g === 'pass') {
-    const extra = Math.max(0, state.selectedCountries.length - 1) * 5;
-    price += extra;
-  }
-  return price;
+  return Number(state.selectedProduct.p || 0);
 }
 
 function renderProducts(products) {
@@ -269,14 +281,18 @@ async function selectProduct(productId) {
   state.selectedProduct = (state.init?.products || []).find((item) => item.id === productId) || null;
   state.selectedDate = '';
   state.selectedSlot = '';
+  state.quote = null;
+  state.optionKeys = [];
   if (state.selectedProduct?.g !== 'pass') {
     state.selectedCountries = [];
   }
+  els.generalPeople.value = '1';
+  els.passportPeople.value = '1';
   els.submitBtn.disabled = true;
   renderProducts(state.init?.products || []);
   renderPassportPanel();
-  renderProductDetail();
-  renderReview();
+  renderGeneralPanel();
+  await refreshQuote();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
   setBanner(getCopy().loadCalendar, 'loading');
@@ -288,6 +304,73 @@ function renderPassportPanel() {
   els.passportPanel.classList.toggle('hidden', !isPass);
   if (isPass) {
     renderPassportCountries();
+  }
+}
+
+function renderGeneralPanel() {
+  const product = state.selectedProduct;
+  const showGeneral = !!product && product.g !== 'pass';
+  els.generalPanel.classList.toggle('hidden', !showGeneral);
+  if (!showGeneral) {
+    els.optionGrid.innerHTML = '';
+    return;
+  }
+  const showPeople = product.t === 'group' || product.t === 'snap';
+  els.peopleField.classList.toggle('hidden', !showPeople);
+  const options = Object.entries(OPTION_META)
+    .filter(([, meta]) => meta.groups.includes(product.g))
+    .map(([key, meta]) => {
+      const label = meta.label[state.lang] || meta.label.ko;
+      const selected = state.optionKeys.includes(key) ? ' selected' : '';
+      return `<button type="button" class="chip-btn toggle-chip${selected}" data-option="${key}">${escapeHtml(label)}</button>`;
+    }).join('');
+  els.optionGrid.innerHTML = options || '<div class="muted-copy">추가 옵션이 없습니다.</div>';
+  els.optionGrid.querySelectorAll('[data-option]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.option;
+      const index = state.optionKeys.indexOf(key);
+      if (index >= 0) state.optionKeys.splice(index, 1);
+      else state.optionKeys.push(key);
+      handleQuoteInputChange();
+    });
+  });
+}
+
+function getQuoteRequest() {
+  const product = state.selectedProduct;
+  if (!product) return null;
+  return {
+    itemId: product.id,
+    people: product.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
+    optionKeys: [...state.optionKeys],
+    passCountries: product.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
+    otherCountry: '',
+    date: state.selectedDate || '',
+    marketing: false,
+    isReturn: false
+  };
+}
+
+async function refreshQuote() {
+  if (!state.selectedProduct) return;
+  try {
+    state.quote = await fetchQuote(getQuoteRequest());
+  } catch (error) {
+    console.error(error);
+    state.quote = null;
+  }
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
+}
+
+async function handleQuoteInputChange() {
+  clearCalendarSelection();
+  await refreshQuote();
+  if (state.selectedProduct) {
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
+    setBanner(getCopy().loadCalendar, 'loading');
+    await loadCalendar();
   }
 }
 
@@ -306,10 +389,8 @@ function toggleCountry(code) {
   const index = state.selectedCountries.indexOf(code);
   if (index >= 0) state.selectedCountries.splice(index, 1);
   else state.selectedCountries.push(code);
-  clearCalendarSelection();
   renderPassportCountries();
-  renderProductDetail();
-  renderReview();
+  handleQuoteInputChange();
 }
 
 function renderProductDetail() {
@@ -442,6 +523,10 @@ function renderReview() {
       rows.push([copy.reviewCountries, countries]);
     }
   }
+  if (state.optionKeys.length) {
+    const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
+    rows.push(['옵션', optionLabels]);
+  }
   els.reviewBox.className = 'detail-box';
   els.reviewBox.innerHTML = rows.map(([key, val]) => `
     <div class="summary-item" style="margin-top:10px;">
@@ -481,7 +566,7 @@ async function onSubmit(event) {
     itemId: state.selectedProduct.id,
     date: state.selectedDate,
     time: state.selectedSlot,
-    people: state.selectedProduct.g === 'pass' ? Number(els.passportPeople.value || 1) : 1,
+    people: state.selectedProduct.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
     name: String(formData.get('name') || '').trim(),
     phone: String(formData.get('phone') || '').trim(),
     email: String(formData.get('email') || '').trim(),
@@ -489,7 +574,7 @@ async function onSubmit(event) {
     memo: String(formData.get('memo') || '').trim(),
     website: String(formData.get('website') || ''),
     lang: state.lang,
-    optionKeys: [],
+    optionKeys: [...state.optionKeys],
     passCountries: state.selectedProduct.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
     surveyKeys: [],
     businessDetails: '',
