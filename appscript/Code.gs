@@ -459,7 +459,21 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const m=d.getMonth();
   const key=`${y}_${m}`;
   const out={};
-  out[key]=getUnavailableDays(y,m,totalDur,itemGroup,true);
+  const unavail=[],slotCounts={},slotsByDate={};
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const now=new Date().getTime();
+  const monthEvents=getEventsForRange_(new Date(y,m,1),new Date(y,m,daysInMonth,23,59,59));
+  for(let day=1;day<=daysInMonth;day++){
+    const dStr=`${y}-${('0'+(m+1)).slice(-2)}-${('0'+day).slice(-2)}`;
+    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){
+      unavail.push(dStr);
+      continue;
+    }
+    if(!hasAnySlot_(dStr,monthEvents,totalDur,itemGroup)){
+      unavail.push(dStr);
+    }
+  }
+  out[key]={unavail,slotCounts,slotsByDate};
   return out;
 }
 

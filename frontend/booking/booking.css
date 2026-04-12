@@ -877,8 +877,8 @@ h1 {
   .hero { padding-bottom: 12px; }
   .panel { padding: 16px; border-radius: 22px; }
   .booking-form { grid-template-columns: 1fr; }
-  .hero-top { flex-direction: column; align-items: flex-start; }
-  .lang-row { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .hero-top { flex-direction: row; align-items: flex-start; justify-content: space-between; }
+  .lang-row { gap: 6px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
   .header-logo { width: min(220px, 60vw); }
   h1 { font-size: 26px; }
   .lede { font-size: 14px; line-height: 1.55; }
@@ -924,8 +924,8 @@ h1 {
 }
 
 @media (max-width: 480px) {
-  .hero-top { flex-direction: column; gap: 10px; }
-  .lang-row { justify-content: flex-start; }
+  .hero-top { flex-direction: row; gap: 10px; align-items: flex-start; justify-content: space-between; }
+  .lang-row { justify-content: flex-end; margin-left: auto; }
   .header-logo { width: min(200px, 64vw); }
   .panel-head h2 { font-size: 19px; }
   .calendar-weekday { font-size: 11px; }

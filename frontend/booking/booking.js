@@ -917,6 +917,26 @@ function applyCopy() {
   renderReturnNotice();
   syncConsentVisibility();
   syncSelectAllRequired();
+  refreshBannerCopy();
+}
+
+function refreshBannerCopy() {
+  if (!els.banner) return;
+  if (els.banner.classList.contains('error')) return;
+  if (state.resultBox && !state.resultBox.hidden) return;
+  if (els.banner.classList.contains('loading')) {
+    setBanner(getCopy().loadCalendar, 'loading');
+    return;
+  }
+  if (!state.selectedGroup) {
+    setBanner(getCopy().initSuccess, 'success');
+    return;
+  }
+  if (state.activeStep >= 3 && state.selectedProduct) {
+    setBanner(getCopy().calendarLoaded, 'success');
+    return;
+  }
+  setBanner(getCopy().initSuccess, 'success');
 }
 
 function setText(id, value) {
