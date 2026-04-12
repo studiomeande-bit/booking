@@ -222,7 +222,9 @@ const els = {
   form: document.getElementById('bookingForm'),
   otherCountryField: document.getElementById('otherCountryField'),
   locationField: document.getElementById('locationField'),
+  locationInput: document.getElementById('locationInput'),
   businessField: document.getElementById('businessField'),
+  businessInput: document.getElementById('businessInput'),
   surveyField: document.getElementById('surveyField'),
   surveyGrid: document.getElementById('surveyGrid'),
   submitBtn: document.getElementById('submitBtn'),
@@ -264,8 +266,8 @@ function wireEvents() {
   els.form.addEventListener('submit', onSubmit);
   els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
   els.form.elements.marketing?.addEventListener('change', handleQuoteInputChange);
-  els.form.elements.location?.addEventListener('input', renderReview);
-  els.form.elements.businessDetails?.addEventListener('input', renderReview);
+  els.locationInput?.addEventListener('input', renderReview);
+  els.businessInput?.addEventListener('input', renderReview);
   els.form.elements.memo?.addEventListener('input', renderReview);
   els.passportPeople.addEventListener('change', () => {
     handleQuoteInputChange();
@@ -474,8 +476,9 @@ function getBgSelectionLimit(product) {
   const desc = `${product.descKo || ''}\n${product.descEn || ''}\n${product.descDe || ''}`;
   if (/제한 없음|Unlimited|unlimited|unbegrenzt/i.test(desc)) return -1;
   const match = desc.match(/(\d+)\s*(개|배경|background|backgrounds|Hintergrund|Hintergründe)/i);
-  if (match) return Number(match[1]) || 1;
-  return 1;
+  let limit = match ? (Number(match[1]) || 1) : 1;
+  if (state.optionKeys.includes('bg')) limit += 1;
+  return limit;
 }
 
 function renderBgChips() {
@@ -833,19 +836,6 @@ function renderProductDetail() {
       <div class="price-hero-copy">촬영 약 ${getShootDuration()}분</div>
     </div>
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
-    <div class="muted-copy" style="margin-top:10px;">${escapeHtml(
-      getPrepDuration() > 0
-        ? (state.lang === 'en'
-          ? `Calendar block: ${getCalendarDuration()} min (includes ${getPrepDuration()} min prep/buffer).`
-          : state.lang === 'de'
-            ? `Kalenderblock: ${getCalendarDuration()} Min. (inkl. ${getPrepDuration()} Min. Vor-/Nachbereitung).`
-            : `예약 블록 시간은 ${getCalendarDuration()}분이며, 준비/정리 ${getPrepDuration()}분이 포함됩니다.`)
-        : (state.lang === 'en'
-          ? `Calendar block: ${getCalendarDuration()} min.`
-          : state.lang === 'de'
-            ? `Kalenderblock: ${getCalendarDuration()} Min.`
-            : `예약 블록 시간은 ${getCalendarDuration()}분입니다.`)
-    )}</div>
     ${getPeoplePricingNote(state.selectedProduct, getPeopleCount()) ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getPeoplePricingNote(state.selectedProduct, getPeopleCount()))}</div>` : ''}
   `;
 }
@@ -885,9 +875,11 @@ async function loadCalendar() {
 
 function renderCalendar(data) {
   if (!data) {
+    els.calendarGrid.classList.add('empty-state');
     els.calendarGrid.innerHTML = '<div class="empty-state">달력 데이터가 없습니다.</div>';
     return;
   }
+  els.calendarGrid.classList.remove('empty-state');
   const unavail = new Set(data.unavail || []);
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
@@ -924,10 +916,12 @@ async function selectDate(dateKey) {
 
 function renderSlots(slots) {
   if (!Array.isArray(slots) || slots.length === 0) {
+    els.slotGrid.classList.add('empty-state');
     els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().noSlots}</div>`;
     els.submitBtn.disabled = true;
     return;
   }
+  els.slotGrid.classList.remove('empty-state');
   els.slotGrid.innerHTML = slots.map((slot) => {
     const value = typeof slot === 'string' ? slot : slot.time;
     return `<button type="button" class="slot-btn${state.selectedSlot === value ? ' selected' : ''}" data-time="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
@@ -989,9 +983,9 @@ function renderReview() {
       .join(', ');
     rows.push([copy.reviewSurvey, surveyLabels]);
   }
-  const location = String(els.form.elements.location?.value || '').trim();
+  const location = String(els.locationInput?.value || '').trim();
   if (location) rows.push([copy.reviewLocation, location]);
-  const businessDetails = String(els.form.elements.businessDetails?.value || '').trim();
+  const businessDetails = String(els.businessInput?.value || '').trim();
   if (businessDetails) rows.push([copy.reviewBusiness, businessDetails]);
   if (state.bgColors.length) {
     const bgLabels = state.bgColors
@@ -1056,8 +1050,8 @@ async function onSubmit(event) {
     passCountries: state.selectedProduct.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
     otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
-    businessDetails: state.selectedProduct.g === 'biz' ? String(formData.get('businessDetails') || '').trim() : '',
-    location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(formData.get('location') || '').trim() : '',
+    businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
+    location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(els.locationInput?.value || '').trim() : '',
     marketing: formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
     aiConsent: formData.get('aiConsent') === 'on',
