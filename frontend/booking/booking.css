@@ -280,6 +280,17 @@ h1 {
   font-weight: 700;
   color: #645c53;
 }
+.checkbox-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.consent-sub {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  font-weight: 500;
+}
 .inline-field select,
 .booking-form input,
 .booking-form textarea {
@@ -400,14 +411,14 @@ h1 {
 .checkbox-row {
   grid-column: 1 / -1;
   display: flex !important;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 2px 2px 2px 4px;
 }
 .checkbox-row input {
   width: 18px !important;
   height: 18px;
-  margin: 0;
+  margin: 2px 0 0;
 }
 .booking-form label:last-of-type,
 .submit-btn,

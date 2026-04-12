@@ -214,10 +214,13 @@ const COPY = {
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
     consentCopy: '필수 항목을 체크해야 예약을 제출할 수 있습니다.',
-    selectAllLabel: '[선택] 필수 동의 항목 한 번에 체크',
+    selectAllLabel: '[선택] 필수 항목 전체 선택',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    gdprSub: '서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
+    aiSub: '촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.',
     marketingLabel: '[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.',
+    marketingSub: '촬영 결과물을 Studio mean의 웹사이트 및 SNS 홍보 용도로 활용하는 것에 동의합니다.',
     submitLabel: '예약 제출',
     submitLoading: '제출 중...',
     calendarPrompt: '상품을 먼저 선택하세요.',
@@ -294,10 +297,13 @@ const COPY = {
     memoLabel: 'Notes',
     consentTitle: 'Consent',
     consentCopy: 'Required items must be checked before submitting.',
-    selectAllLabel: '[Optional] Check all required consents',
+    selectAllLabel: '[Optional] Select all required items',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
+    gdprSub: 'I agree to the minimum data processing needed to confirm the booking and deliver the final images.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
+    aiSub: 'AI-based tools may be used as supporting tools during the retouching and delivery workflow.',
     marketingLabel: '[Optional] I agree to marketing/SNS/portfolio usage.',
+    marketingSub: 'I agree that the final images may be used on Studio mean website and social media for promotion.',
     submitLabel: 'Submit Booking',
     submitLoading: 'Submitting...',
     calendarPrompt: 'Choose a package first.',
@@ -374,10 +380,13 @@ const COPY = {
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
     consentCopy: 'Pflichtangaben müssen vor dem Absenden bestätigt werden.',
-    selectAllLabel: '[Optional] Alle Pflicht-Einwilligungen aktivieren',
+    selectAllLabel: '[Optional] Alle Pflichtfelder auswählen',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
+    gdprSub: 'Ich stimme der minimalen Datenverarbeitung zu, die für Buchungsbestätigung und Bildübergabe erforderlich ist.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
+    aiSub: 'KI-basierte Werkzeuge können unterstützend bei Retusche und Auslieferung eingesetzt werden.',
     marketingLabel: '[Optional] Ich stimme Marketing/SNS/Portfolio-Nutzung zu.',
+    marketingSub: 'Ich bin einverstanden, dass die Ergebnisse zu Werbezwecken auf der Website und in sozialen Medien von Studio mean genutzt werden dürfen.',
     submitLabel: 'Buchung senden',
     submitLoading: 'Wird gesendet...',
     calendarPrompt: 'Bitte zuerst ein Paket wählen.',
@@ -601,8 +610,11 @@ function applyCopy() {
   setText('consentCopy', copy.consentCopy);
   setText('selectAllLabel', copy.selectAllLabel);
   setText('gdprLabel', copy.gdprLabel);
+  setText('gdprSub', copy.gdprSub);
   setText('aiLabel', copy.aiLabel);
+  setText('aiSub', copy.aiSub);
   setText('marketingLabel', copy.marketingLabel);
+  setText('marketingSub', copy.marketingSub);
   els.passportHint.textContent = copy.passportHint;
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
@@ -1789,7 +1801,9 @@ function renderReview() {
   }
   const memo = String(els.form.elements.memo?.value || '').trim();
   if (memo) rows.push([copy.reviewMemo, memo]);
-  rows.push([copy.reviewMarketing, els.form.elements.marketing?.checked ? copy.yes : copy.no]);
+  if (state.selectedProduct?.g !== 'pass') {
+    rows.push([copy.reviewMarketing, els.form.elements.marketing?.checked ? copy.yes : copy.no]);
+  }
   els.reviewBox.className = 'detail-box';
   els.reviewBox.innerHTML = rows.map(([key, val]) => `
     <div class="summary-item" style="margin-top:10px;">
@@ -1826,6 +1840,7 @@ async function onSubmit(event) {
   event.preventDefault();
   if (!state.selectedProduct || !state.selectedDate || !state.selectedSlot) return;
   const formData = new FormData(els.form);
+  const isPass = state.selectedProduct.g === 'pass';
   const payload = {
     requestId: createRequestId('booking'),
     itemId: state.selectedProduct.id,
@@ -1846,9 +1861,9 @@ async function onSubmit(event) {
     surveyKeys: [...state.surveyKeys],
     businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
     location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(els.locationInput?.value || '').trim() : '',
-    marketing: formData.get('marketing') === 'on',
+    marketing: !isPass && formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
-    aiConsent: formData.get('aiConsent') === 'on',
+    aiConsent: isPass ? true : formData.get('aiConsent') === 'on',
     ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
     babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
@@ -1889,7 +1904,7 @@ async function onSubmit(event) {
     setBanner(getCopy().locationRequired, 'error');
     return;
   }
-  if (!payload.gdprConsent || !payload.aiConsent) {
+  if (!payload.gdprConsent || (!isPass && !payload.aiConsent)) {
     setBanner(getCopy().consentRequired, 'error');
     return;
   }
