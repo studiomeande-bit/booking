@@ -191,7 +191,9 @@ const COPY = {
     submitCardEmail: '이메일',
     submitCardDateTime: '예약 일시',
     submitCardProduct: '상품',
+    submitCardPrice: '예상 금액',
     submitCardNote: '메일이 보이지 않으면 스팸함도 함께 확인해 주세요.',
+    submitCardReturn: '재방문 할인 대상 예약으로 접수되었습니다.',
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
@@ -281,7 +283,9 @@ const COPY = {
     submitCardEmail: 'Email',
     submitCardDateTime: 'Booking time',
     submitCardProduct: 'Package',
+    submitCardPrice: 'Estimated price',
     submitCardNote: 'If you do not see the email, please check your spam folder as well.',
+    submitCardReturn: 'This booking was received as an eligible return-customer reservation.',
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
@@ -371,7 +375,9 @@ const COPY = {
     submitCardEmail: 'E-Mail',
     submitCardDateTime: 'Termin',
     submitCardProduct: 'Paket',
+    submitCardPrice: 'Geschätzter Preis',
     submitCardNote: 'Falls keine E-Mail sichtbar ist, prüfen Sie bitte auch den Spam-Ordner.',
+    submitCardReturn: 'Diese Buchung wurde als berechtigte Stammkunden-Reservierung erfasst.',
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
@@ -1970,7 +1976,7 @@ async function onSubmit(event) {
   els.submitBtn.textContent = getCopy().submitLoading;
   try {
     const result = await submitBooking(payload, payload.requestId);
-    renderSubmitResult(payload);
+    renderSubmitResult(payload, result);
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();
     state.selectedSlot = '';
@@ -1998,8 +2004,10 @@ function clearSubmitResult() {
   els.resultBox.innerHTML = '';
 }
 
-function renderSubmitResult(payload) {
+function renderSubmitResult(payload, result) {
   const copy = getCopy();
+  const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
+  const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
   els.resultBox.hidden = false;
   els.resultBox.innerHTML = `
     <h3>${escapeHtml(copy.submitCardTitle)}</h3>
@@ -2021,7 +2029,12 @@ function renderSubmitResult(payload) {
         <strong>${escapeHtml(copy.submitCardProduct)}</strong>
         <span>${escapeHtml(getProductLabel(state.selectedProduct))}</span>
       </div>
+      <div class="result-item">
+        <strong>${escapeHtml(copy.submitCardPrice)}</strong>
+        <span>${escapeHtml(`€${totalPrice}`)}</span>
+      </div>
     </div>
+    ${returnNote}
     <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
   `;
 }
