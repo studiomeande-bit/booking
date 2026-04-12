@@ -1065,19 +1065,7 @@ async function loadCalendar() {
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth);
   if (!batch) {
     try {
-      batch = await fetchCalendarBatch({
-        year: state.calendarYear,
-        month: state.calendarMonth,
-        totalDur: duration,
-        itemGroup: state.selectedProduct.g
-      });
-      Object.entries(batch || {}).forEach(([monthKey, data]) => {
-        const fullKey = `${monthKey}_${state.selectedProduct.g}_${duration}`;
-        state.calendarCache.set(fullKey, data);
-        Object.entries(data?.slotsByDate || {}).forEach(([dateKey, slots]) => {
-          state.slotCache.set(`${dateKey}_${state.selectedProduct.g}_${duration}`, slots);
-        });
-      });
+      batch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
       batch = state.calendarCache.get(cacheKey);
     } catch (error) {
       console.error(error);
@@ -1088,6 +1076,37 @@ async function loadCalendar() {
   }
   renderCalendar(batch);
   setBanner(getCopy().calendarLoaded, 'success');
+  prefetchNextCalendarMonth();
+}
+
+async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+  const batch = await fetchCalendarBatch({
+    year,
+    month,
+    totalDur: duration,
+    itemGroup
+  });
+  Object.entries(batch || {}).forEach(([monthKey, data]) => {
+    const fullKey = `${monthKey}_${itemGroup}_${duration}`;
+    state.calendarCache.set(fullKey, data);
+    Object.entries(data?.slotsByDate || {}).forEach(([dateKey, slots]) => {
+      state.slotCache.set(`${dateKey}_${itemGroup}_${duration}`, slots);
+    });
+  });
+  return batch;
+}
+
+async function prefetchNextCalendarMonth() {
+  if (!state.selectedProduct) return;
+  const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
+  const duration = getCalendarDuration();
+  const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
+  if (state.calendarCache.has(nextKey)) return;
+  try {
+    await fetchAndStoreCalendarBatch(next.getFullYear(), next.getMonth(), duration, state.selectedProduct.g);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function renderCalendar(data) {
@@ -1311,7 +1330,11 @@ async function onSubmit(event) {
   try {
     const result = await submitBooking(payload, payload.requestId);
     els.resultBox.hidden = false;
-    els.resultBox.textContent = JSON.stringify(result, null, 2);
+    els.resultBox.textContent = state.lang === 'en'
+      ? `Booking request submitted.\n\nName: ${payload.name}\nEmail: ${payload.email}\nDate: ${payload.date} ${payload.time}\nPackage: ${getProductLabel(state.selectedProduct)}`
+      : state.lang === 'de'
+        ? `Buchungsanfrage wurde gesendet.\n\nName: ${payload.name}\nE-Mail: ${payload.email}\nTermin: ${payload.date} ${payload.time}\nPaket: ${getProductLabel(state.selectedProduct)}`
+        : `예약 신청이 접수되었습니다.\n\n이름: ${payload.name}\n이메일: ${payload.email}\n일시: ${payload.date} ${payload.time}\n상품: ${getProductLabel(state.selectedProduct)}`;
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();
     state.selectedSlot = '';
