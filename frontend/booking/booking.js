@@ -655,13 +655,17 @@ function syncSelectAllRequired() {
 
 function syncConsentVisibility() {
   const isPass = state.selectedGroup === 'pass';
-  const marketingRow = els.form.elements.marketing?.closest('.consent-row');
-  const aiRow = els.form.elements.aiConsent?.closest('.consent-row');
+  const marketingRow = document.getElementById('marketingRow');
+  const aiRow = document.getElementById('aiRow');
+  const selectAllRow = document.getElementById('selectAllRow');
   if (marketingRow) marketingRow.style.display = isPass ? 'none' : '';
   if (aiRow) aiRow.style.display = isPass ? 'none' : '';
+  if (selectAllRow) selectAllRow.style.display = isPass ? 'none' : '';
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
     if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = false;
+    const selectAll = document.getElementById('selectAllRequired');
+    if (selectAll) selectAll.checked = false;
   }
   syncSelectAllRequired();
 }
