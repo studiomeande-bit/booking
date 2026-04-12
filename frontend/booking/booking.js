@@ -170,7 +170,7 @@ const SURVEY_META = [
 
 const COPY = {
   ko: {
-    hero: '이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 기존 예약 UX를 순차적으로 이식합니다.',
+    hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 선택',
@@ -184,7 +184,7 @@ const COPY = {
     slotHintEmpty: '날짜를 선택하면 예약 가능 시간이 표시됩니다.',
     noSlots: '예약 가능한 시간이 없습니다.',
     invalidForm: '이름, 연락처, 이메일은 필수입니다.',
-    submitDone: '예약 API 제출이 완료되었습니다.',
+    submitDone: '예약 신청이 정상적으로 접수되었습니다.',
     submitCardTitle: '예약 신청이 접수되었습니다.',
     submitCardCopy: '확인 메일을 보내드렸습니다. 관리자 확인 후 순차적으로 안내드립니다.',
     submitCardName: '이름',
@@ -262,7 +262,7 @@ const COPY = {
     no: '미동의'
   },
   en: {
-    hero: 'This Netlify frontend is now connected to the booking API. In this phase we are rebuilding the original reservation UX step by step.',
+    hero: 'Choose your shoot type and schedule, then enter your booking details.',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date',
@@ -276,7 +276,7 @@ const COPY = {
     slotHintEmpty: 'Select a date to see available time slots.',
     noSlots: 'No available time slots.',
     invalidForm: 'Name, phone, and email are required.',
-    submitDone: 'Booking request was submitted successfully.',
+    submitDone: 'Your booking request was submitted successfully.',
     submitCardTitle: 'Your booking request has been received.',
     submitCardCopy: 'A confirmation email has been sent. We will follow up after reviewing the request.',
     submitCardName: 'Name',
@@ -354,7 +354,7 @@ const COPY = {
     no: 'Not agreed'
   },
   de: {
-    hero: 'Dieses Netlify-Frontend ist jetzt mit der Buchungs-API verbunden. In dieser Phase bauen wir die ursprüngliche Buchungs-UX Schritt für Schritt nach.',
+    hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum wählen',
@@ -368,7 +368,7 @@ const COPY = {
     slotHintEmpty: 'Wählen Sie ein Datum, um verfügbare Zeiten zu sehen.',
     noSlots: 'Keine verfügbaren Termine.',
     invalidForm: 'Name, Telefon und E-Mail sind erforderlich.',
-    submitDone: 'Die Buchung wurde erfolgreich übermittelt.',
+    submitDone: 'Ihre Buchungsanfrage wurde erfolgreich übermittelt.',
     submitCardTitle: 'Ihre Buchungsanfrage ist eingegangen.',
     submitCardCopy: 'Eine Bestätigungs-E-Mail wurde gesendet. Nach Prüfung melden wir uns bei Ihnen.',
     submitCardName: 'Name',
