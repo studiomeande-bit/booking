@@ -39,6 +39,8 @@ This repository is the new split structure for the Studio mean reservation platf
 
 - Frontend: GitHub `main` push -> Netlify auto deploy
 - Apps Script: `clasp push` + `clasp deploy`
+- Netlify booking site base directory: `frontend/booking`
+- Netlify select site base directory: `frontend/select`
 
 ## Current API routes
 
@@ -48,3 +50,9 @@ This repository is the new split structure for the Studio mean reservation platf
 - `GET /exec/api/select-session?id=SESSION_ID`
 - `POST /exec/api/select-submit`
 - `POST /exec/api/select-update`
+
+## Deployment docs
+
+- [Architecture](./docs/architecture.md)
+- [API Spec](./docs/api-spec.md)
+- [Deployment](./docs/deployment.md)

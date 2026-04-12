@@ -1,5 +1,5 @@
-import { fetchCalendarBatch, fetchInitData, submitBooking } from '../shared/api.js';
-import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
+import { fetchCalendarBatch, fetchInitData, submitBooking } from './shared/api.js';
+import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from './shared/utils.js';
 
 const state = {
   init: null,

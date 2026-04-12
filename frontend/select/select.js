@@ -1,5 +1,5 @@
-import { fetchSelectSession, submitSelect, updateSelect } from '../shared/api.js';
-import { createRequestId, escapeHtml } from '../shared/utils.js';
+import { fetchSelectSession, submitSelect, updateSelect } from './shared/api.js';
+import { createRequestId, escapeHtml } from './shared/utils.js';
 
 const PRINT_OPTIONS = [
   { id: 'basic_10x15', label: '기본 10×15cm' },
