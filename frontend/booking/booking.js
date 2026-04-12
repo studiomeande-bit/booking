@@ -1871,9 +1871,13 @@ function renderCalendar(data) {
 }
 
 async function selectDate(dateKey) {
+  state.slotRequestToken += 1;
   state.selectedDate = dateKey;
   state.activeStep = 3;
   state.selectedSlot = '';
+  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+  els.slotGrid.classList.add('empty-state');
+  els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
   await refreshQuote();
   renderSeniorWarning();
   const duration = getCalendarDuration();
