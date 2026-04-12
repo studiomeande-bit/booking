@@ -469,6 +469,7 @@ const state = {
   returnEligible: false,
   returnNoticeTimer: null,
   returnNoticeToken: 0,
+  quoteToken: 0,
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -578,7 +579,8 @@ function wireEvents() {
   els.wizardButtons.step1Next?.addEventListener('click', () => goToStep(2));
   els.wizardButtons.step2Back?.addEventListener('click', () => goToStep(1));
   els.wizardButtons.step2Next?.addEventListener('click', async () => {
-    if (!state.selectedProduct) return;
+    if (!state.selectedProduct || getMaxUnlockedStep() < 3) return;
+    await refreshQuote();
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
@@ -1678,12 +1680,15 @@ function getQuoteRequest() {
 
 async function refreshQuote() {
   if (!state.selectedProduct) return;
+  const token = ++state.quoteToken;
   state.quote = getPreviewQuote();
   renderGeneralPanel();
   renderProductDetail();
   renderReview();
   try {
-    state.quote = await fetchQuote(getQuoteRequest());
+    const nextQuote = await fetchQuote(getQuoteRequest());
+    if (token !== state.quoteToken) return;
+    state.quote = nextQuote;
   } catch (error) {
     console.error(error);
   }
@@ -1819,13 +1824,10 @@ async function prefetchNextCalendarMonth() {
 }
 
 function renderCalendar(data) {
-  if (!data || typeof data !== 'object' || !Object.prototype.hasOwnProperty.call(data, 'unavail')) {
-    els.calendarGrid.classList.add('empty-state');
-    els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().noCalendar)}</div>`;
-    return;
-  }
+  const safeData = data && typeof data === 'object' ? data : {};
+  const unavailSource = Array.isArray(safeData.unavail) ? safeData.unavail : [];
   els.calendarGrid.classList.remove('empty-state');
-  const unavail = new Set(data.unavail || []);
+  const unavail = new Set(unavailSource);
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   const cells = [];
