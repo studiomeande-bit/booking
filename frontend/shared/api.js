@@ -43,3 +43,26 @@ export async function submitBooking(data, requestId) {
   });
   return parseJsonResponse(response);
 }
+
+export async function fetchSelectSession(sessionId) {
+  const response = await fetch(buildUrl('select-session', { id: sessionId }));
+  return parseJsonResponse(response);
+}
+
+export async function submitSelect(sessionId, submission, requestId) {
+  const response = await fetch(buildUrl('select-submit'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, data: { sessionId, submission } })
+  });
+  return parseJsonResponse(response);
+}
+
+export async function updateSelect(sessionId, submission, requestId) {
+  const response = await fetch(buildUrl('select-update'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, data: { sessionId, submission } })
+  });
+  return parseJsonResponse(response);
+}
