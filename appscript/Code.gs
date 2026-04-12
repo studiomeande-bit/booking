@@ -459,7 +459,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const m=d.getMonth();
   const key=`${y}_${m}`;
   const out={};
-  out[key]=getPublicCalendarMonthLite_(y,m,itemGroup);
+  out[key]=getUnavailableDays(y,m,totalDur,itemGroup,true);
   return out;
 }
 
