@@ -34,7 +34,11 @@ export async function fetchSelectSession(sessionId) {
   } catch {
     throw new Error(`Invalid API response: ${text.slice(0, 200)}`);
   }
-  if (payload.ok) return payload.data;
+  if (payload.ok) {
+    if (payload.data?.ok === false && payload.data?.submitted) return payload.data;
+    if (payload.data?.ok === false) throw new Error(payload.data?.message || 'API request failed');
+    return payload.data;
+  }
   if (payload.submitted) return payload;
   throw new Error(payload.error?.message || payload.message || 'API request failed');
 }

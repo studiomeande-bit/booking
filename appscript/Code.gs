@@ -2517,7 +2517,7 @@ function submitPhotoSelection(sessionId,sub){
     }
     _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);
     try{_sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
-    return{ok:true};
+    return{ok:true,totalExtra,extraRetouch,extraRetouchAmt,extraPrintsAmt,invoiceNumber:extraInvoiceNumber||''};
   }catch(e){return{ok:false,message:e.message};}
 }
 
@@ -2597,7 +2597,7 @@ function updatePhotoSelection(sessionId,sub){
     const td=(l,v)=>`<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:90px;border-bottom:1px solid #e2e8f0;font-size:12px;">${l}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${v}</td></tr>`;
     const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('추가인화',prints.length?`${prints.length}건 (${extraPrintsAmt}€)`:'없음')}${td('마케팅',sub.marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table><b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(p=>`<li><b>${p.num}번</b>${p.note?': '+p.note:''}</li>`).join('')}</ul></div></div>`;
     MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정] ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html});
-    return{ok:true};
+    return{ok:true,totalExtra,extraRetouch,extraRetouchAmt,extraPrintsAmt,invoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||'')};
   }catch(e){return{ok:false,message:e.message};}
 }
 

@@ -610,7 +610,8 @@ function renderSuccess(result) {
   els.successName.textContent = state.session?.name || '-';
   els.successProduct.textContent = state.session?.product || '-';
   els.successPhotoCount.textContent = `${state.photos.length}장`;
-  els.successTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
+  const finalTotal = Number(result?.totalExtra ?? calcTotal());
+  els.successTotal.textContent = finalTotal === 0 ? '무료' : `€${finalTotal}`;
   els.successGuide.innerHTML = `
     <div class="detail-title">선택 요약</div>
     <div class="guide-copy">보정 선택 ${state.photos.length}장 · 추가 인화 ${state.prints.length}건 · 마케팅 동의 ${state.marketing === 'Y' ? '동의' : '미동의'}</div>
