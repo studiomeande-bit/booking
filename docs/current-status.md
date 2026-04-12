@@ -45,6 +45,13 @@ Updated: 2026-04-12 Europe/Berlin
   - reshooting consent when required
   - passport country and other-country text when required
 - Success result uses a card UI instead of raw text.
+- Booking frontend now uses GET-based public transport for:
+  - `quote`
+  - `return-check`
+  - `booking`
+  This avoids Apps Script cross-origin POST redirect failures from Netlify.
+- Calendar month header is localized by current language.
+- Date click shows slots before waiting on date-dependent quote refresh, improving perceived speed.
 - Old Apps Script select links redirect to `select.studio-mean.com?id=...`.
 - Backend still handles:
   - booking DB save
@@ -77,6 +84,8 @@ Updated: 2026-04-12 Europe/Berlin
 
 ## Most Recent Commits
 
+- `c2824e6` Fix booking submit transport and localize calendar
+- `5d47a2c` Fix API redirect handling and calendar UX
 - `691e0c0` Remove duplicate kids discount label
 - `5ca9729` Fix booking form return notice layout
 - `b42c1e3` Use booking success card after submit
@@ -87,7 +96,7 @@ Updated: 2026-04-12 Europe/Berlin
 
 ## Apps Script Deployment
 
-- Latest confirmed deployment in prior work: `@243`
+- Latest confirmed deployment: `@245`
 - Customer pages are redirected from Apps Script to Netlify domains.
 
 ## Remaining Work
@@ -95,9 +104,8 @@ Updated: 2026-04-12 Europe/Berlin
 ### Booking frontend
 
 - Final parity review against original `/Users/taewoongmin/index.html`
-- Improve submit success UX further using returned quote/isReturn data
+- Validate live booking submit after Netlify cache refresh
 - Verify new wizard navigation on mobile after Netlify deploy
-- Use backend `return-check` result to drive return notice display only for eligible customers
 - Final mobile readability cleanup
 - Review remaining package-specific copy / edge cases
 - Additional calendar loading optimization if needed
