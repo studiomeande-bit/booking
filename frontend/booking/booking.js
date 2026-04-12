@@ -1139,6 +1139,13 @@ function getProductPolicyNote(product) {
 function getAppliedDiscountNote() {
   const item = state.selectedProduct;
   if (!item || !state.quote) return '';
+  if (state.quote.eventDiscount > 0) {
+    return state.lang === 'en'
+      ? `Event discount -€${state.quote.eventDiscount} applied.`
+      : state.lang === 'de'
+        ? `Aktionsrabatt -${state.quote.eventDiscount}€ angewendet.`
+        : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`;
+  }
   if (item.g === 'prof') {
     if (state.ageGroup === 'kids') {
       return state.lang === 'en'
@@ -1462,10 +1469,27 @@ function renderProductDetail() {
   }
   const desc = getProductDescription(state.selectedProduct);
   const price = getEstimatedPrice();
+  const eventBadge = state.quote?.eventDiscount > 0
+    ? `<div style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#dc2626;color:#fff;font-weight:800;font-size:13px;margin:0 0 12px 0;">
+        ${state.lang === 'en'
+          ? `EVENT DISCOUNT LIVE · -€${state.quote.eventDiscount}`
+          : state.lang === 'de'
+            ? `AKTION LÄUFT · -${state.quote.eventDiscount}€`
+            : `이벤트 진행중 · -€${state.quote.eventDiscount}`}
+      </div>
+      <div class="muted-copy" style="margin:0 0 10px 0;font-weight:700;color:#b91c1c;">
+        ${state.lang === 'en'
+          ? 'The discounted event price is currently applied to this package.'
+          : state.lang === 'de'
+            ? 'Für dieses Paket wird aktuell der Aktionspreis angewendet.'
+            : '현재 이 상품에는 이벤트 할인가가 적용되고 있습니다.'}
+      </div>`
+    : '';
   els.productDetail.className = 'detail-box';
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
     <div class="detail-copy">${escapeHtml(desc)}</div>
+    ${eventBadge}
     <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
       <div class="price-hero-value">€${price}</div>
