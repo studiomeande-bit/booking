@@ -9,18 +9,42 @@
 <body>
   <main class="shell">
     <section class="hero">
-      <p class="eyebrow">Studio mean</p>
+      <div class="hero-top">
+        <p class="eyebrow">Studio mean</p>
+        <div class="lang-row">
+          <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+        </div>
+      </div>
       <h1>예약 시스템 분리 작업 중</h1>
-      <p class="lede">이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 상품 조회, 날짜/시간 조회, 예약 제출 경로를 먼저 분리합니다.</p>
+      <p id="heroLead" class="lede">이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 기존 예약 UX를 순차적으로 이식합니다.</p>
       <div id="statusBanner" class="banner loading">초기 데이터를 불러오는 중입니다.</div>
     </section>
 
     <section class="panel">
       <div class="panel-head">
         <h2>1. 상품 선택</h2>
-        <p>Apps Script `getInitDataCustomer()`를 JSON API로 호출합니다.</p>
+        <p id="productHelp">상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.</p>
       </div>
       <div id="productGrid" class="product-grid"></div>
+      <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
+      <div id="passportPanel" class="detail-box hidden">
+        <div class="detail-title">여권/비자 옵션</div>
+        <p class="detail-copy">촬영 국가를 선택하면 국가별 추가 비용을 함께 반영합니다.</p>
+        <div class="chip-grid" id="passportCountries"></div>
+        <label class="inline-field">
+          <span>인원</span>
+          <select id="passportPeople">
+            <option value="1">1명</option>
+            <option value="2">2명</option>
+            <option value="3">3명</option>
+            <option value="4">4명</option>
+            <option value="5">5명</option>
+          </select>
+        </label>
+        <div id="passportHint" class="muted-copy"></div>
+      </div>
     </section>
 
     <section class="panel">
@@ -46,9 +70,10 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>4. 고객 정보</h2>
-        <p>현재 단계는 기본 예약 제출 경로만 연결합니다.</p>
+        <h2>4. 예약 정보</h2>
+        <p id="formHelp">기본 예약 정보를 입력한 뒤 제출합니다.</p>
       </div>
+      <div id="reviewBox" class="detail-box empty-state">상품, 날짜, 시간이 선택되면 예약 요약이 표시됩니다.</div>
       <form id="bookingForm" class="booking-form">
         <label>
           <span>이름</span>
@@ -69,6 +94,10 @@
         <label>
           <span>요청사항</span>
           <textarea name="memo" rows="4"></textarea>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="marketing">
+          <span>마케팅/SNS 활용에 동의합니다.</span>
         </label>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
         <button id="submitBtn" type="submit" class="submit-btn" disabled>예약 제출</button>

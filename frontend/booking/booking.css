@@ -15,12 +15,38 @@ body {
 .hero {
   padding: 12px 4px 28px;
 }
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
 .eyebrow {
   margin: 0 0 8px;
   text-transform: uppercase;
   letter-spacing: .2em;
   font-size: 12px;
   color: #8c7f6d;
+}
+.lang-row {
+  display: flex;
+  gap: 8px;
+}
+.lang-btn {
+  border: 1px solid #dbcdb8;
+  border-radius: 999px;
+  background: rgba(255,255,255,.75);
+  color: #5b5045;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lang-btn.active {
+  background: #2d2a26;
+  border-color: #2d2a26;
+  color: #fff;
 }
 h1 {
   margin: 0;
@@ -65,6 +91,14 @@ h1 {
   gap: 14px;
   margin-top: 18px;
 }
+.product-group-title {
+  grid-column: 1 / -1;
+  margin: 8px 0 -2px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #5f5346;
+  letter-spacing: .03em;
+}
 .product-card {
   border: 1px solid #e6ddd0;
   border-radius: 18px;
@@ -91,6 +125,75 @@ h1 {
   margin-top: 10px;
   color: #665e55;
   font-size: 14px;
+}
+.detail-box {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #e5dccf;
+  border-radius: 18px;
+  background: #fcfaf6;
+}
+.detail-box.hidden {
+  display: none;
+}
+.detail-title {
+  font-size: 15px;
+  font-weight: 800;
+}
+.detail-copy {
+  margin: 8px 0 0;
+  color: #6d655d;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.detail-price {
+  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 800;
+}
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.chip-btn {
+  border: 1px solid #ddd3c5;
+  border-radius: 999px;
+  background: #fff;
+  color: #52483d;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chip-btn.selected {
+  background: #2d2a26;
+  border-color: #2d2a26;
+  color: #fff;
+}
+.inline-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.inline-field span,
+.checkbox-row span {
+  font-size: 14px;
+  color: #645c53;
+}
+.inline-field select {
+  width: 100%;
+  border: 1px solid #d9d0c3;
+  border-radius: 14px;
+  background: #fff;
+  padding: 13px 14px;
+  font: inherit;
+}
+.muted-copy {
+  margin-top: 12px;
+  color: #85786a;
+  font-size: 13px;
 }
 .calendar-toolbar {
   display: flex;
@@ -174,6 +277,18 @@ h1 {
   font-size: 14px;
   color: #645c53;
 }
+.checkbox-row {
+  grid-column: 1 / -1;
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 2px 2px 4px;
+}
+.checkbox-row input {
+  width: 18px !important;
+  height: 18px;
+  margin: 0;
+}
 .booking-form input,
 .booking-form textarea {
   width: 100%;
@@ -217,4 +332,5 @@ h1 {
   .panel { padding: 18px; border-radius: 20px; }
   .booking-form { grid-template-columns: 1fr; }
   .calendar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hero-top { flex-direction: column; align-items: flex-start; }
 }
