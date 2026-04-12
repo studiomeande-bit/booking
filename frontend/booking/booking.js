@@ -282,7 +282,7 @@ function wireEvents() {
       renderProductDetail();
       renderReview();
       if (state.selectedProduct) {
-        els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분`;
+        els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분`;
       }
     });
   });
@@ -431,16 +431,84 @@ function getProductDescription(product) {
   return product.descKo || product.descEn || '';
 }
 
-function getDisplayDuration() {
+function getShootDuration() {
+  if (state.quote?.duration) return Number(state.quote.duration) || 0;
+  if (!state.selectedProduct) return 0;
+  return Number(state.selectedProduct.d || 0);
+}
+
+function getCalendarDuration() {
   if (state.quote?.totalDuration) return Number(state.quote.totalDuration) || 0;
   if (!state.selectedProduct) return 0;
   return Number(state.selectedProduct.d || 0) + Number(state.selectedProduct.prep || 0);
+}
+
+function getPrepDuration() {
+  if (state.quote?.prep !== undefined) return Number(state.quote.prep) || 0;
+  if (!state.selectedProduct) return 0;
+  return Number(state.selectedProduct.prep || 0);
 }
 
 function getEstimatedPrice() {
   if (state.quote?.totalPrice !== undefined) return Number(state.quote.totalPrice) || 0;
   if (!state.selectedProduct) return 0;
   return Number(state.selectedProduct.p || 0);
+}
+
+function getPeopleCount() {
+  if (!state.selectedProduct) return 1;
+  return state.selectedProduct.g === 'pass'
+    ? Number(els.passportPeople.value || 1)
+    : Number(els.generalPeople.value || 1);
+}
+
+function getPeoplePricingNote(product, people) {
+  if (!product) return '';
+  if (product.t === 'group') {
+    if (people <= 2) {
+      return state.lang === 'en'
+        ? 'Base price includes up to 2 people. From the 3rd person: +€30 each.'
+        : state.lang === 'de'
+          ? 'Der Grundpreis gilt für bis zu 2 Personen. Ab der 3. Person: +€30 pro Person.'
+          : '기본가는 2인 기준입니다. 3인부터 1인당 €30가 추가됩니다.';
+    }
+    const extra = (people - 2) * 30;
+    return state.lang === 'en'
+      ? `${people} people selected: +€${extra} extra person fee applied.`
+      : state.lang === 'de'
+        ? `${people} Personen gewählt: Aufpreis +€${extra} angewendet.`
+        : `${people}명 선택: 인원 추가비 €${extra}가 반영되었습니다.`;
+  }
+  if (product.t === 'snap') {
+    if (people === 1) {
+      return state.lang === 'en'
+        ? '1 person selected: solo discount -€30 applied.'
+        : state.lang === 'de'
+          ? '1 Person gewählt: Einzelrabatt -€30 angewendet.'
+          : '1인 선택: 1인 촬영 할인 -€30가 반영되었습니다.';
+    }
+    if (people === 2) {
+      return state.lang === 'en'
+        ? 'Base price includes 2 people. 1 person gets -€30, 3+ people add +€30 each.'
+        : state.lang === 'de'
+          ? 'Der Grundpreis gilt für 2 Personen. 1 Person: -€30, ab 3 Personen: +€30 pro Person.'
+          : '기본가는 2인 기준입니다. 1인은 -€30, 3인부터 1인당 €30가 추가됩니다.';
+    }
+    const extra = (people - 2) * 30;
+    return state.lang === 'en'
+      ? `${people} people selected: +€${extra} extra person fee applied.`
+      : state.lang === 'de'
+        ? `${people} Personen gewählt: Aufpreis +€${extra} angewendet.`
+        : `${people}명 선택: 인원 추가비 €${extra}가 반영되었습니다.`;
+  }
+  if (product.g === 'pass') {
+    return state.lang === 'en'
+      ? `Current quote is based on ${people} applicant${people > 1 ? 's' : ''}.`
+      : state.lang === 'de'
+        ? `Das aktuelle Angebot basiert auf ${people} Antragsteller${people > 1 ? 'n' : ''}.`
+        : `현재 금액은 ${people}명 기준으로 계산되었습니다.`;
+  }
+  return '';
 }
 
 function renderProducts(products) {
@@ -456,14 +524,14 @@ function renderProducts(products) {
     const meta = GROUP_META[groupKey] || { icon: '📷', label: { ko: groupKey, en: groupKey, de: groupKey } };
     const groupLabel = meta.label[state.lang] || meta.label.ko;
     const cards = products.filter((product) => product.g === groupKey).map((product) => {
-      const duration = Number(product.d || 0) + Number(product.prep || 0);
+      const duration = Number(product.d || 0);
       const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
       return `
         <button type="button" class="product-card${selected}" data-id="${escapeHtml(product.id)}">
           <h3>${escapeHtml(getProductLabel(product))}</h3>
           <div class="product-meta">
             <div>${escapeHtml(product.nameEn || '')}</div>
-            <div>€${escapeHtml(product.p)} · ${escapeHtml(duration)}분</div>
+            <div>€${escapeHtml(product.p)} · 촬영 ${escapeHtml(duration)}분</div>
           </div>
         </button>
       `;
@@ -502,7 +570,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   await refreshQuote();
   if (!state.selectedProduct) return;
-  els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
+  els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
   setBanner(getCopy().loadCalendar, 'loading');
   await loadCalendar();
 }
@@ -595,7 +663,7 @@ async function handleQuoteInputChange() {
   clearCalendarSelection();
   await refreshQuote();
   if (state.selectedProduct) {
-    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
   }
@@ -633,17 +701,31 @@ function renderProductDetail() {
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
     <div class="detail-copy">${escapeHtml(desc)}</div>
-    <div class="price-hero">
+      <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
       <div class="price-hero-value">€${price}</div>
-      <div class="price-hero-copy">${getDisplayDuration()}분</div>
+      <div class="price-hero-copy">촬영 약 ${getShootDuration()}분</div>
     </div>
+    <div class="muted-copy" style="margin-top:10px;">${escapeHtml(
+      getPrepDuration() > 0
+        ? (state.lang === 'en'
+          ? `Calendar block: ${getCalendarDuration()} min (includes ${getPrepDuration()} min prep/buffer).`
+          : state.lang === 'de'
+            ? `Kalenderblock: ${getCalendarDuration()} Min. (inkl. ${getPrepDuration()} Min. Vor-/Nachbereitung).`
+            : `예약 블록 시간은 ${getCalendarDuration()}분이며, 준비/정리 ${getPrepDuration()}분이 포함됩니다.`)
+        : (state.lang === 'en'
+          ? `Calendar block: ${getCalendarDuration()} min.`
+          : state.lang === 'de'
+            ? `Kalenderblock: ${getCalendarDuration()} Min.`
+            : `예약 블록 시간은 ${getCalendarDuration()}분입니다.`)
+    )}</div>
+    ${getPeoplePricingNote(state.selectedProduct, getPeopleCount()) ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getPeoplePricingNote(state.selectedProduct, getPeopleCount()))}</div>` : ''}
   `;
 }
 
 async function loadCalendar() {
   if (!state.selectedProduct) return;
-  const duration = getDisplayDuration();
+  const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
   let batch = state.calendarCache.get(cacheKey);
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth);
@@ -703,8 +785,8 @@ function renderCalendar(data) {
 function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.selectedSlot = '';
-  renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getDisplayDuration()}`));
-  const slotKey = `${dateKey}_${state.selectedProduct.g}_${getDisplayDuration()}`;
+  renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
+  const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
   const slots = state.slotCache.get(slotKey) || [];
   els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
   renderSlots(slots);
