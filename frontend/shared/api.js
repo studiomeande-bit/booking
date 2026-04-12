@@ -45,7 +45,16 @@ export async function submitBooking(data, requestId) {
 
 export async function fetchSelectSession(sessionId) {
   const response = await fetch(buildUrl('select-session', { id: sessionId }));
-  return parseJsonResponse(response);
+  const text = await response.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid API response: ${text.slice(0, 200)}`);
+  }
+  if (payload.ok) return payload.data;
+  if (payload.submitted) return payload;
+  throw new Error(payload.error?.message || payload.message || 'API request failed');
 }
 
 export async function submitSelect(sessionId, submission, requestId) {
