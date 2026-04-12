@@ -1,6 +1,6 @@
 # Current Status
 
-Updated: 2026-04-12 Europe/Berlin
+Updated: 2026-04-13 Europe/Berlin
 
 ## Live Endpoints
 
@@ -20,6 +20,7 @@ Updated: 2026-04-12 Europe/Berlin
   - `frontend/booking/index.html`
   - `frontend/booking/booking.js`
   - `frontend/booking/booking.css`
+  - `frontend/booking/studio-mean-logo.png`
 - Frontend select:
   - `frontend/select/index.html`
   - `frontend/select/select.js`
@@ -28,121 +29,107 @@ Updated: 2026-04-12 Europe/Berlin
   - `appscript/Code.gs`
   - `appscript/Admin.html`
 
-## What Is Working
+## Compressed Progress
 
-- Netlify static booking/select pages are connected to Apps Script public JSON APIs.
-- Booking flow is split into category -> package -> date -> time -> booking details.
-- Booking flow now supports one-step-at-a-time wizard navigation with back/next buttons.
-- Passport flow hides AI consent, marketing consent, and select-all-required rows.
-- Public API now includes `return-check` for backend-based return-customer eligibility.
-- Booking submit readiness now checks:
-  - product/date/time
-  - name/phone/email
-  - GDPR
-  - AI consent for non-pass flows
-  - location for outdoor/pre-wedding
-  - baby name when required
-  - reshooting consent when required
-  - passport country and other-country text when required
-- Success result uses a card UI instead of raw text.
-- Booking frontend now uses GET-based public transport for:
+- 고객 예약/셀렉 화면은 Netlify 정적 프론트로 분리됨
+- 관리자 ERP, 시트, 캘린더, 메일은 Apps Script 유지
+- booking은 단계형 흐름으로 재구성됨
+  - 1. 촬영 종류
+  - 2. 세부 상품/옵션
+  - 3. 날짜 및 시간
+  - 4. 예약 정보
+- 날짜와 시간은 한 화면에서 선택
+- 실제 Google Calendar 기반 시간 슬롯 표시 복구
+- booking submit은 Apps Script 공개 API로 연결됨
+- 성공 화면은 별도 완료 카드로 전환됨
+- 상품별 완료 안내 추가
+  - 여권/비자 상세 안내
+  - 프리웨딩 상세 안내
+  - 돌상 무료 셋팅 안내
+  - 공통 오시는 길 / 주차 안내
+- 예약 메일 안내문도 확장됨
+- booking 디자인 정리 진행
+  - 초기 로딩 화면 추가
+  - 폰트 두께 완화
+  - 카드/버튼/완료 화면 스타일 정리
+  - 실제 업로드된 PNG 로고 연결
+
+## Booking Rules Implemented
+
+- Passport
+  - 국가 선택 필수
+  - 기타 국가명 입력 필수
+  - AI/마케팅/전체선택 동의 숨김
+- Profile
+  - Kids 할인 `-10€`
+  - Basic: 영유아 비활성, 시니어 평일 무료
+  - Business: 시니어 평일 `-50€`
+  - Professional: 시니어 평일 `-50€`, 토요일 `-30€`
+- Studio
+  - 기본 2인
+  - 배경 선택 지원
+- Outdoor
+  - 기본 2인
+  - 1인 `-30€`
+  - 3인부터 `+30€`씩
+  - 의상 추가 / 반려동물 옵션
+- Baby / Birthday
+  - 필요 시 아기 이름 필수
+  - 돌상 무료 셋팅 안내 추가
+- Common
+  - 인보이스용 주소는 선택 입력
+  - 재방문 할인은 백엔드 검증 기반
+
+## Backend Status
+
+- Apps Script public APIs in use:
+  - `init`
   - `quote`
+  - `calendar-batch`
+  - `slots`
   - `return-check`
   - `booking`
-  This avoids Apps Script cross-origin POST redirect failures from Netlify.
-- Calendar month header is localized by current language.
-- Date click shows slots before waiting on date-dependent quote refresh, improving perceived speed.
-- Old Apps Script select links redirect to `select.studio-mean.com?id=...`.
-- Backend still handles:
-  - booking DB save
-  - calendar event creation
-  - customer/admin email send
-  - admin update / reschedule / cancel flows
+  - `select-session`
+  - `select-submit`
+  - `select-update`
+- Customer booking still saves to sheet, creates calendar event, sends customer/admin emails
+- Admin update / reschedule / cancel flows remain on Apps Script
 
-## Booking Rules Already Implemented
+## Latest Important Deploy State
 
-- Studio default people: 2
-- Outdoor default people: 2
-- Outdoor 1 person discount: `-30€`
-- Outdoor 3+ people surcharge: `+30€` each extra person
-- Outdoor options: pet, extra outfit
-- Profile Basic:
-  - infant disabled
-  - senior weekday free
-- Profile Business:
-  - senior weekday `-50€`
-- Profile Professional:
-  - senior weekday `-50€`
-  - senior Saturday `-30€`
-- Kids discount `-10€`
-- Background selection for profile/studio
-- Background recommendations with outfit hints
-- Passport add-on for profile/studio
-- Baby/birthday flow:
-  - baby name required where applicable
-  - review and memo include baby name
-
-## Most Recent Commits
-
-- `c2824e6` Fix booking submit transport and localize calendar
-- `5d47a2c` Fix API redirect handling and calendar UX
-- `691e0c0` Remove duplicate kids discount label
-- `5ca9729` Fix booking form return notice layout
-- `b42c1e3` Use booking success card after submit
-- `635c910` Tighten booking submit readiness checks
-- `477a441` Improve booking submit readiness for passport flow
-- `50562a0` Polish customer-facing frontend copy
-- `9700b69` Add resumable project status log
-
-## Apps Script Deployment
-
-- Latest confirmed deployment: `@245`
-- Customer pages are redirected from Apps Script to Netlify domains.
+- GitHub `main` latest booking/logo commit reflected
+- Apps Script existing web app updated through deployment `@250`
+- Booking frontend live checks already confirmed:
+  - calendar renders
+  - time slots render for valid dates
+  - logo loading screen markup present
 
 ## Remaining Work
 
-### Booking frontend
+### 1. Booking final parity
 
-- Final parity review against original `/Users/taewoongmin/index.html`
-- Validate live booking submit after Netlify cache refresh
-- Verify new wizard navigation on mobile after Netlify deploy
-- Final mobile readability cleanup
-- Review remaining package-specific copy / edge cases
-- Additional calendar loading optimization if needed
+- 상품별 원본 안내문/예외 규칙 마지막 대조
+- 기업/행사 상품 구조 재설계
+- 완료 화면 문구 다국어 정리
+- 모바일 spacing / hierarchy 마감
 
-### Select frontend
+### 2. End-to-end verification
 
-- Deep parity review against original select behavior
-- Real session-based UX validation
-- Existing submission restore/edit flow validation
+- Netlify booking submit -> sheet save
+- customer mail delivery
+- admin notification
+- admin edit/reschedule/cancel on Netlify-created booking
 
-### End-to-end verification
+### 3. Select parity
 
-- Booking submit -> customer mail -> admin notification
-- Admin edit / reschedule / cancel on records created from Netlify frontend
-- Select link from old emails -> redirected select frontend -> submit/update flow
+- 실 세션 링크 검증
+- 기존 제출 복원 / 수정 제출
+- 추가 인화 / 추가 보정 UI 최종 점검
 
-## Resume Instructions
-
-When resuming, first inspect:
+## Resume Order
 
 1. `docs/current-status.md`
 2. `git log --oneline -10`
 3. `frontend/booking/booking.js`
 4. `appscript/Code.gs`
-
-Then continue from:
-
-- booking parity / end-to-end verification first
-- select parity second
-- 2026-04-13
-  - 예약 완료 화면에 상품별 상세 안내 추가
-    - 여권/비자 상세 안내
-    - 프리웨딩 상세 안내
-    - 돌상 무료 셋팅 안내
-    - 공통 오시는 길 / 주차 안내
-  - 예약 메일 안내문도 상세형으로 확장
-  - booking 프론트 디자인 정리
-    - Studio_mean 워드마크 추가
-    - 초기 로딩 오버레이 추가
-    - 덜 볼드한 타이포와 일관된 카드 스타일 적용
+5. Continue with booking final parity, then end-to-end verification, then select parity
