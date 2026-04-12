@@ -591,21 +591,21 @@ function wireEvents() {
   els.wizardButtons.step5Back?.addEventListener('click', () => goToStep(4));
   els.form.elements.otherCountry?.addEventListener('input', async () => {
     await handleQuoteInputChange();
-    updateSubmitState();
+    refreshStepLocks();
   });
   els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
-  els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
-  els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
-  els.form.elements.name?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
-  els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
-  els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
-  els.form.elements.address?.addEventListener('input', updateSubmitState);
-  els.form.elements.babyName?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
-  els.reshootingConsent?.addEventListener('change', updateSubmitState);
-  document.getElementById('selectAllRequired')?.addEventListener('change', () => { toggleAllRequired(); updateSubmitState(); });
-  els.locationInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
-  els.businessInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
-  els.form.elements.memo?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
+  els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
+  els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
+  els.form.elements.name?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
+  els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
+  els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
+  els.form.elements.address?.addEventListener('input', refreshStepLocks);
+  els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  els.reshootingConsent?.addEventListener('change', refreshStepLocks);
+  document.getElementById('selectAllRequired')?.addEventListener('change', () => { toggleAllRequired(); refreshStepLocks(); });
+  els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  els.form.elements.memo?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.passportPeople.addEventListener('change', () => {
     handleQuoteInputChange();
   });
@@ -627,6 +627,7 @@ function wireEvents() {
       renderGeneralPanel();
       renderProductDetail();
       renderReview();
+      refreshStepLocks();
       if (state.selectedProduct) {
         els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
       }
@@ -865,6 +866,11 @@ function syncStepPanels() {
   updateWizardButtons(maxStep);
 }
 
+function refreshStepLocks() {
+  syncStepPanels();
+  updateSubmitState();
+}
+
 function getMaxUnlockedStep() {
   const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
@@ -917,6 +923,7 @@ function renderSurveyChips() {
       else state.surveyKeys.push(key);
       renderSurveyChips();
       renderReview();
+      refreshStepLocks();
     });
   });
 }
@@ -959,6 +966,7 @@ function renderAgeChips() {
       renderBabyTypeChips();
       renderSeniorWarning();
       handleQuoteInputChange();
+      refreshStepLocks();
     });
   });
   renderSeniorWarning();
@@ -1088,6 +1096,7 @@ function renderBabyTypeChips() {
       state.babyType = button.dataset.babyType;
       renderBabyTypeChips();
       renderReview();
+      refreshStepLocks();
     });
   });
 }
@@ -1141,6 +1150,7 @@ function renderBgChips() {
       } else state.bgColors.push(key);
       renderBgChips();
       renderReview();
+      refreshStepLocks();
     });
   });
   renderBgRecommendations();
@@ -1604,6 +1614,7 @@ function renderGeneralPanel() {
       if (index >= 0) state.optionKeys.splice(index, 1);
       else state.optionKeys.push(key);
       handleQuoteInputChange();
+      refreshStepLocks();
     });
   });
   syncConditionalFields();
@@ -1714,7 +1725,7 @@ function toggleCountry(code) {
   else state.selectedCountries.push(code);
   renderPassportCountries();
   syncConditionalFields();
-  handleQuoteInputChange().then(() => updateSubmitState());
+  handleQuoteInputChange().then(() => refreshStepLocks());
 }
 
 function renderProductDetail() {
@@ -1807,7 +1818,7 @@ async function prefetchNextCalendarMonth() {
 }
 
 function renderCalendar(data) {
-  if (!data) {
+  if (!data || typeof data !== 'object' || !Object.prototype.hasOwnProperty.call(data, 'unavail')) {
     els.calendarGrid.classList.add('empty-state');
     els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().noCalendar)}</div>`;
     return;
