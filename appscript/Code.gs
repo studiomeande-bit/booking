@@ -111,23 +111,25 @@ function handlePublicApiRequest_(route,method,e){
       return jsonOk_(getPublicCalendarBatch_(year,month,totalDur,itemGroup));
     }
     if(route==='quote'){
-      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/quote');
-      const body=parsePublicJsonBody_(e);
-      const payload=body.data||body;
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/quote');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body;
+      const payload=request.payload;
       if(!payload||!payload.itemId) return jsonError_('INVALID_ARGUMENT','Missing quote parameters');
       return jsonOk_(calculateQuote_(payload));
     }
     if(route==='return-check'){
-      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/return-check');
-      const body=parsePublicJsonBody_(e);
-      const payload=body.data||body;
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/return-check');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload;
       if(!payload||!payload.name||!payload.phone||!payload.email) return jsonOk_({eligible:false});
       return jsonOk_({eligible:checkReturnCustomer_(payload.name,payload.phone,payload.email)});
     }
     if(route==='booking'){
-      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking');
-      const body=parsePublicJsonBody_(e);
-      const payload=body.data||body;
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/booking');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body;
+      const payload=request.payload;
       assertPublicBookingPayload_(payload,body);
       const result=processForm(payload);
       if(!result||!result.ok) return jsonError_('BOOKING_FAILED',(result&&result.message)||'Booking failed');
@@ -172,6 +174,21 @@ function parsePublicJsonBody_(e){
   const body=String((e&&e.postData&&e.postData.contents)||'').trim();
   if(!body) return {};
   try{return JSON.parse(body);}catch(err){throw new Error('Invalid JSON body');}
+}
+
+function getPublicPayloadFromRequest_(e){
+  const p=(e&&e.parameter)||{};
+  const rawPayload=String(p.payload||'').trim();
+  if(rawPayload){
+    try{
+      const parsed=JSON.parse(rawPayload);
+      return {body:parsed||{},payload:(parsed&&parsed.data)||parsed||{}};
+    }catch(err){
+      throw new Error('Invalid payload parameter');
+    }
+  }
+  const body=parsePublicJsonBody_(e);
+  return {body:body||{},payload:(body&&body.data)||body||{}};
 }
 
 function assertPublicBookingPayload_(payload,body){

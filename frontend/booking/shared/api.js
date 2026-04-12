@@ -24,6 +24,13 @@ function buildUrl(route, params = {}) {
   return base.toString();
 }
 
+function buildPayloadUrl(route, data = {}, extraParams = {}) {
+  return buildUrl(route, {
+    ...extraParams,
+    payload: JSON.stringify({ ...extraParams, data })
+  });
+}
+
 async function parseJsonResponse(response) {
   const text = await response.text();
   let payload;
@@ -51,28 +58,19 @@ export async function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
 }
 
 export async function fetchQuote(data) {
-  const response = await fetch(buildUrl('quote'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
-  });
+  const response = await fetch(buildPayloadUrl('quote', data));
+  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function fetchReturnEligibility(data) {
-  const response = await fetch(buildUrl('return-check'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
-  });
+  const response = await fetch(buildPayloadUrl('return-check', data));
+  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
 
 export async function submitBooking(data, requestId) {
-  const response = await fetch(buildUrl('booking'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId, data })
-  });
+  const response = await fetch(buildPayloadUrl('booking', data, { requestId }));
+  setResolvedApiBaseUrl(response.url);
   return parseJsonResponse(response);
 }
