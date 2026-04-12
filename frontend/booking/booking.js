@@ -1754,8 +1754,8 @@ async function loadCalendar() {
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   if (!batch) {
     try {
-      batch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
-      batch = state.calendarCache.get(cacheKey);
+      const monthBatch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
+      batch = state.calendarCache.get(cacheKey) || monthBatch;
     } catch (error) {
       console.error(error);
       setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
@@ -1779,7 +1779,7 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
   });
-  return batch;
+  return batch?.[`${year}_${month}`] || null;
 }
 
 async function prefetchNextCalendarMonth() {
