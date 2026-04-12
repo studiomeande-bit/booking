@@ -553,15 +553,17 @@ function wireEvents() {
   els.form.addEventListener('submit', onSubmit);
   els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
   els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
-  els.form.elements.gdprConsent?.addEventListener('change', syncSelectAllRequired);
-  els.form.elements.aiConsent?.addEventListener('change', syncSelectAllRequired);
-  els.form.elements.name?.addEventListener('input', renderReturnNotice);
-  els.form.elements.phone?.addEventListener('input', renderReturnNotice);
-  els.form.elements.email?.addEventListener('input', renderReturnNotice);
+  els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
+  els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
+  els.form.elements.name?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
+  els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
+  els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
+  els.form.elements.address?.addEventListener('input', updateSubmitState);
+  els.form.elements.babyName?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
   document.getElementById('selectAllRequired')?.addEventListener('change', toggleAllRequired);
-  els.locationInput?.addEventListener('input', renderReview);
-  els.businessInput?.addEventListener('input', renderReview);
-  els.form.elements.memo?.addEventListener('input', renderReview);
+  els.locationInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
+  els.businessInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
+  els.form.elements.memo?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
   els.passportPeople.addEventListener('change', () => {
     handleQuoteInputChange();
   });
@@ -1835,8 +1837,23 @@ function renderReview() {
 
 function updateSubmitState() {
   syncConsentVisibility();
-  const ready = state.selectedProduct && state.selectedDate && state.selectedSlot;
-  els.submitBtn.disabled = !ready;
+  const product = state.selectedProduct;
+  if (!product || !state.selectedDate || !state.selectedSlot) {
+    els.submitBtn.disabled = true;
+    return;
+  }
+  const formData = new FormData(els.form);
+  const name = String(formData.get('name') || '').trim();
+  const phone = String(formData.get('phone') || '').trim();
+  const email = String(formData.get('email') || '').trim();
+  const isPass = product.g === 'pass';
+  const gdprOk = formData.get('gdprConsent') === 'on';
+  const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
+  const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
+  const babyName = String(formData.get('babyName') || '').trim();
+  const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
+  const reshootingOk = !(product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
+  els.submitBtn.disabled = !(name && phone && email && gdprOk && aiOk && locationOk && babyNameOk && reshootingOk);
 }
 
 function clearCalendarSelection() {
