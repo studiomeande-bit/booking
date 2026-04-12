@@ -658,9 +658,19 @@ function syncConsentVisibility() {
   const marketingRow = document.getElementById('marketingRow');
   const aiRow = document.getElementById('aiRow');
   const selectAllRow = document.getElementById('selectAllRow');
-  if (marketingRow) marketingRow.classList.toggle('hidden-field', isPass);
-  if (aiRow) aiRow.classList.toggle('hidden-field', isPass);
-  if (selectAllRow) selectAllRow.classList.toggle('hidden-field', isPass);
+  const toggleRow = (row, hidden) => {
+    if (!row) return;
+    row.classList.toggle('hidden-field', hidden);
+    row.hidden = hidden;
+    row.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    row.style.display = hidden ? 'none' : '';
+    row.querySelectorAll('input').forEach((input) => {
+      input.disabled = hidden;
+    });
+  };
+  toggleRow(marketingRow, isPass);
+  toggleRow(aiRow, isPass);
+  toggleRow(selectAllRow, isPass);
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
     if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = false;
