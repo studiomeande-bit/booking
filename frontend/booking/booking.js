@@ -55,6 +55,111 @@ const BG_META = [
   { key: 'sky', color: '#c9dff2', label: { ko: '하늘색', en: 'Sky Blue', de: 'Himmelblau' } }
 ];
 
+const BG_REC_META = {
+  white: {
+    outfits: {
+      ko: '올 화이트, 데님, 파스텔톤, 블랙',
+      en: 'All white, denim, pastel tones, black',
+      de: 'Ganz in Weiß, Denim, Pastelltöne, Schwarz'
+    },
+    desc: {
+      ko: '가장 깨끗하고 화사한 느낌. 광고나 프로필 사진의 정석입니다.',
+      en: 'The cleanest and brightest mood. A classic choice for advertising or profile photos.',
+      de: 'Der sauberste und hellste Look. Ein Klassiker für Werbe- oder Profilfotos.'
+    },
+    guide: {
+      ko: 'Classic & Clean',
+      en: 'Classic & Clean',
+      de: 'Klassisch & Clean'
+    }
+  },
+  grey: {
+    outfits: {
+      ko: '무채색(블랙/화이트), 네이비, 버건디',
+      en: 'Monotones (black/white), navy, burgundy',
+      de: 'Monotöne (Schwarz/Weiß), Navy, Bordeaux'
+    },
+    desc: {
+      ko: '도회적이고 지적인 분위기. 비즈니스 프로필에 잘 어울립니다.',
+      en: 'Urban and intelligent mood. Works especially well for business profiles.',
+      de: 'Urban und intelligent. Besonders passend für Business-Profile.'
+    },
+    guide: {
+      ko: 'Classic & Clean',
+      en: 'Classic & Clean',
+      de: 'Klassisch & Clean'
+    }
+  },
+  black: {
+    outfits: {
+      ko: '블랙, 다크 그레이, 골드/실버 포인트',
+      en: 'Black, dark grey, gold/silver accents',
+      de: 'Schwarz, Dunkelgrau, Gold-/Silber-Akzente'
+    },
+    desc: {
+      ko: '시크하고 고급스러운 느낌. 인물의 윤곽과 표정에 집중하기 좋습니다.',
+      en: 'Chic and luxurious. Great for emphasizing facial lines and expressions.',
+      de: 'Schick und hochwertig. Ideal, um Konturen und Ausdruck zu betonen.'
+    },
+    guide: {
+      ko: 'Classic & Clean',
+      en: 'Classic & Clean',
+      de: 'Klassisch & Clean'
+    }
+  },
+  beige: {
+    outfits: {
+      ko: '브라운, 아이보리, 웜톤 그린',
+      en: 'Brown, ivory, warm green tones',
+      de: 'Braun, Elfenbein, warme Grüntöne'
+    },
+    desc: {
+      ko: '따뜻하고 부드러운 감성. 자연스러운 라이프스타일 컷에 추천합니다.',
+      en: 'Warm and soft. Recommended for natural lifestyle-style portraits.',
+      de: 'Warm und weich. Ideal für natürliche Lifestyle-Aufnahmen.'
+    },
+    guide: {
+      ko: 'Warm & Natural',
+      en: 'Warm & Natural',
+      de: 'Warm & Natürlich'
+    }
+  },
+  pink: {
+    outfits: {
+      ko: '화이트, 라이트 그레이, 진한 로즈',
+      en: 'White, light grey, deep rose',
+      de: 'Weiß, Hellgrau, dunkles Rosé'
+    },
+    desc: {
+      ko: '사랑스럽고 로맨틱한 연출. 소품을 활용한 컨셉 촬영에 좋습니다.',
+      en: 'Lovely and romantic. Great for styled sessions with props.',
+      de: 'Lieblich und romantisch. Passt gut zu Konzeptshootings mit Requisiten.'
+    },
+    guide: {
+      ko: 'Cool & Fresh',
+      en: 'Cool & Fresh',
+      de: 'Kühl & Frisch'
+    }
+  },
+  sky: {
+    outfits: {
+      ko: '화이트, 레몬 옐로우, 네이비',
+      en: 'White, lemon yellow, navy',
+      de: 'Weiß, Zitronengelb, Navy'
+    },
+    desc: {
+      ko: '청량하고 깨끗한 이미지. 여름 시즌이나 스포티한 컨셉에 잘 어울립니다.',
+      en: 'Clear and refreshing. Fits summer or sporty concepts very well.',
+      de: 'Klar und frisch. Passt besonders gut zu sommerlichen oder sportlichen Konzepten.'
+    },
+    guide: {
+      ko: 'Cool & Fresh',
+      en: 'Cool & Fresh',
+      de: 'Kühl & Frisch'
+    }
+  }
+};
+
 const SURVEY_META = [
   { key: 'clean', icon: '🪴', label: { ko: '깔끔/모던', en: 'Clean / Modern', de: 'Sauber / Modern' } },
   { key: 'warm', icon: '🌿', label: { ko: '따뜻/자연', en: 'Warm / Natural', de: 'Warm / Natürlich' } },
@@ -226,6 +331,7 @@ const els = {
   bgField: document.getElementById('bgField'),
   bgHelp: document.getElementById('bgHelp'),
   bgGrid: document.getElementById('bgGrid'),
+  bgRecList: document.getElementById('bgRecList'),
   calendarHint: document.getElementById('calendarHint'),
   monthLabel: document.getElementById('monthLabel'),
   calendarWeekdays: document.getElementById('calendarWeekdays'),
@@ -243,6 +349,7 @@ const els = {
   businessInput: document.getElementById('businessInput'),
   surveyField: document.getElementById('surveyField'),
   surveyGrid: document.getElementById('surveyGrid'),
+  babyNameField: document.getElementById('babyNameField'),
   submitBtn: document.getElementById('submitBtn'),
   resultBox: document.getElementById('resultBox'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
@@ -392,7 +499,11 @@ function syncStepPanels() {
 }
 
 function renderSurveyChips() {
-  els.surveyGrid.innerHTML = SURVEY_META.map((item) => {
+  const surveyItems = SURVEY_META.filter((item) => {
+    if (item.key !== 'baby') return true;
+    return state.selectedProduct?.g === 'prof' || state.selectedProduct?.g === 'stud';
+  });
+  els.surveyGrid.innerHTML = surveyItems.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.surveyKeys.includes(item.key) ? ' selected' : '';
     return `<button type="button" class="survey-chip${selected}" data-survey="${item.key}">${item.icon} ${escapeHtml(label)}</button>`;
@@ -638,6 +749,47 @@ function renderBgChips() {
       renderReview();
     });
   });
+  renderBgRecommendations();
+}
+
+function renderBgRecommendations() {
+  if (!els.bgRecList) return;
+  if (!state.bgColors.length) {
+    els.bgRecList.innerHTML = '';
+    return;
+  }
+  const titleBase = state.lang === 'en'
+    ? 'Background'
+    : state.lang === 'de'
+      ? 'Hintergrund'
+      : '배경';
+  const outfitPrefix = state.lang === 'en'
+    ? 'Recommended outfit'
+    : state.lang === 'de'
+      ? 'Empfohlenes Outfit'
+      : '추천 의상';
+  const guideLead = state.lang === 'en'
+    ? 'Choosing clothes one tone lighter or darker than the background usually gives the cleanest result.'
+    : state.lang === 'de'
+      ? 'Kleidung in einem Ton heller oder dunkler als der Hintergrund ergibt meist das sauberste Ergebnis.'
+      : '배경보다 한 톤 밝거나 어두운 톤온톤 의상을 선택하시면 실패 없는 결과물을 얻기 좋습니다.';
+  els.bgRecList.innerHTML = state.bgColors.map((key, index) => {
+    const bg = BG_META.find((item) => item.key === key);
+    const rec = BG_REC_META[key];
+    if (!bg || !rec) return '';
+    const label = bg.label[state.lang] || bg.label.ko;
+    const outfits = rec.outfits[state.lang] || rec.outfits.ko;
+    const desc = rec.desc[state.lang] || rec.desc.ko;
+    const guide = rec.guide[state.lang] || rec.guide.ko;
+    return `
+      <div class="bg-rec-card">
+        <div class="bg-rec-title">${escapeHtml(titleBase)} ${index + 1} · ${escapeHtml(label)}</div>
+        <div class="bg-rec-outfits">👗 ${escapeHtml(outfitPrefix)}: ${escapeHtml(outfits)}</div>
+        <div class="bg-rec-desc">${escapeHtml(desc)}</div>
+        <div class="bg-rec-guide">💡 <strong>${escapeHtml(guide)}</strong><br>${escapeHtml(guideLead)}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function getProductLabel(product) {
@@ -968,6 +1120,7 @@ function syncConditionalFields() {
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
   els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
+  els.babyNameField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
   els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
 }
@@ -1210,6 +1363,8 @@ function renderReview() {
     if (state.ageGroup === 'baby') {
       const babyTypeLabel = BABY_TYPE_META.find((item) => item.key === state.babyType)?.label[state.lang] || BABY_TYPE_META.find((item) => item.key === state.babyType)?.label.ko || state.babyType;
       rows.push([state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류', babyTypeLabel]);
+      const babyName = String(els.form.elements.babyName?.value || '').trim();
+      if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
     }
   }
   if (state.optionKeys.length) {
@@ -1284,6 +1439,7 @@ async function onSubmit(event) {
     phone: String(formData.get('phone') || '').trim(),
     email: String(formData.get('email') || '').trim(),
     address: String(formData.get('address') || '').trim(),
+    babyName: String(formData.get('babyName') || '').trim(),
     memo: String(formData.get('memo') || '').trim(),
     website: String(formData.get('website') || ''),
     lang: state.lang,
@@ -1310,6 +1466,17 @@ async function onSubmit(event) {
     setBanner(getCopy().countryRequired, 'error');
     return;
   }
+  if (state.selectedProduct.g === 'prof' && state.selectedProduct.id === 'pp' && state.ageGroup === 'baby' && !payload.babyName) {
+    setBanner(
+      state.lang === 'en'
+        ? 'Please enter the baby name for the 100-day / 1st birthday session.'
+        : state.lang === 'de'
+          ? 'Bitte geben Sie den Babynamen für das 100-Tage-/1. Geburtstags-Shooting ein.'
+          : '백일/돌 촬영은 아기 이름을 입력해 주세요.',
+      'error'
+    );
+    return;
+  }
   if ((state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') && !payload.location) {
     setBanner(getCopy().locationRequired, 'error');
     return;
@@ -1328,6 +1495,9 @@ async function onSubmit(event) {
       'error'
     );
     return;
+  }
+  if (payload.babyName) {
+    payload.memo = `[아기 이름: ${payload.babyName}] ${payload.memo}`.trim();
   }
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = '제출 중...';

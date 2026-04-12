@@ -24,7 +24,7 @@
 
     <section class="panel" id="stepPanel1">
       <div class="panel-head">
-        <h2>1. 촬영 종류 선택</h2>
+        <h2 id="step1Title">1. 촬영 종류 선택</h2>
         <p id="groupHelp">먼저 큰 카테고리를 선택해 주세요.</p>
       </div>
       <div id="groupGrid" class="group-grid"></div>
@@ -32,16 +32,16 @@
 
     <section class="panel hidden-step" id="stepPanel2">
       <div class="panel-head">
-        <h2>2. 세부 상품 선택</h2>
+        <h2 id="step2Title">2. 세부 상품 선택</h2>
         <p id="productHelp">세부 패키지와 추가 설정을 선택합니다.</p>
       </div>
       <div id="productGrid" class="product-grid"></div>
       <div id="passportPanel" class="detail-box hidden">
-        <div class="detail-title">여권/비자 옵션</div>
+        <div id="passportTitle" class="detail-title">여권/비자 옵션</div>
         <p class="detail-copy">촬영 국가를 선택하면 국가별 추가 비용을 함께 반영합니다.</p>
         <div class="chip-grid" id="passportCountries"></div>
         <label class="inline-field">
-          <span>인원</span>
+          <span id="passportPeopleLabel">인원</span>
           <select id="passportPeople">
             <option value="1">1명</option>
             <option value="2">2명</option>
@@ -53,26 +53,26 @@
         <div id="passportHint" class="muted-copy"></div>
       </div>
       <div id="generalPanel" class="detail-box hidden">
-        <div class="detail-title">추가 설정</div>
-        <p class="detail-copy">인원이나 옵션을 선택하면 예상 금액과 예약 시간이 다시 계산됩니다.</p>
+        <div id="generalTitle" class="detail-title">추가 설정</div>
+        <p id="generalCopy" class="detail-copy">인원이나 옵션을 선택하면 예상 금액과 예약 시간이 다시 계산됩니다.</p>
         <div id="ageField" class="hidden-field form-block">
-          <span class="block-label">촬영 대상 연령</span>
+          <span id="ageFieldLabel" class="block-label">촬영 대상 연령</span>
           <div id="ageGrid" class="survey-grid"></div>
           <div id="seniorWarning" class="senior-warning"></div>
         </div>
         <div id="babyTypeField" class="hidden-field form-block">
-          <span class="block-label">촬영 종류</span>
+          <span id="babyTypeFieldLabel" class="block-label">촬영 종류</span>
           <div id="babyTypeGrid" class="survey-grid"></div>
         </div>
         <div id="reshootingField" class="hidden-field detail-box">
-          <div class="detail-title">재촬영 약관 동의</div>
+          <div id="reshootingTitle" class="detail-title">재촬영 약관 동의</div>
           <label class="checkbox-row consent-row" style="margin-top:10px;">
             <input type="checkbox" id="reshootingConsent">
             <span id="reshootingText">촬영 당일 아이의 컨디션 이슈가 있으면 재촬영 정책에 동의합니다.</span>
           </label>
         </div>
         <label id="peopleField" class="inline-field hidden">
-          <span>인원</span>
+          <span id="generalPeopleLabel">인원</span>
           <select id="generalPeople">
             <option value="1">1명</option>
             <option value="2">2명</option>
@@ -83,13 +83,13 @@
         </label>
         <div id="optionGrid" class="chip-grid"></div>
         <div id="passAddonField" class="hidden-field detail-box">
-          <div class="detail-title">여권사진 추가 촬영</div>
+          <div id="passAddonTitle" class="detail-title">여권사진 추가 촬영</div>
           <label class="checkbox-row consent-row" style="margin-top:10px;">
             <input type="checkbox" id="passAddonToggle">
-            <span>프로필/스튜디오와 함께 여권사진을 추가합니다.</span>
+            <span id="passAddonCopy">프로필/스튜디오와 함께 여권사진을 추가합니다.</span>
           </label>
           <label id="passAddonPeopleField" class="inline-field hidden-field">
-            <span>여권 인원</span>
+            <span id="passAddonPeopleLabel">여권 인원</span>
             <select id="passAddonPeople">
               <option value="1">1명 (+15분)</option>
               <option value="2">2명 (+20분)</option>
@@ -100,22 +100,23 @@
           <div id="passAddonPriceTag" class="muted-copy"></div>
         </div>
         <label id="locationField" class="hidden-field inline-field">
-          <span>희망 촬영 장소</span>
+          <span id="locationLabel">희망 촬영 장소</span>
           <p id="locationInfo" class="muted-copy">프랑크푸르트 기준 50km 이내 촬영은 기본 비용에 포함됩니다. 이외 지역은 왕복 유류비가 추가될 수 있습니다.</p>
           <textarea id="locationInput" name="location" rows="3" placeholder="예: Frankfurt Römer, Heidelberg Old Town"></textarea>
         </label>
         <label id="businessField" class="hidden-field inline-field">
-          <span>행사 상세 내용</span>
+          <span id="businessLabel">행사 상세 내용</span>
           <textarea id="businessInput" name="businessDetails" rows="3" placeholder="행사 목적, 예상 인원, 필요한 결과물을 적어 주세요."></textarea>
         </label>
         <div id="surveyField" class="hidden-field form-block">
-          <span class="block-label">원하는 분위기</span>
+          <span id="surveyFieldLabel" class="block-label">원하는 분위기</span>
           <div id="surveyGrid" class="survey-grid"></div>
         </div>
         <div id="bgField" class="hidden-field form-block">
-          <span class="block-label">배경 선택</span>
+          <span id="bgFieldLabel" class="block-label">배경 선택</span>
           <p id="bgHelp" class="muted-copy"></p>
           <div id="bgGrid" class="survey-grid"></div>
+          <div id="bgRecList" class="bg-rec-list"></div>
         </div>
       </div>
       <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
@@ -123,7 +124,7 @@
 
     <section class="panel hidden-step" id="stepPanel3">
       <div class="panel-head">
-        <h2>3. 날짜 선택</h2>
+        <h2 id="step3Title">3. 날짜 선택</h2>
         <p id="calendarHint">상품을 먼저 선택하세요.</p>
       </div>
       <div class="calendar-toolbar">
@@ -137,7 +138,7 @@
 
     <section class="panel hidden-step" id="stepPanel4">
       <div class="panel-head">
-        <h2>4. 시간 선택</h2>
+        <h2 id="step4Title">4. 시간 선택</h2>
         <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
       </div>
       <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
@@ -145,49 +146,53 @@
 
     <section class="panel hidden-step" id="stepPanel5">
       <div class="panel-head">
-        <h2>5. 예약 정보</h2>
+        <h2 id="step5Title">5. 예약 정보</h2>
         <p id="formHelp">기본 예약 정보를 입력한 뒤 제출합니다.</p>
       </div>
       <div id="reviewBox" class="detail-box empty-state">상품, 날짜, 시간이 선택되면 예약 요약이 표시됩니다.</div>
       <form id="bookingForm" class="booking-form">
         <label>
-          <span>이름</span>
+          <span id="nameLabel">이름</span>
           <input name="name" autocomplete="name" required>
         </label>
         <label>
-          <span>연락처</span>
+          <span id="phoneLabel">연락처</span>
           <input name="phone" autocomplete="tel" required>
         </label>
         <label>
-          <span>이메일</span>
+          <span id="emailLabel">이메일</span>
           <input name="email" type="email" autocomplete="email" required>
         </label>
         <label>
-          <span>주소</span>
-          <input name="address" autocomplete="street-address">
+          <span id="addressLabel">주소 (인보이스용, 선택)</span>
+          <input name="address" autocomplete="street-address" placeholder="인보이스가 필요한 경우만 입력해 주세요">
+        </label>
+        <label id="babyNameField" class="hidden-field">
+          <span id="babyNameLabel">아기 이름</span>
+          <input name="babyName" autocomplete="off" placeholder="백일/돌 촬영 아기 이름">
         </label>
         <label id="otherCountryField" class="hidden-field">
-          <span>기타 국가명</span>
+          <span id="otherCountryLabel">기타 국가명</span>
           <input name="otherCountry" autocomplete="off" placeholder="예: France, Canada">
         </label>
         <label>
-          <span>요청사항</span>
+          <span id="memoLabel">요청사항</span>
           <textarea name="memo" rows="4"></textarea>
         </label>
         <div class="consent-box">
-          <div class="consent-title">이용 동의</div>
-          <p class="consent-copy">필수 항목을 체크해야 예약을 제출할 수 있습니다.</p>
+          <div id="consentTitle" class="consent-title">이용 동의</div>
+          <p id="consentCopy" class="consent-copy">필수 항목을 체크해야 예약을 제출할 수 있습니다.</p>
           <label class="checkbox-row consent-row">
             <input type="checkbox" name="gdprConsent">
-            <span>[필수] 개인정보 수집 및 이용에 동의합니다.</span>
+            <span id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</span>
           </label>
           <label class="checkbox-row consent-row">
             <input type="checkbox" name="aiConsent">
-            <span>[필수] AI 보정 및 처리 안내에 동의합니다.</span>
+            <span id="aiLabel">[필수] AI 보정 및 처리 안내에 동의합니다.</span>
           </label>
           <label class="checkbox-row consent-row">
             <input type="checkbox" name="marketing">
-            <span>[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.</span>
+            <span id="marketingLabel">[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.</span>
           </label>
         </div>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
