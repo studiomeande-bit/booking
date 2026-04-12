@@ -213,6 +213,7 @@ const els = {
   bgGrid: document.getElementById('bgGrid'),
   calendarHint: document.getElementById('calendarHint'),
   monthLabel: document.getElementById('monthLabel'),
+  calendarWeekdays: document.getElementById('calendarWeekdays'),
   calendarGrid: document.getElementById('calendarGrid'),
   slotHint: document.getElementById('slotHint'),
   slotGrid: document.getElementById('slotGrid'),
@@ -302,6 +303,16 @@ function applyCopy() {
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
+  renderWeekdayHeader();
+}
+
+function renderWeekdayHeader() {
+  const labels = state.lang === 'en'
+    ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    : state.lang === 'de'
+      ? ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+      : ['일', '월', '화', '수', '목', '금', '토'];
+  els.calendarWeekdays.innerHTML = labels.map((label) => `<div class="calendar-weekday">${escapeHtml(label)}</div>`).join('');
 }
 
 function syncStepPanels() {
@@ -332,12 +343,10 @@ function renderSurveyChips() {
 }
 
 function renderAgeChips() {
-  const isPb = state.selectedProduct?.id === 'pb';
   els.ageGrid.innerHTML = AGE_META.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.ageGroup === item.key ? ' subtle-selected' : '';
-    const disabled = isPb && item.key === 'baby';
-    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
+    return `<button type="button" class="survey-chip${selected}" data-age="${item.key}">${escapeHtml(label)}</button>`;
   }).join('');
   els.ageGrid.querySelectorAll('[data-age]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -507,6 +516,25 @@ function getPeoplePricingNote(product, people) {
       : state.lang === 'de'
         ? `Das aktuelle Angebot basiert auf ${people} Antragsteller${people > 1 ? 'n' : ''}.`
         : `현재 금액은 ${people}명 기준으로 계산되었습니다.`;
+  }
+  return '';
+}
+
+function getProductPolicyNote(product) {
+  if (!product) return '';
+  if (product.id === 'pb') {
+    return state.lang === 'en'
+      ? 'Profile Basic seniors are free on weekdays (Tue-Fri).'
+      : state.lang === 'de'
+        ? 'Profile Basic ist für Senioren an Werktagen (Di-Fr) kostenlos.'
+        : '프로필 Basic은 시니어 고객 평일(화-금) 무료입니다.';
+  }
+  if (product.id === 'pbus' || product.id === 'pp') {
+    return state.lang === 'en'
+      ? 'Senior weekday discounts apply after selecting the date.'
+      : state.lang === 'de'
+        ? 'Seniorenrabatte an Werktagen werden nach Auswahl des Datums angewendet.'
+        : '프로필 Business / Professional의 시니어 할인은 날짜 선택 후 적용됩니다.';
   }
   return '';
 }
@@ -701,11 +729,12 @@ function renderProductDetail() {
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
     <div class="detail-copy">${escapeHtml(desc)}</div>
-      <div class="price-hero">
+    <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
       <div class="price-hero-value">€${price}</div>
       <div class="price-hero-copy">촬영 약 ${getShootDuration()}분</div>
     </div>
+    ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
     <div class="muted-copy" style="margin-top:10px;">${escapeHtml(
       getPrepDuration() > 0
         ? (state.lang === 'en'
@@ -782,9 +811,10 @@ function renderCalendar(data) {
   });
 }
 
-function selectDate(dateKey) {
+async function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.selectedSlot = '';
+  await refreshQuote();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
   const slots = state.slotCache.get(slotKey) || [];
