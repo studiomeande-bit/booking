@@ -703,13 +703,6 @@ function getPeoplePricingNote(product, people) {
         : `${people}명 선택: 인원 추가비 €${extra}가 반영되었습니다.`;
   }
   if (product.t === 'snap') {
-    if (people === 1) {
-      return state.lang === 'en'
-        ? '1 person selected: solo discount -€30 applied.'
-        : state.lang === 'de'
-          ? '1 Person gewählt: Einzelrabatt -€30 angewendet.'
-          : '1인 선택: 1인 촬영 할인 -€30가 반영되었습니다.';
-    }
     if (people === 2) {
       return state.lang === 'en'
         ? 'Base price includes 2 people. 1 person gets -€30, 3+ people add +€30 each.'
@@ -820,6 +813,17 @@ function getAppliedDiscountNote() {
         : `여권 추가촬영이 적용되었습니다 (+€${state.quote.passAddonPrice || 0}).`;
   }
   return '';
+}
+
+function getSecondaryPriceNote() {
+  const item = state.selectedProduct;
+  if (!item) return '';
+  const discountNote = getAppliedDiscountNote();
+  const peopleNote = getPeoplePricingNote(item, getPeopleCount());
+  if (!discountNote) return peopleNote;
+  if (!peopleNote) return '';
+  if (item.t === 'snap' && getPeopleCount() === 1) return '';
+  return peopleNote;
 }
 
 function renderProducts(products) {
@@ -1053,7 +1057,7 @@ function renderProductDetail() {
     </div>
     ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
-    ${getPeoplePricingNote(state.selectedProduct, getPeopleCount()) ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getPeoplePricingNote(state.selectedProduct, getPeopleCount()))}</div>` : ''}
+    ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
   `;
 }
 
