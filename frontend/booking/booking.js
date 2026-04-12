@@ -551,7 +551,10 @@ function wireEvents() {
   els.prevMonthBtn.addEventListener('click', () => changeMonth(-1));
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
-  els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
+  els.form.elements.otherCountry?.addEventListener('input', async () => {
+    await handleQuoteInputChange();
+    updateSubmitState();
+  });
   els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
   els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
   els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); updateSubmitState(); });
@@ -560,7 +563,8 @@ function wireEvents() {
   els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); updateSubmitState(); });
   els.form.elements.address?.addEventListener('input', updateSubmitState);
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
-  document.getElementById('selectAllRequired')?.addEventListener('change', toggleAllRequired);
+  els.reshootingConsent?.addEventListener('change', updateSubmitState);
+  document.getElementById('selectAllRequired')?.addEventListener('change', () => { toggleAllRequired(); updateSubmitState(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
   els.form.elements.memo?.addEventListener('input', () => { renderReview(); updateSubmitState(); });
@@ -1594,7 +1598,7 @@ function toggleCountry(code) {
   else state.selectedCountries.push(code);
   renderPassportCountries();
   syncConditionalFields();
-  handleQuoteInputChange();
+  handleQuoteInputChange().then(() => updateSubmitState());
 }
 
 function renderProductDetail() {
@@ -1849,11 +1853,13 @@ function updateSubmitState() {
   const isPass = product.g === 'pass';
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
+  const passCountriesOk = !isPass || state.selectedCountries.length > 0;
+  const otherCountryOk = !isPass || !state.selectedCountries.includes('OTHER') || !!String(formData.get('otherCountry') || '').trim();
   const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !(product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
-  els.submitBtn.disabled = !(name && phone && email && gdprOk && aiOk && locationOk && babyNameOk && reshootingOk);
+  els.submitBtn.disabled = !(name && phone && email && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && babyNameOk && reshootingOk);
 }
 
 function clearCalendarSelection() {
