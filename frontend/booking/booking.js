@@ -214,6 +214,7 @@ const COPY = {
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
     consentCopy: '필수 항목을 체크해야 예약을 제출할 수 있습니다.',
+    selectAllLabel: '[선택] 필수 동의 항목 한 번에 체크',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
     marketingLabel: '[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.',
@@ -293,6 +294,7 @@ const COPY = {
     memoLabel: 'Notes',
     consentTitle: 'Consent',
     consentCopy: 'Required items must be checked before submitting.',
+    selectAllLabel: '[Optional] Check all required consents',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
     marketingLabel: '[Optional] I agree to marketing/SNS/portfolio usage.',
@@ -372,6 +374,7 @@ const COPY = {
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
     consentCopy: 'Pflichtangaben müssen vor dem Absenden bestätigt werden.',
+    selectAllLabel: '[Optional] Alle Pflicht-Einwilligungen aktivieren',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
     marketingLabel: '[Optional] Ich stimme Marketing/SNS/Portfolio-Nutzung zu.',
@@ -520,6 +523,12 @@ function wireEvents() {
   els.form.addEventListener('submit', onSubmit);
   els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
   els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
+  els.form.elements.gdprConsent?.addEventListener('change', syncSelectAllRequired);
+  els.form.elements.aiConsent?.addEventListener('change', syncSelectAllRequired);
+  els.form.elements.name?.addEventListener('input', renderReturnNotice);
+  els.form.elements.phone?.addEventListener('input', renderReturnNotice);
+  els.form.elements.email?.addEventListener('input', renderReturnNotice);
+  document.getElementById('selectAllRequired')?.addEventListener('change', toggleAllRequired);
   els.locationInput?.addEventListener('input', renderReview);
   els.businessInput?.addEventListener('input', renderReview);
   els.form.elements.memo?.addEventListener('input', renderReview);
@@ -590,6 +599,7 @@ function applyCopy() {
   setText('memoLabel', copy.memoLabel);
   setText('consentTitle', copy.consentTitle);
   setText('consentCopy', copy.consentCopy);
+  setText('selectAllLabel', copy.selectAllLabel);
   setText('gdprLabel', copy.gdprLabel);
   setText('aiLabel', copy.aiLabel);
   setText('marketingLabel', copy.marketingLabel);
@@ -618,11 +628,47 @@ function applyCopy() {
   }
   renderPeopleOptions();
   renderWeekdayHeader();
+  renderReturnNotice();
+  syncSelectAllRequired();
 }
 
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+function toggleAllRequired(event) {
+  const checked = !!event?.target?.checked;
+  if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
+  if (state.selectedProduct?.g !== 'pass' && els.form.elements.aiConsent) els.form.elements.aiConsent.checked = checked;
+  syncSelectAllRequired();
+}
+
+function syncSelectAllRequired() {
+  const el = document.getElementById('selectAllRequired');
+  if (!el) return;
+  const gdpr = !!els.form.elements.gdprConsent?.checked;
+  const ai = state.selectedProduct?.g === 'pass' ? true : !!els.form.elements.aiConsent?.checked;
+  el.checked = gdpr && ai;
+}
+
+function renderReturnNotice() {
+  const box = document.getElementById('returnNotice');
+  if (!box) return;
+  const name = String(els.form.elements.name?.value || '').trim();
+  const phone = String(els.form.elements.phone?.value || '').trim();
+  const email = String(els.form.elements.email?.value || '').trim();
+  const show = !!(name && phone && email);
+  box.classList.toggle('hidden-field', !show);
+  if (!show) {
+    box.textContent = '';
+    return;
+  }
+  box.textContent = state.lang === 'en'
+    ? 'If you already have a booking today, the return-customer discount is applied automatically when eligible.'
+    : state.lang === 'de'
+      ? 'Wenn Sie heute bereits eine Buchung haben, wird der Stammkundenrabatt bei Berechtigung automatisch angewendet.'
+      : '오늘 이미 예약이 있는 경우, 재방문 할인 대상이면 자동으로 적용됩니다.';
 }
 
 function renderGroups() {
@@ -1353,6 +1399,11 @@ function renderGeneralPanel() {
       ? `+€${state.quote?.passAddonPrice || getPreviewQuote()?.passAddonPrice || 0}`
       : '';
   }
+  if (els.form.elements.marketing) {
+    const marketingRow = els.form.elements.marketing.closest('.consent-row');
+    if (marketingRow) marketingRow.style.display = product.g === 'pass' ? 'none' : '';
+    if (product.g === 'pass') els.form.elements.marketing.checked = false;
+  }
   renderAgeChips();
   renderBabyTypeChips();
   renderBgChips();
@@ -1675,6 +1726,12 @@ function renderReview() {
       rows.push([state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류', babyTypeLabel]);
     }
   }
+  if (state.surveyKeys.includes('baby') && !(state.selectedProduct.g === 'prof' && state.ageGroup === 'baby')) {
+    rows.push([
+      state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류',
+      state.lang === 'en' ? 'Baby / Birthday' : state.lang === 'de' ? 'Baby / Geburtstag' : '백일/돌'
+    ]);
+  }
   const babyName = String(els.form.elements.babyName?.value || '').trim();
   if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
@@ -1841,6 +1898,8 @@ async function onSubmit(event) {
   } finally {
     els.submitBtn.textContent = getCopy().submitLabel;
     updateSubmitState();
+    renderReturnNotice();
+    syncSelectAllRequired();
   }
 }
 
