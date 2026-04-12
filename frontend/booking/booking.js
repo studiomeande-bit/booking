@@ -807,10 +807,6 @@ function getPreviewQuote() {
     }
   }
 
-  if (!seniorFree && !seniorDiscApplied && Number(item.discountRate || 0) > 0) {
-    total -= Math.round(total * (Number(item.discountRate || 0) / 100));
-  }
-
   let marketingDiscount = 0;
   const marketing = els.form.elements.marketing?.checked || false;
   if (item.g === 'wed' && marketing) {
@@ -1353,15 +1349,36 @@ function renderGeneralPanel() {
 
 function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
+  const needsBabyName = (group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')
+    || state.surveyKeys.includes('baby');
   els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
   els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
-  els.babyNameField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
+  els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
   els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
+  syncMemoPlaceholder();
+}
+
+function syncMemoPlaceholder() {
+  const memo = els.form?.elements?.memo;
+  if (!memo) return;
+  if (state.surveyKeys.includes('baby') || (state.selectedProduct?.g === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')) {
+    memo.placeholder = state.lang === 'en'
+      ? "Please write the baby's name in Korean or English. Add any requests here as well."
+      : state.lang === 'de'
+        ? 'Bitte den Namen des Kindes auf Koreanisch oder Englisch angeben. Weitere Wünsche bitte ebenfalls hier notieren.'
+        : '아기 이름을 한글 또는 영문으로 적어주세요. 기타 요청사항도 함께 작성해 주세요.';
+    return;
+  }
+  memo.placeholder = state.lang === 'en'
+    ? 'Share any requests or notes for the shoot.'
+    : state.lang === 'de'
+      ? 'Bitte teilen Sie uns besondere Wünsche oder Hinweise zum Shooting mit.'
+      : '촬영 전에 전달할 요청사항이 있다면 적어 주세요.';
 }
 
 function getQuoteRequest() {
@@ -1609,10 +1626,10 @@ function renderReview() {
     if (state.ageGroup === 'baby') {
       const babyTypeLabel = BABY_TYPE_META.find((item) => item.key === state.babyType)?.label[state.lang] || BABY_TYPE_META.find((item) => item.key === state.babyType)?.label.ko || state.babyType;
       rows.push([state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류', babyTypeLabel]);
-      const babyName = String(els.form.elements.babyName?.value || '').trim();
-      if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
     }
   }
+  const babyName = String(els.form.elements.babyName?.value || '').trim();
+  if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
     const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
     rows.push([copy.reviewOptions, optionLabels]);
@@ -1718,6 +1735,17 @@ async function onSubmit(event) {
         ? 'Please enter the baby name for the 100-day / 1st birthday session.'
         : state.lang === 'de'
           ? 'Bitte geben Sie den Babynamen für das 100-Tage-/1. Geburtstags-Shooting ein.'
+          : '백일/돌 촬영은 아기 이름을 입력해 주세요.',
+      'error'
+    );
+    return;
+  }
+  if (state.surveyKeys.includes('baby') && !payload.babyName) {
+    setBanner(
+      state.lang === 'en'
+        ? 'Please enter the baby name for the baby / birthday session.'
+        : state.lang === 'de'
+          ? 'Bitte geben Sie den Babynamen für das Baby-/Geburtstags-Shooting ein.'
           : '백일/돌 촬영은 아기 이름을 입력해 주세요.',
       'error'
     );

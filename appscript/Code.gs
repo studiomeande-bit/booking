@@ -483,7 +483,7 @@ function calculateQuote_(request){
     }
   }
   let productDiscount=0,eventDiscount=0,returnDiscount=0;
-  if(!seniorFree&&!seniorDiscApplied&&item.discountRate>0){productDiscount=Math.round(total*(item.discountRate/100));total-=productDiscount;}
+  productDiscount=0;
   const settings=getSettingsMap_();const evRate=parseInt(settings.event_rate)||0;
   if(evRate>0&&settings.event_start&&settings.event_end&&request.date&&request.date>=settings.event_start&&request.date<=settings.event_end){eventDiscount=Math.round(total*(evRate/100));total-=eventDiscount;}
   if(request.isReturn){const rate=parseInt(settings.return_discount)||10;returnDiscount=Math.round(total*(rate/100));total-=returnDiscount;}
