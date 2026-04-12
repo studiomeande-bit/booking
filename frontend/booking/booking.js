@@ -654,7 +654,7 @@ function syncSelectAllRequired() {
 }
 
 function syncConsentVisibility() {
-  const isPass = state.selectedGroup === 'pass';
+  const isPass = state.selectedGroup === 'pass' || state.selectedProduct?.g === 'pass';
   const marketingRow = document.getElementById('marketingRow');
   const aiRow = document.getElementById('aiRow');
   const selectAllRow = document.getElementById('selectAllRow');
@@ -1710,6 +1710,7 @@ function renderSlots(slots) {
 }
 
 function renderReview() {
+  syncConsentVisibility();
   if (!state.selectedProduct) {
     els.reviewBox.className = 'detail-box empty-state';
     els.reviewBox.textContent = getCopy().reviewEmpty;
@@ -1787,6 +1788,7 @@ function renderReview() {
 }
 
 function updateSubmitState() {
+  syncConsentVisibility();
   const ready = state.selectedProduct && state.selectedDate && state.selectedSlot;
   els.submitBtn.disabled = !ready;
 }
