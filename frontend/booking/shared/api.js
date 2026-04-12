@@ -6,9 +6,13 @@ function setResolvedApiBaseUrl(url) {
   if (!url) return;
   try {
     const parsed = new URL(url);
-    parsed.search = '';
+    const preserved = new URL(`${parsed.origin}${parsed.pathname}`);
+    ['user_content_key', 'lib'].forEach((key) => {
+      const value = parsed.searchParams.get(key);
+      if (value) preserved.searchParams.set(key, value);
+    });
     parsed.hash = '';
-    resolvedApiBaseUrl = parsed.toString();
+    resolvedApiBaseUrl = preserved.toString();
   } catch {
     resolvedApiBaseUrl = '';
   }
