@@ -464,7 +464,9 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
 }
 
 function getPublicSlots_(dateStr,totalDur,itemGroup){
-  return getAvailableSlots(dateStr,totalDur,itemGroup);
+  if(isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
+  const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  return computeSlots_(dateStr,events,totalDur,itemGroup);
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){

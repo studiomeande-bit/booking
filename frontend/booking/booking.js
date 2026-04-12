@@ -1878,11 +1878,11 @@ async function selectDate(dateKey) {
   els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
-  await refreshQuote();
   renderSeniorWarning();
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
   await loadSlotsForDate(dateKey);
+  refreshQuote();
   renderReview();
   syncStepPanels();
   goToStep(3);

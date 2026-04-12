@@ -21,6 +21,7 @@ function setResolvedApiBaseUrl(url) {
 function buildUrl(route, params = {}) {
   const base = new URL(resolvedApiBaseUrl || CONFIG.apiBaseUrl);
   base.searchParams.set('api', route);
+  base.searchParams.set('_ts', String(Date.now()));
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
     base.searchParams.set(key, value);
@@ -43,7 +44,7 @@ async function parseJsonResponse(response) {
 }
 
 export async function fetchSelectSession(sessionId) {
-  const response = await fetch(buildUrl('select-session', { id: sessionId }));
+  const response = await fetch(buildUrl('select-session', { id: sessionId }), { cache: 'no-store' });
   setResolvedApiBaseUrl(response.url);
   const text = await response.text();
   let payload;
@@ -61,6 +62,7 @@ export async function submitSelect(sessionId, submission, requestId) {
   const response = await fetch(buildUrl('select-submit'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
     body: JSON.stringify({ requestId, data: { sessionId, submission } })
   });
   return parseJsonResponse(response);
@@ -70,6 +72,7 @@ export async function updateSelect(sessionId, submission, requestId) {
   const response = await fetch(buildUrl('select-update'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
     body: JSON.stringify({ requestId, data: { sessionId, submission } })
   });
   return parseJsonResponse(response);
