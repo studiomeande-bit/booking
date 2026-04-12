@@ -21,7 +21,7 @@ const GROUP_META = {
 
 const OPTION_META = {
   dog: {
-    groups: ['stud'],
+    groups: ['stud', 'snap'],
     label: { ko: '반려동물 (+€15)', en: 'Pet (+€15)', de: 'Haustier (+€15)' }
   },
   bg: {
@@ -29,7 +29,7 @@ const OPTION_META = {
     label: { ko: '배경 추가 (+€20)', en: 'Extra background (+€20)', de: 'Zusätzlicher Hintergrund (+€20)' }
   },
   outfit: {
-    groups: ['prof', 'stud'],
+    groups: ['prof', 'stud', 'snap'],
     label: { ko: '의상 추가 (+€20)', en: 'Extra outfit (+€20)', de: 'Extra Outfit (+€20)' }
   }
 };
@@ -519,7 +519,7 @@ function wireEvents() {
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
   els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
-  els.form.elements.marketing?.addEventListener('change', handleQuoteInputChange);
+  els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
   els.locationInput?.addEventListener('input', renderReview);
   els.businessInput?.addEventListener('input', renderReview);
   els.form.elements.memo?.addEventListener('input', renderReview);
@@ -672,7 +672,7 @@ function syncStepPanels() {
 function renderSurveyChips() {
   const surveyItems = SURVEY_META.filter((item) => {
     if (item.key !== 'baby') return true;
-    return state.selectedProduct?.g === 'prof' || state.selectedProduct?.g === 'stud';
+    return state.selectedProduct?.g === 'prof' || state.selectedProduct?.g === 'stud' || state.selectedProduct?.g === 'snap';
   });
   els.surveyGrid.innerHTML = surveyItems.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
@@ -1008,6 +1008,12 @@ function getPeopleCount() {
     : Number(els.generalPeople.value || 1);
 }
 
+function getDefaultPeopleForProduct(product) {
+  if (!product) return 1;
+  if (product.g === 'stud' || product.g === 'snap') return 2;
+  return 1;
+}
+
 function getPeopleOptionLabel(count, product) {
   const copy = getCopy();
   const baseLabel = state.lang === 'en'
@@ -1035,7 +1041,8 @@ function getPassAddonPeopleLabel(count) {
 
 function renderPeopleOptions() {
   const product = state.selectedProduct;
-  const generalValue = String(els.generalPeople?.value || '1');
+  const generalDefault = String(getDefaultPeopleForProduct(product));
+  const generalValue = String(els.generalPeople?.value || generalDefault);
   const passportValue = String(els.passportPeople?.value || '1');
   const addonValue = String(els.passAddonPeople?.value || '1');
 
@@ -1083,6 +1090,13 @@ function getPeoplePricingNote(product, people) {
         : state.lang === 'de'
           ? 'Der Grundpreis gilt für 2 Personen. 1 Person: -€30, ab 3 Personen: +€30 pro Person.'
           : '기본가는 2인 기준입니다. 1인은 -€30, 3인부터 1인당 €30가 추가됩니다.';
+    }
+    if (people === 1) {
+      return state.lang === 'en'
+        ? 'Solo outdoor booking discount -€30 applied.'
+        : state.lang === 'de'
+          ? 'Outdoor-Einzelbuchung: Rabatt -30€ angewendet.'
+          : '야외스냅 1인 할인 -€30이 적용되었습니다.';
     }
     const extra = (people - 2) * 30;
     return state.lang === 'en'
@@ -1266,7 +1280,7 @@ async function selectProduct(productId) {
   state.babyType = 'baekil';
   state.bgColors = [];
   els.form.reset();
-  els.generalPeople.value = '1';
+  els.generalPeople.value = String(getDefaultPeopleForProduct(state.selectedProduct));
   els.passportPeople.value = '1';
   renderPeopleOptions();
   els.submitBtn.disabled = true;
@@ -1387,13 +1401,20 @@ async function refreshQuote() {
 }
 
 async function handleQuoteInputChange() {
-  clearCalendarSelection();
+  const prevDuration = getCalendarDuration();
   await refreshQuote();
-  if (state.selectedProduct) {
+  const nextDuration = getCalendarDuration();
+  const shouldReloadCalendar = !state.selectedDate || prevDuration !== nextDuration;
+  if (shouldReloadCalendar) clearCalendarSelection();
+  if (state.selectedProduct && shouldReloadCalendar) {
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
   }
+}
+
+async function handleMarketingChange() {
+  await refreshQuote();
 }
 
 function renderPassportCountries() {
