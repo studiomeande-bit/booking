@@ -459,12 +459,25 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const m=d.getMonth();
   const key=`${y}_${m}`;
   const out={};
-  out[key]=getUnavailableDays(y,m,totalDur,itemGroup,true);
+  out[key]=getPublicCalendarMonthLite_(y,m,itemGroup);
   return out;
 }
 
 function getPublicSlots_(dateStr,totalDur,itemGroup){
   return getAvailableSlots(dateStr,totalDur,itemGroup);
+}
+
+function getPublicCalendarMonthLite_(year,month,itemGroup){
+  const unavail=[],slotCounts={},slotsByDate={};
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const now=new Date().getTime();
+  for(let d=1;d<=daysInMonth;d++){
+    const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
+    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){
+      unavail.push(dStr);
+    }
+  }
+  return {unavail,slotCounts,slotsByDate};
 }
 
 function getInitDataAdmin(token){assertAdmin_(token);const d=getInitDataCustomer();return{dashboard:getDashboardData_(),products:d.products,settings:d.settings};}
