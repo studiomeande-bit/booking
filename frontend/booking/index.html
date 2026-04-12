@@ -24,8 +24,16 @@
 
     <section class="panel" id="stepPanel1">
       <div class="panel-head">
-        <h2>1. 상품 선택</h2>
-        <p id="productHelp">상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.</p>
+        <h2>1. 촬영 종류 선택</h2>
+        <p id="groupHelp">먼저 큰 카테고리를 선택해 주세요.</p>
+      </div>
+      <div id="groupGrid" class="group-grid"></div>
+    </section>
+
+    <section class="panel hidden-step" id="stepPanel2">
+      <div class="panel-head">
+        <h2>2. 세부 상품 선택</h2>
+        <p id="productHelp">세부 패키지와 추가 설정을 선택합니다.</p>
       </div>
       <div id="productGrid" class="product-grid"></div>
       <div id="passportPanel" class="detail-box hidden">
@@ -89,9 +97,9 @@
       <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
     </section>
 
-    <section class="panel hidden-step" id="stepPanel2">
+    <section class="panel hidden-step" id="stepPanel3">
       <div class="panel-head">
-        <h2>2. 날짜 선택</h2>
+        <h2>3. 날짜 선택</h2>
         <p id="calendarHint">상품을 먼저 선택하세요.</p>
       </div>
       <div class="calendar-toolbar">
@@ -103,17 +111,17 @@
       <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
     </section>
 
-    <section class="panel hidden-step" id="stepPanel3">
+    <section class="panel hidden-step" id="stepPanel4">
       <div class="panel-head">
-        <h2>3. 시간 선택</h2>
+        <h2>4. 시간 선택</h2>
         <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
       </div>
       <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
     </section>
 
-    <section class="panel hidden-step" id="stepPanel4">
+    <section class="panel hidden-step" id="stepPanel5">
       <div class="panel-head">
-        <h2>4. 예약 정보</h2>
+        <h2>5. 예약 정보</h2>
         <p id="formHelp">기본 예약 정보를 입력한 뒤 제출합니다.</p>
       </div>
       <div id="reviewBox" class="detail-box empty-state">상품, 날짜, 시간이 선택되면 예약 요약이 표시됩니다.</div>

@@ -66,6 +66,7 @@ const SURVEY_META = [
 const COPY = {
   ko: {
     hero: '이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 기존 예약 UX를 순차적으로 이식합니다.',
+    groupHelp: '먼저 촬영 종류를 선택해 주세요.',
     initSuccess: '상품 데이터를 불러왔습니다. 원하는 상품을 선택해 주세요.',
     loadCalendar: '달력을 불러오는 중입니다.',
     calendarLoaded: '달력 데이터를 불러왔습니다.',
@@ -101,6 +102,7 @@ const COPY = {
   },
   en: {
     hero: 'This Netlify frontend is now connected to the booking API. In this phase we are rebuilding the original reservation UX step by step.',
+    groupHelp: 'Choose the main category first.',
     initSuccess: 'Products loaded. Please choose a package.',
     loadCalendar: 'Loading the calendar.',
     calendarLoaded: 'Calendar data loaded.',
@@ -136,6 +138,7 @@ const COPY = {
   },
   de: {
     hero: 'Dieses Netlify-Frontend ist jetzt mit der Buchungs-API verbunden. In dieser Phase bauen wir die ursprüngliche Buchungs-UX Schritt für Schritt nach.',
+    groupHelp: 'Wählen Sie zuerst die Hauptkategorie.',
     initSuccess: 'Produkte geladen. Bitte wählen Sie ein Paket.',
     loadCalendar: 'Kalender wird geladen.',
     calendarLoaded: 'Kalenderdaten geladen.',
@@ -174,6 +177,7 @@ const COPY = {
 const state = {
   init: null,
   lang: 'ko',
+  selectedGroup: '',
   selectedProduct: null,
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
@@ -193,6 +197,8 @@ const state = {
 const els = {
   banner: document.getElementById('statusBanner'),
   heroLead: document.getElementById('heroLead'),
+  groupHelp: document.getElementById('groupHelp'),
+  groupGrid: document.getElementById('groupGrid'),
   productHelp: document.getElementById('productHelp'),
   productGrid: document.getElementById('productGrid'),
   productDetail: document.getElementById('productDetail'),
@@ -237,7 +243,8 @@ const els = {
   stepPanels: {
     step2: document.getElementById('stepPanel2'),
     step3: document.getElementById('stepPanel3'),
-    step4: document.getElementById('stepPanel4')
+    step4: document.getElementById('stepPanel4'),
+    step5: document.getElementById('stepPanel5')
   }
 };
 
@@ -249,7 +256,8 @@ async function boot() {
   try {
     const initData = await fetchInitData();
     state.init = initData;
-    renderProducts(initData.products || []);
+    renderGroups();
+    renderProducts([]);
     renderPassportCountries();
     renderSurveyChips();
     renderProductDetail();
@@ -280,7 +288,8 @@ function wireEvents() {
       state.lang = button.dataset.lang;
       els.langButtons.forEach((item) => item.classList.toggle('active', item === button));
       applyCopy();
-      renderProducts(state.init?.products || []);
+      renderGroups();
+      renderProducts((state.init?.products || []).filter((item) => !state.selectedGroup || item.g === state.selectedGroup));
       renderPassportCountries();
       renderSurveyChips();
       renderGeneralPanel();
@@ -300,6 +309,7 @@ function getCopy() {
 function applyCopy() {
   const copy = getCopy();
   els.heroLead.textContent = copy.hero;
+  if (els.groupHelp) els.groupHelp.textContent = copy.groupHelp;
   els.productHelp.textContent = copy.productHelp;
   els.formHelp.textContent = copy.formHelp;
   els.passportHint.textContent = copy.passportHint;
@@ -317,6 +327,30 @@ function applyCopy() {
   renderWeekdayHeader();
 }
 
+function renderGroups() {
+  const groups = Object.keys(GROUP_META);
+  els.groupGrid.innerHTML = groups.map((groupKey) => {
+    const meta = GROUP_META[groupKey];
+    const label = meta.label[state.lang] || meta.label.ko;
+    const sub = state.lang === 'en'
+      ? 'Choose category'
+      : state.lang === 'de'
+        ? 'Kategorie wählen'
+        : '카테고리 선택';
+    const selected = state.selectedGroup === groupKey ? ' selected' : '';
+    return `
+      <button type="button" class="group-card${selected}" data-group="${escapeHtml(groupKey)}">
+        <div class="group-card-icon">${meta.icon}</div>
+        <div class="group-card-title">${escapeHtml(label)}</div>
+        <div class="group-card-sub">${escapeHtml(sub)}</div>
+      </button>
+    `;
+  }).join('');
+  els.groupGrid.querySelectorAll('[data-group]').forEach((button) => {
+    button.addEventListener('click', () => selectGroup(button.dataset.group));
+  });
+}
+
 function renderWeekdayHeader() {
   const labels = state.lang === 'en'
     ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -327,12 +361,14 @@ function renderWeekdayHeader() {
 }
 
 function syncStepPanels() {
+  const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
   const hasDate = !!state.selectedDate;
   const hasSlot = !!state.selectedSlot;
-  els.stepPanels.step2.classList.toggle('hidden-step', !hasProduct);
-  els.stepPanels.step3.classList.toggle('hidden-step', !hasDate);
-  els.stepPanels.step4.classList.toggle('hidden-step', !hasSlot);
+  els.stepPanels.step2.classList.toggle('hidden-step', !hasGroup);
+  els.stepPanels.step3.classList.toggle('hidden-step', !hasProduct);
+  els.stepPanels.step4.classList.toggle('hidden-step', !hasDate);
+  els.stepPanels.step5.classList.toggle('hidden-step', !hasSlot);
 }
 
 function renderSurveyChips() {
@@ -746,39 +782,58 @@ function getAppliedDiscountNote() {
 }
 
 function renderProducts(products) {
-  const groups = [];
-  const seen = new Set();
-  (products || []).forEach((product) => {
-    if (!seen.has(product.g)) {
-      seen.add(product.g);
-      groups.push(product.g);
-    }
-  });
-  els.productGrid.innerHTML = groups.map((groupKey) => {
-    const meta = GROUP_META[groupKey] || { icon: '📷', label: { ko: groupKey, en: groupKey, de: groupKey } };
-    const groupLabel = meta.label[state.lang] || meta.label.ko;
-    const cards = products.filter((product) => product.g === groupKey).map((product) => {
-      const duration = Number(product.d || 0);
-      const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
-      return `
-        <button type="button" class="product-card${selected}" data-id="${escapeHtml(product.id)}">
-          <h3>${escapeHtml(getProductLabel(product))}</h3>
-          <div class="product-meta">
-            <div>${escapeHtml(product.nameEn || '')}</div>
-            <div>€${escapeHtml(product.p)} · 촬영 ${escapeHtml(duration)}분</div>
-          </div>
-        </button>
-      `;
-    }).join('');
-    return `<div class="product-group-title">${meta.icon} ${escapeHtml(groupLabel)}</div>${cards}`;
+  const cards = (products || []).map((product) => {
+    const duration = Number(product.d || 0);
+    const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
+    return `
+      <button type="button" class="product-card${selected}" data-id="${escapeHtml(product.id)}">
+        <h3>${escapeHtml(getProductLabel(product))}</h3>
+        <div class="product-meta">
+          <div>${escapeHtml(product.nameEn || '')}</div>
+          <div>€${escapeHtml(product.p)} · 촬영 ${escapeHtml(duration)}분</div>
+        </div>
+      </button>
+    `;
   }).join('');
+  els.productGrid.innerHTML = cards || '<div class="empty-state">카테고리를 먼저 선택해 주세요.</div>';
   els.productGrid.querySelectorAll('.product-card').forEach((button) => {
     button.addEventListener('click', () => selectProduct(button.dataset.id));
   });
 }
 
+function selectGroup(groupKey) {
+  state.selectedGroup = groupKey;
+  state.selectedProduct = null;
+  state.selectedDate = '';
+  state.selectedSlot = '';
+  state.quote = null;
+  state.selectedCountries = [];
+  state.optionKeys = [];
+  state.surveyKeys = [];
+  state.ageGroup = 'adult';
+  state.babyType = 'baekil';
+  state.bgColors = [];
+  els.form.reset();
+  els.generalPeople.value = '1';
+  els.passportPeople.value = '1';
+  els.submitBtn.disabled = true;
+  renderGroups();
+  renderProducts((state.init?.products || []).filter((item) => item.g === groupKey));
+  renderPassportPanel();
+  renderSurveyChips();
+  renderAgeChips();
+  renderBabyTypeChips();
+  renderBgChips();
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
+  clearCalendarSelection();
+  syncStepPanels();
+}
+
 async function selectProduct(productId) {
   state.selectedProduct = (state.init?.products || []).find((item) => item.id === productId) || null;
+  state.selectedGroup = state.selectedProduct?.g || state.selectedGroup;
   state.selectedDate = '';
   state.selectedSlot = '';
   state.quote = null;
@@ -794,7 +849,8 @@ async function selectProduct(productId) {
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
   els.submitBtn.disabled = true;
-  renderProducts(state.init?.products || []);
+  renderGroups();
+  renderProducts((state.init?.products || []).filter((item) => item.g === state.selectedGroup));
   renderPassportPanel();
   renderSurveyChips();
   renderAgeChips();
