@@ -228,7 +228,12 @@ const els = {
   resultBox: document.getElementById('resultBox'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
-  langButtons: Array.from(document.querySelectorAll('.lang-btn'))
+  langButtons: Array.from(document.querySelectorAll('.lang-btn')),
+  stepPanels: {
+    step2: document.getElementById('stepPanel2'),
+    step3: document.getElementById('stepPanel3'),
+    step4: document.getElementById('stepPanel4')
+  }
 };
 
 boot();
@@ -244,6 +249,7 @@ async function boot() {
     renderSurveyChips();
     renderProductDetail();
     renderReview();
+    syncStepPanels();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
@@ -296,6 +302,15 @@ function applyCopy() {
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
+}
+
+function syncStepPanels() {
+  const hasProduct = !!state.selectedProduct;
+  const hasDate = !!state.selectedDate;
+  const hasSlot = !!state.selectedSlot;
+  els.stepPanels.step2.classList.toggle('hidden-step', !hasProduct);
+  els.stepPanels.step3.classList.toggle('hidden-step', !hasDate);
+  els.stepPanels.step4.classList.toggle('hidden-step', !hasSlot);
 }
 
 function renderSurveyChips() {
@@ -484,6 +499,7 @@ async function selectProduct(productId) {
   renderBabyTypeChips();
   renderBgChips();
   renderGeneralPanel();
+  syncStepPanels();
   await refreshQuote();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getDisplayDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
@@ -693,6 +709,7 @@ function selectDate(dateKey) {
   els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
   renderSlots(slots);
   renderReview();
+  syncStepPanels();
 }
 
 function renderSlots(slots) {
@@ -711,6 +728,7 @@ function renderSlots(slots) {
       els.slotGrid.querySelectorAll('.slot-btn').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
       updateSubmitState();
       renderReview();
+      syncStepPanels();
     });
   });
   updateSubmitState();
@@ -796,6 +814,7 @@ function clearCalendarSelection() {
   els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotHintEmpty}</div>`;
   els.slotHint.textContent = getCopy().slotHintEmpty;
   updateSubmitState();
+  syncStepPanels();
 }
 
 function changeMonth(offset) {

@@ -1261,7 +1261,10 @@ function processForm(data){
     const locationLabel=data.location?`[촬영장소:${data.location}]`:'';
     const memo=(babyTypeLabel?'['+babyTypeLabel+'] ':'')+(bgColorLabel?bgColorLabel+' ':'')+(passAddonLabel?passAddonLabel+' ':'')+(locationLabel?locationLabel+' ':'')+String(data.memo||'').trim();
     const priceLabel=quote.itemGroup==='biz'?'견적필요':quote.totalPrice+'€';
-    const event=calendar.createEvent(`${koName} | ${data.name} | ${quote.people}인 | ${priceLabel}`,startTime,endTime,{description:buildCalendarDescription_(data,quote,surveyStr,memo),location:'Holzweg-passage 3, 61440 Oberursel'});
+    const calendarLocation=(quote.itemGroup==='snap'||quote.itemGroup==='wed')&&String(data.location||'').trim()
+      ? String(data.location).trim()
+      : 'Holzweg-passage 3, 61440 Oberursel';
+    const event=calendar.createEvent(`${koName} | ${data.name} | ${quote.people}인 | ${priceLabel}`,startTime,endTime,{description:buildCalendarDescription_(data,quote,surveyStr,memo),location:calendarLocation});
     const gdprStr=data.gdprConsent?'Y':'N';
     const marketingStr=data.marketing?'Y':'N';
     const aiConsentStr=data.aiConsent?'Y':'N';

@@ -22,7 +22,7 @@
       <div id="statusBanner" class="banner loading">초기 데이터를 불러오는 중입니다.</div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="stepPanel1">
       <div class="panel-head">
         <h2>1. 상품 선택</h2>
         <p id="productHelp">상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.</p>
@@ -75,7 +75,7 @@
       <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
     </section>
 
-    <section class="panel">
+    <section class="panel hidden-step" id="stepPanel2">
       <div class="panel-head">
         <h2>2. 날짜 선택</h2>
         <p id="calendarHint">상품을 먼저 선택하세요.</p>
@@ -88,7 +88,7 @@
       <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
     </section>
 
-    <section class="panel">
+    <section class="panel hidden-step" id="stepPanel3">
       <div class="panel-head">
         <h2>3. 시간 선택</h2>
         <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
@@ -96,7 +96,7 @@
       <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
     </section>
 
-    <section class="panel">
+    <section class="panel hidden-step" id="stepPanel4">
       <div class="panel-head">
         <h2>4. 예약 정보</h2>
         <p id="formHelp">기본 예약 정보를 입력한 뒤 제출합니다.</p>
