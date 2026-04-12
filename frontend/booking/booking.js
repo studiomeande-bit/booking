@@ -203,6 +203,7 @@ const els = {
   generalPanel: document.getElementById('generalPanel'),
   ageField: document.getElementById('ageField'),
   ageGrid: document.getElementById('ageGrid'),
+  seniorWarning: document.getElementById('seniorWarning'),
   babyTypeField: document.getElementById('babyTypeField'),
   babyTypeGrid: document.getElementById('babyTypeGrid'),
   peopleField: document.getElementById('peopleField'),
@@ -391,9 +392,35 @@ function renderAgeChips() {
       if (state.ageGroup !== 'baby') state.babyType = 'baekil';
       renderAgeChips();
       renderBabyTypeChips();
+      renderSeniorWarning();
       handleQuoteInputChange();
     });
   });
+  renderSeniorWarning();
+}
+
+function renderSeniorWarning() {
+  if (!els.seniorWarning) return;
+  const product = state.selectedProduct;
+  const show = product?.id === 'pb' && state.ageGroup === 'senior' && !!state.selectedDate;
+  if (!show) {
+    els.seniorWarning.style.display = 'none';
+    els.seniorWarning.textContent = '';
+    return;
+  }
+  const d = new Date(`${state.selectedDate}T12:00:00`);
+  const day = d.getDay();
+  if (day >= 2 && day <= 5) {
+    els.seniorWarning.style.display = 'none';
+    els.seniorWarning.textContent = '';
+    return;
+  }
+  els.seniorWarning.style.display = 'block';
+  els.seniorWarning.textContent = state.lang === 'en'
+    ? 'The senior solo profile free benefit is only available on weekdays (Tue-Fri). A regular rate applies for weekend bookings.'
+    : state.lang === 'de'
+      ? 'Das kostenlose Senior-Profil gilt nur an Wochentagen (Di-Fr). Für Wochenenden gilt der reguläre Preis.'
+      : '시니어 단독 프로필 무료 혜택은 평일(화-금)에만 제공됩니다.\n주말로 예약하실 경우 정상가가 적용됩니다.';
 }
 
 function getPreviewQuote() {
@@ -662,6 +689,62 @@ function getProductPolicyNote(product) {
   return '';
 }
 
+function getAppliedDiscountNote() {
+  const item = state.selectedProduct;
+  if (!item || !state.quote) return '';
+  if (item.g === 'prof') {
+    if (state.ageGroup === 'kids') {
+      return state.lang === 'en'
+        ? 'Kids discount -€10 applied.'
+        : state.lang === 'de'
+          ? 'Kinderrabatt -10€ angewendet.'
+          : '키즈 할인 -€10이 적용되었습니다.';
+    }
+    if (state.ageGroup === 'senior' && state.selectedDate) {
+      const d = new Date(`${state.selectedDate}T12:00:00`);
+      const day = d.getDay();
+      const isWd = day >= 2 && day <= 5;
+      const isSat = day === 6;
+      if (item.id === 'pb' && isWd && state.quote.totalPrice === 0) {
+        return state.lang === 'en'
+          ? 'Senior weekday free benefit applied.'
+          : state.lang === 'de'
+            ? 'Senioren-Vorteil werktags kostenlos angewendet.'
+            : '시니어 평일 무료 혜택이 적용되었습니다.';
+      }
+      if ((item.id === 'pbus' || item.id === 'pp') && isWd) {
+        return state.lang === 'en'
+          ? 'Senior weekday discount -€50 applied.'
+          : state.lang === 'de'
+            ? 'Seniorenrabatt werktags -50€ angewendet.'
+            : '시니어 평일 할인 -€50이 적용되었습니다.';
+      }
+      if (item.id === 'pp' && isSat) {
+        return state.lang === 'en'
+          ? 'Senior Saturday discount -€30 applied.'
+          : state.lang === 'de'
+            ? 'Seniorenrabatt Samstag -30€ angewendet.'
+            : '시니어 토요일 할인 -€30이 적용되었습니다.';
+      }
+    }
+  }
+  if (item.t === 'snap' && getPeopleCount() === 1) {
+    return state.lang === 'en'
+      ? 'Solo outdoor discount -€30 applied.'
+      : state.lang === 'de'
+        ? 'Solo-Outdoor-Rabatt -30€ angewendet.'
+        : '야외 1인 촬영 할인 -€30이 적용되었습니다.';
+  }
+  if (item.g === 'wed' && (els.form.elements.marketing?.checked || false)) {
+    return state.lang === 'en'
+      ? 'Marketing consent discount -€50 applied.'
+      : state.lang === 'de'
+        ? 'Rabatt für Marketing-Einwilligung -50€ angewendet.'
+        : '마케팅 동의 할인 -€50이 적용되었습니다.';
+  }
+  return '';
+}
+
 function renderProducts(products) {
   const groups = [];
   const seen = new Set();
@@ -860,6 +943,7 @@ function renderProductDetail() {
       <div class="price-hero-value">€${price}</div>
       <div class="price-hero-copy">촬영 약 ${getShootDuration()}분</div>
     </div>
+    ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
     ${getPeoplePricingNote(state.selectedProduct, getPeopleCount()) ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getPeoplePricingNote(state.selectedProduct, getPeopleCount()))}</div>` : ''}
   `;
@@ -930,6 +1014,7 @@ async function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.selectedSlot = '';
   await refreshQuote();
+  renderSeniorWarning();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
   const slots = state.slotCache.get(slotKey) || [];
