@@ -470,6 +470,7 @@ const state = {
   returnNoticeTimer: null,
   returnNoticeToken: 0,
   quoteToken: 0,
+  slotRequestToken: 0,
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -577,11 +578,11 @@ function wireEvents() {
   els.wizardButtons.step2Back?.addEventListener('click', () => goToStep(1));
   els.wizardButtons.step2Next?.addEventListener('click', async () => {
     if (!state.selectedProduct || getMaxUnlockedStep() < 3) return;
+    goToStep(3);
     await refreshQuote();
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
-    goToStep(3);
   });
   els.wizardButtons.step3Back?.addEventListener('click', () => goToStep(2));
   els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(5));
@@ -1841,19 +1842,27 @@ function renderCalendar(data) {
 }
 
 async function selectDate(dateKey) {
+  const token = ++state.slotRequestToken;
   state.selectedDate = dateKey;
   state.activeStep = 3;
   state.selectedSlot = '';
-  renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${getCalendarDuration()}`));
-  const slotKey = `${dateKey}_${state.selectedProduct.g}_${getCalendarDuration()}`;
+  await refreshQuote();
+  if (token !== state.slotRequestToken) return;
+  renderSeniorWarning();
+  const duration = getCalendarDuration();
+  renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
+  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
   let slots = state.slotCache.get(slotKey) || [];
   if (!slots.length) {
     els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
-    renderSlots([]);
+    els.slotGrid.classList.add('empty-state');
+    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
     try {
-      slots = await fetchSlots({ date: dateKey, totalDur: getCalendarDuration(), itemGroup: state.selectedProduct.g });
+      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
+      if (token !== state.slotRequestToken) return;
       state.slotCache.set(slotKey, slots);
     } catch (error) {
+      if (token !== state.slotRequestToken) return;
       console.error(error);
       els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
       renderSlots([]);
@@ -1865,18 +1874,6 @@ async function selectDate(dateKey) {
   renderReview();
   syncStepPanels();
   goToStep(3);
-  const previousDuration = getCalendarDuration();
-  await refreshQuote();
-  renderSeniorWarning();
-  const nextDuration = getCalendarDuration();
-  if (previousDuration !== nextDuration) {
-    await loadCalendar();
-    renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${nextDuration}`));
-    const nextSlotKey = `${dateKey}_${state.selectedProduct.g}_${nextDuration}`;
-    renderSlots(state.slotCache.get(nextSlotKey) || []);
-  } else {
-    renderReview();
-  }
 }
 
 function renderSlots(slots) {
