@@ -507,6 +507,8 @@ function calculateQuote_(request){
 function checkReturnCustomer_(name,phone,email){
   const sh=getDbSheet(),data=sh.getDataRange().getValues().slice(1);
   const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const now=new Date().getTime();
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
   const cleanPhone=String(phone||'').replace(/[\s\-\(\)]/g,'');
   const cleanName=String(name||'').trim().toLowerCase();
   const cleanEmail=String(email||'').trim().toLowerCase();
@@ -514,7 +516,19 @@ function checkReturnCustomer_(name,phone,email){
     if(!row[0]) return false;
     const rowDate=parseDateSafe_(row[0]).str.slice(0,10);
     if(rowDate!==todayStr) return false;
-    return String(row[2]||'').trim().toLowerCase()===cleanName&&String(row[3]||'').replace(/[\s\-\(\)]/g,'')===cleanPhone&&String(row[4]||'').trim().toLowerCase()===cleanEmail&&String(row[1])!=='취소됨';
+    if(String(row[2]||'').trim().toLowerCase()!==cleanName) return false;
+    if(String(row[3]||'').replace(/[\s\-\(\)]/g,'')!==cleanPhone) return false;
+    if(String(row[4]||'').trim().toLowerCase()!==cleanEmail) return false;
+    if(String(row[1])==='취소됨') return false;
+    const eventId=String(row[16]||'').trim();
+    if(eventId){
+      try{
+        const ev=calendar.getEventById(eventId);
+        if(ev) return ev.getEndTime().getTime()<=now;
+      }catch(err){}
+    }
+    const fallbackDate=parseDateSafe_(row[0]).obj;
+    return fallbackDate && fallbackDate.getTime()<=now;
   });
 }
 

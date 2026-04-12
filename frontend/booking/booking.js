@@ -665,10 +665,10 @@ function renderReturnNotice() {
     return;
   }
   box.textContent = state.lang === 'en'
-    ? 'If you already have a booking today, the return-customer discount is applied automatically when eligible.'
+    ? 'If you book again after finishing today’s shoot, the return-customer discount is applied automatically when eligible.'
     : state.lang === 'de'
-      ? 'Wenn Sie heute bereits eine Buchung haben, wird der Stammkundenrabatt bei Berechtigung automatisch angewendet.'
-      : '오늘 이미 예약이 있는 경우, 재방문 할인 대상이면 자동으로 적용됩니다.';
+      ? 'Wenn Sie nach dem heutigen Shooting erneut buchen, wird der Stammkundenrabatt bei Berechtigung automatisch angewendet.'
+      : '오늘 촬영을 마친 뒤 같은 날 재예약하는 경우, 재방문 할인 대상이면 자동으로 적용됩니다.';
 }
 
 function renderGroups() {
