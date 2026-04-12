@@ -533,6 +533,7 @@ const els = {
   submitBtn: document.getElementById('submitBtn'),
   resultBox: document.getElementById('resultBox'),
   successPanel: document.getElementById('successPanel'),
+  loadingScreen: document.getElementById('loadingScreen'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
   langButtons: Array.from(document.querySelectorAll('.lang-btn')),
@@ -571,7 +572,16 @@ async function boot() {
   } catch (error) {
     console.error(error);
     setBanner(`초기화 실패: ${error.message}`, 'error');
+  } finally {
+    hideLoadingScreen();
   }
+}
+
+function hideLoadingScreen() {
+  if (!els.loadingScreen) return;
+  window.setTimeout(() => {
+    els.loadingScreen.classList.add('is-hidden');
+  }, 180);
 }
 
 function wireEvents() {
@@ -2343,10 +2353,165 @@ function resetBookingFlow() {
   els.stepPanels.step1?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function getSuccessGuideHtml(payload) {
+  const product = state.selectedProduct;
+  if (!product) return '';
+  const isKo = state.lang === 'ko';
+  const hasBabyBirthday = payload.surveyKeys?.includes('baby') || payload.babyType === 'baekil' || payload.babyType === 'dol';
+  const sections = [];
+
+  if (product.g === 'pass') {
+    sections.push(`
+      <section class="result-guide-box">
+        <h4 class="result-guide-title">${isKo ? '[예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영' : 'Passport / Visa Shoot Guide'}</h4>
+        <div class="result-guide-body">
+          ${isKo ? `
+            <p>고객님, 예약을 환영합니다. 독일의 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.</p>
+            <h5>⚠️ [필독] 눈썹 노출 및 반려 주의</h5>
+            <ul>
+              <li>눈썹 전체가 보여야 합니다. 앞머리가 눈썹을 조금이라도 가리면 반려될 확률이 매우 높습니다.</li>
+              <li>귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.</li>
+            </ul>
+            <h5>📋 촬영 전 체크리스트</h5>
+            <ul>
+              <li>흰색 상의나 연한 파스텔톤은 피하고, 진한 계열 상의를 추천드립니다.</li>
+              <li>안경은 렌즈 반사나 테가 눈을 가릴 수 있어 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.</li>
+              <li>입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.</li>
+            </ul>
+            <h5>✅ 유효기간 및 규격</h5>
+            <ul>
+              <li>촬영일로부터 6개월 사용 가능합니다.</li>
+              <li>사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.</li>
+            </ul>
+            <h5>👶 영유아 촬영 시</h5>
+            <ul>
+              <li>아기를 눕힌 상태에서 촬영하며, 눈은 떠 있어야 하고 손이나 그림자가 얼굴을 가리면 안 됩니다.</li>
+              <li>보호자 손, 옷, 그림자는 사진에 보이면 안 되며 흰색 의상은 피해주세요.</li>
+              <li>안경, 모자, 머리띠는 착용할 수 없습니다.</li>
+            </ul>
+          ` : `
+            <p>Please review the biometric passport / visa photo requirements before your visit.</p>
+            <ul>
+              <li>Keep eyebrows fully visible and avoid reflective glasses.</li>
+              <li>Neutral expression, closed mouth, and clear lenses only.</li>
+              <li>Infants are photographed lying down and no caregiver hands or shadows may appear.</li>
+            </ul>
+          `}
+        </div>
+      </section>
+    `);
+  }
+
+  if (product.g === 'wed') {
+    sections.push(`
+      <section class="result-guide-box">
+        <h4 class="result-guide-title">${isKo ? '프리웨딩 촬영 전 안내사항 (예약 확정 후)' : 'Pre-Wedding Preparation Guide'}</h4>
+        <div class="result-guide-body">
+          ${isKo ? `
+            <h5>1) 촬영 목적/무드 사전 공유</h5>
+            <p>원하시는 분위기와 사용 목적에 따라 촬영 구도와 보정 톤이 달라집니다. 레퍼런스 사진 1~5장이나 선호하는 색감이 있다면 미리 공유해 주세요.</p>
+            <h5>2) 일정/로케이션(동선) 확인</h5>
+            <ul>
+              <li>촬영 날짜, 시작/종료 시간</li>
+              <li>장소명과 이동 동선</li>
+              <li>우천·강풍 시 대체 장소 여부</li>
+            </ul>
+            <p>야외 촬영은 보통 해 질 무렵 골든아워 시간대 결과가 가장 좋습니다.</p>
+            <h5>3) 복장 가이드</h5>
+            <ul>
+              <li>크림/베이지/화이트 또는 네이비/블랙처럼 톤을 맞추면 훨씬 고급스럽게 보입니다.</li>
+              <li>큰 로고, 강한 패턴, 잔줄무늬는 피해주세요.</li>
+              <li>가능하다면 포멀 1벌 + 캐주얼 1벌처럼 2벌 구성을 추천드립니다.</li>
+            </ul>
+            <h5>4) 준비물 체크리스트</h5>
+            <ul>
+              <li>신부: 누브라/테이프, 누드톤 속옷, 여분 스타킹</li>
+              <li>신랑: 검정/네이비 양말, 벨트, 가능 시 셔츠 여분</li>
+              <li>이동용 편한 신발, 물, 간단 간식, 부케/반지/청첩장 같은 소품</li>
+            </ul>
+            <h5>5) 헤어·메이크업 안내</h5>
+            <p>야외 촬영은 바람과 습기 영향이 있으니 헤어 스프레이, 핀, 수정 메이크업 용품을 함께 준비해 주세요. 원하시면 출장 헤어·메이크업 연결도 가능합니다.</p>
+            <h5>6) 도착 권장 시간</h5>
+            <p>촬영 시작 10~15분 전 도착을 권장드립니다. 지각 시 다음 일정에 따라 촬영 구성이 일부 조정될 수 있습니다.</p>
+            <h5>7) 촬영 진행 방식</h5>
+            <p>포즈, 표정, 시선은 모두 디렉션해 드리며, 핵심 컷부터 디테일 컷 순으로 자연스럽게 진행합니다.</p>
+            <h5>8) 결과물/보정 안내</h5>
+            <p>밝은 톤 또는 무드 톤으로 맞춤 보정해 드리며, 제공 장수와 원본 제공 여부는 예약하신 패키지 기준으로 진행됩니다.</p>
+          ` : `
+            <p>Please share references, outfit tones, and location flow before the shoot.</p>
+            <ul>
+              <li>1–5 reference images are helpful.</li>
+              <li>Two outfits are recommended.</li>
+              <li>Please arrive 10–15 minutes early.</li>
+            </ul>
+          `}
+        </div>
+      </section>
+    `);
+  }
+
+  if (hasBabyBirthday && (product.g === 'stud' || product.g === 'snap' || product.g === 'prof')) {
+    sections.push(`
+      <section class="result-guide-box">
+        <h4 class="result-guide-title">${isKo ? '🎂 돌상 무료 셋팅 안내' : 'Baby / Birthday Setup Guide'}</h4>
+        <div class="result-guide-body">
+          ${isKo ? `
+            <p>돌상은 기본 구성으로 무료 셋팅해 드립니다. 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.</p>
+            <h5>포함 항목</h5>
+            <ul>
+              <li>돌상 테이블 기본 구성 및 소품 연출</li>
+              <li>배경과 톤에 맞춘 기본 배치</li>
+            </ul>
+            <h5>준비해 오시면 좋은 항목</h5>
+            <ul>
+              <li>아기 한복/의상, 신발, 머리띠/헤어 소품</li>
+              <li>원하실 경우 떡, 케이크, 과일 같은 실제 음식</li>
+              <li>돌잡이 소품이나 의미 있는 개인 소품</li>
+            </ul>
+            <h5>사전 요청 및 유의사항</h5>
+            <ul>
+              <li>원하시는 스타일이 있다면 참고 이미지 1~3장을 미리 보내주세요.</li>
+              <li>특정 색감/테마가 있으면 예약 시 알려주시면 맞춰 준비합니다.</li>
+              <li>특수 테마, 대형 장식, 풍선/꽃장식, 맞춤 제작 소품은 추가 비용이 발생할 수 있습니다.</li>
+              <li>셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.</li>
+            </ul>
+          ` : `
+            <p>A simple birthday setup is included for baby / birthday sessions. Please share reference images in advance if you have a specific theme in mind.</p>
+          `}
+        </div>
+      </section>
+    `);
+  }
+
+  sections.push(`
+    <section class="result-guide-box">
+      <h4 class="result-guide-title">${isKo ? '오시는 길 / 주차 안내' : 'Arrival & Parking'}</h4>
+      <div class="result-guide-body">
+        ${isKo ? `
+          <p><b>주소:</b> Holzweg-passage 3, 61440 Oberursel<br><a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Google Maps 열기</a></p>
+          <p>도착하시면 2층에 스튜디오가 있습니다. <b>ALIN / Das Boots</b> 간판 밑 문으로 들어오셔서 계단을 올라오시면 됩니다. 찾기 어려우시면 연락 주세요.</p>
+          <p><b>주차 안내</b><br>전용 주차장은 없으며 주변 길가 또는 파크하우스를 이용해 주세요.</p>
+          <ul>
+            <li><a href="https://maps.app.goo.gl/6JTrYv5p7cSSy5oY7?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">City Parkhaus</a></li>
+            <li><a href="https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Parkhaus Altstadt</a></li>
+            <li><a href="https://maps.app.goo.gl/S7zA3hEstWqhGhkUA" target="_blank" rel="noreferrer">Rathausparkplatz</a></li>
+          </ul>
+        ` : `
+          <p>Holzweg-passage 3, 61440 Oberursel<br><a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Open in Google Maps</a></p>
+          <p>The studio is on the 2nd floor under the ALIN / Das Boots sign. There is no dedicated parking lot nearby.</p>
+        `}
+      </div>
+    </section>
+  `);
+
+  return `<div class="result-guide-stack">${sections.join('')}</div>`;
+}
+
 function renderSubmitResult(payload, result) {
   const copy = getCopy();
   const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
   const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
+  const successGuideHtml = getSuccessGuideHtml(payload);
   els.hero?.classList.add('hidden-step');
   Object.values(els.stepPanels).forEach((panel) => panel?.classList.add('hidden-step'));
   els.successPanel?.classList.remove('hidden-step');
@@ -2378,6 +2543,7 @@ function renderSubmitResult(payload, result) {
     </div>
     ${returnNote}
     <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
+    ${successGuideHtml}
     <div class="result-actions">
       <button type="button" id="resultResetBtn" class="result-action-btn">${escapeHtml(copy.submitCardAction)}</button>
     </div>

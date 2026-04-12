@@ -1,5 +1,5 @@
 :root {
-  --bg: #f7f2ea;
+  --bg: #f6f1e8;
   --paper: #fffdf9;
   --paper-strong: #ffffff;
   --line: #e4d9c7;
@@ -13,33 +13,104 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: "Avenir Next", "Noto Sans KR", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "Noto Sans KR", sans-serif;
   background:
     radial-gradient(circle at top left, rgba(238, 227, 209, 0.9), transparent 26%),
     linear-gradient(180deg, var(--bg) 0%, #fcfaf6 100%);
   color: var(--text);
   line-height: 1.55;
+  font-weight: 450;
 }
 .shell {
   width: min(980px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 72px;
 }
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(238, 227, 209, 0.95), transparent 26%),
+    rgba(252, 250, 246, 0.96);
+  z-index: 90;
+  transition: opacity .28s ease, visibility .28s ease;
+}
+.loading-screen.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.loading-card {
+  width: min(420px, 100%);
+  padding: 28px 24px;
+  border-radius: 28px;
+  background: rgba(255, 253, 249, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 40px rgba(45, 42, 38, 0.08);
+  text-align: center;
+}
+.brand-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.brand-lockup.centered {
+  align-items: center;
+}
+.brand-kicker {
+  font-size: 11px;
+  letter-spacing: .24em;
+  color: #90826f;
+}
+.brand-logo {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(28px, 4vw, 42px);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -.03em;
+  color: #2d2a26;
+}
+.brand-tagline {
+  color: #8a7b68;
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+.loading-copy {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.loading-dots {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #bba78c;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: .15s; }
+.loading-dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes pulse {
+  0%, 80%, 100% { opacity: .35; transform: scale(.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
 .hero {
   padding: 6px 2px 20px;
 }
 .hero-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-}
-.eyebrow {
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: .2em;
-  font-size: 11px;
-  color: #8c7f6d;
 }
 .lang-row {
   display: flex;
@@ -53,7 +124,7 @@ body {
   padding: 8px 12px;
   font: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 .lang-btn.active {
@@ -66,6 +137,7 @@ h1 {
   font-size: clamp(30px, 5vw, 44px);
   line-height: 1.02;
   letter-spacing: -.03em;
+  font-weight: 700;
 }
 .lede {
   width: min(640px, 100%);
@@ -107,7 +179,7 @@ h1 {
 }
 .wizard-progress {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 .wizard-actions {
@@ -119,6 +191,7 @@ h1 {
   margin: 0;
   font-size: 22px;
   letter-spacing: -.02em;
+  font-weight: 650;
 }
 .panel-head p {
   margin: 8px 0 0;
@@ -163,7 +236,7 @@ h1 {
 .group-card-title {
   margin-top: 10px;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: -.02em;
 }
 .group-card-sub {
@@ -176,7 +249,7 @@ h1 {
   grid-column: 1 / -1;
   margin: 10px 0 -2px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 650;
   color: #7a6855;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -205,6 +278,7 @@ h1 {
   margin: 0;
   font-size: 18px;
   line-height: 1.25;
+  font-weight: 650;
 }
 .product-badge {
   display: inline-flex;
@@ -215,7 +289,7 @@ h1 {
   background: #dc2626;
   color: #fff;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -248,7 +322,7 @@ h1 {
 }
 .detail-title {
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 650;
 }
 .detail-copy {
   margin: 8px 0 0;
@@ -260,7 +334,7 @@ h1 {
 .detail-price {
   margin-top: 12px;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 650;
 }
 .chip-grid {
   display: flex;
@@ -275,7 +349,7 @@ h1 {
   color: #52483d;
   padding: 11px 14px;
   font: inherit;
-  font-weight: 800;
+  font-weight: 600;
   font-size: 14px;
   cursor: pointer;
 }
@@ -296,7 +370,7 @@ h1 {
 .inline-field span,
 .checkbox-row span {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: #645c53;
 }
 .checkbox-row span {
@@ -357,7 +431,7 @@ h1 {
 }
 .slot-panel-title {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: #8a7f72;
@@ -367,7 +441,7 @@ h1 {
   border: 0;
   border-radius: 999px;
   padding: 12px 18px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   font-size: 14px;
 }
@@ -390,7 +464,7 @@ h1 {
 .calendar-weekday {
   text-align: center;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   color: #8a7f72;
   letter-spacing: .04em;
 }
@@ -408,7 +482,7 @@ h1 {
 .calendar-cell {
   display: grid;
   place-items: center;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   padding: 10px 4px;
 }
@@ -453,7 +527,7 @@ h1 {
 }
 .booking-form label span {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: #645c53;
 }
 .checkbox-row {
@@ -487,6 +561,7 @@ h1 {
   margin-bottom: 8px;
   font-size: 14px;
   color: #645c53;
+  font-weight: 600;
 }
 .survey-grid {
   display: grid;
@@ -500,7 +575,7 @@ h1 {
   color: #52483d;
   padding: 14px 16px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
   line-height: 1.45;
@@ -556,7 +631,7 @@ h1 {
 }
 .bg-rec-title {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   color: #6366f1;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -564,7 +639,7 @@ h1 {
 .bg-rec-outfits {
   margin-top: 8px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: #1e293b;
 }
 .bg-rec-desc {
@@ -594,11 +669,12 @@ h1 {
   opacity: .7;
   text-transform: uppercase;
   letter-spacing: .08em;
+  font-weight: 600;
 }
 .price-hero-value {
   margin-top: 6px;
   font-size: 34px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -.03em;
 }
 .price-hero-copy {
@@ -614,7 +690,7 @@ h1 {
 }
 .consent-title {
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 650;
 }
 .consent-copy {
   margin: 6px 0 12px;
@@ -652,7 +728,7 @@ h1 {
 .result-box h3 {
   margin: 0 0 8px;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 650;
 }
 .result-box p {
   margin: 0;
@@ -676,7 +752,7 @@ h1 {
 }
 .guide-title {
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 650;
   color: #645c53;
   margin-bottom: 8px;
   letter-spacing: .02em;
@@ -725,6 +801,47 @@ h1 {
   color: #1d4ed8;
   font-size: 13px;
   line-height: 1.65;
+}
+.result-guide-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.result-guide-box {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid #dfe9e2;
+  background: #fff;
+}
+.result-guide-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #2d2a26;
+}
+.result-guide-body {
+  color: #5d564f;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.result-guide-body h5 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  color: #2d2a26;
+}
+.result-guide-body p {
+  margin: 0 0 8px;
+}
+.result-guide-body ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.result-guide-body li + li {
+  margin-top: 4px;
+}
+.result-guide-body a {
+  color: #2563eb;
+  font-weight: 700;
 }
 .result-actions {
   margin-top: 16px;
@@ -805,6 +922,7 @@ h1 {
 @media (max-width: 480px) {
   .hero-top { flex-direction: column; gap: 10px; }
   .lang-row { justify-content: flex-start; }
+  .brand-logo { font-size: 32px; }
   .panel-head h2 { font-size: 19px; }
   .calendar-weekday { font-size: 11px; }
   .calendar-cell { min-height: 40px; font-size: 13px; }

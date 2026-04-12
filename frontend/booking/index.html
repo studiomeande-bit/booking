@@ -7,10 +7,26 @@
   <link rel="stylesheet" href="./booking.css">
 </head>
 <body>
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-card">
+      <div class="brand-lockup centered">
+        <div class="brand-kicker">STUDIO MEAN</div>
+        <div class="brand-logo">Studio_mean</div>
+        <div class="brand-tagline">make meaningful moments</div>
+      </div>
+      <div class="loading-copy">예약 페이지를 준비하고 있습니다.</div>
+      <div class="loading-dots" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
   <main class="shell">
     <section class="hero">
       <div class="hero-top">
-        <p class="eyebrow">Studio mean</p>
+        <div class="brand-lockup">
+          <div class="brand-kicker">STUDIO MEAN</div>
+          <div class="brand-logo">Studio_mean</div>
+        </div>
         <div class="lang-row">
           <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
           <button type="button" class="lang-btn" data-lang="en">EN</button>

@@ -135,3 +135,14 @@ Then continue from:
 
 - booking parity / end-to-end verification first
 - select parity second
+- 2026-04-13
+  - 예약 완료 화면에 상품별 상세 안내 추가
+    - 여권/비자 상세 안내
+    - 프리웨딩 상세 안내
+    - 돌상 무료 셋팅 안내
+    - 공통 오시는 길 / 주차 안내
+  - 예약 메일 안내문도 상세형으로 확장
+  - booking 프론트 디자인 정리
+    - Studio_mean 워드마크 추가
+    - 초기 로딩 오버레이 추가
+    - 덜 볼드한 타이포와 일관된 카드 스타일 적용
