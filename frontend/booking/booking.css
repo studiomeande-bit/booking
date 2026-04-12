@@ -659,6 +659,38 @@ h1 {
   color: #476253;
   line-height: 1.65;
 }
+.success-panel {
+  margin-top: 0;
+}
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.guide-box {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #fffdfa;
+}
+.guide-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #645c53;
+  margin-bottom: 8px;
+  letter-spacing: .02em;
+}
+.guide-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #6d655d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.guide-list li + li {
+  margin-top: 4px;
+}
 .result-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -753,6 +785,7 @@ h1 {
   .price-hero-value { font-size: 30px; }
   .chip-grid { display: grid; grid-template-columns: 1fr 1fr; }
   .chip-btn { width: 100%; text-align: center; padding: 12px 10px; font-size: 13px; }
+  .guide-grid { grid-template-columns: 1fr; }
   .result-grid { grid-template-columns: 1fr; }
   .result-actions { justify-content: stretch; }
   .result-action-btn { width: 100%; }

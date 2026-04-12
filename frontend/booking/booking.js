@@ -478,6 +478,8 @@ const state = {
 };
 
 const els = {
+  shell: document.querySelector('.shell'),
+  hero: document.querySelector('.hero'),
   banner: document.getElementById('statusBanner'),
   heroLead: document.getElementById('heroLead'),
   groupHelp: document.getElementById('groupHelp'),
@@ -530,6 +532,7 @@ const els = {
   babyNameField: document.getElementById('babyNameField'),
   submitBtn: document.getElementById('submitBtn'),
   resultBox: document.getElementById('resultBox'),
+  successPanel: document.getElementById('successPanel'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
   langButtons: Array.from(document.querySelectorAll('.lang-btn')),
@@ -1436,6 +1439,62 @@ function getProductPolicyNote(product) {
   return '';
 }
 
+function getProductGuideList(product) {
+  if (!product) return [];
+  if (product.g === 'pass') {
+    return state.lang === 'en'
+      ? ['Bring your passport or ID information to avoid mismatches.', 'Please check the exact visa photo requirements before visiting.', 'Additional countries are charged automatically in the quote.']
+      : state.lang === 'de'
+        ? ['Bitte bringen Sie Ihre Pass- oder Ausweisdaten korrekt mit.', 'Prüfen Sie vorab die genauen Visumfoto-Anforderungen des Ziellandes.', 'Zusätzliche Länder werden automatisch im Angebot berechnet.']
+        : ['여권/신분증 정보가 정확한지 미리 확인해 주세요.', '비자 사진은 국가별 규격을 방문 전 다시 확인해 주세요.', '추가 국가는 견적에 자동 반영됩니다.'];
+  }
+  if (product.g === 'prof') {
+    return state.lang === 'en'
+      ? ['Please prepare one or two outfits that match the selected background and mood.', 'Simple accessories work best for profile sessions.', 'If you add passport photos, the total session time increases automatically.']
+      : state.lang === 'de'
+        ? ['Bitte bereiten Sie ein bis zwei Outfits passend zum Hintergrund und zur Stimmung vor.', 'Schlichte Accessoires funktionieren bei Profilshootings am besten.', 'Bei zusätzlichem Passfoto verlängert sich die Gesamtzeit automatisch.']
+        : ['선택한 배경과 분위기에 맞는 의상 1~2벌을 준비해 주세요.', '프로필 촬영은 심플한 액세서리가 가장 잘 어울립니다.', '여권사진 추가 촬영을 선택하면 전체 시간이 자동으로 늘어납니다.'];
+  }
+  if (product.g === 'stud') {
+    return state.lang === 'en'
+      ? ['Background and outfit options change the styling, not the shoot flow itself.', 'Please arrive a few minutes early if multiple people are included.', 'Studio family/group sessions are priced for two people by default.']
+      : state.lang === 'de'
+        ? ['Hintergrund- und Outfitoptionen verändern den Stil, nicht den grundsätzlichen Ablauf.', 'Bitte kommen Sie bei mehreren Personen ein paar Minuten früher.', 'Studio-Familien/Gruppen-Sessions sind standardmäßig für zwei Personen kalkuliert.']
+        : ['배경/의상 옵션은 촬영 스타일에만 영향을 주고 진행 흐름은 그대로 유지됩니다.', '여러 명이 함께 촬영하는 경우 약간 일찍 도착해 주세요.', '스튜디오 가족/그룹 촬영은 기본 2인 기준으로 계산됩니다.'];
+  }
+  if (product.g === 'snap' || product.g === 'wed') {
+    return state.lang === 'en'
+      ? ['Please enter the preferred location in step 2 before checking the calendar.', 'Travel outside the Frankfurt 50km area may require an extra transportation fee.', 'Outdoor sessions are weather-sensitive, so we may suggest alternatives after review.']
+      : state.lang === 'de'
+        ? ['Bitte geben Sie den gewünschten Ort in Schritt 2 ein, bevor Sie den Kalender prüfen.', 'Außerhalb des 50-km-Radius von Frankfurt können zusätzliche Fahrtkosten entstehen.', 'Outdoor-Shootings sind wetterabhängig; nach Prüfung können Alternativen vorgeschlagen werden.']
+        : ['달력 확인 전 2단계에서 희망 촬영 장소를 먼저 입력해 주세요.', '프랑크푸르트 50km 외 지역은 추가 이동 비용이 발생할 수 있습니다.', '야외 촬영은 날씨 영향을 받아 검토 후 대체안을 안내드릴 수 있습니다.'];
+  }
+  if (product.g === 'biz') {
+    return state.lang === 'en'
+      ? ['Please describe the event purpose, schedule, and required deliverables in detail.', 'Corporate/event sessions are finalized after internal review.', 'We may contact you for timeline or location coordination before confirmation.']
+      : state.lang === 'de'
+        ? ['Bitte beschreiben Sie Zweck, Ablauf und gewünschte Deliverables des Events möglichst genau.', 'Firmen-/Event-Shootings werden nach interner Prüfung final bestätigt.', 'Vor der Bestätigung können wir uns zur Abstimmung von Zeitplan oder Ort melden.']
+        : ['행사 목적, 시간대, 필요한 결과물을 가능한 자세히 적어 주세요.', '기업/행사 촬영은 내부 검토 후 최종 확정됩니다.', '확정 전 일정이나 장소 조율을 위해 별도로 연락드릴 수 있습니다.'];
+  }
+  return [];
+}
+
+function getVisitGuideList(product) {
+  if (!product) return [];
+  if (product.g === 'pass' || product.g === 'prof' || product.g === 'stud') {
+    return state.lang === 'en'
+      ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Detailed arrival instructions are sent again in the confirmation email.', 'If you need an invoice, please fill in the address field before submitting.']
+      : state.lang === 'de'
+        ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Die genaue Anfahrtsinformation wird in der Bestätigungs-E-Mail erneut gesendet.', 'Wenn Sie eine Rechnung benötigen, tragen Sie bitte vor dem Absenden Ihre Adresse ein.']
+        : ['Studio mean, Holzwegpassage 3, 61440 Oberursel', '정확한 방문 안내는 확인 메일에서 다시 보내드립니다.', '인보이스가 필요하시면 제출 전 주소를 입력해 주세요.'];
+  }
+  return state.lang === 'en'
+    ? ['The final meeting location is confirmed after review and via email.', 'Please keep your phone number available in case we need to coordinate quickly.']
+    : state.lang === 'de'
+      ? ['Der endgültige Treffpunkt wird nach Prüfung per E-Mail bestätigt.', 'Bitte halten Sie Ihre Telefonnummer für eine kurzfristige Abstimmung bereit.']
+      : ['최종 만남 장소는 예약 검토 후 메일로 다시 안내드립니다.', '빠른 조율이 필요할 수 있으니 연락 가능한 번호를 정확히 남겨 주세요.'];
+}
+
 function isEventPeriodActive() {
   const settings = state.init?.settings || {};
   if (!settings.eventRate || !settings.eventStart || !settings.eventEnd) return false;
@@ -1803,6 +1862,8 @@ function renderProductDetail() {
   }
   const desc = getProductDescription(state.selectedProduct);
   const price = getEstimatedPrice();
+  const productGuideList = getProductGuideList(state.selectedProduct);
+  const visitGuideList = getVisitGuideList(state.selectedProduct);
   const eventBadge = state.quote?.eventDiscount > 0
     ? `<div style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#dc2626;color:#fff;font-weight:800;font-size:13px;margin:0 0 12px 0;">
         ${state.lang === 'en'
@@ -1832,6 +1893,20 @@ function renderProductDetail() {
     ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
     ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
+    <div class="guide-grid">
+      <div class="guide-box">
+        <div class="guide-title">${state.lang === 'en' ? 'Booking Guide' : state.lang === 'de' ? 'Buchungshinweise' : '예약 안내'}</div>
+        <ul class="guide-list">
+          ${productGuideList.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="guide-box">
+        <div class="guide-title">${state.lang === 'en' ? 'Arrival Guide' : state.lang === 'de' ? 'Besuch / Anfahrt' : '오시는 길 안내'}</div>
+        <ul class="guide-list">
+          ${visitGuideList.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
   `;
 }
 
@@ -2225,6 +2300,9 @@ function clearSubmitResult() {
   if (!els.resultBox) return;
   els.resultBox.hidden = true;
   els.resultBox.innerHTML = '';
+  els.successPanel?.classList.add('hidden-step');
+  els.hero?.classList.remove('hidden-step');
+  Object.values(els.stepPanels).forEach((panel) => panel?.classList.remove('hidden-step'));
 }
 
 function resetBookingFlow() {
@@ -2269,6 +2347,9 @@ function renderSubmitResult(payload, result) {
   const copy = getCopy();
   const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
   const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
+  els.hero?.classList.add('hidden-step');
+  Object.values(els.stepPanels).forEach((panel) => panel?.classList.add('hidden-step'));
+  els.successPanel?.classList.remove('hidden-step');
   els.resultBox.hidden = false;
   els.resultBox.innerHTML = `
     <h3>${escapeHtml(copy.submitCardTitle)}</h3>
