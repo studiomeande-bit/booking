@@ -35,9 +35,9 @@ const OPTION_META = {
 };
 
 const AGE_META = [
-  { key: 'adult', label: { ko: '성인', en: 'Adult', de: 'Erwachsene' } },
-  { key: 'kids', label: { ko: '키즈 (-€10)', en: 'Kids (-€10)', de: 'Kinder (-€10)' } },
   { key: 'baby', label: { ko: '영유아', en: 'Infant', de: 'Kleinkind' } },
+  { key: 'kids', label: { ko: '키즈 (-€10)', en: 'Kids (-€10)', de: 'Kinder (-€10)' } },
+  { key: 'adult', label: { ko: '성인', en: 'Adult', de: 'Erwachsene' } },
   { key: 'senior', label: { ko: '시니어', en: 'Senior', de: 'Senior' } }
 ];
 
@@ -185,6 +185,13 @@ const COPY = {
     noSlots: '예약 가능한 시간이 없습니다.',
     invalidForm: '이름, 연락처, 이메일은 필수입니다.',
     submitDone: '예약 API 제출이 완료되었습니다.',
+    submitCardTitle: '예약 신청이 접수되었습니다.',
+    submitCardCopy: '확인 메일을 보내드렸습니다. 관리자 확인 후 순차적으로 안내드립니다.',
+    submitCardName: '이름',
+    submitCardEmail: '이메일',
+    submitCardDateTime: '예약 일시',
+    submitCardProduct: '상품',
+    submitCardNote: '메일이 보이지 않으면 스팸함도 함께 확인해 주세요.',
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
@@ -268,6 +275,13 @@ const COPY = {
     noSlots: 'No available time slots.',
     invalidForm: 'Name, phone, and email are required.',
     submitDone: 'Booking request was submitted successfully.',
+    submitCardTitle: 'Your booking request has been received.',
+    submitCardCopy: 'A confirmation email has been sent. We will follow up after reviewing the request.',
+    submitCardName: 'Name',
+    submitCardEmail: 'Email',
+    submitCardDateTime: 'Booking time',
+    submitCardProduct: 'Package',
+    submitCardNote: 'If you do not see the email, please check your spam folder as well.',
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
@@ -351,6 +365,13 @@ const COPY = {
     noSlots: 'Keine verfügbaren Termine.',
     invalidForm: 'Name, Telefon und E-Mail sind erforderlich.',
     submitDone: 'Die Buchung wurde erfolgreich übermittelt.',
+    submitCardTitle: 'Ihre Buchungsanfrage ist eingegangen.',
+    submitCardCopy: 'Eine Bestätigungs-E-Mail wurde gesendet. Nach Prüfung melden wir uns bei Ihnen.',
+    submitCardName: 'Name',
+    submitCardEmail: 'E-Mail',
+    submitCardDateTime: 'Termin',
+    submitCardProduct: 'Paket',
+    submitCardNote: 'Falls keine E-Mail sichtbar ist, prüfen Sie bitte auch den Spam-Ordner.',
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
