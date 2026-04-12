@@ -2,8 +2,7 @@ import { CONFIG } from './config.js';
 
 function buildUrl(route, params = {}) {
   const base = new URL(CONFIG.apiBaseUrl);
-  const apiBase = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
-  base.pathname = `${apiBase}api/${route}`;
+  base.searchParams.set('api', route);
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
     base.searchParams.set(key, value);
