@@ -807,9 +807,6 @@ function renderAgeChips() {
   els.ageGrid.innerHTML = AGE_META.map((item) => {
     let label = item.label[state.lang] || item.label.ko;
     const disabled = isPb && item.key === 'baby';
-    if (item.key === 'kids') {
-      label += ' · -€10';
-    }
     if (isPb && item.key === 'senior') {
       label += state.lang === 'en'
         ? ' · Weekday Free'
