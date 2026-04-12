@@ -171,6 +171,11 @@ const SURVEY_META = [
 const COPY = {
   ko: {
     hero: '이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 기존 예약 UX를 순차적으로 이식합니다.',
+    step1Title: '1. 촬영 종류 선택',
+    step2Title: '2. 세부 상품 선택',
+    step3Title: '3. 날짜 선택',
+    step4Title: '4. 시간 선택',
+    step5Title: '5. 예약 정보',
     groupHelp: '먼저 촬영 종류를 선택해 주세요.',
     initSuccess: '상품 데이터를 불러왔습니다. 원하는 상품을 선택해 주세요.',
     loadCalendar: '달력을 불러오는 중입니다.',
@@ -183,9 +188,47 @@ const COPY = {
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
+    generalTitle: '추가 설정',
+    generalCopy: '인원이나 옵션을 선택하면 예상 금액이 다시 계산됩니다.',
     passportTitle: '여권/비자 옵션',
     passportCopy: '촬영 국가를 선택하면 국가별 추가 비용을 함께 반영합니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
+    passportPeopleLabel: '인원',
+    generalPeopleLabel: '인원',
+    ageFieldLabel: '촬영 대상 연령',
+    babyTypeFieldLabel: '촬영 종류',
+    reshootingTitle: '재촬영 약관 동의',
+    passAddonTitle: '여권사진 추가 촬영',
+    passAddonCopy: '프로필/스튜디오와 함께 여권사진을 추가합니다.',
+    passAddonPeopleLabel: '여권 인원',
+    locationLabel: '희망 촬영 장소',
+    businessLabel: '행사 상세 내용',
+    surveyFieldLabel: '원하는 분위기',
+    bgFieldLabel: '배경 선택',
+    nameLabel: '이름',
+    phoneLabel: '연락처',
+    emailLabel: '이메일',
+    addressLabel: '주소 (인보이스용, 선택)',
+    babyNameLabel: '아기 이름',
+    otherCountryLabel: '기타 국가명',
+    memoLabel: '요청사항',
+    consentTitle: '이용 동의',
+    consentCopy: '필수 항목을 체크해야 예약을 제출할 수 있습니다.',
+    gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
+    marketingLabel: '[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.',
+    submitLabel: '예약 제출',
+    submitLoading: '제출 중...',
+    calendarPrompt: '상품을 먼저 선택하세요.',
+    calendarLoadedHint: '예약 가능 날짜를 선택해 주세요.',
+    monthPrev: '이전 달',
+    monthNext: '다음 달',
+    selectProductDetailEmpty: '상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.',
+    selectCategoryEmpty: '카테고리를 먼저 선택해 주세요.',
+    noOptions: '추가 옵션이 없습니다.',
+    noCalendar: '달력 데이터가 없습니다.',
+    calendarLoadError: '달력을 불러오지 못했습니다.',
+    peopleUnit: '명',
     reviewEmpty: '상품, 날짜, 시간이 선택되면 예약 요약이 표시됩니다.',
     reviewPrice: '예상 금액',
     reviewProduct: '상품',
@@ -207,6 +250,11 @@ const COPY = {
   },
   en: {
     hero: 'This Netlify frontend is now connected to the booking API. In this phase we are rebuilding the original reservation UX step by step.',
+    step1Title: '1. Choose Category',
+    step2Title: '2. Choose Package',
+    step3Title: '3. Select Date',
+    step4Title: '4. Select Time',
+    step5Title: '5. Booking Details',
     groupHelp: 'Choose the main category first.',
     initSuccess: 'Products loaded. Please choose a package.',
     loadCalendar: 'Loading the calendar.',
@@ -219,9 +267,47 @@ const COPY = {
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
+    generalTitle: 'Additional Settings',
+    generalCopy: 'Changing people or options recalculates the estimated price.',
     passportTitle: 'Passport / Visa options',
     passportCopy: 'Choose the target country and we will include additional country charges.',
     passportHint: 'One country is included. Each additional country adds €5.',
+    passportPeopleLabel: 'People',
+    generalPeopleLabel: 'People',
+    ageFieldLabel: 'Age Group',
+    babyTypeFieldLabel: 'Session Type',
+    reshootingTitle: 'Reshooting Consent',
+    passAddonTitle: 'Passport Add-on',
+    passAddonCopy: 'Add passport photos together with profile/studio.',
+    passAddonPeopleLabel: 'Passport People',
+    locationLabel: 'Preferred Location',
+    businessLabel: 'Event Details',
+    surveyFieldLabel: 'Preferred Mood',
+    bgFieldLabel: 'Background Selection',
+    nameLabel: 'Name',
+    phoneLabel: 'Phone',
+    emailLabel: 'Email',
+    addressLabel: 'Address (optional, for invoice)',
+    babyNameLabel: 'Baby Name',
+    otherCountryLabel: 'Other Country',
+    memoLabel: 'Notes',
+    consentTitle: 'Consent',
+    consentCopy: 'Required items must be checked before submitting.',
+    gdprLabel: '[Required] I agree to the collection and use of personal data.',
+    aiLabel: '[Required] I agree to the AI retouching and processing notice.',
+    marketingLabel: '[Optional] I agree to marketing/SNS/portfolio usage.',
+    submitLabel: 'Submit Booking',
+    submitLoading: 'Submitting...',
+    calendarPrompt: 'Choose a package first.',
+    calendarLoadedHint: 'Choose an available date.',
+    monthPrev: 'Previous month',
+    monthNext: 'Next month',
+    selectProductDetailEmpty: 'Select a package to see the description and estimated price.',
+    selectCategoryEmpty: 'Please choose a category first.',
+    noOptions: 'No additional options available.',
+    noCalendar: 'No calendar data available.',
+    calendarLoadError: 'Unable to load the calendar.',
+    peopleUnit: ' person',
     reviewEmpty: 'A booking summary appears here after you choose product, date, and time.',
     reviewPrice: 'Estimated price',
     reviewProduct: 'Product',
@@ -243,6 +329,11 @@ const COPY = {
   },
   de: {
     hero: 'Dieses Netlify-Frontend ist jetzt mit der Buchungs-API verbunden. In dieser Phase bauen wir die ursprüngliche Buchungs-UX Schritt für Schritt nach.',
+    step1Title: '1. Hauptkategorie wählen',
+    step2Title: '2. Paket wählen',
+    step3Title: '3. Datum wählen',
+    step4Title: '4. Uhrzeit wählen',
+    step5Title: '5. Buchungsdaten',
     groupHelp: 'Wählen Sie zuerst die Hauptkategorie.',
     initSuccess: 'Produkte geladen. Bitte wählen Sie ein Paket.',
     loadCalendar: 'Kalender wird geladen.',
@@ -255,9 +346,47 @@ const COPY = {
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
+    generalTitle: 'Zusätzliche Einstellungen',
+    generalCopy: 'Bei Änderung von Personen oder Optionen wird der geschätzte Preis neu berechnet.',
     passportTitle: 'Pass / Visum Optionen',
     passportCopy: 'Wählen Sie das Zielland. Zusätzliche Länder werden im Preis berücksichtigt.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
+    passportPeopleLabel: 'Personen',
+    generalPeopleLabel: 'Personen',
+    ageFieldLabel: 'Altersgruppe',
+    babyTypeFieldLabel: 'Aufnahmetyp',
+    reshootingTitle: 'Einwilligung zum Nachshooting',
+    passAddonTitle: 'Passfoto Zusatz',
+    passAddonCopy: 'Passfotos zusammen mit Profil/Studio hinzufügen.',
+    passAddonPeopleLabel: 'Passfoto Personen',
+    locationLabel: 'Gewünschter Aufnahmeort',
+    businessLabel: 'Eventdetails',
+    surveyFieldLabel: 'Gewünschte Stimmung',
+    bgFieldLabel: 'Hintergrundauswahl',
+    nameLabel: 'Name',
+    phoneLabel: 'Telefon',
+    emailLabel: 'E-Mail',
+    addressLabel: 'Adresse (optional, für Rechnung)',
+    babyNameLabel: 'Babyname',
+    otherCountryLabel: 'Anderes Land',
+    memoLabel: 'Hinweise',
+    consentTitle: 'Einwilligung',
+    consentCopy: 'Pflichtangaben müssen vor dem Absenden bestätigt werden.',
+    gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
+    aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
+    marketingLabel: '[Optional] Ich stimme Marketing/SNS/Portfolio-Nutzung zu.',
+    submitLabel: 'Buchung senden',
+    submitLoading: 'Wird gesendet...',
+    calendarPrompt: 'Bitte zuerst ein Paket wählen.',
+    calendarLoadedHint: 'Bitte wählen Sie ein verfügbares Datum.',
+    monthPrev: 'Vorheriger Monat',
+    monthNext: 'Nächster Monat',
+    selectProductDetailEmpty: 'Wählen Sie ein Paket, um Beschreibung und geschätzten Preis zu sehen.',
+    selectCategoryEmpty: 'Bitte zuerst eine Kategorie wählen.',
+    noOptions: 'Keine zusätzlichen Optionen verfügbar.',
+    noCalendar: 'Keine Kalenderdaten vorhanden.',
+    calendarLoadError: 'Kalender konnte nicht geladen werden.',
+    peopleUnit: ' Person',
     reviewEmpty: 'Hier erscheint eine Zusammenfassung, sobald Produkt, Datum und Uhrzeit gewählt wurden.',
     reviewPrice: 'Geschätzter Preis',
     reviewProduct: 'Produkt',
@@ -416,7 +545,7 @@ function wireEvents() {
       renderProductDetail();
       renderReview();
       if (state.selectedProduct) {
-        els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분`;
+        els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
       }
     });
   });
@@ -429,14 +558,50 @@ function getCopy() {
 function applyCopy() {
   const copy = getCopy();
   els.heroLead.textContent = copy.hero;
+  setText('step1Title', copy.step1Title);
+  setText('step2Title', copy.step2Title);
+  setText('step3Title', copy.step3Title);
+  setText('step4Title', copy.step4Title);
+  setText('step5Title', copy.step5Title);
   if (els.groupHelp) els.groupHelp.textContent = copy.groupHelp;
   els.productHelp.textContent = copy.productHelp;
   els.formHelp.textContent = copy.formHelp;
+  setText('generalTitle', copy.generalTitle);
+  setText('generalCopy', copy.generalCopy);
+  setText('passportTitle', copy.passportTitle);
+  setText('passportPeopleLabel', copy.passportPeopleLabel);
+  setText('generalPeopleLabel', copy.generalPeopleLabel);
+  setText('ageFieldLabel', copy.ageFieldLabel);
+  setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
+  setText('reshootingTitle', copy.reshootingTitle);
+  setText('passAddonTitle', copy.passAddonTitle);
+  setText('passAddonCopy', copy.passAddonCopy);
+  setText('passAddonPeopleLabel', copy.passAddonPeopleLabel);
+  setText('locationLabel', copy.locationLabel);
+  setText('businessLabel', copy.businessLabel);
+  setText('surveyFieldLabel', copy.surveyFieldLabel);
+  setText('bgFieldLabel', copy.bgFieldLabel);
+  setText('nameLabel', copy.nameLabel);
+  setText('phoneLabel', copy.phoneLabel);
+  setText('emailLabel', copy.emailLabel);
+  setText('addressLabel', copy.addressLabel);
+  setText('babyNameLabel', copy.babyNameLabel);
+  setText('otherCountryLabel', copy.otherCountryLabel);
+  setText('memoLabel', copy.memoLabel);
+  setText('consentTitle', copy.consentTitle);
+  setText('consentCopy', copy.consentCopy);
+  setText('gdprLabel', copy.gdprLabel);
+  setText('aiLabel', copy.aiLabel);
+  setText('marketingLabel', copy.marketingLabel);
   els.passportHint.textContent = copy.passportHint;
+  els.prevMonthBtn.textContent = copy.monthPrev;
+  els.nextMonthBtn.textContent = copy.monthNext;
+  els.submitBtn.textContent = copy.submitLabel;
   els.slotHint.textContent = state.selectedDate ? els.slotHint.textContent : copy.slotHintEmpty;
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
+  if (!state.selectedProduct) els.calendarHint.textContent = copy.calendarPrompt;
   if (els.locationInfo) {
     els.locationInfo.textContent = state.lang === 'en'
       ? 'Shoots within 50 km of Frankfurt are included in the base price. Additional travel costs may apply outside this area.'
@@ -451,7 +616,13 @@ function applyCopy() {
         ? 'Nachshooting-Einwilligung (Pflicht) — Wenn das Kind am Drehtag wegen Schüchternheit oder Verfassung nicht normal mitmachen kann, kann innerhalb von 4 Wochen ein Nachshooting für 30% des Ursprungspreises vereinbart werden.'
         : '재촬영 약관 동의 (필수) — 촬영 당일 아이의 낯가림이나 컨디션 난조로 정상 진행이 어려울 경우, 원 촬영 비용의 30%를 추가 지불하고 4주 이내 재촬영 일정을 잡을 수 있습니다.';
   }
+  renderPeopleOptions();
   renderWeekdayHeader();
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
 function renderGroups() {
@@ -837,6 +1008,57 @@ function getPeopleCount() {
     : Number(els.generalPeople.value || 1);
 }
 
+function getPeopleOptionLabel(count, product) {
+  const copy = getCopy();
+  const baseLabel = state.lang === 'en'
+    ? `${count}${count > 1 ? ' people' : copy.peopleUnit}`
+    : state.lang === 'de'
+      ? `${count} ${count > 1 ? 'Personen' : 'Person'}`
+      : `${count}${copy.peopleUnit}`;
+  if (!product) return baseLabel;
+  let surcharge = 0;
+  if (product.t === 'group' && count > 2) surcharge = (count - 2) * 30;
+  if (product.t === 'snap' && count > 2) surcharge = (count - 2) * 30;
+  if (surcharge > 0) return `${baseLabel} (+€${surcharge})`;
+  return baseLabel;
+}
+
+function getPassAddonPeopleLabel(count) {
+  const extraDur = { 1: 15, 2: 20, 3: 30, 4: 40 }[count] || 40;
+  const baseLabel = state.lang === 'en'
+    ? `${count}${count > 1 ? ' people' : ' person'}`
+    : state.lang === 'de'
+      ? `${count} ${count > 1 ? 'Personen' : 'Person'}`
+      : `${count}명`;
+  return `${baseLabel} (+${extraDur}분)`;
+}
+
+function renderPeopleOptions() {
+  const product = state.selectedProduct;
+  const generalValue = String(els.generalPeople?.value || '1');
+  const passportValue = String(els.passportPeople?.value || '1');
+  const addonValue = String(els.passAddonPeople?.value || '1');
+
+  if (els.generalPeople) {
+    els.generalPeople.innerHTML = [1, 2, 3, 4, 5]
+      .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, product))}</option>`)
+      .join('');
+    els.generalPeople.value = generalValue;
+  }
+  if (els.passportPeople) {
+    els.passportPeople.innerHTML = [1, 2, 3, 4, 5]
+      .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, { t: 'pass' }))}</option>`)
+      .join('');
+    els.passportPeople.value = passportValue;
+  }
+  if (els.passAddonPeople) {
+    els.passAddonPeople.innerHTML = [1, 2, 3, 4]
+      .map((count) => `<option value="${count}">${escapeHtml(getPassAddonPeopleLabel(count))}</option>`)
+      .join('');
+    els.passAddonPeople.value = addonValue;
+  }
+}
+
 function getPeoplePricingNote(product, people) {
   if (!product) return '';
   if (product.t === 'group') {
@@ -987,12 +1209,12 @@ function renderProducts(products) {
         <h3>${escapeHtml(getProductLabel(product))}</h3>
         <div class="product-meta">
           <div>${escapeHtml(product.nameEn || '')}</div>
-          <div>€${escapeHtml(product.p)} · 촬영 ${escapeHtml(duration)}분</div>
+          <div>€${escapeHtml(product.p)} · ${state.lang === 'en' ? `${escapeHtml(duration)} min` : state.lang === 'de' ? `${escapeHtml(duration)} Min` : `촬영 ${escapeHtml(duration)}분`}</div>
         </div>
       </button>
     `;
   }).join('');
-  els.productGrid.innerHTML = cards || '<div class="empty-state">카테고리를 먼저 선택해 주세요.</div>';
+  els.productGrid.innerHTML = cards || `<div class="empty-state">${escapeHtml(getCopy().selectCategoryEmpty)}</div>`;
   els.productGrid.querySelectorAll('.product-card').forEach((button) => {
     button.addEventListener('click', () => selectProduct(button.dataset.id));
   });
@@ -1013,6 +1235,7 @@ function selectGroup(groupKey) {
   els.form.reset();
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
+  renderPeopleOptions();
   els.submitBtn.disabled = true;
   renderGroups();
   renderProducts((state.init?.products || []).filter((item) => item.g === groupKey));
@@ -1045,6 +1268,7 @@ async function selectProduct(productId) {
   els.form.reset();
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
+  renderPeopleOptions();
   els.submitBtn.disabled = true;
   renderGroups();
   renderProducts((state.init?.products || []).filter((item) => item.g === state.selectedGroup));
@@ -1057,7 +1281,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   await refreshQuote();
   if (!state.selectedProduct) return;
-  els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
+  els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
   setBanner(getCopy().loadCalendar, 'loading');
   await loadCalendar();
 }
@@ -1099,7 +1323,8 @@ function renderGeneralPanel() {
       const selected = state.optionKeys.includes(key) ? ' selected' : '';
       return `<button type="button" class="chip-btn toggle-chip${selected}" data-option="${key}">${escapeHtml(label)}</button>`;
     }).join('');
-  els.optionGrid.innerHTML = options || '<div class="muted-copy">추가 옵션이 없습니다.</div>';
+  els.optionGrid.innerHTML = options || `<div class="muted-copy">${escapeHtml(getCopy().noOptions)}</div>`;
+  renderPeopleOptions();
   els.optionGrid.querySelectorAll('[data-option]').forEach((button) => {
     button.addEventListener('click', () => {
       const key = button.dataset.option;
@@ -1165,7 +1390,7 @@ async function handleQuoteInputChange() {
   clearCalendarSelection();
   await refreshQuote();
   if (state.selectedProduct) {
-    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · 예약 블록 ${getCalendarDuration()}분 기준으로 예약 가능 날짜를 조회합니다.`;
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
   }
@@ -1194,7 +1419,7 @@ function toggleCountry(code) {
 function renderProductDetail() {
   if (!state.selectedProduct) {
     els.productDetail.className = 'detail-box empty-state';
-    els.productDetail.textContent = '상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.';
+    els.productDetail.textContent = getCopy().selectProductDetailEmpty;
     return;
   }
   const desc = getProductDescription(state.selectedProduct);
@@ -1206,7 +1431,7 @@ function renderProductDetail() {
     <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
       <div class="price-hero-value">€${price}</div>
-      <div class="price-hero-copy">촬영 약 ${getShootDuration()}분</div>
+      <div class="price-hero-copy">${state.lang === 'en' ? `About ${getShootDuration()} min` : state.lang === 'de' ? `Ca. ${getShootDuration()} Min` : `촬영 약 ${getShootDuration()}분`}</div>
     </div>
     ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
@@ -1227,7 +1452,7 @@ async function loadCalendar() {
     } catch (error) {
       console.error(error);
       setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
-      els.calendarGrid.innerHTML = `<div class="empty-state">달력을 불러오지 못했습니다. ${escapeHtml(error.message)}</div>`;
+      els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(error.message)}</div>`;
       return;
     }
   }
@@ -1269,7 +1494,7 @@ async function prefetchNextCalendarMonth() {
 function renderCalendar(data) {
   if (!data) {
     els.calendarGrid.classList.add('empty-state');
-    els.calendarGrid.innerHTML = '<div class="empty-state">달력 데이터가 없습니다.</div>';
+    els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().noCalendar)}</div>`;
     return;
   }
   els.calendarGrid.classList.remove('empty-state');
@@ -1346,7 +1571,7 @@ function renderReview() {
   if (state.selectedDate) rows.push([copy.reviewDate, state.selectedDate]);
   if (state.selectedSlot) rows.push([copy.reviewTime, state.selectedSlot]);
   if (state.selectedProduct.g === 'pass') {
-    rows.push([copy.reviewPeople, `${els.passportPeople.value}명`]);
+    rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.passportPeople.value || 1), { t: 'pass' })]);
     if (state.selectedCountries.length) {
       const countries = state.selectedCountries.map((code) => {
         const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
@@ -1355,7 +1580,7 @@ function renderReview() {
       rows.push([copy.reviewCountries, countries]);
     }
   } else if (!els.peopleField.classList.contains('hidden')) {
-    rows.push([copy.reviewPeople, `${els.generalPeople.value}명`]);
+    rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.generalPeople.value || 1), state.selectedProduct)]);
   }
   if (state.selectedProduct.g === 'prof') {
     const ageLabel = AGE_META.find((item) => item.key === state.ageGroup)?.label[state.lang] || AGE_META.find((item) => item.key === state.ageGroup)?.label.ko || state.ageGroup;
@@ -1500,7 +1725,7 @@ async function onSubmit(event) {
     payload.memo = `[아기 이름: ${payload.babyName}] ${payload.memo}`.trim();
   }
   els.submitBtn.disabled = true;
-  els.submitBtn.textContent = '제출 중...';
+  els.submitBtn.textContent = getCopy().submitLoading;
   try {
     const result = await submitBooking(payload, payload.requestId);
     els.resultBox.hidden = false;
@@ -1518,7 +1743,7 @@ async function onSubmit(event) {
     console.error(error);
     setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
   } finally {
-    els.submitBtn.textContent = '예약 제출';
+    els.submitBtn.textContent = getCopy().submitLabel;
     updateSubmitState();
   }
 }
