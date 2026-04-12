@@ -50,8 +50,8 @@ function doGet(e) {
   if(apiRoute) return handlePublicApiRequest_(apiRoute,'get',e);
   if (p.action==='confirm'||p.action==='cancel'||p.action==='customer_cancel'||p.action==='approve_retouch'||p.action==='revise_retouch'||p.action==='customer_reschedule') return handleActionRoute_(p);
   const page = (p.p||'admin').toLowerCase();
-  if(page==='index') return renderFrontendMovedPage_('booking');
-  if(page==='select'||page==='select_preview') return renderFrontendMovedPage_('select');
+  if(page==='index') return renderFrontendMovedPage_('booking', p);
+  if(page==='select'||page==='select_preview') return renderFrontendMovedPage_('select', p);
   return HtmlService.createHtmlOutputFromFile('Admin')
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
     .setTitle(CONFIG.APP_TITLE+' ERP')
@@ -64,10 +64,22 @@ function doPost(e){
   return jsonError_('NOT_FOUND','Unsupported route');
 }
 
-function renderFrontendMovedPage_(target){
-  const targetUrl=target==='select'?'https://select.studio-mean.com':'https://booking.studio-mean.com';
+function buildFrontendTargetUrl_(target, params){
+  const base = target==='select' ? 'https://select.studio-mean.com' : 'https://booking.studio-mean.com';
+  const query = [];
+  Object.keys(params||{}).forEach(function(key){
+    if(key==='p'||key==='api') return;
+    const value = params[key];
+    if(value===undefined || value===null || value==='') return;
+    query.push(encodeURIComponent(key)+'='+encodeURIComponent(String(value)));
+  });
+  return query.length ? base+'?'+query.join('&') : base;
+}
+
+function renderFrontendMovedPage_(target, params){
+  const targetUrl=buildFrontendTargetUrl_(target, params||{});
   const title=target==='select'?'Photo Selection moved':'Booking moved';
-  const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f3ed;color:#2d2a26;margin:0;padding:32px}.card{max-width:560px;margin:10vh auto;background:#fff;border:1px solid #e8dfcf;border-radius:18px;padding:28px;box-shadow:0 20px 50px rgba(45,42,38,.08)}h1{margin:0 0 12px;font-size:28px}p{line-height:1.7;color:#5b554e}.btn{display:inline-block;margin-top:14px;background:#2d2a26;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}</style></head><body><div class="card"><h1>${title}</h1><p>The customer page is now served from a dedicated frontend domain.</p><p>Moved to: <b>${targetUrl}</b></p><a class="btn" href="${targetUrl}">Open page</a></div></body></html>`;
+  const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><meta http-equiv="refresh" content="0; url=${targetUrl}"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f3ed;color:#2d2a26;margin:0;padding:32px}.card{max-width:560px;margin:10vh auto;background:#fff;border:1px solid #e8dfcf;border-radius:18px;padding:28px;box-shadow:0 20px 50px rgba(45,42,38,.08)}h1{margin:0 0 12px;font-size:28px}p{line-height:1.7;color:#5b554e}.btn{display:inline-block;margin-top:14px;background:#2d2a26;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}</style><script>window.location.replace(${JSON.stringify(targetUrl)});</script></head><body><div class="card"><h1>${title}</h1><p>The customer page is now served from a dedicated frontend domain.</p><p>Redirecting to: <b>${targetUrl}</b></p><a class="btn" href="${targetUrl}">Open page</a></div></body></html>`;
   return HtmlService.createHtmlOutput(html)
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
     .setTitle(CONFIG.APP_TITLE);
@@ -2136,7 +2148,7 @@ function createSelectSession(token,data){
       bookingRowIndex:data.bookingRowIndex||''
     });
     selSh.appendRow(built.row);
-    const url=ScriptApp.getService().getUrl()+'?p=select&id='+built.sessionId;
+    const url='https://select.studio-mean.com?id='+encodeURIComponent(built.sessionId);
     _sendSelectLinkEmail(data,url,driveLink,baseCount,retouchPrice);
     return{ok:true,sessionId:built.sessionId,selectUrl:url};
   }catch(err){return{ok:false,message:err.message};}
@@ -2343,7 +2355,7 @@ function _sendSelectReminderEmail_(row, stage){
   const lang=String(row[SELECT_COL['언어']]||'ko');
   const name=String(row[SELECT_COL['고객명']]||'');
   const sessionId=String(row[SELECT_COL['세션ID']]||'');
-  const selectUrl=ScriptApp.getService().getUrl()+'?p=select&id='+sessionId;
+  const selectUrl='https://select.studio-mean.com?id='+encodeURIComponent(sessionId);
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
   const deadline=String(row[SELECT_COL['셀렉마감일']]||'');
   const stageText={ko:`${stage}차`,en:`Reminder ${stage}`,de:`Erinnerung ${stage}`};
@@ -2618,7 +2630,7 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
       resendCount:existingRow?(parseInt(selRows[existingRow-1][SELECT_COL['재발송횟수']])||0)+1:1,
       resendAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
     });
-    const url=ScriptApp.getService().getUrl()+'?p=select&id='+built.sessionId;
+    const url='https://select.studio-mean.com?id='+encodeURIComponent(built.sessionId);
 
     if(existingRow){
       selSh.getRange(existingRow,1,1,SELECT_HEADERS.length).setValues([built.row]);
