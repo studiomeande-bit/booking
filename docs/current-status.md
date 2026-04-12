@@ -32,7 +32,9 @@ Updated: 2026-04-12 Europe/Berlin
 
 - Netlify static booking/select pages are connected to Apps Script public JSON APIs.
 - Booking flow is split into category -> package -> date -> time -> booking details.
+- Booking flow now supports one-step-at-a-time wizard navigation with back/next buttons.
 - Passport flow hides AI consent, marketing consent, and select-all-required rows.
+- Public API now includes `return-check` for backend-based return-customer eligibility.
 - Booking submit readiness now checks:
   - product/date/time
   - name/phone/email
@@ -75,10 +77,13 @@ Updated: 2026-04-12 Europe/Berlin
 
 ## Most Recent Commits
 
+- `691e0c0` Remove duplicate kids discount label
 - `5ca9729` Fix booking form return notice layout
 - `b42c1e3` Use booking success card after submit
 - `635c910` Tighten booking submit readiness checks
 - `477a441` Improve booking submit readiness for passport flow
+- `50562a0` Polish customer-facing frontend copy
+- `9700b69` Add resumable project status log
 
 ## Apps Script Deployment
 
@@ -91,6 +96,8 @@ Updated: 2026-04-12 Europe/Berlin
 
 - Final parity review against original `/Users/taewoongmin/index.html`
 - Improve submit success UX further using returned quote/isReturn data
+- Verify new wizard navigation on mobile after Netlify deploy
+- Use backend `return-check` result to drive return notice display only for eligible customers
 - Final mobile readability cleanup
 - Review remaining package-specific copy / edge cases
 - Additional calendar loading optimization if needed
@@ -120,4 +127,3 @@ Then continue from:
 
 - booking parity / end-to-end verification first
 - select parity second
-

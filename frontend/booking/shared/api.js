@@ -43,6 +43,15 @@ export async function fetchQuote(data) {
   return parseJsonResponse(response);
 }
 
+export async function fetchReturnEligibility(data) {
+  const response = await fetch(buildUrl('return-check'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return parseJsonResponse(response);
+}
+
 export async function submitBooking(data, requestId) {
   const response = await fetch(buildUrl('booking'), {
     method: 'POST',

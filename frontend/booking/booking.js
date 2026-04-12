@@ -1,4 +1,4 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, submitBooking } from './shared/api.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, submitBooking } from './shared/api.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from './shared/utils.js';
 
 const COUNTRY_OPTIONS = [
@@ -462,6 +462,10 @@ const state = {
   ageGroup: 'adult',
   babyType: 'baekil',
   bgColors: [],
+  activeStep: 1,
+  returnEligible: false,
+  returnNoticeTimer: null,
+  returnNoticeToken: 0,
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -523,7 +527,18 @@ const els = {
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
   langButtons: Array.from(document.querySelectorAll('.lang-btn')),
+  wizardButtons: {
+    step1Next: document.getElementById('step1NextBtn'),
+    step2Back: document.getElementById('step2BackBtn'),
+    step2Next: document.getElementById('step2NextBtn'),
+    step3Back: document.getElementById('step3BackBtn'),
+    step3Next: document.getElementById('step3NextBtn'),
+    step4Back: document.getElementById('step4BackBtn'),
+    step4Next: document.getElementById('step4NextBtn'),
+    step5Back: document.getElementById('step5BackBtn')
+  },
   stepPanels: {
+    step1: document.getElementById('stepPanel1'),
     step2: document.getElementById('stepPanel2'),
     step3: document.getElementById('stepPanel3'),
     step4: document.getElementById('stepPanel4'),
@@ -557,6 +572,14 @@ function wireEvents() {
   els.prevMonthBtn.addEventListener('click', () => changeMonth(-1));
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
+  els.wizardButtons.step1Next?.addEventListener('click', () => goToStep(2));
+  els.wizardButtons.step2Back?.addEventListener('click', () => goToStep(1));
+  els.wizardButtons.step2Next?.addEventListener('click', () => goToStep(3));
+  els.wizardButtons.step3Back?.addEventListener('click', () => goToStep(2));
+  els.wizardButtons.step3Next?.addEventListener('click', () => goToStep(4));
+  els.wizardButtons.step4Back?.addEventListener('click', () => goToStep(3));
+  els.wizardButtons.step4Next?.addEventListener('click', () => goToStep(5));
+  els.wizardButtons.step5Back?.addEventListener('click', () => goToStep(4));
   els.form.elements.otherCountry?.addEventListener('input', async () => {
     await handleQuoteInputChange();
     updateSubmitState();
@@ -652,6 +675,16 @@ function applyCopy() {
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
   els.submitBtn.textContent = copy.submitLabel;
+  const prevLabel = state.lang === 'en' ? 'Back' : state.lang === 'de' ? 'Zurück' : '이전';
+  const nextLabel = state.lang === 'en' ? 'Next' : state.lang === 'de' ? 'Weiter' : '다음';
+  setText('step1NextBtn', nextLabel);
+  setText('step2BackBtn', prevLabel);
+  setText('step2NextBtn', nextLabel);
+  setText('step3BackBtn', prevLabel);
+  setText('step3NextBtn', nextLabel);
+  setText('step4BackBtn', prevLabel);
+  setText('step4NextBtn', nextLabel);
+  setText('step5BackBtn', prevLabel);
   els.slotHint.textContent = state.selectedDate ? els.slotHint.textContent : copy.slotHintEmpty;
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
@@ -737,13 +770,40 @@ function renderReturnNotice() {
   box.classList.toggle('hidden-field', !show);
   if (!show) {
     box.textContent = '';
+    state.returnEligible = false;
+    if (state.returnNoticeTimer) clearTimeout(state.returnNoticeTimer);
     return;
   }
   box.textContent = state.lang === 'en'
-    ? 'If you book again after finishing today’s shoot, the return-customer discount is applied automatically when eligible.'
+    ? 'Checking return-customer eligibility...'
     : state.lang === 'de'
-      ? 'Wenn Sie nach dem heutigen Shooting erneut buchen, wird der Stammkundenrabatt bei Berechtigung automatisch angewendet.'
-      : '오늘 촬영을 마친 뒤 같은 날 재예약하는 경우, 재방문 할인 대상이면 자동으로 적용됩니다.';
+      ? 'Prüfe Stammkundenberechtigung...'
+      : '재방문 할인 대상 여부를 확인하는 중입니다...';
+  if (state.returnNoticeTimer) clearTimeout(state.returnNoticeTimer);
+  const token = ++state.returnNoticeToken;
+  state.returnNoticeTimer = setTimeout(async () => {
+    try {
+      const result = await fetchReturnEligibility({ name, phone, email });
+      if (token !== state.returnNoticeToken) return;
+      state.returnEligible = !!result?.eligible;
+      if (!state.returnEligible) {
+        box.classList.add('hidden-field');
+        box.textContent = '';
+        return;
+      }
+      box.classList.remove('hidden-field');
+      box.textContent = state.lang === 'en'
+        ? 'Return-customer discount is available if you are rebooking after finishing today’s shoot.'
+        : state.lang === 'de'
+          ? 'Der Stammkundenrabatt ist verfügbar, wenn Sie nach dem heutigen Shooting erneut buchen.'
+          : '오늘 촬영을 마친 뒤 같은 날 재예약하는 경우, 재방문 할인이 자동 적용됩니다.';
+    } catch (error) {
+      if (token !== state.returnNoticeToken) return;
+      state.returnEligible = false;
+      box.classList.add('hidden-field');
+      box.textContent = '';
+    }
+  }, 350);
 }
 
 function renderGroups() {
@@ -780,14 +840,40 @@ function renderWeekdayHeader() {
 }
 
 function syncStepPanels() {
+  const maxStep = getMaxUnlockedStep();
+  if (state.activeStep > maxStep) state.activeStep = maxStep;
+  Object.entries(els.stepPanels).forEach(([key, panel]) => {
+    const step = Number(key.replace('step', ''));
+    panel.classList.toggle('hidden-step', step !== state.activeStep || step > maxStep);
+  });
+  updateWizardButtons(maxStep);
+}
+
+function getMaxUnlockedStep() {
   const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
   const hasDate = !!state.selectedDate;
   const hasSlot = !!state.selectedSlot;
-  els.stepPanels.step2.classList.toggle('hidden-step', !hasGroup);
-  els.stepPanels.step3.classList.toggle('hidden-step', !hasProduct);
-  els.stepPanels.step4.classList.toggle('hidden-step', !hasDate);
-  els.stepPanels.step5.classList.toggle('hidden-step', !hasSlot);
+  if (!hasGroup) return 1;
+  if (!hasProduct) return 2;
+  if (!hasDate) return 3;
+  if (!hasSlot) return 4;
+  return 5;
+}
+
+function goToStep(step) {
+  const next = Math.max(1, Math.min(5, step));
+  const maxStep = getMaxUnlockedStep();
+  state.activeStep = Math.min(next, maxStep);
+  syncStepPanels();
+  els.stepPanels[`step${state.activeStep}`]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function updateWizardButtons(maxStep) {
+  if (els.wizardButtons.step1Next) els.wizardButtons.step1Next.disabled = maxStep < 2;
+  if (els.wizardButtons.step2Next) els.wizardButtons.step2Next.disabled = maxStep < 3;
+  if (els.wizardButtons.step3Next) els.wizardButtons.step3Next.disabled = maxStep < 4;
+  if (els.wizardButtons.step4Next) els.wizardButtons.step4Next.disabled = maxStep < 5;
 }
 
 function renderSurveyChips() {
@@ -1381,6 +1467,7 @@ function renderProducts(products) {
 function selectGroup(groupKey) {
   clearSubmitResult();
   state.selectedGroup = groupKey;
+  state.activeStep = 2;
   state.selectedProduct = null;
   state.selectedDate = '';
   state.selectedSlot = '';
@@ -1413,6 +1500,7 @@ function selectGroup(groupKey) {
 
 async function selectProduct(productId) {
   clearSubmitResult();
+  state.activeStep = 3;
   state.selectedProduct = (state.init?.products || []).find((item) => item.id === productId) || null;
   state.selectedGroup = state.selectedProduct?.g || state.selectedGroup;
   state.selectedDate = '';
@@ -1446,6 +1534,7 @@ async function selectProduct(productId) {
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
   setBanner(getCopy().loadCalendar, 'loading');
   await loadCalendar();
+  goToStep(3);
 }
 
 function renderPassportPanel() {
@@ -1729,6 +1818,7 @@ function renderCalendar(data) {
 
 async function selectDate(dateKey) {
   state.selectedDate = dateKey;
+  state.activeStep = 4;
   state.selectedSlot = '';
   await refreshQuote();
   renderSeniorWarning();
@@ -1739,6 +1829,7 @@ async function selectDate(dateKey) {
   renderSlots(slots);
   renderReview();
   syncStepPanels();
+  goToStep(4);
 }
 
 function renderSlots(slots) {
@@ -1756,10 +1847,12 @@ function renderSlots(slots) {
   els.slotGrid.querySelectorAll('.slot-btn').forEach((button) => {
     button.addEventListener('click', () => {
       state.selectedSlot = button.dataset.time;
+      state.activeStep = 5;
       els.slotGrid.querySelectorAll('.slot-btn').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
       updateSubmitState();
       renderReview();
       syncStepPanels();
+      goToStep(5);
     });
   });
   updateSubmitState();

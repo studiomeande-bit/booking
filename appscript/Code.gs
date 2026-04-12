@@ -117,6 +117,13 @@ function handlePublicApiRequest_(route,method,e){
       if(!payload||!payload.itemId) return jsonError_('INVALID_ARGUMENT','Missing quote parameters');
       return jsonOk_(calculateQuote_(payload));
     }
+    if(route==='return-check'){
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/return-check');
+      const body=parsePublicJsonBody_(e);
+      const payload=body.data||body;
+      if(!payload||!payload.name||!payload.phone||!payload.email) return jsonOk_({eligible:false});
+      return jsonOk_({eligible:checkReturnCustomer_(payload.name,payload.phone,payload.email)});
+    }
     if(route==='booking'){
       if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking');
       const body=parsePublicJsonBody_(e);

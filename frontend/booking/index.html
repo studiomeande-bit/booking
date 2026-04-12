@@ -28,6 +28,12 @@
         <p id="groupHelp">먼저 큰 카테고리를 선택해 주세요.</p>
       </div>
       <div id="groupGrid" class="group-grid"></div>
+      <div class="wizard-nav">
+        <div id="wizardProgress1" class="wizard-progress">1 / 5</div>
+        <div class="wizard-actions">
+          <button type="button" id="step1NextBtn" class="ghost-btn" disabled>다음</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel hidden-step" id="stepPanel2">
@@ -120,6 +126,13 @@
         </div>
       </div>
       <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
+      <div class="wizard-nav">
+        <div id="wizardProgress2" class="wizard-progress">2 / 5</div>
+        <div class="wizard-actions">
+          <button type="button" id="step2BackBtn" class="ghost-btn">이전</button>
+          <button type="button" id="step2NextBtn" class="ghost-btn" disabled>다음</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel hidden-step" id="stepPanel3">
@@ -134,6 +147,13 @@
       </div>
       <div id="calendarWeekdays" class="calendar-weekdays"></div>
       <div id="calendarGrid" class="calendar-grid empty-state">상품 선택 후 달력을 불러옵니다.</div>
+      <div class="wizard-nav">
+        <div id="wizardProgress3" class="wizard-progress">3 / 5</div>
+        <div class="wizard-actions">
+          <button type="button" id="step3BackBtn" class="ghost-btn">이전</button>
+          <button type="button" id="step3NextBtn" class="ghost-btn" disabled>다음</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel hidden-step" id="stepPanel4">
@@ -142,6 +162,13 @@
         <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
       </div>
       <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
+      <div class="wizard-nav">
+        <div id="wizardProgress4" class="wizard-progress">4 / 5</div>
+        <div class="wizard-actions">
+          <button type="button" id="step4BackBtn" class="ghost-btn">이전</button>
+          <button type="button" id="step4NextBtn" class="ghost-btn" disabled>다음</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel hidden-step" id="stepPanel5">
@@ -210,7 +237,13 @@
           </label>
         </div>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
-        <button id="submitBtn" type="submit" class="submit-btn" disabled>예약 제출</button>
+        <div class="wizard-nav form-nav">
+          <div id="wizardProgress5" class="wizard-progress">5 / 5</div>
+          <div class="wizard-actions">
+            <button type="button" id="step5BackBtn" class="ghost-btn">이전</button>
+            <button id="submitBtn" type="submit" class="submit-btn" disabled>예약 제출</button>
+          </div>
+        </div>
       </form>
       <div id="resultBox" class="result-box" hidden></div>
     </section>
