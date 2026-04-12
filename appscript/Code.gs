@@ -509,6 +509,36 @@ function calculateQuote_(request){
   const otherCountry=(request.otherCountry||'').trim();
   const totalCountries=passCountries.length+(otherCountry?1:0);
   let total=item.p;
+  let productLabelKo=item.nameKo, productLabelEn=item.nameEn, productLabelDe=item.nameDe;
+  let businessMode=String(request.businessMode||'photo');
+  let businessHours=Math.min(8,Math.max(2,parseInt(request.businessHours,10)||2));
+  let businessVideoEdit=String(request.businessVideoEdit||'raw');
+  const businessAddonKeys=(request.businessAddonKeys||[]).filter(Boolean);
+  if(item.g==='biz'){
+    const priceMap={
+      photo:{2:300,3:450,4:500,5:600,6:700,7:800,8:880},
+      video_raw:{2:400,3:550,4:700,5:850,6:1000,7:1150,8:1300},
+      video_basic:{2:600,3:800,4:1000,5:1200,6:1400,7:1600,8:1800},
+      video_full:{2:800,3:1100,4:1400,5:1700,6:2000,7:2300,8:2600}
+    };
+    const tableKey=businessMode==='video'?('video_'+(businessVideoEdit==='basic'||businessVideoEdit==='full'?businessVideoEdit:'raw')):'photo';
+    total=((priceMap[tableKey]||priceMap.photo)[businessHours])||0;
+    const hourKo=businessHours+'시간';
+    const hourEn=businessHours+'h';
+    const hourDe=businessHours+' Std.';
+    if(businessMode==='video'){
+      const editKo=businessVideoEdit==='basic'?'기본 편집':businessVideoEdit==='full'?'풀 편집':'촬영만';
+      const editEn=businessVideoEdit==='basic'?'Basic Edit':businessVideoEdit==='full'?'Full Edit':'Raw Footage';
+      const editDe=businessVideoEdit==='basic'?'Basis-Schnitt':businessVideoEdit==='full'?'Vollschnitt':'Rohmaterial';
+      productLabelKo='행사 영상 '+hourKo+' ('+editKo+')';
+      productLabelEn='Event Video '+hourEn+' ('+editEn+')';
+      productLabelDe='Event Video '+hourDe+' ('+editDe+')';
+    }else{
+      productLabelKo='행사 사진 '+hourKo;
+      productLabelEn='Event Photo '+hourEn;
+      productLabelDe='Event Foto '+hourDe;
+    }
+  }
   if(item.t==='passport') total=(item.p+Math.max(totalCountries-1,0)*5)*people;
   else if(item.t==='group'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&people>2) total+=(people-2)*30;
@@ -542,7 +572,9 @@ function calculateQuote_(request){
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=50;total-=marketingDiscount;}
   const PASS_DUR=[0,15,20,30,40];
-  const duration=item.t==='passport'?PASS_DUR[Math.min(people,4)]||40:item.d;
+  const duration=item.g==='biz'
+    ? businessHours*60
+    : (item.t==='passport'?PASS_DUR[Math.min(people,4)]||40:item.d);
   // 여권 콤보 추가 시 duration에 합산
   const passAddon=request.passAddon||false;
   const passAddonPeople=parseInt(request.passAddonPeople)||1;
@@ -552,7 +584,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz';
   const depositAmount=item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0);
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
 
 /* ====== 재방문 감지 ====== */
@@ -803,6 +835,13 @@ function getIcloudCalUrls_(){
     urls.push(n.endsWith('/')?n:n+'/');
   }
   return urls;
+}
+
+/** Returns the primary private CalDAV URL used for PUT event creation. */
+function getIcloudCalUrl_(){
+  const urls=getIcloudCalUrls_();
+  if(!urls.length) throw new Error('iCloud calendar URL missing: ICLOUD_CAL_URL');
+  return urls[0];
 }
 
 /** Returns all public ICS subscription URLs (no auth, read-only). */
@@ -1300,6 +1339,11 @@ function _getGuideHtml(itemGroup,lang,surveyKeys){
     if(L==='de')return`<b>📸 Pre-Wedding Shooting Hinweise</b><br>1) Bitte senden Sie Stimmungsreferenzen, bevorzugte Farbtöne und den Verwendungszweck vorab.<br>2) Orte, Laufwege und Wetter-Alternativen bitte im Voraus abstimmen. Die Goldene Stunde eignet sich meist am besten.<br>3) Aufeinander abgestimmte Outfits wirken hochwertiger. Zwei Outfits werden empfohlen.<br>4) Touch-up Make-up, bequeme Schuhe und kleine Requisiten sind hilfreich.<br>5) Bitte 10–15 Minuten früher kommen.`;
     return`<b>📸 프리웨딩 촬영 전 안내사항 (예약 확정 후)</b><br><br><b>1) 촬영 목적/무드 사전 공유</b><br>원하시는 분위기와 사용 목적에 따라 촬영 구도와 보정 톤이 달라집니다. 레퍼런스 사진 1~5장이나 선호하는 색감이 있다면 미리 공유해 주세요.<br><br><b>2) 일정/로케이션(동선) 확인</b><br>• 촬영 날짜, 시작/종료 시간<br>• 장소명과 이동 동선<br>• 우천·강풍 시 대체 장소 여부<br>※ 야외 촬영은 보통 해 질 무렵 골든아워 시간대 결과가 가장 좋습니다.<br><br><b>3) 복장 가이드</b><br>• 크림/베이지/화이트 또는 네이비/블랙처럼 톤을 맞추면 훨씬 고급스럽게 보입니다.<br>• 큰 로고, 강한 패턴, 잔줄무늬는 피해주세요.<br>• 가능하다면 포멀 1벌 + 캐주얼 1벌처럼 2벌 구성을 추천드립니다.<br><br><b>4) 준비물 체크리스트</b><br>• 신부: 누브라/테이프, 누드톤 속옷, 여분 스타킹<br>• 신랑: 검정/네이비 양말, 벨트, 가능 시 셔츠 여분<br>• 이동용 편한 신발, 물, 간단 간식, 부케/반지/청첩장 같은 소품<br><br><b>5) 헤어·메이크업 안내</b><br>야외 촬영은 바람과 습기 영향이 있으니 헤어 스프레이, 핀, 수정 메이크업 용품을 함께 준비해 주세요. 원하시면 출장 헤어·메이크업 연결도 가능합니다.<br><br><b>6) 도착 권장 시간</b><br>촬영 시작 10~15분 전 도착을 권장드립니다. 지각 시 다음 일정에 따라 촬영 구성이 일부 조정될 수 있습니다.<br><br><b>7) 촬영 진행 방식</b><br>포즈, 표정, 시선은 모두 디렉션해 드리며, 핵심 컷부터 디테일 컷 순으로 자연스럽게 진행합니다.<br><br><b>8) 결과물/보정 관련 안내</b><br>밝은 톤 또는 무드 톤으로 맞춤 보정해 드리며, 제공 장수와 원본 제공 여부는 예약하신 패키지 기준으로 진행됩니다.`;
   }
+  if(itemGroup==='biz'){
+    if(L==='en')return`<b>📸 Corporate / Event Booking Guide</b><br>• The selected package has been received and will be reviewed internally before final confirmation.<br>• Photo packages include JPG originals with basic color correction.<br>• Video packages follow the selected level: raw footage, basic edit, or full edit.<br>• SNS short-form, rush delivery, and subtitle/logo/BGM requests are reviewed after booking.`;
+    if(L==='de')return`<b>📸 Firmen-/Event-Buchungshinweise</b><br>• Das gewählte Paket ist eingegangen und wird vor der finalen Bestätigung intern geprüft.<br>• Fotopakete enthalten JPG-Originale mit grundlegender Farbkorrektur.<br>• Videopakete folgen der gewählten Stufe: Rohmaterial, Basis-Schnitt oder Vollschnitt.<br>• SNS-Kurzformat, Express-Lieferung und Untertitel/Logo/BGM werden nach der Buchung einzeln geprüft.`;
+    return`<b>📸 기업/행사 촬영 안내</b><br>• 선택하신 패키지 기준으로 예약이 접수되며, 내부 검토 후 최종 확정이 진행됩니다.<br>• 사진 패키지는 JPG 원본과 기본 색보정본이 제공됩니다.<br>• 영상 패키지는 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.<br>• SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 예약 접수 후 개별 검토 후 안내드립니다.`;
+  }
   if(L==='en')return`<b>📸 Shoot Notes</b><br>Your session is confirmed. Share preferred mood or reference images in advance.<br>Contact: studio.mean.de@gmail.com`;
   if(L==='de')return`<b>📸 Shooting-Hinweise</b><br>Ihr Termin ist bestätigt. Stimmung oder Referenzbilder bitte im Voraus mitteilen.<br>Kontakt: studio.mean.de@gmail.com`;
   return`<b>📸 촬영 안내</b><br>일정이 확정되었습니다. 원하시는 분위기나 레퍼런스를 미리 공유해 주세요.<br>문의: studio.mean.de@gmail.com`;
@@ -1311,9 +1355,14 @@ function buildCalendarDescription_(data,quote,surveyStr,memo){
   const cleanPhone=String(data.phone||'').replace(/\s/g,'');
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
   const passInfo=allCountries?` (${allCountries})`:'';
-  const lines=[`이름=${data.name}`,`전화=${cleanPhone}`,`이메일=${data.email}`,`분류=${quote.product.nameKo+passInfo}`,`패키지=${quote.itemGroup!=='pass'?quote.product.nameKo:''}`,`인원=${quote.people}`,`총비용=${quote.itemGroup==='biz'?'미정':quote.totalPrice+'€'}`,`계약금=${quote.depositAmount||0}|DB|${today}`,`잔금=${quote.balanceAmount||quote.totalPrice}|미정|${today}`,`마케팅=${quote.marketing?'Y':'N'}`,`상태=대기`,`---`];
+  const productKo=quote.productLabelKo||quote.product.nameKo;
+  const lines=[`이름=${data.name}`,`전화=${cleanPhone}`,`이메일=${data.email}`,`분류=${productKo+passInfo}`,`패키지=${quote.itemGroup!=='pass'?productKo:''}`,`인원=${quote.people}`,`총비용=${quote.totalPrice+'€'}`,`계약금=${quote.depositAmount||0}|DB|${today}`,`잔금=${quote.balanceAmount||quote.totalPrice}|미정|${today}`,`마케팅=${quote.marketing?'Y':'N'}`,`상태=대기`,`---`];
   if(memo) lines.push(`요청: ${memo}`);
   if(surveyStr) lines.push(`분위기: ${surveyStr}`);
+  if(quote.itemGroup==='biz'){
+    lines.push(`행사패키지: ${productKo}`);
+    if((quote.businessAddonKeys||[]).length) lines.push(`추가요청: ${(quote.businessAddonKeys||[]).join(', ')}`);
+  }
   if(data.businessDetails) lines.push(`행사상세: ${data.businessDetails}`);
   if(quote.isReturn) lines.push(`메모: 재방문 고객 — 할인 자동 적용됨`);
   return lines.join('\n');
@@ -1330,8 +1379,10 @@ function processForm(data){
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,data.location||'')) throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
     const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
     const cleanPhone=String(data.phone).replace(/[\s\-]/g,'');
-    const koName=quote.product.nameKo;
-    const localName=data.lang==='en'?quote.product.nameEn:(data.lang==='de'?quote.product.nameDe:koName);
+    const koName=quote.productLabelKo||quote.product.nameKo;
+    const localName=data.lang==='en'
+      ? (quote.productLabelEn||quote.product.nameEn)
+      : (data.lang==='de' ? (quote.productLabelDe||quote.product.nameDe) : koName);
     const surveyDict={clean:'깔끔/모던',warm:'따뜻/자연',pro:'전문/포멀',unique:'트렌디/유니크',baby:'백일/돌'};
     const surveyStr=(data.surveyKeys||[]).map(k=>surveyDict[k]||k).join(', ');
     const babyTypeLabel=data.babyType==='dol'?'돌촬영':data.babyType==='baekil'?'백일촬영':'';
@@ -1340,7 +1391,7 @@ function processForm(data){
     const passAddonLabel=data.passAddon?`[여권콤보:${data.passAddonPeople}명]`:'';
     const locationLabel=data.location?`[촬영장소:${data.location}]`:'';
     const memo=(babyTypeLabel?'['+babyTypeLabel+'] ':'')+(bgColorLabel?bgColorLabel+' ':'')+(passAddonLabel?passAddonLabel+' ':'')+(locationLabel?locationLabel+' ':'')+String(data.memo||'').trim();
-    const priceLabel=quote.itemGroup==='biz'?'견적필요':quote.totalPrice+'€';
+    const priceLabel=quote.totalPrice+'€';
     const calendarLocation=(quote.itemGroup==='snap'||quote.itemGroup==='wed')&&String(data.location||'').trim()
       ? String(data.location).trim()
       : 'Holzweg-passage 3, 61440 Oberursel';
@@ -1369,6 +1420,7 @@ function sendAdminNotificationEmail_(data,quote,koName,eventId,surveyStr,memo,is
 function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,eventId){
   const lang=request.lang||'ko';const T=EMAIL_I18N[lang]||EMAIL_I18N.ko;
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
+  const guide=_getGuideHtml(quote.itemGroup,lang,request.surveyKeys||[]);
   const priceHtml=quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`;
   const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Rabatt:'};
   const discHtml=[quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
@@ -1386,7 +1438,7 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
       cancelSection=`<hr style="margin:20px 0;border:none;border-top:1px solid #e2e8f0;"><p style="font-size:12px;color:#64748b;">${infoText[lang||'ko']}</p><div style="display:flex;gap:10px;flex-wrap:wrap;"><a href="${rescheduleUrl}" style="display:inline-block;padding:10px 20px;background:#eff6ff;color:#2563eb;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📅 ${rescheduleLabel[lang]||rescheduleLabel.ko}</a><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#f1f5f9;color:#475569;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📩 ${cancelLabel[lang]||cancelLabel.ko}</a></div>`;
     }catch(e){Logger.log('pending cancelSection 오류:'+e.message);}
   }
-  const body=`${T.greeting(request.name)}<br><br>${T.pending_intro}${returnBadge}<br><br><b>${T.receipt_title}</b><br>${T.lbl_product} ${localProductName}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} ${request.date} ${request.time}<br>${priceHtml}${discHtml?'<br>'+discHtml:''}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${_getDirectionHtml(lang)}<br><br>${cancelSection}${_getSignatureHtml()}`;
+  const body=`${T.greeting(request.name)}<br><br>${T.pending_intro}${returnBadge}<br><br><b>${T.receipt_title}</b><br>${T.lbl_product} ${localProductName}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} ${request.date} ${request.time}<br>${priceHtml}${discHtml?'<br>'+discHtml:''}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${guide}<br><br><hr><br>${_getDirectionHtml(lang)}<br><br>${cancelSection}${_getSignatureHtml()}`;
   MailApp.sendEmail({to:request.email,subject:T.pending_subject(request.name,localProductName),htmlBody:body});
 }
 

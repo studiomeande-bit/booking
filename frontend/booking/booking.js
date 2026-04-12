@@ -34,6 +34,32 @@ const OPTION_META = {
   }
 };
 
+const BUSINESS_MODE_META = [
+  { key: 'photo', label: { ko: '행사 사진', en: 'Event Photo', de: 'Event Foto' } },
+  { key: 'video', label: { ko: '행사 영상', en: 'Event Video', de: 'Event Video' } }
+];
+
+const BUSINESS_HOURS_META = [2, 3, 4, 5, 6, 7, 8];
+
+const BUSINESS_VIDEO_EDIT_META = [
+  { key: 'raw', label: { ko: '촬영만 · 원본 제공', en: 'Raw Footage Only', de: 'Nur Aufnahme / Rohmaterial' } },
+  { key: 'basic', label: { ko: '기본 편집 · 2~5분', en: 'Basic Edit · 2–5 min', de: 'Basis-Schnitt · 2–5 Min.' } },
+  { key: 'full', label: { ko: '풀 편집 · 10분 이상', en: 'Full Edit · 10+ min', de: 'Vollschnitt · 10+ Min.' } }
+];
+
+const BUSINESS_ADDON_META = [
+  { key: 'sns', label: { ko: 'SNS 숏폼 요청', en: 'SNS Short Form Request', de: 'SNS Kurzformat Anfrage' } },
+  { key: 'rush', label: { ko: '긴급 납품 요청', en: 'Rush Delivery Request', de: 'Express-Lieferung Anfrage' } },
+  { key: 'branding', label: { ko: '자막/로고/BGM 요청', en: 'Subtitle / Logo / BGM Request', de: 'Untertitel / Logo / BGM Anfrage' } }
+];
+
+const BUSINESS_PRICE_META = {
+  photo: { 2: 300, 3: 450, 4: 500, 5: 600, 6: 700, 7: 800, 8: 880 },
+  video_raw: { 2: 400, 3: 550, 4: 700, 5: 850, 6: 1000, 7: 1150, 8: 1300 },
+  video_basic: { 2: 600, 3: 800, 4: 1000, 5: 1200, 6: 1400, 7: 1600, 8: 1800 },
+  video_full: { 2: 800, 3: 1100, 4: 1400, 5: 1700, 6: 2000, 7: 2300, 8: 2600 }
+};
+
 const AGE_META = [
   { key: 'baby', label: { ko: '영유아', en: 'Infant', de: 'Kleinkind' } },
   { key: 'kids', label: { ko: '키즈 (-€10)', en: 'Kids (-€10)', de: 'Kinder (-€10)' } },
@@ -170,7 +196,9 @@ const SURVEY_META = [
 
 const COPY = {
   ko: {
+    heroTitle: '예약하기',
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
+    loadingCopy: '예약 페이지를 준비하고 있습니다.',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 및 시간 선택',
@@ -213,6 +241,11 @@ const COPY = {
     passAddonPeopleLabel: '여권 인원',
     locationLabel: '희망 촬영 장소',
     businessLabel: '행사 상세 내용',
+    bizModeLabel: '촬영 유형',
+    bizHoursLabel: '촬영 시간',
+    bizEditLabel: '영상 편집',
+    bizAddonLabel: '추가 요청',
+    bizAddonHelp: '추가 요청은 예약 접수 후 세부 내용에 따라 별도 비용이 안내될 수 있습니다.',
     surveyFieldLabel: '원하는 분위기',
     bgFieldLabel: '배경 선택',
     nameLabel: '이름',
@@ -237,6 +270,7 @@ const COPY = {
     calendarLoadedHint: '예약 가능 날짜를 선택해 주세요.',
     monthPrev: '이전 달',
     monthNext: '다음 달',
+    slotPanelTitle: '예약 가능 시간',
     selectProductDetailEmpty: '상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.',
     selectCategoryEmpty: '카테고리를 먼저 선택해 주세요.',
     noOptions: '추가 옵션이 없습니다.',
@@ -254,16 +288,23 @@ const COPY = {
     reviewSurvey: '원하는 분위기',
     reviewLocation: '촬영 장소',
     reviewBusiness: '행사 상세',
+    reviewBusinessPackage: '행사 패키지',
     reviewMemo: '요청사항',
     reviewMarketing: '마케팅 동의',
     countryRequired: '촬영 국가를 최소 1개 선택해 주세요.',
     locationRequired: '희망 촬영 장소를 입력해 주세요.',
     consentRequired: '필수 동의 항목을 체크해 주세요.',
+    slotLoadingForDate: '{date} 기준 예약 가능 시간을 불러오는 중입니다.',
+    slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
+    slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
+    initFail: '초기화 실패',
     yes: '동의',
     no: '미동의'
   },
   en: {
+    heroTitle: 'Book Your Session',
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
+    loadingCopy: 'Preparing the booking page.',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date & Time',
@@ -306,6 +347,11 @@ const COPY = {
     passAddonPeopleLabel: 'Passport People',
     locationLabel: 'Preferred Location',
     businessLabel: 'Event Details',
+    bizModeLabel: 'Session Type',
+    bizHoursLabel: 'Coverage',
+    bizEditLabel: 'Video Edit',
+    bizAddonLabel: 'Optional Requests',
+    bizAddonHelp: 'Optional requests are reviewed after booking and may require an extra quote.',
     surveyFieldLabel: 'Preferred Mood',
     bgFieldLabel: 'Background Selection',
     nameLabel: 'Name',
@@ -330,6 +376,7 @@ const COPY = {
     calendarLoadedHint: 'Choose an available date.',
     monthPrev: 'Previous month',
     monthNext: 'Next month',
+    slotPanelTitle: 'Available Times',
     selectProductDetailEmpty: 'Select a package to see the description and estimated price.',
     selectCategoryEmpty: 'Please choose a category first.',
     noOptions: 'No additional options available.',
@@ -347,16 +394,23 @@ const COPY = {
     reviewSurvey: 'Preferred mood',
     reviewLocation: 'Location',
     reviewBusiness: 'Event details',
+    reviewBusinessPackage: 'Event package',
     reviewMemo: 'Notes',
     reviewMarketing: 'Marketing',
     countryRequired: 'Please choose at least one country.',
     locationRequired: 'Please enter your preferred shooting location.',
     consentRequired: 'Please check the required consent items.',
+    slotLoadingForDate: 'Loading available times for {date}.',
+    slotLoadedForDate: 'Available times for {date}.',
+    slotFailForDate: 'Failed to load available times for {date}.',
+    initFail: 'Initialization failed',
     yes: 'Agreed',
     no: 'Not agreed'
   },
   de: {
+    heroTitle: 'Termin buchen',
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
+    loadingCopy: 'Buchungsseite wird vorbereitet.',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum & Uhrzeit wählen',
@@ -399,6 +453,11 @@ const COPY = {
     passAddonPeopleLabel: 'Passfoto Personen',
     locationLabel: 'Gewünschter Aufnahmeort',
     businessLabel: 'Eventdetails',
+    bizModeLabel: 'Aufnahmetyp',
+    bizHoursLabel: 'Stunden',
+    bizEditLabel: 'Videoschnitt',
+    bizAddonLabel: 'Zusatzanfragen',
+    bizAddonHelp: 'Zusatzwünsche werden nach der Buchung geprüft und ggf. separat angeboten.',
     surveyFieldLabel: 'Gewünschte Stimmung',
     bgFieldLabel: 'Hintergrundauswahl',
     nameLabel: 'Name',
@@ -423,6 +482,7 @@ const COPY = {
     calendarLoadedHint: 'Bitte wählen Sie ein verfügbares Datum.',
     monthPrev: 'Vorheriger Monat',
     monthNext: 'Nächster Monat',
+    slotPanelTitle: 'Verfügbare Zeiten',
     selectProductDetailEmpty: 'Wählen Sie ein Paket, um Beschreibung und geschätzten Preis zu sehen.',
     selectCategoryEmpty: 'Bitte zuerst eine Kategorie wählen.',
     noOptions: 'Keine zusätzlichen Optionen verfügbar.',
@@ -440,11 +500,16 @@ const COPY = {
     reviewSurvey: 'Stimmung',
     reviewLocation: 'Aufnahmeort',
     reviewBusiness: 'Eventdetails',
+    reviewBusinessPackage: 'Event-Paket',
     reviewMemo: 'Hinweise',
     reviewMarketing: 'Marketing',
     countryRequired: 'Bitte wählen Sie mindestens ein Land aus.',
     locationRequired: 'Bitte geben Sie den gewünschten Aufnahmeort ein.',
     consentRequired: 'Bitte bestätigen Sie die Pflicht-Einwilligungen.',
+    slotLoadingForDate: 'Verfügbare Zeiten für {date} werden geladen.',
+    slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
+    slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
+    initFail: 'Initialisierung fehlgeschlagen',
     yes: 'Zustimmung',
     no: 'Keine Zustimmung'
   }
@@ -465,6 +530,10 @@ const state = {
   ageGroup: 'adult',
   babyType: 'baekil',
   bgColors: [],
+  businessMode: 'photo',
+  businessHours: '2',
+  businessVideoEdit: 'raw',
+  businessAddonKeys: [],
   activeStep: 1,
   returnEligible: false,
   returnNoticeTimer: null,
@@ -480,8 +549,10 @@ const state = {
 const els = {
   shell: document.querySelector('.shell'),
   hero: document.querySelector('.hero'),
+  heroTitle: document.getElementById('heroTitle'),
   banner: document.getElementById('statusBanner'),
   heroLead: document.getElementById('heroLead'),
+  loadingCopy: document.getElementById('loadingCopy'),
   groupHelp: document.getElementById('groupHelp'),
   groupGrid: document.getElementById('groupGrid'),
   productHelp: document.getElementById('productHelp'),
@@ -516,6 +587,7 @@ const els = {
   monthLabel: document.getElementById('monthLabel'),
   calendarWeekdays: document.getElementById('calendarWeekdays'),
   calendarGrid: document.getElementById('calendarGrid'),
+  slotPanelTitle: document.getElementById('slotPanelTitle'),
   slotHint: document.getElementById('slotHint'),
   slotGrid: document.getElementById('slotGrid'),
   reviewBox: document.getElementById('reviewBox'),
@@ -526,6 +598,12 @@ const els = {
   locationInfo: document.getElementById('locationInfo'),
   locationInput: document.getElementById('locationInput'),
   businessField: document.getElementById('businessField'),
+  bizMode: document.getElementById('bizMode'),
+  bizHours: document.getElementById('bizHours'),
+  bizEdit: document.getElementById('bizEdit'),
+  bizEditField: document.getElementById('bizEditField'),
+  bizAddonGrid: document.getElementById('bizAddonGrid'),
+  bizAddonHelp: document.getElementById('bizAddonHelp'),
   businessInput: document.getElementById('businessInput'),
   surveyField: document.getElementById('surveyField'),
   surveyGrid: document.getElementById('surveyGrid'),
@@ -571,7 +649,7 @@ async function boot() {
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
-    setBanner(`초기화 실패: ${error.message}`, 'error');
+    setBanner(`${getCopy().initFail}: ${error.message}`, 'error');
   } finally {
     hideLoadingScreen();
   }
@@ -684,6 +762,23 @@ function wireEvents() {
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  els.bizMode?.addEventListener('change', async () => {
+    state.businessMode = els.bizMode.value || 'photo';
+    if (state.businessMode !== 'video') state.businessVideoEdit = 'raw';
+    renderBusinessOptions();
+    await handleQuoteInputChange();
+    refreshStepLocks();
+  });
+  els.bizHours?.addEventListener('change', async () => {
+    state.businessHours = els.bizHours.value || '2';
+    await handleQuoteInputChange();
+    refreshStepLocks();
+  });
+  els.bizEdit?.addEventListener('change', async () => {
+    state.businessVideoEdit = els.bizEdit.value || 'raw';
+    await handleQuoteInputChange();
+    refreshStepLocks();
+  });
   els.form.elements.memo?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.passportPeople.addEventListener('change', () => {
     handleQuoteInputChange();
@@ -718,9 +813,28 @@ function getCopy() {
   return COPY[state.lang] || COPY.ko;
 }
 
+function fillCopy(template, vars = {}) {
+  return Object.entries(vars).reduce((acc, [key, value]) => acc.replaceAll(`{${key}}`, String(value)), template);
+}
+
+function formatDateLabel(dateKey) {
+  const [year, month, day] = String(dateKey || '').split('-').map(Number);
+  if (!year || !month || !day) return String(dateKey || '');
+  const date = new Date(year, month - 1, day);
+  if (state.lang === 'en') {
+    return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
+  }
+  if (state.lang === 'de') {
+    return new Intl.DateTimeFormat('de-DE', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
+  }
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
 function applyCopy() {
   const copy = getCopy();
+  if (els.heroTitle) els.heroTitle.textContent = copy.heroTitle;
   els.heroLead.textContent = copy.hero;
+  if (els.loadingCopy) els.loadingCopy.textContent = copy.loadingCopy;
   setText('step1Title', copy.step1Title);
   setText('step2Title', copy.step2Title);
   setText('step3Title', copy.step3Title);
@@ -764,6 +878,7 @@ function applyCopy() {
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
+  if (els.slotPanelTitle) els.slotPanelTitle.textContent = copy.slotPanelTitle;
   els.submitBtn.textContent = copy.submitLabel;
   const prevLabel = state.lang === 'en' ? 'Back' : state.lang === 'de' ? 'Zurück' : '이전';
   const nextLabel = state.lang === 'en' ? 'Next' : state.lang === 'de' ? 'Weiter' : '다음';
@@ -773,7 +888,12 @@ function applyCopy() {
   setText('step3BackBtn', prevLabel);
   setText('step3NextBtn', nextLabel);
   setText('step5BackBtn', prevLabel);
-  els.slotHint.textContent = state.selectedDate ? els.slotHint.textContent : copy.slotHintEmpty;
+  if (state.selectedDate) {
+    const template = state.selectedSlot ? copy.slotLoadedForDate : copy.slotLoadingForDate;
+    els.slotHint.textContent = fillCopy(template, { date: formatDateLabel(state.selectedDate) });
+  } else {
+    els.slotHint.textContent = copy.slotHintEmpty;
+  }
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
@@ -1082,6 +1202,35 @@ function getPreviewQuote() {
   const totalCountries = passCountries.length + (otherCountry ? 1 : 0);
   let total = Number(item.p || 0);
 
+  if (item.g === 'biz') {
+    const business = getBusinessSelection();
+    return {
+      itemId: item.id,
+      itemGroup: item.g,
+      itemType: item.t,
+      people: 1,
+      totalPrice: business.price,
+      duration: business.duration,
+      prep: Number(item.prep || 0),
+      totalDuration: business.duration + Number(item.prep || 0),
+      product: item,
+      marketingDiscount: 0,
+      passAddon: false,
+      passAddonPeople: 0,
+      passAddonDur: 0,
+      passAddonPrice: 0,
+      passCountries: [],
+      otherCountry: '',
+      totalCountries: 0,
+      optionKeys: [],
+      businessMode: business.mode,
+      businessHours: business.hours,
+      businessVideoEdit: business.edit,
+      businessAddonKeys: [...state.businessAddonKeys],
+      businessLabel: business.label
+    };
+  }
+
   if (item.t === 'passport') total = (total + Math.max(totalCountries - 1, 0) * 5) * people;
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
@@ -1279,6 +1428,26 @@ function getProductLabel(product) {
   return product.nameKo || product.nameEn || product.nameDe;
 }
 
+function getBusinessSelection() {
+  const mode = state.businessMode || 'photo';
+  const hours = Number(state.businessHours || 2);
+  const edit = state.businessVideoEdit || 'raw';
+  const tableKey = mode === 'video' ? `video_${edit}` : 'photo';
+  const price = BUSINESS_PRICE_META[tableKey]?.[hours] || 0;
+  const modeLabel = BUSINESS_MODE_META.find((item) => item.key === mode)?.label[state.lang]
+    || BUSINESS_MODE_META.find((item) => item.key === mode)?.label.ko
+    || mode;
+  const editLabel = mode === 'video'
+    ? (BUSINESS_VIDEO_EDIT_META.find((item) => item.key === edit)?.label[state.lang]
+      || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === edit)?.label.ko
+      || edit)
+    : '';
+  const label = mode === 'video'
+    ? `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'} · ${editLabel}`
+    : `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`;
+  return { mode, hours, edit, tableKey, price, label, duration: hours * 60 };
+}
+
 function getProductDescription(product) {
   if (!product) return '';
   if (state.lang === 'en') return product.descEn || product.descKo || '';
@@ -1307,11 +1476,13 @@ function getPrepDuration() {
 function getEstimatedPrice() {
   if (state.quote?.totalPrice !== undefined) return Number(state.quote.totalPrice) || 0;
   if (!state.selectedProduct) return 0;
+  if (state.selectedProduct.g === 'biz') return getBusinessSelection().price;
   return Number(state.selectedProduct.p || 0);
 }
 
 function getPeopleCount() {
   if (!state.selectedProduct) return 1;
+  if (state.selectedProduct.g === 'biz') return 1;
   return state.selectedProduct.g === 'pass'
     ? Number(els.passportPeople.value || 1)
     : Number(els.generalPeople.value || 1);
@@ -1373,6 +1544,52 @@ function renderPeopleOptions() {
       .join('');
     els.passAddonPeople.value = addonValue;
   }
+}
+
+function renderBusinessOptions() {
+  if (!els.bizMode || !els.bizHours || !els.bizEdit || !els.bizAddonGrid || !els.bizAddonHelp) return;
+  const isBiz = state.selectedProduct?.g === 'biz';
+  if (!isBiz) {
+    els.bizEditField?.classList.add('hidden-field');
+    els.bizAddonGrid.innerHTML = '';
+    return;
+  }
+  els.bizMode.innerHTML = BUSINESS_MODE_META
+    .map((item) => `<option value="${item.key}">${escapeHtml(item.label[state.lang] || item.label.ko)}</option>`)
+    .join('');
+  els.bizHours.innerHTML = BUSINESS_HOURS_META
+    .map((hours) => {
+      const label = state.lang === 'en'
+        ? `${hours} hours`
+        : state.lang === 'de'
+          ? `${hours} Stunden`
+          : `${hours}시간`;
+      return `<option value="${hours}">${escapeHtml(label)}</option>`;
+    })
+    .join('');
+  els.bizEdit.innerHTML = BUSINESS_VIDEO_EDIT_META
+    .map((item) => `<option value="${item.key}">${escapeHtml(item.label[state.lang] || item.label.ko)}</option>`)
+    .join('');
+  els.bizMode.value = state.businessMode;
+  els.bizHours.value = state.businessHours;
+  els.bizEdit.value = state.businessVideoEdit;
+  els.bizEditField?.classList.toggle('hidden-field', state.businessMode !== 'video');
+  els.bizAddonHelp.textContent = getCopy().bizAddonHelp;
+  els.bizAddonGrid.innerHTML = BUSINESS_ADDON_META.map((item) => {
+    const selected = state.businessAddonKeys.includes(item.key) ? ' selected' : '';
+    return `<button type="button" class="chip-btn toggle-chip${selected}" data-biz-addon="${item.key}">${escapeHtml(item.label[state.lang] || item.label.ko)}</button>`;
+  }).join('');
+  els.bizAddonGrid.querySelectorAll('[data-biz-addon]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.bizAddon;
+      const index = state.businessAddonKeys.indexOf(key);
+      if (index >= 0) state.businessAddonKeys.splice(index, 1);
+      else state.businessAddonKeys.push(key);
+      renderBusinessOptions();
+      renderReview();
+      refreshStepLocks();
+    });
+  });
 }
 
 function getPeoplePricingNote(product, people) {
@@ -1480,11 +1697,24 @@ function getProductGuideList(product) {
         : ['달력 확인 전 2단계에서 희망 촬영 장소를 먼저 입력해 주세요.', '프랑크푸르트 50km 외 지역은 추가 이동 비용이 발생할 수 있습니다.', '야외 촬영은 날씨 영향을 받아 검토 후 대체안을 안내드릴 수 있습니다.'];
   }
   if (product.g === 'biz') {
+    const business = getBusinessSelection();
     return state.lang === 'en'
-      ? ['Please describe the event purpose, schedule, and required deliverables in detail.', 'Corporate/event sessions are finalized after internal review.', 'We may contact you for timeline or location coordination before confirmation.']
+      ? [
+          `${business.label} package is currently selected.`,
+          'Please describe the event purpose, schedule, and required deliverables in detail.',
+          'SNS, rush delivery, and branding requests are reviewed after booking.'
+        ]
       : state.lang === 'de'
-        ? ['Bitte beschreiben Sie Zweck, Ablauf und gewünschte Deliverables des Events möglichst genau.', 'Firmen-/Event-Shootings werden nach interner Prüfung final bestätigt.', 'Vor der Bestätigung können wir uns zur Abstimmung von Zeitplan oder Ort melden.']
-        : ['행사 목적, 시간대, 필요한 결과물을 가능한 자세히 적어 주세요.', '기업/행사 촬영은 내부 검토 후 최종 확정됩니다.', '확정 전 일정이나 장소 조율을 위해 별도로 연락드릴 수 있습니다.'];
+        ? [
+            `${business.label} ist aktuell ausgewählt.`,
+            'Bitte beschreiben Sie Zweck, Ablauf und gewünschte Deliverables des Events möglichst genau.',
+            'SNS, Express-Lieferung und Branding-Wünsche werden nach der Buchung einzeln geprüft.'
+          ]
+        : [
+            `${business.label} 패키지가 현재 선택되어 있습니다.`,
+            '행사 목적, 시간대, 필요한 결과물을 가능한 자세히 적어 주세요.',
+            'SNS, 긴급 납품, 자막/로고/BGM 요청은 예약 접수 후 개별 검토됩니다.'
+          ];
   }
   return [];
 }
@@ -1643,6 +1873,10 @@ function selectGroup(groupKey) {
   state.ageGroup = 'adult';
   state.babyType = 'baekil';
   state.bgColors = [];
+  state.businessMode = 'photo';
+  state.businessHours = '2';
+  state.businessVideoEdit = 'raw';
+  state.businessAddonKeys = [];
   els.form.reset();
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
@@ -1679,6 +1913,10 @@ async function selectProduct(productId) {
   state.ageGroup = 'adult';
   state.babyType = 'baekil';
   state.bgColors = [];
+  state.businessMode = 'photo';
+  state.businessHours = '2';
+  state.businessVideoEdit = 'raw';
+  state.businessAddonKeys = [];
   els.form.reset();
   els.generalPeople.value = String(getDefaultPeopleForProduct(state.selectedProduct));
   els.passportPeople.value = '1';
@@ -1731,6 +1969,7 @@ function renderGeneralPanel() {
   renderAgeChips();
   renderBabyTypeChips();
   renderBgChips();
+  renderBusinessOptions();
   const options = Object.entries(OPTION_META)
     .filter(([, meta]) => meta.groups.includes(product.g))
     .map(([key, meta]) => {
@@ -1767,6 +2006,7 @@ function syncConditionalFields() {
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
   els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
+  if (group === 'biz') renderBusinessOptions();
   syncMemoPlaceholder();
 }
 
@@ -1803,6 +2043,10 @@ function getQuoteRequest() {
     ageGroup: product.g === 'prof' ? state.ageGroup : 'adult',
     babyType: product.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
+    businessMode: product.g === 'biz' ? state.businessMode : '',
+    businessHours: product.g === 'biz' ? Number(state.businessHours || 2) : '',
+    businessVideoEdit: product.g === 'biz' ? state.businessVideoEdit : '',
+    businessAddonKeys: product.g === 'biz' ? [...state.businessAddonKeys] : [],
     passAddon: (product.g === 'prof' || product.g === 'stud') && !!els.passAddonToggle?.checked,
     passAddonPeople: Number(els.passAddonPeople?.value || 1)
   };
@@ -1870,7 +2114,14 @@ function renderProductDetail() {
     els.productDetail.textContent = getCopy().selectProductDetailEmpty;
     return;
   }
-  const desc = getProductDescription(state.selectedProduct);
+  const business = state.selectedProduct.g === 'biz' ? getBusinessSelection() : null;
+  const desc = business
+    ? (state.lang === 'en'
+      ? `${business.label}. Original files are included. Optional requests are reviewed after booking.`
+      : state.lang === 'de'
+        ? `${business.label}. Originaldateien sind inklusive. Zusatzwünsche werden nach der Buchung geprüft.`
+        : `${business.label}. 원본 제공이 포함되며, 추가 요청은 예약 접수 후 검토됩니다.`)
+    : getProductDescription(state.selectedProduct);
   const price = getEstimatedPrice();
   const productGuideList = getProductGuideList(state.selectedProduct);
   const visitGuideList = getVisitGuideList(state.selectedProduct);
@@ -1898,7 +2149,17 @@ function renderProductDetail() {
     <div class="price-hero">
       <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
       <div class="price-hero-value">€${price}</div>
-      <div class="price-hero-copy">${state.lang === 'en' ? `About ${getShootDuration()} min` : state.lang === 'de' ? `Ca. ${getShootDuration()} Min` : `촬영 약 ${getShootDuration()}분`}</div>
+      <div class="price-hero-copy">${state.selectedProduct.g === 'biz'
+        ? (state.lang === 'en'
+          ? `${business.hours} hours selected`
+          : state.lang === 'de'
+            ? `${business.hours} Stunden ausgewählt`
+            : `${business.hours}시간 선택`)
+        : (state.lang === 'en'
+          ? `About ${getShootDuration()} min`
+          : state.lang === 'de'
+            ? `Ca. ${getShootDuration()} Min`
+            : `촬영 약 ${getShootDuration()}분`)}</div>
     </div>
     ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
     ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
@@ -1977,7 +2238,8 @@ async function loadSlotsForDate(dateKey) {
   const token = ++state.slotRequestToken;
   const duration = getCalendarDuration();
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
-  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+  const dateLabel = formatDateLabel(dateKey);
+  els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
   let slots = [];
@@ -1988,12 +2250,12 @@ async function loadSlotsForDate(dateKey) {
   } catch (error) {
     if (token !== state.slotRequestToken) return;
     console.error(error);
-    els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간 조회에 실패했습니다.`;
+    els.slotHint.textContent = fillCopy(getCopy().slotFailForDate, { date: dateLabel });
     renderSlots([]);
     return;
   }
   if (token !== state.slotRequestToken) return;
-  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간입니다.`;
+  els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: dateLabel });
   renderSlots(slots);
 }
 
@@ -2027,7 +2289,7 @@ async function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.activeStep = 3;
   state.selectedSlot = '';
-  els.slotHint.textContent = `${dateKey} 기준 예약 가능 시간을 불러오는 중입니다.`;
+  els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: formatDateLabel(dateKey) });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
   renderSeniorWarning();
@@ -2123,6 +2385,17 @@ function renderReview() {
   const location = String(els.locationInput?.value || '').trim();
   if (location) rows.push([copy.reviewLocation, location]);
   const businessDetails = String(els.businessInput?.value || '').trim();
+  if (state.selectedProduct.g === 'biz') {
+    rows.push([copy.reviewBusinessPackage, state.quote?.businessLabel || getBusinessSelection().label]);
+    if (state.businessAddonKeys.length) {
+      const addonLabels = state.businessAddonKeys
+        .map((key) => BUSINESS_ADDON_META.find((item) => item.key === key))
+        .filter(Boolean)
+        .map((item) => item.label[state.lang] || item.label.ko)
+        .join(', ');
+      rows.push([copy.reviewOptions, addonLabels]);
+    }
+  }
   if (businessDetails) rows.push([copy.reviewBusiness, businessDetails]);
   if (state.bgColors.length) {
     const bgLabels = state.bgColors
@@ -2164,10 +2437,11 @@ function updateSubmitState() {
   const passCountriesOk = !isPass || state.selectedCountries.length > 0;
   const otherCountryOk = !isPass || !state.selectedCountries.includes('OTHER') || !!String(formData.get('otherCountry') || '').trim();
   const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
+  const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !(product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
-  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && babyNameOk && reshootingOk);
+  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk);
 }
 
 function clearCalendarSelection() {
@@ -2217,6 +2491,10 @@ async function onSubmit(event) {
     otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
     businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
+    businessMode: state.selectedProduct.g === 'biz' ? state.businessMode : '',
+    businessHours: state.selectedProduct.g === 'biz' ? Number(state.businessHours || 2) : '',
+    businessVideoEdit: state.selectedProduct.g === 'biz' ? state.businessVideoEdit : '',
+    businessAddonKeys: state.selectedProduct.g === 'biz' ? [...state.businessAddonKeys] : [],
     location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(els.locationInput?.value || '').trim() : '',
     marketing: !isPass && formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
@@ -2260,6 +2538,17 @@ async function onSubmit(event) {
   }
   if ((state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') && !payload.location) {
     setBanner(getCopy().locationRequired, 'error');
+    return;
+  }
+  if (state.selectedProduct.g === 'biz' && !payload.businessDetails) {
+    setBanner(
+      state.lang === 'en'
+        ? 'Please describe the event details before submitting.'
+        : state.lang === 'de'
+          ? 'Bitte beschreiben Sie das Event vor dem Absenden.'
+          : '행사 상세 내용을 입력해 주세요.',
+      'error'
+    );
     return;
   }
   if (!payload.gdprConsent || (!isPass && !payload.aiConsent)) {
@@ -2328,6 +2617,10 @@ function resetBookingFlow() {
   state.ageGroup = 'adult';
   state.babyType = 'baekil';
   state.bgColors = [];
+  state.businessMode = 'photo';
+  state.businessHours = '2';
+  state.businessVideoEdit = 'raw';
+  state.businessAddonKeys = [];
   state.quote = null;
   state.returnEligible = false;
   state.returnNoticeToken += 1;
@@ -2443,6 +2736,39 @@ function getSuccessGuideHtml(payload) {
               <li>1–5 reference images are helpful.</li>
               <li>Two outfits are recommended.</li>
               <li>Please arrive 10–15 minutes early.</li>
+            </ul>
+          `}
+        </div>
+      </section>
+    `);
+  }
+
+  if (product.g === 'biz') {
+    const business = state.quote || getBusinessSelection();
+    sections.push(`
+      <section class="result-guide-box">
+        <h4 class="result-guide-title">${isKo ? '📸 기업/행사 촬영 안내' : 'Corporate / Event Booking Guide'}</h4>
+        <div class="result-guide-body">
+          ${isKo ? `
+            <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> 기준으로 예약이 접수되었습니다.</p>
+            <h5>제공 방식</h5>
+            <ul>
+              <li>행사 사진은 촬영 시간별 투명한 가격으로 진행되며 JPG 원본과 기본 색보정본이 제공됩니다.</li>
+              <li>행사 영상은 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.</li>
+              <li>SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 행사 목적과 일정에 따라 개별 검토 후 안내드립니다.</li>
+            </ul>
+            <h5>예약 후 진행</h5>
+            <ul>
+              <li>행사 목적, 시작/종료 시간, 장소, 예상 인원, 필요한 결과물을 기준으로 최종 내용을 확인합니다.</li>
+              <li>필요 시 이메일 또는 전화로 동선, 납품 일정, 추가 요청을 다시 조율합니다.</li>
+              <li>긴급 납품이나 브랜드 삽입 요청은 확정 메일에서 최종 비용과 가능 여부를 안내드립니다.</li>
+            </ul>
+          ` : `
+            <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> has been requested.</p>
+            <ul>
+              <li>We will review the event purpose, timeline, deliverables, and any optional requests.</li>
+              <li>SNS short-form, rush delivery, and branding requests are confirmed after internal review.</li>
+              <li>We may contact you again to coordinate timing, location flow, and delivery expectations.</li>
             </ul>
           `}
         </div>

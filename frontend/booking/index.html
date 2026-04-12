@@ -10,10 +10,9 @@
   <div id="loadingScreen" class="loading-screen">
     <div class="loading-card">
       <div class="brand-lockup centered">
-        <div class="brand-kicker">STUDIO MEAN</div>
         <img class="brand-logo-image" src="./studio-mean-logo.png" alt="Studio mean logo">
       </div>
-      <div class="loading-copy">예약 페이지를 준비하고 있습니다.</div>
+      <div id="loadingCopy" class="loading-copy">예약 페이지를 준비하고 있습니다.</div>
       <div class="loading-dots" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>
@@ -23,7 +22,6 @@
     <section class="hero">
       <div class="hero-top">
         <div class="brand-lockup">
-          <div class="brand-kicker">STUDIO MEAN</div>
           <img class="brand-logo-image header-logo" src="./studio-mean-logo.png" alt="Studio mean logo">
         </div>
         <div class="lang-row">
@@ -32,7 +30,7 @@
           <button type="button" class="lang-btn" data-lang="de">DE</button>
         </div>
       </div>
-      <h1>예약하기</h1>
+      <h1 id="heroTitle">예약하기</h1>
       <p id="heroLead" class="lede">원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.</p>
       <div id="statusBanner" class="banner loading">초기 데이터를 불러오는 중입니다.</div>
     </section>
@@ -131,6 +129,25 @@
         </label>
         <label id="businessField" class="hidden-field inline-field">
           <span id="businessLabel">행사 상세 내용</span>
+          <div id="bizConfigField" class="biz-config-grid">
+            <label class="inline-field">
+              <span id="bizModeLabel">촬영 유형</span>
+              <select id="bizMode"></select>
+            </label>
+            <label class="inline-field">
+              <span id="bizHoursLabel">촬영 시간</span>
+              <select id="bizHours"></select>
+            </label>
+            <label id="bizEditField" class="inline-field">
+              <span id="bizEditLabel">영상 편집</span>
+              <select id="bizEdit"></select>
+            </label>
+          </div>
+          <div id="bizAddonField" class="form-block">
+            <span id="bizAddonLabel" class="block-label">추가 요청</span>
+            <div id="bizAddonGrid" class="chip-grid"></div>
+            <p id="bizAddonHelp" class="muted-copy">추가 옵션은 예약 접수 후 세부 내용에 따라 최종 비용이 안내될 수 있습니다.</p>
+          </div>
           <textarea id="businessInput" name="businessDetails" rows="3" placeholder="행사 목적, 예상 인원, 필요한 결과물을 적어 주세요."></textarea>
         </label>
         <div id="surveyField" class="hidden-field form-block">
@@ -171,7 +188,7 @@
         </div>
         <aside class="slot-panel">
           <div class="slot-panel-head">
-            <div class="slot-panel-title">Available Times</div>
+            <div id="slotPanelTitle" class="slot-panel-title">예약 가능 시간</div>
             <p id="slotHint">날짜를 선택하면 예약 가능 시간이 표시됩니다.</p>
           </div>
           <div id="slotGrid" class="slot-grid empty-state">아직 선택된 날짜가 없습니다.</div>
