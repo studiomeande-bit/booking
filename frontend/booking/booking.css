@@ -136,6 +136,9 @@ h1 {
 .detail-box.hidden {
   display: none;
 }
+.hidden-field {
+  display: none !important;
+}
 .inline-field.hidden {
   display: none;
 }
@@ -310,6 +313,55 @@ h1 {
 .result-box {
   grid-column: 1 / -1;
 }
+.form-block,
+.consent-box {
+  grid-column: 1 / -1;
+}
+.block-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #645c53;
+}
+.survey-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.survey-chip {
+  border: 1px solid #ddd3c5;
+  border-radius: 16px;
+  background: #fff;
+  color: #52483d;
+  padding: 14px 16px;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.survey-chip.selected {
+  background: #20394f;
+  border-color: #20394f;
+  color: #fff;
+}
+.consent-box {
+  padding: 16px;
+  border: 1px solid #e5dccf;
+  border-radius: 18px;
+  background: #fcfaf6;
+}
+.consent-title {
+  font-size: 15px;
+  font-weight: 800;
+}
+.consent-copy {
+  margin: 6px 0 12px;
+  color: #6d655d;
+  line-height: 1.6;
+}
+.consent-row {
+  padding-left: 0;
+}
 .submit-btn {
   margin-top: 6px;
   background: #2d2a26;
@@ -340,4 +392,5 @@ h1 {
   .booking-form { grid-template-columns: 1fr; }
   .calendar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .hero-top { flex-direction: column; align-items: flex-start; }
+  .survey-grid { grid-template-columns: 1fr; }
 }

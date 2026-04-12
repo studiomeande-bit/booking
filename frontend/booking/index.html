@@ -106,14 +106,42 @@
           <span>주소</span>
           <input name="address" autocomplete="street-address">
         </label>
+        <label id="otherCountryField" class="hidden-field">
+          <span>기타 국가명</span>
+          <input name="otherCountry" autocomplete="off" placeholder="예: France, Canada">
+        </label>
+        <label id="locationField" class="hidden-field">
+          <span>희망 촬영 장소</span>
+          <textarea name="location" rows="3" placeholder="예: Frankfurt Römer, Heidelberg Old Town"></textarea>
+        </label>
+        <label id="businessField" class="hidden-field">
+          <span>행사 상세 내용</span>
+          <textarea name="businessDetails" rows="3" placeholder="행사 목적, 예상 인원, 필요한 결과물을 적어 주세요."></textarea>
+        </label>
+        <div id="surveyField" class="hidden-field form-block">
+          <span class="block-label">원하는 분위기</span>
+          <div id="surveyGrid" class="survey-grid"></div>
+        </div>
         <label>
           <span>요청사항</span>
           <textarea name="memo" rows="4"></textarea>
         </label>
-        <label class="checkbox-row">
-          <input type="checkbox" name="marketing">
-          <span>마케팅/SNS 활용에 동의합니다.</span>
-        </label>
+        <div class="consent-box">
+          <div class="consent-title">이용 동의</div>
+          <p class="consent-copy">필수 항목을 체크해야 예약을 제출할 수 있습니다.</p>
+          <label class="checkbox-row consent-row">
+            <input type="checkbox" name="gdprConsent">
+            <span>[필수] 개인정보 수집 및 이용에 동의합니다.</span>
+          </label>
+          <label class="checkbox-row consent-row">
+            <input type="checkbox" name="aiConsent">
+            <span>[필수] AI 보정 및 처리 안내에 동의합니다.</span>
+          </label>
+          <label class="checkbox-row consent-row">
+            <input type="checkbox" name="marketing">
+            <span>[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.</span>
+          </label>
+        </div>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
         <button id="submitBtn" type="submit" class="submit-btn" disabled>예약 제출</button>
       </form>

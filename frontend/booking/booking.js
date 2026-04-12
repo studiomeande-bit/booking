@@ -34,6 +34,14 @@ const OPTION_META = {
   }
 };
 
+const SURVEY_META = [
+  { key: 'clean', icon: '🪴', label: { ko: '깔끔/모던', en: 'Clean / Modern', de: 'Sauber / Modern' } },
+  { key: 'warm', icon: '🌿', label: { ko: '따뜻/자연', en: 'Warm / Natural', de: 'Warm / Natürlich' } },
+  { key: 'pro', icon: '💼', label: { ko: '전문/포멀', en: 'Professional / Formal', de: 'Professionell / Formal' } },
+  { key: 'unique', icon: '✨', label: { ko: '트렌디/유니크', en: 'Trendy / Unique', de: 'Trendy / Einzigartig' } },
+  { key: 'baby', icon: '👶', label: { ko: '백일/돌', en: 'Baby / Birthday', de: 'Baby / Geburtstag' } }
+];
+
 const COPY = {
   ko: {
     hero: '이 페이지는 Netlify 정적 프론트의 예약 API 연결 버전입니다. 이번 단계에서는 기존 예약 UX를 순차적으로 이식합니다.',
@@ -58,6 +66,15 @@ const COPY = {
     reviewTime: '시간',
     reviewPeople: '인원',
     reviewCountries: '촬영 국가',
+    reviewOptions: '추가 옵션',
+    reviewSurvey: '원하는 분위기',
+    reviewLocation: '촬영 장소',
+    reviewBusiness: '행사 상세',
+    reviewMemo: '요청사항',
+    reviewMarketing: '마케팅 동의',
+    countryRequired: '촬영 국가를 최소 1개 선택해 주세요.',
+    locationRequired: '희망 촬영 장소를 입력해 주세요.',
+    consentRequired: '필수 동의 항목을 체크해 주세요.',
     yes: '동의',
     no: '미동의'
   },
@@ -84,6 +101,15 @@ const COPY = {
     reviewTime: 'Time',
     reviewPeople: 'People',
     reviewCountries: 'Country',
+    reviewOptions: 'Add-ons',
+    reviewSurvey: 'Preferred mood',
+    reviewLocation: 'Location',
+    reviewBusiness: 'Event details',
+    reviewMemo: 'Notes',
+    reviewMarketing: 'Marketing',
+    countryRequired: 'Please choose at least one country.',
+    locationRequired: 'Please enter your preferred shooting location.',
+    consentRequired: 'Please check the required consent items.',
     yes: 'Agreed',
     no: 'Not agreed'
   },
@@ -110,6 +136,15 @@ const COPY = {
     reviewTime: 'Uhrzeit',
     reviewPeople: 'Personen',
     reviewCountries: 'Land',
+    reviewOptions: 'Optionen',
+    reviewSurvey: 'Stimmung',
+    reviewLocation: 'Aufnahmeort',
+    reviewBusiness: 'Eventdetails',
+    reviewMemo: 'Hinweise',
+    reviewMarketing: 'Marketing',
+    countryRequired: 'Bitte wählen Sie mindestens ein Land aus.',
+    locationRequired: 'Bitte geben Sie den gewünschten Aufnahmeort ein.',
+    consentRequired: 'Bitte bestätigen Sie die Pflicht-Einwilligungen.',
     yes: 'Zustimmung',
     no: 'Keine Zustimmung'
   }
@@ -125,6 +160,7 @@ const state = {
   selectedSlot: '',
   selectedCountries: [],
   optionKeys: [],
+  surveyKeys: [],
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -152,6 +188,11 @@ const els = {
   reviewBox: document.getElementById('reviewBox'),
   formHelp: document.getElementById('formHelp'),
   form: document.getElementById('bookingForm'),
+  otherCountryField: document.getElementById('otherCountryField'),
+  locationField: document.getElementById('locationField'),
+  businessField: document.getElementById('businessField'),
+  surveyField: document.getElementById('surveyField'),
+  surveyGrid: document.getElementById('surveyGrid'),
   submitBtn: document.getElementById('submitBtn'),
   resultBox: document.getElementById('resultBox'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
@@ -169,6 +210,7 @@ async function boot() {
     state.init = initData;
     renderProducts(initData.products || []);
     renderPassportCountries();
+    renderSurveyChips();
     renderProductDetail();
     renderReview();
     setBanner(getCopy().initSuccess, 'success');
@@ -182,6 +224,11 @@ function wireEvents() {
   els.prevMonthBtn.addEventListener('click', () => changeMonth(-1));
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
+  els.form.elements.otherCountry?.addEventListener('input', handleQuoteInputChange);
+  els.form.elements.marketing?.addEventListener('change', handleQuoteInputChange);
+  els.form.elements.location?.addEventListener('input', renderReview);
+  els.form.elements.businessDetails?.addEventListener('input', renderReview);
+  els.form.elements.memo?.addEventListener('input', renderReview);
   els.passportPeople.addEventListener('change', () => {
     handleQuoteInputChange();
   });
@@ -193,6 +240,7 @@ function wireEvents() {
       applyCopy();
       renderProducts(state.init?.products || []);
       renderPassportCountries();
+      renderSurveyChips();
       renderGeneralPanel();
       renderProductDetail();
       renderReview();
@@ -217,6 +265,24 @@ function applyCopy() {
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
+}
+
+function renderSurveyChips() {
+  els.surveyGrid.innerHTML = SURVEY_META.map((item) => {
+    const label = item.label[state.lang] || item.label.ko;
+    const selected = state.surveyKeys.includes(item.key) ? ' selected' : '';
+    return `<button type="button" class="survey-chip${selected}" data-survey="${item.key}">${item.icon} ${escapeHtml(label)}</button>`;
+  }).join('');
+  els.surveyGrid.querySelectorAll('[data-survey]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.survey;
+      const index = state.surveyKeys.indexOf(key);
+      if (index >= 0) state.surveyKeys.splice(index, 1);
+      else state.surveyKeys.push(key);
+      renderSurveyChips();
+      renderReview();
+    });
+  });
 }
 
 function getProductLabel(product) {
@@ -286,11 +352,14 @@ async function selectProduct(productId) {
   if (state.selectedProduct?.g !== 'pass') {
     state.selectedCountries = [];
   }
+  state.surveyKeys = [];
+  els.form.reset();
   els.generalPeople.value = '1';
   els.passportPeople.value = '1';
   els.submitBtn.disabled = true;
   renderProducts(state.init?.products || []);
   renderPassportPanel();
+  renderSurveyChips();
   renderGeneralPanel();
   await refreshQuote();
   if (!state.selectedProduct) return;
@@ -313,6 +382,7 @@ function renderGeneralPanel() {
   els.generalPanel.classList.toggle('hidden', !showGeneral);
   if (!showGeneral) {
     els.optionGrid.innerHTML = '';
+    syncConditionalFields();
     return;
   }
   const showPeople = product.t === 'group' || product.t === 'snap';
@@ -334,6 +404,15 @@ function renderGeneralPanel() {
       handleQuoteInputChange();
     });
   });
+  syncConditionalFields();
+}
+
+function syncConditionalFields() {
+  const group = state.selectedProduct?.g || '';
+  els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
+  els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
+  els.businessField.classList.toggle('hidden-field', group !== 'biz');
+  els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
 }
 
 function getQuoteRequest() {
@@ -344,9 +423,9 @@ function getQuoteRequest() {
     people: product.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
     optionKeys: [...state.optionKeys],
     passCountries: product.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
-    otherCountry: '',
+    otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
-    marketing: false,
+    marketing: els.form.elements.marketing?.checked || false,
     isReturn: false
   };
 }
@@ -390,6 +469,7 @@ function toggleCountry(code) {
   if (index >= 0) state.selectedCountries.splice(index, 1);
   else state.selectedCountries.push(code);
   renderPassportCountries();
+  syncConditionalFields();
   handleQuoteInputChange();
 }
 
@@ -522,11 +602,28 @@ function renderReview() {
       }).join(', ');
       rows.push([copy.reviewCountries, countries]);
     }
+  } else if (!els.peopleField.classList.contains('hidden')) {
+    rows.push([copy.reviewPeople, `${els.generalPeople.value}명`]);
   }
   if (state.optionKeys.length) {
     const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
-    rows.push(['옵션', optionLabels]);
+    rows.push([copy.reviewOptions, optionLabels]);
   }
+  if (state.surveyKeys.length) {
+    const surveyLabels = state.surveyKeys
+      .map((key) => SURVEY_META.find((item) => item.key === key))
+      .filter(Boolean)
+      .map((item) => item.label[state.lang] || item.label.ko)
+      .join(', ');
+    rows.push([copy.reviewSurvey, surveyLabels]);
+  }
+  const location = String(els.form.elements.location?.value || '').trim();
+  if (location) rows.push([copy.reviewLocation, location]);
+  const businessDetails = String(els.form.elements.businessDetails?.value || '').trim();
+  if (businessDetails) rows.push([copy.reviewBusiness, businessDetails]);
+  const memo = String(els.form.elements.memo?.value || '').trim();
+  if (memo) rows.push([copy.reviewMemo, memo]);
+  rows.push([copy.reviewMarketing, els.form.elements.marketing?.checked ? copy.yes : copy.no]);
   els.reviewBox.className = 'detail-box';
   els.reviewBox.innerHTML = rows.map(([key, val]) => `
     <div class="summary-item" style="margin-top:10px;">
@@ -576,12 +673,13 @@ async function onSubmit(event) {
     lang: state.lang,
     optionKeys: [...state.optionKeys],
     passCountries: state.selectedProduct.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
-    surveyKeys: [],
-    businessDetails: '',
-    location: '',
+    otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
+    surveyKeys: [...state.surveyKeys],
+    businessDetails: state.selectedProduct.g === 'biz' ? String(formData.get('businessDetails') || '').trim() : '',
+    location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(formData.get('location') || '').trim() : '',
     marketing: formData.get('marketing') === 'on',
-    gdprConsent: true,
-    aiConsent: true,
+    gdprConsent: formData.get('gdprConsent') === 'on',
+    aiConsent: formData.get('aiConsent') === 'on',
     bgColors: [],
     passAddon: false,
     passAddonPeople: 1
@@ -591,7 +689,15 @@ async function onSubmit(event) {
     return;
   }
   if (state.selectedProduct.g === 'pass' && !state.selectedCountries.length) {
-    setBanner('촬영 국가를 최소 1개 선택해 주세요.', 'error');
+    setBanner(getCopy().countryRequired, 'error');
+    return;
+  }
+  if ((state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') && !payload.location) {
+    setBanner(getCopy().locationRequired, 'error');
+    return;
+  }
+  if (!payload.gdprConsent || !payload.aiConsent) {
+    setBanner(getCopy().consentRequired, 'error');
     return;
   }
   els.submitBtn.disabled = true;
