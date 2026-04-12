@@ -74,6 +74,14 @@ body {
   letter-spacing: -.03em;
   color: #2d2a26;
 }
+.brand-logo-image {
+  display: block;
+  width: min(420px, 100%);
+  height: auto;
+}
+.header-logo {
+  width: min(280px, 58vw);
+}
 .brand-tagline {
   color: #8a7b68;
   font-size: 12px;
@@ -922,7 +930,7 @@ h1 {
 @media (max-width: 480px) {
   .hero-top { flex-direction: column; gap: 10px; }
   .lang-row { justify-content: flex-start; }
-  .brand-logo { font-size: 32px; }
+  .header-logo { width: min(240px, 72vw); }
   .panel-head h2 { font-size: 19px; }
   .calendar-weekday { font-size: 11px; }
   .calendar-cell { min-height: 40px; font-size: 13px; }
