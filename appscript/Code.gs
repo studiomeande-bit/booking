@@ -155,17 +155,19 @@ function handlePublicApiRequest_(route,method,e){
       return jsonOk_(getSelectSession(sessionId));
     }
     if(route==='select-submit'){
-      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-submit');
-      const body=parsePublicJsonBody_(e);
-      const payload=body.data||body;
-      assertPublicRequestId_(body.requestId||payload.requestId);
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-submit');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body;
+      const payload=request.payload;
+      assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
       return jsonOk_(submitPhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
     }
     if(route==='select-update'){
-      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-update');
-      const body=parsePublicJsonBody_(e);
-      const payload=body.data||body;
-      assertPublicRequestId_(body.requestId||payload.requestId);
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-update');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body;
+      const payload=request.payload;
+      assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
       return jsonOk_(updatePhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
     }
     return jsonError_('NOT_FOUND','Unknown API route');

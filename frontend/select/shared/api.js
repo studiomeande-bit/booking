@@ -11,6 +11,13 @@ function buildUrl(route, params = {}) {
   return base.toString();
 }
 
+function buildPayloadUrl(route, data = {}, extraParams = {}) {
+  return buildUrl(route, {
+    ...extraParams,
+    payload: JSON.stringify({ ...extraParams, data })
+  });
+}
+
 async function parseJsonResponse(response) {
   const text = await response.text();
   let payload;
@@ -44,21 +51,15 @@ export async function fetchSelectSession(sessionId) {
 }
 
 export async function submitSelect(sessionId, submission, requestId) {
-  const response = await fetch(buildUrl('select-submit'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({ requestId, data: { sessionId, submission } })
+  const response = await fetch(buildPayloadUrl('select-submit', { sessionId, submission }, { requestId }), {
+    cache: 'no-store'
   });
   return parseJsonResponse(response);
 }
 
 export async function updateSelect(sessionId, submission, requestId) {
-  const response = await fetch(buildUrl('select-update'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({ requestId, data: { sessionId, submission } })
+  const response = await fetch(buildPayloadUrl('select-update', { sessionId, submission }, { requestId }), {
+    cache: 'no-store'
   });
   return parseJsonResponse(response);
 }
