@@ -2234,6 +2234,14 @@ function getAccountingLedger(token, startDate, endDate) {
       source: 'booking',
       flow:'income',
       rowIndex: r+1,
+      depositDue: Number(row[11]||0) || 0,
+      depositPaid: String(row[BOOKING_COL['계약금입금여부']]||''),
+      depositPaidAt: String(row[BOOKING_COL['계약금입금일']]||''),
+      depositPaidAmount: String(row[BOOKING_COL['계약금입금금액']]||''),
+      balancePaid: String(row[BOOKING_COL['잔금결제여부']]||''),
+      balancePaidAt: String(row[BOOKING_COL['잔금입금일']]||''),
+      balancePaidAmount: String(row[BOOKING_COL['잔금결제금액']]||''),
+      openAmount: Math.max(0, (Number(row[10]||0)||0) - ((Number(row[BOOKING_COL['계약금입금금액']]||0)||0) + (Number(row[BOOKING_COL['잔금결제금액']]||0)||0))),
       lexwareSyncStatus: String(row[36]||''),
       lexwarePaymentStatus: String(row[35]||'')
     });
@@ -2324,6 +2332,13 @@ function getAccountingLedger(token, startDate, endDate) {
   let lexwarePendingCount = 0;
   let lexwareSyncedCount = 0;
   let lexwarePaidCount = 0;
+  let depositPaidCount = 0;
+  let depositPaidAmount = 0;
+  let balancePaidCount = 0;
+  let balancePaidAmount = 0;
+  let openCount = 0;
+  let openAmount = 0;
+  let partialPaidCount = 0;
   entries.forEach(function(entry){
     const typeKey = entry.type || '기타';
     byType[typeKey] = Math.round(((byType[typeKey] || 0) + (entry.gross || 0)) * 100) / 100;
@@ -2334,6 +2349,24 @@ function getAccountingLedger(token, startDate, endDate) {
     if (syncStatus && syncStatus !== '미전송') lexwareSyncedCount++;
     else lexwarePendingCount++;
     if (/paid|bezahlt|완료|fully_paid/i.test(paymentStatus)) lexwarePaidCount++;
+    if (entry.flow === 'income') {
+      if (String(entry.depositPaid||'') === 'Y') {
+        depositPaidCount++;
+        depositPaidAmount += Number(entry.depositPaidAmount||0) || 0;
+      }
+      if (String(entry.balancePaid||'') === 'Y') {
+        balancePaidCount++;
+        balancePaidAmount += Number(entry.balancePaidAmount||0) || 0;
+      }
+      const open = Number(entry.openAmount||0) || 0;
+      if (open > 0) {
+        openCount++;
+        openAmount += open;
+      }
+      if (String(entry.depositPaid||'') === 'Y' && String(entry.balancePaid||'') !== 'Y') {
+        partialPaidCount++;
+      }
+    }
   });
   const topAccountingClasses = Object.keys(byAccountingClass)
     .map(function(label){ return { label: label, gross: byAccountingClass[label] }; })
@@ -2352,6 +2385,13 @@ function getAccountingLedger(token, startDate, endDate) {
     lexwarePendingCount,
     lexwareSyncedCount,
     lexwarePaidCount,
+    depositPaidCount,
+    depositPaidAmount: Math.round(depositPaidAmount*100)/100,
+    balancePaidCount,
+    balancePaidAmount: Math.round(balancePaidAmount*100)/100,
+    openCount,
+    openAmount: Math.round(openAmount*100)/100,
+    partialPaidCount,
     byType,
     topAccountingClasses
   };
