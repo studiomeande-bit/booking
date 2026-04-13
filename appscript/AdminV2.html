@@ -1325,7 +1325,23 @@ function syncLexwareAccountingUi(){
   if(!confirm('Lexware 수입/지출 내역을 현재 기간 기준으로 가져와 회계장부와 예약장부를 갱신할까요?')) return;
   google.script.run
     .withSuccessHandler(res=>{
-      alert(`Lexware 가져오기 완료\n지출 반영: ${res.importedExpenses||0}건\n지출 갱신: ${res.updatedExpenses||0}건\n예약/인보이스 갱신: ${res.syncedIncome||0}건\n대기 상태: ${res.pendingIncome||0}건`);
+      const debug = res && res.debug ? res.debug : {};
+      const typeSummary = debug.typeCounts ? Object.keys(debug.typeCounts).map(k=>`${k}:${debug.typeCounts[k]}`).join(', ') : '';
+      const sampleSummary = Array.isArray(debug.sample) && debug.sample.length
+        ? debug.sample.map(v=>`${v.type} / ${v.date} / ${v.amount}€ / ${v.contact || '-'}`).join('\n')
+        : '없음';
+      alert(
+        `Lexware 가져오기 완료\n`+
+        `지출 반영: ${res.importedExpenses||0}건\n`+
+        `지출 갱신: ${res.updatedExpenses||0}건\n`+
+        `예약/인보이스 갱신: ${res.syncedIncome||0}건\n`+
+        `대기 상태: ${res.pendingIncome||0}건\n\n`+
+        `조회된 voucher: ${res.voucherCount||0}건\n`+
+        `조회 방식: ${debug.mode||'-'}\n`+
+        `총 요소수: ${debug.totalElements||0}\n`+
+        `타입 요약: ${typeSummary||'없음'}\n\n`+
+        `샘플:\n${sampleSummary}`
+      );
       loadAccountingData(true);
       loadAll();
       if(typeof loadInvoiceList==='function') loadInvoiceList();

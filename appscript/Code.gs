@@ -2620,20 +2620,37 @@ function getInvoiceLexwareBookingMap_(){
 function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   try{
     const cfg = getLexwareConfigRequired_();
-    if(!cfg.enabled) return [];
+    if(!cfg.enabled) return { vouchers:[], debug:{ disabled:true } };
   }catch(e){
-    return [];
+    return { vouchers:[], debug:{ configError:String(e&&e.message||e) } };
   }
   const cache = CacheService.getScriptCache();
   const cacheKey = getLexwareAccountingCacheKey_(startDate, endDate);
   if(forceRefresh) cache.remove(cacheKey);
   const cached = cache.get(cacheKey);
   if(cached){
-    try{return JSON.parse(cached)||[];}catch(e){}
+    try{
+      const parsed = JSON.parse(cached)||{};
+      if(Array.isArray(parsed)) return { vouchers: parsed, debug:{ cacheLegacy:true } };
+      return {
+        vouchers: Array.isArray(parsed.vouchers) ? parsed.vouchers : [],
+        debug: parsed.debug || { cacheHit:true }
+      };
+    }catch(e){}
   }
   const from = String(startDate||'').trim();
   const to = String(endDate||'').trim();
   const size = 250;
+  const debug = {
+    from: from,
+    to: to,
+    mode: 'voucherDate',
+    pages: 0,
+    rawCount: 0,
+    totalElements: 0,
+    sample: [],
+    typeCounts: {}
+  };
 
   function fetchPages_(extraParams, maxPages){
     const collected = [];
@@ -2648,6 +2665,10 @@ function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
       ].concat(extraParams || []);
       const data = lexwareRequest_('get', '/v1/voucherlist?' + params.join('&'));
       const content = Array.isArray(data && data.content) ? data.content : [];
+      debug.pages++;
+      if(page === 0){
+        debug.totalElements = toNumberOrZero_(data && data.totalElements);
+      }
       collected.push.apply(collected, content);
       if(content.length < size) break;
       page++;
@@ -2661,6 +2682,7 @@ function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   ].filter(Boolean), 10);
 
   if(!out.length && (from || to)){
+    debug.mode = 'updatedDate';
     out = fetchPages_([
       from ? ('updatedDateFrom=' + encodeURIComponent(from)) : '',
       to ? ('updatedDateTo=' + encodeURIComponent(to)) : ''
@@ -2668,13 +2690,32 @@ function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   }
 
   if(!out.length && (from || to)){
+    debug.mode = 'localFilterFallback';
     out = fetchPages_([], 4).filter(function(v){
       return isLexwareVoucherInRange_(v, from, to);
     });
   }
 
-  cache.put(cacheKey, JSON.stringify(out), 300);
-  return out;
+  debug.rawCount = out.length;
+  out.slice(0, 5).forEach(function(v){
+    const typeKey = String(v && (v.voucherType || v.type) || 'unknown');
+    debug.typeCounts[typeKey] = (debug.typeCounts[typeKey] || 0) + 1;
+    debug.sample.push({
+      id: String(v && v.id || ''),
+      type: typeKey,
+      number: String(v && v.voucherNumber || ''),
+      date: String(v && (v.voucherDate || v.createdDate || v.updatedDate) || '').slice(0, 10),
+      amount: Math.round(toNumberOrZero_(v && v.totalAmount) * 100) / 100,
+      contact: String(v && v.contactName || '')
+    });
+  });
+  out.forEach(function(v){
+    const typeKey = String(v && (v.voucherType || v.type) || 'unknown');
+    debug.typeCounts[typeKey] = (debug.typeCounts[typeKey] || 0) + 1;
+  });
+  const payload = { vouchers: out, debug: debug };
+  cache.put(cacheKey, JSON.stringify(payload), 300);
+  return payload;
 }
 
 function classifyLexwareVoucherAccounting_(voucher){
@@ -2797,8 +2838,16 @@ function findInvoiceMatchForLexwareVoucher_(voucher){
 
 function syncLexwareAccounting(token, startDate, endDate){
   assertAdmin_(token);
-  const vouchers = fetchLexwareVoucherlistForRange_(startDate, endDate, true);
-  const imported = { importedExpenses:0, updatedExpenses:0, syncedIncome:0, pendingIncome:0 };
+  const fetched = fetchLexwareVoucherlistForRange_(startDate, endDate, true);
+  const vouchers = Array.isArray(fetched && fetched.vouchers) ? fetched.vouchers : [];
+  const imported = {
+    importedExpenses:0,
+    updatedExpenses:0,
+    syncedIncome:0,
+    pendingIncome:0,
+    voucherCount: vouchers.length,
+    debug: fetched && fetched.debug ? fetched.debug : {}
+  };
   vouchers.forEach(function(voucher){
     const voucherType = String(voucher && voucher.voucherType || '').toLowerCase();
     if(/^purchase/.test(voucherType)){
@@ -2840,7 +2889,8 @@ function syncLexwareAccounting(token, startDate, endDate){
 }
 
 function buildLexwareAccountingMatches_(entries, startDate, endDate, forceRefresh){
-  const vouchers = fetchLexwareVoucherlistForRange_(startDate, endDate, !!forceRefresh);
+  const fetched = fetchLexwareVoucherlistForRange_(startDate, endDate, !!forceRefresh);
+  const vouchers = Array.isArray(fetched && fetched.vouchers) ? fetched.vouchers : [];
   if(!vouchers.length){
     return {
       vouchers: [],
