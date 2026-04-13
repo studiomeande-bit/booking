@@ -41,7 +41,8 @@ const PUBLIC_API_CONFIG = {
     'http://127.0.0.1:5173'
   ],
   REQUEST_ID_TTL_SEC: 60 * 10,
-  HONEYPOT_FIELD: 'website'
+  HONEYPOT_FIELD: 'website',
+  MAX_BOOKING_DATE_STR: '2026-12-31'
 };
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -460,6 +461,9 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const y=d.getFullYear();
   const m=d.getMonth();
   const key=`${y}_${m}`;
+  if(new Date(y,m,1).getTime()>new Date(`${PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR}T23:59:59`).getTime()){
+    return buildClosedMonthSummary_(y,m);
+  }
   const ver=getCalCacheVer_();
   const cacheKey=`public_batch_v4_${ver}_${y}_${m}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
@@ -478,7 +482,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
 }
 
 function getPublicSlots_(dateStr,totalDur,itemGroup){
-  if(isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
+  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
   return computeSlots_(dateStr,events,totalDur,itemGroup);
 }
@@ -494,6 +498,21 @@ function getPublicCalendarMonthLite_(year,month,itemGroup){
     }
   }
   return {unavail,slotCounts,slotsByDate};
+}
+
+function isBeyondPublicBookingRange_(dateStr){
+  return new Date(`${dateStr}T23:59:59`).getTime()>new Date(`${PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR}T23:59:59`).getTime();
+}
+
+function buildClosedMonthSummary_(year,month){
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const unavail=[];
+  for(let d=1;d<=daysInMonth;d++){
+    unavail.push(`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`);
+  }
+  const out={};
+  out[`${year}_${month}`]={unavail,slotCounts:{},slotsByDate:{}};
+  return out;
 }
 
 function getInitDataAdmin(token){assertAdmin_(token);const d=getInitDataCustomer();return{dashboard:getDashboardData_(),products:d.products,settings:d.settings};}
@@ -1234,7 +1253,7 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
   const slotsTTL=Math.min(CONFIG.SLOTS_CACHE_TTL_SEC,CONFIG.UNAVAIL_CACHE_TTL_SEC);
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
-    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){unavail.push(dStr);continue;}
+    if(new Date(`${dStr}T23:59:59`).getTime()<now||isBeyondPublicBookingRange_(dStr)||isWeekendOrHolidayBlocked_(dStr,itemGroup)){unavail.push(dStr);continue;}
     const daySlots=lightMode?null:computeSlots_(dStr,events,totalDur,itemGroup);
     const hasSlots=lightMode?hasAnySlot_(dStr,events,totalDur,itemGroup):!!daySlots.length;
     if(!hasSlots){unavail.push(dStr);}else if(daySlots){
@@ -1269,7 +1288,7 @@ function getAvailableSlots(dateStr,totalDur,itemGroup){
   // 월 캘린더 로드 시 이미 캐싱됐으면 즉시 반환 (Calendar API 재호출 없음)
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
   // 캐시 미스 시 fallback (직접 날짜 선택 등 예외 경우)
-  if(isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
+  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
   const slots=computeSlots_(dateStr,events,totalDur,itemGroup);
   try{cache.put(cacheKey,JSON.stringify(slots),CONFIG.SLOTS_CACHE_TTL_SEC);}catch(e){}
@@ -1277,7 +1296,7 @@ function getAvailableSlots(dateStr,totalDur,itemGroup){
 }
 
 function slotAvailable_(dateStr,timeStr,totalDur,itemGroup,newLocation){
-  if(isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return false;
+  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return false;
   const start=new Date(`${dateStr}T${timeStr}:00`).getTime(),end=start+totalDur*60000;
   if(start<=new Date().getTime()) return false;
   const inBlock=getTimeBlocksForDate_(dateStr,itemGroup).some(b=>{

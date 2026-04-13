@@ -998,6 +998,15 @@ function setCalendarBusy(isBusy) {
   if (els.nextMonthBtn) els.nextMonthBtn.disabled = isBusy;
 }
 
+function updateMonthNavAvailability() {
+  const now = new Date();
+  const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const currentTs = new Date(state.calendarYear, state.calendarMonth, 1).getTime();
+  const maxTs = new Date(2026, 11, 1).getTime();
+  if (els.prevMonthBtn) els.prevMonthBtn.disabled = !!els.prevMonthBtn.disabled || currentTs <= minTs;
+  if (els.nextMonthBtn) els.nextMonthBtn.disabled = !!els.nextMonthBtn.disabled || currentTs >= maxTs;
+}
+
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
@@ -2154,6 +2163,7 @@ async function warmSelectedProductCalendar(product, durationOverride) {
 }
 
 const MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_BOOKING_MONTH = { year: 2026, month: 11 };
 
 function getMonthStorageKey(year, month, itemGroup, duration) {
   return `booking:month:v2:${year}_${month}_${itemGroup}_${duration}`;
@@ -2569,6 +2579,7 @@ async function loadCalendar() {
   if (token !== state.calendarRequestToken) return;
   renderCalendar(batch);
   setCalendarBusy(false);
+  updateMonthNavAvailability();
   setBanner(getCopy().calendarLoaded, 'success');
   if (!state.selectedDate) {
     const nearestDate = getNearestAvailableDate(batch);
@@ -2596,6 +2607,7 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
 async function prefetchNextCalendarMonth() {
   if (!state.selectedProduct) return;
   const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
+  if (next.getFullYear() > MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() > MAX_BOOKING_MONTH.month)) return;
   const duration = getCalendarDuration();
   const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
   if (state.calendarCache.has(nextKey)) return;
@@ -2863,6 +2875,11 @@ function clearCalendarSelection() {
 
 async function changeMonth(offset) {
   const next = new Date(state.calendarYear, state.calendarMonth + offset, 1);
+  const now = new Date();
+  const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextTs = new Date(next.getFullYear(), next.getMonth(), 1).getTime();
+  const maxTs = new Date(MAX_BOOKING_MONTH.year, MAX_BOOKING_MONTH.month, 1).getTime();
+  if (nextTs < minTs || nextTs > maxTs) return;
   state.calendarYear = next.getFullYear();
   state.calendarMonth = next.getMonth();
   clearCalendarSelection();
