@@ -84,8 +84,9 @@
         <button id="addPhotoBtn" type="button" class="ghost-btn">사진 항목 추가</button>
         <div class="nav-row">
           <button class="ghost-btn" type="button" data-go="0">이전</button>
-          <button class="primary-btn" type="button" data-go="2">다음</button>
+          <button id="step1NextBtn" class="primary-btn" type="button" data-go="2">다음</button>
         </div>
+        <div id="step1Warning" class="step-warning"></div>
       </section>
 
       <section class="panel step-panel" data-step="2">
@@ -98,8 +99,9 @@
         <button id="addPrintBtn" type="button" class="ghost-btn">인화 항목 추가</button>
         <div class="nav-row">
           <button class="ghost-btn" type="button" data-go="1">이전</button>
-          <button class="primary-btn" type="button" data-go="3">다음</button>
+          <button id="step2NextBtn" class="primary-btn" type="button" data-go="3">다음</button>
         </div>
+        <div id="step2Warning" class="step-warning"></div>
       </section>
 
       <section class="panel step-panel" data-step="3">
@@ -127,6 +129,7 @@
         <div class="nav-row">
           <button class="ghost-btn" type="button" data-go="2">이전</button>
         </div>
+        <div id="step3Warning" class="step-warning"></div>
       </section>
 
       <section id="successPanel" class="panel success-panel hidden">

@@ -609,6 +609,12 @@ const els = {
   surveyGrid: document.getElementById('surveyGrid'),
   babyNameField: document.getElementById('babyNameField'),
   submitBtn: document.getElementById('submitBtn'),
+  stepWarnings: {
+    step1: document.getElementById('step1Warning'),
+    step2: document.getElementById('step2Warning'),
+    step3: document.getElementById('step3Warning'),
+    step5: document.getElementById('step5Warning')
+  },
   resultBox: document.getElementById('resultBox'),
   successPanel: document.getElementById('successPanel'),
   loadingScreen: document.getElementById('loadingScreen'),
@@ -645,7 +651,7 @@ async function boot() {
     renderSurveyChips();
     renderProductDetail();
     renderReview();
-    syncStepPanels();
+    refreshStepLocks();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
@@ -1087,6 +1093,7 @@ function syncStepPanels() {
 function refreshStepLocks() {
   syncStepPanels();
   updateSubmitState();
+  renderStepWarnings();
 }
 
 function getMaxUnlockedStep() {
@@ -1119,6 +1126,102 @@ function updateWizardButtons(maxStep) {
   if (els.wizardButtons.step1Next) els.wizardButtons.step1Next.disabled = maxStep < 2;
   if (els.wizardButtons.step2Next) els.wizardButtons.step2Next.disabled = maxStep < 3;
   if (els.wizardButtons.step3Next) els.wizardButtons.step3Next.disabled = maxStep < 5;
+}
+
+function renderStepWarnings() {
+  const product = state.selectedProduct;
+  const isPass = product?.g === 'pass';
+  const step1Message = state.selectedGroup ? '' : (
+    state.lang === 'en'
+      ? 'Choose the main shoot category to continue.'
+      : state.lang === 'de'
+        ? 'Wählen Sie zuerst die Hauptkategorie aus.'
+        : '촬영 종류를 선택해야 다음으로 넘어갈 수 있습니다.'
+  );
+  let step2Message = '';
+  if (state.selectedGroup && !product) {
+    step2Message = state.lang === 'en'
+      ? 'Choose a detailed package first.'
+      : state.lang === 'de'
+        ? 'Wählen Sie zuerst ein detailliertes Paket aus.'
+        : '세부 상품을 모두 선택해야 다음 단계가 활성화됩니다.';
+  } else if (isPass && !state.selectedCountries.length) {
+    step2Message = getCopy().countryRequired;
+  } else if (isPass && state.selectedCountries.includes('OTHER') && !String(els.form.elements.otherCountry?.value || '').trim()) {
+    step2Message = state.lang === 'en'
+      ? 'Enter the other country name.'
+      : state.lang === 'de'
+        ? 'Geben Sie den Namen des anderen Landes ein.'
+        : '기타 국가명을 입력해야 합니다.';
+  } else if ((product?.g === 'snap' || product?.g === 'wed') && !String(els.locationInput?.value || '').trim()) {
+    step2Message = getCopy().locationRequired;
+  } else if (product?.g === 'biz' && !String(els.businessInput?.value || '').trim()) {
+    step2Message = state.lang === 'en'
+      ? 'Enter event details to continue.'
+      : state.lang === 'de'
+        ? 'Geben Sie die Veranstaltungsdetails ein.'
+        : '행사 상세 내용을 입력해야 다음으로 넘어갈 수 있습니다.';
+  }
+
+  let step3Message = '';
+  if (!state.selectedDate) {
+    step3Message = state.lang === 'en'
+      ? 'Select an available date first.'
+      : state.lang === 'de'
+        ? 'Wählen Sie zuerst ein verfügbares Datum.'
+        : '날짜를 선택해야 시간 선택이 완료됩니다.';
+  } else if (!state.selectedSlot) {
+    step3Message = state.lang === 'en'
+      ? 'Select an available time to continue.'
+      : state.lang === 'de'
+        ? 'Wählen Sie eine verfügbare Uhrzeit aus.'
+        : '예약 가능한 시간을 선택해야 다음 단계가 활성화됩니다.';
+  }
+
+  const formData = new FormData(els.form);
+  const email = String(formData.get('email') || '').trim();
+  const emailOk = /\S+@\S+\.\S+/.test(email);
+  const gdprOk = formData.get('gdprConsent') === 'on';
+  const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
+  const babyNameOk = !((product?.g === 'prof' && product?.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
+  const reshootingOk = !(product?.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
+  let step5Message = '';
+  if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
+    step5Message = state.lang === 'en'
+      ? 'Fill in name, phone, and email to enable booking.'
+      : state.lang === 'de'
+        ? 'Name, Telefonnummer und E-Mail müssen ausgefüllt sein.'
+        : '이름, 연락처, 이메일을 모두 입력해야 예약 제출이 활성화됩니다.';
+  } else if (!emailOk) {
+    step5Message = state.lang === 'en'
+      ? 'Enter a valid email address.'
+      : state.lang === 'de'
+        ? 'Geben Sie eine gültige E-Mail-Adresse ein.'
+        : '올바른 이메일 형식을 입력해 주세요.';
+  } else if (!gdprOk || !aiOk) {
+    step5Message = state.lang === 'en'
+      ? 'Required consent items must be checked.'
+      : state.lang === 'de'
+        ? 'Die erforderlichen Zustimmungspunkte müssen aktiviert werden.'
+        : '필수 동의 항목을 체크해야 예약 제출이 가능합니다.';
+  } else if (!babyNameOk) {
+    step5Message = state.lang === 'en'
+      ? 'Enter the baby name for baby/first birthday sessions.'
+      : state.lang === 'de'
+        ? 'Geben Sie den Namen des Babys für 백일/돌 촬영 ein.'
+        : '백일/돌 촬영은 아기 이름 입력이 필요합니다.';
+  } else if (!reshootingOk) {
+    step5Message = state.lang === 'en'
+      ? 'Check the reshooting policy consent to continue.'
+      : state.lang === 'de'
+        ? 'Stimmen Sie der Richtlinie für erneute Aufnahmen zu.'
+        : '재촬영 약관 동의가 필요합니다.';
+  }
+
+  if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
+  if (els.stepWarnings.step2) els.stepWarnings.step2.textContent = step2Message;
+  if (els.stepWarnings.step3) els.stepWarnings.step3.textContent = step3Message;
+  if (els.stepWarnings.step5) els.stepWarnings.step5.textContent = step5Message;
 }
 
 function renderSurveyChips() {

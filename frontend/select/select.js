@@ -68,6 +68,13 @@ const els = {
   successPhotoCount: document.getElementById('successPhotoCount'),
   successTotal: document.getElementById('successTotal'),
   successGuide: document.getElementById('successGuide'),
+  step1NextBtn: document.getElementById('step1NextBtn'),
+  step2NextBtn: document.getElementById('step2NextBtn'),
+  stepWarnings: {
+    step1: document.getElementById('step1Warning'),
+    step2: document.getElementById('step2Warning'),
+    step3: document.getElementById('step3Warning')
+  },
   stepPanels: Array.from(document.querySelectorAll('.step-panel')),
   stepDots: [0, 1, 2, 3].map((index) => document.getElementById(`dot${index}`)),
   navButtons: Array.from(document.querySelectorAll('[data-go]'))
@@ -503,6 +510,7 @@ function updateReview() {
   els.reviewMarketing.textContent = state.marketing === 'Y' ? '동의' : '미동의';
   els.reviewTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
   updateSubmitState();
+  renderStepWarnings();
 }
 
 function validateStep1() {
@@ -555,7 +563,40 @@ function canSubmit() {
 }
 
 function updateSubmitState() {
+  if (els.step1NextBtn) els.step1NextBtn.disabled = !canProceedStep1();
+  if (els.step2NextBtn) els.step2NextBtn.disabled = !canProceedStep2();
   els.submitBtn.disabled = !canSubmit() || state.submitted;
+  renderStepWarnings();
+}
+
+function canProceedStep1() {
+  return !!state.marketing
+    && state.photos.length > 0
+    && !state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim());
+}
+
+function canProceedStep2() {
+  return !state.prints.some((print) => !String(print.photoNum || '').trim());
+}
+
+function renderStepWarnings() {
+  const step1Message = canProceedStep1()
+    ? ''
+    : !state.marketing
+      ? '마케팅 동의 여부를 먼저 선택해 주세요.'
+      : !state.photos.length
+        ? '보정 사진을 최소 1장 추가해야 다음 단계로 이동할 수 있습니다.'
+        : '보정 사진의 번호와 요청사항을 모두 입력해야 다음 버튼이 활성화됩니다.';
+  const step2Message = canProceedStep2()
+    ? ''
+    : '추가 인화의 사진 번호를 모두 입력해야 다음 단계로 이동할 수 있습니다.';
+  const step3Message = canSubmit()
+    ? ''
+    : '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.';
+
+  if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
+  if (els.stepWarnings.step2) els.stepWarnings.step2.textContent = step2Message;
+  if (els.stepWarnings.step3) els.stepWarnings.step3.textContent = step3Message;
 }
 
 async function onSubmit() {

@@ -290,7 +290,25 @@ h1 {
   background: #2f2924;
   color: #fff;
 }
-.primary-btn:disabled { opacity: .45; cursor: not-allowed; }
+.primary-btn:disabled,
+.ghost-btn:disabled {
+  background: #efe7db;
+  color: #b2a898;
+  border: 1px dashed #d9cebd;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.step-warning {
+  min-height: 22px;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #9a4f2f;
+}
+.step-warning:empty {
+  display: none;
+}
 .nav-row {
   display: flex;
   gap: 10px;
