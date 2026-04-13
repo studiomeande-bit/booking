@@ -84,14 +84,17 @@ function normalizePrintRow_(row, rowIdx, colMap) {
     !String(row[colMap['매출날짜']]).match(/^\d{4}-\d{2}-\d{2}/);
 
   if (hasLegacyHeader) {
+    const legacyItems = String(row[3] || '').trim();
+    const legacyRetouch = String(row[4] || '').trim();
+    const legacyMemo = String(row[8] || '').trim();
     return {
       rowIdx,
       dateStr: parseDateSafe_(row[0]).str,
       salesDate: String(row[10] || '').trim(),
       name: String(row[1] || ''),
       phone: String(row[2] || ''),
-      items: String(row[3] || ''),
-      retouchItems: String(row[4] || ''),
+      items: legacyItems || (legacyMemo && !/셀렉:/i.test(legacyMemo) ? legacyMemo : ''),
+      retouchItems: legacyRetouch,
       qty: Number(row[5] || 0) || 0,
       total: Number(row[6] || 0) || 0,
       payMethod: String(row[7] || ''),
@@ -100,14 +103,17 @@ function normalizePrintRow_(row, rowIdx, colMap) {
     };
   }
 
+  const itemText = String(row[colMap['인화항목']] || '').trim();
+  const retouchText = String(row[colMap['보정항목']] || '').trim();
+  const memoText = String(row[colMap['메모']] || '').trim();
   return {
     rowIdx,
     dateStr: parseDateSafe_(row[colMap['주문일시']] || '').str,
     salesDate: String(row[colMap['매출날짜']] || '').trim(),
     name: String(row[colMap['고객명']] || ''),
     phone: String(row[colMap['연락처']] || ''),
-    items: String(row[colMap['인화항목']] || ''),
-    retouchItems: String(row[colMap['보정항목']] || ''),
+    items: itemText || (memoText && !/셀렉:/i.test(memoText) ? memoText : ''),
+    retouchItems: retouchText,
     qty: Number(row[colMap['총수량']] || 0) || 0,
     total: Number(row[colMap['금액']] || 0) || 0,
     payMethod: String(row[colMap['결제수단']] || ''),
@@ -2304,6 +2310,7 @@ function batchUpdateAdvanced(token,list,type,val){
 function getAccountingLedger(token, startDate, endDate, forceRefresh) {
   assertAdmin_(token);
   const entries = [];
+  const invoiceLexwareMap = getInvoiceLexwareBookingMap_();
   const bookSh = getDbSheet();
   const bookData = bookSh.getDataRange().getValues();
   for(let r=1; r<bookData.length; r++) {
@@ -2319,6 +2326,10 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
     if(gross===0) continue;
     const net = Math.round(gross/1.19);
     const tax = gross - net;
+    const linkedInvoice = invoiceLexwareMap[r+1] || null;
+    const localPaidAmount = ((Number(row[BOOKING_COL['계약금입금금액']]||0)||0) + (Number(row[BOOKING_COL['잔금결제금액']]||0)||0));
+    const linkedPaidAmount = linkedInvoice ? toNumberOrZero_(linkedInvoice.paidAmount) : 0;
+    const effectivePaidAmount = Math.max(localPaidAmount, linkedPaidAmount);
     entries.push({
       date: dateOnly,
       dateStr: dStr,
@@ -2332,21 +2343,23 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
       tax,
       payMethod: String(row[13]||''),
       status: '완료',
-      invoice: String(row[16]||'').slice(-8),
+      invoice: linkedInvoice ? String(linkedInvoice.number||'') : '',
       note: String(row[15]||''),
       source: 'booking',
       flow:'income',
       rowIndex: r+1,
       depositDue: Number(row[11]||0) || 0,
-      depositPaid: String(row[BOOKING_COL['계약금입금여부']]||''),
-      depositPaidAt: String(row[BOOKING_COL['계약금입금일']]||''),
-      depositPaidAmount: String(row[BOOKING_COL['계약금입금금액']]||''),
-      balancePaid: String(row[BOOKING_COL['잔금결제여부']]||''),
-      balancePaidAt: String(row[BOOKING_COL['잔금입금일']]||''),
-      balancePaidAmount: String(row[BOOKING_COL['잔금결제금액']]||''),
-      openAmount: Math.max(0, (Number(row[10]||0)||0) - ((Number(row[BOOKING_COL['계약금입금금액']]||0)||0) + (Number(row[BOOKING_COL['잔금결제금액']]||0)||0))),
-      lexwareSyncStatus: String(row[36]||''),
-      lexwarePaymentStatus: String(row[35]||'')
+      depositPaid: linkedInvoice ? (linkedInvoice.depositPaid ? 'Y' : String(row[BOOKING_COL['계약금입금여부']]||'')) : String(row[BOOKING_COL['계약금입금여부']]||''),
+      depositPaidAt: linkedInvoice ? String(linkedInvoice.depositPaidAt||row[BOOKING_COL['계약금입금일']]||'') : String(row[BOOKING_COL['계약금입금일']]||''),
+      depositPaidAmount: linkedInvoice ? String(linkedInvoice.depositPaidAmount||row[BOOKING_COL['계약금입금금액']]||'') : String(row[BOOKING_COL['계약금입금금액']]||''),
+      balancePaid: linkedInvoice ? (linkedInvoice.balancePaid ? 'Y' : String(row[BOOKING_COL['잔금결제여부']]||'')) : String(row[BOOKING_COL['잔금결제여부']]||''),
+      balancePaidAt: linkedInvoice ? String(linkedInvoice.balancePaidAt||row[BOOKING_COL['잔금입금일']]||'') : String(row[BOOKING_COL['잔금입금일']]||''),
+      balancePaidAmount: linkedInvoice ? String(linkedInvoice.balancePaidAmount||row[BOOKING_COL['잔금결제금액']]||'') : String(row[BOOKING_COL['잔금결제금액']]||''),
+      openAmount: linkedInvoice ? Math.max(0, toNumberOrZero_(linkedInvoice.openAmount)) : Math.max(0, (Number(row[10]||0)||0) - effectivePaidAmount),
+      lexwareInvoiceId: linkedInvoice ? String(linkedInvoice.lexwareInvoiceId||'') : '',
+      lexwareVoucherNumber: linkedInvoice ? String(linkedInvoice.lexwareVoucherNumber||'') : '',
+      lexwareSyncStatus: linkedInvoice ? String(linkedInvoice.lexwareSyncStatus||row[36]||'') : String(row[36]||''),
+      lexwarePaymentStatus: linkedInvoice ? String(linkedInvoice.lexwarePaymentStatus||row[35]||'') : String(row[35]||'')
     });
   }
   const printSh = ensureSheets_().printSheet;
@@ -2547,6 +2560,41 @@ function getLexwareAccountingCacheKey_(startDate, endDate){
   return 'lexware_voucher_snapshot:' + [String(startDate||''), String(endDate||'')].join(':');
 }
 
+function getInvoiceLexwareBookingMap_(){
+  const {invoiceSheet} = ensureSheets_();
+  const rows = invoiceSheet.getDataRange().getValues();
+  const out = {};
+  rows.slice(1).forEach(function(row, idx){
+    const inv = invoiceRowToObject_(row, idx+2);
+    const bookingRowIndex = parseInt(inv.bookingRowIndex, 10) || 0;
+    if(!bookingRowIndex || !inv.lexwareInvoiceId) return;
+    const total = toNumberOrZero_(inv.total);
+    const deposit = toNumberOrZero_(inv.deposit);
+    const openAmount = toNumberOrZero_(inv.lexwareOpenAmount);
+    const paidAmount = Math.max(0, Math.round((total - openAmount) * 100) / 100);
+    const existing = out[bookingRowIndex];
+    if(existing && toNumberOrZero_(existing.total) > total) return;
+    out[bookingRowIndex] = {
+      number: inv.number,
+      total: total,
+      deposit: deposit,
+      openAmount: openAmount,
+      paidAmount: paidAmount,
+      lexwareInvoiceId: inv.lexwareInvoiceId,
+      lexwareVoucherNumber: inv.lexwareVoucherNumber,
+      lexwareSyncStatus: inv.lexwareSyncStatus,
+      lexwarePaymentStatus: inv.lexwarePaymentStatus,
+      depositPaid: deposit > 0 && paidAmount >= (deposit - 0.01),
+      depositPaidAt: inv.lexwarePaidAt || '',
+      depositPaidAmount: deposit > 0 ? Math.min(deposit, paidAmount) : 0,
+      balancePaid: paidAmount >= (total - 0.01),
+      balancePaidAt: inv.lexwarePaidAt || '',
+      balancePaidAmount: Math.max(0, Math.round((paidAmount - deposit) * 100) / 100)
+    };
+  });
+  return out;
+}
+
 function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   try{
     const cfg = getLexwareConfigRequired_();
@@ -2619,6 +2667,29 @@ function buildLexwareAccountingMatches_(entries, startDate, endDate, forceRefres
     return copy;
   });
   localEntries.forEach(function(entry){
+    if(entry.lexwareVoucherId){
+      matchedIds[entry.lexwareVoucherId] = true;
+      entry.matchStatus = toNumberOrZero_(entry.openAmount) > 0.01 ? 'payment_mismatch' : 'matched';
+      entry.matchLabel = entry.matchStatus === 'matched' ? '매칭완료' : '결제 불일치';
+      entry.matchDelta = toNumberOrZero_(entry.openAmount);
+      return;
+    }
+    if(entry.lexwareVoucherNumber){
+      const direct = vouchers.find(function(v){
+        return !matchedIds[v.id] && String(v.voucherNumber||'') === String(entry.lexwareVoucherNumber||'');
+      });
+      if(direct){
+        matchedIds[direct.id] = true;
+        const voucherOpen = Math.round((Number(direct.openAmount||0)||0)*100)/100;
+        const deltaDirect = Math.abs(voucherOpen - Math.round((Number(entry.openAmount||0)||0)*100)/100);
+        entry.lexwareVoucherId = String(direct.id||entry.lexwareVoucherId||'');
+        entry.lexwarePaymentStatus = entry.lexwarePaymentStatus || String(direct.voucherStatus||'');
+        entry.matchStatus = deltaDirect > 0.01 ? 'payment_mismatch' : 'matched';
+        entry.matchLabel = deltaDirect > 0.01 ? '결제 불일치' : '매칭완료';
+        entry.matchDelta = deltaDirect;
+        return;
+      }
+    }
     const entryDate = String(entry.date||'').slice(0,10);
     const entryName = normalizeAccountingName_(entry.name);
     const entryGross = Math.round((Number(entry.gross||0)||0)*100)/100;
