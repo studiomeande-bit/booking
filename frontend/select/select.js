@@ -4,6 +4,8 @@ import { createRequestId, escapeHtml } from './shared/utils.js';
 const PRINT_OPTIONS = [
   { id: 'basic_10x15', label: '기본 10×15cm', retouched: 0, additional: 5 },
   { id: 'premium_10x15', label: '프리미엄 10×15cm', retouched: 3, additional: 8 },
+  { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
+  { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
   { id: 'basic_a4', label: '기본 A4', retouched: 10, additional: 15 },
   { id: 'premium_a4', label: '프리미엄 A4', retouched: 15, additional: 20 },
   { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 }

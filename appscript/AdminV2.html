@@ -20,6 +20,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .card{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
 .card-title{font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:6px;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
+.dashboard-grid{display:grid;gap:12px;align-items:start;}
+.dashboard-grid>*{min-width:0;}
+.stat-card{background:#fff;border:1px solid #e7dfd4;border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(45,42,38,.05);}
+.stat-title{font-size:12px;font-weight:700;color:#7a6f63;margin-bottom:8px;letter-spacing:.01em;}
 .stat-item{background:#f8fafc;border-radius:10px;padding:14px;text-align:center;transition:background .15s;}.stat-item.clickable{cursor:pointer;}.stat-item.clickable:hover{background:#e2e8f0;}
 .stat-val{font-size:20px;font-weight:800;color:#2D2A26;}
 .stat-lbl{font-size:11px;color:#64748b;margin-top:4px;}
@@ -74,6 +78,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .accounting-toolbar .toolbar-group select,
 .accounting-toolbar .toolbar-group input{width:100%;}
 .accounting-toolbar .toolbar-spacer{margin-left:auto;}
+.accounting-box{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+.accounting-box .card-title{margin-bottom:12px;}
+.accounting-chart{display:grid;gap:10px;min-height:140px;align-content:start;}
+.accounting-summary-list{display:grid;gap:8px;min-height:140px;align-content:start;}
+.accounting-chart-empty{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed #d6cfc3;border-radius:12px;background:#fcfaf6;font-size:12px;color:#8b8378;}
 .action-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
 .sort-icon{font-size:10px;color:#94a3b8;}
 .print-price-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;}
@@ -112,6 +121,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 @media(max-width:640px){
   .form-row{grid-template-columns:1fr;}
   .week-grid{gap:3px;}
+  .dashboard-grid{grid-template-columns:1fr !important;}
   .week-day-cell{padding:6px;min-height:60px;}
   .wev{font-size:9px;}
   .accounting-toolbar-row{flex-direction:column;align-items:stretch;}
@@ -281,13 +291,23 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="stat-card" style="padding:15px;"><div class="stat-title">결제 완료</div><div class="stat-val" id="acc_lexPaid" style="color:#059669;">0건</div></div>
       </div>
       <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1.2fr .8fr;">
-        <div class="card" style="margin-bottom:0;box-shadow:none;border:1px solid #e2e8f0;">
+        <div class="accounting-box" style="margin-bottom:0;">
           <div class="card-title" style="margin-bottom:10px;">📚 회계분류 요약</div>
-          <div id="acc_classSummary" style="display:grid;gap:8px;"></div>
+          <div id="acc_classSummary" class="accounting-summary-list"></div>
         </div>
-        <div class="card" style="margin-bottom:0;box-shadow:none;border:1px solid #e2e8f0;">
+        <div class="accounting-box" style="margin-bottom:0;">
           <div class="card-title" style="margin-bottom:10px;">💳 유형별 합계</div>
-          <div id="acc_typeSummary" style="display:grid;gap:8px;"></div>
+          <div id="acc_typeSummary" class="accounting-summary-list"></div>
+        </div>
+      </div>
+      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1fr 1fr;">
+        <div class="accounting-box" style="margin-bottom:0;">
+          <div class="card-title" style="margin-bottom:10px;">📈 유형별 그래프</div>
+          <div id="acc_typeChart" class="accounting-chart"></div>
+        </div>
+        <div class="accounting-box" style="margin-bottom:0;">
+          <div class="card-title" style="margin-bottom:10px;">📊 상위 회계분류 그래프</div>
+          <div id="acc_classChart" class="accounting-chart"></div>
         </div>
       </div>
 
@@ -892,7 +912,7 @@ let debounceTimer=null,sortField='dateObj',sortDir=-1;
 let printOrdersData=[];
 let invoiceItems=[];
 
-const PRINT_PRICES={'basic_10x15':{label:'기본 10×15cm',price:5,priceRetouched:0},'premium_10x15':{label:'프리미엄 10×15cm',price:8,priceRetouched:3},'basic_a4':{label:'기본 A4',price:15,priceRetouched:10},'premium_a4':{label:'프리미엄 A4',price:20,priceRetouched:15},'premium_a3':{label:'프리미엄 A3',price:50,priceRetouched:35}};
+const PRINT_PRICES={'basic_10x15':{label:'기본 10×15cm',price:5,priceRetouched:0},'premium_10x15':{label:'프리미엄 10×15cm',price:8,priceRetouched:3},'photocard_single':{label:'포토카드 프린트 (단면)',price:5,priceRetouched:5},'photocard_double':{label:'포토카드 프린트 (양면)',price:8,priceRetouched:8},'basic_a4':{label:'기본 A4',price:15,priceRetouched:10},'premium_a4':{label:'프리미엄 A4',price:20,priceRetouched:15},'premium_a3':{label:'프리미엄 A3',price:50,priceRetouched:35}};
 const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외스냅',wed:'프리웨딩',biz:'기업/행사'};
 const G_COLORS={pass:'wev-pass',prof:'wev-prof',stud:'wev-stud',snap:'wev-snap',wed:'wev-wed',biz:'wev-biz'};
 const GT_CLASS={pass:'gt-pass',prof:'gt-prof',stud:'gt-stud',snap:'gt-snap',wed:'gt-wed',biz:'gt-biz'};
@@ -1161,6 +1181,8 @@ function loadAccountingData() {
 function renderAccountingSummaries(res){
   const classBox = document.getElementById('acc_classSummary');
   const typeBox = document.getElementById('acc_typeSummary');
+  const typeChart = document.getElementById('acc_typeChart');
+  const classChart = document.getElementById('acc_classChart');
   const classes = (res.topAccountingClasses || []);
   const typeMap = res.byType || {};
   classBox.innerHTML = classes.length ? classes.map(item => `
@@ -1176,6 +1198,31 @@ function renderAccountingSummaries(res){
       <span style="font-size:12px;font-weight:800;color:${label==='지출'?'#b91c1c':'#1d4ed8'};">${Number(typeMap[label]||0).toLocaleString()}€</span>
     </div>
   `).join('');
+  const typeItems = typeOrder.map(label => ({ label, gross: Number(typeMap[label]||0), tone: label==='지출' ? '#b91c1c' : '#1d4ed8' })).filter(item => item.gross > 0);
+  const maxType = Math.max(...typeItems.map(item => item.gross), 1);
+  typeChart.innerHTML = typeItems.length ? typeItems.map(item => `
+    <div>
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:700;color:#334155;">${item.label}</span>
+        <span style="font-size:12px;font-weight:800;color:${item.tone};">${item.gross.toLocaleString()}€</span>
+      </div>
+      <div style="height:10px;border-radius:999px;background:#e2e8f0;overflow:hidden;">
+        <div style="height:100%;width:${Math.max(8,(item.gross/maxType)*100)}%;background:${item.tone};border-radius:999px;"></div>
+      </div>
+    </div>
+  `).join('') : '<div class="accounting-chart-empty">표시할 데이터가 없습니다.</div>';
+  const maxClass = Math.max(...classes.map(item => Number(item.gross||0)), 1);
+  classChart.innerHTML = classes.length ? classes.map(item => `
+    <div>
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:700;color:#334155;">${item.label}</span>
+        <span style="font-size:12px;font-weight:800;color:#2D2A26;">${Number(item.gross||0).toLocaleString()}€</span>
+      </div>
+      <div style="height:10px;border-radius:999px;background:#ede7dc;overflow:hidden;">
+        <div style="height:100%;width:${Math.max(8,((Number(item.gross||0))/maxClass)*100)}%;background:linear-gradient(90deg,#2d2a26,#6f6250);border-radius:999px;"></div>
+      </div>
+    </div>
+  `).join('') : '<div class="accounting-chart-empty">표시할 회계분류가 없습니다.</div>';
 }
 
 function saveExpense(){
