@@ -278,9 +278,12 @@ const COPY = {
     generalTitle: '추가 설정',
     generalCopy: '인원이나 옵션을 선택하면 예상 금액이 다시 계산됩니다.',
     passportTitle: '여권/비자 옵션',
-    passportCopy: '촬영 국가를 선택하면 국가별 추가 비용을 함께 반영합니다.',
+    passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
     passportPeopleLabel: '인원',
+    passportConfigLabel: '구성 {index}',
+    passportConfigAdd: '구성 추가하기',
+    passportCountryLabel: '원하는 촬영국가 선택',
     generalPeopleLabel: '인원',
     ageFieldLabel: '촬영 대상 연령',
     babyTypeFieldLabel: '촬영 종류',
@@ -387,9 +390,12 @@ const COPY = {
     generalTitle: 'Additional Settings',
     generalCopy: 'Changing people or options recalculates the estimated price.',
     passportTitle: 'Passport / Visa options',
-    passportCopy: 'Choose the target country and we will include additional country charges.',
+    passportCopy: 'Add each country and people combination to reflect the correct passport / visa quote.',
     passportHint: 'One country is included. Each additional country adds €5.',
     passportPeopleLabel: 'People',
+    passportConfigLabel: 'Configuration {index}',
+    passportConfigAdd: 'Add another configuration',
+    passportCountryLabel: 'Choose desired countries',
     generalPeopleLabel: 'People',
     ageFieldLabel: 'Age Group',
     babyTypeFieldLabel: 'Session Type',
@@ -496,9 +502,12 @@ const COPY = {
     generalTitle: 'Zusätzliche Einstellungen',
     generalCopy: 'Bei Änderung von Personen oder Optionen wird der geschätzte Preis neu berechnet.',
     passportTitle: 'Pass / Visum Optionen',
-    passportCopy: 'Wählen Sie das Zielland. Zusätzliche Länder werden im Preis berücksichtigt.',
+    passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
     passportPeopleLabel: 'Personen',
+    passportConfigLabel: 'Konfiguration {index}',
+    passportConfigAdd: 'Weitere Konfiguration hinzufügen',
+    passportCountryLabel: 'Gewünschte Aufnahmeländer',
     generalPeopleLabel: 'Personen',
     ageFieldLabel: 'Altersgruppe',
     babyTypeFieldLabel: 'Aufnahmetyp',
@@ -582,6 +591,7 @@ const state = {
   selectedDate: '',
   selectedSlot: '',
   selectedCountries: [],
+  passportConfigs: [],
   passportPersonCountries: [],
   optionKeys: [],
   surveyKeys: [],
@@ -624,7 +634,7 @@ const els = {
   productDetail: document.getElementById('productDetail'),
   passportPanel: document.getElementById('passportPanel'),
   passportCountries: document.getElementById('passportCountries'),
-  passportPeople: document.getElementById('passportPeople'),
+  passportAddConfigBtn: document.getElementById('passportAddConfigBtn'),
   passportHint: document.getElementById('passportHint'),
   generalPanel: document.getElementById('generalPanel'),
   ageField: document.getElementById('ageField'),
@@ -637,6 +647,7 @@ const els = {
   reshootingText: document.getElementById('reshootingText'),
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
+  generalPeopleCustom: document.getElementById('generalPeopleCustom'),
   optionGrid: document.getElementById('optionGrid'),
   passAddonField: document.getElementById('passAddonField'),
   passAddonToggle: document.getElementById('passAddonToggle'),
@@ -851,12 +862,17 @@ function wireEvents() {
     refreshStepLocks();
   });
   els.form.elements.memo?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
-  els.passportPeople.addEventListener('change', () => {
-    syncPassportPersonCountries();
+  els.passportAddConfigBtn?.addEventListener('click', () => {
+    syncPassportConfigs();
+    state.passportConfigs.push(createDefaultPassportConfig());
     renderPassportCountries();
     handleQuoteInputChange();
   });
-  els.generalPeople.addEventListener('change', handleQuoteInputChange);
+  els.generalPeople.addEventListener('change', () => {
+    els.generalPeopleCustom?.classList.toggle('hidden-field', els.generalPeople.value !== 'custom');
+    handleQuoteInputChange();
+  });
+  els.generalPeopleCustom?.addEventListener('input', handleQuoteInputChange);
   els.passAddonToggle?.addEventListener('change', () => {
     els.passAddonPeopleField?.classList.toggle('hidden-field', !els.passAddonToggle.checked);
     handleQuoteInputChange();
@@ -886,24 +902,41 @@ function getCopy() {
   return COPY[state.lang] || COPY.ko;
 }
 
-function getPassportPeopleCount() {
-  return Number(els.passportPeople?.value || 1);
+function createDefaultPassportConfig(defaultCountries = []) {
+  return { countries: [...defaultCountries], people: 1 };
 }
 
-function getDefaultPassportCountries(index) {
-  return index === 0 ? ['KR'] : [];
+function syncPassportConfigs() {
+  if (!Array.isArray(state.passportConfigs) || !state.passportConfigs.length) {
+    state.passportConfigs = [createDefaultPassportConfig(['KR'])];
+  }
+  state.passportConfigs = state.passportConfigs.map((config, index) => {
+    const countries = Array.isArray(config?.countries) ? config.countries.filter(Boolean) : [];
+    const people = Math.max(1, Math.min(5, Number(config?.people || 1)));
+    if (index === 0 && !countries.length) return { countries: ['KR'], people };
+    return { countries, people };
+  });
+}
+
+function getPassportPeopleCount() {
+  syncPassportConfigs();
+  return state.passportConfigs.reduce((sum, config) => sum + Number(config.people || 1), 0);
+}
+
+function getSelectedPeopleValue(selectEl, inputEl, fallback = 1) {
+  const selected = String(selectEl?.value || fallback);
+  if (selected === 'custom') {
+    const custom = Math.max(6, Number(inputEl?.value || 6));
+    return Number.isFinite(custom) ? custom : 6;
+  }
+  const parsed = Number(selected || fallback);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function syncPassportPersonCountries() {
-  const people = Math.max(1, getPassportPeopleCount());
-  state.passportPersonCountries = Array.from(
-    { length: people },
-    (_, index) => {
-      const existing = state.passportPersonCountries[index];
-      if (Array.isArray(existing)) return existing.filter(Boolean);
-      if (existing) return [existing];
-      return getDefaultPassportCountries(index);
-    }
+  syncPassportConfigs();
+  state.passportPersonCountries = state.passportConfigs.flatMap((config) =>
+    Array.from({ length: Math.max(1, Number(config.people || 1)) }, () => [...config.countries])
   );
   state.selectedCountries = [
     ...new Set(
@@ -914,38 +947,38 @@ function syncPassportPersonCountries() {
 
 function hasPassportCountrySelections() {
   if (state.selectedProduct?.g !== 'pass') return true;
-  syncPassportPersonCountries();
-  return state.passportPersonCountries.every((codes) => Array.isArray(codes) && codes.length > 0);
+  syncPassportConfigs();
+  return state.passportConfigs.every((config) => Array.isArray(config.countries) && config.countries.length > 0);
 }
 
 function getPassportCountryReviewLabel() {
-  syncPassportPersonCountries();
-  return state.passportPersonCountries.map((codes, index) => {
-    const label = (Array.isArray(codes) ? codes : [])
+  syncPassportConfigs();
+  return state.passportConfigs.map((config) => {
+    const label = (Array.isArray(config.countries) ? config.countries : [])
       .map((code) => {
         const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
         return item ? (item.label[state.lang] || item.label.ko) : code;
       })
       .join(' + ');
     return state.lang === 'en'
-      ? `Person ${index + 1}: ${label}`
+      ? `${config.people} ${config.people > 1 ? 'people' : 'person'}: ${label}`
       : state.lang === 'de'
-        ? `Person ${index + 1}: ${label}`
-        : `${index + 1}명: ${label}`;
+        ? `${config.people} ${config.people > 1 ? 'Personen' : 'Person'}: ${label}`
+        : `${config.people}명: ${label}`;
   }).join(' / ');
 }
 
 function buildPassportMemoPrefix() {
   if (state.selectedProduct?.g !== 'pass') return '';
-  syncPassportPersonCountries();
-  const rows = state.passportPersonCountries.map((codes, index) => {
-    const label = (Array.isArray(codes) ? codes : [])
+  syncPassportConfigs();
+  const rows = state.passportConfigs.map((config) => {
+    const label = (Array.isArray(config.countries) ? config.countries : [])
       .map((code) => {
         const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
         return item ? (item.label.ko || item.label.en || code) : code;
       })
       .join('+');
-    return `${index + 1}명:${label}`;
+    return `${config.people}명:${label}`;
   }).join(', ');
   return rows ? `[국가별 신청] ${rows}` : '';
 }
@@ -985,6 +1018,8 @@ function applyCopy() {
   setText('generalCopy', copy.generalCopy);
   setText('passportTitle', copy.passportTitle);
   setText('passportPeopleLabel', copy.passportPeopleLabel);
+  setText('passportCountryLabel', copy.passportCountryLabel);
+  setText('passportAddConfigBtn', copy.passportConfigAdd);
   setText('generalPeopleLabel', copy.generalPeopleLabel);
   setText('ageFieldLabel', copy.ageFieldLabel);
   setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
@@ -1796,8 +1831,8 @@ function getPeopleCount() {
   if (!state.selectedProduct) return 1;
   if (state.selectedProduct.g === 'biz') return 1;
   return state.selectedProduct.g === 'pass'
-    ? Number(els.passportPeople.value || 1)
-    : Number(els.generalPeople.value || 1);
+    ? getPassportPeopleCount()
+    : getSelectedPeopleValue(els.generalPeople, els.generalPeopleCustom, getDefaultPeopleForProduct(state.selectedProduct));
 }
 
 function getDefaultPeopleForProduct(product) {
@@ -1841,21 +1876,24 @@ function getPassAddonPeopleLabel(count) {
 function renderPeopleOptions() {
   const product = state.selectedProduct;
   const generalDefault = String(getDefaultPeopleForProduct(product));
-  const generalValue = String(els.generalPeople?.value || generalDefault);
-  const passportValue = String(els.passportPeople?.value || '1');
+  const currentGeneralCount = getSelectedPeopleValue(els.generalPeople, els.generalPeopleCustom, Number(generalDefault));
   const addonValue = String(els.passAddonPeople?.value || '1');
 
   if (els.generalPeople) {
     els.generalPeople.innerHTML = [1, 2, 3, 4, 5]
       .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, product))}</option>`)
+      .concat(`<option value="custom">${state.lang === 'en' ? '6+ people (enter manually)' : state.lang === 'de' ? 'Ab 6 Personen direkt eingeben' : '6명 이상 직접입력'}</option>`)
       .join('');
-    els.generalPeople.value = generalValue;
-  }
-  if (els.passportPeople) {
-    els.passportPeople.innerHTML = [1, 2, 3, 4, 5]
-      .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, { t: 'pass' }))}</option>`)
-      .join('');
-    els.passportPeople.value = passportValue;
+    if (currentGeneralCount > 5) {
+      els.generalPeople.value = 'custom';
+      if (els.generalPeopleCustom) {
+        els.generalPeopleCustom.value = String(currentGeneralCount);
+        els.generalPeopleCustom.classList.remove('hidden-field');
+      }
+    } else {
+      els.generalPeople.value = String(currentGeneralCount);
+      els.generalPeopleCustom?.classList.add('hidden-field');
+    }
   }
   syncPassportPersonCountries();
   if (els.passAddonPeople) {
@@ -2343,6 +2381,7 @@ function selectGroup(groupKey) {
   state.selectedSlot = '';
   state.quote = null;
   state.selectedCountries = [];
+  state.passportConfigs = [];
   state.passportPersonCountries = [];
   state.optionKeys = [];
   state.surveyKeys = [];
@@ -2355,7 +2394,8 @@ function selectGroup(groupKey) {
   state.businessAddonKeys = [];
   els.form.reset();
   els.generalPeople.value = '1';
-  els.passportPeople.value = '1';
+  els.generalPeopleCustom?.classList.add('hidden-field');
+  els.generalPeopleCustom && (els.generalPeopleCustom.value = '');
   renderPeopleOptions();
   els.submitBtn.disabled = true;
   renderGroups();
@@ -2384,10 +2424,11 @@ async function selectProduct(productId) {
   state.optionKeys = [];
   if (state.selectedProduct?.g !== 'pass') {
     state.selectedCountries = [];
+    state.passportConfigs = [];
     state.passportPersonCountries = [];
   } else {
-    state.passportPersonCountries = [['KR']];
-    state.selectedCountries = ['KR'];
+    state.passportConfigs = [createDefaultPassportConfig(['KR'])];
+    syncPassportPersonCountries();
   }
   state.surveyKeys = [];
   state.ageGroup = 'adult';
@@ -2399,7 +2440,8 @@ async function selectProduct(productId) {
   state.businessAddonKeys = [];
   els.form.reset();
   els.generalPeople.value = String(getDefaultPeopleForProduct(state.selectedProduct));
-  els.passportPeople.value = '1';
+  els.generalPeopleCustom?.classList.add('hidden-field');
+  els.generalPeopleCustom && (els.generalPeopleCustom.value = '');
   renderPeopleOptions();
   els.submitBtn.disabled = true;
   renderGroups();
@@ -2517,7 +2559,7 @@ function getQuoteRequest() {
   syncPassportPersonCountries();
   return {
     itemId: product.id,
-    people: product.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
+    people: product.g === 'pass' ? getPassportPeopleCount() : getSelectedPeopleValue(els.generalPeople, els.generalPeopleCustom, getDefaultPeopleForProduct(product)),
     optionKeys: [...state.optionKeys],
     passCountries: product.g === 'pass'
       ? [...new Set(state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
@@ -2576,38 +2618,85 @@ async function handleMarketingChange() {
 }
 
 function renderPassportCountries() {
-  syncPassportPersonCountries();
-  const people = getPassportPeopleCount();
-  els.passportCountries.innerHTML = Array.from({ length: people }, (_, index) => {
-    const rowLabel = state.lang === 'en'
-      ? `Applicant ${index + 1}`
-      : state.lang === 'de'
-        ? `Person ${index + 1}`
-        : `${index + 1}명 촬영 국가`;
-    const selectedCodes = Array.isArray(state.passportPersonCountries[index]) ? state.passportPersonCountries[index] : [];
+  syncPassportConfigs();
+  const copy = getCopy();
+  els.passportCountries.innerHTML = state.passportConfigs.map((config, index) => {
+    const rowLabel = fillCopy(copy.passportConfigLabel, { index: index + 1 });
+    const selectedCodes = Array.isArray(config.countries) ? config.countries : [];
     const chips = COUNTRY_OPTIONS.map((item) => {
       const label = item.label[state.lang] || item.label.ko;
       const selected = selectedCodes.includes(item.code) ? ' selected' : '';
-      return `<button type="button" class="chip-btn${selected}" data-person-index="${index}" data-country="${item.code}">${item.flag} ${escapeHtml(label)}</button>`;
+      return `<button type="button" class="chip-btn${selected}" data-config-index="${index}" data-country="${item.code}">${item.flag} ${escapeHtml(label)}</button>`;
     }).join('');
-    return `<div class="form-block"><span class="block-label">${escapeHtml(rowLabel)}</span><div class="chip-grid">${chips}</div></div>`;
+    const removeButton = index > 0
+      ? `<button type="button" class="ghost-btn" data-remove-config="${index}">${state.lang === 'en' ? 'Remove' : state.lang === 'de' ? 'Entfernen' : '구성 삭제'}</button>`
+      : '';
+    return `<div class="form-block passport-config-row">
+      <div class="passport-config-head">
+        <span class="block-label">${escapeHtml(rowLabel)}</span>
+        ${removeButton}
+      </div>
+      <div class="chip-grid">${chips}</div>
+      <label class="inline-field">
+        <span>${escapeHtml(copy.passportPeopleLabel)}</span>
+        <select data-passport-config-people="${index}">
+          ${[1, 2, 3, 4, 5].map((count) => `<option value="${count}" ${Number(config.people || 1) === count ? 'selected' : ''}>${escapeHtml(getPeopleOptionLabel(count, { t: 'pass' }))}</option>`).join('')}
+          <option value="custom" ${Number(config.people || 1) > 5 ? 'selected' : ''}>${state.lang === 'en' ? '6+ people (enter manually)' : state.lang === 'de' ? 'Ab 6 Personen direkt eingeben' : '6명 이상 직접입력'}</option>
+        </select>
+        <input class="${Number(config.people || 1) > 5 ? '' : 'hidden-field'}" data-passport-config-custom="${index}" type="number" min="6" step="1" value="${Number(config.people || 1) > 5 ? escapeHtml(String(config.people)) : ''}" placeholder="${state.lang === 'en' ? 'Enter people' : state.lang === 'de' ? 'Personenzahl eingeben' : '인원수 입력'}">
+      </label>
+    </div>`;
   }).join('');
   els.passportCountries.querySelectorAll('.chip-btn').forEach((button) => {
-    button.addEventListener('click', () => setPassportCountry(Number(button.dataset.personIndex), button.dataset.country));
+    button.addEventListener('click', () => setPassportCountry(Number(button.dataset.configIndex), button.dataset.country));
+  });
+  els.passportCountries.querySelectorAll('[data-passport-config-people]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const index = Number(select.dataset.passportConfigPeople);
+      const customInput = els.passportCountries.querySelector(`[data-passport-config-custom="${index}"]`);
+      if (select.value === 'custom') {
+        customInput?.classList.remove('hidden-field');
+        setPassportConfigPeople(index, Math.max(6, Number(customInput?.value || 6)));
+      } else {
+        customInput?.classList.add('hidden-field');
+        setPassportConfigPeople(index, Number(select.value || 1));
+      }
+    });
+  });
+  els.passportCountries.querySelectorAll('[data-passport-config-custom]').forEach((input) => {
+    input.addEventListener('input', () => setPassportConfigPeople(Number(input.dataset.passportConfigCustom), Math.max(6, Number(input.value || 6))));
+  });
+  els.passportCountries.querySelectorAll('[data-remove-config]').forEach((button) => {
+    button.addEventListener('click', () => removePassportConfig(Number(button.dataset.removeConfig)));
   });
 }
 
-function setPassportCountry(personIndex, code) {
-  syncPassportPersonCountries();
-  const selected = new Set(Array.isArray(state.passportPersonCountries[personIndex]) ? state.passportPersonCountries[personIndex] : []);
+function setPassportCountry(configIndex, code) {
+  syncPassportConfigs();
+  const selected = new Set(Array.isArray(state.passportConfigs[configIndex]?.countries) ? state.passportConfigs[configIndex].countries : []);
   if (selected.has(code)) selected.delete(code);
   else selected.add(code);
-  state.passportPersonCountries[personIndex] = [...selected];
-  state.selectedCountries = [
-    ...new Set(
-      state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter(Boolean))
-    )
-  ];
+  state.passportConfigs[configIndex].countries = [...selected];
+  syncPassportPersonCountries();
+  renderPassportCountries();
+  syncConditionalFields();
+  handleQuoteInputChange().then(() => refreshStepLocks());
+}
+
+function setPassportConfigPeople(configIndex, people) {
+  syncPassportConfigs();
+  if (!state.passportConfigs[configIndex]) return;
+  state.passportConfigs[configIndex].people = Math.max(1, Math.min(5, Number(people || 1)));
+  syncPassportPersonCountries();
+  renderPassportCountries();
+  handleQuoteInputChange().then(() => refreshStepLocks());
+}
+
+function removePassportConfig(configIndex) {
+  syncPassportConfigs();
+  if (configIndex <= 0 || configIndex >= state.passportConfigs.length) return;
+  state.passportConfigs.splice(configIndex, 1);
+  syncPassportPersonCountries();
   renderPassportCountries();
   syncConditionalFields();
   handleQuoteInputChange().then(() => refreshStepLocks());
@@ -2926,12 +3015,12 @@ function renderReview() {
   if (state.selectedDate) rows.push([copy.reviewDate, state.selectedDate]);
   if (state.selectedSlot) rows.push([copy.reviewTime, state.selectedSlot]);
   if (state.selectedProduct.g === 'pass') {
-    rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.passportPeople.value || 1), { t: 'pass' })]);
+    rows.push([copy.reviewPeople, `${getPassportPeopleCount()}${state.lang === 'en' ? (getPassportPeopleCount() > 1 ? ' people' : ' person') : state.lang === 'de' ? (getPassportPeopleCount() > 1 ? ' Personen' : ' Person') : '명'}`]);
     if (hasPassportCountrySelections()) {
       rows.push([copy.reviewCountries, getPassportCountryReviewLabel()]);
     }
   } else if (!els.peopleField.classList.contains('hidden')) {
-    rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.generalPeople.value || 1), state.selectedProduct)]);
+    rows.push([copy.reviewPeople, getPeopleOptionLabel(getSelectedPeopleValue(els.generalPeople, els.generalPeopleCustom, getDefaultPeopleForProduct(state.selectedProduct)), state.selectedProduct)]);
   }
   if (state.selectedProduct.g === 'prof') {
     const ageLabel = AGE_META.find((item) => item.key === state.ageGroup)?.label[state.lang] || AGE_META.find((item) => item.key === state.ageGroup)?.label.ko || state.ageGroup;
@@ -3066,7 +3155,7 @@ async function onSubmit(event) {
     itemId: state.selectedProduct.id,
     date: state.selectedDate,
     time: state.selectedSlot,
-    people: state.selectedProduct.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
+    people: state.selectedProduct.g === 'pass' ? getPassportPeopleCount() : getSelectedPeopleValue(els.generalPeople, els.generalPeopleCustom, getDefaultPeopleForProduct(state.selectedProduct)),
     name: String(formData.get('name') || '').trim(),
     phone: String(formData.get('phone') || '').trim(),
     email: String(formData.get('email') || '').trim(),
@@ -3223,7 +3312,8 @@ function resetBookingFlow() {
   if (state.returnNoticeTimer) clearTimeout(state.returnNoticeTimer);
   els.form.reset();
   els.generalPeople.value = '1';
-  els.passportPeople.value = '1';
+  els.generalPeopleCustom?.classList.add('hidden-field');
+  els.generalPeopleCustom && (els.generalPeopleCustom.value = '');
   if (els.passAddonPeople) els.passAddonPeople.value = '1';
   renderGroups();
   renderProducts([]);
