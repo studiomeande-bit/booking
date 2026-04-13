@@ -913,7 +913,15 @@ let debounceTimer=null,sortField='dateObj',sortDir=-1;
 let printOrdersData=[];
 let invoiceItems=[];
 
-const PRINT_PRICES={'basic_10x15':{label:'기본 10×15cm',price:5,priceRetouched:0},'premium_10x15':{label:'프리미엄 10×15cm',price:8,priceRetouched:3},'photocard_single':{label:'포토카드 프린트 (단면)',price:5,priceRetouched:5},'photocard_double':{label:'포토카드 프린트 (양면)',price:8,priceRetouched:8},'basic_a4':{label:'기본 A4',price:15,priceRetouched:10},'premium_a4':{label:'프리미엄 A4',price:20,priceRetouched:15},'premium_a3':{label:'프리미엄 A3',price:50,priceRetouched:35}};
+const PRINT_PRICES={
+  'photocard_single':{label:'포토카드 프린트 (단면)',price:5,priceRetouched:5},
+  'photocard_double':{label:'포토카드 프린트 (양면)',price:8,priceRetouched:8},
+  'basic_10x15':{label:'기본 10×15cm',price:5,priceRetouched:0},
+  'premium_10x15':{label:'프리미엄 10×15cm',price:8,priceRetouched:3},
+  'basic_a4':{label:'기본 A4',price:15,priceRetouched:10},
+  'premium_a4':{label:'프리미엄 A4',price:20,priceRetouched:15},
+  'premium_a3':{label:'프리미엄 A3',price:50,priceRetouched:35}
+};
 const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외스냅',wed:'프리웨딩',biz:'기업/행사'};
 const G_COLORS={pass:'wev-pass',prof:'wev-prof',stud:'wev-stud',snap:'wev-snap',wed:'wev-wed',biz:'wev-biz'};
 const GT_CLASS={pass:'gt-pass',prof:'gt-prof',stud:'gt-stud',snap:'gt-snap',wed:'gt-wed',biz:'gt-biz'};
