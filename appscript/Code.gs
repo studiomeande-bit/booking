@@ -2574,6 +2574,14 @@ function getLexwareAccountingCacheKey_(startDate, endDate){
   return 'lexware_voucher_snapshot:' + [String(startDate||''), String(endDate||'')].join(':');
 }
 
+function isLexwareVoucherInRange_(voucher, startDate, endDate){
+  const voucherDate = String(voucher && (voucher.voucherDate || voucher.createdDate || voucher.updatedDate) || '').slice(0,10);
+  if(!voucherDate) return false;
+  if(startDate && voucherDate < startDate) return false;
+  if(endDate && voucherDate > endDate) return false;
+  return true;
+}
+
 function getInvoiceLexwareBookingMap_(){
   const {invoiceSheet} = ensureSheets_();
   const rows = invoiceSheet.getDataRange().getValues();
@@ -2625,26 +2633,46 @@ function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   }
   const from = String(startDate||'').trim();
   const to = String(endDate||'').trim();
-  const types = 'invoice,downpaymentinvoice,salesinvoice,purchaseinvoice,purchasecreditnote,salescreditnote';
-  const out = [];
-  let page = 0;
   const size = 250;
-  while(page < 10){
-    const params = [
-      'page=' + page,
-      'size=' + size,
-      'voucherType=' + encodeURIComponent(types),
-      'voucherStatus=' + encodeURIComponent('any'),
-      'sort=' + encodeURIComponent('updatedDate,DESC')
-    ];
-    if(from) params.push('voucherDateFrom=' + encodeURIComponent(from));
-    if(to) params.push('voucherDateTo=' + encodeURIComponent(to));
-    const data = lexwareRequest_('get', '/v1/voucherlist?' + params.join('&'));
-    const content = Array.isArray(data&&data.content) ? data.content : [];
-    out.push.apply(out, content);
-    if(content.length < size) break;
-    page++;
+
+  function fetchPages_(extraParams, maxPages){
+    const collected = [];
+    let page = 0;
+    while(page < maxPages){
+      const params = [
+        'page=' + page,
+        'size=' + size,
+        'voucherType=' + encodeURIComponent('any'),
+        'voucherStatus=' + encodeURIComponent('any'),
+        'sort=' + encodeURIComponent('updatedDate,DESC')
+      ].concat(extraParams || []);
+      const data = lexwareRequest_('get', '/v1/voucherlist?' + params.join('&'));
+      const content = Array.isArray(data && data.content) ? data.content : [];
+      collected.push.apply(collected, content);
+      if(content.length < size) break;
+      page++;
+    }
+    return collected;
   }
+
+  let out = fetchPages_([
+    from ? ('voucherDateFrom=' + encodeURIComponent(from)) : '',
+    to ? ('voucherDateTo=' + encodeURIComponent(to)) : ''
+  ].filter(Boolean), 10);
+
+  if(!out.length && (from || to)){
+    out = fetchPages_([
+      from ? ('updatedDateFrom=' + encodeURIComponent(from)) : '',
+      to ? ('updatedDateTo=' + encodeURIComponent(to)) : ''
+    ].filter(Boolean), 10);
+  }
+
+  if(!out.length && (from || to)){
+    out = fetchPages_([], 4).filter(function(v){
+      return isLexwareVoucherInRange_(v, from, to);
+    });
+  }
+
   cache.put(cacheKey, JSON.stringify(out), 300);
   return out;
 }
