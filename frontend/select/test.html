@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio mean Select Test</title>
+  <style>
+    :root {
+      --bg: #f6f2ea;
+      --panel: rgba(255, 255, 255, 0.9);
+      --line: #dccfb8;
+      --text: #3c342d;
+      --muted: #776b5f;
+      --accent: #2f2a25;
+      --soft: #eef7f3;
+      --soft-line: #cfe5d9;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(229, 214, 183, 0.42), transparent 32%),
+        var(--bg);
+    }
+
+    .shell {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 14px 34px rgba(97, 79, 58, 0.08);
+    }
+
+    .hero {
+      padding: 28px;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .logo {
+      width: min(320px, 82%);
+      display: block;
+      margin: 0 auto 18px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    p {
+      margin: 0;
+      line-height: 1.7;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .panel {
+      padding: 26px;
+      margin-bottom: 18px;
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .panel h3 {
+      margin: 24px 0 10px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .field {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    label {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    input {
+      width: 100%;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button,
+    .link-btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--text);
+      padding: 14px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .banner {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: var(--soft);
+      border: 1px solid var(--soft-line);
+      font-size: 14px;
+      color: #446354;
+      word-break: break-all;
+    }
+
+    .hint-list {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .hint-list li + li {
+      margin-top: 4px;
+    }
+
+    .url-box {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px dashed var(--line);
+      background: rgba(255, 255, 255, 0.55);
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    @media (max-width: 640px) {
+      .shell {
+        padding: 18px 14px 40px;
+      }
+
+      .hero,
+      .panel {
+        border-radius: 22px;
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      button,
+      .link-btn {
+        width: 100%;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <img src="./studio-mean-logo.png" alt="Studio mean" class="logo">
+      <h1>셀렉 테스트 페이지</h1>
+      <p>실제 세션 ID를 넣고 Netlify 셀렉 페이지를 바로 열어보는 용도입니다. 신규 제출, 수정 제출, 성공 화면, 인보이스 번호 노출까지 빠르게 점검할 수 있습니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>세션 열기</h2>
+      <p>셀렉 메일에 포함된 `id=` 값만 넣으면 됩니다.</p>
+
+      <div class="field">
+        <label for="sessionId">세션 ID</label>
+        <input id="sessionId" type="text" placeholder="예: ttt6p5NeZhNw7t77R8Ka" autocomplete="off">
+      </div>
+
+      <div class="actions">
+        <button id="openSame" class="primary" type="button">같은 탭에서 열기</button>
+        <button id="openNew" type="button">새 탭에서 열기</button>
+        <button id="copyUrl" type="button">테스트 URL 복사</button>
+      </div>
+
+      <div id="previewUrl" class="banner">https://select.studio-mean.com/?id=</div>
+
+      <div class="url-box">
+        직접 접속 URL<br>
+        <code>https://select.studio-mean.com/?id=세션ID</code>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>점검 항목</h2>
+      <ul class="hint-list">
+        <li>세션 진입 후 고객명, 상품명, 기본 보정 장수가 정상 표시되는지</li>
+        <li>기존 제출 데이터가 있으면 복원되는지</li>
+        <li>추가 인화/추가 보정 비용이 리뷰와 성공 화면에 맞게 보이는지</li>
+        <li>제출 후 인보이스 번호와 드라이브 링크가 성공 화면에 보이는지</li>
+        <li>수정 제출 모드에서 다시 제출이 가능한지</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    const sessionInput = document.getElementById('sessionId');
+    const previewUrl = document.getElementById('previewUrl');
+    const baseUrl = 'https://select.studio-mean.com/?id=';
+
+    function buildUrl() {
+      return `${baseUrl}${encodeURIComponent(sessionInput.value.trim())}`;
+    }
+
+    function syncPreview() {
+      previewUrl.textContent = buildUrl();
+    }
+
+    function ensureValue() {
+      const value = sessionInput.value.trim();
+      if (!value) {
+        sessionInput.focus();
+        return false;
+      }
+      return true;
+    }
+
+    sessionInput.addEventListener('input', syncPreview);
+    syncPreview();
+
+    document.getElementById('openSame').addEventListener('click', () => {
+      if (!ensureValue()) return;
+      window.location.href = buildUrl();
+    });
+
+    document.getElementById('openNew').addEventListener('click', () => {
+      if (!ensureValue()) return;
+      window.open(buildUrl(), '_blank', 'noopener');
+    });
+
+    document.getElementById('copyUrl').addEventListener('click', async () => {
+      if (!ensureValue()) return;
+      await navigator.clipboard.writeText(buildUrl());
+      previewUrl.textContent = `${buildUrl()}  (복사됨)`;
+    });
+  </script>
+</body>
+</html>
