@@ -26,7 +26,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
@@ -2077,7 +2077,19 @@ function getDashboardData_(){
     if(bDate && bDate.includes('GMT')) { bDate = parseDateSafe_(row[20]).str.slice(0,10); }
 
     const rescheduleReq=String(row[24]||'').trim();
-    customers.push({rowIndex:r+1,dateStr:dStr,dateObj:dObj.getTime(),month:m,status,name:row[2],phone:row[3],email:row[4],lang:row[5],itemGroup:g,product:row[7],optionStr:row[8],people:row[9],price,deposit:depositRaw,depositRaw,balance:balanceRaw,payMethod:payStr,depPayMethod:row[17],extraItem:row[18],memo:row[15],isReturn:String(row[19]||'')==='재방문', balanceDate:bDate,rescheduleReq,address:String(row[26]||'')});
+    customers.push({
+      rowIndex:r+1,dateStr:dStr,dateObj:dObj.getTime(),month:m,status,name:row[2],phone:row[3],email:row[4],lang:row[5],
+      itemGroup:g,product:row[7],optionStr:row[8],people:row[9],price,deposit:depositRaw,depositRaw,balance:balanceRaw,
+      payMethod:payStr,depPayMethod:row[17],extraItem:row[18],memo:row[15],isReturn:String(row[19]||'')==='재방문',
+      balanceDate:bDate,rescheduleReq,address:String(row[26]||''),
+      depositPaid:String(row[BOOKING_COL['계약금입금여부']]||''),
+      depositPaidAt:String(row[BOOKING_COL['계약금입금일']]||''),
+      depositPaidAmount:String(row[BOOKING_COL['계약금입금금액']]||''),
+      balancePaid:String(row[BOOKING_COL['잔금결제여부']]||''),
+      balancePaidAmount:String(row[BOOKING_COL['잔금결제금액']]||''),
+      lexwarePaymentStatus:String(row[BOOKING_COL['Lexware결제상태']]||''),
+      lexwareSyncedAt:String(row[BOOKING_COL['Lexware동기화일시']]||'')
+    });
     
     const CONFIRMED_STATUSES=['확정됨','촬영완료','셀렉완료','작업완료'];
     if(CONFIRMED_STATUSES.includes(status)&&dObj.getTime()<=now){totReal+=price;monthly[m].revenue+=price;monthly[m].count++;prod[g]=(prod[g]||0)+price;if(payStr.includes('현금'))pay.cash+=price;else if(payStr.includes('카드'))pay.card+=price;else if(payStr.includes('계좌이체'))pay.transfer+=price;else if(payStr.includes('마이리얼트립'))pay.myreal+=price;else pay.none+=price;}
@@ -3412,6 +3424,67 @@ function updateInvoiceLexwareFields_(rowIndex, fields){
   });
 }
 
+function toNumberOrZero_(value){
+  const num=Number(String(value==null?'':value).replace(/[^0-9.\-]/g,''));
+  return isFinite(num)?num:0;
+}
+
+function extractLexwarePaymentSummary_(payment, invoiceTotal, depositTarget){
+  const items=Array.isArray(payment&&payment.paymentItems)?payment.paymentItems:[];
+  const normalized=items.map(function(item){
+    const amountCandidates=[
+      item&&item.amount,
+      item&&item.paidAmount,
+      item&&item.value,
+      item&&item.totalAmount,
+      item&&item.amount&&item.amount.value
+    ];
+    const amount=amountCandidates.map(toNumberOrZero_).find(function(v){return v>0;})||0;
+    return {
+      amount:amount,
+      date:String((item&&item.postingDate)||(item&&item.paymentDate)||(item&&item.date)||'')
+    };
+  }).filter(function(item){return item.amount>0 || item.date;});
+  const openAmount=toNumberOrZero_(payment&&payment.openAmount);
+  const paidAmount=normalized.reduce(function(sum,item){return sum+item.amount;},0) || Math.max(0,toNumberOrZero_(invoiceTotal)-openAmount);
+  const sortedDates=normalized.map(function(item){return item.date;}).filter(Boolean).sort();
+  const depositDue=Math.max(0,toNumberOrZero_(depositTarget));
+  const fullyPaid=paidAmount >= (toNumberOrZero_(invoiceTotal)-0.01);
+  const depositPaid=depositDue>0 && paidAmount >= (depositDue-0.01);
+  return {
+    paidAmount:Math.round(paidAmount*100)/100,
+    openAmount:Math.round(openAmount*100)/100,
+    depositPaid:depositPaid,
+    depositPaidAt:depositPaid?(sortedDates[0]||''):'',
+    balancePaid:fullyPaid,
+    balancePaidAt:fullyPaid?(sortedDates[sortedDates.length-1]||''):'',
+    paymentStatus:String((payment&&payment.paymentStatus)||(payment&&payment.voucherStatus)||'')
+  };
+}
+
+function updateBookingLexwareFields_(bookingRowIndex, summary, invoiceTotal, depositTarget){
+  if(!(bookingRowIndex>=2)) return;
+  const {bookingSheet}=ensureSheets_();
+  const totalAmount=Math.max(0,toNumberOrZero_(invoiceTotal));
+  const depositAmount=Math.max(0,toNumberOrZero_(depositTarget));
+  const paidAmount=Math.max(0,toNumberOrZero_(summary&&summary.paidAmount));
+  const balancePaidAmount=Math.max(0,Math.round((paidAmount-depositAmount)*100)/100);
+  const updates={};
+  updates['계약금입금여부']=summary.depositPaid?'Y':'N';
+  updates['계약금입금일']=summary.depositPaidAt||'';
+  updates['계약금입금금액']=summary.depositPaid?String(Math.min(depositAmount||paidAmount,paidAmount)):'';
+  updates['잔금결제여부']=summary.balancePaid?'Y':'N';
+  updates['잔금결제금액']=summary.balancePaid?String(Math.max(0,Math.min(balancePaidAmount,totalAmount-depositAmount))):'';
+  updates['잔금입금일']=summary.balancePaidAt||'';
+  updates['Lexware결제상태']=summary.paymentStatus||'';
+  updates['Lexware동기화일시']=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  Object.keys(updates).forEach(function(key){
+    const col=BOOKING_COL[key];
+    if(col==null) return;
+    bookingSheet.getRange(bookingRowIndex,col+1).setValue(updates[key]);
+  });
+}
+
 function maskSecret_(value, left, right){
   const s=String(value||'');
   if(!s) return '';
@@ -3874,24 +3947,44 @@ function syncLexwareInvoiceStatus(token, invNumber){
   if(!inv.lexwareInvoiceId) throw new Error('먼저 Lexware 전송을 진행해 주세요.');
   const payment=lexwareRequest_('get','/v1/payments/'+encodeURIComponent(inv.lexwareInvoiceId));
   const syncedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-  const paymentItems=Array.isArray(payment.paymentItems)?payment.paymentItems:[];
-  const latestPaidAt=paymentItems.length
-    ?paymentItems.map(item=>String(item.postingDate||'')).sort().slice(-1)[0]
-    :'';
+  const summary=extractLexwarePaymentSummary_(payment, inv.total, inv.deposit);
   updateInvoiceLexwareFields_(rowIndex,{
-    LexwarePaymentStatus:String(payment.paymentStatus||payment.voucherStatus||''),
-    LexwareOpenAmount:String(payment.openAmount||''),
-    LexwarePaidAt:latestPaidAt,
+    LexwarePaymentStatus:summary.paymentStatus,
+    LexwareOpenAmount:String(summary.openAmount),
+    LexwarePaidAt:summary.balancePaidAt||summary.depositPaidAt||'',
     LexwareSyncStatus:'status-synced',
     LexwareSyncedAt:syncedAt
   });
+  if(inv.bookingRowIndex){
+    updateBookingLexwareFields_(inv.bookingRowIndex, summary, inv.total, inv.deposit);
+  }
   return {
     ok:true,
-    paymentStatus:String(payment.paymentStatus||payment.voucherStatus||''),
-    openAmount:String(payment.openAmount||''),
-    paidAt:latestPaidAt,
+    paymentStatus:summary.paymentStatus,
+    openAmount:String(summary.openAmount),
+    paidAt:summary.balancePaidAt||summary.depositPaidAt||'',
+    depositPaid:summary.depositPaid,
+    depositPaidAt:summary.depositPaidAt,
+    depositPaidAmount:summary.depositPaid?String(Math.min(toNumberOrZero_(inv.deposit)||summary.paidAmount,summary.paidAmount)):'',
+    balancePaid:summary.balancePaid,
+    balancePaidAt:summary.balancePaidAt,
+    balancePaidAmount:summary.balancePaid?String(Math.max(0,Math.round((summary.paidAmount-toNumberOrZero_(inv.deposit))*100)/100)):'',
     syncedAt
   };
+}
+
+function syncBookingLexwarePayment(token, bookingRowIndex){
+  assertAdmin_(token);
+  const {invoiceSheet}=ensureSheets_();
+  const rows=invoiceSheet.getDataRange().getValues();
+  const candidates=rows.slice(1)
+    .map(function(row, idx){return invoiceRowToObject_(row, idx+2);})
+    .filter(function(inv){
+      return inv.bookingRowIndex===parseInt(bookingRowIndex,10) && inv.lexwareInvoiceId && inv.type!=='셀렉추가금';
+    });
+  if(!candidates.length) throw new Error('연결된 Lexware 인보이스가 없습니다.');
+  const target=candidates.sort(function(a,b){return (b.rowIndex||0)-(a.rowIndex||0);})[0];
+  return syncLexwareInvoiceStatus(token, target.number);
 }
 
 

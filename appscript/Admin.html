@@ -958,7 +958,7 @@ function renderTable(){
   const dc=dep=>{if(!dep||dep==='-')return '<span class="dep-none">-</span>';if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 미입금</span>`;if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ 완료</span>`;return `<span style="font-size:11px;color:#475569;">${dep}</span>`;};
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
 
-  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
+  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}${(c.depositPaid==='Y'||c.balancePaid==='Y'||c.lexwarePaymentStatus)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#475569;">${c.depositPaid==='Y'?`💳 계약금 ${c.depositPaidAmount||''}€`:'💳 계약금 미입금'}${c.balancePaid==='Y'?`<br>✅ 잔금 ${c.balancePaidAmount||''}€`:(c.balanceDate?`<br>📅 잔금일 ${c.balanceDate}`:'')}${c.lexwarePaymentStatus?`<br>📚 ${c.lexwarePaymentStatus}`:''}</div>`:''}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">💶결제</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
 }
 
@@ -2597,11 +2597,23 @@ function syncInvoiceLexware(invNumber){
 function syncInvoiceLexwareStatus(invNumber){
   google.script.run
     .withSuccessHandler(res=>{
-      alert(`상태 동기화 완료\nStatus: ${res.paymentStatus||'-'}\nOpen: ${res.openAmount||'-'}€`);
+      alert(`상태 동기화 완료\nStatus: ${res.paymentStatus||'-'}\nOpen: ${res.openAmount||'-'}€${res.depositPaid?`\n계약금 입금: ${res.depositPaidAmount||'-'}€ (${res.depositPaidAt||'-'})`:''}${res.balancePaid?`\n잔금 결제: ${res.balancePaidAmount||'-'}€ (${res.balancePaidAt||'-'})`:''}`);
       loadInvoiceList();
+      loadAll();
     })
     .withFailureHandler(handleApiError)
     .syncLexwareInvoiceStatus(adminToken, invNumber);
+}
+
+function syncBookingLexware(rowIndex){
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`예약 결제 동기화 완료\nStatus: ${res.paymentStatus||'-'}\nOpen: ${res.openAmount||'-'}€${res.depositPaid?`\n계약금 입금: ${res.depositPaidAmount||'-'}€ (${res.depositPaidAt||'-'})`:''}${res.balancePaid?`\n잔금 결제: ${res.balancePaidAmount||'-'}€ (${res.balancePaidAt||'-'})`:''}`);
+      loadAll();
+      loadInvoiceList();
+    })
+    .withFailureHandler(handleApiError)
+    .syncBookingLexwarePayment(adminToken,rowIndex);
 }
 </script>
 </body>
