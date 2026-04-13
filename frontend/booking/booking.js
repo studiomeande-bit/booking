@@ -60,9 +60,9 @@ const GROUP_META = {
     icon: '🎬',
     label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' },
     sub: {
-      ko: '행사 사진, 영상 촬영, 하이라이트 편집',
-      en: 'Event photo, video, highlight editing',
-      de: 'Event-Foto, Video, Highlight-Schnitt'
+      ko: '돌잔치촬영, 결혼식, 암트결혼식, 기업행사',
+      en: 'Birthday party, wedding, registry wedding, corporate event',
+      de: 'Geburtstagsfeier, Hochzeit, Standesamt, Firmenevent'
     }
   }
 };

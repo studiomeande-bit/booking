@@ -67,9 +67,8 @@
       <div id="passportPanel" class="detail-box hidden">
         <div id="passportTitle" class="detail-title">여권/비자 옵션</div>
         <p class="detail-copy">촬영 국가를 선택하면 국가별 추가 비용을 함께 반영합니다.</p>
-        <div class="chip-grid" id="passportCountries"></div>
         <label class="inline-field">
-          <span id="passportPeopleLabel">인원</span>
+          <span id="passportPeopleLabel">인원수</span>
           <select id="passportPeople">
             <option value="1">1명</option>
             <option value="2">2명</option>
@@ -78,6 +77,11 @@
             <option value="5">5명</option>
           </select>
         </label>
+        <div class="form-block">
+          <span id="passportCountryLabel" class="block-label">원하는 촬영국가 선택</span>
+          <div class="chip-grid" id="passportCountries"></div>
+        </div>
+        <button type="button" id="passportAddConfigBtn" class="ghost-btn">구성 추가</button>
         <div id="passportHint" class="muted-copy"></div>
       </div>
       <div id="generalPanel" class="detail-box hidden">
@@ -153,7 +157,7 @@
             <div id="bizAddonGrid" class="chip-grid"></div>
             <p id="bizAddonHelp" class="muted-copy">추가 옵션은 예약 접수 후 세부 내용에 따라 최종 비용이 안내될 수 있습니다.</p>
           </div>
-          <textarea id="businessInput" name="businessDetails" rows="3" placeholder="행사 목적, 예상 인원, 필요한 결과물을 적어 주세요."></textarea>
+          <textarea id="businessInput" name="businessDetails" rows="3" placeholder="예: 돌잔치촬영 / 결혼식 / 암트결혼식 / 기업행사 · 예상 인원, 필요한 결과물을 적어 주세요."></textarea>
         </label>
         <div id="surveyField" class="hidden-field form-block">
           <span id="surveyFieldLabel" class="block-label">원하는 분위기</span>
