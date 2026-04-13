@@ -461,7 +461,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const m=d.getMonth();
   const key=`${y}_${m}`;
   const ver=getCalCacheVer_();
-  const cacheKey=`public_batch_v3_${ver}_${y}_${m}_${itemGroup}_${totalDur}`;
+  const cacheKey=`public_batch_v4_${ver}_${y}_${m}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   try{
     const hit=cache.get(cacheKey);
@@ -470,37 +470,10 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
       if(parsed&&typeof parsed==='object') return parsed;
     }
   }catch(e){}
+  const monthSummary=getUnavailableDays(y,m,totalDur,itemGroup,true);
   const out={};
-  const unavail=[],slotCounts={},slotsByDate={};
-  const daysInMonth=new Date(y,m+1,0).getDate();
-  const now=new Date().getTime();
-  const monthEvents=getEventsForRange_(new Date(y,m,1),new Date(y,m,daysInMonth,23,59,59));
-  var prefetchedCount=0;
-  for(let day=1;day<=daysInMonth;day++){
-    const dStr=`${y}-${('0'+(m+1)).slice(-2)}-${('0'+day).slice(-2)}`;
-    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){
-      unavail.push(dStr);
-      continue;
-    }
-    if(prefetchedCount<12){
-      const daySlots=computeSlots_(dStr,monthEvents,totalDur,itemGroup);
-      if(!daySlots||!daySlots.length){
-        unavail.push(dStr);
-        continue;
-      }
-      slotsByDate[dStr]=daySlots;
-      slotCounts[dStr]=daySlots.length;
-      prefetchedCount++;
-      continue;
-    }
-    if(!hasAnySlot_(dStr,monthEvents,totalDur,itemGroup)){
-      unavail.push(dStr);
-      continue;
-    }
-    slotCounts[dStr]=1;
-  }
-  out[key]={unavail,slotCounts,slotsByDate};
-  try{cache.put(cacheKey,JSON.stringify(out),60);}catch(e){}
+  out[key]={unavail:monthSummary.unavail||[],slotCounts:{},slotsByDate:{}};
+  try{cache.put(cacheKey,JSON.stringify(out),300);}catch(e){}
   return out;
 }
 

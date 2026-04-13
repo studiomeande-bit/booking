@@ -2137,6 +2137,36 @@ async function warmSelectedProductCalendar(product, durationOverride) {
   }, 40);
 }
 
+const MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getMonthStorageKey(year, month, itemGroup, duration) {
+  return `booking:month:v2:${year}_${month}_${itemGroup}_${duration}`;
+}
+
+function readMonthStorage(year, month, itemGroup, duration) {
+  try {
+    const raw = window.localStorage.getItem(getMonthStorageKey(year, month, itemGroup, duration));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.savedAt || !parsed.data) return null;
+    if (Date.now() - Number(parsed.savedAt) > MONTH_CACHE_TTL_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeMonthStorage(year, month, itemGroup, duration, data) {
+  try {
+    window.localStorage.setItem(
+      getMonthStorageKey(year, month, itemGroup, duration),
+      JSON.stringify({ savedAt: Date.now(), data })
+    );
+  } catch {
+    // Ignore storage quota / private mode errors.
+  }
+}
+
 function selectGroup(groupKey) {
   clearSubmitResult();
   state.selectedGroup = groupKey;
@@ -2498,6 +2528,10 @@ async function loadCalendar() {
   const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
   let batch = state.calendarCache.get(cacheKey);
+  if (!batch) {
+    batch = readMonthStorage(state.calendarYear, state.calendarMonth, state.selectedProduct.g, duration);
+    if (batch) state.calendarCache.set(cacheKey, batch);
+  }
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   if (!batch) {
     try {
@@ -2532,10 +2566,8 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
   Object.entries(batch || {}).forEach(([monthKey, data]) => {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
-    const slotsByDate = data && typeof data === 'object' && data.slotsByDate ? data.slotsByDate : {};
-    Object.entries(slotsByDate).forEach(([dateKey, slots]) => {
-      state.slotCache.set(`${dateKey}_${itemGroup}_${duration}`, Array.isArray(slots) ? slots : []);
-    });
+    const [yearPart, monthPart] = monthKey.split('_');
+    writeMonthStorage(Number(yearPart), Number(monthPart), itemGroup, duration, data);
   });
   return batch?.[`${year}_${month}`] || Object.values(batch || {})[0] || null;
 }
