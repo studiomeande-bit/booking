@@ -459,6 +459,16 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const y=d.getFullYear();
   const m=d.getMonth();
   const key=`${y}_${m}`;
+  const ver=getCalCacheVer_();
+  const cacheKey=`public_batch_v3_${ver}_${y}_${m}_${itemGroup}_${totalDur}`;
+  const cache=CacheService.getScriptCache();
+  try{
+    const hit=cache.get(cacheKey);
+    if(hit){
+      const parsed=JSON.parse(hit);
+      if(parsed&&typeof parsed==='object') return parsed;
+    }
+  }catch(e){}
   const out={};
   const unavail=[],slotCounts={},slotsByDate={};
   const daysInMonth=new Date(y,m+1,0).getDate();
@@ -489,6 +499,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
     slotCounts[dStr]=1;
   }
   out[key]={unavail,slotCounts,slotsByDate};
+  try{cache.put(cacheKey,JSON.stringify(out),60);}catch(e){}
   return out;
 }
 
@@ -1266,11 +1277,12 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
 
 function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation){
   const now=new Date().getTime(),loc=newLocation||'';
+  const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
   return getTimeBlocksForDate_(dateStr,itemGroup).some(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
     for(let t=bs;t<be;t+=15*60000){
-      if(t<=now||t+totalDur*60000>be) continue;
+      if(t<leadTimeCutoff||t+totalDur*60000>be) continue;
       if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)) return true;
     }
     return false;
