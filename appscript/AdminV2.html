@@ -1354,7 +1354,7 @@ function renderAccountingPaymentState(r){
 
 function exportAccountingCSV() {
   if(!accountingData.length) { alert('내보낼 데이터가 없습니다.'); return; }
-  let csv = '\uFEFFDatum(결제일),Beleg(구분),Kontoart(회계분류),Kunde(고객명),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt(19%),Memo(메모),Lexware\n';
+  let csv = '\uFEFFBelegdatum,Belegart,Kontoart,Kunde/Lieferant,Buchungstext,Zahlungsart,Brutto,Netto,MwSt,Memo,Lexware\n';
   
   const filtered = accountingData.filter(r => {
     const type = document.getElementById('acc_type').value;
@@ -1369,16 +1369,16 @@ function exportAccountingCSV() {
   filtered.forEach(r => {
     const row = [
       r.date || '', 
-      r.type || '', 
-      `"${(r.accountingClass||'').replace(/"/g, '""')}"`,
+      translateAccountingTypeDe(r.type || ''), 
+      safeCsvField(translateAccountingClassDe(r.accountingClass||'')),
       `"${(r.name||'').replace(/"/g, '""')}"`, 
       `"${(r.description||'').replace(/"/g, '""')}"`, 
-      r.payMethod || '', 
+      translatePayMethodDe(r.payMethod || ''), 
       r.gross || 0, 
       r.net || 0, 
       r.tax || 0,
       `"${(r.note||'').replace(/"/g, '""')}"`,
-      `"${((r.lexwareSyncStatus||r.lexwarePaymentStatus||'')).replace(/"/g, '""')}"`
+      safeCsvField(translateLexwareStatusDe(r.lexwareSyncStatus||r.lexwarePaymentStatus||''))
     ];
     csv += row.join(',') + '\n';
   });
@@ -1435,22 +1435,22 @@ function exportAccountingSummaryCSV() {
     byType[typeKey].tax += Number(row.tax || 0);
   });
 
-  let csv = '\uFEFFSection,Key,Count,Brutto,Netto,MwSt/Vorsteuer,StartDate,EndDate,Notes\n';
+  let csv = '\uFEFFBereich,Schluessel,Anzahl,Brutto,Netto,MwSt/Vorsteuer,Startdatum,Enddatum,Hinweis\n';
   csv += [
-    ['period','selected_period',filtered.length,totals.gross.toFixed(2),totals.net.toFixed(2),totals.tax.toFixed(2),startDate,endDate,'현재 필터 기준'],
-    ['period','income_gross','',totals.incomeGross.toFixed(2),'','','','', '수입 총액'],
-    ['period','expense_gross','',totals.expenseGross.toFixed(2),'','','','', '지출 총액'],
-    ['period','lexware_synced',totals.lexwareSynced,'','','','','','Lexware 동기화 건수'],
-    ['period','lexware_pending',totals.lexwarePending,'','','','','','Lexware 미전송 건수']
+    ['zeitraum','ausgewaehlter_zeitraum',filtered.length,totals.gross.toFixed(2),totals.net.toFixed(2),totals.tax.toFixed(2),startDate,endDate,'Aktueller Filter'],
+    ['zeitraum','umsatz_brutto','',totals.incomeGross.toFixed(2),'','','','', 'Bruttoumsatz'],
+    ['zeitraum','ausgaben_brutto','',totals.expenseGross.toFixed(2),'','','','', 'Bruttoausgaben'],
+    ['zeitraum','lexware_synchronisiert',totals.lexwareSynced,'','','','','','Lexware synchronisierte Buchungen'],
+    ['zeitraum','lexware_ausstehend',totals.lexwarePending,'','','','','','Lexware ausstehende Buchungen']
   ].map(row => row.join(',')).join('\n') + '\n';
 
   Object.keys(byClass).sort().forEach(key => {
     const item = byClass[key];
-    csv += ['accounting_class', `"${String(key).replace(/"/g, '""')}"`, item.count, item.gross.toFixed(2), item.net.toFixed(2), item.tax.toFixed(2), startDate, endDate, ''].join(',') + '\n';
+    csv += ['kontoklasse', safeCsvField(translateAccountingClassDe(String(key))), item.count, item.gross.toFixed(2), item.net.toFixed(2), item.tax.toFixed(2), startDate, endDate, ''].join(',') + '\n';
   });
   Object.keys(byType).sort().forEach(key => {
     const item = byType[key];
-    csv += ['type', `"${String(key).replace(/"/g, '""')}"`, item.count, item.gross.toFixed(2), item.net.toFixed(2), item.tax.toFixed(2), startDate, endDate, ''].join(',') + '\n';
+    csv += ['belegart', safeCsvField(translateAccountingTypeDe(String(key))), item.count, item.gross.toFixed(2), item.net.toFixed(2), item.tax.toFixed(2), startDate, endDate, ''].join(',') + '\n';
   });
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1476,20 +1476,20 @@ function exportAccountingDatevCSV() {
   if(!filtered.length) { alert('내보낼 DATEV/세무사 데이터가 없습니다.'); return; }
   let csv = '\uFEFFBelegdatum;Buchungstext;Kontoart;Flow;Kunde/Lieferant;Zahlungsart;Brutto;Netto;Steuer;Waehrung;Memo;Lexware;Zahlungsstatus\n';
   filtered.forEach(r => {
-    const paymentState = (r.flow === 'expense') ? '지출' : stripHtml(renderAccountingPaymentState(r)).replace(/\s+/g,' ').trim();
+    const paymentState = (r.flow === 'expense') ? 'Ausgabe' : translatePaymentStateDe(r);
     const row = [
       safeDatevField(r.date || ''),
       safeDatevField(r.description || r.type || ''),
-      safeDatevField(r.accountingClass || ''),
+      safeDatevField(translateAccountingClassDe(r.accountingClass || '')),
       safeDatevField((r.flow || 'income') === 'expense' ? 'expense' : 'income'),
       safeDatevField(r.name || ''),
-      safeDatevField(r.payMethod || ''),
+      safeDatevField(translatePayMethodDe(r.payMethod || '')),
       formatDatevNumber(r.gross),
       formatDatevNumber(r.net),
       formatDatevNumber(r.tax),
       'EUR',
       safeDatevField(r.note || ''),
-      safeDatevField(r.lexwareSyncStatus || r.lexwarePaymentStatus || ''),
+      safeDatevField(translateLexwareStatusDe(r.lexwareSyncStatus || r.lexwarePaymentStatus || '')),
       safeDatevField(paymentState)
     ];
     csv += row.join(';') + '\n';
@@ -1515,6 +1515,71 @@ function stripHtml(html){
   const div=document.createElement('div');
   div.innerHTML=html||'';
   return div.textContent||div.innerText||'';
+}
+
+function safeCsvField(v){
+  return `"${String(v||'').replace(/"/g,'""')}"`;
+}
+
+function translateAccountingTypeDe(v){
+  const map = {
+    '촬영예약':'Fotoauftrag',
+    '인화/보정':'Druck/Retusche',
+    '지출':'Ausgabe'
+  };
+  return map[v] || v || '';
+}
+
+function translateAccountingClassDe(v){
+  const map = {
+    '여권/비자 매출':'Passfoto/Visum Umsatz',
+    '프로필 매출':'Profil Umsatz',
+    '스튜디오 매출':'Studio Umsatz',
+    '야외스냅 매출':'Outdoor Umsatz',
+    '프리웨딩 매출':'Pre-Wedding Umsatz',
+    '행사/영상 매출':'Event/Video Umsatz',
+    '추가 인화/보정 매출':'Druck/Retusche Umsatz',
+    '소모품':'Verbrauchsmaterial',
+    '장비':'Equipment',
+    '교통비':'Fahrtkosten',
+    '광고비':'Werbekosten',
+    '구독료':'Abonnements',
+    '외주':'Fremdleistung',
+    '임차/관리비':'Miete/Verwaltung',
+    '기타':'Sonstiges',
+    '미분류':'Nicht klassifiziert'
+  };
+  return map[v] || v || '';
+}
+
+function translatePayMethodDe(v){
+  const map = {
+    '현금':'Bar',
+    '카드':'Karte',
+    '계좌이체':'Überweisung',
+    '마이리얼트립':'MyRealTrip',
+    '미결제':'Offen'
+  };
+  return map[v] || v || '';
+}
+
+function translateLexwareStatusDe(v){
+  const s = String(v||'');
+  if(!s) return '';
+  if(s === '미전송') return 'Nicht synchronisiert';
+  if(/paid|fully_paid|bezahlt|완료/i.test(s)) return 'Bezahlt';
+  if(/open|offen|미결/i.test(s)) return 'Offen';
+  if(/partial|teil/i.test(s)) return 'Teilweise bezahlt';
+  return s;
+}
+
+function translatePaymentStateDe(r){
+  if(r.flow === 'expense') return 'Ausgabe';
+  const parts = [];
+  if(r.depositPaid === 'Y') parts.push(`Anzahlung ${Number(r.depositPaidAmount||0).toLocaleString('de-DE')}€`);
+  if(r.balancePaid === 'Y') parts.push(`Restzahlung ${Number(r.balancePaidAmount||0).toLocaleString('de-DE')}€`);
+  if(Number(r.openAmount||0) > 0) parts.push(`Offen ${Number(r.openAmount||0).toLocaleString('de-DE')}€`);
+  return parts.join(' / ') || 'Ungeprüft';
 }
 
 /* ===== 수기 등록 ===== */
@@ -1781,9 +1846,10 @@ function searchPrintCustomer() {
 }
 
 function loadPrintHistory() {
+  const tb = document.getElementById('printHistoryBody');
+  if (tb) tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:20px;"><span class="spinner"></span> 주문 내역을 불러오는 중...</td></tr>';
   google.script.run.withSuccessHandler(orders => {
     printOrdersData = orders || []; // 전역 저장
-    const tb = document.getElementById('printHistoryBody');
     if (!printOrdersData.length) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:20px;">주문 내역이 없습니다.</td></tr>'; return; }
     tb.innerHTML = printOrdersData.map(o => `<tr>
       <td style="font-size:12px;">${o.dateStr}</td>
@@ -1800,7 +1866,10 @@ function loadPrintHistory() {
         <button class="btn btn-danger btn-sm" onclick="deletePrintOrder(${o.rowIdx})" style="background:#ef4444;border:none;padding:4px 8px;margin-top:2px;">삭제</button>
       </td>
     </tr>`).join('');
-  }).withFailureHandler(handleApiError).getPrintOrdersAdmin(adminToken);
+  }).withFailureHandler(e => {
+    if (tb) tb.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#ef4444;padding:20px;">주문 내역 조회 오류: ${e.message}</td></tr>`;
+    handleApiError(e);
+  }).getPrintOrdersAdmin(adminToken);
 }
 
 function deletePrintOrder(rowIdx) {
@@ -2280,7 +2349,13 @@ function setupSelectTrigger(){
 }
 
 /* ===== 탭 전환 ===== */
-function switchTab(id){document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['dashboard','booking','accounting','print','manual','product','select','invoice','settings'][i]===id));document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));document.getElementById('tab_'+id).classList.add('active');}
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['dashboard','booking','accounting','print','manual','product','select','invoice','settings'][i]===id));
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab_'+id).classList.add('active');
+  if(id==='print') loadPrintHistory();
+  if(id==='accounting') loadAccountingData();
+}
 function viewSubmission(rowIndex){
   const r=allSelectDashboard.find(x=>x.rowIndex===rowIndex);
   if(!r||!r.sel||!r.sel.submittedAt){alert('아직 제출된 회신이 없습니다.');return;}

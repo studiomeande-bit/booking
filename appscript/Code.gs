@@ -33,6 +33,7 @@ const CONFIG = {
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
 };
 const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const PRINT_COL=CONFIG.PRINT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PUBLIC_API_CONFIG = {
   ALLOWED_ORIGINS: [
     'https://booking.studio-mean.com',
@@ -59,6 +60,60 @@ function doGet(e) {
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
     .setTitle(CONFIG.APP_TITLE+' ERP')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function getPrintSheetColMap_(sh) {
+  const headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), CONFIG.PRINT_HEADERS.length)).getValues()[0] || [];
+  const map = {};
+  headers.forEach((h, i) => { if (h) map[String(h).trim()] = i; });
+  return map;
+}
+
+function buildPrintSheetRow_(colMap, data) {
+  const row = new Array(Math.max(Object.keys(colMap).length, CONFIG.PRINT_HEADERS.length)).fill('');
+  Object.entries(data).forEach(([header, value]) => {
+    if (colMap[header] !== undefined) row[colMap[header]] = value;
+  });
+  return row;
+}
+
+function normalizePrintRow_(row, rowIdx, colMap) {
+  const hasLegacyHeader =
+    colMap['매출날짜'] === 1 &&
+    row[colMap['매출날짜']] &&
+    !String(row[colMap['매출날짜']]).match(/^\d{4}-\d{2}-\d{2}/);
+
+  if (hasLegacyHeader) {
+    return {
+      rowIdx,
+      dateStr: parseDateSafe_(row[0]).str,
+      salesDate: String(row[10] || '').trim(),
+      name: String(row[1] || ''),
+      phone: String(row[2] || ''),
+      items: String(row[3] || ''),
+      retouchItems: String(row[4] || ''),
+      qty: Number(row[5] || 0) || 0,
+      total: Number(row[6] || 0) || 0,
+      payMethod: String(row[7] || ''),
+      memo: String(row[8] || ''),
+      status: String(row[9] || '완료')
+    };
+  }
+
+  return {
+    rowIdx,
+    dateStr: parseDateSafe_(row[colMap['주문일시']] || '').str,
+    salesDate: String(row[colMap['매출날짜']] || '').trim(),
+    name: String(row[colMap['고객명']] || ''),
+    phone: String(row[colMap['연락처']] || ''),
+    items: String(row[colMap['인화항목']] || ''),
+    retouchItems: String(row[colMap['보정항목']] || ''),
+    qty: Number(row[colMap['총수량']] || 0) || 0,
+    total: Number(row[colMap['금액']] || 0) || 0,
+    payMethod: String(row[colMap['결제수단']] || ''),
+    memo: String(row[colMap['메모']] || ''),
+    status: String(row[colMap['상태']] || '완료')
+  };
 }
 
 function doPost(e){
@@ -2050,34 +2105,54 @@ function addManualBookingAdmin(token, data) {
 /* ====== 인화 ====== */
 function savePrintOrder(token,order){
   assertAdmin_(token);const sh=ensureSheets_().printSheet;
+  const colMap=getPrintSheetColMap_(sh);
   const nowTime=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'HH:mm');
   // 선택한 날짜에 현재 시간을 조합하여 저장 (선택 날짜 없으면 현재 일시)
   const finalDate = order.date ? `${order.date} ${nowTime}` : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const printItems=(order.printItems||[]).map(i=>`${i.label} ×${i.qty}(${i.price}€)`).join(', ');
   const retouchItems=(order.retouchItems||[]).map(i=>`보정 ${i.label} ×${i.qty}(${i.price}€)`).join(', ');
   const total=(order.printItems||[]).reduce((s,i)=>s+(i.price*i.qty),0)+(order.retouchItems||[]).reduce((s,i)=>s+(i.price*i.qty),0);
-  sh.appendRow([finalDate,order.name,order.phone,printItems||'-',retouchItems||'-',order.totalQty||0,total,order.payMethod,order.memo||'','완료']);
+  const salesDate = String(order.date || finalDate).slice(0, 10);
+  sh.appendRow(buildPrintSheetRow_(colMap, {
+    '주문일시': finalDate,
+    '매출날짜': salesDate,
+    '고객명': order.name || '',
+    '연락처': order.phone || '',
+    '인화항목': printItems || '-',
+    '보정항목': retouchItems || '-',
+    '총수량': order.totalQty || 0,
+    '금액': total,
+    '결제수단': order.payMethod || '',
+    '메모': order.memo || '',
+    '상태': '완료'
+  }));
   return{ok:true,total};
 }
 /* 인화 주문 수정 (통합 버전 - dateStr/status와 printItems/salesDate 모두 처리) */
 function updatePrintOrderAdmin(token,rowIdx,d){
   assertAdmin_(token);const sh=ensureSheets_().printSheet;
-  if(d.dateStr!==undefined) sh.getRange(rowIdx,1).setValue(d.dateStr||'');
-  sh.getRange(rowIdx,2).setValue(d.name||'');
-  sh.getRange(rowIdx,3).setValue(d.phone||'');
+  const colMap=getPrintSheetColMap_(sh);
+  if(d.dateStr!==undefined && colMap['주문일시']!==undefined) sh.getRange(rowIdx,colMap['주문일시']+1).setValue(d.dateStr||'');
+  if(colMap['고객명']!==undefined) sh.getRange(rowIdx,colMap['고객명']+1).setValue(d.name||'');
+  if(colMap['연락처']!==undefined) sh.getRange(rowIdx,colMap['연락처']+1).setValue(d.phone||'');
   const items=d.printItems!==undefined?d.printItems:(d.items!==undefined?d.items:undefined);
-  if(items!==undefined) sh.getRange(rowIdx,4).setValue(items||'');
-  if(d.retouchItems!==undefined) sh.getRange(rowIdx,5).setValue(d.retouchItems||'');
-  if(d.total!==undefined) sh.getRange(rowIdx,7).setValue(Number(d.total)||0);
-  if(d.payMethod!==undefined) sh.getRange(rowIdx,8).setValue(d.payMethod||'');
-  if(d.memo!==undefined) sh.getRange(rowIdx,9).setValue(d.memo||'');
-  if(d.status!==undefined) sh.getRange(rowIdx,10).setValue(d.status||'');
-  if(d.salesDate!==undefined) sh.getRange(rowIdx,11).setValue(d.salesDate||'');
+  if(items!==undefined && colMap['인화항목']!==undefined) sh.getRange(rowIdx,colMap['인화항목']+1).setValue(items||'');
+  if(d.retouchItems!==undefined && colMap['보정항목']!==undefined) sh.getRange(rowIdx,colMap['보정항목']+1).setValue(d.retouchItems||'');
+  if(d.total!==undefined && colMap['금액']!==undefined) sh.getRange(rowIdx,colMap['금액']+1).setValue(Number(d.total)||0);
+  if(d.payMethod!==undefined && colMap['결제수단']!==undefined) sh.getRange(rowIdx,colMap['결제수단']+1).setValue(d.payMethod||'');
+  if(d.memo!==undefined && colMap['메모']!==undefined) sh.getRange(rowIdx,colMap['메모']+1).setValue(d.memo||'');
+  if(d.status!==undefined && colMap['상태']!==undefined) sh.getRange(rowIdx,colMap['상태']+1).setValue(d.status||'');
+  if(d.salesDate!==undefined && colMap['매출날짜']!==undefined) sh.getRange(rowIdx,colMap['매출날짜']+1).setValue(d.salesDate||'');
   return{ok:true};
 }
 function getPrintOrdersAdmin(token){
   assertAdmin_(token);const result=[];
-  ensureSheets_().printSheet.getDataRange().getValues().slice(1).forEach((r,i)=>{if(!r[0])return;result.push({rowIdx:i+2,dateStr:parseDateSafe_(r[0]).str,name:r[1],phone:r[2],items:r[3],retouchItems:r[4],qty:r[5],total:r[6],payMethod:r[7],memo:r[8],status:r[9],salesDate:r[10]||''});});
+  const sh=ensureSheets_().printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  sh.getDataRange().getValues().slice(1).forEach((r,i)=>{
+    if(!r[0]) return;
+    result.push(normalizePrintRow_(r, i+2, colMap));
+  });
   return result.reverse();
 }
 function searchCustomersForPrint(token,query){
@@ -2247,33 +2322,35 @@ function getAccountingLedger(token, startDate, endDate) {
     });
   }
   const printSh = ensureSheets_().printSheet;
+  const printColMap = getPrintSheetColMap_(printSh);
   const printData = printSh.getDataRange().getValues();
   for(let r=1; r<printData.length; r++) {
     const row = printData[r]; if(!row[0]) continue;
-    const salesDateRaw = row[10]||row[0]; 
+    const normalized = normalizePrintRow_(row, r+1, printColMap);
+    const salesDateRaw = normalized.salesDate || normalized.dateStr;
     const {str:dStr} = parseDateSafe_(salesDateRaw);
     const dateOnly = dStr.slice(0,10);
     if(startDate && dateOnly < startDate) continue;
     if(endDate && dateOnly > endDate) continue;
-    const gross = Number(row[6])||0; 
+    const gross = Number(normalized.total)||0;
     if(gross===0) continue;
     const net = Math.round(gross/1.19);
     const tax = gross - net;
     entries.push({
       date: dateOnly,
-      dateStr: parseDateSafe_(row[0]).str,
+      dateStr: normalized.dateStr,
       type: '인화/보정',
       category: 'print',
       accountingClass: classifyPrintAccounting_(),
-      name:String(row[1]||''),
-      description: `추가인화 - ${row[1]||''}`,
+      name: normalized.name,
+      description: `추가인화 - ${normalized.name||''}`,
       gross,
       net,
       tax,
-      payMethod: String(row[7]||''),
-      status: String(row[9]||'완료'),
+      payMethod: normalized.payMethod,
+      status: normalized.status || '완료',
       invoice: '',
-      note: String(row[8]||''),
+      note: normalized.memo,
       source: 'print',
       flow:'income',
       rowIndex: r+1,
