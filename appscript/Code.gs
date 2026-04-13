@@ -463,15 +463,29 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const daysInMonth=new Date(y,m+1,0).getDate();
   const now=new Date().getTime();
   const monthEvents=getEventsForRange_(new Date(y,m,1),new Date(y,m,daysInMonth,23,59,59));
+  var prefetchedCount=0;
   for(let day=1;day<=daysInMonth;day++){
     const dStr=`${y}-${('0'+(m+1)).slice(-2)}-${('0'+day).slice(-2)}`;
     if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){
       unavail.push(dStr);
       continue;
     }
+    if(prefetchedCount<12){
+      const daySlots=computeSlots_(dStr,monthEvents,totalDur,itemGroup);
+      if(!daySlots||!daySlots.length){
+        unavail.push(dStr);
+        continue;
+      }
+      slotsByDate[dStr]=daySlots;
+      slotCounts[dStr]=daySlots.length;
+      prefetchedCount++;
+      continue;
+    }
     if(!hasAnySlot_(dStr,monthEvents,totalDur,itemGroup)){
       unavail.push(dStr);
+      continue;
     }
+    slotCounts[dStr]=1;
   }
   out[key]={unavail,slotCounts,slotsByDate};
   return out;

@@ -1890,10 +1890,10 @@ function getVisitGuideList(product) {
   if (!product) return [];
   if (product.g === 'pass' || product.g === 'prof' || product.g === 'stud') {
     return state.lang === 'en'
-      ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Detailed arrival instructions are sent again in the confirmation email.', 'If you need an invoice, please fill in the address field before submitting.']
+      ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'The studio is on the 2nd floor under the ALIN / Das Boots sign.', 'There is no dedicated parking lot, so nearby street parking or Parkhaus options are recommended.']
       : state.lang === 'de'
-        ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Die genaue Anfahrtsinformation wird in der Bestätigungs-E-Mail erneut gesendet.', 'Wenn Sie eine Rechnung benötigen, tragen Sie bitte vor dem Absenden Ihre Adresse ein.']
-        : ['Studio mean, Holzwegpassage 3, 61440 Oberursel', '정확한 방문 안내는 확인 메일에서 다시 보내드립니다.', '인보이스가 필요하시면 제출 전 주소를 입력해 주세요.'];
+        ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Das Studio befindet sich im 2. Stock unter dem Schild ALIN / Das Boots.', 'Es gibt keinen eigenen Parkplatz. Straßenrand oder nahe Parkhäuser werden empfohlen.']
+        : ['Studio mean, Holzweg-passage 3, 61440 Oberursel', '도착하시면 ALIN / Das Boots 간판 밑 문으로 들어오셔서 2층으로 올라오시면 됩니다.', '전용 주차장은 없으며 주변 길가 또는 파크하우스 이용을 추천드립니다.'];
   }
   return state.lang === 'en'
     ? ['The final meeting location is confirmed after review and via email.', 'Please keep your phone number available in case we need to coordinate quickly.']
@@ -2487,6 +2487,10 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
   Object.entries(batch || {}).forEach(([monthKey, data]) => {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
+    const slotsByDate = data && typeof data === 'object' && data.slotsByDate ? data.slotsByDate : {};
+    Object.entries(slotsByDate).forEach(([dateKey, slots]) => {
+      state.slotCache.set(`${dateKey}_${itemGroup}_${duration}`, Array.isArray(slots) ? slots : []);
+    });
   });
   return batch?.[`${year}_${month}`] || Object.values(batch || {})[0] || null;
 }
@@ -2512,6 +2516,13 @@ async function loadSlotsForDate(dateKey) {
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
+  const cachedSlots = state.slotCache.get(slotKey);
+  if (Array.isArray(cachedSlots)) {
+    if (token !== state.slotRequestToken) return;
+    els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: dateLabel });
+    renderSlots(cachedSlots);
+    return;
+  }
   let slots = [];
   try {
     slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
@@ -2583,7 +2594,7 @@ async function selectDate(dateKey) {
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
   await loadSlotsForDate(dateKey);
-  refreshQuote();
+  refreshQuote().catch((error) => console.error(error));
   renderReview();
   syncStepPanels();
   goToStep(3);
@@ -2604,12 +2615,19 @@ function renderSlots(slots) {
   els.slotGrid.querySelectorAll('.slot-btn').forEach((button) => {
     button.addEventListener('click', () => {
       state.selectedSlot = button.dataset.time;
-      state.activeStep = 5;
       els.slotGrid.querySelectorAll('.slot-btn').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
+      els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: formatDateLabel(state.selectedDate) });
       updateSubmitState();
       renderReview();
       syncStepPanels();
-      goToStep(5);
+      setBanner(
+        state.lang === 'en'
+          ? 'Date and time selected. Review once more, then continue.'
+          : state.lang === 'de'
+            ? 'Datum und Uhrzeit wurden gewählt. Bitte prüfen Sie alles und fahren Sie dann fort.'
+            : '날짜와 시간이 선택되었습니다. 한 번 더 확인한 뒤 다음으로 진행해 주세요.',
+        'success'
+      );
     });
   });
   updateSubmitState();
@@ -3128,7 +3146,13 @@ function getSuccessGuideHtml(payload) {
           </ul>
         ` : `
           <p>Holzweg-passage 3, 61440 Oberursel<br><a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Open in Google Maps</a></p>
-          <p>The studio is on the 2nd floor under the ALIN / Das Boots sign. There is no dedicated parking lot nearby.</p>
+          <p>The studio is on the 2nd floor under the ALIN / Das Boots sign. If it is hard to find, please contact us and we can guide you.</p>
+          <p><b>Parking</b><br>There is no dedicated parking lot. We recommend nearby street parking or one of the parking options below.</p>
+          <ul>
+            <li><a href="https://maps.app.goo.gl/6JTrYv5p7cSSy5oY7?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">City Parkhaus</a></li>
+            <li><a href="https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Parkhaus Altstadt</a></li>
+            <li><a href="https://maps.app.goo.gl/S7zA3hEstWqhGhkUA" target="_blank" rel="noreferrer">Rathausparkplatz</a></li>
+          </ul>
         `}
       </div>
     </section>

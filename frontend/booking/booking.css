@@ -445,9 +445,11 @@ h1 {
   border: 0;
   border-radius: 999px;
   padding: 12px 18px;
+  min-width: 124px;
   font-weight: 600;
   cursor: pointer;
   font-size: 14px;
+  justify-content: center;
 }
 .ghost-btn {
   background: var(--accent-soft);
@@ -946,13 +948,14 @@ h1 {
   .wizard-actions .ghost-btn,
   .wizard-actions .submit-btn {
     flex: 0 0 auto;
+    min-width: 132px;
   }
   .submit-btn {
     position: sticky;
     bottom: 10px;
     z-index: 20;
   }
-  .form-nav .submit-btn { width: auto; min-width: 160px; }
+  .form-nav .submit-btn { width: auto; min-width: 170px; }
 }
 
 @media (max-width: 480px) {

@@ -254,7 +254,7 @@ function syncMarketingUi() {
   els.marketingYesCard.classList.toggle('active', value === 'Y');
   els.marketingNoCard.classList.toggle('active', value === 'N');
   if (state.session?.bookingMarketing === 'Y') {
-    els.marketingBox.querySelector('.detail-copy').textContent = '예약 단계에서 이미 마케팅 활용에 동의한 상태입니다.';
+    els.marketingBox.querySelector('.detail-copy').textContent = '예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 아래에서 다시 한 번 확인만 해주시면 됩니다.';
   }
   updateSubmitState();
 }
