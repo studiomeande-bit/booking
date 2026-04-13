@@ -2238,6 +2238,10 @@ function debugSelectDashboard(token){
 function quickUpdateBookingStatus(token,rIdx,status){
   assertAdmin_(token);
   const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
+  if(status==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
+    throw new Error('예약금이 있는 상품은 계약금 입금 확인 후에만 확정할 수 있습니다.');
+  }
   sh.getRange(rIdx,2).setValue(status);
   if(status==='취소됨'){
     try{const eventId=String(sh.getRange(rIdx,17).getValue()||'');if(eventId){const ev=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(eventId);if(ev)ev.deleteEvent();}}catch(e){}
@@ -2247,6 +2251,10 @@ function quickUpdateBookingStatus(token,rIdx,status){
 
 function updateBookingAdmin(token,rIdx,d){
   assertAdmin_(token);const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
+  if(String(d.status||'')==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
+    throw new Error('예약금이 있는 상품은 계약금 입금 확인 후에만 확정할 수 있습니다.');
+  }
   sh.getRange(rIdx,2).setValue(d.status);sh.getRange(rIdx,3).setValue(d.name);sh.getRange(rIdx,4).setValue(d.phone);
   sh.getRange(rIdx,11).setValue(d.price);sh.getRange(rIdx,12).setValue(d.deposit);sh.getRange(rIdx,13).setValue(d.balance);
   sh.getRange(rIdx,14).setValue(d.payMethod);sh.getRange(rIdx,16).setValue(d.memo);sh.getRange(rIdx,18).setValue(d.depPayMethod);
@@ -2261,6 +2269,32 @@ function updateBookingAdmin(token,rIdx,d){
   return{ok:true};
 }
 
+function markDepositPaidAndConfirm(token,rIdx){
+  assertAdmin_(token);
+  const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
+  if(!bookingRequiresDepositConfirmation_(row)){
+    sh.getRange(rIdx,2).setValue('확정됨');
+    return{ok:true,message:'예약금이 없는 상품이어서 바로 확정되었습니다.'};
+  }
+  const depositAmount=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+  const now=new Date();
+  sh.getRange(rIdx,2).setValue('확정됨');
+  sh.getRange(rIdx,BOOKING_COL['계약금입금여부']+1).setValue('Y');
+  sh.getRange(rIdx,BOOKING_COL['계약금입금일']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd'));
+  sh.getRange(rIdx,BOOKING_COL['계약금입금금액']+1).setValue(depositAmount);
+  sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  return{ok:true,message:'계약금 입금 확인 후 예약을 확정했습니다.'};
+}
+
+function parseMoneyValue_(value){
+  return Number(String(value||'').replace(/[^0-9.-]/g,''))||0;
+}
+
+function bookingRequiresDepositConfirmation_(row){
+  return parseMoneyValue_(row[BOOKING_COL['계약금']])>0;
+}
+
 function clearRescheduleRequest(token,bookingRowIndex){
   assertAdmin_(token);
   const {bookingSheet}=ensureSheets_();
@@ -2271,7 +2305,17 @@ function clearRescheduleRequest(token,bookingRowIndex){
 function batchUpdateAdvanced(token,list,type,val){
   assertAdmin_(token);const sh=getDbSheet();
   if(type==='delete')list.sort((a,b)=>b.rowIndex-a.rowIndex).forEach(i=>sh.deleteRow(i.rowIndex));
-  else list.forEach(i=>{if(type==='status')sh.getRange(i.rowIndex,2).setValue(val);else if(type==='payMethod')sh.getRange(i.rowIndex,14).setValue(val);});
+  else list.forEach(i=>{
+    if(type==='status'){
+      const row=sh.getRange(i.rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
+      if(String(val)==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
+        return;
+      }
+      sh.getRange(i.rowIndex,2).setValue(val);
+    }else if(type==='payMethod'){
+      sh.getRange(i.rowIndex,14).setValue(val);
+    }
+  });
   return{ok:true};
 }
 
