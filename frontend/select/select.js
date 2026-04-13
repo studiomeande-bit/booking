@@ -153,7 +153,7 @@ function hydrateSession(session) {
   state.marketing = session.bookingMarketing || session.existingMarketing || '';
   state.photos = state.editMode && Array.isArray(session.existingPhotos)
     ? session.existingPhotos.map(normalizePhoto)
-    : buildDefaultPhotos(session.baseRetouchCount || 0);
+    : buildDefaultPhotos(session.baseRetouchCount || 0, session.itemGroup);
   state.prints = state.editMode && Array.isArray(session.existingPrints)
     ? session.existingPrints.map(normalizePrint).filter(hasMeaningfulPrint)
     : [];
@@ -163,13 +163,41 @@ function hydrateSession(session) {
   syncMarketingUi();
 }
 
-function buildDefaultPhotos(count) {
-  return Array.from({ length: Number(count) || 0 }, () => ({
+function buildDefaultPhotos(count, itemGroup) {
+  const total = Number(count) || 0;
+  const presetTypes = getIncludedPrintPresetTypes(itemGroup, total);
+  return Array.from({ length: total }, (_, index) => ({
     num: '',
     note: '',
-    printType: 'basic_10x15',
+    printType: presetTypes[index] || 'basic_10x15',
     isBonus: false
   }));
+}
+
+function getIncludedPrintPresetTypes(itemGroup, count) {
+  const total = Number(count) || 0;
+  const preset = [];
+  const quota = INCLUDED_PRINT_QUOTA[itemGroup] || [];
+  quota.forEach((item) => {
+    for (let i = 0; i < item.qty; i += 1) {
+      preset.push(item.id);
+    }
+  });
+  while (preset.length < total) {
+    preset.push('basic_10x15');
+  }
+  return preset.slice(0, total);
+}
+
+function getIncludedPrintSummary(itemGroup) {
+  const quota = INCLUDED_PRINT_QUOTA[itemGroup] || [];
+  if (!quota.length) return '';
+  return quota.map((item) => {
+    const option = PRINT_OPTIONS.find((print) => print.id === item.id);
+    const label = option?.label || item.id;
+    const countText = `${item.qty}장`;
+    return `${label} ${countText}`;
+  }).join(' · ');
 }
 
 function normalizePhoto(photo) {
@@ -252,9 +280,15 @@ function renderSessionSummary() {
 
 function renderPackageSummary() {
   const s = state.session;
+  const includedSummary = getIncludedPrintSummary(s.itemGroup);
+  const studioNotice = s.itemGroup === 'stud'
+    ? '<div class="guide-copy"><b>스튜디오 상품은 기본 A4 1장이 무료로 포함됩니다.</b></div>'
+    : '';
   els.packageSummary.innerHTML = `
     <div class="detail-title">보정 패키지 안내</div>
     <div class="guide-copy">기본 보정 <b>${escapeHtml(s.baseRetouchCount || 0)}장</b> 포함 · 추가 보정 <b>€${escapeHtml(s.retouchPrice || 0)}/장</b></div>
+    ${includedSummary ? `<div class="guide-copy">기본 인화 구성: <b>${escapeHtml(includedSummary)}</b></div>` : ''}
+    ${studioNotice}
     ${s.deadline ? `<div class="guide-copy">셀렉 마감일: ${escapeHtml(String(s.deadline).slice(0, 10))}</div>` : ''}
     ${s.revisionCount ? `<div class="guide-copy">재수정 요청 횟수: ${escapeHtml(s.revisionCount)}회</div>` : ''}
   `;
