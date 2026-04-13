@@ -3641,8 +3641,8 @@ function sendBookingReminders_(){
 function _getReviewLinks_(){
   const props=PropertiesService.getScriptProperties();
   return {
-    google: String(props.getProperty('GOOGLE_REVIEW_URL')||'').trim(),
-    instagram: 'https://www.instagram.com/studio_mean'
+    google: String(props.getProperty('GOOGLE_REVIEW_URL')||'https://share.google/xUvG9EqOgJFsfqfLl').trim(),
+    instagram: 'https://www.instagram.com/studio_mean/'
   };
 }
 
