@@ -1424,6 +1424,27 @@ function buildCalendarDescription_(data,quote,surveyStr,memo){
   return lines.join('\n');
 }
 
+function _buildBookingExtraItem_(data, quote, surveyStr){
+  const bits = [];
+  const countries = [...(quote.passCountries||[]), ...(quote.otherCountry ? [quote.otherCountry] : [])].filter(Boolean).join(', ');
+  if (countries) bits.push(`국가: ${countries}`);
+  if (surveyStr) bits.push(`분위기: ${surveyStr}`);
+  if ((data.bgColors||[]).length) bits.push(`배경: ${(data.bgColors||[]).filter(Boolean).join(', ')}`);
+  if (data.location) bits.push(`장소: ${String(data.location).trim()}`);
+  if (data.babyName) bits.push(`아기이름: ${String(data.babyName).trim()}`);
+  if (data.passAddon) bits.push(`여권추가촬영: ${data.passAddonPeople||1}명`);
+  if (quote.itemGroup === 'biz') {
+    bits.push(`기업행사: ${quote.businessMode === 'video' ? '영상' : '사진'} / ${quote.businessHours||2}시간`);
+    if (quote.businessMode === 'video') {
+      const editLabel = quote.businessVideoEdit === 'basic' ? '기본편집' : quote.businessVideoEdit === 'full' ? '풀편집' : '촬영만';
+      bits.push(`편집: ${editLabel}`);
+    }
+    if ((quote.businessAddonKeys||[]).length) bits.push(`추가요청: ${(quote.businessAddonKeys||[]).join(', ')}`);
+    if (data.businessDetails) bits.push(`행사상세: ${String(data.businessDetails).trim()}`);
+  }
+  return bits.join(' | ');
+}
+
 /* ====== 예약 처리 ====== */
 function processForm(data){
   try{
@@ -1447,6 +1468,7 @@ function processForm(data){
     const passAddonLabel=data.passAddon?`[여권콤보:${data.passAddonPeople}명]`:'';
     const locationLabel=data.location?`[촬영장소:${data.location}]`:'';
     const memo=(babyTypeLabel?'['+babyTypeLabel+'] ':'')+(bgColorLabel?bgColorLabel+' ':'')+(passAddonLabel?passAddonLabel+' ':'')+(locationLabel?locationLabel+' ':'')+String(data.memo||'').trim();
+    const extraItem=_buildBookingExtraItem_(data,quote,surveyStr);
     const priceLabel=quote.totalPrice+'€';
     const calendarLocation=(quote.itemGroup==='snap'||quote.itemGroup==='wed')&&String(data.location||'').trim()
       ? String(data.location).trim()
@@ -1456,7 +1478,7 @@ function processForm(data){
     const marketingStr=data.marketing?'Y':'N';
     const aiConsentStr=data.aiConsent?'Y':'N';
     const consentTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-','',isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim()]);
+    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim()]);
     bumpCalCacheVer_();
     sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId());
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
@@ -1477,9 +1499,16 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
   const lang=request.lang||'ko';const T=EMAIL_I18N[lang]||EMAIL_I18N.ko;
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
   const guide=_getGuideHtml(quote.itemGroup,lang,request.surveyKeys||[],quote);
-  const priceHtml=quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`;
+  const isBiz=quote.itemGroup==='biz';
+  const priceHtml=isBiz
+    ? (lang==='en'
+        ? '■ Pricing: A custom quote will be sent after review.<br>'
+        : lang==='de'
+          ? '■ Preis: Ein individuelles Angebot senden wir nach Prüfung.<br>'
+          : '■ 가격 안내: 세부 내용 확인 후 맞춤 견적을 보내드립니다.<br>')
+    : (quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`);
   const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Rabatt:'};
-  const discHtml=[quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
+  const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
   const returnBadge=isReturn?`<br><b style="color:#8b5cf6;">${T.return_badge}</b>`:'';
   const refundBox=(quote.itemGroup!=='wed')?(T.refund_policy||''):'';
   // 취소/변경 신청 링크
@@ -1507,9 +1536,16 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup});
   const dep=parseInt(depositAmount)||0;
   const bal=parseInt(balanceAmount)||0;
+  const isBiz=itemGroup==='biz';
   const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
-  const refundBox=(itemGroup!=='wed')?(T.refund_policy||''):'';
-  const priceHtml=dep>0?`${T.lbl_total} ${price}<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${dep}€</span><br>${T.lbl_balance} ${bal}€${depositBox}`:`${T.lbl_total} ${price}€`;
+  const refundBox=(itemGroup!=='wed'&&itemGroup!=='biz')?(T.refund_policy||''):'';
+  const priceHtml=isBiz
+    ? (lang==='en'
+        ? '■ Pricing: A detailed quote will be sent after reviewing your request.'
+        : lang==='de'
+          ? '■ Preis: Ein detailliertes Angebot senden wir nach Prüfung Ihrer Anfrage.'
+          : '■ 가격 안내: 요청하신 내용을 검토한 후 상세 견적을 보내드립니다.')
+    : (dep>0?`${T.lbl_total} ${price}<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${dep}€</span><br>${T.lbl_balance} ${bal}€${depositBox}`:`${T.lbl_total} ${price}€`);
   // 고객 취소요청 링크
   let cancelSection='';
   if(eventId){

@@ -541,6 +541,8 @@ const state = {
   quoteToken: 0,
   calendarRequestToken: 0,
   slotRequestToken: 0,
+  calendarWarmupStarted: false,
+  calendarWarmupInFlight: new Set(),
   quote: null,
   calendarCache: new Map(),
   slotCache: new Map()
@@ -652,6 +654,7 @@ async function boot() {
     renderProductDetail();
     renderReview();
     refreshStepLocks();
+    startCalendarWarmup();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
@@ -2023,6 +2026,72 @@ function renderProducts(products) {
   });
 }
 
+function getCalendarWarmupTasks() {
+  const products = (state.init?.products || []).filter(Boolean);
+  const combos = new Map();
+  products.forEach((product) => {
+    if (!product?.g) return;
+    const totalDur = Number(product.d || 0) + Number(product.prep || 0);
+    const key = `${product.g}_${totalDur}`;
+    if (!combos.has(key)) combos.set(key, { itemGroup: product.g, totalDur });
+  });
+  const base = new Date();
+  const tasks = [];
+  for (let offset = 0; offset < 4; offset += 1) {
+    const d = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+    combos.forEach((combo) => {
+      tasks.push({
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        itemGroup: combo.itemGroup,
+        totalDur: combo.totalDur
+      });
+    });
+  }
+  return tasks;
+}
+
+async function warmCalendarRange(tasks) {
+  for (const task of tasks) {
+    const key = `${task.year}_${task.month}_${task.itemGroup}_${task.totalDur}`;
+    if (state.calendarCache.has(key) || state.calendarWarmupInFlight.has(key)) continue;
+    state.calendarWarmupInFlight.add(key);
+    try {
+      await fetchAndStoreCalendarBatch(task.year, task.month, task.totalDur, task.itemGroup);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      state.calendarWarmupInFlight.delete(key);
+    }
+  }
+}
+
+function startCalendarWarmup() {
+  if (state.calendarWarmupStarted) return;
+  state.calendarWarmupStarted = true;
+  const tasks = getCalendarWarmupTasks();
+  window.setTimeout(() => {
+    warmCalendarRange(tasks);
+  }, 60);
+}
+
+function warmSelectedProductCalendar(product) {
+  if (!product) return;
+  const tasks = [];
+  const totalDur = Number(product.d || 0) + Number(product.prep || 0);
+  const base = new Date();
+  for (let offset = 0; offset < 4; offset += 1) {
+    const d = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+    tasks.push({
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      itemGroup: product.g,
+      totalDur
+    });
+  }
+  warmCalendarRange(tasks);
+}
+
 function selectGroup(groupKey) {
   clearSubmitResult();
   state.selectedGroup = groupKey;
@@ -2097,6 +2166,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   syncConsentVisibility();
   await refreshQuote();
+  warmSelectedProductCalendar(state.selectedProduct);
   refreshStepLocks();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
@@ -2287,6 +2357,7 @@ function renderProductDetail() {
         : `${business.label}. 원본 제공이 포함되며, 추가 요청은 예약 접수 후 검토됩니다.`)
     : getProductDescription(state.selectedProduct);
   const price = getEstimatedPrice();
+  const hideBizPrice = state.selectedProduct.g === 'biz';
   const productGuideList = getProductGuideList(state.selectedProduct);
   const visitGuideList = getVisitGuideList(state.selectedProduct);
   const eventBadge = state.quote?.eventDiscount > 0
@@ -2335,24 +2406,30 @@ function renderProductDetail() {
     <div class="detail-copy">${escapeHtml(desc)}</div>
     ${businessSummary}
     ${eventBadge}
-    <div class="price-hero">
-      <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
-      <div class="price-hero-value">€${price}</div>
-      <div class="price-hero-copy">${state.selectedProduct.g === 'biz'
-        ? (state.lang === 'en'
-          ? `${business.hours} hours selected`
+    ${hideBizPrice ? `
+      <div class="price-hero">
+        <div class="price-hero-label">${state.lang === 'en' ? 'Pricing' : state.lang === 'de' ? 'Preis' : '가격 안내'}</div>
+        <div class="price-hero-value" style="font-size:26px;">${state.lang === 'en' ? 'Quote after review' : state.lang === 'de' ? 'Angebot nach Prüfung' : '상담 후 견적 안내'}</div>
+        <div class="price-hero-copy">${state.lang === 'en'
+          ? `${business.hours} hours selected · detailed quote will be sent after review`
           : state.lang === 'de'
-            ? `${business.hours} Stunden ausgewählt`
-            : `${business.hours}시간 선택`)
-        : (state.lang === 'en'
+            ? `${business.hours} Stunden ausgewählt · das genaue Angebot senden wir nach Prüfung`
+            : `${business.hours}시간 선택 · 세부 내용 확인 후 맞춤 견적을 안내드립니다.`}</div>
+      </div>
+    ` : `
+      <div class="price-hero">
+        <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
+        <div class="price-hero-value">€${price}</div>
+        <div class="price-hero-copy">${state.lang === 'en'
           ? `About ${getShootDuration()} min`
           : state.lang === 'de'
             ? `Ca. ${getShootDuration()} Min`
-            : `촬영 약 ${getShootDuration()}분`)}</div>
-    </div>
-    ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
-    ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
-    ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
+            : `촬영 약 ${getShootDuration()}분`}</div>
+      </div>
+      ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
+      ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
+      ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
+    `}
     <div class="guide-grid">
       <div class="guide-box">
         <div class="guide-title">${state.lang === 'en' ? 'Booking Guide' : state.lang === 'de' ? 'Buchungshinweise' : '예약 안내'}</div>
@@ -2393,6 +2470,10 @@ async function loadCalendar() {
   if (token !== state.calendarRequestToken) return;
   renderCalendar(batch);
   setBanner(getCopy().calendarLoaded, 'success');
+  if (!state.selectedDate) {
+    const nearestDate = getNearestAvailableDate(batch);
+    if (nearestDate) await selectDate(nearestDate);
+  }
   prefetchNextCalendarMonth();
 }
 
@@ -2453,13 +2534,15 @@ function renderCalendar(data) {
   const unavailSource = Array.isArray(safeData.unavail) ? safeData.unavail : [];
   els.calendarGrid.classList.remove('empty-state');
   const unavail = new Set(unavailSource);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   const cells = [];
   for (let i = 0; i < firstDay; i += 1) cells.push('<div class="calendar-cell muted"></div>');
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
-    const disabled = unavail.has(dateKey);
+    const disabled = unavail.has(dateKey) || dateKey < todayKey;
     const selected = state.selectedDate === dateKey;
     cells.push(`
       <button type="button" class="calendar-cell${disabled ? ' muted' : ''}${selected ? ' selected' : ''}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}>
@@ -2471,6 +2554,21 @@ function renderCalendar(data) {
   els.calendarGrid.querySelectorAll('.calendar-cell[data-date]').forEach((button) => {
     button.addEventListener('click', () => selectDate(button.dataset.date));
   });
+}
+
+function getNearestAvailableDate(data) {
+  const safeData = data && typeof data === 'object' ? data : {};
+  const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
+    if (dateKey < todayKey) continue;
+    if (unavail.has(dateKey)) continue;
+    return dateKey;
+  }
+  return '';
 }
 
 async function selectDate(dateKey) {
@@ -2525,10 +2623,8 @@ function renderReview() {
     return;
   }
   const copy = getCopy();
-  const rows = [
-    [copy.reviewProduct, getProductLabel(state.selectedProduct)],
-    [copy.reviewPrice, `€${getEstimatedPrice()}`]
-  ];
+  const rows = [[copy.reviewProduct, getProductLabel(state.selectedProduct)]];
+  if (state.selectedProduct.g !== 'biz') rows.push([copy.reviewPrice, `€${getEstimatedPrice()}`]);
   if (state.selectedDate) rows.push([copy.reviewDate, state.selectedDate]);
   if (state.selectedSlot) rows.push([copy.reviewTime, state.selectedSlot]);
   if (state.selectedProduct.g === 'pass') {
@@ -3044,6 +3140,7 @@ function getSuccessGuideHtml(payload) {
 function renderSubmitResult(payload, result) {
   const copy = getCopy();
   const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
+  const hideBizPrice = state.selectedProduct?.g === 'biz';
   const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
   const successGuideHtml = getSuccessGuideHtml(payload);
   els.hero?.classList.add('hidden-step');
@@ -3070,10 +3167,10 @@ function renderSubmitResult(payload, result) {
         <strong>${escapeHtml(copy.submitCardProduct)}</strong>
         <span>${escapeHtml(getProductLabel(state.selectedProduct))}</span>
       </div>
-      <div class="result-item">
+      ${hideBizPrice ? '' : `<div class="result-item">
         <strong>${escapeHtml(copy.submitCardPrice)}</strong>
         <span>${escapeHtml(`€${totalPrice}`)}</span>
-      </div>
+      </div>`}
     </div>
     ${returnNote}
     <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
