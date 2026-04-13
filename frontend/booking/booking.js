@@ -280,7 +280,7 @@ const COPY = {
     passportTitle: '여권/비자 옵션',
     passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
-    passportPeopleLabel: '인원',
+    passportPeopleLabel: '인원수',
     passportConfigLabel: '구성 {index}',
     passportConfigAdd: '구성 추가하기',
     passportCountryLabel: '원하는 촬영국가 선택',
@@ -504,7 +504,7 @@ const COPY = {
     passportTitle: 'Pass / Visum Optionen',
     passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
-    passportPeopleLabel: 'Personen',
+    passportPeopleLabel: 'Personenzahl',
     passportConfigLabel: 'Konfiguration {index}',
     passportConfigAdd: 'Weitere Konfiguration hinzufügen',
     passportCountryLabel: 'Gewünschte Aufnahmeländer',
@@ -912,7 +912,7 @@ function syncPassportConfigs() {
   }
   state.passportConfigs = state.passportConfigs.map((config, index) => {
     const countries = Array.isArray(config?.countries) ? config.countries.filter(Boolean) : [];
-    const people = Math.max(1, Math.min(5, Number(config?.people || 1)));
+    const people = Math.max(1, Number(config?.people || 1));
     if (index === 0 && !countries.length) return { countries: ['KR'], people };
     return { countries, people };
   });
@@ -2077,47 +2077,6 @@ function getProductGuideList(product) {
   return [];
 }
 
-function renderBusinessPricingTable() {
-  const mode = state.businessMode || 'photo';
-  const edit = state.businessVideoEdit || 'raw';
-  const tableKey = mode === 'video' ? `video_${edit}` : 'photo';
-  const selectedHours = Number(state.businessHours || 2);
-  const title = state.lang === 'en'
-    ? 'Price Table'
-    : state.lang === 'de'
-      ? 'Preistabelle'
-      : '가격표';
-  const unit = state.lang === 'en'
-    ? 'h'
-    : state.lang === 'de'
-      ? 'Std.'
-      : '시간';
-  const hoursLabel = state.lang === 'en'
-    ? 'Coverage'
-    : state.lang === 'de'
-      ? 'Zeit'
-      : '촬영 시간';
-  const priceLabel = state.lang === 'en'
-    ? 'Price'
-    : state.lang === 'de'
-      ? 'Preis'
-      : '가격';
-  const rates = BUSINESS_HOURS_META.map((hours) => {
-    const selected = hours === selectedHours ? ' selected' : '';
-    const price = BUSINESS_PRICE_META[tableKey]?.[hours] || 0;
-    return `<div class="biz-rate-row${selected}"><span>${hours}${unit}</span><strong>€${price}</strong></div>`;
-  }).join('');
-  return `
-    <section class="biz-rate-card">
-      <div class="biz-rate-header">
-        <span>${escapeHtml(title)}</span>
-        <span>${escapeHtml(hoursLabel)} / ${escapeHtml(priceLabel)}</span>
-      </div>
-      <div class="biz-rate-grid">${rates}</div>
-    </section>
-  `;
-}
-
 function getVisitGuideList(product) {
   if (!product) return [];
   if (product.g === 'pass' || product.g === 'prof' || product.g === 'stud') {
@@ -2621,7 +2580,7 @@ function renderPassportCountries() {
   syncPassportConfigs();
   const copy = getCopy();
   els.passportCountries.innerHTML = state.passportConfigs.map((config, index) => {
-    const rowLabel = fillCopy(copy.passportConfigLabel, { index: index + 1 });
+    const rowLabel = `${fillCopy(copy.passportConfigLabel, { index: index + 1 })} · ${copy.passportCountryLabel}`;
     const selectedCodes = Array.isArray(config.countries) ? config.countries : [];
     const chips = COUNTRY_OPTIONS.map((item) => {
       const label = item.label[state.lang] || item.label.ko;
@@ -2686,7 +2645,7 @@ function setPassportCountry(configIndex, code) {
 function setPassportConfigPeople(configIndex, people) {
   syncPassportConfigs();
   if (!state.passportConfigs[configIndex]) return;
-  state.passportConfigs[configIndex].people = Math.max(1, Math.min(5, Number(people || 1)));
+  state.passportConfigs[configIndex].people = Math.max(1, Number(people || 1));
   syncPassportPersonCountries();
   renderPassportCountries();
   handleQuoteInputChange().then(() => refreshStepLocks());
@@ -2758,7 +2717,6 @@ function renderProductDetail() {
         </div>` : ''}
       </div>
     </section>
-    ${renderBusinessPricingTable()}
   ` : '';
   els.productDetail.className = 'detail-box';
   els.productDetail.innerHTML = `
