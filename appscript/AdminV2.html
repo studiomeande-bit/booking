@@ -225,6 +225,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
           <button class="btn btn-success btn-sm" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
           <button class="btn btn-outline btn-sm" onclick="exportAccountingSummaryCSV()">📊 요약 CSV</button>
+          <button class="btn btn-outline btn-sm" onclick="exportAccountingDatevCSV()">🧾 DATEV/세무사 CSV</button>
         </div>
         <div class="accounting-toolbar-row">
           <div class="toolbar-group">
@@ -296,6 +297,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="stat-card" style="padding:15px;"><div class="stat-title">잔금 결제</div><div class="stat-val" id="acc_balancePaid" style="color:#15803d;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_balanceAmount">0€</div></div>
         <div class="stat-card" style="padding:15px;"><div class="stat-title">미수금</div><div class="stat-val" id="acc_openAmount" style="color:#b45309;">0€</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_openCount">0건</div></div>
         <div class="stat-card" style="padding:15px;"><div class="stat-title">부분 결제</div><div class="stat-val" id="acc_partialPaid" style="color:#7c3aed;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">계약금 입금 후 잔금 미결제</div></div>
+      </div>
+      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(3,1fr);">
+        <div class="stat-card" style="padding:15px;border-color:#fecaca;background:#fff7f7;"><div class="stat-title">불일치 경고</div><div class="stat-val" id="acc_mismatchCount" style="color:#dc2626;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_mismatchAmount">0€</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">DATEV 준비</div><div class="stat-val" id="acc_datevReady" style="color:#0f766e;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">필터 기준 내보내기 가능 건수</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">수입/지출 흐름</div><div class="stat-val" id="acc_incomeExpenseMix" style="color:#334155;">0 / 0</div><div style="font-size:12px;color:#64748b;margin-top:4px;">수입건 / 지출건</div></div>
       </div>
       <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1.2fr .8fr;">
         <div class="accounting-box" style="margin-bottom:0;">
@@ -1195,6 +1201,10 @@ function loadAccountingData() {
     document.getElementById('acc_openAmount').textContent = (res.openAmount||0).toLocaleString() + '€';
     document.getElementById('acc_openCount').textContent = (res.openCount||0) + '건';
     document.getElementById('acc_partialPaid').textContent = (res.partialPaidCount||0) + '건';
+    document.getElementById('acc_mismatchCount').textContent = (res.mismatchCount||0) + '건';
+    document.getElementById('acc_mismatchAmount').textContent = (res.mismatchAmount||0).toLocaleString() + '€';
+    document.getElementById('acc_datevReady').textContent = (res.entries||[]).length + '건';
+    document.getElementById('acc_incomeExpenseMix').textContent = `${(res.incomeCount||0)} / ${(res.expenseCount||0)}`;
     renderAccountingSummaries(res);
     filterAccountingData();
   }).withFailureHandler(handleApiError).getAccountingLedger(adminToken, sd, ed);
@@ -1450,6 +1460,61 @@ function exportAccountingSummaryCSV() {
   a.download = `studio_mean_buchhaltung_summary_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportAccountingDatevCSV() {
+  if(!accountingData.length) { alert('내보낼 데이터가 없습니다.'); return; }
+  const type = document.getElementById('acc_type').value;
+  const pay = document.getElementById('acc_pay').value;
+  const accountingClass = document.getElementById('acc_class').value;
+  const filtered = accountingData.filter(r => {
+    if(type !== 'all' && r.type !== type) return false;
+    if(pay !== 'all' && r.payMethod !== pay) return false;
+    if(accountingClass !== 'all' && (r.accountingClass || '') !== accountingClass) return false;
+    return true;
+  });
+  if(!filtered.length) { alert('내보낼 DATEV/세무사 데이터가 없습니다.'); return; }
+  let csv = '\uFEFFBelegdatum;Buchungstext;Kontoart;Flow;Kunde/Lieferant;Zahlungsart;Brutto;Netto;Steuer;Waehrung;Memo;Lexware;Zahlungsstatus\n';
+  filtered.forEach(r => {
+    const paymentState = (r.flow === 'expense') ? '지출' : stripHtml(renderAccountingPaymentState(r)).replace(/\s+/g,' ').trim();
+    const row = [
+      safeDatevField(r.date || ''),
+      safeDatevField(r.description || r.type || ''),
+      safeDatevField(r.accountingClass || ''),
+      safeDatevField((r.flow || 'income') === 'expense' ? 'expense' : 'income'),
+      safeDatevField(r.name || ''),
+      safeDatevField(r.payMethod || ''),
+      formatDatevNumber(r.gross),
+      formatDatevNumber(r.net),
+      formatDatevNumber(r.tax),
+      'EUR',
+      safeDatevField(r.note || ''),
+      safeDatevField(r.lexwareSyncStatus || r.lexwarePaymentStatus || ''),
+      safeDatevField(paymentState)
+    ];
+    csv += row.join(';') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `studio_mean_datev_export_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function safeDatevField(v){
+  return `"${String(v||'').replace(/"/g,'""')}"`;
+}
+
+function formatDatevNumber(v){
+  return Number(v||0).toFixed(2).replace('.',',');
+}
+
+function stripHtml(html){
+  const div=document.createElement('div');
+  div.innerHTML=html||'';
+  return div.textContent||div.innerText||'';
 }
 
 /* ===== 수기 등록 ===== */

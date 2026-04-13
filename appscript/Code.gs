@@ -2339,6 +2339,10 @@ function getAccountingLedger(token, startDate, endDate) {
   let openCount = 0;
   let openAmount = 0;
   let partialPaidCount = 0;
+  let mismatchCount = 0;
+  let mismatchAmount = 0;
+  let incomeCount = 0;
+  let expenseCount = 0;
   entries.forEach(function(entry){
     const typeKey = entry.type || '기타';
     byType[typeKey] = Math.round(((byType[typeKey] || 0) + (entry.gross || 0)) * 100) / 100;
@@ -2350,6 +2354,7 @@ function getAccountingLedger(token, startDate, endDate) {
     else lexwarePendingCount++;
     if (/paid|bezahlt|완료|fully_paid/i.test(paymentStatus)) lexwarePaidCount++;
     if (entry.flow === 'income') {
+      incomeCount++;
       if (String(entry.depositPaid||'') === 'Y') {
         depositPaidCount++;
         depositPaidAmount += Number(entry.depositPaidAmount||0) || 0;
@@ -2366,6 +2371,14 @@ function getAccountingLedger(token, startDate, endDate) {
       if (String(entry.depositPaid||'') === 'Y' && String(entry.balancePaid||'') !== 'Y') {
         partialPaidCount++;
       }
+      const markedPaid = String(entry.balancePaid||'') === 'Y' || /paid|bezahlt|완료|fully_paid/i.test(paymentStatus);
+      const synced = syncStatus && syncStatus !== '미전송';
+      if (synced && ((markedPaid && open > 0.01) || (String(entry.depositPaid||'') === 'Y' && Number(entry.depositDue||0) > 0 && Number(entry.depositPaidAmount||0) + 0.01 < Number(entry.depositDue||0)))) {
+        mismatchCount++;
+        mismatchAmount += open;
+      }
+    } else {
+      expenseCount++;
     }
   });
   const topAccountingClasses = Object.keys(byAccountingClass)
@@ -2392,6 +2405,10 @@ function getAccountingLedger(token, startDate, endDate) {
     openCount,
     openAmount: Math.round(openAmount*100)/100,
     partialPaidCount,
+    mismatchCount,
+    mismatchAmount: Math.round(mismatchAmount*100)/100,
+    incomeCount,
+    expenseCount,
     byType,
     topAccountingClasses
   };
