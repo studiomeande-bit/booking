@@ -668,7 +668,6 @@ async function boot() {
     renderReview();
     refreshStepLocks();
     renderNoticePanel();
-    startCalendarWarmup();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
@@ -2102,20 +2101,29 @@ async function warmCalendarRange(tasks) {
 }
 
 function startCalendarWarmup() {
-  if (state.calendarWarmupStarted) return;
-  state.calendarWarmupStarted = true;
-  const tasks = getCalendarWarmupTasks();
-  window.setTimeout(() => {
-    warmCalendarRange(tasks);
-  }, 60);
+  // Initial global warmup is intentionally disabled.
+  // Calendar prefetch starts after a concrete product is chosen.
 }
 
-function warmSelectedProductCalendar(product) {
+async function warmSelectedProductCalendar(product, durationOverride) {
   if (!product) return;
-  const tasks = [];
-  const totalDur = Number(product.d || 0) + Number(product.prep || 0);
+  const totalDur = Number(durationOverride || Number(product.d || 0) + Number(product.prep || 0));
   const base = new Date();
-  for (let offset = 0; offset < 4; offset += 1) {
+  const currentMonth = new Date(base.getFullYear(), base.getMonth(), 1);
+  const currentKey = `${currentMonth.getFullYear()}_${currentMonth.getMonth()}_${product.g}_${totalDur}`;
+  if (!state.calendarCache.has(currentKey) && !state.calendarWarmupInFlight.has(currentKey)) {
+    state.calendarWarmupInFlight.add(currentKey);
+    try {
+      await fetchAndStoreCalendarBatch(currentMonth.getFullYear(), currentMonth.getMonth(), totalDur, product.g);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      state.calendarWarmupInFlight.delete(currentKey);
+    }
+  }
+
+  const tasks = [];
+  for (let offset = 1; offset <= 2; offset += 1) {
     const d = new Date(base.getFullYear(), base.getMonth() + offset, 1);
     tasks.push({
       year: d.getFullYear(),
@@ -2124,7 +2132,9 @@ function warmSelectedProductCalendar(product) {
       totalDur
     });
   }
-  warmCalendarRange(tasks);
+  window.setTimeout(() => {
+    warmCalendarRange(tasks);
+  }, 40);
 }
 
 function selectGroup(groupKey) {
@@ -2201,7 +2211,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   syncConsentVisibility();
   await refreshQuote();
-  warmSelectedProductCalendar(state.selectedProduct);
+  warmSelectedProductCalendar(state.selectedProduct, getCalendarDuration());
   refreshStepLocks();
   if (!state.selectedProduct) return;
   els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
