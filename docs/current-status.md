@@ -153,6 +153,80 @@ Updated: 2026-04-13 Europe/Berlin
    - 관리자 수정
 5. Select 실세션 기준 신규 제출 / 수정 제출 / 추가 인화 검증
 
+## Accounting / Lexware Status
+
+- Lexware 연결 방식은 OAuth 앱이 아니라 `API key + organization id` 기준으로 구성됨
+- 확보 및 설정 완료:
+  - `LEXWARE_API_KEY`
+  - `LEXWARE_ORGANIZATION_ID`
+  - `LEXWARE_ENABLED`
+- AdminV2에 반영된 UI:
+  - 설정 탭 `📚 Lexware 연동`
+  - 인보이스 탭 `📚 전송`, `💶 상태`
+  - 예약장부 `💶결제`
+  - 회계 장부 `🔗 Lexware 대조`, `⬇️ Lexware 가져오기`, `🩺 Lexware 진단`
+
+## Lexware Diagnostic Result
+
+- 연결 테스트는 성공
+- 진단 결과:
+  - `Contacts: 4`
+  - `Invoices: 0`
+  - `Voucherlist: 0`
+- 결론:
+  - 현재 Lexware Public API에서 읽히는 `invoice/voucher`가 없음
+  - 따라서 `⬇️ Lexware 가져오기`로 예약/회계 자료를 역으로 자동 매칭할 대상이 없음
+  - Lexware 화면에 보이는 SumUp/은행 흐름이 있어도, Public API 기준 invoice/voucher 문서가 아니면 현재 구조로는 가져오지 못함
+
+## Lexware Integration Decision
+
+- 현재 프로젝트의 주 흐름은 아래로 정리됨
+  1. 우리 시스템에서 예약/추가금 인보이스를 먼저 Lexware로 생성
+  2. 이후 `💶 상태`로 Lexware 결제 상태를 읽어옴
+  3. 예약장부/인보이스/회계장부의 계약금, 잔금, 미수금을 갱신
+- 즉 `Lexware -> admin 역가져오기`는 보조 기능이고,
+- 핵심 자동화는 `admin -> Lexware -> payment status back` 구조임
+
+## Receivables Logic Decision
+
+- 이전에는 로컬 입금 필드가 비어 있으면 미수금처럼 보이는 문제가 있었음
+- 현재는 아래 우선순위로 판정
+  1. Lexware `openAmount / paymentStatus`가 있으면 그것을 우선
+  2. 없을 때만 로컬 `미결제/부분결제` 신호 사용
+  3. 단순히 결제수단이 `현금/카드/계좌이체`이고 미결제 표시가 없으면 자동 미수로 보지 않음
+- 아직 사용자가 체감하는 미수금/완납 상태 검수는 더 필요
+
+## Accounting Direction Agreed
+
+- UI는 한국어로 보여도
+- 회계 내보내기 값은 독일어 기준으로 정리
+- 월별 / 분기별 / 반기별 / 연도별 보기 유지
+- DATEV/세무사 CSV와 요약 CSV 제공
+- 계약금 있는 상품:
+  - 확정 후 입금 확인
+  - 5일 미입금 경고
+  - 10일 미입금 자동 취소
+- 계약금 없는 상품:
+  - 환불 규정 메일 제외
+
+## Important Lexware Limitation
+
+- `인보이스 없는 일반 카드 결제건`은 Lexware와 완전 자동 동기화가 어려움
+- 이유:
+  - Public API가 안정적으로 연결 가능한 기준은 주로 `invoice / voucher`
+  - 단순 카드 결제/은행 흐름만 있고 대응 문서가 없으면 예약과 자동 연결 불가
+- 향후 선택지:
+  1. 즉시결제 건에도 Lexware 문서를 생성
+  2. 그렇지 않으면 집계형 회계 처리만 수행
+
+## Recommended Next Step
+
+1. Lexware 인보이스 `📚 전송 -> 💶 상태` 실제 1건 검증
+2. 계약금/잔금/미수금이 예약장부와 회계장부에서 어떻게 바뀌는지 확인
+3. 그 다음 필요 시
+   - 즉시결제 카드 매출의 Lexware 문서화
+   - SumUp 또는 은행 CSV 연동
+
 ## Important Operational Note
 
 - 로컬에는 `appscript/Admin.html` 사용자 변경이 남아 있음
