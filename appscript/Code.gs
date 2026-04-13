@@ -26,12 +26,13 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
 };
+const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PUBLIC_API_CONFIG = {
   ALLOWED_ORIGINS: [
     'https://booking.studio-mean.com',
@@ -2263,7 +2264,7 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -3594,6 +3595,9 @@ function installDailyTrigger(){
 function dailyTasks(){
   try{sendBookingReminders_();}catch(e){Logger.log('B2 error: '+e.message);}
   try{autoSelectDailyCheck();}catch(e){Logger.log('C2 error: '+e.message);}
+  try{sendPostShootFollowupEmails_();}catch(e){Logger.log('B3 error: '+e.message);}
+  try{sendDolRecommendationEmails_();}catch(e){Logger.log('B4 error: '+e.message);}
+  try{sendPostRetouchFollowupEmails_();}catch(e){Logger.log('C3 error: '+e.message);}
 }
 
 function sendBookingReminders_(){
@@ -3631,6 +3635,149 @@ function sendBookingReminders_(){
       props.setProperty(remKey,Utilities.formatDate(new Date(),tz,'yyyy-MM-dd'));
       Logger.log('B2 reminder sent to '+email);
     }catch(e){Logger.log('B2 send failed: '+e.message);}
+  });
+}
+
+function _getReviewLinks_(){
+  const props=PropertiesService.getScriptProperties();
+  return {
+    google: String(props.getProperty('GOOGLE_REVIEW_URL')||'').trim(),
+    instagram: 'https://www.instagram.com/studio_mean'
+  };
+}
+
+function _followupCommonHtml_(lang){
+  const links=_getReviewLinks_();
+  const reviewLine=links.google
+    ? (lang==='en'
+        ? `If you enjoyed the session, a short <a href="${links.google}" style="color:#2563eb;font-weight:700;">Google review</a> would really help our studio.`
+        : lang==='de'
+          ? `Wenn Ihnen das Shooting gefallen hat, freuen wir uns sehr über eine kurze <a href="${links.google}" style="color:#2563eb;font-weight:700;">Google-Bewertung</a>.`
+          : `촬영이 만족스러우셨다면 짧은 <a href="${links.google}" style="color:#2563eb;font-weight:700;">구글 리뷰</a>를 남겨 주시면 큰 힘이 됩니다.`)
+    : (lang==='en'
+        ? 'If you enjoyed the session, we would be grateful if you could recommend Studio mean to others.'
+        : lang==='de'
+          ? 'Wenn Ihnen das Shooting gefallen hat, empfehlen Sie Studio mean gerne weiter.'
+          : '촬영이 만족스러우셨다면 주변에 Studio mean을 추천해 주시면 큰 힘이 됩니다.');
+  const instaLine=lang==='en'
+    ? `If you share your photos on Instagram, feel free to tag <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>.`
+    : lang==='de'
+      ? `Wenn Sie Ihre Fotos auf Instagram teilen, markieren Sie gerne <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>.`
+      : `인스타그램에 사진을 올리실 때 <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a> 태그를 남겨 주시면 정말 감사하겠습니다.`;
+  return `${reviewLine}<br><br>${instaLine}`;
+}
+
+function _isBaekilBookingRow_(row){
+  const memo=String(row[15]||'');
+  return memo.indexOf('[백일촬영]')>-1;
+}
+
+function sendPostShootFollowupEmails_(){
+  const sh=ensureSheets_().bookingSheet;
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return;
+  const data=sh.getDataRange().getValues();
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  data.slice(1).forEach(function(row, idx){
+    const status=String(row[1]||'').trim();
+    if(!['촬영완료','셀렉완료','작업완료'].includes(status)) return;
+    if(String(row[BOOKING_COL['촬영후감사메일발송일시']]||'').trim()) return;
+    const shootInfo=parseDateSafe_(row[0]);
+    const shootDate=shootInfo.str.slice(0,10);
+    if(!shootDate || shootDate>=todayStr) return;
+    const dayDiff=Math.floor((new Date(todayStr+'T00:00:00')-new Date(shootDate+'T00:00:00'))/86400000);
+    if(dayDiff<1 || dayDiff>14) return;
+    const email=String(row[4]||'').trim();
+    if(!email || !email.includes('@') || email.includes('수기')) return;
+    const lang=String(row[5]||'ko').toLowerCase().trim();
+    const name=String(row[2]||'');
+    const product=String(row[7]||'');
+    const subj={
+      ko:`[Studio mean] 촬영해 주셔서 감사합니다 — ${name}님`,
+      en:`[Studio mean] Thank you for your session — ${name}`,
+      de:`[Studio mean] Vielen Dank für Ihr Shooting — ${name}`
+    };
+    const body={
+      ko:`안녕하세요 <b>${name}</b>님,<br><br>Studio mean과 함께해 주셔서 진심으로 감사합니다.<br>${product} 촬영이 좋은 기억으로 남으셨기를 바랍니다.<br><br>${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
+      en:`Hello <b>${name}</b>,<br><br>Thank you sincerely for booking with Studio mean.<br>We hope your ${product} session was a meaningful experience.<br><br>${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
+      de:`Hallo <b>${name}</b>,<br><br>Vielen Dank, dass Sie sich für Studio mean entschieden haben.<br>Wir hoffen, dass Ihnen Ihr ${product}-Shooting in guter Erinnerung bleibt.<br><br>${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+    };
+    MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+    sh.getRange(idx+2,BOOKING_COL['촬영후감사메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  });
+}
+
+function sendDolRecommendationEmails_(){
+  const sh=ensureSheets_().bookingSheet;
+  const data=sh.getDataRange().getValues();
+  const now=new Date();
+  data.slice(1).forEach(function(row, idx){
+    if(!_isBaekilBookingRow_(row)) return;
+    if(String(row[BOOKING_COL['돌촬영추천메일발송일시']]||'').trim()) return;
+    const email=String(row[4]||'').trim();
+    if(!email || !email.includes('@') || email.includes('수기')) return;
+    const shootObj=parseDateSafe_(row[0]).obj;
+    if(!shootObj) return;
+    const diffDays=Math.floor((now-shootObj)/86400000);
+    if(diffDays<150 || diffDays>240) return;
+    const lang=String(row[5]||'ko').toLowerCase().trim();
+    const name=String(row[2]||'');
+    const subj={
+      ko:`[Studio mean] 돌촬영 시기 안내 — ${name}님`,
+      en:`[Studio mean] First birthday session timing — ${name}`,
+      de:`[Studio mean] Empfehlung für das 1. Geburtstagsshooting — ${name}`
+    };
+    const body={
+      ko:`안녕하세요 <b>${name}</b>님,<br><br>백일 촬영을 함께했던 시간이 벌써 많이 지났네요. 아이가 걷기 전인 <b>10~11개월 무렵</b>은 돌촬영을 준비하시기에 가장 좋은 시기입니다.<br><br>원하시면 돌상 무료 셋팅과 함께 자연스러운 돌촬영 구성을 안내드릴 수 있습니다.<br><br>${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
+      en:`Hello <b>${name}</b>,<br><br>It has already been some time since your baby's 100-day session. The period around <b>10–11 months, before walking steadily</b>, is usually ideal for planning a first birthday session.<br><br>If you would like, we can guide you through a birthday shoot setup with our complimentary basic dol table styling.<br><br>${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
+      de:`Hallo <b>${name}</b>,<br><br>Seit Ihrem 100-Tage-Shooting ist schon etwas Zeit vergangen. Die Zeit um den <b>10.–11. Monat, bevor das Kind sicher läuft</b>, ist ideal für ein Geburtstagsshooting.<br><br>Gerne beraten wir Sie zu einem natürlichen Geburtstagsshooting inklusive kostenlosem Basic-Dol-Table-Setup.<br><br>${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+    };
+    MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+    sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  });
+}
+
+function sendPostRetouchFollowupEmails_(){
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rows=selSh.getDataRange().getValues();
+  const now=new Date();
+  rows.slice(1).forEach(function(row, idx){
+    if(String(row[SELECT_COL['상태']]||'')!=='보정본발송') return;
+    if(String(row[SELECT_COL['보정후안내메일발송일시']]||'').trim()) return;
+    const sentAt=String(row[SELECT_COL['보정본발송일시']]||'').trim();
+    if(!sentAt) return;
+    const sentObj=parseDateSafe_(sentAt).obj;
+    if(!sentObj) return;
+    const target=new Date(sentObj.getTime());
+    target.setDate(target.getDate()+3);
+    if(now<target) return;
+    const diffDays=Math.floor((now-sentObj)/86400000);
+    if(diffDays>30) return;
+    const email=String(row[SELECT_COL['이메일']]||'').trim();
+    if(!email || !email.includes('@')) return;
+    const lang=String(row[SELECT_COL['언어']]||'ko').toLowerCase().trim();
+    const name=String(row[SELECT_COL['고객명']]||'');
+    const driveLink=String(row[SELECT_COL['드라이브링크']]||'').trim();
+    const subj={
+      ko:`[Studio mean] 보정본 안내 및 감사 인사 — ${name}님`,
+      en:`[Studio mean] Thank you and your final photos — ${name}`,
+      de:`[Studio mean] Vielen Dank und Ihre finalen Fotos — ${name}`
+    };
+    const driveLine=driveLink
+      ? (lang==='en'
+          ? `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">Open your photo folder</a><br><br>`
+          : lang==='de'
+            ? `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">Fotomappe öffnen</a><br><br>`
+            : `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">사진 폴더 열기</a><br><br>`)
+      : '';
+    const body={
+      ko:`안녕하세요 <b>${name}</b>님,<br><br>보정본을 확인해 주셔서 감사합니다. 촬영이 좋은 기억으로 남으셨기를 바랍니다.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
+      en:`Hello <b>${name}</b>,<br><br>Thank you for reviewing your final retouched photos. We hope the session remains a meaningful memory.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
+      de:`Hallo <b>${name}</b>,<br><br>Vielen Dank, dass Sie Ihre finalen bearbeiteten Fotos überprüft haben. Wir hoffen, dass das Shooting in guter Erinnerung bleibt.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+    };
+    MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+    selSh.getRange(idx+2,SELECT_COL['보정후안내메일발송일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   });
 }
 
