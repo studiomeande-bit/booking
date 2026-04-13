@@ -2330,6 +2330,12 @@ function writeMonthStorage(year, month, itemGroup, duration, data) {
 
 function selectGroup(groupKey) {
   clearSubmitResult();
+  const groupProducts = (state.init?.products || []).filter((item) => item.g === groupKey);
+  if (groupProducts.length === 1) {
+    state.selectedGroup = groupKey;
+    selectProduct(groupProducts[0].id);
+    return;
+  }
   state.selectedGroup = groupKey;
   state.activeStep = 2;
   state.selectedProduct = null;
@@ -2353,7 +2359,7 @@ function selectGroup(groupKey) {
   renderPeopleOptions();
   els.submitBtn.disabled = true;
   renderGroups();
-  renderProducts((state.init?.products || []).filter((item) => item.g === groupKey));
+  renderProducts(groupProducts);
   renderPassportPanel();
   renderSurveyChips();
   renderAgeChips();
