@@ -83,6 +83,22 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .accounting-chart{display:grid;gap:10px;min-height:140px;align-content:start;}
 .accounting-summary-list{display:grid;gap:8px;min-height:140px;align-content:start;}
 .accounting-chart-empty{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed #d6cfc3;border-radius:12px;background:#fcfaf6;font-size:12px;color:#8b8378;}
+.lexware-hub{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:15px;}
+.lexware-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.lexware-status-card{border:1px solid #e7dfd4;border-radius:12px;padding:14px;background:#fff;}
+.lexware-status-card .k{font-size:11px;font-weight:700;color:#7a6f63;margin-bottom:6px;}
+.lexware-status-card .v{font-size:20px;font-weight:800;color:#2D2A26;}
+.lexware-status-card .s{font-size:12px;color:#64748b;margin-top:4px;line-height:1.45;}
+.lexware-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;}
+.lexware-badge.pending{background:#fff7ed;color:#b45309;}
+.lexware-badge.synced{background:#eff6ff;color:#1d4ed8;}
+.lexware-badge.paid{background:#ecfdf5;color:#047857;}
+.lexware-badge.partial{background:#f5f3ff;color:#7c3aed;}
+.lexware-badge.none{background:#f8fafc;color:#64748b;}
+.accounting-row-alert td{background:#fff7f7 !important;}
+.accounting-row-pending td{background:#fffaf2 !important;}
+.accounting-lexware-cell{display:grid;gap:6px;align-content:start;}
+.accounting-lexware-note{font-size:11px;color:#64748b;line-height:1.4;}
 .action-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
 .sort-icon{font-size:10px;color:#94a3b8;}
 .print-price-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;}
@@ -127,6 +143,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .accounting-toolbar-row{flex-direction:column;align-items:stretch;}
   .accounting-toolbar .toolbar-group{min-width:0;}
   .accounting-toolbar .toolbar-spacer{margin-left:0;}
+  .lexware-hub{grid-template-columns:1fr;}
+  .lexware-status-grid{grid-template-columns:1fr;}
 }
 </style>
 </head>
@@ -1372,12 +1390,12 @@ function exportAccountingCSV() {
       translateAccountingTypeDe(r.type || ''), 
       safeCsvField(translateAccountingClassDe(r.accountingClass||'')),
       `"${(r.name||'').replace(/"/g, '""')}"`, 
-      `"${(r.description||'').replace(/"/g, '""')}"`, 
+      `"${translateAccountingDescriptionDe(r.description||'').replace(/"/g, '""')}"`, 
       translatePayMethodDe(r.payMethod || ''), 
       r.gross || 0, 
       r.net || 0, 
       r.tax || 0,
-      `"${(r.note||'').replace(/"/g, '""')}"`,
+      `"${translateAccountingNoteDe(r.note||'').replace(/"/g, '""')}"`,
       safeCsvField(translateLexwareStatusDe(r.lexwareSyncStatus||r.lexwarePaymentStatus||''))
     ];
     csv += row.join(',') + '\n';
@@ -1479,7 +1497,7 @@ function exportAccountingDatevCSV() {
     const paymentState = (r.flow === 'expense') ? 'Ausgabe' : translatePaymentStateDe(r);
     const row = [
       safeDatevField(r.date || ''),
-      safeDatevField(r.description || r.type || ''),
+      safeDatevField(translateAccountingDescriptionDe(r.description || r.type || '')),
       safeDatevField(translateAccountingClassDe(r.accountingClass || '')),
       safeDatevField((r.flow || 'income') === 'expense' ? 'expense' : 'income'),
       safeDatevField(r.name || ''),
@@ -1488,7 +1506,7 @@ function exportAccountingDatevCSV() {
       formatDatevNumber(r.net),
       formatDatevNumber(r.tax),
       'EUR',
-      safeDatevField(r.note || ''),
+      safeDatevField(translateAccountingNoteDe(r.note || '')),
       safeDatevField(translateLexwareStatusDe(r.lexwareSyncStatus || r.lexwarePaymentStatus || '')),
       safeDatevField(paymentState)
     ];
@@ -1550,6 +1568,66 @@ function translateAccountingClassDe(v){
     '미분류':'Nicht klassifiziert'
   };
   return map[v] || v || '';
+}
+
+function translateProductLabelDe(v){
+  let s = String(v || '');
+  const direct = {
+    '여권/비자': 'Passfoto/Visum',
+    '여권사진': 'Passfoto',
+    '비자사진': 'Visumfoto',
+    '프로필': 'Profil',
+    '스튜디오': 'Studio',
+    '야외스냅': 'Outdoor',
+    '프리웨딩': 'Pre-Wedding',
+    '가족사진': 'Familienfoto',
+    '기업/행사': 'Event/Business',
+    '행사영상': 'Eventvideo',
+    '추가인화': 'Zusatzdruck',
+    '추가보정': 'Zusatzretusche',
+    '인화/보정': 'Druck/Retusche',
+    '셀렉': 'Auswahl'
+  };
+  if (direct[s]) return direct[s];
+  return s
+    .replace(/여권\/비자/g, 'Passfoto/Visum')
+    .replace(/여권사진/g, 'Passfoto')
+    .replace(/비자사진/g, 'Visumfoto')
+    .replace(/프로필/g, 'Profil')
+    .replace(/스튜디오/g, 'Studio')
+    .replace(/야외스냅/g, 'Outdoor')
+    .replace(/프리웨딩/g, 'Pre-Wedding')
+    .replace(/가족사진/g, 'Familienfoto')
+    .replace(/기업\/행사/g, 'Event/Business')
+    .replace(/행사영상/g, 'Eventvideo')
+    .replace(/추가인화/g, 'Zusatzdruck')
+    .replace(/추가보정/g, 'Zusatzretusche')
+    .replace(/인화\/보정/g, 'Druck/Retusche')
+    .replace(/촬영예약/g, 'Fotoauftrag');
+}
+
+function translateAccountingDescriptionDe(v){
+  const s = String(v || '');
+  if (!s) return '';
+  if (s.includes(' - ')) {
+    const parts = s.split(' - ');
+    const head = translateProductLabelDe(parts.shift());
+    return [head].concat(parts).join(' - ');
+  }
+  return translateProductLabelDe(s);
+}
+
+function translateAccountingNoteDe(v){
+  return translateProductLabelDe(String(v || ''))
+    .replace(/패키지/g, 'Paket')
+    .replace(/아기/g, 'Baby')
+    .replace(/아기1명/g, '1 Baby')
+    .replace(/독일여권 Digital \(QR Code\) 필요합니다/g, 'Deutsches E-Passbild (QR-Code) erforderlich')
+    .replace(/성인2명 아이2명 여권사진 촬영/g, 'Passfoto-Aufnahme für 2 Erwachsene und 2 Kinder')
+    .replace(/한국출력/g, 'Ausdruck für Korea')
+    .replace(/추가인화/g, 'Zusatzdruck')
+    .replace(/비자사진/g, 'Visumfoto')
+    .replace(/여권사진/g, 'Passfoto');
 }
 
 function translatePayMethodDe(v){
