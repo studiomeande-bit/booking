@@ -2628,12 +2628,14 @@ function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
   const types = 'invoice,downpaymentinvoice,salesinvoice,purchaseinvoice,purchasecreditnote,salescreditnote';
   const out = [];
   let page = 0;
-  const size = 100;
+  const size = 250;
   while(page < 10){
     const params = [
       'page=' + page,
       'size=' + size,
-      'voucherType=' + encodeURIComponent(types)
+      'voucherType=' + encodeURIComponent(types),
+      'voucherStatus=' + encodeURIComponent('any'),
+      'sort=' + encodeURIComponent('updatedDate,DESC')
     ];
     if(from) params.push('voucherDateFrom=' + encodeURIComponent(from));
     if(to) params.push('voucherDateTo=' + encodeURIComponent(to));
