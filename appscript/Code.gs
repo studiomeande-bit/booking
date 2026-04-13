@@ -3182,6 +3182,70 @@ function getTwilioConfig(token){
   };
 }
 
+/* ====== Lexware ====== */
+function getLexwareConfig(token){
+  assertAdmin_(token);
+  const props=PropertiesService.getScriptProperties();
+  const apiKey=props.getProperty('LEXWARE_API_KEY')||'';
+  const orgId=props.getProperty('LEXWARE_ORGANIZATION_ID')||'';
+  return{
+    enabled:(props.getProperty('LEXWARE_ENABLED')||'false')==='true',
+    orgId,
+    hasApiKey:!!apiKey,
+    apiKeyMasked:maskSecret_(apiKey,6,4)
+  };
+}
+
+function saveLexwareConfig(token, apiKey, orgId, enabled){
+  assertAdmin_(token);
+  const props=PropertiesService.getScriptProperties();
+  const trimmedKey=String(apiKey||'').trim();
+  const trimmedOrg=String(orgId||'').trim();
+  if(trimmedKey) props.setProperty('LEXWARE_API_KEY', trimmedKey);
+  if(trimmedOrg) props.setProperty('LEXWARE_ORGANIZATION_ID', trimmedOrg);
+  props.setProperty('LEXWARE_ENABLED', enabled ? 'true' : 'false');
+  return getLexwareConfig(token);
+}
+
+function testLexwareConnection(token){
+  assertAdmin_(token);
+  const props=PropertiesService.getScriptProperties();
+  const apiKey=(props.getProperty('LEXWARE_API_KEY')||'').trim();
+  const orgId=(props.getProperty('LEXWARE_ORGANIZATION_ID')||'').trim();
+  if(!apiKey) throw new Error('Lexware API key가 설정되지 않았습니다.');
+  if(!orgId) throw new Error('Lexware organization id가 설정되지 않았습니다.');
+  const url='https://api.lexware.io/v1/contacts?page=0&size=1';
+  const resp=UrlFetchApp.fetch(url,{
+    method:'get',
+    muteHttpExceptions:true,
+    headers:{
+      Authorization:'Bearer '+apiKey,
+      Accept:'application/json'
+    }
+  });
+  const code=resp.getResponseCode();
+  const text=resp.getContentText()||'';
+  let data={};
+  try{data=JSON.parse(text||'{}');}catch(e){}
+  if(code<200||code>=300){
+    throw new Error('Lexware 연결 실패 ('+code+'): '+(data&&data.message||text||'unknown error'));
+  }
+  return{
+    ok:true,
+    status:code,
+    totalElements:typeof data.totalElements==='number'?data.totalElements:null,
+    hasContent:Array.isArray(data.content)?data.content.length:null,
+    orgId
+  };
+}
+
+function maskSecret_(value, left, right){
+  const s=String(value||'');
+  if(!s) return '';
+  if(s.length<=left+right) return s.slice(0,1)+'***';
+  return s.slice(0,left)+'***'+s.slice(-right);
+}
+
 /* ====== 인보이스 ====== */
 function ensureInvoiceFolder_(){
   const props=PropertiesService.getScriptProperties();

@@ -463,6 +463,33 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
       <div id="twilioResult" style="margin-top:10px;font-size:13px;"></div>
     </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">📚 Lexware 연동</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Lexware Public API key와 organization id를 저장하고 연결 상태를 확인합니다. API key 입력란을 비워두면 기존 키를 유지합니다.</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>활성화</label>
+          <label style="display:flex;align-items:center;gap:8px;padding-top:8px;">
+            <input type="checkbox" id="lex_enabled"> <span>Lexware 연동 사용</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Organization ID</label>
+          <input type="text" id="lex_org" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="lex_api_key" placeholder="비워두면 기존 키 유지">
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-primary btn-sm" onclick="saveLexwareSettings()">💾 저장</button>
+        <button class="btn btn-outline btn-sm" onclick="testLexwareConnectionUi()">🔌 연결 테스트</button>
+        <span id="lex_status" style="font-size:12px;color:#64748b;"></span>
+      </div>
+      <div id="lex_result" style="margin-top:10px;font-size:13px;"></div>
+    </div>
   </div>
 
   <div class="content" id="tab_select">
@@ -844,6 +871,7 @@ function onInitAdmin(res){
   // ✅ 인화 주문 등록 날짜를 오늘로 기본 셋팅
   document.getElementById('pn_date').value = new Date().toISOString().slice(0,10);
   loadAccountingData();
+  loadLexwareConfigUi();
 }
 
 /* ===== 대시보드 ===== */
@@ -930,7 +958,7 @@ function renderTable(){
   const dc=dep=>{if(!dep||dep==='-')return '<span class="dep-none">-</span>';if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 미입금</span>`;if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ 완료</span>`;return `<span style="font-size:11px;color:#475569;">${dep}</span>`;};
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
 
-  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(c.memo||'').replace(/"/g,'&quot;')}">${c.memo||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
+  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
 }
 
@@ -977,6 +1005,7 @@ function openEdit(rowIndex){
     ['👥 인원', c.people||'-'],
     ['🌐 언어', {ko:'한국어',en:'English',de:'Deutsch'}[c.lang]||c.lang||'-'],
     ['💬 옵션', c.optionStr||'-'],
+    ['🧩 추가항목', c.extraItem||'-'],
     ['🔁 재방문', c.isReturn?'✅ 재방문':'신규']
   ];
   document.getElementById('edit_info').innerHTML=infoItems.map(([l,v])=>`<div><span style="color:#94a3b8;font-weight:600;">${l}</span><br><span style="color:#1e293b;font-weight:500;">${v}</span></div>`).join('');
@@ -1523,6 +1552,45 @@ function testTwilioSmsSend(){
     else{r.style.color='#ef4444';r.textContent='❌ 발송 실패 (Twilio 설정 확인)';}
   }).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;})
   .testTwilioSms(adminToken,phone);
+}
+
+/* ===== Lexware 설정 ===== */
+function loadLexwareConfigUi(){
+  google.script.run.withSuccessHandler(cfg=>{
+    if(!cfg) return;
+    document.getElementById('lex_enabled').checked=!!cfg.enabled;
+    document.getElementById('lex_org').value=cfg.orgId||'';
+    document.getElementById('lex_status').textContent=cfg.hasApiKey?`저장된 API key: ${cfg.apiKeyMasked}`:'저장된 API key 없음';
+  }).withFailureHandler(()=>{}).getLexwareConfig(adminToken);
+}
+function saveLexwareSettings(){
+  const apiKey=document.getElementById('lex_api_key').value.trim();
+  const orgId=document.getElementById('lex_org').value.trim();
+  const enabled=document.getElementById('lex_enabled').checked;
+  const r=document.getElementById('lex_result');
+  r.style.color='#64748b';
+  r.textContent='저장 중...';
+  google.script.run.withSuccessHandler(cfg=>{
+    document.getElementById('lex_api_key').value='';
+    document.getElementById('lex_status').textContent=cfg.hasApiKey?`저장된 API key: ${cfg.apiKeyMasked}`:'저장된 API key 없음';
+    r.style.color='#10b981';
+    r.textContent='✅ Lexware 설정 저장 완료';
+  }).withFailureHandler(e=>{
+    r.style.color='#ef4444';
+    r.textContent='❌ '+e.message;
+  }).saveLexwareConfig(adminToken,apiKey,orgId,enabled);
+}
+function testLexwareConnectionUi(){
+  const r=document.getElementById('lex_result');
+  r.style.color='#64748b';
+  r.textContent='연결 테스트 중...';
+  google.script.run.withSuccessHandler(res=>{
+    r.style.color='#10b981';
+    r.textContent=`✅ 연결 성공 (status ${res.status}) · contacts ${res.totalElements===null?'확인됨':res.totalElements}`;
+  }).withFailureHandler(e=>{
+    r.style.color='#ef4444';
+    r.textContent='❌ '+e.message;
+  }).testLexwareConnection(adminToken);
 }
 
 /* ===== 사진셀렉 ===== */
