@@ -241,6 +241,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('year')">올해</button>
           <div class="toolbar-spacer"></div>
           <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
+          <button class="btn btn-outline btn-sm" onclick="loadAccountingData(true)">🔗 Lexware 대조</button>
           <button class="btn btn-success btn-sm" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
           <button class="btn btn-outline btn-sm" onclick="exportAccountingSummaryCSV()">📊 요약 CSV</button>
           <button class="btn btn-outline btn-sm" onclick="exportAccountingDatevCSV()">🧾 DATEV/세무사 CSV</button>
@@ -321,6 +322,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="stat-card" style="padding:15px;"><div class="stat-title">DATEV 준비</div><div class="stat-val" id="acc_datevReady" style="color:#0f766e;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">필터 기준 내보내기 가능 건수</div></div>
         <div class="stat-card" style="padding:15px;"><div class="stat-title">수입/지출 흐름</div><div class="stat-val" id="acc_incomeExpenseMix" style="color:#334155;">0 / 0</div><div style="font-size:12px;color:#64748b;margin-top:4px;">수입건 / 지출건</div></div>
       </div>
+      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(3,1fr);">
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">매칭 완료</div><div class="stat-val" id="acc_matchOk" style="color:#15803d;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">로컬과 Lexware 일치</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">로컬만 존재</div><div class="stat-val" id="acc_localOnly" style="color:#b45309;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">예약/지출만 있고 Lexware 없음</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware만 존재</div><div class="stat-val" id="acc_lexwareOnly" style="color:#7c3aed;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_lexwareOnlyAmount">0€</div></div>
+      </div>
       <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1.2fr .8fr;">
         <div class="accounting-box" style="margin-bottom:0;">
           <div class="card-title" style="margin-bottom:10px;">📚 회계분류 요약</div>
@@ -386,7 +392,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <thead><tr>
             <th>결제일자</th><th>구분</th><th>회계분류</th><th>거래처/고객</th><th>내역</th><th>결제수단</th>
             <th style="text-align:right;">총액(Brutto)</th><th style="text-align:right;">순액(Netto)</th><th style="text-align:right;">세금(MwSt)</th>
-            <th>결제상태</th><th>메모</th><th>Lexware</th>
+            <th>결제상태</th><th>대조</th><th>메모</th><th>Lexware</th>
           </tr></thead>
           <tbody id="accountingBody"></tbody>
         </table>
@@ -1201,11 +1207,11 @@ function saveEdit(){
 }
 
 /* ===== 회계 장부 ===== */
-function loadAccountingData() {
+function loadAccountingData(forceRefresh) {
   const sd = document.getElementById('acc_startDate').value;
   const ed = document.getElementById('acc_endDate').value;
   const tbody = document.getElementById('accountingBody');
-  tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;"><span class="spinner"></span> 데이터를 불러오는 중입니다...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;"><span class="spinner"></span> 데이터를 불러오는 중입니다...</td></tr>';
   
   google.script.run.withSuccessHandler(res => {
     accountingData = res.entries || [];
@@ -1229,9 +1235,13 @@ function loadAccountingData() {
     document.getElementById('acc_mismatchAmount').textContent = (res.mismatchAmount||0).toLocaleString() + '€';
     document.getElementById('acc_datevReady').textContent = (res.entries||[]).length + '건';
     document.getElementById('acc_incomeExpenseMix').textContent = `${(res.incomeCount||0)} / ${(res.expenseCount||0)}`;
+    document.getElementById('acc_matchOk').textContent = (res.matchOkCount||0) + '건';
+    document.getElementById('acc_localOnly').textContent = (res.localOnlyCount||0) + '건';
+    document.getElementById('acc_lexwareOnly').textContent = (res.lexwareOnlyCount||0) + '건';
+    document.getElementById('acc_lexwareOnlyAmount').textContent = (res.lexwareOnlyAmount||0).toLocaleString() + '€';
     renderAccountingSummaries(res);
     filterAccountingData();
-  }).withFailureHandler(handleApiError).getAccountingLedger(adminToken, sd, ed);
+  }).withFailureHandler(handleApiError).getAccountingLedger(adminToken, sd, ed, !!forceRefresh);
 }
 
 function renderAccountingSummaries(res){
@@ -1498,7 +1508,7 @@ function exportAccountingDatevCSV() {
     return true;
   });
   if(!filtered.length) { alert('내보낼 DATEV/세무사 데이터가 없습니다.'); return; }
-  let csv = '\uFEFFBelegdatum;Buchungstext;Kontoart;Flow;Kunde/Lieferant;Zahlungsart;Brutto;Netto;Steuer;Waehrung;Memo;Lexware;Zahlungsstatus\n';
+  let csv = '\uFEFFBelegdatum;Buchungstext;Kontoart;Flow;Kunde/Lieferant;Zahlungsart;Brutto;Netto;Steuer;Waehrung;Memo;Lexware;Zahlungsstatus;Abgleich\n';
   filtered.forEach(r => {
     const paymentState = (r.flow === 'expense') ? 'Ausgabe' : translatePaymentStateDe(r);
     const row = [
@@ -1514,7 +1524,8 @@ function exportAccountingDatevCSV() {
       'EUR',
       safeDatevField(translateAccountingNoteDe(r.note || '')),
       safeDatevField(translateLexwareStatusDe(r.lexwareSyncStatus || r.lexwarePaymentStatus || '')),
-      safeDatevField(paymentState)
+      safeDatevField(paymentState),
+      safeDatevField(translateMatchStatusDe(r.matchStatus || ''))
     ];
     csv += row.join(';') + '\n';
   });
@@ -2547,7 +2558,7 @@ function filterAccountingData() {
   
   const tbody = document.getElementById('accountingBody');
   if(!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
     return;
   }
   
@@ -2562,17 +2573,47 @@ function filterAccountingData() {
       <td style="text-align:right; font-weight:700; color:${r.flow==='expense'?'#b91c1c':'#1d4ed8'};">${r.flow==='expense'?'-':''}${r.gross}€</td>
       <td style="text-align:right;">${r.flow==='expense'?'-':''}${r.net}€</td>
       <td style="text-align:right; color:#ef4444;">${r.flow==='expense'?'-':''}${r.tax}€</td>
+      <td style="font-size:12px;">${renderAccountingPaymentState(r)}</td>
+      <td style="font-size:12px;">${renderAccountingMatchState(r)}</td>
       <td style="font-size:12px;color:#64748b;">${r.note || ''}${r.evidenceLink?`<br><a href="${r.evidenceLink}" target="_blank" style="color:#2563eb;">증빙</a>`:''}</td>
-      <td style="font-size:12px;">${r.lexwareSyncStatus || r.lexwarePaymentStatus || (r.lexwareVoucherId ? '전송됨' : '-')}</td>
+      <td style="font-size:12px;">${renderAccountingLexwareState(r)}</td>
     </tr>
   `).join('');
 }
 
-// (이전 코드: filterAccountingData() 함수의 끝나는 괄호 } 바로 아래에 붙여넣습니다)
+function renderAccountingMatchState(r){
+  const status = String(r.matchStatus||'');
+  if(status === 'matched') return '<span style="display:inline-block;padding:2px 6px;border-radius:999px;background:#ecfdf5;color:#047857;font-weight:700;font-size:11px;">매칭완료</span>';
+  if(status === 'payment_mismatch' || status === 'amount_mismatch') return `<span style="display:inline-block;padding:2px 6px;border-radius:999px;background:#fff7ed;color:#b45309;font-weight:700;font-size:11px;">불일치 ${Number(r.matchDelta||0).toLocaleString()}€</span>`;
+  if(status === 'lexware_only') return '<span style="display:inline-block;padding:2px 6px;border-radius:999px;background:#f5f3ff;color:#6d28d9;font-weight:700;font-size:11px;">Lexware만</span>';
+  return '<span style="display:inline-block;padding:2px 6px;border-radius:999px;background:#fef3c7;color:#92400e;font-weight:700;font-size:11px;">로컬만</span>';
+}
+
+function renderAccountingLexwareState(r){
+  const parts = [];
+  if(r.lexwareVoucherNumber) parts.push(r.lexwareVoucherNumber);
+  else if(r.lexwareVoucherId) parts.push(r.lexwareVoucherId);
+  const status = translateLexwareStatusDe(r.lexwareSyncStatus || r.lexwarePaymentStatus || '');
+  if(status) parts.push(status);
+  if(r.source === 'lexware' && !parts.length) parts.push('Lexware');
+  const label = parts.join(' · ') || '-';
+  if(!label) return '-';
+  return String(label);
+}
+
+function translateMatchStatusDe(v){
+  const s = String(v||'');
+  if(!s) return '';
+  if(s === 'matched') return 'Abgeglichen';
+  if(s === 'lexware_only') return 'Nur Lexware';
+  if(s === 'payment_mismatch' || s === 'amount_mismatch') return 'Zahlungsabweichung';
+  if(s === 'local_only') return 'Nur lokal';
+  return s;
+}
 
 function exportAccountingCSV() {
   if(!accountingData.length) { alert('내보낼 데이터가 없습니다.'); return; }
-  let csv = '\uFEFFDatum(결제일),Beleg(구분),Kontoart(회계분류),Name(거래처/고객),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt/Vorsteuer,Memo(메모),Lexware,Flow\n';
+  let csv = '\uFEFFBelegdatum,Beleg,Kontoart,Kunde/Lieferant,Buchungstext,Zahlungsart,Brutto,Netto,MwSt/Vorsteuer,Zahlungsstatus,Abgleich,Memo,Lexware,Flow\n';
   
   const filtered = accountingData.filter(r => {
     const type = document.getElementById('acc_type').value;
@@ -2586,18 +2627,20 @@ function exportAccountingCSV() {
 
   filtered.forEach(r => {
     const row = [
-      r.date || '', 
-      r.type || '', 
-      `"${(r.accountingClass||'').replace(/"/g, '""')}"`,
-      `"${(r.name||'').replace(/"/g, '""')}"`, 
-      `"${(r.description||'').replace(/"/g, '""')}"`, 
-      r.payMethod || '', 
-      r.gross || 0, 
-      r.net || 0, 
+      safeCsvField(r.date || ''),
+      safeCsvField(translateAccountingTypeDe(r.type || '')),
+      safeCsvField(translateAccountingClassDe(r.accountingClass || '')),
+      safeCsvField(r.name || ''),
+      safeCsvField(translateAccountingDescriptionDe(r.description || '')),
+      safeCsvField(translatePayMethodDe(r.payMethod || '')),
+      r.gross || 0,
+      r.net || 0,
       r.tax || 0,
-      `"${(r.note||'').replace(/"/g, '""')}"`,
-      `"${((r.lexwareSyncStatus||r.lexwarePaymentStatus||'')).replace(/"/g, '""')}"`,
-      r.flow || ''
+      safeCsvField(translatePaymentStateDe(r)),
+      safeCsvField(translateMatchStatusDe(r.matchStatus || '')),
+      safeCsvField(translateAccountingNoteDe(r.note || '')),
+      safeCsvField(translateLexwareStatusDe(r.lexwareSyncStatus || r.lexwarePaymentStatus || '')),
+      safeCsvField((r.flow || 'income') === 'expense' ? 'expense' : 'income')
     ];
     csv += row.join(',') + '\n';
   });

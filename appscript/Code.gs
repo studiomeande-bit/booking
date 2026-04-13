@@ -1414,9 +1414,9 @@ const PARKING_2='https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8';
 const PARKING_3='https://maps.app.goo.gl/S7zA3hEstWqhGhkUA';
 
 const EMAIL_I18N={
-  ko:{greeting:n=>`안녕하세요 <b>${n}</b>님,`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일</div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 8일 이전 취소: 계약금 100% 환불<br>• 촬영 2~7일 전 취소: 계약금 50% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가<br>※ 프리웨딩 패키지는 별도 협의</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재방문 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청 접수 안내 (대기중)`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재방문 할인이 자동 적용되었습니다!'},
-  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Reference: Your name + shoot date</div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• 8+ days before shoot: 100% deposit refund<br>• 2–7 days before: 50% deposit refund<br>• Day before or same day: No refund<br>※ Pre-wedding packages: separate agreement</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Return customer discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Return customer discount applied automatically!'},
-  de:{greeting:n=>`Hallo <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum</div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• 8+ Tage vor dem Shooting: 100% Rückerstattung<br>• 2–7 Tage vorher: 50% Rückerstattung<br>• Vortag oder gleicher Tag: Keine Rückerstattung<br>※ Pre-Wedding-Pakete: separate Vereinbarung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Stammkundenrabatt:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Stammkundenrabatt wurde automatisch angewendet!'}
+  ko:{greeting:n=>`안녕하세요 <b>${n}</b>님,`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재방문 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청 접수 안내 (대기중)`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재방문 할인이 자동 적용되었습니다!'},
+  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Return customer discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Return customer discount applied automatically!'},
+  de:{greeting:n=>`Hallo <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Stammkundenrabatt:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Stammkundenrabatt wurde automatisch angewendet!'}
 };
 
 function _getDirectionHtml(lang){
@@ -1630,7 +1630,7 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
   const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Rabatt:'};
   const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
   const returnBadge=isReturn?`<br><b style="color:#8b5cf6;">${T.return_badge}</b>`:'';
-  const refundBox=(quote.itemGroup!=='wed')?(T.refund_policy||''):'';
+  const refundBox=(quote.isDeposit&&quote.depositAmount>0&&quote.itemGroup!=='wed')?(T.refund_policy||''):'';
   // 취소/변경 신청 링크
   let cancelSection='';
   if(eventId){
@@ -1658,7 +1658,7 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const bal=parseInt(balanceAmount)||0;
   const isBiz=itemGroup==='biz';
   const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
-  const refundBox=(itemGroup!=='wed'&&itemGroup!=='biz')?(T.refund_policy||''):'';
+  const refundBox=(dep>0&&itemGroup!=='wed'&&itemGroup!=='biz')?(T.refund_policy||''):'';
   const priceHtml=isBiz
     ? (lang==='en'
         ? '■ Pricing: A detailed quote will be sent after reviewing your request.'
@@ -2301,7 +2301,7 @@ function batchUpdateAdvanced(token,list,type,val){
 }
 
 /* ====== 회계장부 ====== */
-function getAccountingLedger(token, startDate, endDate) {
+function getAccountingLedger(token, startDate, endDate, forceRefresh) {
   assertAdmin_(token);
   const entries = [];
   const bookSh = getDbSheet();
@@ -2423,9 +2423,11 @@ function getAccountingLedger(token, startDate, endDate) {
       lexwareSyncedAt: String(row[14]||'')
     });
   }
-  entries.sort((a,b)=>a.date>b.date?-1:a.date<b.date?1:0);
-  const incomeEntries=entries.filter(e=>e.flow==='income');
-  const expenseEntries=entries.filter(e=>e.flow==='expense');
+  const matchInfo = buildLexwareAccountingMatches_(entries, startDate, endDate, !!forceRefresh);
+  const mergedEntries = matchInfo.entries || entries;
+  mergedEntries.sort((a,b)=>a.date>b.date?-1:a.date<b.date?1:0);
+  const incomeEntries=mergedEntries.filter(e=>e.flow==='income');
+  const expenseEntries=mergedEntries.filter(e=>e.flow==='expense');
   const totalGross = incomeEntries.reduce((s,e)=>s+e.gross,0);
   const totalNet = incomeEntries.reduce((s,e)=>s+e.net,0);
   const totalTax = incomeEntries.reduce((s,e)=>s+e.tax,0);
@@ -2448,13 +2450,23 @@ function getAccountingLedger(token, startDate, endDate) {
   let mismatchAmount = 0;
   let incomeCount = 0;
   let expenseCount = 0;
-  entries.forEach(function(entry){
+  let matchOkCount = 0;
+  let localOnlyCount = 0;
+  let lexwareOnlyCount = 0;
+  let lexwareOnlyAmount = 0;
+  mergedEntries.forEach(function(entry){
     const typeKey = entry.type || '기타';
     byType[typeKey] = Math.round(((byType[typeKey] || 0) + (entry.gross || 0)) * 100) / 100;
     const classKey = entry.accountingClass || '미분류';
     byAccountingClass[classKey] = Math.round(((byAccountingClass[classKey] || 0) + (entry.gross || 0)) * 100) / 100;
     const syncStatus = String(entry.lexwareSyncStatus || '');
     const paymentStatus = String(entry.lexwarePaymentStatus || '');
+    if(entry.matchStatus === 'matched') matchOkCount++;
+    else if(entry.matchStatus === 'local_only') localOnlyCount++;
+    else if(entry.matchStatus === 'lexware_only') {
+      lexwareOnlyCount++;
+      lexwareOnlyAmount += Number(entry.gross||0) || 0;
+    }
     if (syncStatus && syncStatus !== '미전송') lexwareSyncedCount++;
     else lexwarePendingCount++;
     if (/paid|bezahlt|완료|fully_paid/i.test(paymentStatus)) lexwarePaidCount++;
@@ -2491,7 +2503,7 @@ function getAccountingLedger(token, startDate, endDate) {
     .sort(function(a,b){ return b.gross - a.gross; })
     .slice(0, 6);
   return {
-    entries,
+    entries: mergedEntries,
     totalGross,
     totalNet,
     totalTax,
@@ -2512,10 +2524,164 @@ function getAccountingLedger(token, startDate, endDate) {
     partialPaidCount,
     mismatchCount,
     mismatchAmount: Math.round(mismatchAmount*100)/100,
+    matchOkCount,
+    localOnlyCount,
+    lexwareOnlyCount,
+    lexwareOnlyAmount: Math.round(lexwareOnlyAmount*100)/100,
     incomeCount,
     expenseCount,
     byType,
     topAccountingClasses
+  };
+}
+
+function normalizeAccountingName_(value){
+  return String(value||'')
+    .toLowerCase()
+    .replace(/\s+/g,' ')
+    .replace(/[^\p{L}\p{N}\s]/gu,'')
+    .trim();
+}
+
+function getLexwareAccountingCacheKey_(startDate, endDate){
+  return 'lexware_voucher_snapshot:' + [String(startDate||''), String(endDate||'')].join(':');
+}
+
+function fetchLexwareVoucherlistForRange_(startDate, endDate, forceRefresh){
+  try{
+    const cfg = getLexwareConfigRequired_();
+    if(!cfg.enabled) return [];
+  }catch(e){
+    return [];
+  }
+  const cache = CacheService.getScriptCache();
+  const cacheKey = getLexwareAccountingCacheKey_(startDate, endDate);
+  if(forceRefresh) cache.remove(cacheKey);
+  const cached = cache.get(cacheKey);
+  if(cached){
+    try{return JSON.parse(cached)||[];}catch(e){}
+  }
+  const from = String(startDate||'').trim();
+  const to = String(endDate||'').trim();
+  const types = 'invoice,downpaymentinvoice,salesinvoice,purchaseinvoice,purchasecreditnote,salescreditnote';
+  const out = [];
+  let page = 0;
+  const size = 100;
+  while(page < 10){
+    const params = [
+      'page=' + page,
+      'size=' + size,
+      'voucherType=' + encodeURIComponent(types)
+    ];
+    if(from) params.push('voucherDateFrom=' + encodeURIComponent(from));
+    if(to) params.push('voucherDateTo=' + encodeURIComponent(to));
+    const data = lexwareRequest_('get', '/v1/voucherlist?' + params.join('&'));
+    const content = Array.isArray(data&&data.content) ? data.content : [];
+    out.push.apply(out, content);
+    if(content.length < size) break;
+    page++;
+  }
+  cache.put(cacheKey, JSON.stringify(out), 300);
+  return out;
+}
+
+function classifyLexwareVoucherAccounting_(voucher){
+  const type = String(voucher&&voucher.voucherType||'').toLowerCase();
+  const name = String(voucher&&voucher.contactName||'').toLowerCase();
+  if(/^purchase/.test(type)){
+    if(/amazon/.test(name)) return '소모품';
+    if(/adobe|google|meta|instagram|subscription/.test(name)) return '구독료';
+    if(/bahn|train|taxi|uber|transport/.test(name)) return '교통비';
+    return '기타';
+  }
+  return '기타';
+}
+
+function buildLexwareAccountingMatches_(entries, startDate, endDate, forceRefresh){
+  const vouchers = fetchLexwareVoucherlistForRange_(startDate, endDate, !!forceRefresh);
+  if(!vouchers.length){
+    return {
+      vouchers: [],
+      entries: entries.map(function(entry){
+        entry.matchStatus = 'local_only';
+        entry.matchLabel = '로컬만';
+        entry.matchDelta = 0;
+        return entry;
+      })
+    };
+  }
+  const matchedIds = {};
+  const localEntries = entries.map(function(entry){
+    const copy = JSON.parse(JSON.stringify(entry));
+    copy.matchStatus = 'local_only';
+    copy.matchLabel = '로컬만';
+    copy.matchDelta = 0;
+    return copy;
+  });
+  localEntries.forEach(function(entry){
+    const entryDate = String(entry.date||'').slice(0,10);
+    const entryName = normalizeAccountingName_(entry.name);
+    const entryGross = Math.round((Number(entry.gross||0)||0)*100)/100;
+    const candidate = vouchers.find(function(v){
+      if(matchedIds[v.id]) return false;
+      const voucherType = String(v.voucherType||'').toLowerCase();
+      if(entry.flow === 'expense' && !/^purchase/.test(voucherType)) return false;
+      if(entry.flow === 'income' && /^purchase/.test(voucherType)) return false;
+      const voucherDate = String(v.voucherDate||v.createdDate||'').slice(0,10);
+      const voucherName = normalizeAccountingName_(v.contactName);
+      const voucherGross = Math.round((Number(v.totalAmount||0)||0)*100)/100;
+      return voucherDate === entryDate && Math.abs(voucherGross - entryGross) <= 0.01 && (!entryName || !voucherName || voucherName === entryName);
+    });
+    if(!candidate) return;
+    matchedIds[candidate.id] = true;
+    const voucherOpen = Math.round((Number(candidate.openAmount||0)||0)*100)/100;
+    const localOpen = Math.round((Number(entry.openAmount||0)||0)*100)/100;
+    const delta = Math.abs(voucherOpen - localOpen);
+    entry.lexwareVoucherId = String(candidate.id||entry.lexwareVoucherId||'');
+    entry.lexwareVoucherNumber = String(candidate.voucherNumber||'');
+    entry.lexwareSyncStatus = entry.lexwareSyncStatus || 'synced';
+    entry.lexwarePaymentStatus = entry.lexwarePaymentStatus || String(candidate.voucherStatus||'');
+    entry.matchStatus = delta > 0.01 ? 'payment_mismatch' : 'matched';
+    entry.matchLabel = delta > 0.01 ? '결제 불일치' : '매칭완료';
+    entry.matchDelta = delta;
+  });
+  const remoteOnly = vouchers.filter(function(v){ return !matchedIds[v.id]; }).map(function(v){
+    const isExpense = /^purchase/.test(String(v.voucherType||'').toLowerCase());
+    const gross = Math.round((Number(v.totalAmount||0)||0)*100)/100;
+    const net = Math.round((gross/1.19)*100)/100;
+    const tax = Math.round((gross-net)*100)/100;
+    const openAmount = Math.round((Number(v.openAmount||0)||0)*100)/100;
+    return {
+      date: String(v.voucherDate||v.createdDate||'').slice(0,10),
+      dateStr: String(v.voucherDate||v.createdDate||'').slice(0,10),
+      type: isExpense ? 'Lexware 지출' : 'Lexware 수입',
+      category: String(v.voucherType||''),
+      accountingClass: classifyLexwareVoucherAccounting_(v),
+      name: String(v.contactName||'Lexware'),
+      description: String(v.voucherNumber||v.id||''),
+      gross: gross,
+      net: net,
+      tax: tax,
+      payMethod: '',
+      status: String(v.voucherStatus||''),
+      invoice: String(v.voucherNumber||''),
+      note: 'Lexware에서만 발견된 거래',
+      source: 'lexware',
+      flow: isExpense ? 'expense' : 'income',
+      rowIndex: 0,
+      openAmount: openAmount,
+      lexwareVoucherId: String(v.id||''),
+      lexwareVoucherNumber: String(v.voucherNumber||''),
+      lexwareSyncStatus: 'lexware-only',
+      lexwarePaymentStatus: String(v.voucherStatus||''),
+      matchStatus: 'lexware_only',
+      matchLabel: 'Lexware만',
+      matchDelta: openAmount
+    };
+  });
+  return {
+    vouchers: vouchers,
+    entries: localEntries.concat(remoteOnly)
   };
 }
 
