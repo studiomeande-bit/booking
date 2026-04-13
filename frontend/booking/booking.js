@@ -199,6 +199,7 @@ const COPY = {
     heroTitle: '예약하기',
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     loadingCopy: '예약 페이지를 준비하고 있습니다.',
+    noticeTitle: '공지사항',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 및 시간 선택',
@@ -299,12 +300,15 @@ const COPY = {
     slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
     initFail: '초기화 실패',
     yes: '동의',
-    no: '미동의'
+    no: '미동의',
+    holidayNotice: '설정된 휴무일과 마감된 일정은 달력에서 자동으로 선택 불가 처리됩니다.',
+    holidayListLabel: '예정 휴무일'
   },
   en: {
     heroTitle: 'Book Your Session',
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
     loadingCopy: 'Preparing the booking page.',
+    noticeTitle: 'Notice',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date & Time',
@@ -405,12 +409,15 @@ const COPY = {
     slotFailForDate: 'Failed to load available times for {date}.',
     initFail: 'Initialization failed',
     yes: 'Agreed',
-    no: 'Not agreed'
+    no: 'Not agreed',
+    holidayNotice: 'Configured holidays and blocked dates are automatically disabled in the calendar.',
+    holidayListLabel: 'Upcoming closed dates'
   },
   de: {
     heroTitle: 'Termin buchen',
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     loadingCopy: 'Buchungsseite wird vorbereitet.',
+    noticeTitle: 'Hinweis',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum & Uhrzeit wählen',
@@ -511,7 +518,9 @@ const COPY = {
     slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
     initFail: 'Initialisierung fehlgeschlagen',
     yes: 'Zustimmung',
-    no: 'Keine Zustimmung'
+    no: 'Keine Zustimmung',
+    holidayNotice: 'Eingestellte Ruhetage und gesperrte Termine werden im Kalender automatisch deaktiviert.',
+    holidayListLabel: 'Kommende Ruhetage'
   }
 };
 
@@ -553,6 +562,10 @@ const els = {
   hero: document.querySelector('.hero'),
   heroTitle: document.getElementById('heroTitle'),
   banner: document.getElementById('statusBanner'),
+  noticePanel: document.getElementById('noticePanel'),
+  noticeTitle: document.getElementById('noticeTitle'),
+  noticeBody: document.getElementById('noticeBody'),
+  noticeMeta: document.getElementById('noticeMeta'),
   heroLead: document.getElementById('heroLead'),
   loadingCopy: document.getElementById('loadingCopy'),
   groupHelp: document.getElementById('groupHelp'),
@@ -654,6 +667,7 @@ async function boot() {
     renderProductDetail();
     renderReview();
     refreshStepLocks();
+    renderNoticePanel();
     startCalendarWarmup();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
@@ -842,6 +856,7 @@ function formatDateLabel(dateKey) {
 function applyCopy() {
   const copy = getCopy();
   if (els.heroTitle) els.heroTitle.textContent = copy.heroTitle;
+  if (els.noticeTitle) els.noticeTitle.textContent = copy.noticeTitle;
   els.heroLead.textContent = copy.hero;
   if (els.loadingCopy) els.loadingCopy.textContent = copy.loadingCopy;
   setText('step1Title', copy.step1Title);
@@ -924,9 +939,55 @@ function applyCopy() {
   renderPeopleOptions();
   renderWeekdayHeader();
   renderReturnNotice();
+  renderNoticePanel();
   syncConsentVisibility();
   syncSelectAllRequired();
   refreshBannerCopy();
+}
+
+function getLocalizedNoticeText() {
+  const settings = state.init?.settings || {};
+  if (state.lang === 'en') return String(settings.en || '').trim();
+  if (state.lang === 'de') return String(settings.de || '').trim();
+  return String(settings.ko || '').trim();
+}
+
+function getUpcomingHolidayList() {
+  const raw = String(state.init?.settings?.customHolidays || '').trim();
+  if (!raw) return [];
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 90);
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((dateStr) => {
+      const date = new Date(`${dateStr}T00:00:00`);
+      return !Number.isNaN(date.getTime()) && date >= start && date <= end;
+    })
+    .sort();
+}
+
+function renderNoticePanel() {
+  if (!els.noticePanel || !els.noticeBody || !els.noticeMeta) return;
+  const notice = getLocalizedNoticeText();
+  const upcomingHolidays = getUpcomingHolidayList();
+  const copy = getCopy();
+  if (!notice && !upcomingHolidays.length) {
+    els.noticePanel.classList.add('hidden-field');
+    els.noticeBody.innerHTML = '';
+    els.noticeMeta.innerHTML = '';
+    return;
+  }
+  els.noticePanel.classList.remove('hidden-field');
+  els.noticeBody.innerHTML = notice ? escapeHtml(notice).replace(/\n/g, '<br>') : '';
+  const metaParts = [escapeHtml(copy.holidayNotice)];
+  if (upcomingHolidays.length) {
+    metaParts.push(`<strong>${escapeHtml(copy.holidayListLabel)}:</strong> ${escapeHtml(upcomingHolidays.join(', '))}`);
+  }
+  els.noticeMeta.innerHTML = metaParts.join('<br>');
 }
 
 function refreshBannerCopy() {
