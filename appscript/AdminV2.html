@@ -243,6 +243,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
           <button class="btn btn-outline btn-sm" onclick="loadAccountingData(true)">🔗 Lexware 대조</button>
           <button class="btn btn-outline btn-sm" onclick="syncLexwareAccountingUi()">⬇️ Lexware 가져오기</button>
+          <button class="btn btn-outline btn-sm" onclick="diagnoseLexwareUi()">🩺 Lexware 진단</button>
           <button class="btn btn-success btn-sm" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
           <button class="btn btn-outline btn-sm" onclick="exportAccountingSummaryCSV()">📊 요약 CSV</button>
           <button class="btn btn-outline btn-sm" onclick="exportAccountingDatevCSV()">🧾 DATEV/세무사 CSV</button>
@@ -1348,6 +1349,29 @@ function syncLexwareAccountingUi(){
     })
     .withFailureHandler(handleApiError)
     .syncLexwareAccounting(adminToken, sd, ed);
+}
+
+function diagnoseLexwareUi(){
+  const sd = document.getElementById('acc_startDate').value;
+  const ed = document.getElementById('acc_endDate').value;
+  google.script.run
+    .withSuccessHandler(res=>{
+      const lines = [
+        'Lexware 진단',
+        `조직 ID: ${res.orgId || '-'}`,
+        `Contacts: ${res.contacts || 0}건`,
+        `Invoices: ${res.invoices || 0}건`,
+        `Voucherlist: ${res.vouchers || 0}건`,
+        `조회 방식: ${res.voucherMode || '-'}`,
+        `총 요소수: ${res.voucherTotalElements || 0}`,
+        `타입 요약: ${res.voucherTypes || '없음'}`,
+        '',
+        res.notice || ''
+      ];
+      alert(lines.filter(Boolean).join('\n'));
+    })
+    .withFailureHandler(handleApiError)
+    .diagnoseLexware(adminToken, sd, ed);
 }
 
 function setAccountingPreset(mode){

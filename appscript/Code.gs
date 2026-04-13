@@ -3996,6 +3996,36 @@ function testLexwareConnection(token){
   };
 }
 
+function diagnoseLexware(token, startDate, endDate){
+  assertAdmin_(token);
+  const cfg = getLexwareConfigRequired_();
+  const contacts = lexwareRequest_('get', '/v1/contacts?page=0&size=1');
+  let invoices = {};
+  try{
+    invoices = lexwareRequest_('get', '/v1/invoices?page=0&size=1');
+  }catch(e){
+    invoices = {totalElements:0, content:[]};
+  }
+  const fetched = fetchLexwareVoucherlistForRange_(startDate, endDate, true);
+  const debug = fetched && fetched.debug ? fetched.debug : {};
+  const typeSummary = debug.typeCounts
+    ? Object.keys(debug.typeCounts).map(k => k + ':' + debug.typeCounts[k]).join(', ')
+    : '';
+  return {
+    ok: true,
+    orgId: cfg.orgId,
+    contacts: Number(contacts && contacts.totalElements || 0),
+    invoices: Number(invoices && invoices.totalElements || 0),
+    vouchers: Number(fetched && fetched.vouchers ? fetched.vouchers.length : 0),
+    voucherMode: debug.mode || '',
+    voucherTotalElements: Number(debug.totalElements || 0),
+    voucherTypes: typeSummary || '없음',
+    notice: Number(debug.totalElements || 0) === 0
+      ? '현재 Lexware Public API에서 읽히는 voucher가 없습니다. SumUp/은행 흐름만 있고 invoice/voucher로 생성되지 않은 상태일 수 있습니다.'
+      : 'voucher가 조회됩니다. 0건 매칭이면 다음 단계는 매칭 규칙 보정입니다.'
+  };
+}
+
 function getLexwareConfigRequired_(){
   const props=PropertiesService.getScriptProperties();
   const apiKey=(props.getProperty('LEXWARE_API_KEY')||'').trim();
