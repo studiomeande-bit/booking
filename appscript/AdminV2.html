@@ -190,6 +190,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="card">
       <div class="card-title">📊 독일 세무신고용 회계 장부 (Buchhaltung)</div>
       <div class="filter-bar" style="background:#f8fafc; border:none; padding:10px;">
+        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('month')">이번 달</button>
+        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('quarter')">이번 분기</button>
+        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('half')">이번 반기</button>
+        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('year')">올해</button>
         <input type="date" id="acc_startDate" onchange="loadAccountingData()" style="max-width:140px;">
         <span style="color:#64748b; font-weight:bold;">~</span>
         <input type="date" id="acc_endDate" onchange="loadAccountingData()" style="max-width:140px;">
@@ -205,6 +209,24 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <option value="카드">카드</option>
           <option value="계좌이체">계좌이체</option>
           <option value="마이리얼트립">마이리얼트립</option>
+        </select>
+        <select id="acc_class" onchange="filterAccountingData()" style="max-width:170px;">
+          <option value="all">모든 회계분류</option>
+          <option value="여권/비자 매출">여권/비자 매출</option>
+          <option value="프로필 매출">프로필 매출</option>
+          <option value="스튜디오 매출">스튜디오 매출</option>
+          <option value="야외스냅 매출">야외스냅 매출</option>
+          <option value="프리웨딩 매출">프리웨딩 매출</option>
+          <option value="행사/영상 매출">행사/영상 매출</option>
+          <option value="추가 인화/보정 매출">추가 인화/보정 매출</option>
+          <option value="소모품">소모품</option>
+          <option value="장비">장비</option>
+          <option value="교통비">교통비</option>
+          <option value="광고비">광고비</option>
+          <option value="구독료">구독료</option>
+          <option value="외주">외주</option>
+          <option value="임차/관리비">임차/관리비</option>
+          <option value="기타">기타</option>
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
         <button class="btn btn-success btn-sm" style="margin-left:auto;" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
@@ -229,6 +251,18 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
               <option>구독료</option><option>광고비</option><option>임차/관리비</option><option>기타</option>
             </select>
           </div>
+          <div class="form-group"><label>회계분류</label>
+            <select id="exp_accountingClass">
+              <option value="소모품">소모품</option>
+              <option value="장비">장비</option>
+              <option value="교통비">교통비</option>
+              <option value="광고비">광고비</option>
+              <option value="구독료">구독료</option>
+              <option value="외주">외주</option>
+              <option value="임차/관리비">임차/관리비</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>설명</label><input type="text" id="exp_description" placeholder="예: 프린터 잉크 / 렌즈 클리너"></div>
@@ -248,9 +282,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>결제일자</th><th>구분</th><th>거래처/고객</th><th>내역</th><th>결제수단</th>
+            <th>결제일자</th><th>구분</th><th>회계분류</th><th>거래처/고객</th><th>내역</th><th>결제수단</th>
             <th style="text-align:right;">총액(Brutto)</th><th style="text-align:right;">순액(Netto)</th><th style="text-align:right;">세금(MwSt)</th>
-            <th>메모</th>
+            <th>메모</th><th>Lexware</th>
           </tr></thead>
           <tbody id="accountingBody"></tbody>
         </table>
@@ -1055,7 +1089,7 @@ function loadAccountingData() {
   const sd = document.getElementById('acc_startDate').value;
   const ed = document.getElementById('acc_endDate').value;
   const tbody = document.getElementById('accountingBody');
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;"><span class="spinner"></span> 데이터를 불러오는 중입니다...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;"><span class="spinner"></span> 데이터를 불러오는 중입니다...</td></tr>';
   
   google.script.run.withSuccessHandler(res => {
     accountingData = res.entries || [];
@@ -1073,6 +1107,7 @@ function saveExpense(){
     date:document.getElementById('exp_date').value,
     vendor:document.getElementById('exp_vendor').value.trim(),
     category:document.getElementById('exp_category').value,
+    accountingClass:document.getElementById('exp_accountingClass').value,
     description:document.getElementById('exp_description').value.trim(),
     gross:document.getElementById('exp_gross').value,
     tax:document.getElementById('exp_tax').value,
@@ -1094,19 +1129,44 @@ function saveExpense(){
     .saveExpenseAdmin(adminToken,payload);
 }
 
+function setAccountingPreset(mode){
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  let start = new Date(yyyy, 0, 1);
+  let end = new Date(yyyy, 11, 31);
+  if(mode === 'month'){
+    start = new Date(yyyy, now.getMonth(), 1);
+    end = new Date(yyyy, now.getMonth() + 1, 0);
+  }else if(mode === 'quarter'){
+    const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
+    start = new Date(yyyy, qStartMonth, 1);
+    end = new Date(yyyy, qStartMonth + 3, 0);
+  }else if(mode === 'half'){
+    const hStartMonth = now.getMonth() < 6 ? 0 : 6;
+    start = new Date(yyyy, hStartMonth, 1);
+    end = new Date(yyyy, hStartMonth + 6, 0);
+  }
+  const toDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('acc_startDate').value = toDate(start);
+  document.getElementById('acc_endDate').value = toDate(end);
+  loadAccountingData();
+}
+
 function filterAccountingData() {
   const type = document.getElementById('acc_type').value;
   const pay = document.getElementById('acc_pay').value;
+  const accountingClass = document.getElementById('acc_class').value;
   
   const filtered = accountingData.filter(r => {
     if(type !== 'all' && r.type !== type) return false;
     if(pay !== 'all' && r.payMethod !== pay) return false;
+    if(accountingClass !== 'all' && (r.accountingClass || '') !== accountingClass) return false;
     return true;
   });
   
   const tbody = document.getElementById('accountingBody');
   if(!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
     return;
   }
   
@@ -1114,6 +1174,7 @@ function filterAccountingData() {
     <tr>
       <td style="font-size:12px;">${r.dateStr || ''}</td>
       <td><span class="group-tag ${r.source==='booking'?'gt-stud':'gt-pass'}">${r.type || ''}</span></td>
+      <td style="font-size:12px;"><b>${r.accountingClass || '-'}</b></td>
       <td><b>${r.name || ''}</b></td>
       <td style="font-size:12px;max-width:180px;">${r.description || ''}</td>
       <td style="font-size:12px;">${r.payMethod || ''}</td>
@@ -1121,19 +1182,22 @@ function filterAccountingData() {
       <td style="text-align:right;">${r.net}€</td>
       <td style="text-align:right; color:#ef4444;">${r.tax}€</td>
       <td style="font-size:12px;color:#64748b;">${r.note || ''}</td>
+      <td style="font-size:12px;">${r.lexwareSyncStatus || r.lexwarePaymentStatus || '-'}</td>
     </tr>
   `).join('');
 }
 
 function exportAccountingCSV() {
   if(!accountingData.length) { alert('내보낼 데이터가 없습니다.'); return; }
-  let csv = '\uFEFFDatum(결제일),Beleg(구분),Kunde(고객명),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt(19%),Memo(메모)\n';
+  let csv = '\uFEFFDatum(결제일),Beleg(구분),Kontoart(회계분류),Kunde(고객명),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt(19%),Memo(메모),Lexware\n';
   
   const filtered = accountingData.filter(r => {
     const type = document.getElementById('acc_type').value;
     const pay = document.getElementById('acc_pay').value;
+    const accountingClass = document.getElementById('acc_class').value;
     if(type !== 'all' && r.type !== type) return false;
     if(pay !== 'all' && r.payMethod !== pay) return false;
+    if(accountingClass !== 'all' && (r.accountingClass || '') !== accountingClass) return false;
     return true;
   });
 
@@ -1141,13 +1205,15 @@ function exportAccountingCSV() {
     const row = [
       r.date || '', 
       r.type || '', 
+      `"${(r.accountingClass||'').replace(/"/g, '""')}"`,
       `"${(r.name||'').replace(/"/g, '""')}"`, 
       `"${(r.description||'').replace(/"/g, '""')}"`, 
       r.payMethod || '', 
       r.gross || 0, 
       r.net || 0, 
       r.tax || 0,
-      `"${(r.note||'').replace(/"/g, '""')}"`
+      `"${(r.note||'').replace(/"/g, '""')}"`,
+      `"${((r.lexwareSyncStatus||r.lexwarePaymentStatus||'')).replace(/"/g, '""')}"`
     ];
     csv += row.join(',') + '\n';
   });
@@ -2020,16 +2086,18 @@ window.onload=function(){
 function filterAccountingData() {
   const type = document.getElementById('acc_type').value;
   const pay = document.getElementById('acc_pay').value;
+  const accountingClass = document.getElementById('acc_class').value;
   
   const filtered = accountingData.filter(r => {
     if(type !== 'all' && r.type !== type) return false;
     if(pay !== 'all' && r.payMethod !== pay) return false;
+    if(accountingClass !== 'all' && (r.accountingClass || '') !== accountingClass) return false;
     return true;
   });
   
   const tbody = document.getElementById('accountingBody');
   if(!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#94a3b8;padding:20px;">해당하는 회계 내역이 없습니다.</td></tr>';
     return;
   }
   
@@ -2037,6 +2105,7 @@ function filterAccountingData() {
     <tr>
       <td style="font-size:12px;">${r.dateStr || ''}</td>
       <td><span class="group-tag ${r.flow==='expense'?'gt-wed':(r.source==='booking'?'gt-stud':'gt-pass')}">${r.type || ''}</span></td>
+      <td style="font-size:12px;"><b>${r.accountingClass || '-'}</b></td>
       <td><b>${r.name || ''}</b></td>
       <td style="font-size:12px;max-width:180px;">${r.description || ''}</td>
       <td style="font-size:12px;">${r.payMethod || ''}</td>
@@ -2044,6 +2113,7 @@ function filterAccountingData() {
       <td style="text-align:right;">${r.flow==='expense'?'-':''}${r.net}€</td>
       <td style="text-align:right; color:#ef4444;">${r.flow==='expense'?'-':''}${r.tax}€</td>
       <td style="font-size:12px;color:#64748b;">${r.note || ''}${r.evidenceLink?`<br><a href="${r.evidenceLink}" target="_blank" style="color:#2563eb;">증빙</a>`:''}</td>
+      <td style="font-size:12px;">${r.lexwareSyncStatus || r.lexwarePaymentStatus || (r.lexwareVoucherId ? '전송됨' : '-')}</td>
     </tr>
   `).join('');
 }
@@ -2052,13 +2122,15 @@ function filterAccountingData() {
 
 function exportAccountingCSV() {
   if(!accountingData.length) { alert('내보낼 데이터가 없습니다.'); return; }
-  let csv = '\uFEFFDatum(결제일),Beleg(구분),Name(거래처/고객),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt/Vorsteuer,Memo(메모),Flow\n';
+  let csv = '\uFEFFDatum(결제일),Beleg(구분),Kontoart(회계분류),Name(거래처/고객),Beschreibung(내역),Zahlungsart(결제수단),Brutto(총액),Netto(순액),MwSt/Vorsteuer,Memo(메모),Lexware,Flow\n';
   
   const filtered = accountingData.filter(r => {
     const type = document.getElementById('acc_type').value;
     const pay = document.getElementById('acc_pay').value;
+    const accountingClass = document.getElementById('acc_class').value;
     if(type !== 'all' && r.type !== type) return false;
     if(pay !== 'all' && r.payMethod !== pay) return false;
+    if(accountingClass !== 'all' && (r.accountingClass || '') !== accountingClass) return false;
     return true;
   });
 
@@ -2066,6 +2138,7 @@ function exportAccountingCSV() {
     const row = [
       r.date || '', 
       r.type || '', 
+      `"${(r.accountingClass||'').replace(/"/g, '""')}"`,
       `"${(r.name||'').replace(/"/g, '""')}"`, 
       `"${(r.description||'').replace(/"/g, '""')}"`, 
       r.payMethod || '', 
@@ -2073,6 +2146,7 @@ function exportAccountingCSV() {
       r.net || 0, 
       r.tax || 0,
       `"${(r.note||'').replace(/"/g, '""')}"`,
+      `"${((r.lexwareSyncStatus||r.lexwarePaymentStatus||'')).replace(/"/g, '""')}"`,
       r.flow || ''
     ];
     csv += row.join(',') + '\n';

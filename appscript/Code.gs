@@ -28,7 +28,7 @@ const CONFIG = {
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
   BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
-  EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태'],
+  EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
 };
@@ -328,6 +328,34 @@ function ensureExpenseSheet_(ss) {
     }
   }
   return sh;
+}
+
+function classifyBookingAccounting_(group, productName) {
+  const g = String(group || '').trim();
+  const product = String(productName || '').trim();
+  if (g === 'pass') return '여권/비자 매출';
+  if (g === 'prof') return '프로필 매출';
+  if (g === 'stud') return '스튜디오 매출';
+  if (g === 'snap') return '야외스냅 매출';
+  if (g === 'wed') return '프리웨딩 매출';
+  if (g === 'business') return '행사/영상 매출';
+  return product ? product + ' 매출' : '촬영매출';
+}
+
+function classifyPrintAccounting_() {
+  return '추가 인화/보정 매출';
+}
+
+function classifyExpenseAccounting_(row) {
+  const explicitClass = String(row[11] || '').trim();
+  if (explicitClass) return explicitClass;
+  const category = String(row[2] || '').trim();
+  const vendor = String(row[1] || '').trim().toLowerCase();
+  if (category) return category;
+  if (vendor.indexOf('amazon') > -1) return '소모품';
+  if (vendor.indexOf('adobe') > -1) return '구독료';
+  if (vendor.indexOf('bahn') > -1 || vendor.indexOf('uber') > -1) return '교통비';
+  return '기타';
 }
 function getDefaultProducts_() {
   return [
@@ -2188,7 +2216,27 @@ function getAccountingLedger(token, startDate, endDate) {
     if(gross===0) continue;
     const net = Math.round(gross/1.19);
     const tax = gross - net;
-    entries.push({date: dateOnly, dateStr: dStr, type: '촬영예약', category: String(row[6]||''), name:String(row[2]||''), description: `${row[7]||''} - ${row[2]||''}`, gross, net, tax, payMethod: String(row[13]||''), status: '완료', invoice: String(row[16]||'').slice(-8), note: String(row[15]||''), source: 'booking', flow:'income', rowIndex: r+1});
+    entries.push({
+      date: dateOnly,
+      dateStr: dStr,
+      type: '촬영예약',
+      category: String(row[6]||''),
+      accountingClass: classifyBookingAccounting_(row[6], row[7]),
+      name:String(row[2]||''),
+      description: `${row[7]||''} - ${row[2]||''}`,
+      gross,
+      net,
+      tax,
+      payMethod: String(row[13]||''),
+      status: '완료',
+      invoice: String(row[16]||'').slice(-8),
+      note: String(row[15]||''),
+      source: 'booking',
+      flow:'income',
+      rowIndex: r+1,
+      lexwareSyncStatus: String(row[35]||''),
+      lexwarePaymentStatus: String(row[34]||'')
+    });
   }
   const printSh = ensureSheets_().printSheet;
   const printData = printSh.getDataRange().getValues();
@@ -2203,7 +2251,27 @@ function getAccountingLedger(token, startDate, endDate) {
     if(gross===0) continue;
     const net = Math.round(gross/1.19);
     const tax = gross - net;
-    entries.push({date: dateOnly, dateStr: parseDateSafe_(row[0]).str, type: '인화/보정', category: 'print', name:String(row[1]||''), description: `추가인화 - ${row[1]||''}`, gross, net, tax, payMethod: String(row[7]||''), status: String(row[9]||'완료'), invoice: '', note: String(row[8]||''), source: 'print', flow:'income', rowIndex: r+1});
+    entries.push({
+      date: dateOnly,
+      dateStr: parseDateSafe_(row[0]).str,
+      type: '인화/보정',
+      category: 'print',
+      accountingClass: classifyPrintAccounting_(),
+      name:String(row[1]||''),
+      description: `추가인화 - ${row[1]||''}`,
+      gross,
+      net,
+      tax,
+      payMethod: String(row[7]||''),
+      status: String(row[9]||'완료'),
+      invoice: '',
+      note: String(row[8]||''),
+      source: 'print',
+      flow:'income',
+      rowIndex: r+1,
+      lexwareSyncStatus: '',
+      lexwarePaymentStatus: ''
+    });
   }
   const expenseSh = ensureSheets_().expenseSheet;
   const expenseData = expenseSh.getDataRange().getValues();
@@ -2222,6 +2290,7 @@ function getAccountingLedger(token, startDate, endDate) {
       dateStr: dStr,
       type: '지출',
       category: String(row[2]||''),
+      accountingClass: classifyExpenseAccounting_(row),
       name: String(row[1]||''),
       description: String(row[3]||''),
       gross,
@@ -2234,7 +2303,11 @@ function getAccountingLedger(token, startDate, endDate) {
       evidenceLink: String(row[9]||''),
       source: 'expense',
       flow: 'expense',
-      rowIndex: r+1
+      rowIndex: r+1,
+      lexwareVoucherId: String(row[12]||''),
+      lexwareSyncStatus: String(row[13]||''),
+      lexwarePaymentStatus: '',
+      lexwareSyncedAt: String(row[14]||'')
     });
   }
   entries.sort((a,b)=>a.date>b.date?-1:a.date<b.date?1:0);
@@ -2277,7 +2350,11 @@ function saveExpenseAdmin(token, expense){
     String(expense.payMethod||'').trim(),
     String(expense.note||'').trim(),
     String(expense.evidenceLink||'').trim(),
-    String(expense.status||'확정').trim()
+    String(expense.status||'확정').trim(),
+    String(expense.accountingClass||expense.category||'기타').trim(),
+    '',
+    '미전송',
+    ''
   ]);
   return {ok:true};
 }
