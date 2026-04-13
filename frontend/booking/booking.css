@@ -177,15 +177,17 @@ h1 {
   border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
 .wizard-progress {
+  order: 1;
+  flex: 0 0 auto;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
 }
 .wizard-actions {
+  order: 3;
   display: flex;
   gap: 10px;
   justify-content: flex-end;
@@ -465,8 +467,10 @@ h1 {
   cursor: not-allowed;
 }
 .step-warning {
+  order: 2;
+  flex: 1 1 auto;
+  text-align: left;
   min-height: 22px;
-  margin-top: 10px;
   font-size: 13px;
   line-height: 1.5;
   color: #9a4f2f;
@@ -940,7 +944,16 @@ h1 {
     flex-wrap: wrap;
     align-items: flex-start;
   }
+  .wizard-progress {
+    width: auto;
+  }
+  .step-warning {
+    order: 2;
+    flex: 1 1 100%;
+    min-height: 0;
+  }
   .wizard-actions {
+    order: 3;
     width: 100%;
     justify-content: flex-end;
     margin-left: 0;
