@@ -21,6 +21,7 @@ body {
   color: var(--text);
   line-height: 1.55;
   font-weight: 450;
+  overflow-x: hidden;
 }
 .shell {
   width: min(980px, calc(100% - 32px));
@@ -212,6 +213,9 @@ h1 {
   grid-template-areas: "progress warning actions";
   align-items: center;
   gap: 12px 18px;
+}
+.form-nav {
+  grid-column: 1 / -1;
 }
 .wizard-progress {
   grid-area: progress;
@@ -514,6 +518,7 @@ h1 {
   font-size: 13px;
   line-height: 1.5;
   color: #9a4f2f;
+  max-width: 100%;
 }
 .step-warning:empty {
   display: none;
@@ -946,7 +951,7 @@ h1 {
   opacity: 0;
 }
 @media (max-width: 768px) {
-  .shell { width: min(100% - 16px, 1040px); padding-top: 16px; padding-bottom: 88px; }
+  .shell { width: calc(100% - 16px); max-width: 100%; padding-top: 14px; padding-bottom: 88px; }
   .hero { padding-bottom: 12px; }
   .panel { padding: 16px; border-radius: 22px; }
   .notice-panel { padding: 16px; border-radius: 18px; }
@@ -991,8 +996,8 @@ h1 {
   .wizard-nav {
     grid-template-columns: auto 1fr;
     grid-template-areas:
-      "progress actions"
-      "warning warning";
+      "progress warning"
+      "actions actions";
     align-items: start;
   }
   .wizard-progress {
@@ -1000,15 +1005,18 @@ h1 {
   }
   .step-warning {
     min-height: 0;
+    text-align: left;
+    align-self: center;
   }
   .wizard-actions {
-    width: auto;
+    width: 100%;
     justify-content: flex-end;
+    gap: 8px;
   }
   .wizard-actions .ghost-btn,
   .wizard-actions .submit-btn {
     flex: 0 0 auto;
-    min-width: 144px;
+    min-width: 124px;
   }
   .submit-btn {
     position: sticky;
@@ -1019,17 +1027,73 @@ h1 {
 }
 
 @media (max-width: 480px) {
+  .loading-screen { padding: 16px; }
+  .loading-card {
+    width: min(320px, calc(100vw - 32px));
+    padding: 22px 18px;
+    border-radius: 24px;
+  }
+  .brand-logo-image {
+    width: min(260px, 100%);
+  }
+  .shell {
+    width: calc(100% - 10px);
+    padding-top: 10px;
+    padding-bottom: 82px;
+  }
   .hero-top { flex-direction: row; gap: 10px; align-items: flex-start; justify-content: space-between; }
   .lang-row { justify-content: flex-end; margin-left: auto; }
   .header-logo { width: min(188px, 60vw); }
   .notice-title { font-size: 12px; }
   .notice-body,
   .notice-meta { font-size: 13px; }
+  .panel { padding: 14px; border-radius: 20px; }
   .panel-head h2 { font-size: 19px; }
+  .panel-head p { font-size: 13px; }
+  .banner { padding: 12px 14px; border-radius: 14px; font-size: 13px; }
   .calendar-weekday { font-size: 11px; }
+  .calendar-toolbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+  }
+  .calendar-toolbar strong {
+    min-width: 0;
+    font-size: 20px;
+    white-space: nowrap;
+  }
   .calendar-cell { min-height: 40px; font-size: 13px; }
-  .slot-panel { padding: 14px; }
+  .slot-panel {
+    padding: 12px;
+    border-radius: 18px;
+  }
+  .slot-panel-head { gap: 6px; }
+  .slot-panel-title { font-size: 11px; }
+  #slotHint {
+    font-size: 13px;
+    line-height: 1.5;
+  }
   .slot-grid { grid-template-columns: 1fr; }
   .chip-grid { grid-template-columns: 1fr; }
   .group-grid { grid-template-columns: 1fr; }
+  .wizard-nav { gap: 10px; }
+  .wizard-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .wizard-actions .ghost-btn,
+  .wizard-actions .submit-btn {
+    min-width: 104px;
+    padding: 11px 14px;
+  }
+  .wizard-progress,
+  .step-warning {
+    font-size: 12px;
+  }
+  .form-nav .wizard-actions {
+    justify-content: flex-end;
+  }
+  .form-nav .submit-btn {
+    min-width: 148px;
+  }
 }
