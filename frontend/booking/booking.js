@@ -982,6 +982,22 @@ function refreshBannerCopy() {
   setBanner(getCopy().initSuccess, 'success');
 }
 
+function renderPanelLoading(message) {
+  return `
+    <div class="panel-loading">
+      <div class="panel-loading-copy">
+        <div>${escapeHtml(message)}</div>
+        <div class="panel-loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+  `;
+}
+
+function setCalendarBusy(isBusy) {
+  if (els.prevMonthBtn) els.prevMonthBtn.disabled = isBusy;
+  if (els.nextMonthBtn) els.nextMonthBtn.disabled = isBusy;
+}
+
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
@@ -2533,7 +2549,10 @@ async function loadCalendar() {
     if (batch) state.calendarCache.set(cacheKey, batch);
   }
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
+  setCalendarBusy(true);
   if (!batch) {
+    els.calendarGrid.classList.remove('empty-state');
+    els.calendarGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
     try {
       const monthBatch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
       if (token !== state.calendarRequestToken) return;
@@ -2543,11 +2562,13 @@ async function loadCalendar() {
       console.error(error);
       setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
       els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(error.message)}</div>`;
+      setCalendarBusy(false);
       return;
     }
   }
   if (token !== state.calendarRequestToken) return;
   renderCalendar(batch);
+  setCalendarBusy(false);
   setBanner(getCopy().calendarLoaded, 'success');
   if (!state.selectedDate) {
     const nearestDate = getNearestAvailableDate(batch);
@@ -2592,7 +2613,7 @@ async function loadSlotsForDate(dateKey) {
   const dateLabel = formatDateLabel(dateKey);
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
   const cachedSlots = state.slotCache.get(slotKey);
   if (Array.isArray(cachedSlots)) {
     if (token !== state.slotRequestToken) return;
@@ -2666,7 +2687,7 @@ async function selectDate(dateKey) {
   state.selectedSlot = '';
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: formatDateLabel(dateKey) });
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().loadCalendar)}</div>`;
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
   renderSeniorWarning();
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));

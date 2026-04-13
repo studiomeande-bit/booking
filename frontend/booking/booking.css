@@ -468,6 +468,7 @@ h1 {
 .calendar-main,
 .slot-panel {
   min-width: 0;
+  position: relative;
 }
 .slot-panel {
   padding: 20px;
@@ -578,6 +579,37 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
 }
+.panel-loading {
+  display: grid;
+  place-items: center;
+  min-height: 196px;
+  padding: 18px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(251, 247, 239, 0.96) 0%, rgba(245, 238, 227, 0.96) 100%);
+  color: #7e7469;
+}
+.panel-loading-copy {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.panel-loading-dots {
+  display: flex;
+  gap: 7px;
+}
+.panel-loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #b9a68e;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.panel-loading-dots span:nth-child(2) { animation-delay: .14s; }
+.panel-loading-dots span:nth-child(3) { animation-delay: .28s; }
 .slot-btn {
   padding: 14px 12px;
   font-weight: 700;
@@ -975,13 +1007,18 @@ h1 {
   .calendar-grid { gap: 6px; }
   .calendar-toolbar {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 96px minmax(110px, 1fr) 96px;
     align-items: center;
+    gap: 8px;
   }
   .calendar-toolbar strong {
-    min-width: 72px;
-    font-size: 22px;
+    min-width: 0;
+    font-size: 20px;
+    white-space: nowrap;
+    text-align: center;
   }
+  .calendar-toolbar .ghost-btn:first-child { justify-self: start; }
+  .calendar-toolbar .ghost-btn:last-child { justify-self: end; }
   .ghost-btn { padding: 10px 12px; font-size: 13px; }
   .calendar-cell { min-height: 44px; border-radius: 12px; font-size: 14px; }
   .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1053,13 +1090,20 @@ h1 {
   .banner { padding: 12px 14px; border-radius: 14px; font-size: 13px; }
   .calendar-weekday { font-size: 11px; }
   .calendar-toolbar {
-    grid-template-columns: auto 1fr auto;
-    gap: 10px;
+    grid-template-columns: 82px minmax(98px, 1fr) 82px;
+    gap: 8px;
   }
   .calendar-toolbar strong {
     min-width: 0;
-    font-size: 20px;
+    font-size: 17px;
     white-space: nowrap;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .calendar-toolbar .ghost-btn {
+    min-width: 82px;
+    padding: 9px 8px;
+    font-size: 12px;
   }
   .calendar-cell { min-height: 40px; font-size: 13px; }
   .slot-panel {
@@ -1073,6 +1117,14 @@ h1 {
     line-height: 1.5;
   }
   .slot-grid { grid-template-columns: 1fr; }
+  .panel-loading {
+    min-height: 136px;
+    padding: 14px 10px;
+    border-radius: 14px;
+  }
+  .panel-loading-copy {
+    font-size: 13px;
+  }
   .chip-grid { grid-template-columns: 1fr; }
   .group-grid { grid-template-columns: 1fr; }
   .wizard-nav { gap: 10px; }
