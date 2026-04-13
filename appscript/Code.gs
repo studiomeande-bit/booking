@@ -26,7 +26,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
@@ -1598,7 +1598,7 @@ function processForm(data){
     const marketingStr=data.marketing?'Y':'N';
     const aiConsentStr=data.aiConsent?'Y':'N';
     const consentTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim()]);
+    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim(),'','','','','','','','','']);
     bumpCalCacheVer_();
     sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId());
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
@@ -2194,7 +2194,10 @@ function getDashboardData_(){
       balancePaid:String(row[BOOKING_COL['잔금결제여부']]||''),
       balancePaidAmount:String(row[BOOKING_COL['잔금결제금액']]||''),
       lexwarePaymentStatus:String(row[BOOKING_COL['Lexware결제상태']]||''),
-      lexwareSyncedAt:String(row[BOOKING_COL['Lexware동기화일시']]||'')
+      lexwareSyncedAt:String(row[BOOKING_COL['Lexware동기화일시']]||''),
+      confirmedAt:String(row[BOOKING_COL['확정일시']]||row[BOOKING_COL['동의시각']]||''),
+      depositWarnedAt:String(row[BOOKING_COL['입금경고일시']]||''),
+      autoCancelledAt:String(row[BOOKING_COL['자동취소일시']]||'')
     });
     
     const CONFIRMED_STATUSES=['확정됨','촬영완료','셀렉완료','작업완료'];
@@ -2238,11 +2241,7 @@ function debugSelectDashboard(token){
 function quickUpdateBookingStatus(token,rIdx,status){
   assertAdmin_(token);
   const sh=getDbSheet();
-  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
-  if(status==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
-    throw new Error('예약금이 있는 상품은 계약금 입금 확인 후에만 확정할 수 있습니다.');
-  }
-  sh.getRange(rIdx,2).setValue(status);
+  setBookingStatus_(sh,rIdx,status);
   if(status==='취소됨'){
     try{const eventId=String(sh.getRange(rIdx,17).getValue()||'');if(eventId){const ev=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(eventId);if(ev)ev.deleteEvent();}}catch(e){}
   }
@@ -2251,11 +2250,7 @@ function quickUpdateBookingStatus(token,rIdx,status){
 
 function updateBookingAdmin(token,rIdx,d){
   assertAdmin_(token);const sh=getDbSheet();
-  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
-  if(String(d.status||'')==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
-    throw new Error('예약금이 있는 상품은 계약금 입금 확인 후에만 확정할 수 있습니다.');
-  }
-  sh.getRange(rIdx,2).setValue(d.status);sh.getRange(rIdx,3).setValue(d.name);sh.getRange(rIdx,4).setValue(d.phone);
+  setBookingStatus_(sh,rIdx,d.status);sh.getRange(rIdx,3).setValue(d.name);sh.getRange(rIdx,4).setValue(d.phone);
   sh.getRange(rIdx,11).setValue(d.price);sh.getRange(rIdx,12).setValue(d.deposit);sh.getRange(rIdx,13).setValue(d.balance);
   sh.getRange(rIdx,14).setValue(d.payMethod);sh.getRange(rIdx,16).setValue(d.memo);sh.getRange(rIdx,18).setValue(d.depPayMethod);
   sh.getRange(rIdx,19).setValue(d.extraItem);
@@ -2269,30 +2264,20 @@ function updateBookingAdmin(token,rIdx,d){
   return{ok:true};
 }
 
-function markDepositPaidAndConfirm(token,rIdx){
-  assertAdmin_(token);
-  const sh=getDbSheet();
-  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
-  if(!bookingRequiresDepositConfirmation_(row)){
-    sh.getRange(rIdx,2).setValue('확정됨');
-    return{ok:true,message:'예약금이 없는 상품이어서 바로 확정되었습니다.'};
-  }
-  const depositAmount=parseMoneyValue_(row[BOOKING_COL['계약금']]);
-  const now=new Date();
-  sh.getRange(rIdx,2).setValue('확정됨');
-  sh.getRange(rIdx,BOOKING_COL['계약금입금여부']+1).setValue('Y');
-  sh.getRange(rIdx,BOOKING_COL['계약금입금일']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd'));
-  sh.getRange(rIdx,BOOKING_COL['계약금입금금액']+1).setValue(depositAmount);
-  sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
-  return{ok:true,message:'계약금 입금 확인 후 예약을 확정했습니다.'};
-}
-
 function parseMoneyValue_(value){
   return Number(String(value||'').replace(/[^0-9.-]/g,''))||0;
 }
 
 function bookingRequiresDepositConfirmation_(row){
   return parseMoneyValue_(row[BOOKING_COL['계약금']])>0;
+}
+
+function setBookingStatus_(sheet,rowIndex,status){
+  const currentStatus=String(sheet.getRange(rowIndex,2).getValue()||'');
+  sheet.getRange(rowIndex,2).setValue(status);
+  if(status==='확정됨' && currentStatus!=='확정됨' && BOOKING_COL['확정일시']!=null){
+    sheet.getRange(rowIndex,BOOKING_COL['확정일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  }
 }
 
 function clearRescheduleRequest(token,bookingRowIndex){
@@ -2307,11 +2292,7 @@ function batchUpdateAdvanced(token,list,type,val){
   if(type==='delete')list.sort((a,b)=>b.rowIndex-a.rowIndex).forEach(i=>sh.deleteRow(i.rowIndex));
   else list.forEach(i=>{
     if(type==='status'){
-      const row=sh.getRange(i.rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]||[];
-      if(String(val)==='확정됨' && bookingRequiresDepositConfirmation_(row) && String(row[BOOKING_COL['계약금입금여부']]||'')!=='Y'){
-        return;
-      }
-      sh.getRange(i.rowIndex,2).setValue(val);
+      setBookingStatus_(sh,i.rowIndex,val);
     }else if(type==='payMethod'){
       sh.getRange(i.rowIndex,14).setValue(val);
     }
@@ -4221,6 +4202,14 @@ function syncInvoiceToLexware(token, invNumber){
 
 function syncLexwareInvoiceStatus(token, invNumber){
   assertAdmin_(token);
+  return syncLexwareInvoiceStatusCore_(String(invNumber||'').trim());
+}
+
+function syncLexwareInvoiceStatusInternal_(invNumber){
+  return syncLexwareInvoiceStatusCore_(String(invNumber||'').trim());
+}
+
+function syncLexwareInvoiceStatusCore_(invNumber){
   const {invoiceSheet}=ensureSheets_();
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===String(invNumber||'').trim());
@@ -4258,6 +4247,10 @@ function syncLexwareInvoiceStatus(token, invNumber){
 
 function syncBookingLexwarePayment(token, bookingRowIndex){
   assertAdmin_(token);
+  return syncBookingLexwarePaymentInternal_(parseInt(bookingRowIndex,10));
+}
+
+function syncBookingLexwarePaymentInternal_(bookingRowIndex){
   const {invoiceSheet}=ensureSheets_();
   const rows=invoiceSheet.getDataRange().getValues();
   const candidates=rows.slice(1)
@@ -4267,7 +4260,7 @@ function syncBookingLexwarePayment(token, bookingRowIndex){
     });
   if(!candidates.length) throw new Error('연결된 Lexware 인보이스가 없습니다.');
   const target=candidates.sort(function(a,b){return (b.rowIndex||0)-(a.rowIndex||0);})[0];
-  return syncLexwareInvoiceStatus(token, target.number);
+  return syncLexwareInvoiceStatusCore_(target.number);
 }
 
 
@@ -4284,10 +4277,81 @@ function installDailyTrigger(){
 
 function dailyTasks(){
   try{sendBookingReminders_();}catch(e){Logger.log('B2 error: '+e.message);}
+  try{syncPendingBookingPaymentsFromLexware_();}catch(e){Logger.log('L1 error: '+e.message);}
+  try{flagAndCancelOverdueDepositBookings_();}catch(e){Logger.log('L2 error: '+e.message);}
   try{autoSelectDailyCheck();}catch(e){Logger.log('C2 error: '+e.message);}
   try{sendPostShootFollowupEmails_();}catch(e){Logger.log('B3 error: '+e.message);}
   try{sendDolRecommendationEmails_();}catch(e){Logger.log('B4 error: '+e.message);}
   try{sendPostRetouchFollowupEmails_();}catch(e){Logger.log('C3 error: '+e.message);}
+}
+
+function syncPendingBookingPaymentsFromLexware_(){
+  const {bookingSheet}=ensureSheets_();
+  const rows=bookingSheet.getDataRange().getValues();
+  rows.slice(1).forEach(function(row, idx){
+    const status=String(row[BOOKING_COL['상태']]||'');
+    const deposit=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
+    if(deposit<=0 || depositPaid) return;
+    if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
+    try{
+      syncBookingLexwarePaymentInternal_(idx+2);
+    }catch(e){
+      Logger.log('syncPendingBookingPaymentsFromLexware_ row '+(idx+2)+': '+e.message);
+    }
+  });
+}
+
+function flagAndCancelOverdueDepositBookings_(){
+  const {bookingSheet}=ensureSheets_();
+  const rows=bookingSheet.getDataRange().getValues();
+  const now=new Date();
+  rows.slice(1).forEach(function(row, idx){
+    const rowIndex=idx+2;
+    const status=String(row[BOOKING_COL['상태']]||'');
+    const deposit=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
+    if(deposit<=0 || depositPaid || status==='취소됨') return;
+    if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
+    const confirmedRaw=String(row[BOOKING_COL['확정일시']]||row[BOOKING_COL['동의시각']]||'').trim();
+    const confirmedDate=parseDateSafe_(confirmedRaw).obj;
+    if(isNaN(confirmedDate.getTime())) return;
+    const ageDays=Math.floor((now.getTime()-confirmedDate.getTime())/86400000);
+    if(ageDays>=5 && !String(row[BOOKING_COL['입금경고일시']]||'').trim()){
+      bookingSheet.getRange(rowIndex,BOOKING_COL['입금경고일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+    }
+    if(ageDays>=10 && !String(row[BOOKING_COL['자동취소일시']]||'').trim()){
+      autoCancelBookingForMissingDeposit_(rowIndex, row);
+    }
+  });
+}
+
+function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
+  const {bookingSheet}=ensureSheets_();
+  const nowStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  bookingSheet.getRange(bookingRowIndex,BOOKING_COL['상태']+1).setValue('취소됨');
+  bookingSheet.getRange(bookingRowIndex,BOOKING_COL['자동취소일시']+1).setValue(nowStr);
+  const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
+  bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
+  const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+  if(eventId){
+    try{
+      const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+      const ev=cal.getEventById(eventId);
+      if(ev) ev.deleteEvent();
+    }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ calendar delete: '+e.message);}
+  }
+  const email=String(row[BOOKING_COL['이메일']]||'').trim();
+  if(email && email.includes('@') && !email.includes('수기')){
+    try{
+      MailApp.sendEmail({
+        to:email,
+        subject:'[Studio mean] 예약이 자동 취소되었습니다',
+        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약 확정 후 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
+      });
+    }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
+  }
 }
 
 function sendBookingReminders_(){
