@@ -2587,7 +2587,9 @@ function submitPhotoSelection(sessionId,sub){
       }catch(e){Logger.log('submitPhotoSelection invoice error: '+e.message);}
     }
     _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);
-    try{_sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+    if(!sub.suppressCustomerEmail){
+      try{_sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+    }
     return{ok:true,totalExtra,extraRetouch,extraRetouchAmt,extraPrintsAmt,invoiceNumber:extraInvoiceNumber||''};
   }catch(e){return{ok:false,message:e.message};}
 }

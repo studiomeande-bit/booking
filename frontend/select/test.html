@@ -212,11 +212,12 @@
         <button id="copyUrl" type="button">테스트 URL 복사</button>
       </div>
 
-      <div id="previewUrl" class="banner">https://select.studio-mean.com/?id=</div>
+      <div id="previewUrl" class="banner">https://select.studio-mean.com/?test=1&id=</div>
 
       <div class="url-box">
-        직접 접속 URL<br>
-        <code>https://select.studio-mean.com/?id=세션ID</code>
+        테스트 접속 URL<br>
+        <code>https://select.studio-mean.com/?test=1&id=세션ID</code><br><br>
+        테스트 모드에서는 고객 메일만 발송하지 않습니다. 저장과 관리자 알림은 그대로 유지됩니다.
       </div>
     </section>
 
@@ -235,7 +236,7 @@
   <script>
     const sessionInput = document.getElementById('sessionId');
     const previewUrl = document.getElementById('previewUrl');
-    const baseUrl = 'https://select.studio-mean.com/?id=';
+    const baseUrl = 'https://select.studio-mean.com/?test=1&id=';
 
     function buildUrl() {
       return `${baseUrl}${encodeURIComponent(sessionInput.value.trim())}`;

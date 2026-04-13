@@ -20,6 +20,7 @@ const INCLUDED_PRINT_QUOTA = {
 
 const state = {
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
+  testMode: new URLSearchParams(globalThis.location.search).get('test') === '1',
   session: null,
   photos: [],
   prints: [],
@@ -190,6 +191,12 @@ function renderHeader() {
   const name = state.session?.name || '';
   els.welcomeTitle.textContent = name ? `안녕하세요, ${name}님!` : '사진 셀렉';
   els.welcomeSub.textContent = state.editMode ? '이미 제출한 내용을 수정할 수 있습니다.' : '보정 선택과 추가 인화를 차례대로 진행해 주세요.';
+  if (state.testMode) {
+    els.submitHint.textContent = state.editMode
+      ? '테스트 모드입니다. 고객 메일은 발송되지 않고 수정 제출만 검증합니다.'
+      : '테스트 모드입니다. 고객 메일은 발송되지 않고 제출 흐름만 검증합니다.';
+    return;
+  }
   els.submitHint.textContent = state.editMode ? '수정 제출 모드입니다. 변경 후 다시 제출해 주세요.' : '모든 확인이 끝나면 제출해 주세요.';
 }
 
@@ -614,7 +621,8 @@ async function onSubmit() {
         isRetouched: false
       };
     }),
-    marketing: state.marketing
+    marketing: state.marketing,
+    suppressCustomerEmail: state.testMode
   };
   try {
     const requestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
