@@ -21,6 +21,7 @@ const CONFIG = {
   PRODUCTS_CACHE_TTL_SEC: 3600,
   UNAVAIL_CACHE_TTL_SEC: 1800,
   SLOTS_CACHE_TTL_SEC: 900,
+  MIN_BOOKING_NOTICE_MIN: 180,
   BUFFER_OUTDOOR_MIN: 60,
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
@@ -1226,11 +1227,12 @@ function getTimeBlocksForDate_(dateStr,itemGroup){
  *  newLocation: 신규 예약의 촬영 장소 (Type C 동일장소 예외 적용용, 기본 '') */
 function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation){
   const now=new Date().getTime(),slots=[],loc=newLocation||'';
+  const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
   getTimeBlocksForDate_(dateStr,itemGroup).forEach(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
     for(let t=bs;t<be;t+=15*60000){
-      if(t<=now||t+totalDur*60000>be) continue;
+      if(t<leadTimeCutoff||t+totalDur*60000>be) continue;
       if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)){const dt=new Date(t);slots.push(`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`);}
     }
   });
