@@ -538,6 +538,7 @@ function calculateQuote_(request){
   const item=getProductById_(request.itemId);
   const people=Math.max(1,parseInt(request.people)||1);
   const optionKeys=(request.optionKeys||[]).filter(Boolean);
+  const passPersonCountries=(request.passPersonCountries||[]).filter(Boolean);
   const passCountries=(request.passCountries||[]).filter(Boolean);
   const otherCountry=(request.otherCountry||'').trim();
   const totalCountries=passCountries.length+(otherCountry?1:0);
@@ -572,7 +573,7 @@ function calculateQuote_(request){
       productLabelDe='Event Foto '+hourDe;
     }
   }
-  if(item.t==='passport') total=(item.p+Math.max(totalCountries-1,0)*5)*people;
+  if(item.t==='passport') total=item.p*people;
   else if(item.t==='group'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&people===1) total-=30;
@@ -617,7 +618,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz';
   const depositAmount=item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0);
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
 
 /* ====== 재방문 감지 ====== */

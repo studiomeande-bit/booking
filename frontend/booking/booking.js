@@ -11,12 +11,60 @@ const COUNTRY_OPTIONS = [
 ];
 
 const GROUP_META = {
-  pass: { icon: '🛂', label: { ko: '여권/비자', en: 'Passport / Visa', de: 'Pass / Visum' } },
-  prof: { icon: '👤', label: { ko: '프로필', en: 'Profile', de: 'Profil' } },
-  stud: { icon: '📸', label: { ko: '스튜디오', en: 'Studio', de: 'Studio' } },
-  snap: { icon: '🌿', label: { ko: '야외스냅', en: 'Outdoor', de: 'Outdoor' } },
-  wed: { icon: '💍', label: { ko: '프리웨딩', en: 'Pre-Wedding', de: 'Pre-Wedding' } },
-  biz: { icon: '🎬', label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' } }
+  pass: {
+    icon: '🛂',
+    label: { ko: '여권/비자', en: 'Passport / Visa', de: 'Pass / Visum' },
+    sub: {
+      ko: '한국 여권, 독일 E-passbild, 해외 비자 사진',
+      en: 'Korean passport, German E-passbild, visa photos',
+      de: 'Koreanischer Pass, deutsches E-Passbild, Visafotos'
+    }
+  },
+  prof: {
+    icon: '👤',
+    label: { ko: '프로필', en: 'Profile', de: 'Profil' },
+    sub: {
+      ko: '개인 프로필, 키즈, 시니어, 백일/돌 촬영',
+      en: 'Personal profile, kids, senior, baby sessions',
+      de: 'Persönliche Profile, Kinder, Senioren, Baby-Shootings'
+    }
+  },
+  stud: {
+    icon: '📸',
+    label: { ko: '스튜디오', en: 'Studio', de: 'Studio' },
+    sub: {
+      ko: '가족, 커플, 그룹, 돌상 포함 스튜디오 촬영',
+      en: 'Studio shoots for family, couple, group, birthday setup',
+      de: 'Studio-Shootings für Familie, Paar, Gruppe, Geburtstag'
+    }
+  },
+  snap: {
+    icon: '🌿',
+    label: { ko: '야외스냅', en: 'Outdoor', de: 'Outdoor' },
+    sub: {
+      ko: '야외 인물, 커플, 가족, 백일/돌 스냅',
+      en: 'Outdoor portraits, couples, families, baby sessions',
+      de: 'Outdoor-Porträts, Paare, Familien, Baby-Sessions'
+    }
+  },
+  wed: {
+    icon: '💍',
+    label: { ko: '프리웨딩', en: 'Pre-Wedding', de: 'Pre-Wedding' },
+    sub: {
+      ko: '야외 프리웨딩, 커플 컨셉 촬영',
+      en: 'Outdoor pre-wedding and couple concept shoots',
+      de: 'Outdoor Pre-Wedding und Couple-Konzept-Shootings'
+    }
+  },
+  biz: {
+    icon: '🎬',
+    label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' },
+    sub: {
+      ko: '행사 사진, 영상 촬영, 하이라이트 편집',
+      en: 'Event photo, video, highlight editing',
+      de: 'Event-Foto, Video, Highlight-Schnitt'
+    }
+  }
 };
 
 const OPTION_META = {
@@ -534,6 +582,7 @@ const state = {
   selectedDate: '',
   selectedSlot: '',
   selectedCountries: [],
+  passportPersonCountries: [],
   optionKeys: [],
   surveyKeys: [],
   ageGroup: 'adult',
@@ -715,7 +764,7 @@ function wireEvents() {
       );
       return;
     }
-    if (state.selectedProduct.g === 'pass' && !state.selectedCountries.length) {
+    if (state.selectedProduct.g === 'pass' && !hasPassportCountrySelections()) {
       setBanner(getCopy().countryRequired, 'error');
       return;
     }
@@ -803,6 +852,8 @@ function wireEvents() {
   });
   els.form.elements.memo?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.passportPeople.addEventListener('change', () => {
+    syncPassportPersonCountries();
+    renderPassportCountries();
     handleQuoteInputChange();
   });
   els.generalPeople.addEventListener('change', handleQuoteInputChange);
@@ -833,6 +884,53 @@ function wireEvents() {
 
 function getCopy() {
   return COPY[state.lang] || COPY.ko;
+}
+
+function getPassportPeopleCount() {
+  return Number(els.passportPeople?.value || 1);
+}
+
+function getDefaultPassportCountry(index) {
+  return index === 0 ? 'KR' : '';
+}
+
+function syncPassportPersonCountries() {
+  const people = Math.max(1, getPassportPeopleCount());
+  state.passportPersonCountries = Array.from(
+    { length: people },
+    (_, index) => state.passportPersonCountries[index] || getDefaultPassportCountry(index)
+  );
+  state.selectedCountries = [...new Set(state.passportPersonCountries.filter(Boolean))];
+}
+
+function hasPassportCountrySelections() {
+  if (state.selectedProduct?.g !== 'pass') return true;
+  syncPassportPersonCountries();
+  return state.passportPersonCountries.every(Boolean);
+}
+
+function getPassportCountryReviewLabel() {
+  syncPassportPersonCountries();
+  return state.passportPersonCountries.map((code, index) => {
+    const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
+    const label = item ? (item.label[state.lang] || item.label.ko) : code;
+    return state.lang === 'en'
+      ? `Person ${index + 1}: ${label}`
+      : state.lang === 'de'
+        ? `Person ${index + 1}: ${label}`
+        : `${index + 1}명: ${label}`;
+  }).join(' / ');
+}
+
+function buildPassportMemoPrefix() {
+  if (state.selectedProduct?.g !== 'pass') return '';
+  syncPassportPersonCountries();
+  const rows = state.passportPersonCountries.map((code, index) => {
+    const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
+    const label = item ? (item.label.ko || item.label.en || code) : code;
+    return `${index + 1}명:${label}`;
+  }).join(', ');
+  return rows ? `[국가별 신청] ${rows}` : '';
 }
 
 function fillCopy(template, vars = {}) {
@@ -1113,11 +1211,7 @@ function renderGroups() {
   els.groupGrid.innerHTML = groups.map((groupKey) => {
     const meta = GROUP_META[groupKey];
     const label = meta.label[state.lang] || meta.label.ko;
-    const sub = state.lang === 'en'
-      ? 'Choose category'
-      : state.lang === 'de'
-        ? 'Kategorie wählen'
-        : '카테고리 선택';
+    const sub = meta.sub?.[state.lang] || meta.sub?.ko || '';
     const selected = state.selectedGroup === groupKey ? ' selected' : '';
     return `
       <button type="button" class="group-card${selected}" data-group="${escapeHtml(groupKey)}">
@@ -1164,7 +1258,7 @@ function getMaxUnlockedStep() {
   const isPass = state.selectedProduct?.g === 'pass';
   const hasRequiredStep2 = !hasProduct ? false : (
     (isPass
-      ? state.selectedCountries.length > 0 && (!state.selectedCountries.includes('OTHER') || !!String(els.form.elements.otherCountry?.value || '').trim())
+      ? hasPassportCountrySelections() && (!state.selectedCountries.includes('OTHER') || !!String(els.form.elements.otherCountry?.value || '').trim())
       : !((state.selectedProduct?.g === 'snap' || state.selectedProduct?.g === 'wed') && !String(els.locationInput?.value || '').trim()))
   );
   const hasDate = !!state.selectedDate;
@@ -1207,7 +1301,7 @@ function renderStepWarnings() {
       : state.lang === 'de'
         ? 'Wählen Sie zuerst ein detailliertes Paket aus.'
         : '세부 상품을 모두 선택해야 다음 단계가 활성화됩니다.';
-  } else if (isPass && !state.selectedCountries.length) {
+  } else if (isPass && !hasPassportCountrySelections()) {
     step2Message = getCopy().countryRequired;
   } else if (isPass && state.selectedCountries.includes('OTHER') && !String(els.form.elements.otherCountry?.value || '').trim()) {
     step2Message = state.lang === 'en'
@@ -1382,7 +1476,9 @@ function getPreviewQuote() {
   if (!item) return null;
   const people = getPeopleCount();
   const optionKeys = [...state.optionKeys];
-  const passCountries = item.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [];
+  syncPassportPersonCountries();
+  const passPersonCountries = item.g === 'pass' ? [...state.passportPersonCountries] : [];
+  const passCountries = item.g === 'pass' ? [...new Set(passPersonCountries.filter((code) => code && code !== 'OTHER'))] : [];
   const otherCountry = item.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '';
   const totalCountries = passCountries.length + (otherCountry ? 1 : 0);
   let total = Number(item.p || 0);
@@ -1416,7 +1512,7 @@ function getPreviewQuote() {
     };
   }
 
-  if (item.t === 'passport') total = (total + Math.max(totalCountries - 1, 0) * 5) * people;
+  if (item.t === 'passport') total = item.p * people;
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people === 1) total -= 30;
@@ -1489,6 +1585,7 @@ function getPreviewQuote() {
     passAddonDur,
     passAddonPrice,
     passCountries,
+    passPersonCountries,
     otherCountry,
     totalCountries,
     optionKeys
@@ -1681,6 +1778,13 @@ function getDefaultPeopleForProduct(product) {
 
 function getPeopleOptionLabel(count, product) {
   const copy = getCopy();
+  if (product?.t === 'snap' && count === 1) {
+    return state.lang === 'en'
+      ? '1 person (-€30)'
+      : state.lang === 'de'
+        ? '1 Person (-30€)'
+        : '1명(-€30)';
+  }
   const baseLabel = state.lang === 'en'
     ? `${count}${count > 1 ? ' people' : copy.peopleUnit}`
     : state.lang === 'de'
@@ -1723,6 +1827,7 @@ function renderPeopleOptions() {
       .join('');
     els.passportPeople.value = passportValue;
   }
+  syncPassportPersonCountries();
   if (els.passAddonPeople) {
     els.passAddonPeople.innerHTML = [1, 2, 3, 4]
       .map((count) => `<option value="${count}">${escapeHtml(getPassAddonPeopleLabel(count))}</option>`)
@@ -2202,6 +2307,7 @@ function selectGroup(groupKey) {
   state.selectedSlot = '';
   state.quote = null;
   state.selectedCountries = [];
+  state.passportPersonCountries = [];
   state.optionKeys = [];
   state.surveyKeys = [];
   state.ageGroup = 'adult';
@@ -2242,6 +2348,10 @@ async function selectProduct(productId) {
   state.optionKeys = [];
   if (state.selectedProduct?.g !== 'pass') {
     state.selectedCountries = [];
+    state.passportPersonCountries = [];
+  } else {
+    state.passportPersonCountries = ['KR'];
+    state.selectedCountries = ['KR'];
   }
   state.surveyKeys = [];
   state.ageGroup = 'adult';
@@ -2278,6 +2388,7 @@ function renderPassportPanel() {
   const isPass = state.selectedProduct?.g === 'pass';
   els.passportPanel.classList.toggle('hidden', !isPass);
   if (isPass) {
+    syncPassportPersonCountries();
     renderPassportCountries();
   }
 }
@@ -2332,6 +2443,7 @@ function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
   const needsBabyName = (group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')
     || state.surveyKeys.includes('baby');
+  syncPassportPersonCountries();
   els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
@@ -2366,11 +2478,13 @@ function syncMemoPlaceholder() {
 function getQuoteRequest() {
   const product = state.selectedProduct;
   if (!product) return null;
+  syncPassportPersonCountries();
   return {
     itemId: product.id,
     people: product.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
     optionKeys: [...state.optionKeys],
-    passCountries: product.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
+    passCountries: product.g === 'pass' ? [...new Set(state.passportPersonCountries.filter((code) => code && code !== 'OTHER'))] : [],
+    passPersonCountries: product.g === 'pass' ? [...state.passportPersonCountries] : [],
     otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
     marketing: els.form.elements.marketing?.checked || false,
@@ -2424,20 +2538,31 @@ async function handleMarketingChange() {
 }
 
 function renderPassportCountries() {
-  els.passportCountries.innerHTML = COUNTRY_OPTIONS.map((item) => {
-    const label = item.label[state.lang] || item.label.ko;
-    const selected = state.selectedCountries.includes(item.code) ? ' selected' : '';
-    return `<button type="button" class="chip-btn${selected}" data-country="${item.code}">${item.flag} ${escapeHtml(label)}</button>`;
+  syncPassportPersonCountries();
+  const people = getPassportPeopleCount();
+  els.passportCountries.innerHTML = Array.from({ length: people }, (_, index) => {
+    const rowLabel = state.lang === 'en'
+      ? `Applicant ${index + 1}`
+      : state.lang === 'de'
+        ? `Person ${index + 1}`
+        : `${index + 1}명 촬영 국가`;
+    const selectedCode = state.passportPersonCountries[index] || '';
+    const chips = COUNTRY_OPTIONS.map((item) => {
+      const label = item.label[state.lang] || item.label.ko;
+      const selected = selectedCode === item.code ? ' selected' : '';
+      return `<button type="button" class="chip-btn${selected}" data-person-index="${index}" data-country="${item.code}">${item.flag} ${escapeHtml(label)}</button>`;
+    }).join('');
+    return `<div class="form-block"><span class="block-label">${escapeHtml(rowLabel)}</span><div class="chip-grid">${chips}</div></div>`;
   }).join('');
   els.passportCountries.querySelectorAll('.chip-btn').forEach((button) => {
-    button.addEventListener('click', () => toggleCountry(button.dataset.country));
+    button.addEventListener('click', () => setPassportCountry(Number(button.dataset.personIndex), button.dataset.country));
   });
 }
 
-function toggleCountry(code) {
-  const index = state.selectedCountries.indexOf(code);
-  if (index >= 0) state.selectedCountries.splice(index, 1);
-  else state.selectedCountries.push(code);
+function setPassportCountry(personIndex, code) {
+  syncPassportPersonCountries();
+  state.passportPersonCountries[personIndex] = code;
+  state.selectedCountries = [...new Set(state.passportPersonCountries.filter(Boolean))];
   renderPassportCountries();
   syncConditionalFields();
   handleQuoteInputChange().then(() => refreshStepLocks());
@@ -2757,12 +2882,8 @@ function renderReview() {
   if (state.selectedSlot) rows.push([copy.reviewTime, state.selectedSlot]);
   if (state.selectedProduct.g === 'pass') {
     rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.passportPeople.value || 1), { t: 'pass' })]);
-    if (state.selectedCountries.length) {
-      const countries = state.selectedCountries.map((code) => {
-        const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
-        return item ? item.label[state.lang] || item.label.ko : code;
-      }).join(', ');
-      rows.push([copy.reviewCountries, countries]);
+    if (hasPassportCountrySelections()) {
+      rows.push([copy.reviewCountries, getPassportCountryReviewLabel()]);
     }
   } else if (!els.peopleField.classList.contains('hidden')) {
     rows.push([copy.reviewPeople, getPeopleOptionLabel(Number(els.generalPeople.value || 1), state.selectedProduct)]);
@@ -2852,7 +2973,7 @@ function updateSubmitState() {
   const isPass = product.g === 'pass';
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
-  const passCountriesOk = !isPass || state.selectedCountries.length > 0;
+  const passCountriesOk = !isPass || hasPassportCountrySelections();
   const otherCountryOk = !isPass || !state.selectedCountries.includes('OTHER') || !!String(formData.get('otherCountry') || '').trim();
   const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
   const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
@@ -2906,11 +3027,12 @@ async function onSubmit(event) {
     email: String(formData.get('email') || '').trim(),
     address: String(formData.get('address') || '').trim(),
     babyName: String(formData.get('babyName') || '').trim(),
-    memo: String(formData.get('memo') || '').trim(),
+    memo: '',
     website: String(formData.get('website') || ''),
     lang: state.lang,
     optionKeys: [...state.optionKeys],
-    passCountries: state.selectedProduct.g === 'pass' ? state.selectedCountries.filter((code) => code !== 'OTHER') : [],
+    passCountries: state.selectedProduct.g === 'pass' ? [...new Set(state.passportPersonCountries.filter((code) => code && code !== 'OTHER'))] : [],
+    passPersonCountries: state.selectedProduct.g === 'pass' ? [...state.passportPersonCountries] : [],
     otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
     businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
@@ -2933,10 +3055,13 @@ async function onSubmit(event) {
     setBanner(getCopy().invalidForm, 'error');
     return;
   }
-  if (state.selectedProduct.g === 'pass' && !state.selectedCountries.length) {
+  if (state.selectedProduct.g === 'pass' && !hasPassportCountrySelections()) {
     setBanner(getCopy().countryRequired, 'error');
     return;
   }
+  const userMemo = String(formData.get('memo') || '').trim();
+  const passMemoPrefix = buildPassportMemoPrefix();
+  payload.memo = [passMemoPrefix, userMemo].filter(Boolean).join('\n');
   if (state.selectedProduct.g === 'prof' && state.selectedProduct.id === 'pp' && state.ageGroup === 'baby' && !payload.babyName) {
     setBanner(
       state.lang === 'en'
@@ -3035,6 +3160,7 @@ function resetBookingFlow() {
   state.selectedDate = '';
   state.selectedSlot = '';
   state.selectedCountries = [];
+  state.passportPersonCountries = [];
   state.optionKeys = [];
   state.surveyKeys = [];
   state.ageGroup = 'adult';
