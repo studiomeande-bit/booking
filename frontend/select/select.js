@@ -153,7 +153,7 @@ function hydrateSession(session) {
     ? session.existingPhotos.map(normalizePhoto)
     : buildDefaultPhotos(session.baseRetouchCount || 0);
   state.prints = state.editMode && Array.isArray(session.existingPrints)
-    ? session.existingPrints.map(normalizePrint)
+    ? session.existingPrints.map(normalizePrint).filter(hasMeaningfulPrint)
     : [];
   if (session.bookingMarketing === 'Y') {
     state.marketing = 'Y';
@@ -180,11 +180,47 @@ function normalizePhoto(photo) {
 }
 
 function normalizePrint(print) {
+  const resolvedId = resolvePrintId(print);
   return {
-    photoNum: String(print?.photoNum ?? print?.num ?? ''),
-    printId: String((print?.printId || print?.id || print?.printType || 'basic_10x15')).replace(/_(r|e)$/, ''),
+    photoNum: String(
+      print?.photoNum ??
+      print?.photo ??
+      print?.num ??
+      print?.number ??
+      print?.photoNumber ??
+      ''
+    ),
+    printId: resolvedId,
     qty: Math.max(1, Number(print?.qty || 1) || 1)
   };
+}
+
+function resolvePrintId(print) {
+  const raw = String(
+    print?.printId ||
+    print?.id ||
+    print?.printType ||
+    print?.type ||
+    print?.paperType ||
+    print?.size ||
+    print?.label ||
+    ''
+  ).replace(/_(r|e)$/, '').trim();
+  if (!raw) return 'basic_10x15';
+
+  const exact = PRINT_OPTIONS.find((item) => item.id === raw);
+  if (exact) return exact.id;
+
+  const normalized = raw.toLowerCase().replace(/\s+/g, '');
+  const labelMatch = PRINT_OPTIONS.find((item) => {
+    const itemLabel = item.label.toLowerCase().replace(/\s+/g, '');
+    return itemLabel === normalized || itemLabel.includes(normalized) || normalized.includes(itemLabel);
+  });
+  return labelMatch ? labelMatch.id : 'basic_10x15';
+}
+
+function hasMeaningfulPrint(print) {
+  return !!String(print?.photoNum || '').trim() || Math.max(1, Number(print?.qty || 1) || 1) > 0;
 }
 
 function renderHeader() {
