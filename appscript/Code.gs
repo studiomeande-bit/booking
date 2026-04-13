@@ -44,7 +44,7 @@ const PUBLIC_API_CONFIG = {
   HONEYPOT_FIELD: 'website',
   MAX_BOOKING_DATE_STR: '2026-12-31'
 };
-const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시'];
+const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
 function doGet(e) {
@@ -3239,6 +3239,179 @@ function testLexwareConnection(token){
   };
 }
 
+function getLexwareConfigRequired_(){
+  const props=PropertiesService.getScriptProperties();
+  const apiKey=(props.getProperty('LEXWARE_API_KEY')||'').trim();
+  const orgId=(props.getProperty('LEXWARE_ORGANIZATION_ID')||'').trim();
+  const enabled=(props.getProperty('LEXWARE_ENABLED')||'false')==='true';
+  if(!enabled) throw new Error('Lexware 연동이 비활성화되어 있습니다.');
+  if(!apiKey) throw new Error('Lexware API key가 설정되지 않았습니다.');
+  if(!orgId) throw new Error('Lexware organization id가 설정되지 않았습니다.');
+  return {apiKey, orgId};
+}
+
+function lexwareRequest_(method, path, payload){
+  const cfg=getLexwareConfigRequired_();
+  const url='https://api.lexware.io'+path;
+  const options={
+    method:String(method||'get').toLowerCase(),
+    muteHttpExceptions:true,
+    headers:{
+      Authorization:'Bearer '+cfg.apiKey,
+      Accept:'application/json'
+    }
+  };
+  if(payload!=null){
+    options.contentType='application/json';
+    options.payload=JSON.stringify(payload);
+    options.headers['Content-Type']='application/json';
+  }
+  const resp=UrlFetchApp.fetch(url,options);
+  const code=resp.getResponseCode();
+  const text=resp.getContentText()||'';
+  let data={};
+  try{data=JSON.parse(text||'{}');}catch(e){data={raw:text};}
+  if(code<200||code>=300){
+    const msg=(data&&(
+      data.message||
+      data.error_description||
+      data.title||
+      (Array.isArray(data.issues)&&data.issues.map(x=>x.message||x.field||'').join(', '))
+    ))||text||('HTTP '+code);
+    throw new Error('Lexware API 실패 ('+code+'): '+msg);
+  }
+  return data;
+}
+
+function splitCustomerName_(name){
+  const raw=String(name||'').trim().replace(/\s+/g,' ');
+  if(!raw) return {firstName:'', lastName:'Unknown'};
+  const parts=raw.split(' ');
+  if(parts.length===1) return {firstName:parts[0], lastName:parts[0]};
+  return {
+    firstName:parts.slice(0,-1).join(' '),
+    lastName:parts.slice(-1).join(' ')
+  };
+}
+
+function buildLexwareAddress_(fullName, addressText){
+  const parts=splitCustomerName_(fullName);
+  const lines=String(addressText||'').split(/\r?\n|,/).map(s=>String(s||'').trim()).filter(Boolean);
+  const street=lines[0]||'';
+  const cityLine=lines[1]||'';
+  let zip=''; let city='';
+  const match=cityLine.match(/(\d{4,5})\s+(.*)/);
+  if(match){
+    zip=match[1];
+    city=match[2];
+  }else{
+    city=cityLine||'Oberursel';
+  }
+  return {
+    salutation:'mr',
+    firstName:parts.firstName,
+    lastName:parts.lastName,
+    street,
+    zip,
+    city,
+    countryCode:'DE'
+  };
+}
+
+function findLexwareContactByEmail_(email){
+  const clean=String(email||'').trim();
+  if(!clean) return null;
+  const data=lexwareRequest_('get','/v1/contacts?email='+encodeURIComponent(clean)+'&page=0&size=1');
+  return Array.isArray(data.content)&&data.content.length?data.content[0]:null;
+}
+
+function createLexwareContact_(inv){
+  const parts=splitCustomerName_(inv.name);
+  const address=buildLexwareAddress_(inv.name,inv.customerAddress);
+  const payload={
+    roles:{customer:{}},
+    company:{},
+    person:{
+      salutation:'mr',
+      firstName:parts.firstName,
+      lastName:parts.lastName
+    },
+    addresses:{
+      billing:[address]
+    },
+    emailAddresses:{
+      business:[String(inv.email||'').trim()].filter(Boolean)
+    },
+    phoneNumbers:{
+      business:[String(inv.phone||'').trim()].filter(Boolean)
+    },
+    note:'Created by Studio mean reservation system'
+  };
+  const created=lexwareRequest_('post','/v1/contacts',payload);
+  return created;
+}
+
+function ensureLexwareContactForInvoice_(inv){
+  if(inv.lexwareContactId) return inv.lexwareContactId;
+  const found=findLexwareContactByEmail_(inv.email);
+  if(found&&found.id) return found.id;
+  const created=createLexwareContact_(inv);
+  if(!created||!created.id) throw new Error('Lexware 연락처 생성에 실패했습니다.');
+  return created.id;
+}
+
+function buildLexwareInvoicePayload_(inv, contactId){
+  const voucherDate=parseDateSafe_(inv.issuedAtRaw||inv.issuedAt||new Date()).date||new Date();
+  const formattedVoucherDate=Utilities.formatDate(voucherDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'00:00:00.000XXX");
+  const shippingDate=parseDateSafe_(inv.dateStr||inv.issuedAt||new Date()).date||voucherDate;
+  const formattedShippingDate=Utilities.formatDate(shippingDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'00:00:00.000XXX");
+  const lineItems=(inv.items&&inv.items.length?inv.items:[{description:inv.product||'촬영 서비스',qty:1,unitGross:inv.total||0}]).map((item,idx)=>({
+    id:'line-'+idx,
+    type:'custom',
+    name:String(item.description||inv.product||'촬영 서비스'),
+    quantity:Math.max(1,parseInt(item.qty,10)||1),
+    unitName:'Stk',
+    unitPrice:{
+      currency:'EUR',
+      grossAmount:Math.round((parseFloat(item.unitGross)||0)*100)/100,
+      taxRatePercentage:19
+    },
+    discountPercentage:0,
+    lineItemAmount:Math.round(((parseInt(item.qty,10)||1)*(parseFloat(item.unitGross)||0))*100)/100
+  }));
+  return {
+    voucherDate:formattedVoucherDate,
+    address:{
+      contactId
+    },
+    lineItems,
+    totalPrice:{
+      currency:'EUR'
+    },
+    taxConditions:{
+      taxType:'gross'
+    },
+    paymentConditions:{
+      paymentTermDuration:14
+    },
+    shippingConditions:{
+      shippingType:'service',
+      shippingDate:formattedShippingDate
+    },
+    title:'invoice',
+    introduction:String(inv.memo||'촬영 예약 인보이스').slice(0,250),
+    remark:'Generated by Studio mean reservation system'
+  };
+}
+
+function updateInvoiceLexwareFields_(rowIndex, fields){
+  const {invoiceSheet}=ensureSheets_();
+  Object.keys(fields||{}).forEach(key=>{
+    if(!(key in INVOICE_COL)) return;
+    invoiceSheet.getRange(rowIndex,INVOICE_COL[key]+1).setValue(fields[key]);
+  });
+}
+
 function maskSecret_(value, left, right){
   const s=String(value||'');
   if(!s) return '';
@@ -3445,7 +3618,15 @@ function invoiceRowToObject_(row,rowIndex){
     pdfUrl:String(row[INVOICE_COL['PDF링크']]||''),
     mailSubject:String(row[INVOICE_COL['메일제목']]||''),
     mailBody:String(row[INVOICE_COL['메일본문']]||''),
-    mailSentAt:String(row[INVOICE_COL['메일발송일시']]||'')
+    mailSentAt:String(row[INVOICE_COL['메일발송일시']]||''),
+    lexwareContactId:String(row[INVOICE_COL['LexwareContactId']]||''),
+    lexwareInvoiceId:String(row[INVOICE_COL['LexwareInvoiceId']]||''),
+    lexwareVoucherNumber:String(row[INVOICE_COL['LexwareVoucherNumber']]||''),
+    lexwareSyncStatus:String(row[INVOICE_COL['LexwareSyncStatus']]||''),
+    lexwarePaymentStatus:String(row[INVOICE_COL['LexwarePaymentStatus']]||''),
+    lexwareOpenAmount:String(row[INVOICE_COL['LexwareOpenAmount']]||''),
+    lexwarePaidAt:String(row[INVOICE_COL['LexwarePaidAt']]||''),
+    lexwareSyncedAt:String(row[INVOICE_COL['LexwareSyncedAt']]||'')
   };
 }
 
@@ -3509,7 +3690,7 @@ function createInvoiceRecord_(payload){
     invNo, now, payload.type||(linkedBookingRow?'예약':'수기'), linkedBookingRow||'',
     customerName, customerEmail, customerPhone, dateStr, row?row[6]:'', product,
     price, deposit, refund, payload.memo||'', '발행', customerAddress, JSON.stringify(items),
-    '', '', mailSubject, mailBody, ''
+    '', '', mailSubject, mailBody, '', '', '', '', '', '', '', '', ''
   ]);
   const newRowIndex=invoiceSheet.getLastRow();
   const inv={
@@ -3652,6 +3833,65 @@ function getInvoiceList(token){
   if(rows.length<=1) return {ok:true, invoices:[]};
   const invoices=rows.slice(1).map((r,i)=>invoiceRowToObject_(r,i+2)).reverse();
   return {ok:true, invoices};
+}
+
+function syncInvoiceToLexware(token, invNumber){
+  assertAdmin_(token);
+  const {invoiceSheet}=ensureSheets_();
+  const rows=invoiceSheet.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===String(invNumber||'').trim());
+  if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
+  const rowIndex=idx+2;
+  const inv=invoiceRowToObject_(rows[idx+1],rowIndex);
+  const syncedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const contactId=ensureLexwareContactForInvoice_(inv);
+  const payload=buildLexwareInvoicePayload_(inv,contactId);
+  const created=lexwareRequest_('post','/v1/invoices',payload);
+  updateInvoiceLexwareFields_(rowIndex,{
+    LexwareContactId:contactId,
+    LexwareInvoiceId:String(created.id||''),
+    LexwareVoucherNumber:String(created.voucherNumber||''),
+    LexwareSyncStatus:'synced',
+    LexwareSyncedAt:syncedAt
+  });
+  return {
+    ok:true,
+    contactId,
+    invoiceId:String(created.id||''),
+    voucherNumber:String(created.voucherNumber||''),
+    syncedAt
+  };
+}
+
+function syncLexwareInvoiceStatus(token, invNumber){
+  assertAdmin_(token);
+  const {invoiceSheet}=ensureSheets_();
+  const rows=invoiceSheet.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===String(invNumber||'').trim());
+  if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
+  const rowIndex=idx+2;
+  const inv=invoiceRowToObject_(rows[idx+1],rowIndex);
+  if(!inv.lexwareInvoiceId) throw new Error('먼저 Lexware 전송을 진행해 주세요.');
+  const payment=lexwareRequest_('get','/v1/payments/'+encodeURIComponent(inv.lexwareInvoiceId));
+  const syncedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const paymentItems=Array.isArray(payment.paymentItems)?payment.paymentItems:[];
+  const latestPaidAt=paymentItems.length
+    ?paymentItems.map(item=>String(item.postingDate||'')).sort().slice(-1)[0]
+    :'';
+  updateInvoiceLexwareFields_(rowIndex,{
+    LexwarePaymentStatus:String(payment.paymentStatus||payment.voucherStatus||''),
+    LexwareOpenAmount:String(payment.openAmount||''),
+    LexwarePaidAt:latestPaidAt,
+    LexwareSyncStatus:'status-synced',
+    LexwareSyncedAt:syncedAt
+  });
+  return {
+    ok:true,
+    paymentStatus:String(payment.paymentStatus||payment.voucherStatus||''),
+    openAmount:String(payment.openAmount||''),
+    paidAt:latestPaidAt,
+    syncedAt
+  };
 }
 
 

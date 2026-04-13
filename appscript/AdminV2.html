@@ -2391,6 +2391,10 @@ function renderInvoiceTable(){
     ?allInvoices.map(inv=>{
       const pdfLink=inv.pdfUrl?`<a href="${inv.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
       const mailBadge=inv.mailSentAt?`<div style="font-size:10px;color:#059669;margin-top:4px;">발송 ${inv.mailSentAt}</div>`:'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">미발송</div>';
+      const lexBadge=inv.lexwareInvoiceId
+        ?`<div style="font-size:10px;color:#0f766e;margin-top:4px;">Lexware ${inv.lexwareVoucherNumber||inv.lexwareInvoiceId}</div>
+          <div style="font-size:10px;color:#475569;margin-top:2px;">${inv.lexwarePaymentStatus||inv.lexwareSyncStatus||'synced'}${inv.lexwareOpenAmount!==''?` · open ${inv.lexwareOpenAmount}€`:''}</div>`
+        :`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Lexware 미전송</div>`;
       return `<tr>
         <td style="font-weight:700;font-size:12px;">${inv.number}</td>
         <td style="font-size:12px;white-space:nowrap;">${inv.issuedAt}</td>
@@ -2400,11 +2404,13 @@ function renderInvoiceTable(){
         <td style="font-weight:700;">${inv.total}€</td>
         <td>${inv.deposit}€</td>
         <td style="color:${inv.refund>0?'#ef4444':'#94a3b8'};font-weight:${inv.refund>0?'700':'400'};">${inv.refund>0?inv.refund+'€':'-'}</td>
-        <td style="font-size:11px;color:#64748b;max-width:120px;">${inv.memo||''}<div style="margin-top:4px;">${pdfLink}</div>${mailBadge}</td>
+        <td style="font-size:11px;color:#64748b;max-width:140px;">${inv.memo||''}<div style="margin-top:4px;">${pdfLink}</div>${mailBadge}${lexBadge}</td>
         <td style="white-space:nowrap;">
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"de")'>🖨️ DE</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"ko")'>🖨️ KO</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"en")'>🖨️ EN</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#7c3aed;border-color:#ddd6fe;" onclick="syncInvoiceLexware('${inv.number}')">📚 전송</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="syncInvoiceLexwareStatus('${inv.number}')">💶 상태</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#2563eb;border-color:#bfdbfe;" onclick="openInvoiceMailModal('${inv.number}')">✉️ 메일</button>
           <button class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="deleteInvoice('${inv.number}')">🗑️</button>
         </td>
@@ -2575,6 +2581,27 @@ function deleteInvoice(invNumber){
     .withSuccessHandler(()=>{loadInvoiceList();})
     .withFailureHandler(handleApiError)
     .deleteInvoiceAdmin(adminToken, invNumber);
+}
+
+function syncInvoiceLexware(invNumber){
+  if(!confirm(`Lexware로 ${invNumber} 인보이스를 전송할까요?`)) return;
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`Lexware 전송 완료\nVoucher: ${res.voucherNumber||'-'}`);
+      loadInvoiceList();
+    })
+    .withFailureHandler(handleApiError)
+    .syncInvoiceToLexware(adminToken, invNumber);
+}
+
+function syncInvoiceLexwareStatus(invNumber){
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`상태 동기화 완료\nStatus: ${res.paymentStatus||'-'}\nOpen: ${res.openAmount||'-'}€`);
+      loadInvoiceList();
+    })
+    .withFailureHandler(handleApiError)
+    .syncLexwareInvoiceStatus(adminToken, invNumber);
 }
 </script>
 </body>
