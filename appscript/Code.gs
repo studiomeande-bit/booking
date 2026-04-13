@@ -2645,6 +2645,156 @@ function classifyLexwareVoucherAccounting_(voucher){
   return '기타';
 }
 
+function summarizeLexwareVoucherPayment_(voucher, invoiceTotal, depositTarget){
+  const totalAmount = Math.max(0, toNumberOrZero_(voucher && voucher.totalAmount));
+  const openAmount = Math.max(0, toNumberOrZero_(voucher && voucher.openAmount));
+  const paidAmount = Math.max(0, Math.round((totalAmount - openAmount) * 100) / 100);
+  const depositDue = Math.max(0, toNumberOrZero_(depositTarget));
+  const totalDue = Math.max(0, toNumberOrZero_(invoiceTotal || totalAmount));
+  const voucherDate = String(voucher && (voucher.voucherDate || voucher.createdDate) || '').slice(0,10);
+  return {
+    paidAmount: paidAmount,
+    openAmount: openAmount,
+    depositPaid: depositDue > 0 && paidAmount >= (depositDue - 0.01),
+    depositPaidAt: paidAmount > 0 ? voucherDate : '',
+    balancePaid: paidAmount >= (totalDue - 0.01),
+    balancePaidAt: openAmount <= 0.01 ? voucherDate : '',
+    paymentStatus: String((voucher && voucher.voucherStatus) || '')
+  };
+}
+
+function getExistingExpenseLexwareMap_(){
+  const {expenseSheet} = ensureSheets_();
+  const rows = expenseSheet.getDataRange().getValues();
+  const out = {};
+  rows.slice(1).forEach(function(row, idx){
+    const voucherId = String(row[12] || '').trim();
+    if(!voucherId) return;
+    out[voucherId] = idx + 2;
+  });
+  return out;
+}
+
+function upsertLexwareExpenseVoucher_(voucher){
+  const {expenseSheet} = ensureSheets_();
+  const existingMap = getExistingExpenseLexwareMap_();
+  const voucherId = String(voucher && voucher.id || '').trim();
+  if(!voucherId) return {created:false, updated:false};
+  const gross = Math.round((toNumberOrZero_(voucher && voucher.totalAmount)) * 100) / 100;
+  const tax = Math.round((toNumberOrZero_(voucher && voucher.taxAmount || voucher && voucher.totalTaxAmount)) * 100) / 100;
+  const net = Math.max(0, Math.round((gross - tax) * 100) / 100);
+  const rowValues = [
+    String(voucher && (voucher.voucherDate || voucher.createdDate) || '').slice(0,10),
+    String(voucher && voucher.contactName || 'Lexware'),
+    String(voucher && voucher.voucherType || ''),
+    String(voucher && (voucher.voucherNumber || voucher.id) || ''),
+    gross,
+    net,
+    tax,
+    '',
+    'Lexware 가져오기',
+    '',
+    '확정',
+    classifyLexwareVoucherAccounting_(voucher),
+    voucherId,
+    'synced',
+    Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
+  ];
+  const existingRow = existingMap[voucherId];
+  if(existingRow){
+    expenseSheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+    return {created:false, updated:true};
+  }
+  expenseSheet.appendRow(rowValues);
+  return {created:true, updated:false};
+}
+
+function findBookingMatchForLexwareVoucher_(voucher){
+  const {bookingSheet} = ensureSheets_();
+  const rows = bookingSheet.getDataRange().getValues();
+  const targetDate = String(voucher && (voucher.voucherDate || voucher.createdDate) || '').slice(0,10);
+  const targetGross = Math.round((toNumberOrZero_(voucher && voucher.totalAmount)) * 100) / 100;
+  const targetName = normalizeAccountingName_(voucher && voucher.contactName);
+  let bestRow = 0;
+  rows.slice(1).some(function(row, idx){
+    const rowIndex = idx + 2;
+    const rowDate = String(parseDateSafe_(row[0]).str || '').slice(0,10);
+    const rowGross = Math.round((toNumberOrZero_(row[10])) * 100) / 100;
+    const rowName = normalizeAccountingName_(row[2]);
+    if(rowDate === targetDate && Math.abs(rowGross - targetGross) <= 0.01 && (!targetName || !rowName || rowName === targetName)){
+      bestRow = rowIndex;
+      return true;
+    }
+    return false;
+  });
+  return bestRow;
+}
+
+function findInvoiceMatchForLexwareVoucher_(voucher){
+  const {invoiceSheet} = ensureSheets_();
+  const rows = invoiceSheet.getDataRange().getValues();
+  const targetDate = String(voucher && (voucher.voucherDate || voucher.createdDate) || '').slice(0,10);
+  const targetGross = Math.round((toNumberOrZero_(voucher && voucher.totalAmount)) * 100) / 100;
+  const targetName = normalizeAccountingName_(voucher && voucher.contactName);
+  let found = null;
+  rows.slice(1).some(function(row, idx){
+    const inv = invoiceRowToObject_(row, idx + 2);
+    const invDate = String(inv.issuedAt || inv.dateStr || '').slice(0,10);
+    const invGross = Math.round((toNumberOrZero_(inv.total)) * 100) / 100;
+    const invName = normalizeAccountingName_(inv.name);
+    if(invDate === targetDate && Math.abs(invGross - targetGross) <= 0.01 && (!targetName || !invName || invName === targetName)){
+      found = inv;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+function syncLexwareAccounting(token, startDate, endDate){
+  assertAdmin_(token);
+  const vouchers = fetchLexwareVoucherlistForRange_(startDate, endDate, true);
+  const imported = { importedExpenses:0, updatedExpenses:0, syncedIncome:0, pendingIncome:0 };
+  vouchers.forEach(function(voucher){
+    const voucherType = String(voucher && voucher.voucherType || '').toLowerCase();
+    if(/^purchase/.test(voucherType)){
+      const res = upsertLexwareExpenseVoucher_(voucher);
+      if(res.created) imported.importedExpenses++;
+      if(res.updated) imported.updatedExpenses++;
+      return;
+    }
+    const invoiceMatch = findInvoiceMatchForLexwareVoucher_(voucher);
+    if(invoiceMatch){
+      const summary = summarizeLexwareVoucherPayment_(voucher, invoiceMatch.total, invoiceMatch.deposit);
+      updateInvoiceLexwareFields_(invoiceMatch.rowIndex, {
+        LexwareInvoiceId: String(voucher.id || invoiceMatch.lexwareInvoiceId || ''),
+        LexwareVoucherNumber: String(voucher.voucherNumber || invoiceMatch.lexwareVoucherNumber || ''),
+        LexwarePaymentStatus: summary.paymentStatus,
+        LexwareOpenAmount: String(summary.openAmount),
+        LexwarePaidAt: summary.balancePaidAt || summary.depositPaidAt || '',
+        LexwareSyncStatus: 'status-synced',
+        LexwareSyncedAt: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
+      });
+      if(invoiceMatch.bookingRowIndex){
+        updateBookingLexwareFields_(invoiceMatch.bookingRowIndex, summary, invoiceMatch.total, invoiceMatch.deposit);
+      }
+      imported.syncedIncome++;
+      return;
+    }
+    const bookingRowIndex = findBookingMatchForLexwareVoucher_(voucher);
+    if(bookingRowIndex){
+      const {bookingSheet} = ensureSheets_();
+      const row = bookingSheet.getRange(bookingRowIndex, 1, 1, CONFIG.BOOKING_HEADERS.length).getValues()[0];
+      const summary = summarizeLexwareVoucherPayment_(voucher, row[10], row[11]);
+      updateBookingLexwareFields_(bookingRowIndex, summary, row[10], row[11]);
+      imported.syncedIncome++;
+      return;
+    }
+    imported.pendingIncome++;
+  });
+  return imported;
+}
+
 function buildLexwareAccountingMatches_(entries, startDate, endDate, forceRefresh){
   const vouchers = fetchLexwareVoucherlistForRange_(startDate, endDate, !!forceRefresh);
   if(!vouchers.length){
