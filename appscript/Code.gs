@@ -2327,9 +2327,23 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
     const net = Math.round(gross/1.19);
     const tax = gross - net;
     const linkedInvoice = invoiceLexwareMap[r+1] || null;
+    const payMethod = String(row[13]||'');
     const localPaidAmount = ((Number(row[BOOKING_COL['계약금입금금액']]||0)||0) + (Number(row[BOOKING_COL['잔금결제금액']]||0)||0));
     const linkedPaidAmount = linkedInvoice ? toNumberOrZero_(linkedInvoice.paidAmount) : 0;
     const effectivePaidAmount = Math.max(localPaidAmount, linkedPaidAmount);
+    const depositDue = Number(row[11]||0) || 0;
+    const localDepositPaid = String(row[BOOKING_COL['계약금입금여부']]||'') === 'Y';
+    const localBalancePaid = String(row[BOOKING_COL['잔금결제여부']]||'') === 'Y';
+    const explicitlyUnpaid = /미결제|unpaid|offen/i.test(payMethod);
+    const hasPartialLocalSignals =
+      localDepositPaid ||
+      localBalancePaid ||
+      effectivePaidAmount > 0.01;
+    const localOpenAmount = explicitlyUnpaid
+      ? Math.max(0, gross - effectivePaidAmount)
+      : (hasPartialLocalSignals && effectivePaidAmount + 0.01 < gross
+          ? Math.max(0, gross - effectivePaidAmount)
+          : 0);
     entries.push({
       date: dateOnly,
       dateStr: dStr,
@@ -2348,14 +2362,14 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
       source: 'booking',
       flow:'income',
       rowIndex: r+1,
-      depositDue: Number(row[11]||0) || 0,
+      depositDue: depositDue,
       depositPaid: linkedInvoice ? (linkedInvoice.depositPaid ? 'Y' : String(row[BOOKING_COL['계약금입금여부']]||'')) : String(row[BOOKING_COL['계약금입금여부']]||''),
       depositPaidAt: linkedInvoice ? String(linkedInvoice.depositPaidAt||row[BOOKING_COL['계약금입금일']]||'') : String(row[BOOKING_COL['계약금입금일']]||''),
       depositPaidAmount: linkedInvoice ? String(linkedInvoice.depositPaidAmount||row[BOOKING_COL['계약금입금금액']]||'') : String(row[BOOKING_COL['계약금입금금액']]||''),
       balancePaid: linkedInvoice ? (linkedInvoice.balancePaid ? 'Y' : String(row[BOOKING_COL['잔금결제여부']]||'')) : String(row[BOOKING_COL['잔금결제여부']]||''),
       balancePaidAt: linkedInvoice ? String(linkedInvoice.balancePaidAt||row[BOOKING_COL['잔금입금일']]||'') : String(row[BOOKING_COL['잔금입금일']]||''),
       balancePaidAmount: linkedInvoice ? String(linkedInvoice.balancePaidAmount||row[BOOKING_COL['잔금결제금액']]||'') : String(row[BOOKING_COL['잔금결제금액']]||''),
-      openAmount: linkedInvoice ? Math.max(0, toNumberOrZero_(linkedInvoice.openAmount)) : Math.max(0, (Number(row[10]||0)||0) - effectivePaidAmount),
+      openAmount: linkedInvoice ? Math.max(0, toNumberOrZero_(linkedInvoice.openAmount)) : localOpenAmount,
       lexwareInvoiceId: linkedInvoice ? String(linkedInvoice.lexwareInvoiceId||'') : '',
       lexwareVoucherNumber: linkedInvoice ? String(linkedInvoice.lexwareVoucherNumber||'') : '',
       lexwareSyncStatus: linkedInvoice ? String(linkedInvoice.lexwareSyncStatus||row[36]||'') : String(row[36]||''),
