@@ -4,48 +4,73 @@ Updated: 2026-04-13 Europe/Berlin
 
 ## Immediate
 
-1. Booking end-to-end verification
+1. Business / Event customer UI cleanup
+- remove visible hour-by-hour price table from booking customer detail panel
+- keep only current selection summary and consultation message
+- verify mail / success screen still avoid direct customer price exposure
+
+2. Booking mobile and calendar polish
+- tighten mobile footer layout
+- refine month header spacing
+- refine loading card size and hierarchy
+- keep date/time on same page without auto-jump after time click
+
+3. Booking end-to-end verification
 - Netlify booking submit
 - Google Sheets row creation
 - Google Calendar event creation
-- customer pending mail / confirm mail
+- Apple Calendar reflection check
+- customer mail delivery
 - admin notification mail
-
-2. Booking final parity cleanup
-- compare remaining product-specific copy with original flow
-- tighten step validation copy
-- mobile readability polish
-
-3. Corporate / Event package redesign
-- split photo vs video
-- hour-based package selector
-- editing option selector
-- SNS / urgent delivery options
+- admin edit / reschedule / cancel
 
 ## Next
 
-4. Select real-session validation
+4. Calendar performance follow-up
+- measure current month / next month / third month load gap
+- tune month-summary cache TTL
+- refine background prefetch order
+- reduce visual confusion while loading later months
+
+5. Select real-session verification
 - open existing session link
 - restore existing submission
 - submit update flow
 - extra prints / extra retouch totals
-
-5. Admin consistency review
-- verify new frontend fields in admin edit views
-- verify memo/baby/address/location persistence
+- success screen / invoice number / drive link confirmation
 
 6. Mail content cleanup
-- reduce repeated text across pending / confirmed / reminder mails
+- reduce repeated text across pending / confirmed / follow-up mails
 - unify Korean / English / German tone
+- verify pre-wedding / passport infant / dol guide content balance
 
 ## Later
 
-7. Final design pass
+7. Corporate / Event product redesign
+- split photo vs video more clearly
+- separate wedding / registry wedding / dol / corporate use cases if needed
+- improve consultation payload structure without exposing pricing
+
+8. Final design pass
 - booking success screen polish
 - select design alignment with booking
 - spacing / typography consistency review
+- mobile safe-area and in-app browser polish
 
-8. Ops checklist refresh
+9. Ops checklist refresh
 - deployment notes
 - known caveats
 - regression checklist
+- admin dirty-file warning
+
+## Done Recently
+
+- booking/select split to Netlify
+- booking wizard flow rebuilt
+- month/day slot split
+- product-specific guides added
+- follow-up mails automated
+- review + instagram links wired
+- passport multi-country per person support
+- passport single-product auto-open
+- booking/select success screens rebuilt

@@ -2234,8 +2234,8 @@ function getAccountingLedger(token, startDate, endDate) {
       source: 'booking',
       flow:'income',
       rowIndex: r+1,
-      lexwareSyncStatus: String(row[35]||''),
-      lexwarePaymentStatus: String(row[34]||'')
+      lexwareSyncStatus: String(row[36]||''),
+      lexwarePaymentStatus: String(row[35]||'')
     });
   }
   const printSh = ensureSheets_().printSheet;
@@ -2319,6 +2319,26 @@ function getAccountingLedger(token, startDate, endDate) {
   const totalExpenseGross = expenseEntries.reduce((s,e)=>s+e.gross,0);
   const totalExpenseNet = expenseEntries.reduce((s,e)=>s+e.net,0);
   const totalExpenseTax = expenseEntries.reduce((s,e)=>s+e.tax,0);
+  const byType = {};
+  const byAccountingClass = {};
+  let lexwarePendingCount = 0;
+  let lexwareSyncedCount = 0;
+  let lexwarePaidCount = 0;
+  entries.forEach(function(entry){
+    const typeKey = entry.type || '기타';
+    byType[typeKey] = Math.round(((byType[typeKey] || 0) + (entry.gross || 0)) * 100) / 100;
+    const classKey = entry.accountingClass || '미분류';
+    byAccountingClass[classKey] = Math.round(((byAccountingClass[classKey] || 0) + (entry.gross || 0)) * 100) / 100;
+    const syncStatus = String(entry.lexwareSyncStatus || '');
+    const paymentStatus = String(entry.lexwarePaymentStatus || '');
+    if (syncStatus && syncStatus !== '미전송') lexwareSyncedCount++;
+    else lexwarePendingCount++;
+    if (/paid|bezahlt|완료|fully_paid/i.test(paymentStatus)) lexwarePaidCount++;
+  });
+  const topAccountingClasses = Object.keys(byAccountingClass)
+    .map(function(label){ return { label: label, gross: byAccountingClass[label] }; })
+    .sort(function(a,b){ return b.gross - a.gross; })
+    .slice(0, 6);
   return {
     entries,
     totalGross,
@@ -2328,7 +2348,12 @@ function getAccountingLedger(token, startDate, endDate) {
     totalExpenseNet,
     totalExpenseTax,
     profitGross: Math.round((totalGross-totalExpenseGross)*100)/100,
-    vatPayable: Math.round((totalTax-totalExpenseTax)*100)/100
+    vatPayable: Math.round((totalTax-totalExpenseTax)*100)/100,
+    lexwarePendingCount,
+    lexwareSyncedCount,
+    lexwarePaidCount,
+    byType,
+    topAccountingClasses
   };
 }
 

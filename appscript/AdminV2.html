@@ -66,6 +66,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
 .filter-bar input[type=text]{flex:1;min-width:150px;padding:8px 12px;}
 .filter-bar select{width:auto;padding:8px 12px;}
+.accounting-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;padding:12px;border-radius:12px;background:#f8fafc;}
+.accounting-toolbar-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.accounting-toolbar .btn{white-space:nowrap;}
+.accounting-toolbar label{margin-bottom:0;font-size:11px;color:#64748b;}
+.accounting-toolbar .toolbar-group{display:flex;flex-direction:column;gap:4px;min-width:140px;}
+.accounting-toolbar .toolbar-group select,
+.accounting-toolbar .toolbar-group input{width:100%;}
+.accounting-toolbar .toolbar-spacer{margin-left:auto;}
 .action-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
 .sort-icon{font-size:10px;color:#94a3b8;}
 .print-price-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;}
@@ -101,7 +109,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .status-sel.s-work{background:#d1fae5;color:#064e3b;border-color:#34d399;font-weight:800;}
 .status-sel.s-cancel{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
 @keyframes spin{to{transform:rotate(360deg);}}
-@media(max-width:640px){.form-row{grid-template-columns:1fr;}.week-grid{gap:3px;}.week-day-cell{padding:6px;min-height:60px;}.wev{font-size:9px;}}
+@media(max-width:640px){
+  .form-row{grid-template-columns:1fr;}
+  .week-grid{gap:3px;}
+  .week-day-cell{padding:6px;min-height:60px;}
+  .wev{font-size:9px;}
+  .accounting-toolbar-row{flex-direction:column;align-items:stretch;}
+  .accounting-toolbar .toolbar-group{min-width:0;}
+  .accounting-toolbar .toolbar-spacer{margin-left:0;}
+}
 </style>
 </head>
 <body>
@@ -189,47 +205,66 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 <div class="content" id="tab_accounting">
     <div class="card">
       <div class="card-title">📊 독일 세무신고용 회계 장부 (Buchhaltung)</div>
-      <div class="filter-bar" style="background:#f8fafc; border:none; padding:10px;">
-        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('month')">이번 달</button>
-        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('quarter')">이번 분기</button>
-        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('half')">이번 반기</button>
-        <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('year')">올해</button>
-        <input type="date" id="acc_startDate" onchange="loadAccountingData()" style="max-width:140px;">
-        <span style="color:#64748b; font-weight:bold;">~</span>
-        <input type="date" id="acc_endDate" onchange="loadAccountingData()" style="max-width:140px;">
-        <select id="acc_type" onchange="filterAccountingData()" style="max-width:140px;">
-          <option value="all">모든 유형</option>
-          <option value="촬영예약">촬영예약</option>
-          <option value="인화/보정">인화/보정</option>
-          <option value="지출">지출</option>
-        </select>
-        <select id="acc_pay" onchange="filterAccountingData()" style="max-width:140px;">
-          <option value="all">모든 결제수단</option>
-          <option value="현금">현금</option>
-          <option value="카드">카드</option>
-          <option value="계좌이체">계좌이체</option>
-          <option value="마이리얼트립">마이리얼트립</option>
-        </select>
-        <select id="acc_class" onchange="filterAccountingData()" style="max-width:170px;">
-          <option value="all">모든 회계분류</option>
-          <option value="여권/비자 매출">여권/비자 매출</option>
-          <option value="프로필 매출">프로필 매출</option>
-          <option value="스튜디오 매출">스튜디오 매출</option>
-          <option value="야외스냅 매출">야외스냅 매출</option>
-          <option value="프리웨딩 매출">프리웨딩 매출</option>
-          <option value="행사/영상 매출">행사/영상 매출</option>
-          <option value="추가 인화/보정 매출">추가 인화/보정 매출</option>
-          <option value="소모품">소모품</option>
-          <option value="장비">장비</option>
-          <option value="교통비">교통비</option>
-          <option value="광고비">광고비</option>
-          <option value="구독료">구독료</option>
-          <option value="외주">외주</option>
-          <option value="임차/관리비">임차/관리비</option>
-          <option value="기타">기타</option>
-        </select>
-        <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
-        <button class="btn btn-success btn-sm" style="margin-left:auto;" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
+      <div class="accounting-toolbar">
+        <div class="accounting-toolbar-row">
+          <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('month')">이번 달</button>
+          <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('quarter')">이번 분기</button>
+          <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('half')">이번 반기</button>
+          <button class="btn btn-outline btn-sm" onclick="setAccountingPreset('year')">올해</button>
+          <div class="toolbar-spacer"></div>
+          <button class="btn btn-primary btn-sm" onclick="loadAccountingData()">🔄 조회</button>
+          <button class="btn btn-success btn-sm" onclick="exportAccountingCSV()">📥 CSV 내보내기</button>
+        </div>
+        <div class="accounting-toolbar-row">
+          <div class="toolbar-group">
+            <label>시작일</label>
+            <input type="date" id="acc_startDate" onchange="loadAccountingData()">
+          </div>
+          <div class="toolbar-group">
+            <label>종료일</label>
+            <input type="date" id="acc_endDate" onchange="loadAccountingData()">
+          </div>
+          <div class="toolbar-group">
+            <label>구분</label>
+            <select id="acc_type" onchange="filterAccountingData()">
+              <option value="all">모든 유형</option>
+              <option value="촬영예약">촬영예약</option>
+              <option value="인화/보정">인화/보정</option>
+              <option value="지출">지출</option>
+            </select>
+          </div>
+          <div class="toolbar-group">
+            <label>결제수단</label>
+            <select id="acc_pay" onchange="filterAccountingData()">
+              <option value="all">모든 결제수단</option>
+              <option value="현금">현금</option>
+              <option value="카드">카드</option>
+              <option value="계좌이체">계좌이체</option>
+              <option value="마이리얼트립">마이리얼트립</option>
+            </select>
+          </div>
+          <div class="toolbar-group" style="min-width:180px;">
+            <label>회계분류</label>
+            <select id="acc_class" onchange="filterAccountingData()">
+              <option value="all">모든 회계분류</option>
+              <option value="여권/비자 매출">여권/비자 매출</option>
+              <option value="프로필 매출">프로필 매출</option>
+              <option value="스튜디오 매출">스튜디오 매출</option>
+              <option value="야외스냅 매출">야외스냅 매출</option>
+              <option value="프리웨딩 매출">프리웨딩 매출</option>
+              <option value="행사/영상 매출">행사/영상 매출</option>
+              <option value="추가 인화/보정 매출">추가 인화/보정 매출</option>
+              <option value="소모품">소모품</option>
+              <option value="장비">장비</option>
+              <option value="교통비">교통비</option>
+              <option value="광고비">광고비</option>
+              <option value="구독료">구독료</option>
+              <option value="외주">외주</option>
+              <option value="임차/관리비">임차/관리비</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+        </div>
       </div>
       
       <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(5,1fr);">
@@ -238,6 +273,22 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="stat-card" style="padding:15px;"><div class="stat-title">부가세 (19%)</div><div class="stat-val" id="acc_totTax" style="color:var(--red)">0€</div></div>
         <div class="stat-card" style="padding:15px;"><div class="stat-title">총 지출 (Brutto)</div><div class="stat-val" id="acc_totExpense" style="color:#b91c1c;">0€</div></div>
         <div class="stat-card" style="padding:15px;"><div class="stat-title">예상 손익</div><div class="stat-val" id="acc_profit" style="color:#059669;">0€</div></div>
+      </div>
+      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(4,1fr);">
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">납부 부가세</div><div class="stat-val" id="acc_vatPayable" style="color:#dc2626;">0€</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware 미전송</div><div class="stat-val" id="acc_lexPending" style="color:#b45309;">0건</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware 동기화</div><div class="stat-val" id="acc_lexSynced" style="color:#2563eb;">0건</div></div>
+        <div class="stat-card" style="padding:15px;"><div class="stat-title">결제 완료</div><div class="stat-val" id="acc_lexPaid" style="color:#059669;">0건</div></div>
+      </div>
+      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1.2fr .8fr;">
+        <div class="card" style="margin-bottom:0;box-shadow:none;border:1px solid #e2e8f0;">
+          <div class="card-title" style="margin-bottom:10px;">📚 회계분류 요약</div>
+          <div id="acc_classSummary" style="display:grid;gap:8px;"></div>
+        </div>
+        <div class="card" style="margin-bottom:0;box-shadow:none;border:1px solid #e2e8f0;">
+          <div class="card-title" style="margin-bottom:10px;">💳 유형별 합계</div>
+          <div id="acc_typeSummary" style="display:grid;gap:8px;"></div>
+        </div>
       </div>
 
       <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
@@ -1098,8 +1149,33 @@ function loadAccountingData() {
     document.getElementById('acc_totTax').textContent = res.totalTax.toLocaleString() + '€';
     document.getElementById('acc_totExpense').textContent = (res.totalExpenseGross||0).toLocaleString() + '€';
     document.getElementById('acc_profit').textContent = (res.profitGross||0).toLocaleString() + '€';
+    document.getElementById('acc_vatPayable').textContent = (res.vatPayable||0).toLocaleString() + '€';
+    document.getElementById('acc_lexPending').textContent = (res.lexwarePendingCount||0) + '건';
+    document.getElementById('acc_lexSynced').textContent = (res.lexwareSyncedCount||0) + '건';
+    document.getElementById('acc_lexPaid').textContent = (res.lexwarePaidCount||0) + '건';
+    renderAccountingSummaries(res);
     filterAccountingData();
   }).withFailureHandler(handleApiError).getAccountingLedger(adminToken, sd, ed);
+}
+
+function renderAccountingSummaries(res){
+  const classBox = document.getElementById('acc_classSummary');
+  const typeBox = document.getElementById('acc_typeSummary');
+  const classes = (res.topAccountingClasses || []);
+  const typeMap = res.byType || {};
+  classBox.innerHTML = classes.length ? classes.map(item => `
+    <div style="display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
+      <span style="font-size:12px;font-weight:700;color:#334155;">${item.label}</span>
+      <span style="font-size:12px;font-weight:800;color:#1d4ed8;">${Number(item.gross||0).toLocaleString()}€</span>
+    </div>
+  `).join('') : '<div style="font-size:12px;color:#94a3b8;">표시할 회계분류가 없습니다.</div>';
+  const typeOrder = ['촬영예약','인화/보정','지출'];
+  typeBox.innerHTML = typeOrder.map(label => `
+    <div style="display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;">
+      <span style="font-size:12px;font-weight:700;color:#334155;">${label}</span>
+      <span style="font-size:12px;font-weight:800;color:${label==='지출'?'#b91c1c':'#1d4ed8'};">${Number(typeMap[label]||0).toLocaleString()}€</span>
+    </div>
+  `).join('');
 }
 
 function saveExpense(){
