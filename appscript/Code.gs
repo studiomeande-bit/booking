@@ -2150,7 +2150,10 @@ function getPrintOrdersAdmin(token){
   const sh=ensureSheets_().printSheet;
   const colMap=getPrintSheetColMap_(sh);
   sh.getDataRange().getValues().slice(1).forEach((r,i)=>{
-    if(!r[0]) return;
+    const hasOrderDate = colMap['주문일시'] !== undefined && String(r[colMap['주문일시']] || '').trim();
+    const hasCustomer = colMap['고객명'] !== undefined && String(r[colMap['고객명']] || '').trim();
+    const hasAmount = colMap['금액'] !== undefined && String(r[colMap['금액']] || '').trim();
+    if(!r[0] && !hasOrderDate && !hasCustomer && !hasAmount) return;
     result.push(normalizePrintRow_(r, i+2, colMap));
   });
   return result.reverse();
