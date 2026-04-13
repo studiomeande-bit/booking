@@ -55,7 +55,7 @@ function doGet(e) {
   const page = (p.p||'admin').toLowerCase();
   if(page==='index') return renderFrontendMovedPage_('booking', p);
   if(page==='select'||page==='select_preview') return renderFrontendMovedPage_('select', p);
-  return HtmlService.createHtmlOutputFromFile('Admin')
+  return HtmlService.createHtmlOutputFromFile('AdminV2')
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
     .setTitle(CONFIG.APP_TITLE+' ERP')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
