@@ -538,10 +538,17 @@ function calculateQuote_(request){
   const item=getProductById_(request.itemId);
   const people=Math.max(1,parseInt(request.people)||1);
   const optionKeys=(request.optionKeys||[]).filter(Boolean);
-  const passPersonCountries=(request.passPersonCountries||[]).filter(Boolean);
+  const passPersonCountries=(request.passPersonCountries||[])
+    .map(function(entry){
+      if(Array.isArray(entry)) return entry.filter(Boolean);
+      return entry ? [entry] : [];
+    })
+    .filter(function(entry){ return entry.length; });
   const passCountries=(request.passCountries||[]).filter(Boolean);
   const otherCountry=(request.otherCountry||'').trim();
-  const totalCountries=passCountries.length+(otherCountry?1:0);
+  const totalCountries=passPersonCountries.reduce(function(sum,codes){
+    return sum + codes.filter(function(code){ return code && code!=='OTHER'; }).length;
+  },0) + (otherCountry?1:0);
   let total=item.p;
   let productLabelKo=item.nameKo, productLabelEn=item.nameEn, productLabelDe=item.nameDe;
   let businessMode=String(request.businessMode||'photo');
@@ -573,7 +580,13 @@ function calculateQuote_(request){
       productLabelDe='Event Foto '+hourDe;
     }
   }
-  if(item.t==='passport') total=item.p*people;
+  if(item.t==='passport'){
+    total=passPersonCountries.reduce(function(sum,codes){
+      const extra=Math.max(0,codes.filter(function(code){ return code && code!=='OTHER'; }).length-1)*5;
+      return sum + item.p + extra;
+    },0);
+    if(!passPersonCountries.length) total=item.p*people;
+  }
   else if(item.t==='group'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&people===1) total-=30;

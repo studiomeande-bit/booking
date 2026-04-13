@@ -890,30 +890,43 @@ function getPassportPeopleCount() {
   return Number(els.passportPeople?.value || 1);
 }
 
-function getDefaultPassportCountry(index) {
-  return index === 0 ? 'KR' : '';
+function getDefaultPassportCountries(index) {
+  return index === 0 ? ['KR'] : [];
 }
 
 function syncPassportPersonCountries() {
   const people = Math.max(1, getPassportPeopleCount());
   state.passportPersonCountries = Array.from(
     { length: people },
-    (_, index) => state.passportPersonCountries[index] || getDefaultPassportCountry(index)
+    (_, index) => {
+      const existing = state.passportPersonCountries[index];
+      if (Array.isArray(existing)) return existing.filter(Boolean);
+      if (existing) return [existing];
+      return getDefaultPassportCountries(index);
+    }
   );
-  state.selectedCountries = [...new Set(state.passportPersonCountries.filter(Boolean))];
+  state.selectedCountries = [
+    ...new Set(
+      state.passportPersonCountries.flatMap((codes) => Array.isArray(codes) ? codes.filter(Boolean) : [])
+    )
+  ];
 }
 
 function hasPassportCountrySelections() {
   if (state.selectedProduct?.g !== 'pass') return true;
   syncPassportPersonCountries();
-  return state.passportPersonCountries.every(Boolean);
+  return state.passportPersonCountries.every((codes) => Array.isArray(codes) && codes.length > 0);
 }
 
 function getPassportCountryReviewLabel() {
   syncPassportPersonCountries();
-  return state.passportPersonCountries.map((code, index) => {
-    const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
-    const label = item ? (item.label[state.lang] || item.label.ko) : code;
+  return state.passportPersonCountries.map((codes, index) => {
+    const label = (Array.isArray(codes) ? codes : [])
+      .map((code) => {
+        const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
+        return item ? (item.label[state.lang] || item.label.ko) : code;
+      })
+      .join(' + ');
     return state.lang === 'en'
       ? `Person ${index + 1}: ${label}`
       : state.lang === 'de'
@@ -925,9 +938,13 @@ function getPassportCountryReviewLabel() {
 function buildPassportMemoPrefix() {
   if (state.selectedProduct?.g !== 'pass') return '';
   syncPassportPersonCountries();
-  const rows = state.passportPersonCountries.map((code, index) => {
-    const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
-    const label = item ? (item.label.ko || item.label.en || code) : code;
+  const rows = state.passportPersonCountries.map((codes, index) => {
+    const label = (Array.isArray(codes) ? codes : [])
+      .map((code) => {
+        const item = COUNTRY_OPTIONS.find((entry) => entry.code === code);
+        return item ? (item.label.ko || item.label.en || code) : code;
+      })
+      .join('+');
     return `${index + 1}명:${label}`;
   }).join(', ');
   return rows ? `[국가별 신청] ${rows}` : '';
@@ -1477,10 +1494,17 @@ function getPreviewQuote() {
   const people = getPeopleCount();
   const optionKeys = [...state.optionKeys];
   syncPassportPersonCountries();
-  const passPersonCountries = item.g === 'pass' ? [...state.passportPersonCountries] : [];
-  const passCountries = item.g === 'pass' ? [...new Set(passPersonCountries.filter((code) => code && code !== 'OTHER'))] : [];
+  const passPersonCountries = item.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [];
+  const passCountries = item.g === 'pass'
+    ? [...new Set(passPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
+    : [];
   const otherCountry = item.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '';
-  const totalCountries = passCountries.length + (otherCountry ? 1 : 0);
+  const totalCountries = item.g === 'pass'
+    ? passPersonCountries.reduce((sum, codes) => {
+      const count = (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER').length;
+      return sum + count;
+    }, 0) + (otherCountry ? 1 : 0)
+    : 0;
   let total = Number(item.p || 0);
 
   if (item.g === 'biz') {
@@ -1512,7 +1536,13 @@ function getPreviewQuote() {
     };
   }
 
-  if (item.t === 'passport') total = item.p * people;
+  if (item.t === 'passport') {
+    total = passPersonCountries.reduce((sum, codes) => {
+      const extra = Math.max(0, (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER').length - 1) * 5;
+      return sum + Number(item.p || 0) + extra;
+    }, 0);
+    if (!passPersonCountries.length) total = item.p * people;
+  }
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people === 1) total -= 30;
@@ -2350,7 +2380,7 @@ async function selectProduct(productId) {
     state.selectedCountries = [];
     state.passportPersonCountries = [];
   } else {
-    state.passportPersonCountries = ['KR'];
+    state.passportPersonCountries = [['KR']];
     state.selectedCountries = ['KR'];
   }
   state.surveyKeys = [];
@@ -2483,8 +2513,10 @@ function getQuoteRequest() {
     itemId: product.id,
     people: product.g === 'pass' ? Number(els.passportPeople.value || 1) : Number(els.generalPeople.value || 1),
     optionKeys: [...state.optionKeys],
-    passCountries: product.g === 'pass' ? [...new Set(state.passportPersonCountries.filter((code) => code && code !== 'OTHER'))] : [],
-    passPersonCountries: product.g === 'pass' ? [...state.passportPersonCountries] : [],
+    passCountries: product.g === 'pass'
+      ? [...new Set(state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
+      : [],
+    passPersonCountries: product.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [],
     otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
     marketing: els.form.elements.marketing?.checked || false,
@@ -2546,10 +2578,10 @@ function renderPassportCountries() {
       : state.lang === 'de'
         ? `Person ${index + 1}`
         : `${index + 1}명 촬영 국가`;
-    const selectedCode = state.passportPersonCountries[index] || '';
+    const selectedCodes = Array.isArray(state.passportPersonCountries[index]) ? state.passportPersonCountries[index] : [];
     const chips = COUNTRY_OPTIONS.map((item) => {
       const label = item.label[state.lang] || item.label.ko;
-      const selected = selectedCode === item.code ? ' selected' : '';
+      const selected = selectedCodes.includes(item.code) ? ' selected' : '';
       return `<button type="button" class="chip-btn${selected}" data-person-index="${index}" data-country="${item.code}">${item.flag} ${escapeHtml(label)}</button>`;
     }).join('');
     return `<div class="form-block"><span class="block-label">${escapeHtml(rowLabel)}</span><div class="chip-grid">${chips}</div></div>`;
@@ -2561,8 +2593,15 @@ function renderPassportCountries() {
 
 function setPassportCountry(personIndex, code) {
   syncPassportPersonCountries();
-  state.passportPersonCountries[personIndex] = code;
-  state.selectedCountries = [...new Set(state.passportPersonCountries.filter(Boolean))];
+  const selected = new Set(Array.isArray(state.passportPersonCountries[personIndex]) ? state.passportPersonCountries[personIndex] : []);
+  if (selected.has(code)) selected.delete(code);
+  else selected.add(code);
+  state.passportPersonCountries[personIndex] = [...selected];
+  state.selectedCountries = [
+    ...new Set(
+      state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter(Boolean))
+    )
+  ];
   renderPassportCountries();
   syncConditionalFields();
   handleQuoteInputChange().then(() => refreshStepLocks());
@@ -3031,8 +3070,10 @@ async function onSubmit(event) {
     website: String(formData.get('website') || ''),
     lang: state.lang,
     optionKeys: [...state.optionKeys],
-    passCountries: state.selectedProduct.g === 'pass' ? [...new Set(state.passportPersonCountries.filter((code) => code && code !== 'OTHER'))] : [],
-    passPersonCountries: state.selectedProduct.g === 'pass' ? [...state.passportPersonCountries] : [],
+    passCountries: state.selectedProduct.g === 'pass'
+      ? [...new Set(state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
+      : [],
+    passPersonCountries: state.selectedProduct.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [],
     otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
     businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
