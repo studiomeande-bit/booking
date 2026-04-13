@@ -952,42 +952,16 @@ function getLocalizedNoticeText() {
   return String(settings.ko || '').trim();
 }
 
-function getUpcomingHolidayList() {
-  const raw = String(state.init?.settings?.customHolidays || '').trim();
-  if (!raw) return [];
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const end = new Date(start);
-  end.setDate(end.getDate() + 90);
-  return raw
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .filter((dateStr) => {
-      const date = new Date(`${dateStr}T00:00:00`);
-      return !Number.isNaN(date.getTime()) && date >= start && date <= end;
-    })
-    .sort();
-}
-
 function renderNoticePanel() {
-  if (!els.noticePanel || !els.noticeBody || !els.noticeMeta) return;
+  if (!els.noticePanel || !els.noticeBody) return;
   const notice = getLocalizedNoticeText();
-  const upcomingHolidays = getUpcomingHolidayList();
-  const copy = getCopy();
-  if (!notice && !upcomingHolidays.length) {
+  if (!notice) {
     els.noticePanel.classList.add('hidden-field');
     els.noticeBody.innerHTML = '';
-    els.noticeMeta.innerHTML = '';
     return;
   }
   els.noticePanel.classList.remove('hidden-field');
   els.noticeBody.innerHTML = notice ? escapeHtml(notice).replace(/\n/g, '<br>') : '';
-  const metaParts = [escapeHtml(copy.holidayNotice)];
-  if (upcomingHolidays.length) {
-    metaParts.push(`<strong>${escapeHtml(copy.holidayListLabel)}:</strong> ${escapeHtml(upcomingHolidays.join(', '))}`);
-  }
-  els.noticeMeta.innerHTML = metaParts.join('<br>');
 }
 
 function refreshBannerCopy() {
