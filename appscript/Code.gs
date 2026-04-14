@@ -340,7 +340,7 @@ function ensureBookingSheet_(ss) {
 function ensureSettingsSheet_(ss) {
   let sh=ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh){sh=ss.insertSheet(CONFIG.SETTINGS_SHEET);sh.appendRow(['항목','값']);}
-  if (sh.getLastRow()<=1) [['notice_ko',''],['notice_en',''],['notice_de',''],['custom_holidays',''],['event_rate','0'],['event_start',''],['event_end',''],['return_discount','10']].forEach(r=>sh.appendRow(r));
+  if (sh.getLastRow()<=1) [['notice_ko',''],['notice_en',''],['notice_de',''],['custom_holidays',''],['event_rate','0'],['event_start',''],['event_end',''],['return_discount','10'],['promo_enabled','N']].forEach(r=>sh.appendRow(r));
   sh.getRange(1,1,1,2).setFontWeight('bold').setBackground('#f1f5f9');
   sh.setFrozenRows(1); return sh;
 }
@@ -528,7 +528,7 @@ function invalidateProductCache_(){try{CacheService.getScriptCache().remove(PROD
 /* ====== 공개 API ====== */
 function getInitDataCustomer() {
   const s=getSettingsMap_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10'},products:getCachedProducts_()};
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||''))},products:getCachedProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -618,7 +618,7 @@ function saveSiteSettings(token,s){
   assertAdmin_(token);
   upsertSetting_('notice_ko',s.ko||'');upsertSetting_('notice_en',s.en||'');upsertSetting_('notice_de',s.de||'');
   upsertSetting_('custom_holidays',s.customHolidays||'');upsertSetting_('event_rate',s.eventRate||'');
-  upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',s.returnDiscount||'10');
+  upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',s.returnDiscount||'10');upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
   if(s.newPassword) PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(s.newPassword));
   return{ok:true};
 }
@@ -2291,6 +2291,93 @@ function confirmBookingDepositAdmin(token,rIdx,amount){
     sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   }
   return{ok:true,paidAmount:paidAmount,paidAt:Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd')};
+}
+
+function bulkConfirmAllPendingDeposits_(){
+  const sh=getDbSheet();
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return {ok:true,updated:0,skipped:0};
+  const rows=sh.getRange(2,1,lastRow-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const now=new Date();
+  const paidAt=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const syncedAt=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  let updated=0, skipped=0;
+  rows.forEach(function(row, idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    const deposit=getEffectiveBookingDeposit_(row);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    if(deposit<=0 || depositPaid || status==='취소됨'){
+      skipped++;
+      return;
+    }
+    const rIdx=idx+2;
+    sh.getRange(rIdx,BOOKING_COL['계약금입금여부']+1).setValue('Y');
+    sh.getRange(rIdx,BOOKING_COL['계약금입금일']+1).setValue(paidAt);
+    sh.getRange(rIdx,BOOKING_COL['계약금입금금액']+1).setValue(deposit);
+    if(BOOKING_COL['입금경고일시']!=null) sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
+    if(BOOKING_COL['Lexware결제상태']!=null){
+      const current=String(row[BOOKING_COL['Lexware결제상태']]||'').trim();
+      if(!current || current==='unmatched' || current==='pending'){
+        sh.getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue('manual_deposit_confirmed');
+      }
+    }
+    if(BOOKING_COL['Lexware동기화일시']!=null){
+      sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(syncedAt);
+    }
+    updated++;
+  });
+  return {ok:true,updated,skipped,paidAt};
+}
+
+function cleanupBookingDepositFlags_(){
+  const sh=getDbSheet();
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return {ok:true,cleanedWarnings:0,cleanedAutoCancel:0};
+  const rows=sh.getRange(2,1,lastRow-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  let cleanedWarnings=0, cleanedAutoCancel=0;
+  rows.forEach(function(row, idx){
+    const rIdx=idx+2;
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    const deposit=getEffectiveBookingDeposit_(row);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    const warnedAt=String(row[BOOKING_COL['입금경고일시']]||'').trim();
+    const autoCancelledAt=String(row[BOOKING_COL['자동취소일시']]||'').trim();
+    const shouldClearWarning = warnedAt && (deposit<=0 || depositPaid || status==='취소됨');
+    const shouldClearAutoCancel = autoCancelledAt && status!=='취소됨';
+    if(shouldClearWarning && BOOKING_COL['입금경고일시']!=null){
+      sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
+      cleanedWarnings++;
+    }
+    if(shouldClearAutoCancel && BOOKING_COL['자동취소일시']!=null){
+      sh.getRange(rIdx,BOOKING_COL['자동취소일시']+1).setValue('');
+      cleanedAutoCancel++;
+    }
+  });
+  return {ok:true,cleanedWarnings,cleanedAutoCancel};
+}
+
+function adminCleanupAndConfirmAllDeposits_(){
+  const cleanup=cleanupBookingDepositFlags_();
+  const confirm=bulkConfirmAllPendingDeposits_();
+  return {
+    ok:true,
+    cleanup:cleanup,
+    confirm:confirm
+  };
+}
+
+function adminCleanupAndConfirmAllDeposits(){
+  return adminCleanupAndConfirmAllDeposits_();
+}
+
+function cleanupBookingDepositFlagsAdmin(token){
+  assertAdmin_(token);
+  return cleanupBookingDepositFlags_();
+}
+
+function bulkConfirmAllPendingDepositsAdmin(token){
+  assertAdmin_(token);
+  return bulkConfirmAllPendingDeposits_();
 }
 
 function updateBookingAdmin(token,rIdx,d){

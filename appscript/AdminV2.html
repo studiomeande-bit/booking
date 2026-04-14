@@ -223,6 +223,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
       <div class="action-bar">
         <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">전체선택</button>
+        <button class="btn btn-sm btn-outline" onclick="bulkConfirmPendingDeposits()">💳 일괄 입금확인</button>
+        <button class="btn btn-sm btn-outline" onclick="cleanupDepositFlags()">🧹 표시 정리</button>
         <select id="batchAction" style="width:auto;padding:6px 10px;font-size:12px;"><option value="">일괄 처리...</option><option value="status_확정됨">→ 확정됨</option><option value="status_촬영완료">→ 촬영완료</option><option value="status_셀렉완료">→ 셀렉완료</option><option value="status_작업완료">→ 작업완료</option><option value="status_대기중">→ 대기중</option><option value="status_취소됨">→ 취소됨</option><option value="payMethod_현금">결제: 현금</option><option value="payMethod_카드">결제: 카드</option><option value="payMethod_계좌이체">결제: 계좌이체</option><option value="delete">🗑️ 삭제</option></select>
         <button class="btn btn-sm btn-outline" onclick="executeBatch()">적용</button>
         <span id="selectedCountLabel" style="font-size:12px;color:#64748b;"></span>
@@ -590,6 +592,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   <div class="content" id="tab_settings">
     <div class="card"><div class="card-title">📣 공지사항</div><div class="form-group"><label>한국어</label><textarea id="s_ko" rows="2"></textarea></div><div class="form-group"><label>English</label><textarea id="s_en" rows="2"></textarea></div><div class="form-group"><label>Deutsch</label><textarea id="s_de" rows="2"></textarea></div></div>
     <div class="card"><div class="card-title">🎉 이벤트 할인</div><div class="form-row"><div class="form-group"><label>할인율 (%)</label><input type="number" id="s_rate" min="0" max="100" placeholder="0"></div><div class="form-group"><label>시작일</label><input type="date" id="s_start"></div></div><div class="form-group"><label>종료일</label><input type="date" id="s_end"></div></div>
+    <div class="card"><div class="card-title">🌷 프로모션 페이지</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">`booking.studio-mean.com/promo/` 페이지 노출 여부를 제어합니다.</div><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="s_promo_enabled"><span>프로모션 페이지 활성화</span></label></div>
     <div class="card"><div class="card-title">⭐ 당일 재방문 할인</div><div class="form-row"><div class="form-group"><label>재방문 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div></div></div>
     <div class="card"><div class="card-title">📅 휴무일 설정</div><div class="hcal-wrap"><div class="hcal-header"><button class="hcal-nav" onclick="changeHolidayCal(-1)">◀</button><div style="font-size:14px;font-weight:700;" id="hcalMonthLabel"></div><button class="hcal-nav" onclick="changeHolidayCal(1)">▶</button></div><div class="hcal-grid" id="hcalGrid"></div><div style="font-size:12px;color:#64748b;margin-top:8px;" id="hcalSummary"></div><div id="hcalSelectedList" style="margin-top:6px;"></div></div></div>
     <div class="card"><div class="card-title">🔒 비밀번호 변경</div><div class="form-group"><label>새 비밀번호</label><input type="password" id="s_pw" placeholder="새 비밀번호"></div></div>
@@ -2189,8 +2192,8 @@ function toggleHoliday(d){if(selectedHolidays.has(d))selectedHolidays.delete(d);
 function removeHoliday(d){selectedHolidays.delete(d);renderHolidayCal();}
 
 /* ===== 설정 ===== */
-function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
-function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
+function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
+function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',promoEnabled:document.getElementById('s_promo_enabled').checked,customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
 
 /* ===== Twilio SMS 설정 ===== */
 function saveInvoiceSeq(){
@@ -2702,6 +2705,26 @@ function confirmBookingDeposit(rowIndex){
     .withSuccessHandler(()=>{alert('예약금 입금 확인이 저장되었습니다.');loadAll();})
     .withFailureHandler(handleApiError)
     .confirmBookingDepositAdmin(adminToken,rowIndex,amount);
+}
+function bulkConfirmPendingDeposits(){
+  if(!confirm('현재 예약장부에서 입금확인이 필요한 모든 건을 일괄 완료 처리할까요?')) return;
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`일괄 입금확인 완료\\n처리: ${res.updated||0}건\\n건너뜀: ${res.skipped||0}건`);
+      loadAll();
+    })
+    .withFailureHandler(handleApiError)
+    .bulkConfirmAllPendingDepositsAdmin(adminToken);
+}
+function cleanupDepositFlags(){
+  if(!confirm('5일 경과/10일 자동취소 표시 중 현재 상태와 맞지 않는 값을 정리할까요?')) return;
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`표시 정리 완료\\n경고 정리: ${res.cleanedWarnings||0}건\\n자동취소 표시 정리: ${res.cleanedAutoCancel||0}건`);
+      loadAll();
+    })
+    .withFailureHandler(handleApiError)
+    .cleanupBookingDepositFlagsAdmin(adminToken);
 }
 function gotoBookings(statusFilter){switchTab('booking');const el=document.getElementById('statusFilter');if(el){el.value=statusFilter||'';renderTable();}}
 function gotoBookingsByMonth(month){switchTab('booking');const el=document.getElementById('monthFilter');if(el){el.value=month;renderTable();}}

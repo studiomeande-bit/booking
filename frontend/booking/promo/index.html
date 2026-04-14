@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio mean Promo</title>
+  <link rel="stylesheet" href="./promo.css">
+</head>
+<body>
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-card">
+      <img class="brand-logo" src="../studio-mean-logo.png" alt="Studio mean logo">
+      <div id="loadingCopy" class="loading-copy">프로모션 페이지를 준비하고 있습니다.</div>
+      <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <img class="header-logo" src="../studio-mean-logo.png" alt="Studio mean logo">
+        <div class="lang-row">
+          <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+        </div>
+      </div>
+      <p id="eyebrow" class="eyebrow">2026 Family Month Promotion</p>
+      <h1 id="heroTitle">가정의 달 이벤트</h1>
+      <p id="heroLead" class="hero-lead">아이의 지금, 그리고 가족의 지금을 가볍지만 오래 남는 사진으로 기록해보세요.</p>
+      <div id="statusBanner" class="status-banner">프로모션 안내를 불러오는 중입니다.</div>
+    </section>
+
+    <section id="promoClosed" class="panel hidden">
+      <h2 id="closedTitle">프로모션이 현재 비활성화되어 있습니다.</h2>
+      <p id="closedBody">운영 공지 후 다시 열릴 예정입니다.</p>
+    </section>
+
+    <section id="promoContent" class="promo-content hidden">
+      <section class="panel intro-panel">
+        <div class="intro-grid">
+          <div class="intro-card">
+            <div id="periodLabel" class="meta-label">진행 기간</div>
+            <div id="periodValue" class="meta-value">2026.04.20 - 2026.05.10</div>
+          </div>
+          <div class="intro-card">
+            <div id="limitLabel" class="meta-label">모집 안내</div>
+            <div id="limitValue" class="meta-value">각 이벤트 선착순 5팀</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="promo-grid">
+        <article class="panel promo-card">
+          <div class="card-badge" id="kidsBadge">Kids Profile Event</div>
+          <h2 id="kidsTitle">키즈 프로필 이벤트</h2>
+          <ul id="kidsList" class="feature-list"></ul>
+          <div class="note-box">
+            <strong id="kidsNoticeTitle">안내</strong>
+            <p id="kidsNoticeBody">단독 키즈 촬영은 만 3세 이하 진행이 어렵습니다.</p>
+          </div>
+        </article>
+
+        <article class="panel promo-card">
+          <div class="card-badge" id="familyBadge">Family Photo Event</div>
+          <h2 id="familyTitle">가족사진 이벤트</h2>
+          <ul id="familyList" class="feature-list"></ul>
+          <div class="note-box">
+            <strong id="familyNoticeTitle">안내</strong>
+            <p id="familyNoticeBody">5인 이상은 1인 추가당 +20€가 적용됩니다.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel footer-panel">
+        <h2 id="footerTitle">프로모션 안내</h2>
+        <p id="footerBody">선착순 마감 시 조기 종료될 수 있습니다.</p>
+        <div id="hashTags" class="hashtags">#독일 #독일가족사진 #유럽한인사진관 #어린이날 #가정의달</div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="./promo.js"></script>
+</body>
+</html>
