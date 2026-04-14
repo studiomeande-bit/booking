@@ -45,6 +45,11 @@ const PUBLIC_API_CONFIG = {
   HONEYPOT_FIELD: 'website',
   MAX_BOOKING_DATE_STR: '2026-12-31'
 };
+const PROMO_CONFIG = {
+  START: '2026-04-20',
+  END: '2026-05-10',
+  ITEM_IDS: ['promo_kids_2026', 'promo_family_2026']
+};
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
@@ -526,9 +531,46 @@ function getCachedProducts_() {
 function invalidateProductCache_(){try{CacheService.getScriptCache().remove(PRODUCTS_CACHE_KEY());}catch(e){}}
 
 /* ====== 공개 API ====== */
+function getPromoProducts_(){
+  return [
+    {
+      id:'promo_kids_2026',
+      g:'promo',
+      t:'promoKids',
+      nameKo:'키즈 프로필 이벤트',
+      nameEn:'Kids Profile Event',
+      nameDe:'Kinderprofil Aktion',
+      p:69,
+      d:30,
+      prep:15,
+      descKo:'30분 촬영 / 보정본 2장 / 배경 1컬러 / 의상 1벌 / 10x15 인원수만큼 / 양면 포토카드 포함',
+      descEn:'30 min session / 2 retouched photos / 1 background / 1 outfit / 10x15 print per person / double-sided photocard',
+      descDe:'30 Min. Shooting / 2 bearbeitete Bilder / 1 Hintergrund / 1 Outfit / 10x15-Abzug pro Person / doppelseitige Fotokarte'
+    },
+    {
+      id:'promo_family_2026',
+      g:'promo',
+      t:'promoFamily',
+      nameKo:'가족사진 이벤트',
+      nameEn:'Family Photo Event',
+      nameDe:'Familienfoto Aktion',
+      p:129,
+      d:30,
+      prep:15,
+      descKo:'30분 촬영 / 보정본 3장 / 배경 1컬러 / 의상 1벌 / A4 1장 + 10x15 2장 / 양면 포토카드 2장 포함',
+      descEn:'30 min session / 3 retouched photos / 1 background / 1 outfit / A4 1 print + 2 prints in 10x15 / 2 double-sided photocards',
+      descDe:'30 Min. Shooting / 3 bearbeitete Bilder / 1 Hintergrund / 1 Outfit / 1x A4 + 2x 10x15 / 2 doppelseitige Fotokarten'
+    }
+  ];
+}
+
+function isPromoDateAllowed_(dateStr){
+  return !!dateStr && dateStr>=PROMO_CONFIG.START && dateStr<=PROMO_CONFIG.END;
+}
+
 function getInitDataCustomer() {
   const s=getSettingsMap_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||''))},products:getCachedProducts_()};
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:PROMO_CONFIG.START,promoEnd:PROMO_CONFIG.END},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -565,7 +607,9 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
       if(parsed&&typeof parsed==='object') return parsed;
     }
   }catch(e){}
-  const monthSummary=getUnavailableDays(y,m,totalDur,itemGroup,true);
+  const monthSummary=itemGroup==='promo'
+    ? getPublicCalendarMonthLite_(y,m,itemGroup)
+    : getUnavailableDays(y,m,totalDur,itemGroup,true);
   const out={};
   out[key]={unavail:monthSummary.unavail||[],slotCounts:{},slotsByDate:{}};
   try{cache.put(cacheKey,JSON.stringify(out),300);}catch(e){}
@@ -573,6 +617,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
 }
 
 function getPublicSlots_(dateStr,totalDur,itemGroup){
+  if(itemGroup==='promo'&&!isPromoDateAllowed_(dateStr)) return[];
   if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
   return computeSlots_(dateStr,events,totalDur,itemGroup);
@@ -584,7 +629,7 @@ function getPublicCalendarMonthLite_(year,month,itemGroup){
   const now=new Date().getTime();
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
-    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)){
+    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)||(itemGroup==='promo'&&!isPromoDateAllowed_(dStr))){
       unavail.push(dStr);
     }
   }
@@ -624,7 +669,11 @@ function saveSiteSettings(token,s){
 }
 
 /* ====== 견적 ====== */
-function getProductById_(itemId){const p=getCachedProducts_().find(x=>x.id===itemId);if(!p)throw new Error('유효하지 않은 상품입니다.');return p;}
+function getProductById_(itemId){
+  const p=getCachedProducts_().concat(getPromoProducts_()).find(x=>x.id===itemId);
+  if(!p)throw new Error('유효하지 않은 상품입니다.');
+  return p;
+}
 function calculateQuote_(request){
   const item=getProductById_(request.itemId);
   const people=Math.max(1,parseInt(request.people)||1);
@@ -669,6 +718,16 @@ function calculateQuote_(request){
       productLabelKo='행사 사진 '+hourKo;
       productLabelEn='Event Photo '+hourEn;
       productLabelDe='Event Foto '+hourDe;
+    }
+  }
+  else if(item.g==='promo'){
+    if(item.id==='promo_kids_2026'){
+      total=people===1?69:people===2?89:109;
+    }else if(item.id==='promo_family_2026'){
+      if(people<=2) total=129;
+      else if(people===3) total=149;
+      else if(people===4) total=169;
+      else total=169+((people-4)*20);
     }
   }
   if(item.t==='passport'){
@@ -720,7 +779,7 @@ function calculateQuote_(request){
   const passItem=passAddon?getCachedProducts_().find(x=>x.g==='pass'):null;
   const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
   if(passAddon)total+=passAddonPrice;
-  const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz';
+  const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo';
   const depositAmount=total<=100?0:(item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0));
   return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
@@ -1577,6 +1636,7 @@ function processForm(data){
     if(!data.name||!data.phone||!data.email) throw new Error('필수 정보 누락');
     const isReturn=checkReturnCustomer_(data.name,data.phone,data.email);
     const quote=calculateQuote_({...data,isReturn});
+    if(quote.itemGroup==='promo' && !isPromoDateAllowed_(data.date)) throw new Error('프로모션 예약 가능 기간이 아닙니다.');
     const startTime=new Date(`${data.date}T${data.time}:00`);
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,data.location||'')) throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');

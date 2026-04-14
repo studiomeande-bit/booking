@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Studio mean Promo</title>
+  <title>Studio mean Family Month Promo</title>
   <link rel="stylesheet" href="./promo.css">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
     <div class="loading-card">
       <img class="brand-logo" src="../studio-mean-logo.png" alt="Studio mean logo">
-      <div id="loadingCopy" class="loading-copy">프로모션 페이지를 준비하고 있습니다.</div>
+      <div id="loadingCopy" class="loading-copy">프로모션 예약 페이지를 준비하고 있습니다.</div>
       <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
     </div>
   </div>
@@ -25,10 +25,10 @@
           <button type="button" class="lang-btn" data-lang="de">DE</button>
         </div>
       </div>
-      <p id="eyebrow" class="eyebrow">2026 Family Month Promotion</p>
-      <h1 id="heroTitle">가정의 달 이벤트</h1>
-      <p id="heroLead" class="hero-lead">아이의 지금, 그리고 가족의 지금을 가볍지만 오래 남는 사진으로 기록해보세요.</p>
-      <div id="statusBanner" class="status-banner">프로모션 안내를 불러오는 중입니다.</div>
+      <div id="heroEyebrow" class="eyebrow">2026 Family Month Promotion</div>
+      <h1 id="heroTitle">가정의 달 이벤트 예약</h1>
+      <p id="heroLead" class="hero-lead">아이와 가족의 지금을 오래 남는 사진으로 기록해 보세요.</p>
+      <div id="statusBanner" class="status-banner">프로모션 예약 페이지를 준비하고 있습니다.</div>
     </section>
 
     <section id="promoClosed" class="panel hidden">
@@ -37,7 +37,7 @@
     </section>
 
     <section id="promoContent" class="promo-content hidden">
-      <section class="panel intro-panel">
+      <section class="panel promo-intro">
         <div class="intro-grid">
           <div class="intro-card">
             <div id="periodLabel" class="meta-label">진행 기간</div>
@@ -50,32 +50,143 @@
         </div>
       </section>
 
-      <section class="promo-grid">
-        <article class="panel promo-card">
-          <div class="card-badge" id="kidsBadge">Kids Profile Event</div>
-          <h2 id="kidsTitle">키즈 프로필 이벤트</h2>
-          <ul id="kidsList" class="feature-list"></ul>
-          <div class="note-box">
-            <strong id="kidsNoticeTitle">안내</strong>
-            <p id="kidsNoticeBody">단독 키즈 촬영은 만 3세 이하 진행이 어렵습니다.</p>
-          </div>
-        </article>
-
-        <article class="panel promo-card">
-          <div class="card-badge" id="familyBadge">Family Photo Event</div>
-          <h2 id="familyTitle">가족사진 이벤트</h2>
-          <ul id="familyList" class="feature-list"></ul>
-          <div class="note-box">
-            <strong id="familyNoticeTitle">안내</strong>
-            <p id="familyNoticeBody">5인 이상은 1인 추가당 +20€가 적용됩니다.</p>
-          </div>
-        </article>
+      <section id="successPanel" class="panel success-panel hidden">
+        <div class="success-card">
+          <div id="successTitle" class="success-title">예약 신청이 접수되었습니다.</div>
+          <p id="successLead" class="success-lead">확인 메일을 보내드렸습니다. 순차적으로 안내드릴게요.</p>
+          <div id="successGrid" class="success-grid"></div>
+          <div id="successGuide" class="success-guide"></div>
+          <button type="button" id="restartBtn" class="primary-btn secondary">새 예약 시작</button>
+        </div>
       </section>
 
-      <section class="panel footer-panel">
-        <h2 id="footerTitle">프로모션 안내</h2>
-        <p id="footerBody">선착순 마감 시 조기 종료될 수 있습니다.</p>
-        <div id="hashTags" class="hashtags">#독일 #독일가족사진 #유럽한인사진관 #어린이날 #가정의달</div>
+      <section id="step1" class="panel">
+        <div class="panel-head">
+          <h2 id="step1Title">1. 이벤트 선택</h2>
+          <p id="step1Lead">예약할 이벤트를 선택해 주세요.</p>
+        </div>
+        <div id="productGrid" class="product-grid"></div>
+        <div class="wizard-nav">
+          <div class="wizard-progress">1 / 4</div>
+          <div id="step1Warning" class="step-warning"></div>
+          <div class="wizard-actions">
+            <button type="button" id="step1Next" class="ghost-btn" disabled>다음</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="step2" class="panel hidden">
+        <div class="panel-head">
+          <h2 id="step2Title">2. 촬영 구성</h2>
+          <p id="step2Lead">인원과 필요한 정보를 입력해 주세요.</p>
+        </div>
+        <div id="detailCard" class="detail-card"></div>
+        <div class="form-grid">
+          <label class="inline-field">
+            <span id="peopleLabel">인원수</span>
+            <select id="peopleSelect"></select>
+            <input id="peopleCustom" class="hidden" type="number" min="6" step="1" placeholder="6명 이상 직접입력">
+          </label>
+          <label id="childAgeField" class="inline-field hidden">
+            <span id="childAgeLabel">아이 나이</span>
+            <input id="childAgeInput" type="text" placeholder="예: 4세">
+          </label>
+          <label id="familyInfoField" class="inline-field hidden">
+            <span id="familyInfoLabel">가족 구성</span>
+            <input id="familyInfoInput" type="text" placeholder="예: 부모 + 아이 2명">
+          </label>
+        </div>
+        <div id="priceCard" class="price-card"></div>
+        <div class="wizard-nav">
+          <div class="wizard-progress">2 / 4</div>
+          <div id="step2Warning" class="step-warning"></div>
+          <div class="wizard-actions">
+            <button type="button" id="step2Back" class="ghost-btn">이전</button>
+            <button type="button" id="step2Next" class="ghost-btn" disabled>다음</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="step3" class="panel hidden">
+        <div class="panel-head">
+          <h2 id="step3Title">3. 날짜 및 시간 선택</h2>
+          <p id="calendarHint">예약 가능한 날짜와 시간을 선택해 주세요.</p>
+        </div>
+        <div class="calendar-stage">
+          <div class="calendar-main">
+            <div class="calendar-toolbar">
+              <button type="button" id="prevMonthBtn" class="ghost-btn">이전 달</button>
+              <strong id="monthLabel">-</strong>
+              <button type="button" id="nextMonthBtn" class="ghost-btn">다음 달</button>
+            </div>
+            <div id="calendarWeekdays" class="calendar-weekdays"></div>
+            <div id="calendarGrid" class="calendar-grid loading-box">달력을 불러오는 중입니다.</div>
+          </div>
+          <aside class="slot-panel">
+            <div class="slot-panel-title" id="slotTitle">예약 가능 시간</div>
+            <div id="slotHint" class="slot-panel-copy">날짜를 선택하면 예약 가능한 시간이 표시됩니다.</div>
+            <div id="slotGrid" class="slot-grid loading-box">시간 정보를 불러오는 중입니다.</div>
+          </aside>
+        </div>
+        <div class="wizard-nav">
+          <div class="wizard-progress">3 / 4</div>
+          <div id="step3Warning" class="step-warning"></div>
+          <div class="wizard-actions">
+            <button type="button" id="step3Back" class="ghost-btn">이전</button>
+            <button type="button" id="step3Next" class="ghost-btn" disabled>다음</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="step4" class="panel hidden">
+        <div class="panel-head">
+          <h2 id="step4Title">4. 예약 정보</h2>
+          <p id="step4Lead">예약자 정보를 입력하고 신청을 완료해 주세요.</p>
+        </div>
+        <div id="reviewBox" class="detail-card review-box"></div>
+        <form id="bookingForm" class="booking-form">
+          <label>
+            <span id="nameLabel">이름</span>
+            <input name="name" autocomplete="name" required>
+          </label>
+          <label>
+            <span id="phoneLabel">연락처</span>
+            <input name="phone" autocomplete="tel" required>
+          </label>
+          <label>
+            <span id="emailLabel">이메일</span>
+            <input name="email" type="email" autocomplete="email" required>
+          </label>
+          <label>
+            <span id="addressLabel">주소 (인보이스용, 선택)</span>
+            <input name="address" autocomplete="street-address" placeholder="인보이스가 필요한 경우만 입력해 주세요">
+          </label>
+          <label>
+            <span id="memoLabel">요청사항</span>
+            <textarea name="memo" rows="4" placeholder="전달할 요청사항이 있다면 적어 주세요."></textarea>
+          </label>
+          <div class="consent-box">
+            <div id="consentTitle" class="consent-title">이용 동의</div>
+            <p id="consentLead" class="consent-copy">개인정보 수집 및 이용 동의가 필요합니다.</p>
+            <label class="checkbox-row">
+              <input type="checkbox" name="gdprConsent">
+              <span id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="marketing">
+              <span id="marketingLabel">[선택] Studio mean 포트폴리오 및 SNS 활용에 동의합니다.</span>
+            </label>
+          </div>
+          <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
+        </form>
+        <div class="wizard-nav">
+          <div class="wizard-progress">4 / 4</div>
+          <div id="step4Warning" class="step-warning"></div>
+          <div class="wizard-actions">
+            <button type="button" id="step4Back" class="ghost-btn">이전</button>
+            <button type="button" id="submitBtn" class="primary-btn" disabled>예약 신청</button>
+          </div>
+        </div>
       </section>
     </section>
   </main>

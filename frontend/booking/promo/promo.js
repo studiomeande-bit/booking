@@ -1,117 +1,271 @@
-import { fetchInitData } from '../shared/api.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchSlots, submitBooking } from '../shared/api.js';
+import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
-const STRINGS = {
+const PROMO_END_LIMIT = '2026-12-31';
+
+const COPY = {
   ko: {
-    loading: '프로모션 페이지를 준비하고 있습니다.',
-    title: '가정의 달 이벤트',
-    lead: '아이의 지금, 그리고 가족의 지금을 가볍지만 오래 남는 사진으로 기록해보세요.',
-    statusReady: '프로모션 안내가 열려 있습니다.',
-    statusClosed: '현재 프로모션이 비활성화되어 있습니다.',
-    closedTitle: '프로모션이 현재 비활성화되어 있습니다.',
+    loading: '프로모션 예약 페이지를 준비하고 있습니다.',
+    statusLoading: '프로모션 정보를 불러오는 중입니다.',
+    statusReady: '프로모션 예약이 가능합니다.',
+    statusClosed: '현재 프로모션 예약이 비활성화되어 있습니다.',
+    closedTitle: '프로모션 예약이 현재 비활성화되어 있습니다.',
     closedBody: '운영 공지 후 다시 열릴 예정입니다.',
+    eyebrow: '2026 Family Month Promotion',
+    heroTitle: '가정의 달 이벤트 예약',
+    heroLead: '아이와 가족의 지금을 오래 남는 사진으로 기록해 보세요.',
     periodLabel: '진행 기간',
-    periodValue: '2026.04.20 - 2026.05.10',
     limitLabel: '모집 안내',
     limitValue: '각 이벤트 선착순 5팀',
-    kidsBadge: 'Kids Profile Event',
-    kidsTitle: '키즈 프로필 이벤트',
-    kidsList: [
-      '30분 촬영 / 보정본 2장 / 배경 1컬러 / 의상 1벌',
-      '프리미엄 인화 10x15cm 인원수만큼 증정',
-      '양면 포토카드 추가 증정',
-      '1인 69€ / 2인 89€ / 3인 109€'
-    ],
-    kidsNoticeTitle: '안내',
-    kidsNoticeBody: '단독 키즈 촬영은 만 3세 이하 진행이 어렵습니다.',
-    familyBadge: 'Family Photo Event',
-    familyTitle: '가족사진 이벤트',
-    familyList: [
-      '30분 촬영 / 보정본 3장 / 배경 1컬러 / 의상 1벌',
-      '프리미엄 인화 A4 1장 + 10x15cm 2장 포함',
-      '양면 포토카드 2장 포함',
-      '2인 129€ / 3인 149€ / 4인 169€'
-    ],
-    familyNoticeTitle: '안내',
-    familyNoticeBody: '5인 이상은 1인 추가당 +20€가 적용됩니다. 인원 추가 시 10x15cm 인화 1장이 함께 추가됩니다.',
-    footerTitle: '프로모션 안내',
-    footerBody: '선착순 마감 시 조기 종료될 수 있습니다.',
-    tags: '#독일 #독일가족사진 #유럽한인사진관 #어린이날 #가정의달'
+    step1Title: '1. 이벤트 선택',
+    step1Lead: '예약할 이벤트를 선택해 주세요.',
+    step2Title: '2. 촬영 구성',
+    step2Lead: '인원과 필요한 정보를 입력해 주세요.',
+    step3Title: '3. 날짜 및 시간 선택',
+    step4Title: '4. 예약 정보',
+    step4Lead: '예약자 정보를 입력하고 신청을 완료해 주세요.',
+    peopleLabel: '인원수',
+    childAgeLabel: '아이 나이',
+    familyInfoLabel: '가족 구성',
+    nameLabel: '이름',
+    phoneLabel: '연락처',
+    emailLabel: '이메일',
+    addressLabel: '주소 (인보이스용, 선택)',
+    memoLabel: '요청사항',
+    consentTitle: '이용 동의',
+    consentLead: '개인정보 수집 및 이용 동의가 필요합니다.',
+    gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    marketingLabel: '[선택] Studio mean 포트폴리오 및 SNS 활용에 동의합니다.',
+    next: '다음',
+    back: '이전',
+    submit: '예약 신청',
+    submitBusy: '제출 중...',
+    restart: '새 예약 시작',
+    periodValue(start, end) { return `${start.replaceAll('-', '.')} - ${end.replaceAll('-', '.')}`; },
+    packageSummary: '포함 구성',
+    dateHint: '예약 가능한 날짜와 시간을 선택해 주세요.',
+    loadingCalendar: '달력을 불러오는 중입니다.',
+    loadingSlots: '시간 정보를 불러오는 중입니다.',
+    slotTitle: '예약 가능 시간',
+    slotEmpty: '날짜를 선택하면 예약 가능한 시간이 표시됩니다.',
+    slotNone: '예약 가능한 시간이 없습니다.',
+    step1Warning: '이벤트를 선택해 주세요.',
+    childAgeRequired: '아이 나이를 입력해 주세요.',
+    familyInfoRequired: '가족 구성을 입력해 주세요.',
+    step3WarningDate: '날짜를 먼저 선택해 주세요.',
+    step3WarningTime: '시간을 먼저 선택해 주세요.',
+    formRequired: '이름, 연락처, 이메일과 필수 동의를 확인해 주세요.',
+    invalidEmail: '이메일 형식을 확인해 주세요.',
+    successTitle: '예약 신청이 접수되었습니다.',
+    successLead: '확인 메일을 보내드렸습니다. 순차적으로 안내드릴게요.',
+    successGuide: '프로모션 기간과 선착순 마감 여부를 확인한 뒤 개별 안내드립니다.',
+    bookingTime: '예약 일시',
+    packageName: '상품',
+    price: '예상 금액',
+    customerName: '이름',
+    customerEmail: '이메일',
+    calendarHintProduct(name) { return `${name} · 예약 가능한 날짜와 시간을 선택해 주세요.`; },
+    childAgePlaceholder: '예: 4세',
+    familyInfoPlaceholder: '예: 부모 + 아이 2명',
+    memoPlaceholder: '전달할 요청사항이 있다면 적어 주세요.',
+    addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
+    groups: {
+      promo_kids_2026: {
+        badge: 'Kids Profile Event',
+        title: '키즈 프로필 이벤트',
+        desc: ['30분 촬영', '보정본 2장', '배경 1컬러 / 의상 1벌', '프리미엄 인화 10x15cm 인원수만큼', '양면 포토카드 추가 증정'],
+        note: '단독 키즈 촬영은 만 3세 이하 진행이 어렵습니다.'
+      },
+      promo_family_2026: {
+        badge: 'Family Photo Event',
+        title: '가족사진 이벤트',
+        desc: ['30분 촬영', '보정본 3장', '배경 1컬러 / 의상 1벌', '프리미엄 인화 A4 1장 + 10x15cm 2장', '양면 포토카드 2장 포함'],
+        note: '5인 이상은 1인 추가당 +20€가 적용되며, 인원 추가 시 10x15cm 인화 1장이 함께 추가됩니다.'
+      }
+    }
   },
   en: {
-    loading: 'Preparing the promotion page.',
-    title: 'Family Month Promotion',
-    lead: 'Record your child and your family as they are now with a light but lasting photo session.',
-    statusReady: 'The promotion page is currently active.',
-    statusClosed: 'This promotion is currently unavailable.',
-    closedTitle: 'This promotion is currently unavailable.',
-    closedBody: 'It will reopen after the studio announces the campaign.',
+    loading: 'Preparing the promotion booking page.',
+    statusLoading: 'Loading promotion information.',
+    statusReady: 'Promotion booking is available.',
+    statusClosed: 'Promotion booking is currently disabled.',
+    closedTitle: 'Promotion booking is currently disabled.',
+    closedBody: 'It will reopen after the next studio notice.',
+    eyebrow: '2026 Family Month Promotion',
+    heroTitle: 'Family Month Promotion Booking',
+    heroLead: 'Capture your child and family as they are now with images that stay with you.',
     periodLabel: 'Promotion Period',
-    periodValue: '2026.04.20 - 2026.05.10',
     limitLabel: 'Availability',
     limitValue: 'Limited to 5 teams per event',
-    kidsBadge: 'Kids Profile Event',
-    kidsTitle: 'Kids Profile Event',
-    kidsList: [
-      '30 min session / 2 retouched photos / 1 background color / 1 outfit',
-      'One premium 10x15cm print per person included',
-      'Extra double-sided photocard included',
-      '1 person 69€ / 2 people 89€ / 3 people 109€'
-    ],
-    kidsNoticeTitle: 'Note',
-    kidsNoticeBody: 'A kids-only session is difficult for children under 3 years old.',
-    familyBadge: 'Family Photo Event',
-    familyTitle: 'Family Photo Event',
-    familyList: [
-      '30 min session / 3 retouched photos / 1 background color / 1 outfit',
-      'Includes 1 A4 premium print + 2 prints in 10x15cm',
-      'Includes 2 double-sided photocards',
-      '2 people 129€ / 3 people 149€ / 4 people 169€'
-    ],
-    familyNoticeTitle: 'Note',
-    familyNoticeBody: 'For 5 or more people, +20€ per additional person applies and one extra 10x15cm print is included.',
-    footerTitle: 'Promotion Note',
-    footerBody: 'The promotion may close early once the limited slots are filled.',
-    tags: '#Germany #FamilyPhotos #KoreanStudioInEurope #ChildrensDay #FamilyMonth'
+    step1Title: '1. Choose your event',
+    step1Lead: 'Select the event you want to book.',
+    step2Title: '2. Session details',
+    step2Lead: 'Set the number of people and required details.',
+    step3Title: '3. Select date and time',
+    step4Title: '4. Booking details',
+    step4Lead: 'Enter your contact details and submit the request.',
+    peopleLabel: 'Number of people',
+    childAgeLabel: 'Child age',
+    familyInfoLabel: 'Family members',
+    nameLabel: 'Name',
+    phoneLabel: 'Phone',
+    emailLabel: 'Email',
+    addressLabel: 'Address (optional, for invoice)',
+    memoLabel: 'Notes',
+    consentTitle: 'Consent',
+    consentLead: 'Personal data consent is required.',
+    gdprLabel: '[Required] I agree to the collection and use of personal data.',
+    marketingLabel: '[Optional] I agree to the use of the photos for Studio mean portfolio and social channels.',
+    next: 'Next',
+    back: 'Back',
+    submit: 'Submit booking',
+    submitBusy: 'Submitting...',
+    restart: 'Start another booking',
+    periodValue(start, end) { return `${start} - ${end}`; },
+    packageSummary: 'What is included',
+    dateHint: 'Choose an available date and time.',
+    loadingCalendar: 'Loading calendar...',
+    loadingSlots: 'Loading available times...',
+    slotTitle: 'Available times',
+    slotEmpty: 'Select a date to view available times.',
+    slotNone: 'No available time for this date.',
+    step1Warning: 'Please choose an event first.',
+    childAgeRequired: 'Please enter the child age.',
+    familyInfoRequired: 'Please enter the family members.',
+    step3WarningDate: 'Please choose a date first.',
+    step3WarningTime: 'Please choose a time first.',
+    formRequired: 'Please complete name, phone, email and required consent.',
+    invalidEmail: 'Please check the email format.',
+    successTitle: 'Your booking request has been received.',
+    successLead: 'We have sent a confirmation email and will follow up shortly.',
+    successGuide: 'We will confirm availability within the promotion period and the first-come-first-served limit.',
+    bookingTime: 'Booking time',
+    packageName: 'Package',
+    price: 'Estimated price',
+    customerName: 'Name',
+    customerEmail: 'Email',
+    calendarHintProduct(name) { return `${name} · Choose an available date and time.`; },
+    childAgePlaceholder: 'e.g. 4 years old',
+    familyInfoPlaceholder: 'e.g. parents + 2 children',
+    memoPlaceholder: 'Share any requests or notes for the shoot.',
+    addressPlaceholder: 'Enter only if you need an invoice',
+    groups: {
+      promo_kids_2026: {
+        badge: 'Kids Profile Event',
+        title: 'Kids Profile Event',
+        desc: ['30 min session', '2 retouched photos', '1 background / 1 outfit', 'Premium 10x15cm print per person', 'Extra double-sided photocard included'],
+        note: 'A kids-only shoot is difficult for children under 3 years old.'
+      },
+      promo_family_2026: {
+        badge: 'Family Photo Event',
+        title: 'Family Photo Event',
+        desc: ['30 min session', '3 retouched photos', '1 background / 1 outfit', 'Premium A4 print + 2x 10x15cm prints', '2 double-sided photocards included'],
+        note: 'For 5 or more people, +20€ applies per added person and one extra 10x15cm print is included.'
+      }
+    }
   },
   de: {
-    loading: 'Die Aktionsseite wird vorbereitet.',
-    title: 'Familienmonat Aktion',
-    lead: 'Halten Sie den jetzigen Moment Ihres Kindes und Ihrer Familie in leichten, aber langlebigen Bildern fest.',
-    statusReady: 'Die Aktionsseite ist aktuell aktiv.',
-    statusClosed: 'Diese Aktion ist derzeit nicht aktiv.',
-    closedTitle: 'Diese Aktion ist derzeit nicht aktiv.',
-    closedBody: 'Nach der nächsten Studio-Ankündigung wird sie wieder geöffnet.',
+    loading: 'Die Aktionsbuchung wird vorbereitet.',
+    statusLoading: 'Aktionsdaten werden geladen.',
+    statusReady: 'Aktionsbuchung ist verfügbar.',
+    statusClosed: 'Die Aktionsbuchung ist derzeit deaktiviert.',
+    closedTitle: 'Die Aktionsbuchung ist derzeit deaktiviert.',
+    closedBody: 'Sie wird nach der nächsten Studio-Mitteilung wieder geöffnet.',
+    eyebrow: '2026 Familienmonat Aktion',
+    heroTitle: 'Familienmonat Aktionsbuchung',
+    heroLead: 'Halten Sie den jetzigen Moment Ihres Kindes und Ihrer Familie mit Bildern fest, die bleiben.',
     periodLabel: 'Aktionszeitraum',
-    periodValue: '20.04.2026 - 10.05.2026',
     limitLabel: 'Verfügbarkeit',
-    limitValue: 'Jeweils 5 Teams pro Aktion',
-    kidsBadge: 'Kids Profile Event',
-    kidsTitle: 'Kinderprofil Aktion',
-    kidsList: [
-      '30 Min. Shooting / 2 bearbeitete Bilder / 1 Hintergrundfarbe / 1 Outfit',
-      'Ein Premiumabzug 10x15cm pro Person inklusive',
-      'Zusätzliche doppelseitige Fotokarte inklusive',
-      '1 Person 69€ / 2 Personen 89€ / 3 Personen 109€'
-    ],
-    kidsNoticeTitle: 'Hinweis',
-    kidsNoticeBody: 'Ein reines Kindershooting ist für Kinder unter 3 Jahren nur eingeschränkt möglich.',
-    familyBadge: 'Family Photo Event',
-    familyTitle: 'Familienfoto Aktion',
-    familyList: [
-      '30 Min. Shooting / 3 bearbeitete Bilder / 1 Hintergrundfarbe / 1 Outfit',
-      'Enthält 1 Premiumabzug A4 + 2 Abzüge 10x15cm',
-      'Enthält 2 doppelseitige Fotokarten',
-      '2 Personen 129€ / 3 Personen 149€ / 4 Personen 169€'
-    ],
-    familyNoticeTitle: 'Hinweis',
-    familyNoticeBody: 'Ab 5 Personen werden pro weiterer Person +20€ berechnet, zusätzlich mit einem weiteren 10x15cm Abzug.',
-    footerTitle: 'Aktionshinweis',
-    footerBody: 'Die Aktion kann bei Erreichen der limitierten Plätze vorzeitig enden.',
-    tags: '#Deutschland #Familienfotos #KoreanischesStudioInEuropa #Kindertag #Familienmonat'
+    limitValue: 'Jeweils 5 Teams pro Event',
+    step1Title: '1. Event wählen',
+    step1Lead: 'Wählen Sie das gewünschte Event aus.',
+    step2Title: '2. Shooting-Konfiguration',
+    step2Lead: 'Legen Sie Personenzahl und benötigte Angaben fest.',
+    step3Title: '3. Datum und Uhrzeit wählen',
+    step4Title: '4. Buchungsdaten',
+    step4Lead: 'Bitte Kontaktdaten eingeben und die Anfrage absenden.',
+    peopleLabel: 'Personenzahl',
+    childAgeLabel: 'Alter des Kindes',
+    familyInfoLabel: 'Familienkonstellation',
+    nameLabel: 'Name',
+    phoneLabel: 'Telefon',
+    emailLabel: 'E-Mail',
+    addressLabel: 'Adresse (optional, für Rechnung)',
+    memoLabel: 'Hinweise',
+    consentTitle: 'Einwilligung',
+    consentLead: 'Die Einwilligung zur Datenverarbeitung ist erforderlich.',
+    gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
+    marketingLabel: '[Optional] Ich stimme der Nutzung der Fotos für Portfolio und soziale Medien von Studio mean zu.',
+    next: 'Weiter',
+    back: 'Zurück',
+    submit: 'Buchung senden',
+    submitBusy: 'Wird gesendet...',
+    restart: 'Neue Buchung starten',
+    periodValue(start, end) { return `${start.split('-').reverse().join('.')} - ${end.split('-').reverse().join('.')}`; },
+    packageSummary: 'Leistungsumfang',
+    dateHint: 'Wählen Sie ein verfügbares Datum und eine Uhrzeit.',
+    loadingCalendar: 'Kalender wird geladen...',
+    loadingSlots: 'Verfügbare Zeiten werden geladen...',
+    slotTitle: 'Verfügbare Zeiten',
+    slotEmpty: 'Bitte wählen Sie ein Datum, um verfügbare Zeiten zu sehen.',
+    slotNone: 'Für dieses Datum ist keine Uhrzeit verfügbar.',
+    step1Warning: 'Bitte wählen Sie zuerst ein Event.',
+    childAgeRequired: 'Bitte geben Sie das Alter des Kindes ein.',
+    familyInfoRequired: 'Bitte geben Sie die Familienkonstellation ein.',
+    step3WarningDate: 'Bitte wählen Sie zuerst ein Datum.',
+    step3WarningTime: 'Bitte wählen Sie zuerst eine Uhrzeit.',
+    formRequired: 'Bitte Name, Telefon, E-Mail und die Pflicht-Einwilligung ausfüllen.',
+    invalidEmail: 'Bitte prüfen Sie das E-Mail-Format.',
+    successTitle: 'Ihre Buchungsanfrage wurde empfangen.',
+    successLead: 'Wir haben eine Bestätigungsmail gesendet und melden uns zeitnah.',
+    successGuide: 'Wir prüfen die Verfügbarkeit innerhalb des Aktionszeitraums und der begrenzten Plätze.',
+    bookingTime: 'Buchungszeit',
+    packageName: 'Paket',
+    price: 'Voraussichtlicher Preis',
+    customerName: 'Name',
+    customerEmail: 'E-Mail',
+    calendarHintProduct(name) { return `${name} · Wählen Sie ein verfügbares Datum und eine Uhrzeit.`; },
+    childAgePlaceholder: 'z. B. 4 Jahre',
+    familyInfoPlaceholder: 'z. B. Eltern + 2 Kinder',
+    memoPlaceholder: 'Notieren Sie Wünsche oder Hinweise zum Shooting.',
+    addressPlaceholder: 'Nur eingeben, wenn eine Rechnung benötigt wird',
+    groups: {
+      promo_kids_2026: {
+        badge: 'Kids Profile Event',
+        title: 'Kinderprofil Aktion',
+        desc: ['30 Min. Shooting', '2 bearbeitete Bilder', '1 Hintergrund / 1 Outfit', 'Premiumabzug 10x15cm pro Person', 'Zusätzliche doppelseitige Fotokarte inklusive'],
+        note: 'Ein reines Kindershooting ist für Kinder unter 3 Jahren nur eingeschränkt möglich.'
+      },
+      promo_family_2026: {
+        badge: 'Family Photo Event',
+        title: 'Familienfoto Aktion',
+        desc: ['30 Min. Shooting', '3 bearbeitete Bilder', '1 Hintergrund / 1 Outfit', 'Premiumabzug A4 + 2x 10x15cm', '2 doppelseitige Fotokarten inklusive'],
+        note: 'Ab 5 Personen werden pro zusätzlicher Person +20€ berechnet, plus ein weiterer 10x15cm Abzug.'
+      }
+    }
   }
 };
 
-const state = { lang: 'ko', promoEnabled: false };
+const state = {
+  lang: 'ko',
+  promoEnabled: false,
+  promoStart: '2026-04-20',
+  promoEnd: '2026-05-10',
+  products: [],
+  selectedProduct: null,
+  people: 1,
+  customPeople: '',
+  childAge: '',
+  familyInfo: '',
+  selectedDate: '',
+  selectedSlot: '',
+  quote: null,
+  currentMonth: null,
+  monthCache: {},
+  calendarLoading: false,
+  slotsLoading: false,
+  submitting: false
+};
 
 const els = {
   loadingScreen: document.getElementById('loadingScreen'),
@@ -119,71 +273,625 @@ const els = {
   statusBanner: document.getElementById('statusBanner'),
   promoClosed: document.getElementById('promoClosed'),
   promoContent: document.getElementById('promoContent'),
-  langBtns: Array.from(document.querySelectorAll('.lang-btn'))
+  langBtns: Array.from(document.querySelectorAll('.lang-btn')),
+  productGrid: document.getElementById('productGrid'),
+  detailCard: document.getElementById('detailCard'),
+  peopleSelect: document.getElementById('peopleSelect'),
+  peopleCustom: document.getElementById('peopleCustom'),
+  childAgeField: document.getElementById('childAgeField'),
+  childAgeInput: document.getElementById('childAgeInput'),
+  familyInfoField: document.getElementById('familyInfoField'),
+  familyInfoInput: document.getElementById('familyInfoInput'),
+  priceCard: document.getElementById('priceCard'),
+  calendarHint: document.getElementById('calendarHint'),
+  prevMonthBtn: document.getElementById('prevMonthBtn'),
+  nextMonthBtn: document.getElementById('nextMonthBtn'),
+  monthLabel: document.getElementById('monthLabel'),
+  calendarWeekdays: document.getElementById('calendarWeekdays'),
+  calendarGrid: document.getElementById('calendarGrid'),
+  slotGrid: document.getElementById('slotGrid'),
+  slotTitle: document.getElementById('slotTitle'),
+  slotHint: document.getElementById('slotHint'),
+  reviewBox: document.getElementById('reviewBox'),
+  form: document.getElementById('bookingForm'),
+  successPanel: document.getElementById('successPanel'),
+  successGrid: document.getElementById('successGrid'),
+  successGuide: document.getElementById('successGuide'),
+  restartBtn: document.getElementById('restartBtn'),
+  step1: document.getElementById('step1'),
+  step2: document.getElementById('step2'),
+  step3: document.getElementById('step3'),
+  step4: document.getElementById('step4'),
+  step1Next: document.getElementById('step1Next'),
+  step2Back: document.getElementById('step2Back'),
+  step2Next: document.getElementById('step2Next'),
+  step3Back: document.getElementById('step3Back'),
+  step3Next: document.getElementById('step3Next'),
+  step4Back: document.getElementById('step4Back'),
+  submitBtn: document.getElementById('submitBtn'),
+  step1Warning: document.getElementById('step1Warning'),
+  step2Warning: document.getElementById('step2Warning'),
+  step3Warning: document.getElementById('step3Warning'),
+  step4Warning: document.getElementById('step4Warning')
 };
 
-function t() {
-  return STRINGS[state.lang] || STRINGS.ko;
+let activeStep = 1;
+
+function copy() {
+  return COPY[state.lang] || COPY.ko;
 }
 
-function setList(id, items) {
-  const list = document.getElementById(id);
-  list.innerHTML = items.map((item) => `<li>${item}</li>`).join('');
+function todayDateStr() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function render() {
-  const copy = t();
+function parseDateParts(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return { year, monthIndex: month - 1, day };
+}
+
+function setStatus(message, type = 'ready') {
+  els.statusBanner.textContent = message;
+  els.statusBanner.className = `status-banner ${type}`;
+}
+
+function setStepWarning(step, message = '') {
+  els[`step${step}Warning`].textContent = message;
+}
+
+function showStep(step) {
+  activeStep = step;
+  els.step1.classList.toggle('hidden', step !== 1);
+  els.step2.classList.toggle('hidden', step !== 2);
+  els.step3.classList.toggle('hidden', step !== 3);
+  els.step4.classList.toggle('hidden', step !== 4);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setProductDefaults() {
+  if (!state.selectedProduct) return;
+  if (state.selectedProduct.id === 'promo_kids_2026') {
+    state.people = 1;
+  } else {
+    state.people = 2;
+  }
+  state.customPeople = '';
+  state.childAge = '';
+  state.familyInfo = '';
+  state.selectedDate = '';
+  state.selectedSlot = '';
+}
+
+function getPeopleValue() {
+  if (String(state.people) === 'custom') {
+    return Math.max(6, Number(state.customPeople || 0) || 0);
+  }
+  return Number(state.people || 0) || 0;
+}
+
+function buildQuotePayload() {
+  if (!state.selectedProduct) return null;
+  return {
+    itemId: state.selectedProduct.id,
+    people: getPeopleValue() || undefined,
+    surveyKeys: [],
+    optionKeys: []
+  };
+}
+
+async function refreshQuote() {
+  const payload = buildQuotePayload();
+  if (!payload) return;
+  state.quote = await fetchQuote(payload);
+  renderPriceCard();
+  updateReview();
+}
+
+function renderStaticCopy() {
+  const c = copy();
   document.documentElement.lang = state.lang;
-  document.getElementById('loadingCopy').textContent = copy.loading;
-  document.getElementById('heroTitle').textContent = copy.title;
-  document.getElementById('heroLead').textContent = copy.lead;
-  document.getElementById('closedTitle').textContent = copy.closedTitle;
-  document.getElementById('closedBody').textContent = copy.closedBody;
-  document.getElementById('periodLabel').textContent = copy.periodLabel;
-  document.getElementById('periodValue').textContent = copy.periodValue;
-  document.getElementById('limitLabel').textContent = copy.limitLabel;
-  document.getElementById('limitValue').textContent = copy.limitValue;
-  document.getElementById('kidsBadge').textContent = copy.kidsBadge;
-  document.getElementById('kidsTitle').textContent = copy.kidsTitle;
-  setList('kidsList', copy.kidsList);
-  document.getElementById('kidsNoticeTitle').textContent = copy.kidsNoticeTitle;
-  document.getElementById('kidsNoticeBody').textContent = copy.kidsNoticeBody;
-  document.getElementById('familyBadge').textContent = copy.familyBadge;
-  document.getElementById('familyTitle').textContent = copy.familyTitle;
-  setList('familyList', copy.familyList);
-  document.getElementById('familyNoticeTitle').textContent = copy.familyNoticeTitle;
-  document.getElementById('familyNoticeBody').textContent = copy.familyNoticeBody;
-  document.getElementById('footerTitle').textContent = copy.footerTitle;
-  document.getElementById('footerBody').textContent = copy.footerBody;
-  document.getElementById('hashTags').textContent = copy.tags;
-  els.statusBanner.textContent = state.promoEnabled ? copy.statusReady : copy.statusClosed;
-  els.statusBanner.style.background = state.promoEnabled ? '#eff8f4' : '#fdf1ef';
-  els.statusBanner.style.borderColor = state.promoEnabled ? '#cfe2da' : '#f1c9c3';
-  els.statusBanner.style.color = state.promoEnabled ? '#497062' : '#8c4d44';
-  els.promoContent.classList.toggle('hidden', !state.promoEnabled);
-  els.promoClosed.classList.toggle('hidden', state.promoEnabled);
+  els.loadingCopy.textContent = c.loading;
+  document.getElementById('heroEyebrow').textContent = c.eyebrow;
+  document.getElementById('heroTitle').textContent = c.heroTitle;
+  document.getElementById('heroLead').textContent = c.heroLead;
+  document.getElementById('closedTitle').textContent = c.closedTitle;
+  document.getElementById('closedBody').textContent = c.closedBody;
+  document.getElementById('periodLabel').textContent = c.periodLabel;
+  document.getElementById('limitLabel').textContent = c.limitLabel;
+  document.getElementById('limitValue').textContent = c.limitValue;
+  document.getElementById('step1Title').textContent = c.step1Title;
+  document.getElementById('step1Lead').textContent = c.step1Lead;
+  document.getElementById('step2Title').textContent = c.step2Title;
+  document.getElementById('step2Lead').textContent = c.step2Lead;
+  document.getElementById('step3Title').textContent = c.step3Title;
+  document.getElementById('step4Title').textContent = c.step4Title;
+  document.getElementById('step4Lead').textContent = c.step4Lead;
+  document.getElementById('peopleLabel').textContent = c.peopleLabel;
+  document.getElementById('childAgeLabel').textContent = c.childAgeLabel;
+  document.getElementById('familyInfoLabel').textContent = c.familyInfoLabel;
+  document.getElementById('nameLabel').textContent = c.nameLabel;
+  document.getElementById('phoneLabel').textContent = c.phoneLabel;
+  document.getElementById('emailLabel').textContent = c.emailLabel;
+  document.getElementById('addressLabel').textContent = c.addressLabel;
+  document.getElementById('memoLabel').textContent = c.memoLabel;
+  document.getElementById('consentTitle').textContent = c.consentTitle;
+  document.getElementById('consentLead').textContent = c.consentLead;
+  document.getElementById('gdprLabel').textContent = c.gdprLabel;
+  document.getElementById('marketingLabel').textContent = c.marketingLabel;
+  els.step1Next.textContent = c.next;
+  els.step2Back.textContent = c.back;
+  els.step2Next.textContent = c.next;
+  els.step3Back.textContent = c.back;
+  els.step3Next.textContent = c.next;
+  els.step4Back.textContent = c.back;
+  els.submitBtn.textContent = state.submitting ? c.submitBusy : c.submit;
+  els.restartBtn.textContent = c.restart;
+  els.prevMonthBtn.textContent = c.back;
+  els.nextMonthBtn.textContent = c.next;
+  els.slotTitle.textContent = c.slotTitle;
+  els.slotHint.textContent = c.slotEmpty;
+  els.calendarGrid.textContent = c.loadingCalendar;
+  els.slotGrid.textContent = c.loadingSlots;
+  els.form.elements.address.placeholder = c.addressPlaceholder;
+  els.form.elements.memo.placeholder = c.memoPlaceholder;
+  els.childAgeInput.placeholder = c.childAgePlaceholder;
+  els.familyInfoInput.placeholder = c.familyInfoPlaceholder;
+  document.getElementById('successTitle').textContent = c.successTitle;
+  document.getElementById('successLead').textContent = c.successLead;
+  els.successGuide.textContent = c.successGuide;
+  document.getElementById('periodValue').textContent = c.periodValue(state.promoStart, state.promoEnd);
   els.langBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.lang === state.lang));
 }
 
-async function init() {
-  els.langBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.lang = btn.dataset.lang;
-      render();
-    });
+function renderProducts() {
+  const c = copy();
+  els.productGrid.innerHTML = state.products.map((product) => {
+    const meta = c.groups[product.id];
+    const active = state.selectedProduct?.id === product.id ? ' active' : '';
+    return `<button type="button" class="product-card${active}" data-product-id="${product.id}">
+      <span class="card-badge">${escapeHtml(meta.badge)}</span>
+      <strong>${escapeHtml(meta.title)}</strong>
+      <ul class="feature-list compact">${meta.desc.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+      <div class="product-note">${escapeHtml(meta.note)}</div>
+    </button>`;
+  }).join('');
+}
+
+function renderDetailCard() {
+  const c = copy();
+  if (!state.selectedProduct) {
+    els.detailCard.innerHTML = '';
+    return;
+  }
+  const meta = c.groups[state.selectedProduct.id];
+  els.detailCard.innerHTML = `
+    <div class="card-badge">${escapeHtml(meta.badge)}</div>
+    <h3>${escapeHtml(meta.title)}</h3>
+    <div class="detail-grid">
+      <div>
+        <div class="meta-label">${escapeHtml(c.packageSummary)}</div>
+        <ul class="feature-list">${meta.desc.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+      </div>
+      <div class="note-box">
+        <strong>${escapeHtml(meta.badge)}</strong>
+        <p>${escapeHtml(meta.note)}</p>
+      </div>
+    </div>`;
+}
+
+function renderPeopleOptions() {
+  const c = copy();
+  const base = state.selectedProduct?.id === 'promo_family_2026' ? 2 : 1;
+  const options = [];
+  for (let i = base; i <= 5; i += 1) {
+    let label = `${i}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`;
+    if (state.selectedProduct?.id === 'promo_family_2026' && i > 4) label += ' (+20€)';
+    options.push(`<option value="${i}">${escapeHtml(label)}</option>`);
+  }
+  options.push(`<option value="custom">${escapeHtml(state.lang === 'de' ? '6+ direkt eingeben' : state.lang === 'en' ? '6+ custom input' : '6명 이상 직접입력')}</option>`);
+  els.peopleSelect.innerHTML = options.join('');
+  els.peopleSelect.value = String(state.people);
+  els.peopleCustom.classList.toggle('hidden', String(state.people) !== 'custom');
+}
+
+function renderConditionalFields() {
+  const kids = state.selectedProduct?.id === 'promo_kids_2026';
+  els.childAgeField.classList.toggle('hidden', !kids);
+  els.familyInfoField.classList.toggle('hidden', kids);
+}
+
+function renderPriceCard() {
+  const c = copy();
+  if (!state.quote || !state.selectedProduct) {
+    els.priceCard.innerHTML = '';
+    return;
+  }
+  const meta = c.groups[state.selectedProduct.id];
+  els.priceCard.innerHTML = `
+    <div class="price-label">${escapeHtml(c.price)}</div>
+    <div class="price-main">€${escapeHtml(state.quote.totalPrice)}</div>
+    <div class="price-sub">${escapeHtml(meta.title)} · ${escapeHtml(`${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`)}</div>
+  `;
+}
+
+function monthKey(year, monthIndex) {
+  return `${year}-${pad2(monthIndex + 1)}`;
+}
+
+function weekdayLabels() {
+  if (state.lang === 'en') return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  if (state.lang === 'de') return ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  return ['일', '월', '화', '수', '목', '금', '토'];
+}
+
+function isDateAllowed(dateStr, unavailSet) {
+  const today = todayDateStr();
+  return dateStr >= today && dateStr <= state.promoEnd && dateStr <= PROMO_END_LIMIT && !unavailSet.has(dateStr);
+}
+
+function renderCalendar(batchData) {
+  const { year, monthIndex } = state.currentMonth;
+  const key = monthKey(year, monthIndex);
+  const unavail = new Set((batchData?.unavail || state.monthCache[key]?.unavail || []).map(String));
+  els.monthLabel.textContent = formatMonthLabel(year, monthIndex, state.lang);
+  els.calendarWeekdays.innerHTML = weekdayLabels().map((label) => `<span>${escapeHtml(label)}</span>`).join('');
+  const first = new Date(year, monthIndex, 1);
+  const startWeekday = first.getDay();
+  const days = new Date(year, monthIndex + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i += 1) cells.push('<span class="day-spacer"></span>');
+  for (let day = 1; day <= days; day += 1) {
+    const dateStr = `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+    const allowed = isDateAllowed(dateStr, unavail);
+    const active = state.selectedDate === dateStr ? ' active' : '';
+    const disabled = allowed ? '' : ' disabled';
+    cells.push(`<button type="button" class="day-btn${active}${disabled}" data-date="${dateStr}" ${allowed ? '' : 'disabled'}>${day}</button>`);
+  }
+  els.calendarGrid.classList.remove('loading-box');
+  els.calendarGrid.innerHTML = cells.join('');
+}
+
+function renderSlotLoading() {
+  els.slotGrid.className = 'slot-grid loading-box';
+  els.slotGrid.textContent = copy().loadingSlots;
+}
+
+function renderSlots(slots) {
+  const c = copy();
+  els.slotGrid.className = 'slot-grid';
+  if (!slots.length) {
+    els.slotGrid.innerHTML = `<div class="slot-empty">${escapeHtml(c.slotNone)}</div>`;
+    return;
+  }
+  els.slotGrid.innerHTML = slots.map((slot) => {
+    const active = state.selectedSlot === slot ? ' active' : '';
+    return `<button type="button" class="slot-btn${active}" data-slot="${slot}">${escapeHtml(slot)}</button>`;
+  }).join('');
+}
+
+async function ensureMonthLoaded(year, monthIndex) {
+  const key = monthKey(year, monthIndex);
+  if (state.monthCache[key]) {
+    renderCalendar(state.monthCache[key]);
+    return state.monthCache[key];
+  }
+  state.calendarLoading = true;
+  els.calendarGrid.className = 'calendar-grid loading-box';
+  els.calendarGrid.textContent = copy().loadingCalendar;
+  const data = await fetchCalendarBatch({
+    year,
+    month: monthIndex,
+    totalDur: Number(state.quote?.totalDuration || state.selectedProduct?.d || 30),
+    itemGroup: 'promo'
   });
-  render();
+  state.monthCache[key] = data;
+  renderCalendar(data);
+  state.calendarLoading = false;
+  return data;
+}
+
+async function loadSlots(dateStr) {
+  state.selectedSlot = '';
+  renderSlotLoading();
+  const data = await fetchSlots({
+    date: dateStr,
+    totalDur: Number(state.quote?.totalDuration || state.selectedProduct?.d || 30),
+    itemGroup: 'promo'
+  });
+  renderSlots(Array.isArray(data?.slots) ? data.slots : []);
+  updateStepButtons();
+}
+
+function updateReview() {
+  const c = copy();
+  if (!state.selectedProduct || !state.quote) {
+    els.reviewBox.innerHTML = '';
+    return;
+  }
+  const meta = c.groups[state.selectedProduct.id];
+  const rows = [
+    [c.packageName, meta.title],
+    [c.price, `€${state.quote.totalPrice}`],
+    [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`]
+  ];
+  if (state.childAge) rows.push([c.childAgeLabel, state.childAge]);
+  if (state.familyInfo) rows.push([c.familyInfoLabel, state.familyInfo]);
+  if (state.selectedDate && state.selectedSlot) rows.push([c.bookingTime, `${state.selectedDate} ${state.selectedSlot}`]);
+  els.reviewBox.innerHTML = rows.map(([label, value]) => `
+    <div class="review-row">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join('');
+}
+
+function validateStep(step) {
+  const c = copy();
+  if (step === 1) return state.selectedProduct ? '' : c.step1Warning;
+  if (step === 2) {
+    if (!state.selectedProduct) return c.step1Warning;
+    if (state.selectedProduct.id === 'promo_kids_2026' && !String(state.childAge || '').trim()) return c.childAgeRequired;
+    if (state.selectedProduct.id === 'promo_family_2026' && !String(state.familyInfo || '').trim()) return c.familyInfoRequired;
+    return '';
+  }
+  if (step === 3) {
+    if (!state.selectedDate) return c.step3WarningDate;
+    if (!state.selectedSlot) return c.step3WarningTime;
+    return '';
+  }
+  if (step === 4) {
+    const email = String(els.form.elements.email.value || '').trim();
+    const ok = String(els.form.elements.name.value || '').trim() &&
+      String(els.form.elements.phone.value || '').trim() &&
+      email &&
+      !!els.form.elements.gdprConsent.checked;
+    if (!ok) return c.formRequired;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.invalidEmail;
+    return '';
+  }
+  return '';
+}
+
+function updateStepButtons() {
+  setStepWarning(1, validateStep(1));
+  setStepWarning(2, validateStep(2));
+  setStepWarning(3, validateStep(3));
+  setStepWarning(4, validateStep(4));
+  els.step1Next.disabled = !!validateStep(1);
+  els.step2Next.disabled = !!validateStep(2);
+  els.step3Next.disabled = !!validateStep(3);
+  els.submitBtn.disabled = !!validateStep(4) || state.submitting;
+}
+
+async function selectProduct(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  state.selectedProduct = product;
+  setProductDefaults();
+  renderProducts();
+  renderConditionalFields();
+  renderPeopleOptions();
+  renderDetailCard();
+  await refreshQuote();
+  updateStepButtons();
+}
+
+async function goToCalendarStep() {
+  const warning = validateStep(2);
+  if (warning) {
+    setStepWarning(2, warning);
+    return;
+  }
+  if (!state.currentMonth) {
+    const { year, monthIndex } = parseDateParts(state.promoStart);
+    state.currentMonth = { year, monthIndex };
+  }
+  showStep(3);
+  els.calendarHint.textContent = copy().calendarHintProduct(copy().groups[state.selectedProduct.id].title);
+  await ensureMonthLoaded(state.currentMonth.year, state.currentMonth.monthIndex);
+  updateStepButtons();
+}
+
+function renderSuccess(result) {
+  const c = copy();
+  const rows = [
+    [c.customerName, result.name || els.form.elements.name.value],
+    [c.customerEmail, result.email || els.form.elements.email.value],
+    [c.bookingTime, `${result.date || state.selectedDate} ${result.time || state.selectedSlot}`],
+    [c.packageName, copy().groups[state.selectedProduct.id].title],
+    [c.price, `€${state.quote?.totalPrice || ''}`]
+  ];
+  els.successGrid.innerHTML = rows.map(([label, value]) => `
+    <div class="success-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>`).join('');
+  els.successGuide.textContent = c.successGuide;
+  els.successPanel.classList.remove('hidden');
+  els.step1.classList.add('hidden');
+  els.step2.classList.add('hidden');
+  els.step3.classList.add('hidden');
+  els.step4.classList.add('hidden');
+}
+
+function buildSubmitPayload() {
+  const meta = copy().groups[state.selectedProduct.id];
+  const extras = [];
+  if (state.childAge) extras.push(`[아이 나이: ${state.childAge}]`);
+  if (state.familyInfo) extras.push(`[가족 구성: ${state.familyInfo}]`);
+  const memo = [extras.join(' '), els.form.elements.memo.value || ''].filter(Boolean).join(' ');
+  return {
+    itemId: state.selectedProduct.id,
+    people: getPeopleValue(),
+    date: state.selectedDate,
+    time: state.selectedSlot,
+    name: String(els.form.elements.name.value || '').trim(),
+    phone: String(els.form.elements.phone.value || '').trim(),
+    email: String(els.form.elements.email.value || '').trim(),
+    address: String(els.form.elements.address.value || '').trim(),
+    memo,
+    gdprConsent: !!els.form.elements.gdprConsent.checked,
+    aiConsent: false,
+    marketing: !!els.form.elements.marketing.checked,
+    lang: state.lang,
+    optionKeys: [],
+    surveyKeys: [],
+    meta: { promoType: meta.title, childAge: state.childAge, familyInfo: state.familyInfo }
+  };
+}
+
+async function onSubmit(event) {
+  event.preventDefault();
+  const warning = validateStep(4);
+  if (warning) {
+    setStepWarning(4, warning);
+    return;
+  }
+  state.submitting = true;
+  renderStaticCopy();
+  updateStepButtons();
   try {
+    const result = await submitBooking(buildSubmitPayload(), createRequestId('promo'));
+    renderSuccess(result || {});
+    setStatus(copy().successTitle, 'ready');
+  } catch (error) {
+    setStatus(error.message || '예약 신청에 실패했습니다.', 'error');
+  } finally {
+    state.submitting = false;
+    renderStaticCopy();
+    updateStepButtons();
+  }
+}
+
+function bindEvents() {
+  els.langBtns.forEach((btn) => btn.addEventListener('click', () => {
+    state.lang = btn.dataset.lang;
+    renderStaticCopy();
+    renderProducts();
+    renderDetailCard();
+    renderPeopleOptions();
+    renderPriceCard();
+    updateReview();
+    if (state.currentMonth) renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
+    updateStepButtons();
+  }));
+  els.productGrid.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-product-id]');
+    if (!btn) return;
+    await selectProduct(btn.dataset.productId);
+  });
+  els.peopleSelect.addEventListener('change', async () => {
+    state.people = els.peopleSelect.value;
+    if (state.people !== 'custom') state.customPeople = '';
+    renderPeopleOptions();
+    await refreshQuote();
+    updateStepButtons();
+  });
+  els.peopleCustom.addEventListener('input', async () => {
+    state.customPeople = els.peopleCustom.value;
+    await refreshQuote();
+    updateStepButtons();
+  });
+  els.childAgeInput.addEventListener('input', () => {
+    state.childAge = els.childAgeInput.value;
+    updateReview();
+    updateStepButtons();
+  });
+  els.familyInfoInput.addEventListener('input', () => {
+    state.familyInfo = els.familyInfoInput.value;
+    updateReview();
+    updateStepButtons();
+  });
+  els.step1Next.addEventListener('click', () => {
+    if (validateStep(1)) return;
+    showStep(2);
+  });
+  els.step2Back.addEventListener('click', () => showStep(1));
+  els.step2Next.addEventListener('click', goToCalendarStep);
+  els.prevMonthBtn.addEventListener('click', async () => {
+    if (!state.currentMonth) return;
+    const next = new Date(state.currentMonth.year, state.currentMonth.monthIndex - 1, 1);
+    if (`${next.getFullYear()}-${pad2(next.getMonth() + 1)}-01` < state.promoStart.slice(0, 8) + '01') return;
+    state.currentMonth = { year: next.getFullYear(), monthIndex: next.getMonth() };
+    state.selectedDate = '';
+    state.selectedSlot = '';
+    renderSlotLoading();
+    await ensureMonthLoaded(state.currentMonth.year, state.currentMonth.monthIndex);
+    renderSlots([]);
+    updateReview();
+    updateStepButtons();
+  });
+  els.nextMonthBtn.addEventListener('click', async () => {
+    if (!state.currentMonth) return;
+    const next = new Date(state.currentMonth.year, state.currentMonth.monthIndex + 1, 1);
+    if (`${next.getFullYear()}-${pad2(next.getMonth() + 1)}-01` > PROMO_END_LIMIT.slice(0, 8) + '01') return;
+    state.currentMonth = { year: next.getFullYear(), monthIndex: next.getMonth() };
+    state.selectedDate = '';
+    state.selectedSlot = '';
+    renderSlotLoading();
+    await ensureMonthLoaded(state.currentMonth.year, state.currentMonth.monthIndex);
+    renderSlots([]);
+    updateReview();
+    updateStepButtons();
+  });
+  els.calendarGrid.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-date]');
+    if (!btn || btn.disabled) return;
+    state.selectedDate = btn.dataset.date;
+    renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
+    await loadSlots(state.selectedDate);
+    updateReview();
+  });
+  els.slotGrid.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-slot]');
+    if (!btn) return;
+    state.selectedSlot = btn.dataset.slot;
+    renderSlots(Array.from(els.slotGrid.querySelectorAll('[data-slot]')).map((el) => el.dataset.slot));
+    updateReview();
+    updateStepButtons();
+  });
+  els.step3Back.addEventListener('click', () => showStep(2));
+  els.step3Next.addEventListener('click', () => {
+    if (validateStep(3)) return;
+    showStep(4);
+  });
+  els.step4Back.addEventListener('click', () => showStep(3));
+  els.form.addEventListener('input', updateStepButtons);
+  els.submitBtn.addEventListener('click', onSubmit);
+  els.restartBtn.addEventListener('click', () => window.location.reload());
+}
+
+async function init() {
+  renderStaticCopy();
+  bindEvents();
+  try {
+    setStatus(copy().statusLoading, 'loading');
     const initData = await fetchInitData();
     state.promoEnabled = !!initData?.settings?.promoEnabled;
+    state.promoStart = initData?.settings?.promoStart || state.promoStart;
+    state.promoEnd = initData?.settings?.promoEnd || state.promoEnd;
+    state.products = Array.isArray(initData?.promoProducts) ? initData.promoProducts : [];
+    if (!state.promoEnabled) {
+      els.promoClosed.classList.remove('hidden');
+      els.promoContent.classList.add('hidden');
+      setStatus(copy().statusClosed, 'error');
+      return;
+    }
+    els.promoClosed.classList.add('hidden');
+    els.promoContent.classList.remove('hidden');
+    state.currentMonth = parseDateParts(state.promoStart);
+    state.currentMonth = { year: state.currentMonth.year, monthIndex: state.currentMonth.monthIndex };
+    renderStaticCopy();
+    renderProducts();
+    renderPeopleOptions();
+    renderConditionalFields();
+    setStatus(copy().statusReady, 'ready');
+    updateStepButtons();
   } catch (error) {
-    state.promoEnabled = false;
-    els.statusBanner.textContent = error.message || '프로모션 정보를 불러오지 못했습니다.';
-    els.statusBanner.style.background = '#fdf1ef';
-    els.statusBanner.style.borderColor = '#f1c9c3';
-    els.statusBanner.style.color = '#8c4d44';
+    els.promoClosed.classList.remove('hidden');
+    els.promoContent.classList.add('hidden');
+    setStatus(error.message || '프로모션 정보를 불러오지 못했습니다.', 'error');
   } finally {
-    render();
     els.loadingScreen.classList.add('hidden');
   }
 }
