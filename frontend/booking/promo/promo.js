@@ -2,6 +2,7 @@ import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchSlots, submitBookin
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const PROMO_END_LIMIT = '2026-12-31';
+const QUOTE_REFRESH_DEBOUNCE_MS = 180;
 
 const COPY = {
   ko: {
@@ -20,12 +21,12 @@ const COPY = {
     step1Title: '1. 이벤트 선택',
     step1Lead: '예약할 이벤트를 선택해 주세요.',
     step2Title: '2. 촬영 구성',
-    step2Lead: '인원과 필요한 정보를 입력해 주세요.',
+    step2Lead: '인원만 선택해 주세요.',
     step3Title: '3. 날짜 및 시간 선택',
     step4Title: '4. 예약 정보',
     step4Lead: '예약자 정보를 입력하고 신청을 완료해 주세요.',
     peopleLabel: '인원수',
-    childAgeLabel: '아이 나이',
+    childAgeLabel: '아이 나이 (만 3세-13세)',
     familyInfoLabel: '가족 구성',
     nameLabel: '이름',
     phoneLabel: '연락처',
@@ -65,7 +66,7 @@ const COPY = {
     customerName: '이름',
     customerEmail: '이메일',
     calendarHintProduct(name) { return `${name} · 예약 가능한 날짜와 시간을 선택해 주세요.`; },
-    childAgePlaceholder: '예: 4세',
+    childAgePlaceholder: '예: 만 4세',
     familyInfoPlaceholder: '예: 부모 + 아이 2명',
     memoPlaceholder: '전달할 요청사항이 있다면 적어 주세요.',
     addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
@@ -74,7 +75,7 @@ const COPY = {
         badge: 'Kids Profile Event',
         title: '키즈 프로필 이벤트',
         desc: ['30분 촬영', '보정본 2장', '배경 1컬러 / 의상 1벌', '프리미엄 인화 10x15cm 인원수만큼', '양면 포토카드 추가 증정'],
-        note: '단독 키즈 촬영은 만 3세 이하 진행이 어렵습니다.'
+        note: '키즈 프로필 이벤트는 만 3세부터 만 13세까지 예약 가능합니다.'
       },
       promo_family_2026: {
         badge: 'Family Photo Event',
@@ -100,12 +101,12 @@ const COPY = {
     step1Title: '1. Choose your event',
     step1Lead: 'Select the event you want to book.',
     step2Title: '2. Session details',
-    step2Lead: 'Set the number of people and required details.',
+    step2Lead: 'Choose the number of people.',
     step3Title: '3. Select date and time',
     step4Title: '4. Booking details',
     step4Lead: 'Enter your contact details and submit the request.',
     peopleLabel: 'Number of people',
-    childAgeLabel: 'Child age',
+    childAgeLabel: 'Child age (3-13 years)',
     familyInfoLabel: 'Family members',
     nameLabel: 'Name',
     phoneLabel: 'Phone',
@@ -154,7 +155,7 @@ const COPY = {
         badge: 'Kids Profile Event',
         title: 'Kids Profile Event',
         desc: ['30 min session', '2 retouched photos', '1 background / 1 outfit', 'Premium 10x15cm print per person', 'Extra double-sided photocard included'],
-        note: 'A kids-only shoot is difficult for children under 3 years old.'
+        note: 'The kids profile event is available for children aged 3 to 13.'
       },
       promo_family_2026: {
         badge: 'Family Photo Event',
@@ -180,12 +181,12 @@ const COPY = {
     step1Title: '1. Event wählen',
     step1Lead: 'Wählen Sie das gewünschte Event aus.',
     step2Title: '2. Shooting-Konfiguration',
-    step2Lead: 'Legen Sie Personenzahl und benötigte Angaben fest.',
+    step2Lead: 'Wählen Sie nur die Personenzahl aus.',
     step3Title: '3. Datum und Uhrzeit wählen',
     step4Title: '4. Buchungsdaten',
     step4Lead: 'Bitte Kontaktdaten eingeben und die Anfrage absenden.',
     peopleLabel: 'Personenzahl',
-    childAgeLabel: 'Alter des Kindes',
+    childAgeLabel: 'Alter des Kindes (3-13 Jahre)',
     familyInfoLabel: 'Familienkonstellation',
     nameLabel: 'Name',
     phoneLabel: 'Telefon',
@@ -234,7 +235,7 @@ const COPY = {
         badge: 'Kids Profile Event',
         title: 'Kinderprofil Aktion',
         desc: ['30 Min. Shooting', '2 bearbeitete Bilder', '1 Hintergrund / 1 Outfit', 'Premiumabzug 10x15cm pro Person', 'Zusätzliche doppelseitige Fotokarte inklusive'],
-        note: 'Ein reines Kindershooting ist für Kinder unter 3 Jahren nur eingeschränkt möglich.'
+        note: 'Die Kinderprofil-Aktion ist für Kinder von 3 bis 13 Jahren verfügbar.'
       },
       promo_family_2026: {
         badge: 'Family Photo Event',
@@ -251,6 +252,7 @@ const state = {
   promoEnabled: false,
   promoStart: '2026-04-20',
   promoEnd: '2026-05-10',
+  promoContent: {},
   products: [],
   selectedProduct: null,
   people: 1,
@@ -260,8 +262,13 @@ const state = {
   selectedDate: '',
   selectedSlot: '',
   quote: null,
+  quoteToken: 0,
+  quoteRefreshTimer: null,
+  quoteCache: new Map(),
   currentMonth: null,
   monthCache: {},
+  slotCache: new Map(),
+  slotRequestToken: 0,
   calendarLoading: false,
   slotsLoading: false,
   submitting: false
@@ -318,7 +325,17 @@ const els = {
 let activeStep = 1;
 
 function copy() {
-  return COPY[state.lang] || COPY.ko;
+  const base = COPY[state.lang] || COPY.ko;
+  const override = state.promoContent?.[state.lang];
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return base;
+  const groups = { ...base.groups };
+  Object.entries(override.groups || {}).forEach(([groupId, groupValue]) => {
+    if (!groups[groupId] || !groupValue || typeof groupValue !== 'object' || Array.isArray(groupValue)) return;
+    const nextGroup = { ...groups[groupId], ...groupValue };
+    if (Array.isArray(groupValue.desc)) nextGroup.desc = groupValue.desc.map((item) => String(item)).filter(Boolean);
+    groups[groupId] = nextGroup;
+  });
+  return { ...base, ...override, groups };
 }
 
 function todayDateStr() {
@@ -345,7 +362,7 @@ function showStep(step) {
   els.step2.classList.toggle('hidden', step !== 2);
   els.step3.classList.toggle('hidden', step !== 3);
   els.step4.classList.toggle('hidden', step !== 4);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0 });
 }
 
 function setProductDefaults() {
@@ -379,12 +396,61 @@ function buildQuotePayload() {
   };
 }
 
-async function refreshQuote() {
+function getCalendarDuration() {
+  if (state.quote?.totalDuration !== undefined) return Number(state.quote.totalDuration) || 0;
+  const shootDuration = Number(state.selectedProduct?.d || 0);
+  const prepDuration = Number(state.selectedProduct?.prep || 0);
+  return shootDuration + prepDuration || 30;
+}
+
+function getQuoteCacheKey(payload) {
+  return JSON.stringify(payload);
+}
+
+function syncQuoteFromCache() {
   const payload = buildQuotePayload();
-  if (!payload) return;
-  state.quote = await fetchQuote(payload);
+  state.quote = payload ? state.quoteCache.get(getQuoteCacheKey(payload)) || null : null;
   renderPriceCard();
   updateReview();
+  if (state.selectedProduct) {
+    const warmup = state.currentMonth || parseDateParts(state.promoStart);
+    prefetchMonth(warmup.year, warmup.monthIndex);
+    prefetchAdjacentMonths(warmup.year, warmup.monthIndex);
+  }
+}
+
+async function refreshQuote() {
+  const payload = buildQuotePayload();
+  if (!payload) return null;
+  const cacheKey = getQuoteCacheKey(payload);
+  const token = ++state.quoteToken;
+  const cached = state.quoteCache.get(cacheKey);
+  if (cached) {
+    state.quote = cached;
+    renderPriceCard();
+    updateReview();
+    return cached;
+  }
+  const nextQuote = await fetchQuote(payload);
+  if (token !== state.quoteToken) return state.quote;
+  state.quote = nextQuote;
+  state.quoteCache.set(cacheKey, nextQuote);
+  renderPriceCard();
+  updateReview();
+  const warmup = state.currentMonth || parseDateParts(state.promoStart);
+  prefetchMonth(warmup.year, warmup.monthIndex);
+  prefetchAdjacentMonths(warmup.year, warmup.monthIndex);
+  return nextQuote;
+}
+
+function queueQuoteRefresh(delay = 0) {
+  if (state.quoteRefreshTimer) clearTimeout(state.quoteRefreshTimer);
+  state.quoteRefreshTimer = window.setTimeout(() => {
+    state.quoteRefreshTimer = null;
+    refreshQuote()
+      .catch((error) => console.error(error))
+      .finally(() => updateStepButtons());
+  }, delay);
 }
 
 function renderStaticCopy() {
@@ -495,9 +561,8 @@ function renderPeopleOptions() {
 }
 
 function renderConditionalFields() {
-  const kids = state.selectedProduct?.id === 'promo_kids_2026';
-  els.childAgeField.classList.toggle('hidden', !kids);
-  els.familyInfoField.classList.toggle('hidden', kids);
+  els.childAgeField.classList.add('hidden');
+  els.familyInfoField.classList.add('hidden');
 }
 
 function renderPriceCard() {
@@ -526,7 +591,11 @@ function weekdayLabels() {
 
 function isDateAllowed(dateStr, unavailSet) {
   const today = todayDateStr();
-  return dateStr >= today && dateStr <= state.promoEnd && dateStr <= PROMO_END_LIMIT && !unavailSet.has(dateStr);
+  return dateStr >= today &&
+    dateStr >= state.promoStart &&
+    dateStr <= state.promoEnd &&
+    dateStr <= PROMO_END_LIMIT &&
+    !unavailSet.has(dateStr);
 }
 
 function renderCalendar(batchData) {
@@ -569,36 +638,78 @@ function renderSlots(slots) {
   }).join('');
 }
 
-async function ensureMonthLoaded(year, monthIndex) {
+function getPrefetchDuration() {
+  if (state.selectedProduct) return getCalendarDuration();
+  const firstPromoProduct = state.products[0];
+  const shootDuration = Number(firstPromoProduct?.d || 0);
+  const prepDuration = Number(firstPromoProduct?.prep || 0);
+  return shootDuration + prepDuration || 30;
+}
+
+async function fetchMonthData(year, monthIndex) {
   const key = monthKey(year, monthIndex);
-  if (state.monthCache[key]) {
-    renderCalendar(state.monthCache[key]);
-    return state.monthCache[key];
-  }
+  if (state.monthCache[key]) return state.monthCache[key];
+  const response = await fetchCalendarBatch({
+    year,
+    month: monthIndex,
+    totalDur: getPrefetchDuration(),
+    itemGroup: 'promo'
+  });
+  const data = response?.[`${year}_${monthIndex}`] || response;
+  state.monthCache[key] = data;
+  return data;
+}
+
+function prefetchMonth(year, monthIndex) {
+  const key = monthKey(year, monthIndex);
+  if (state.monthCache[key]) return;
+  fetchMonthData(year, monthIndex).catch((error) => console.error(error));
+}
+
+function prefetchAdjacentMonths(year, monthIndex) {
+  const prev = new Date(year, monthIndex - 1, 1);
+  const next = new Date(year, monthIndex + 1, 1);
+  const minMonth = `${state.promoStart.slice(0, 7)}-01`;
+  const maxMonth = `${PROMO_END_LIMIT.slice(0, 7)}-01`;
+  const prevKey = `${prev.getFullYear()}-${pad2(prev.getMonth() + 1)}-01`;
+  const nextKey = `${next.getFullYear()}-${pad2(next.getMonth() + 1)}-01`;
+  if (prevKey >= minMonth) prefetchMonth(prev.getFullYear(), prev.getMonth());
+  if (nextKey <= maxMonth) prefetchMonth(next.getFullYear(), next.getMonth());
+}
+
+async function ensureMonthLoaded(year, monthIndex) {
   state.calendarLoading = true;
   els.calendarGrid.className = 'calendar-grid loading-box';
   els.calendarGrid.textContent = copy().loadingCalendar;
-  const data = await fetchCalendarBatch({
-    year,
-    month: monthIndex,
-    totalDur: Number(state.quote?.totalDuration || state.selectedProduct?.d || 30),
-    itemGroup: 'promo'
-  });
-  state.monthCache[key] = data;
+  const data = await fetchMonthData(year, monthIndex);
   renderCalendar(data);
   state.calendarLoading = false;
+  prefetchAdjacentMonths(year, monthIndex);
   return data;
 }
 
 async function loadSlots(dateStr) {
+  const token = ++state.slotRequestToken;
+  const duration = getCalendarDuration();
+  const cacheKey = `${dateStr}_${duration}`;
   state.selectedSlot = '';
   renderSlotLoading();
+  const cached = state.slotCache.get(cacheKey);
+  if (Array.isArray(cached)) {
+    if (token !== state.slotRequestToken) return;
+    renderSlots(cached);
+    updateStepButtons();
+    return;
+  }
   const data = await fetchSlots({
     date: dateStr,
-    totalDur: Number(state.quote?.totalDuration || state.selectedProduct?.d || 30),
+    totalDur: duration,
     itemGroup: 'promo'
   });
-  renderSlots(Array.isArray(data?.slots) ? data.slots : []);
+  if (token !== state.slotRequestToken) return;
+  const slots = Array.isArray(data) ? data : Array.isArray(data?.slots) ? data.slots : [];
+  state.slotCache.set(cacheKey, slots);
+  renderSlots(slots);
   updateStepButtons();
 }
 
@@ -614,8 +725,6 @@ function updateReview() {
     [c.price, `€${state.quote.totalPrice}`],
     [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`]
   ];
-  if (state.childAge) rows.push([c.childAgeLabel, state.childAge]);
-  if (state.familyInfo) rows.push([c.familyInfoLabel, state.familyInfo]);
   if (state.selectedDate && state.selectedSlot) rows.push([c.bookingTime, `${state.selectedDate} ${state.selectedSlot}`]);
   els.reviewBox.innerHTML = rows.map(([label, value]) => `
     <div class="review-row">
@@ -630,8 +739,6 @@ function validateStep(step) {
   if (step === 1) return state.selectedProduct ? '' : c.step1Warning;
   if (step === 2) {
     if (!state.selectedProduct) return c.step1Warning;
-    if (state.selectedProduct.id === 'promo_kids_2026' && !String(state.childAge || '').trim()) return c.childAgeRequired;
-    if (state.selectedProduct.id === 'promo_family_2026' && !String(state.familyInfo || '').trim()) return c.familyInfoRequired;
     return '';
   }
   if (step === 3) {
@@ -663,7 +770,7 @@ function updateStepButtons() {
   els.submitBtn.disabled = !!validateStep(4) || state.submitting;
 }
 
-async function selectProduct(productId) {
+function selectProduct(productId) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
   state.selectedProduct = product;
@@ -672,8 +779,9 @@ async function selectProduct(productId) {
   renderConditionalFields();
   renderPeopleOptions();
   renderDetailCard();
-  await refreshQuote();
+  syncQuoteFromCache();
   updateStepButtons();
+  queueQuoteRefresh();
 }
 
 async function goToCalendarStep() {
@@ -716,10 +824,6 @@ function renderSuccess(result) {
 
 function buildSubmitPayload() {
   const meta = copy().groups[state.selectedProduct.id];
-  const extras = [];
-  if (state.childAge) extras.push(`[아이 나이: ${state.childAge}]`);
-  if (state.familyInfo) extras.push(`[가족 구성: ${state.familyInfo}]`);
-  const memo = [extras.join(' '), els.form.elements.memo.value || ''].filter(Boolean).join(' ');
   return {
     itemId: state.selectedProduct.id,
     people: getPeopleValue(),
@@ -729,14 +833,14 @@ function buildSubmitPayload() {
     phone: String(els.form.elements.phone.value || '').trim(),
     email: String(els.form.elements.email.value || '').trim(),
     address: String(els.form.elements.address.value || '').trim(),
-    memo,
+    memo: String(els.form.elements.memo.value || '').trim(),
     gdprConsent: !!els.form.elements.gdprConsent.checked,
     aiConsent: false,
     marketing: !!els.form.elements.marketing.checked,
     lang: state.lang,
     optionKeys: [],
     surveyKeys: [],
-    meta: { promoType: meta.title, childAge: state.childAge, familyInfo: state.familyInfo }
+    meta: { promoType: meta.title }
   };
 }
 
@@ -778,19 +882,21 @@ function bindEvents() {
   els.productGrid.addEventListener('click', async (event) => {
     const btn = event.target.closest('[data-product-id]');
     if (!btn) return;
-    await selectProduct(btn.dataset.productId);
+    selectProduct(btn.dataset.productId);
   });
   els.peopleSelect.addEventListener('change', async () => {
     state.people = els.peopleSelect.value;
     if (state.people !== 'custom') state.customPeople = '';
     renderPeopleOptions();
-    await refreshQuote();
+    syncQuoteFromCache();
     updateStepButtons();
+    queueQuoteRefresh();
   });
-  els.peopleCustom.addEventListener('input', async () => {
+  els.peopleCustom.addEventListener('input', () => {
     state.customPeople = els.peopleCustom.value;
-    await refreshQuote();
+    syncQuoteFromCache();
     updateStepButtons();
+    queueQuoteRefresh(QUOTE_REFRESH_DEBOUNCE_MS);
   });
   els.childAgeInput.addEventListener('input', () => {
     state.childAge = els.childAgeInput.value;
@@ -870,6 +976,7 @@ async function init() {
     state.promoEnabled = !!initData?.settings?.promoEnabled;
     state.promoStart = initData?.settings?.promoStart || state.promoStart;
     state.promoEnd = initData?.settings?.promoEnd || state.promoEnd;
+    state.promoContent = initData?.settings?.promoContent || {};
     state.products = Array.isArray(initData?.promoProducts) ? initData.promoProducts : [];
     if (!state.promoEnabled) {
       els.promoClosed.classList.remove('hidden');

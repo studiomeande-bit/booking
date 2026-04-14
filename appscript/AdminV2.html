@@ -593,6 +593,71 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="card"><div class="card-title">📣 공지사항</div><div class="form-group"><label>한국어</label><textarea id="s_ko" rows="2"></textarea></div><div class="form-group"><label>English</label><textarea id="s_en" rows="2"></textarea></div><div class="form-group"><label>Deutsch</label><textarea id="s_de" rows="2"></textarea></div></div>
     <div class="card"><div class="card-title">🎉 이벤트 할인</div><div class="form-row"><div class="form-group"><label>할인율 (%)</label><input type="number" id="s_rate" min="0" max="100" placeholder="0"></div><div class="form-group"><label>시작일</label><input type="date" id="s_start"></div></div><div class="form-group"><label>종료일</label><input type="date" id="s_end"></div></div>
     <div class="card"><div class="card-title">🌷 프로모션 페이지</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">`booking.studio-mean.com/promo/` 페이지 노출 여부를 제어합니다.</div><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="s_promo_enabled"><span>프로모션 페이지 활성화</span></label></div>
+    <div class="card">
+      <div class="card-title">📝 프로모션 페이지 편집</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">프로모션 예약 기간과 랜딩 문구를 코드 수정 없이 바로 바꿀 수 있습니다. 상품 구성 설명은 줄바꿈 기준으로 한 줄씩 입력하세요.</div>
+      <div class="form-row">
+        <div class="form-group"><label>프로모션 시작일</label><input type="date" id="promo_start"></div>
+        <div class="form-group"><label>프로모션 종료일</label><input type="date" id="promo_end"></div>
+      </div>
+
+      <details open style="margin-top:12px;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;">
+        <summary style="cursor:pointer;font-weight:700;">한국어</summary>
+        <div class="form-group" style="margin-top:12px;"><label>상단 눈썹문구</label><input type="text" id="promo_ko_eyebrow" placeholder="2026 Family Month Promotion"></div>
+        <div class="form-group"><label>메인 제목</label><input type="text" id="promo_ko_heroTitle" placeholder="가정의 달 이벤트 예약"></div>
+        <div class="form-group"><label>메인 소개</label><textarea id="promo_ko_heroLead" rows="2"></textarea></div>
+        <div class="form-group"><label>모집 안내 문구</label><input type="text" id="promo_ko_limitValue" placeholder="각 이벤트 선착순 5팀"></div>
+        <div class="form-group"><label>비활성화 제목</label><input type="text" id="promo_ko_closedTitle"></div>
+        <div class="form-group"><label>비활성화 안내</label><textarea id="promo_ko_closedBody" rows="2"></textarea></div>
+        <div class="form-group"><label>예약 완료 안내</label><textarea id="promo_ko_successGuide" rows="2"></textarea></div>
+        <div class="form-group"><label>키즈 이벤트 배지</label><input type="text" id="promo_ko_kidsBadge"></div>
+        <div class="form-group"><label>키즈 이벤트 제목</label><input type="text" id="promo_ko_kidsTitle"></div>
+        <div class="form-group"><label>키즈 이벤트 구성</label><textarea id="promo_ko_kidsDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>키즈 이벤트 안내</label><textarea id="promo_ko_kidsNote" rows="2"></textarea></div>
+        <div class="form-group"><label>가족 이벤트 배지</label><input type="text" id="promo_ko_familyBadge"></div>
+        <div class="form-group"><label>가족 이벤트 제목</label><input type="text" id="promo_ko_familyTitle"></div>
+        <div class="form-group"><label>가족 이벤트 구성</label><textarea id="promo_ko_familyDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>가족 이벤트 안내</label><textarea id="promo_ko_familyNote" rows="2"></textarea></div>
+      </details>
+
+      <details style="margin-top:12px;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;">
+        <summary style="cursor:pointer;font-weight:700;">English</summary>
+        <div class="form-group" style="margin-top:12px;"><label>Eyebrow</label><input type="text" id="promo_en_eyebrow"></div>
+        <div class="form-group"><label>Hero title</label><input type="text" id="promo_en_heroTitle"></div>
+        <div class="form-group"><label>Hero lead</label><textarea id="promo_en_heroLead" rows="2"></textarea></div>
+        <div class="form-group"><label>Availability copy</label><input type="text" id="promo_en_limitValue"></div>
+        <div class="form-group"><label>Closed title</label><input type="text" id="promo_en_closedTitle"></div>
+        <div class="form-group"><label>Closed body</label><textarea id="promo_en_closedBody" rows="2"></textarea></div>
+        <div class="form-group"><label>Success guide</label><textarea id="promo_en_successGuide" rows="2"></textarea></div>
+        <div class="form-group"><label>Kids badge</label><input type="text" id="promo_en_kidsBadge"></div>
+        <div class="form-group"><label>Kids title</label><input type="text" id="promo_en_kidsTitle"></div>
+        <div class="form-group"><label>Kids features</label><textarea id="promo_en_kidsDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>Kids note</label><textarea id="promo_en_kidsNote" rows="2"></textarea></div>
+        <div class="form-group"><label>Family badge</label><input type="text" id="promo_en_familyBadge"></div>
+        <div class="form-group"><label>Family title</label><input type="text" id="promo_en_familyTitle"></div>
+        <div class="form-group"><label>Family features</label><textarea id="promo_en_familyDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>Family note</label><textarea id="promo_en_familyNote" rows="2"></textarea></div>
+      </details>
+
+      <details style="margin-top:12px;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;">
+        <summary style="cursor:pointer;font-weight:700;">Deutsch</summary>
+        <div class="form-group" style="margin-top:12px;"><label>Eyebrow</label><input type="text" id="promo_de_eyebrow"></div>
+        <div class="form-group"><label>Hero-Titel</label><input type="text" id="promo_de_heroTitle"></div>
+        <div class="form-group"><label>Hero-Text</label><textarea id="promo_de_heroLead" rows="2"></textarea></div>
+        <div class="form-group"><label>Verfügbarkeit</label><input type="text" id="promo_de_limitValue"></div>
+        <div class="form-group"><label>Deaktiviert-Titel</label><input type="text" id="promo_de_closedTitle"></div>
+        <div class="form-group"><label>Deaktiviert-Hinweis</label><textarea id="promo_de_closedBody" rows="2"></textarea></div>
+        <div class="form-group"><label>Bestätigungs-Hinweis</label><textarea id="promo_de_successGuide" rows="2"></textarea></div>
+        <div class="form-group"><label>Kinder-Badge</label><input type="text" id="promo_de_kidsBadge"></div>
+        <div class="form-group"><label>Kinder-Titel</label><input type="text" id="promo_de_kidsTitle"></div>
+        <div class="form-group"><label>Kinder-Leistungen</label><textarea id="promo_de_kidsDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>Kinder-Hinweis</label><textarea id="promo_de_kidsNote" rows="2"></textarea></div>
+        <div class="form-group"><label>Familien-Badge</label><input type="text" id="promo_de_familyBadge"></div>
+        <div class="form-group"><label>Familien-Titel</label><input type="text" id="promo_de_familyTitle"></div>
+        <div class="form-group"><label>Familien-Leistungen</label><textarea id="promo_de_familyDesc" rows="4"></textarea></div>
+        <div class="form-group"><label>Familien-Hinweis</label><textarea id="promo_de_familyNote" rows="2"></textarea></div>
+      </details>
+    </div>
     <div class="card"><div class="card-title">⭐ 당일 재방문 할인</div><div class="form-row"><div class="form-group"><label>재방문 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div></div></div>
     <div class="card"><div class="card-title">📅 휴무일 설정</div><div class="hcal-wrap"><div class="hcal-header"><button class="hcal-nav" onclick="changeHolidayCal(-1)">◀</button><div style="font-size:14px;font-weight:700;" id="hcalMonthLabel"></div><button class="hcal-nav" onclick="changeHolidayCal(1)">▶</button></div><div class="hcal-grid" id="hcalGrid"></div><div style="font-size:12px;color:#64748b;margin-top:8px;" id="hcalSummary"></div><div id="hcalSelectedList" style="margin-top:6px;"></div></div></div>
     <div class="card"><div class="card-title">🔒 비밀번호 변경</div><div class="form-group"><label>새 비밀번호</label><input type="password" id="s_pw" placeholder="새 비밀번호"></div></div>
@@ -2192,8 +2257,62 @@ function toggleHoliday(d){if(selectedHolidays.has(d))selectedHolidays.delete(d);
 function removeHoliday(d){selectedHolidays.delete(d);renderHolidayCal();}
 
 /* ===== 설정 ===== */
-function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
-function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',promoEnabled:document.getElementById('s_promo_enabled').checked,customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
+const PROMO_EDITOR_LANGS=['ko','en','de'];
+function promoFieldId(lang,key){return `promo_${lang}_${key}`;}
+function setPromoField(lang,key,value){const el=document.getElementById(promoFieldId(lang,key));if(el)el.value=value||'';}
+function getPromoField(lang,key){const el=document.getElementById(promoFieldId(lang,key));return el?el.value.trim():'';}
+function promoListToText(value){return Array.isArray(value)?value.join('\n'):String(value||'');}
+function textToPromoList(value){return String(value||'').split(/\r?\n/).map(v=>v.trim()).filter(Boolean);}
+function buildPromoGroup(lang,prefix){
+  const group={};
+  const badge=getPromoField(lang,`${prefix}Badge`);
+  const title=getPromoField(lang,`${prefix}Title`);
+  const note=getPromoField(lang,`${prefix}Note`);
+  const desc=textToPromoList(getPromoField(lang,`${prefix}Desc`));
+  if(badge) group.badge=badge;
+  if(title) group.title=title;
+  if(desc.length) group.desc=desc;
+  if(note) group.note=note;
+  return Object.keys(group).length ? group : null;
+}
+function loadPromoEditor(content){
+  const safe=content&&typeof content==='object'&&!Array.isArray(content)?content:{};
+  PROMO_EDITOR_LANGS.forEach(lang=>{
+    const langData=safe[lang]&&typeof safe[lang]==='object'&&!Array.isArray(safe[lang])?safe[lang]:{};
+    const groups=langData.groups&&typeof langData.groups==='object'&&!Array.isArray(langData.groups)?langData.groups:{};
+    const kids=groups.promo_kids_2026&&typeof groups.promo_kids_2026==='object'?groups.promo_kids_2026:{};
+    const family=groups.promo_family_2026&&typeof groups.promo_family_2026==='object'?groups.promo_family_2026:{};
+    ['eyebrow','heroTitle','heroLead','limitValue','closedTitle','closedBody','successGuide'].forEach(key=>setPromoField(lang,key,langData[key]||''));
+    setPromoField(lang,'kidsBadge',kids.badge||'');
+    setPromoField(lang,'kidsTitle',kids.title||'');
+    setPromoField(lang,'kidsDesc',promoListToText(kids.desc));
+    setPromoField(lang,'kidsNote',kids.note||'');
+    setPromoField(lang,'familyBadge',family.badge||'');
+    setPromoField(lang,'familyTitle',family.title||'');
+    setPromoField(lang,'familyDesc',promoListToText(family.desc));
+    setPromoField(lang,'familyNote',family.note||'');
+  });
+}
+function buildPromoContentPayload(){
+  const out={};
+  PROMO_EDITOR_LANGS.forEach(lang=>{
+    const langData={};
+    ['eyebrow','heroTitle','heroLead','limitValue','closedTitle','closedBody','successGuide'].forEach(key=>{
+      const value=getPromoField(lang,key);
+      if(value) langData[key]=value;
+    });
+    const groups={};
+    const kids=buildPromoGroup(lang,'kids');
+    const family=buildPromoGroup(lang,'family');
+    if(kids) groups.promo_kids_2026=kids;
+    if(family) groups.promo_family_2026=family;
+    if(Object.keys(groups).length) langData.groups=groups;
+    if(Object.keys(langData).length) out[lang]=langData;
+  });
+  return out;
+}
+function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;document.getElementById('promo_start').value=s.promoStart||'';document.getElementById('promo_end').value=s.promoEnd||'';loadPromoEditor(s.promoContent||{});selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
+function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',promoEnabled:document.getElementById('s_promo_enabled').checked,promoStart:document.getElementById('promo_start').value||'',promoEnd:document.getElementById('promo_end').value||'',promoContent:buildPromoContentPayload(),customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
 
 /* ===== Twilio SMS 설정 ===== */
 function saveInvoiceSeq(){

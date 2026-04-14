@@ -346,7 +346,25 @@ function ensureBookingSheet_(ss) {
 function ensureSettingsSheet_(ss) {
   let sh=ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh){sh=ss.insertSheet(CONFIG.SETTINGS_SHEET);sh.appendRow(['항목','값']);}
-  if (sh.getLastRow()<=1) [['notice_ko',''],['notice_en',''],['notice_de',''],['custom_holidays',''],['event_rate','0'],['event_start',''],['event_end',''],['return_discount','10'],['promo_enabled','N']].forEach(r=>sh.appendRow(r));
+  const defaults=[
+    ['notice_ko',''],
+    ['notice_en',''],
+    ['notice_de',''],
+    ['custom_holidays',''],
+    ['event_rate','0'],
+    ['event_start',''],
+    ['event_end',''],
+    ['return_discount','10'],
+    ['promo_enabled','N'],
+    ['promo_start',PROMO_CONFIG.START],
+    ['promo_end',PROMO_CONFIG.END],
+    ['promo_content_json','']
+  ];
+  if (sh.getLastRow()<=1) defaults.forEach(r=>sh.appendRow(r));
+  else {
+    const existing=new Set(sh.getRange(2,1,Math.max(sh.getLastRow()-1,0),1).getValues().flat().filter(Boolean));
+    defaults.forEach(([key,value])=>{ if(!existing.has(key)) sh.appendRow([key,value]); });
+  }
   sh.getRange(1,1,1,2).setFontWeight('bold').setBackground('#f1f5f9');
   sh.setFrozenRows(1); return sh;
 }
@@ -517,6 +535,24 @@ function parseDateSafe_(rawDate) {
   return{obj:isNaN(obj.getTime())?new Date(0):obj,str};
 }
 
+function getPromoConfig_(){
+  const s=getSettingsMap_();
+  const start=String(s.promo_start||PROMO_CONFIG.START||'').trim()||PROMO_CONFIG.START;
+  const end=String(s.promo_end||PROMO_CONFIG.END||'').trim()||PROMO_CONFIG.END;
+  return {start,end};
+}
+
+function getPromoContent_(){
+  const raw=String(getSettingsMap_().promo_content_json||'').trim();
+  if(!raw) return {};
+  try{
+    const parsed=JSON.parse(raw);
+    return parsed&&typeof parsed==='object'&&!Array.isArray(parsed) ? parsed : {};
+  }catch(e){
+    return {};
+  }
+}
+
 /* ====== 상품 캐시 ====== */
 function PRODUCTS_CACHE_KEY(){return'products_v7';}
 function getProductsFromSheet_(){
@@ -566,12 +602,14 @@ function getPromoProducts_(){
 }
 
 function isPromoDateAllowed_(dateStr){
-  return !!dateStr && dateStr>=PROMO_CONFIG.START && dateStr<=PROMO_CONFIG.END;
+  const promo=getPromoConfig_();
+  return !!dateStr && dateStr>=promo.start && dateStr<=promo.end;
 }
 
 function getInitDataCustomer() {
   const s=getSettingsMap_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:PROMO_CONFIG.START,promoEnd:PROMO_CONFIG.END},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
+  const promo=getPromoConfig_();
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_()},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -665,6 +703,9 @@ function saveSiteSettings(token,s){
   upsertSetting_('notice_ko',s.ko||'');upsertSetting_('notice_en',s.en||'');upsertSetting_('notice_de',s.de||'');
   upsertSetting_('custom_holidays',s.customHolidays||'');upsertSetting_('event_rate',s.eventRate||'');
   upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',s.returnDiscount||'10');upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
+  upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
+  upsertSetting_('promo_end',s.promoEnd||PROMO_CONFIG.END);
+  upsertSetting_('promo_content_json',JSON.stringify(s.promoContent||{}));
   if(s.newPassword) PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(s.newPassword));
   return{ok:true};
 }
