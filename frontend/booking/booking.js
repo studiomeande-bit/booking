@@ -1468,6 +1468,7 @@ function renderSurveyChips() {
       if (index >= 0) state.surveyKeys.splice(index, 1);
       else state.surveyKeys.push(key);
       renderSurveyChips();
+      syncConditionalFields();
       renderReview();
       refreshStepLocks();
     });
