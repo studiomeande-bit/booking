@@ -50,7 +50,7 @@ const PROMO_CONFIG = {
   END: '2026-05-10',
   ITEM_IDS: ['promo_kids_2026', 'promo_family_2026']
 };
-const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt'];
+const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
 function doGet(e) {
@@ -4715,7 +4715,12 @@ function invoiceRowToObject_(row,rowIndex){
     lexwarePaymentStatus:String(row[INVOICE_COL['LexwarePaymentStatus']]||''),
     lexwareOpenAmount:String(row[INVOICE_COL['LexwareOpenAmount']]||''),
     lexwarePaidAt:String(row[INVOICE_COL['LexwarePaidAt']]||''),
-    lexwareSyncedAt:String(row[INVOICE_COL['LexwareSyncedAt']]||'')
+    lexwareSyncedAt:String(row[INVOICE_COL['LexwareSyncedAt']]||''),
+    businessInvoiceNeeded:String(row[INVOICE_COL['사업자송장필요']]||'')==='Y',
+    businessCompanyName:String(row[INVOICE_COL['사업자명']]||''),
+    businessVatId:String(row[INVOICE_COL['사업자VAT번호']]||''),
+    businessInvoiceEmail:String(row[INVOICE_COL['사업자송장이메일']]||''),
+    businessInvoiceRef:String(row[INVOICE_COL['사업자송장참조']]||'')
   };
 }
 
@@ -4744,6 +4749,36 @@ function buildBookingBusinessInvoiceMemo_(meta){
   if(meta.vatId) bits.push(`USt-IdNr: ${meta.vatId}`);
   if(meta.reference) bits.push(`Referenz: ${meta.reference}`);
   return bits.join(' | ');
+}
+
+function getPayloadBusinessInvoiceMeta_(payload){
+  return {
+    needed: !!payload.businessInvoiceNeeded,
+    companyName: String(payload.businessCompanyName||'').trim(),
+    vatId: String(payload.businessVatId||'').trim(),
+    invoiceEmail: String(payload.businessInvoiceEmail||'').trim(),
+    reference: String(payload.businessInvoiceRef||'').trim()
+  };
+}
+
+function mergeInvoiceBusinessMeta_(bookingMeta, payloadMeta, fallbackName, fallbackEmail){
+  const needed = !!((payloadMeta && payloadMeta.needed) || (bookingMeta && bookingMeta.needed));
+  if(!needed){
+    return {
+      needed:false,
+      companyName:'',
+      vatId:'',
+      invoiceEmail:'',
+      reference:''
+    };
+  }
+  return {
+    needed:true,
+    companyName:String((payloadMeta&&payloadMeta.companyName) || (bookingMeta&&bookingMeta.companyName) || fallbackName || '').trim(),
+    vatId:String((payloadMeta&&payloadMeta.vatId) || (bookingMeta&&bookingMeta.vatId) || '').trim(),
+    invoiceEmail:String((payloadMeta&&payloadMeta.invoiceEmail) || (bookingMeta&&bookingMeta.invoiceEmail) || fallbackEmail || '').trim(),
+    reference:String((payloadMeta&&payloadMeta.reference) || (bookingMeta&&bookingMeta.reference) || '').trim()
+  };
 }
 
 function generateInvoiceNumber_(invSh){
@@ -4789,11 +4824,13 @@ function createInvoiceRecord_(payload){
   const refund=parseFloat(payload.refundAmount)||0;
   const product=payload.customProduct||(row?String(row[7]||'').trim():'')||(items[0]&&items[0].description)||'';
   const bookingBusinessMeta=getBookingBusinessInvoiceMeta_(row);
-  const customerName=String(payload.customerName|| (bookingBusinessMeta.needed?bookingBusinessMeta.companyName:'') || (row?row[2]:'') || '').trim();
-  const customerEmail=String(payload.customerEmail|| (bookingBusinessMeta.needed?bookingBusinessMeta.invoiceEmail:'') || (row?row[4]:'') || '').trim();
+  const payloadBusinessMeta=getPayloadBusinessInvoiceMeta_(payload||{});
+  const customerName=String(payload.customerName|| (payloadBusinessMeta.needed?payloadBusinessMeta.companyName:'') || (bookingBusinessMeta.needed?bookingBusinessMeta.companyName:'') || (row?row[2]:'') || '').trim();
+  const customerEmail=String(payload.customerEmail|| (payloadBusinessMeta.needed?payloadBusinessMeta.invoiceEmail:'') || (bookingBusinessMeta.needed?bookingBusinessMeta.invoiceEmail:'') || (row?row[4]:'') || '').trim();
   const customerPhone=String(payload.customerPhone|| (row?row[3]:'') || '').trim();
   const customerAddress=String(payload.customerAddress|| (bookingBusinessMeta.needed?bookingBusinessMeta.companyAddress:'') || (row?row[26]:'') || '').trim();
-  const invoiceMemo=String(payload.memo|| buildBookingBusinessInvoiceMemo_(bookingBusinessMeta) || '').trim();
+  const invoiceBusinessMeta=mergeInvoiceBusinessMeta_(bookingBusinessMeta,payloadBusinessMeta,customerName,customerEmail);
+  const invoiceMemo=String(payload.memo|| buildBookingBusinessInvoiceMemo_(invoiceBusinessMeta) || '').trim();
   const mailLang=String(payload.mailLang||'de').toLowerCase();
   if(!customerName) throw new Error('고객명을 입력해 주세요.');
   if(!product&&!items.length) throw new Error('인보이스 항목을 입력해 주세요.');
@@ -4808,7 +4845,12 @@ function createInvoiceRecord_(payload){
     invNo, now, payload.type||(linkedBookingRow?'예약':'수기'), linkedBookingRow||'',
     customerName, customerEmail, customerPhone, dateStr, row?row[6]:'', product,
     price, deposit, refund, invoiceMemo, '발행', customerAddress, JSON.stringify(items),
-    '', '', mailSubject, mailBody, '', '', '', '', '', '', '', '', ''
+    '', '', mailSubject, mailBody, '', '', '', '', '', '', '', '', '',
+    invoiceBusinessMeta.needed?'Y':'',
+    invoiceBusinessMeta.companyName,
+    invoiceBusinessMeta.vatId,
+    invoiceBusinessMeta.invoiceEmail,
+    invoiceBusinessMeta.reference
   ]);
   const newRowIndex=invoiceSheet.getLastRow();
   const inv={
@@ -4828,7 +4870,12 @@ function createInvoiceRecord_(payload){
     memo:invoiceMemo,
     status:'발행',
     customerAddress,
-    items
+    items,
+    businessInvoiceNeeded:invoiceBusinessMeta.needed,
+    businessCompanyName:invoiceBusinessMeta.companyName,
+    businessVatId:invoiceBusinessMeta.vatId,
+    businessInvoiceEmail:invoiceBusinessMeta.invoiceEmail,
+    businessInvoiceRef:invoiceBusinessMeta.reference
   };
   const pdf=createInvoicePdf_(inv,mailLang);
   invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);

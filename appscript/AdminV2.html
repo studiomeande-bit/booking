@@ -946,6 +946,23 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <label>고객 주소</label>
       <textarea id="inv_customerAddress" rows="2" placeholder="Straße, Hausnummer, PLZ, Stadt"></textarea>
     </div>
+    <div class="form-group" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="inv_businessInvoiceNeeded" style="width:auto;" onchange="syncInvoiceBusinessFields()">
+        <span>사업자 송장으로 발행</span>
+      </label>
+      <div style="font-size:11px;color:#94a3b8;">체크하면 기업명, VAT 번호, 참조번호를 별도로 저장하고 B2B export 버튼이 활성화됩니다.</div>
+    </div>
+    <div id="inv_businessFields" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+      <div class="form-row">
+        <div class="form-group"><label>사업자명</label><input type="text" id="inv_businessCompanyName" placeholder="예: Example GmbH"></div>
+        <div class="form-group"><label>VAT 번호</label><input type="text" id="inv_businessVatId" placeholder="예: DE123456789"></div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;">
+        <div class="form-group"><label>송장 이메일</label><input type="email" id="inv_businessInvoiceEmail" placeholder="invoice@example.com"></div>
+        <div class="form-group"><label>참조번호 / PO</label><input type="text" id="inv_businessInvoiceRef" placeholder="예: PO-2026-001"></div>
+      </div>
+    </div>
     <div class="form-group">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <label style="margin:0;">청구 항목</label>
@@ -1046,6 +1063,18 @@ const PRINT_PRICES={
 const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외스냅',wed:'프리웨딩',biz:'기업/행사'};
 const G_COLORS={pass:'wev-pass',prof:'wev-prof',stud:'wev-stud',snap:'wev-snap',wed:'wev-wed',biz:'wev-biz'};
 const GT_CLASS={pass:'gt-pass',prof:'gt-prof',stud:'gt-stud',snap:'gt-snap',wed:'gt-wed',biz:'gt-biz'};
+const STUDIO_BUSINESS_INFO={
+  name:'Taewoong Min',
+  studioName:'Studio mean',
+  address:['Holzwegpassage 3','61440 Oberursel (Taunus)','Deutschland'],
+  email:'studio.mean.de@gmail.com',
+  phone:'+49 176 6093 9400',
+  taxNumber:'003 846 66574',
+  vatId:'DE440009941',
+  iban:'DE11500700100659117600',
+  bic:'DEUTDEFFXXX',
+  bank:'Deutsche Bank'
+};
 
 /* ===== 로그인 ===== */
 function doLogin(){
@@ -3017,6 +3046,141 @@ function buildBusinessInvoiceMemo(c){
   if(c.businessInvoiceRef) bits.push(`Referenz: ${c.businessInvoiceRef}`);
   return bits.join(' | ');
 }
+function syncInvoiceBusinessFields(){
+  const enabled=!!document.getElementById('inv_businessInvoiceNeeded').checked;
+  document.getElementById('inv_businessFields').style.display=enabled?'block':'none';
+}
+function escapeXmlText(value){
+  return String(value||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&apos;');
+}
+function escapeCsvText(value){
+  return `"${String(value==null?'':value).replace(/"/g,'""')}"`;
+}
+function makeDownloadFileName(inv,suffix,ext){
+  const safeNum=(inv.number||'invoice').replace(/[^a-zA-Z0-9_-]/g,'_');
+  const safeName=((inv.businessCompanyName||inv.name||'customer')+'').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9가-힣_-]/g,'');
+  return `${safeNum}_${safeName}_${suffix}.${ext}`;
+}
+function downloadTextFile(fileName,text,mimeType){
+  const blob=new Blob([text],{type:mimeType||'text/plain;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function buildBusinessInvoiceXml(inv){
+  const issuedAt=(inv.issuedAt||'').slice(0,10);
+  const buyerName=inv.businessCompanyName||inv.name||'';
+  const buyerEmail=inv.businessInvoiceEmail||inv.email||'';
+  const items=(inv.items&&inv.items.length?inv.items:[{description:inv.product||'',qty:1,unitGross:Number(inv.total)||0}]).map((item,idx)=>{
+    const qty=Math.max(1,parseInt(item.qty,10)||1);
+    const unitGross=Math.max(0,Number(item.unitGross)||0);
+    const lineGross=Math.round(qty*unitGross*100)/100;
+    const lineNet=Math.round((lineGross/1.19)*100)/100;
+    return `    <LineItem index="${idx+1}">
+      <Description>${escapeXmlText(item.description||'')}</Description>
+      <Quantity>${qty}</Quantity>
+      <UnitGrossAmount currency="EUR">${unitGross.toFixed(2)}</UnitGrossAmount>
+      <LineNetAmount currency="EUR">${lineNet.toFixed(2)}</LineNetAmount>
+      <TaxRate>19.00</TaxRate>
+    </LineItem>`;
+  }).join('\n');
+  const gross=Math.max(0,Number(inv.total)||0);
+  const net=Math.round((gross/1.19)*100)/100;
+  const vat=Math.round((gross-net)*100)/100;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<BusinessInvoiceExport version="1.0">
+  <ExportNotice>Preparation export for B2B invoice workflows. Validate against your final e-invoice target before submission.</ExportNotice>
+  <Seller>
+    <LegalName>${escapeXmlText(STUDIO_BUSINESS_INFO.name)}</LegalName>
+    <TradingName>${escapeXmlText(STUDIO_BUSINESS_INFO.studioName)}</TradingName>
+    <Address>
+      <Line1>${escapeXmlText(STUDIO_BUSINESS_INFO.address[0])}</Line1>
+      <Line2>${escapeXmlText(STUDIO_BUSINESS_INFO.address[1])}</Line2>
+      <Country>${escapeXmlText(STUDIO_BUSINESS_INFO.address[2])}</Country>
+    </Address>
+    <Email>${escapeXmlText(STUDIO_BUSINESS_INFO.email)}</Email>
+    <Phone>${escapeXmlText(STUDIO_BUSINESS_INFO.phone)}</Phone>
+    <TaxNumber>${escapeXmlText(STUDIO_BUSINESS_INFO.taxNumber)}</TaxNumber>
+    <VatId>${escapeXmlText(STUDIO_BUSINESS_INFO.vatId)}</VatId>
+    <Bank>
+      <Name>${escapeXmlText(STUDIO_BUSINESS_INFO.bank)}</Name>
+      <IBAN>${escapeXmlText(STUDIO_BUSINESS_INFO.iban)}</IBAN>
+      <BIC>${escapeXmlText(STUDIO_BUSINESS_INFO.bic)}</BIC>
+    </Bank>
+  </Seller>
+  <Buyer>
+    <LegalName>${escapeXmlText(buyerName)}</LegalName>
+    <Address>${escapeXmlText(inv.customerAddress||'')}</Address>
+    <InvoiceEmail>${escapeXmlText(buyerEmail)}</InvoiceEmail>
+    <VatId>${escapeXmlText(inv.businessVatId||'')}</VatId>
+    <Reference>${escapeXmlText(inv.businessInvoiceRef||'')}</Reference>
+  </Buyer>
+  <Invoice>
+    <InvoiceNumber>${escapeXmlText(inv.number||'')}</InvoiceNumber>
+    <IssueDate>${escapeXmlText(issuedAt)}</IssueDate>
+    <Type>${escapeXmlText(inv.type||'')}</Type>
+    <Currency>EUR</Currency>
+    <NetAmount>${net.toFixed(2)}</NetAmount>
+    <VatAmount>${vat.toFixed(2)}</VatAmount>
+    <GrossAmount>${gross.toFixed(2)}</GrossAmount>
+    <Memo>${escapeXmlText(inv.memo||'')}</Memo>
+  </Invoice>
+  <LineItems>
+${items}
+  </LineItems>
+</BusinessInvoiceExport>`;
+}
+function buildBusinessInvoiceCsv(inv){
+  const rows=[
+    ['invoice_number',inv.number||''],
+    ['issue_date',(inv.issuedAt||'').slice(0,10)],
+    ['invoice_type',inv.type||''],
+    ['customer_name',inv.name||''],
+    ['company_name',inv.businessCompanyName||''],
+    ['invoice_email',inv.businessInvoiceEmail||inv.email||''],
+    ['phone',inv.phone||''],
+    ['address',inv.customerAddress||''],
+    ['vat_id',inv.businessVatId||''],
+    ['reference',inv.businessInvoiceRef||''],
+    ['gross_amount',Number(inv.total||0).toFixed(2)],
+    ['deposit_amount',Number(inv.deposit||0).toFixed(2)],
+    ['refund_amount',Number(inv.refund||0).toFixed(2)],
+    ['memo',inv.memo||'']
+  ];
+  (inv.items&&inv.items.length?inv.items:[{description:inv.product||'',qty:1,unitGross:Number(inv.total)||0}]).forEach((item,idx)=>{
+    rows.push([`item_${idx+1}_description`,item.description||'']);
+    rows.push([`item_${idx+1}_qty`,Math.max(1,parseInt(item.qty,10)||1)]);
+    rows.push([`item_${idx+1}_unit_gross`,Math.max(0,Number(item.unitGross)||0).toFixed(2)]);
+  });
+  return rows.map(row=>row.map(escapeCsvText).join(',')).join('\n');
+}
+function downloadBusinessInvoiceExport(inv,format){
+  if(!inv||!inv.businessInvoiceNeeded){
+    alert('사업자 송장으로 저장된 인보이스만 export할 수 있습니다.');
+    return;
+  }
+  if(format==='xml'){
+    downloadTextFile(
+      makeDownloadFileName(inv,'b2b_export','xml'),
+      buildBusinessInvoiceXml(inv),
+      'application/xml;charset=utf-8;'
+    );
+    return;
+  }
+  downloadTextFile(
+    makeDownloadFileName(inv,'b2b_export','csv'),
+    buildBusinessInvoiceCsv(inv),
+    'text/csv;charset=utf-8;'
+  );
+}
 function resetInvoiceModal(){
   document.getElementById('inv_rowIndex').value='';
   document.getElementById('inv_number').value='';
@@ -3026,6 +3190,11 @@ function resetInvoiceModal(){
   document.getElementById('inv_customerEmail').value='';
   document.getElementById('inv_customerPhone').value='';
   document.getElementById('inv_customerAddress').value='';
+  document.getElementById('inv_businessInvoiceNeeded').checked=false;
+  document.getElementById('inv_businessCompanyName').value='';
+  document.getElementById('inv_businessVatId').value='';
+  document.getElementById('inv_businessInvoiceEmail').value='';
+  document.getElementById('inv_businessInvoiceRef').value='';
   document.getElementById('inv_memo').value='';
   document.getElementById('inv_sendMail').checked=false;
   document.getElementById('inv_mailSubject').value='';
@@ -3034,6 +3203,7 @@ function resetInvoiceModal(){
   document.getElementById('inv_info').innerHTML='';
   invoiceItems=[];
   renderInvoiceItems();
+  syncInvoiceBusinessFields();
 }
 function fillInvoiceFromBooking(c){
   if(!c)return;
@@ -3046,7 +3216,13 @@ function fillInvoiceFromBooking(c){
   document.getElementById('inv_customerEmail').value=invoiceEmail;
   document.getElementById('inv_customerPhone').value=c.phone||'';
   document.getElementById('inv_customerAddress').value=invoiceAddress;
+  document.getElementById('inv_businessInvoiceNeeded').checked=!!c.businessInvoiceNeeded;
+  document.getElementById('inv_businessCompanyName').value=c.businessCompanyName||invoiceName;
+  document.getElementById('inv_businessVatId').value=c.businessVatId||'';
+  document.getElementById('inv_businessInvoiceEmail').value=c.businessInvoiceEmail||invoiceEmail;
+  document.getElementById('inv_businessInvoiceRef').value=c.businessInvoiceRef||'';
   document.getElementById('inv_memo').value=businessInvoiceMemo;
+  syncInvoiceBusinessFields();
   document.getElementById('inv_info').style.display='block';
   document.getElementById('inv_info').innerHTML=
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
@@ -3083,6 +3259,7 @@ function openManualInvoiceModal(){
   const defaults=buildInvoiceMailDefaults('',document.getElementById('inv_number').value.trim(),0);
   document.getElementById('inv_mailSubject').value=defaults.subject;
   document.getElementById('inv_mailBody').value=defaults.body;
+  syncInvoiceBusinessFields();
   document.getElementById('invIssueModal').classList.add('open');
 }
 function closeInvIssueModal(){document.getElementById('invIssueModal').classList.remove('open');}
@@ -3210,6 +3387,11 @@ function confirmIssueInvoice(){
     customerEmail:document.getElementById('inv_customerEmail').value.trim(),
     customerPhone:document.getElementById('inv_customerPhone').value.trim(),
     customerAddress:document.getElementById('inv_customerAddress').value.trim(),
+    businessInvoiceNeeded:document.getElementById('inv_businessInvoiceNeeded').checked,
+    businessCompanyName:document.getElementById('inv_businessCompanyName').value.trim(),
+    businessVatId:document.getElementById('inv_businessVatId').value.trim(),
+    businessInvoiceEmail:document.getElementById('inv_businessInvoiceEmail').value.trim(),
+    businessInvoiceRef:document.getElementById('inv_businessInvoiceRef').value.trim(),
     memo:document.getElementById('inv_memo').value.trim(),
     sendMail:document.getElementById('inv_sendMail').checked,
     mailSubject:document.getElementById('inv_mailSubject').value.trim(),
@@ -3221,7 +3403,12 @@ function confirmIssueInvoice(){
       unitGross:Math.max(0,Number(item.unitGross)||0)
     })).filter(item=>item.description)
   };
+  if(payload.businessInvoiceNeeded){
+    if(!payload.customerName && payload.businessCompanyName) payload.customerName=payload.businessCompanyName;
+    if(!payload.customerEmail && payload.businessInvoiceEmail) payload.customerEmail=payload.businessInvoiceEmail;
+  }
   if(!payload.customerName){alert('고객명을 입력해 주세요.');return;}
+  if(payload.businessInvoiceNeeded && !payload.businessCompanyName){alert('사업자명을 입력해 주세요.');return;}
   if(!payload.items.length){alert('인보이스 항목을 1개 이상 입력해 주세요.');return;}
   google.script.run
     .withSuccessHandler(res=>{
@@ -3293,16 +3480,26 @@ function renderInvoiceTable(){
   document.getElementById('invoiceBody').innerHTML=allInvoices.length
     ?allInvoices.map(inv=>{
       const pdfLink=inv.pdfUrl?`<a href="${inv.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
+      const b2bBadge=inv.businessInvoiceNeeded?`<div style="display:inline-flex;align-items:center;gap:4px;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;margin-bottom:4px;">🏢 B2B</div>`:'';
+      const b2bMeta=inv.businessInvoiceNeeded
+        ?`<div style="font-size:10px;color:#7c3aed;margin-top:4px;">${inv.businessCompanyName||inv.name||''}</div>
+          ${inv.businessVatId?`<div style="font-size:10px;color:#7c3aed;">VAT ${inv.businessVatId}</div>`:''}
+          ${inv.businessInvoiceRef?`<div style="font-size:10px;color:#7c3aed;">Ref ${inv.businessInvoiceRef}</div>`:''}`
+        :'';
       const mailBadge=inv.mailSentAt?`<div style="font-size:10px;color:#059669;margin-top:4px;">발송 ${inv.mailSentAt}</div>`:'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">미발송</div>';
       const lexBadge=inv.lexwareInvoiceId
         ?`<div style="font-size:10px;color:#0f766e;margin-top:4px;">Lexware ${inv.lexwareVoucherNumber||inv.lexwareInvoiceId}</div>
           <div style="font-size:10px;color:#475569;margin-top:2px;">${inv.lexwarePaymentStatus||inv.lexwareSyncStatus||'synced'}${inv.lexwareOpenAmount!==''?` · open ${inv.lexwareOpenAmount}€`:''}</div>`
         :`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Lexware 미전송</div>`;
+      const businessActions=inv.businessInvoiceNeeded
+        ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xml")'>⬇ XML</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"csv")'>⬇ CSV</button>`
+        :'';
       return `<tr>
         <td style="font-weight:700;font-size:12px;">${inv.number}</td>
         <td style="font-size:12px;white-space:nowrap;">${inv.issuedAt}</td>
         <td><span style="background:${TYPE_COLOR[inv.type]||'#f1f5f9'};padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">${inv.type}</span></td>
-        <td><div style="font-weight:700;">${inv.name}</div><div style="font-size:11px;color:#64748b;">${inv.email||''}</div><div style="font-size:11px;color:#94a3b8;">${inv.customerAddress||''}</div></td>
+        <td>${b2bBadge}<div style="font-weight:700;">${inv.name}</div><div style="font-size:11px;color:#64748b;">${inv.email||''}</div><div style="font-size:11px;color:#94a3b8;">${inv.customerAddress||''}</div>${b2bMeta}</td>
         <td style="font-size:12px;max-width:160px;">${inv.items&&inv.items.length?inv.items.map(it=>`${it.description} ×${it.qty}`).join('<br>'):inv.product||''}</td>
         <td style="font-weight:700;">${inv.total}€</td>
         <td>${inv.deposit}€</td>
@@ -3312,6 +3509,7 @@ function renderInvoiceTable(){
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"de")'>🖨️ DE</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"ko")'>🖨️ KO</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"en")'>🖨️ EN</button>
+          ${businessActions}
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#7c3aed;border-color:#ddd6fe;" onclick="syncInvoiceLexware('${inv.number}')">📚 전송</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="syncInvoiceLexwareStatus('${inv.number}')">💶 상태</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#2563eb;border-color:#bfdbfe;" onclick="openInvoiceMailModal('${inv.number}')">✉️ 메일</button>
