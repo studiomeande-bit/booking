@@ -226,10 +226,43 @@
           <input name="email" type="email" autocomplete="email" required>
         </label>
         <div id="returnNotice" class="detail-box hidden-field"></div>
-        <label>
+        <label id="addressField">
           <span id="addressLabel">주소 (인보이스용, 선택)</span>
           <input name="address" autocomplete="street-address" placeholder="인보이스가 필요한 경우만 입력해 주세요">
         </label>
+        <label id="businessInvoiceToggleRow" class="checkbox-row consent-row">
+          <input type="checkbox" name="businessInvoiceNeeded">
+          <span>
+            <b id="businessInvoiceLabel">사업자용 인보이스 필요</b>
+            <small id="businessInvoiceSub" class="consent-sub">기업/프리랜서/기관 명의의 송장이 필요한 경우에만 체크해 주세요.</small>
+          </span>
+        </label>
+        <div id="businessInvoiceFields" class="detail-box hidden-field">
+          <div id="businessInvoiceFieldsTitle" class="detail-title">기업 송장 정보</div>
+          <p id="businessInvoiceFieldsCopy" class="detail-copy">기존 예약 정보는 그대로 두고, 송장 발행에 필요한 정보만 추가로 입력합니다.</p>
+          <div class="invoice-fields-grid">
+            <label>
+              <span id="businessCompanyNameLabel">사업자명 / 회사명</span>
+              <input name="businessCompanyName" autocomplete="organization">
+            </label>
+            <label>
+              <span id="businessInvoiceEmailLabel">송장 수신 이메일</span>
+              <input name="businessInvoiceEmail" type="email" autocomplete="email">
+            </label>
+            <label class="invoice-field-full">
+              <span id="businessCompanyAddressLabel">사업자 주소</span>
+              <textarea name="businessCompanyAddress" rows="3" autocomplete="street-address"></textarea>
+            </label>
+            <label>
+              <span id="businessVatIdLabel">USt-IdNr. / VAT ID</span>
+              <input name="businessVatId" autocomplete="off">
+            </label>
+            <label>
+              <span id="businessInvoiceRefLabel">주문번호 / 참조번호</span>
+              <input name="businessInvoiceRef" autocomplete="off">
+            </label>
+          </div>
+        </div>
         <label id="payerNameField" class="hidden-field">
           <span id="payerNameLabel">입금자명 (계좌이체 시)</span>
           <input name="payerName" autocomplete="off" placeholder="예약금 입금 시 사용할 예금주명을 적어 주세요">
@@ -287,6 +320,6 @@
       </form>
     </section>
   </main>
-  <script type="module" src="./booking.js"></script>
+  <script type="module" src="./booking.js?v=20260414-b2b1"></script>
 </body>
 </html>

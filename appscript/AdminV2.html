@@ -1333,6 +1333,11 @@ function openEdit(rowIndex){
   const infoItems=[
     ['📧 이메일', c.email||'-'],
     ['🏠 주소', c.address||'-'],
+    ['🧾 사업자송장', c.businessInvoiceNeeded?'필요':'-'],
+    ['🏢 사업자명', c.businessCompanyName||'-'],
+    ['✉️ 송장이메일', c.businessInvoiceEmail||'-'],
+    ['🪪 VAT 번호', c.businessVatId||'-'],
+    ['🔖 참조번호', c.businessInvoiceRef||'-'],
     ['📷 종류', G_LABELS[c.itemGroup]||c.itemGroup||'-'],
     ['🛍 상품', c.product||'-'],
     ['👥 인원', c.people||'-'],
@@ -3005,6 +3010,13 @@ function buildInvoiceMailDefaults(name,invoiceNumber,total){
     body:`Hallo ${safeName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${num}\nGesamtbetrag: €${amount}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
   };
 }
+function buildBusinessInvoiceMemo(c){
+  if(!c||!c.businessInvoiceNeeded) return '';
+  const bits=[];
+  if(c.businessVatId) bits.push(`USt-IdNr: ${c.businessVatId}`);
+  if(c.businessInvoiceRef) bits.push(`Referenz: ${c.businessInvoiceRef}`);
+  return bits.join(' | ');
+}
 function resetInvoiceModal(){
   document.getElementById('inv_rowIndex').value='';
   document.getElementById('inv_number').value='';
@@ -3025,23 +3037,32 @@ function resetInvoiceModal(){
 }
 function fillInvoiceFromBooking(c){
   if(!c)return;
+  const invoiceName=c.businessInvoiceNeeded?(c.businessCompanyName||c.name||''):(c.name||'');
+  const invoiceEmail=c.businessInvoiceNeeded?(c.businessInvoiceEmail||c.email||''):(c.email||'');
+  const invoiceAddress=c.businessInvoiceNeeded?(c.businessCompanyAddress||c.address||''):(c.address||'');
+  const businessInvoiceMemo=buildBusinessInvoiceMemo(c);
   document.getElementById('inv_rowIndex').value=c.rowIndex;
-  document.getElementById('inv_customerName').value=c.name||'';
-  document.getElementById('inv_customerEmail').value=c.email||'';
+  document.getElementById('inv_customerName').value=invoiceName;
+  document.getElementById('inv_customerEmail').value=invoiceEmail;
   document.getElementById('inv_customerPhone').value=c.phone||'';
-  document.getElementById('inv_customerAddress').value=c.address||'';
+  document.getElementById('inv_customerAddress').value=invoiceAddress;
+  document.getElementById('inv_memo').value=businessInvoiceMemo;
   document.getElementById('inv_info').style.display='block';
   document.getElementById('inv_info').innerHTML=
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
       <div><span style="color:#7c3aed;font-weight:600;">고객명</span><br><b>${c.name}</b></div>
       <div><span style="color:#7c3aed;font-weight:600;">촬영일시</span><br><b>${c.dateStr||'-'}</b></div>
+      ${c.businessInvoiceNeeded?`<div><span style="color:#7c3aed;font-weight:600;">사업자명</span><br><b>${c.businessCompanyName||'-'}</b></div>`:''}
+      ${c.businessInvoiceNeeded?`<div><span style="color:#7c3aed;font-weight:600;">송장 이메일</span><br>${invoiceEmail||'-'}</div>`:''}
       <div><span style="color:#7c3aed;font-weight:600;">상품</span><br>${c.product||'-'}</div>
       <div><span style="color:#7c3aed;font-weight:600;">총금액</span><br><b>${c.price}€</b></div>
       <div><span style="color:#7c3aed;font-weight:600;">계약금</span><br>${c.depositRaw||'-'}</div>
-      <div><span style="color:#7c3aed;font-weight:600;">주소</span><br><span style="font-size:11px;">${c.address||'-'}</span></div>
+      <div><span style="color:#7c3aed;font-weight:600;">주소</span><br><span style="font-size:11px;">${invoiceAddress||'-'}</span></div>
+      ${c.businessVatId?`<div><span style="color:#7c3aed;font-weight:600;">VAT 번호</span><br>${c.businessVatId}</div>`:''}
+      ${c.businessInvoiceRef?`<div><span style="color:#7c3aed;font-weight:600;">참조번호</span><br>${c.businessInvoiceRef}</div>`:''}
     </div>`;
-  const defaults=buildInvoiceMailDefaults(c.name||'',document.getElementById('inv_number').value.trim(),Number(c.price)||0);
-  document.getElementById('inv_sendMail').checked=!!(c.email||'').includes('@');
+  const defaults=buildInvoiceMailDefaults(invoiceName,document.getElementById('inv_number').value.trim(),Number(c.price)||0);
+  document.getElementById('inv_sendMail').checked=!!invoiceEmail.includes('@');
   document.getElementById('inv_mailSubject').value=defaults.subject;
   document.getElementById('inv_mailBody').value=defaults.body;
 }

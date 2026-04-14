@@ -305,6 +305,15 @@ const COPY = {
     phoneLabel: '연락처',
     emailLabel: '이메일',
     addressLabel: '주소 (인보이스용, 선택)',
+    businessInvoiceLabel: '사업자용 인보이스 필요',
+    businessInvoiceSub: '기업/프리랜서/기관 명의의 송장이 필요한 경우에만 체크해 주세요.',
+    businessInvoiceFieldsTitle: '기업 송장 정보',
+    businessInvoiceFieldsCopy: '기존 예약 정보는 그대로 두고, 송장 발행에 필요한 정보만 추가로 입력합니다.',
+    businessCompanyNameLabel: '사업자명 / 회사명',
+    businessInvoiceEmailLabel: '송장 수신 이메일',
+    businessCompanyAddressLabel: '사업자 주소',
+    businessVatIdLabel: 'USt-IdNr. / VAT ID',
+    businessInvoiceRefLabel: '주문번호 / 참조번호',
     payerNameLabel: '입금자명 (계좌이체 시)',
     babyNameLabel: '아기 이름',
     otherCountryLabel: '기타 국가명',
@@ -338,6 +347,12 @@ const COPY = {
     reviewTime: '시간',
     reviewPeople: '인원',
     reviewCountries: '촬영 국가',
+    reviewBusinessInvoice: '사업자용 인보이스',
+    reviewBusinessCompanyName: '사업자명',
+    reviewBusinessInvoiceEmail: '송장 이메일',
+    reviewBusinessCompanyAddress: '사업자 주소',
+    reviewBusinessVatId: 'VAT 번호',
+    reviewBusinessInvoiceRef: '참조번호',
     reviewPayerName: '입금자명',
     reviewOptions: '추가 옵션',
     reviewSurvey: '원하는 분위기',
@@ -348,6 +363,8 @@ const COPY = {
     reviewMarketing: '마케팅 동의',
     countryRequired: '촬영 국가를 최소 1개 선택해 주세요.',
     locationRequired: '희망 촬영 장소를 입력해 주세요.',
+    businessInvoiceRequired: '사업자용 인보이스를 선택한 경우 사업자명과 사업자 주소를 입력해 주세요.',
+    businessInvoiceEmailInvalid: '송장 수신 이메일 형식을 확인해 주세요.',
     consentRequired: '필수 동의 항목을 체크해 주세요.',
     slotLoadingForDate: '{date} 기준 예약 가능 시간을 불러오는 중입니다.',
     slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
@@ -420,6 +437,15 @@ const COPY = {
     phoneLabel: 'Phone',
     emailLabel: 'Email',
     addressLabel: 'Address (optional, for invoice)',
+    businessInvoiceLabel: 'Business invoice needed',
+    businessInvoiceSub: 'Check this only if the invoice should be issued to a company, freelancer, or organization.',
+    businessInvoiceFieldsTitle: 'Business invoice details',
+    businessInvoiceFieldsCopy: 'Your booking details stay the same. Add only the information needed for invoice issuing.',
+    businessCompanyNameLabel: 'Company name',
+    businessInvoiceEmailLabel: 'Invoice email',
+    businessCompanyAddressLabel: 'Company address',
+    businessVatIdLabel: 'USt-IdNr. / VAT ID',
+    businessInvoiceRefLabel: 'PO / reference number',
     payerNameLabel: 'Payer name (bank transfer)',
     babyNameLabel: 'Baby Name',
     otherCountryLabel: 'Other Country',
@@ -453,6 +479,12 @@ const COPY = {
     reviewTime: 'Time',
     reviewPeople: 'People',
     reviewCountries: 'Country',
+    reviewBusinessInvoice: 'Business invoice',
+    reviewBusinessCompanyName: 'Company name',
+    reviewBusinessInvoiceEmail: 'Invoice email',
+    reviewBusinessCompanyAddress: 'Company address',
+    reviewBusinessVatId: 'VAT ID',
+    reviewBusinessInvoiceRef: 'Reference',
     reviewPayerName: 'Payer name',
     reviewOptions: 'Add-ons',
     reviewSurvey: 'Preferred mood',
@@ -463,6 +495,8 @@ const COPY = {
     reviewMarketing: 'Marketing',
     countryRequired: 'Please choose at least one country.',
     locationRequired: 'Please enter your preferred shooting location.',
+    businessInvoiceRequired: 'Please enter the company name and company address for a business invoice.',
+    businessInvoiceEmailInvalid: 'Please check the invoice email format.',
     consentRequired: 'Please check the required consent items.',
     slotLoadingForDate: 'Loading available times for {date}.',
     slotLoadedForDate: 'Available times for {date}.',
@@ -535,6 +569,15 @@ const COPY = {
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
     addressLabel: 'Adresse (optional, für Rechnung)',
+    businessInvoiceLabel: 'Geschäftsrechnung erforderlich',
+    businessInvoiceSub: 'Nur ankreuzen, wenn die Rechnung auf eine Firma, freiberufliche Tätigkeit oder Organisation ausgestellt werden soll.',
+    businessInvoiceFieldsTitle: 'Angaben für Geschäftsrechnung',
+    businessInvoiceFieldsCopy: 'Die Buchungsdaten bleiben unverändert. Bitte nur die für die Rechnung nötigen Angaben ergänzen.',
+    businessCompanyNameLabel: 'Firmenname',
+    businessInvoiceEmailLabel: 'E-Mail für Rechnung',
+    businessCompanyAddressLabel: 'Firmenadresse',
+    businessVatIdLabel: 'USt-IdNr. / VAT ID',
+    businessInvoiceRefLabel: 'Bestell- / Referenznummer',
     payerNameLabel: 'Name des Kontoinhabers (Überweisung)',
     babyNameLabel: 'Babyname',
     otherCountryLabel: 'Anderes Land',
@@ -568,6 +611,12 @@ const COPY = {
     reviewTime: 'Uhrzeit',
     reviewPeople: 'Personen',
     reviewCountries: 'Land',
+    reviewBusinessInvoice: 'Geschäftsrechnung',
+    reviewBusinessCompanyName: 'Firmenname',
+    reviewBusinessInvoiceEmail: 'Rechnungs-E-Mail',
+    reviewBusinessCompanyAddress: 'Firmenadresse',
+    reviewBusinessVatId: 'VAT-ID',
+    reviewBusinessInvoiceRef: 'Referenz',
     reviewPayerName: 'Kontoinhaber',
     reviewOptions: 'Optionen',
     reviewSurvey: 'Stimmung',
@@ -578,6 +627,8 @@ const COPY = {
     reviewMarketing: 'Marketing',
     countryRequired: 'Bitte wählen Sie mindestens ein Land aus.',
     locationRequired: 'Bitte geben Sie den gewünschten Aufnahmeort ein.',
+    businessInvoiceRequired: 'Bitte geben Sie Firmenname und Firmenadresse für die Geschäftsrechnung ein.',
+    businessInvoiceEmailInvalid: 'Bitte prüfen Sie das Format der Rechnungs-E-Mail.',
     consentRequired: 'Bitte bestätigen Sie die Pflicht-Einwilligungen.',
     slotLoadingForDate: 'Verfügbare Zeiten für {date} werden geladen.',
     slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
@@ -677,6 +728,8 @@ const els = {
   reviewBox: document.getElementById('reviewBox'),
   formHelp: document.getElementById('formHelp'),
   form: document.getElementById('bookingForm'),
+  addressField: document.getElementById('addressField'),
+  businessInvoiceFields: document.getElementById('businessInvoiceFields'),
   otherCountryField: document.getElementById('otherCountryField'),
   locationField: document.getElementById('locationField'),
   locationInfo: document.getElementById('locationInfo'),
@@ -849,6 +902,14 @@ function wireEvents() {
   els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
   els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
   els.form.elements.address?.addEventListener('input', refreshStepLocks);
+  els.form.elements.businessInvoiceNeeded?.addEventListener('change', () => {
+    syncConditionalFields();
+    renderReview();
+    refreshStepLocks();
+  });
+  ['businessCompanyName', 'businessCompanyAddress', 'businessVatId', 'businessInvoiceEmail', 'businessInvoiceRef'].forEach((fieldName) => {
+    els.form.elements[fieldName]?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.reshootingConsent?.addEventListener('change', refreshStepLocks);
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
@@ -1010,6 +1071,18 @@ function formatDateLabel(dateKey) {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
+function getBusinessInvoiceFormData(source = null) {
+  const formData = source instanceof FormData ? source : new FormData(els.form);
+  return {
+    needed: formData.get('businessInvoiceNeeded') === 'on',
+    companyName: String(formData.get('businessCompanyName') || '').trim(),
+    companyAddress: String(formData.get('businessCompanyAddress') || '').trim(),
+    vatId: String(formData.get('businessVatId') || '').trim(),
+    invoiceEmail: String(formData.get('businessInvoiceEmail') || '').trim(),
+    reference: String(formData.get('businessInvoiceRef') || '').trim()
+  };
+}
+
 function applyCopy() {
   const copy = getCopy();
   if (els.heroTitle) els.heroTitle.textContent = copy.heroTitle;
@@ -1046,6 +1119,15 @@ function applyCopy() {
   setText('phoneLabel', copy.phoneLabel);
   setText('emailLabel', copy.emailLabel);
   setText('addressLabel', copy.addressLabel);
+  setText('businessInvoiceLabel', copy.businessInvoiceLabel);
+  setText('businessInvoiceSub', copy.businessInvoiceSub);
+  setText('businessInvoiceFieldsTitle', copy.businessInvoiceFieldsTitle);
+  setText('businessInvoiceFieldsCopy', copy.businessInvoiceFieldsCopy);
+  setText('businessCompanyNameLabel', copy.businessCompanyNameLabel);
+  setText('businessInvoiceEmailLabel', copy.businessInvoiceEmailLabel);
+  setText('businessCompanyAddressLabel', copy.businessCompanyAddressLabel);
+  setText('businessVatIdLabel', copy.businessVatIdLabel);
+  setText('businessInvoiceRefLabel', copy.businessInvoiceRefLabel);
   setText('payerNameLabel', copy.payerNameLabel);
   setText('babyNameLabel', copy.babyNameLabel);
   setText('otherCountryLabel', copy.otherCountryLabel);
@@ -2501,7 +2583,10 @@ function syncConditionalFields() {
   const needsBabyName = (group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')
     || state.surveyKeys.includes('baby');
   const needsPayerName = Number(state.quote?.depositAmount || getPreviewQuote()?.depositAmount || 0) > 0;
+  const needsBusinessInvoice = !!els.form?.elements?.businessInvoiceNeeded?.checked;
   syncPassportPersonCountries();
+  els.addressField?.classList.toggle('hidden-field', needsBusinessInvoice);
+  els.businessInvoiceFields?.classList.toggle('hidden-field', !needsBusinessInvoice);
   els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
@@ -3058,6 +3143,15 @@ function renderReview() {
       .join(', ');
     rows.push([state.lang === 'en' ? 'Background' : state.lang === 'de' ? 'Hintergrund' : '배경', bgLabels]);
   }
+  const businessInvoice = getBusinessInvoiceFormData();
+  if (businessInvoice.needed) {
+    rows.push([copy.reviewBusinessInvoice, copy.yes]);
+    if (businessInvoice.companyName) rows.push([copy.reviewBusinessCompanyName, businessInvoice.companyName]);
+    if (businessInvoice.invoiceEmail) rows.push([copy.reviewBusinessInvoiceEmail, businessInvoice.invoiceEmail]);
+    if (businessInvoice.companyAddress) rows.push([copy.reviewBusinessCompanyAddress, businessInvoice.companyAddress]);
+    if (businessInvoice.vatId) rows.push([copy.reviewBusinessVatId, businessInvoice.vatId]);
+    if (businessInvoice.reference) rows.push([copy.reviewBusinessInvoiceRef, businessInvoice.reference]);
+  }
   const memo = String(els.form.elements.memo?.value || '').trim();
   const payerName = String(els.form.elements.payerName?.value || '').trim();
   if (payerName) rows.push([copy.reviewPayerName, payerName]);
@@ -3096,7 +3190,12 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
-  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk);
+  const businessInvoice = getBusinessInvoiceFormData(formData);
+  const businessInvoiceOk = !businessInvoice.needed
+    || (businessInvoice.companyName
+      && businessInvoice.companyAddress
+      && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
+  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -3132,6 +3231,7 @@ async function onSubmit(event) {
   if (!state.selectedProduct || !state.selectedDate || !state.selectedSlot) return;
   const formData = new FormData(els.form);
   const isPass = state.selectedProduct.g === 'pass';
+  const businessInvoice = getBusinessInvoiceFormData(formData);
   const payload = {
     requestId: createRequestId('booking'),
     itemId: state.selectedProduct.id,
@@ -3141,7 +3241,7 @@ async function onSubmit(event) {
     name: String(formData.get('name') || '').trim(),
     phone: String(formData.get('phone') || '').trim(),
     email: String(formData.get('email') || '').trim(),
-    address: String(formData.get('address') || '').trim(),
+    address: businessInvoice.needed ? businessInvoice.companyAddress : String(formData.get('address') || '').trim(),
     payerName: String(formData.get('payerName') || '').trim(),
     babyName: String(formData.get('babyName') || '').trim(),
     memo: '',
@@ -3163,6 +3263,12 @@ async function onSubmit(event) {
     marketing: !isPass && formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
     aiConsent: isPass ? true : formData.get('aiConsent') === 'on',
+    businessInvoiceNeeded: businessInvoice.needed,
+    businessCompanyName: businessInvoice.companyName,
+    businessCompanyAddress: businessInvoice.companyAddress,
+    businessVatId: businessInvoice.vatId,
+    businessInvoiceEmail: businessInvoice.invoiceEmail,
+    businessInvoiceRef: businessInvoice.reference,
     isReturn: state.returnEligible,
     ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
     babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
@@ -3218,6 +3324,14 @@ async function onSubmit(event) {
     );
     return;
   }
+  if (businessInvoice.needed && (!businessInvoice.companyName || !businessInvoice.companyAddress)) {
+    setBanner(getCopy().businessInvoiceRequired, 'error');
+    return;
+  }
+  if (businessInvoice.invoiceEmail && !/\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)) {
+    setBanner(getCopy().businessInvoiceEmailInvalid, 'error');
+    return;
+  }
   if (!payload.gdprConsent || (!isPass && !payload.aiConsent)) {
     setBanner(getCopy().consentRequired, 'error');
     return;
@@ -3244,6 +3358,7 @@ async function onSubmit(event) {
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();
     state.selectedSlot = '';
+    syncConditionalFields();
     renderReview();
     updateSubmitState();
   } catch (error) {
