@@ -304,6 +304,7 @@ const COPY = {
     phoneLabel: '연락처',
     emailLabel: '이메일',
     addressLabel: '주소 (인보이스용, 선택)',
+    payerNameLabel: '입금자명 (계좌이체 시)',
     babyNameLabel: '아기 이름',
     otherCountryLabel: '기타 국가명',
     memoLabel: '요청사항',
@@ -336,6 +337,7 @@ const COPY = {
     reviewTime: '시간',
     reviewPeople: '인원',
     reviewCountries: '촬영 국가',
+    reviewPayerName: '입금자명',
     reviewOptions: '추가 옵션',
     reviewSurvey: '원하는 분위기',
     reviewLocation: '촬영 장소',
@@ -416,6 +418,7 @@ const COPY = {
     phoneLabel: 'Phone',
     emailLabel: 'Email',
     addressLabel: 'Address (optional, for invoice)',
+    payerNameLabel: 'Payer name (bank transfer)',
     babyNameLabel: 'Baby Name',
     otherCountryLabel: 'Other Country',
     memoLabel: 'Notes',
@@ -448,6 +451,7 @@ const COPY = {
     reviewTime: 'Time',
     reviewPeople: 'People',
     reviewCountries: 'Country',
+    reviewPayerName: 'Payer name',
     reviewOptions: 'Add-ons',
     reviewSurvey: 'Preferred mood',
     reviewLocation: 'Location',
@@ -528,6 +532,7 @@ const COPY = {
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
     addressLabel: 'Adresse (optional, für Rechnung)',
+    payerNameLabel: 'Name des Kontoinhabers (Überweisung)',
     babyNameLabel: 'Babyname',
     otherCountryLabel: 'Anderes Land',
     memoLabel: 'Hinweise',
@@ -560,6 +565,7 @@ const COPY = {
     reviewTime: 'Uhrzeit',
     reviewPeople: 'Personen',
     reviewCountries: 'Land',
+    reviewPayerName: 'Kontoinhaber',
     reviewOptions: 'Optionen',
     reviewSurvey: 'Stimmung',
     reviewLocation: 'Aufnahmeort',
@@ -683,6 +689,7 @@ const els = {
   surveyField: document.getElementById('surveyField'),
   surveyGrid: document.getElementById('surveyGrid'),
   babyNameField: document.getElementById('babyNameField'),
+  payerNameField: document.getElementById('payerNameField'),
   submitBtn: document.getElementById('submitBtn'),
   stepWarnings: {
     step1: document.getElementById('step1Warning'),
@@ -1035,6 +1042,7 @@ function applyCopy() {
   setText('phoneLabel', copy.phoneLabel);
   setText('emailLabel', copy.emailLabel);
   setText('addressLabel', copy.addressLabel);
+  setText('payerNameLabel', copy.payerNameLabel);
   setText('babyNameLabel', copy.babyNameLabel);
   setText('otherCountryLabel', copy.otherCountryLabel);
   setText('memoLabel', copy.memoLabel);
@@ -2480,6 +2488,7 @@ function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
   const needsBabyName = (group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')
     || state.surveyKeys.includes('baby');
+  const needsPayerName = Number(state.quote?.depositAmount || getPreviewQuote()?.depositAmount || 0) > 0;
   syncPassportPersonCountries();
   els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
@@ -2488,6 +2497,7 @@ function syncConditionalFields() {
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
   els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
+  els.payerNameField.classList.toggle('hidden-field', !needsPayerName);
   els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
   if (group === 'biz') renderBusinessOptions();
@@ -3037,6 +3047,8 @@ function renderReview() {
     rows.push([state.lang === 'en' ? 'Background' : state.lang === 'de' ? 'Hintergrund' : '배경', bgLabels]);
   }
   const memo = String(els.form.elements.memo?.value || '').trim();
+  const payerName = String(els.form.elements.payerName?.value || '').trim();
+  if (payerName) rows.push([copy.reviewPayerName, payerName]);
   if (memo) rows.push([copy.reviewMemo, memo]);
   if (state.selectedProduct?.g !== 'pass') {
     rows.push([copy.reviewMarketing, els.form.elements.marketing?.checked ? copy.yes : copy.no]);
@@ -3118,6 +3130,7 @@ async function onSubmit(event) {
     phone: String(formData.get('phone') || '').trim(),
     email: String(formData.get('email') || '').trim(),
     address: String(formData.get('address') || '').trim(),
+    payerName: String(formData.get('payerName') || '').trim(),
     babyName: String(formData.get('babyName') || '').trim(),
     memo: '',
     website: String(formData.get('website') || ''),

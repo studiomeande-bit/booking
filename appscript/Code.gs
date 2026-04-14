@@ -26,7 +26,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
@@ -1604,7 +1604,7 @@ function processForm(data){
     const marketingStr=data.marketing?'Y':'N';
     const aiConsentStr=data.aiConsent?'Y':'N';
     const consentTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim(),'','','','','','','','','']);
+    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim(),'','','','','','','','','',String(data.payerName||'').trim()]);
     bumpCalCacheVer_();
     sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId());
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
@@ -1617,7 +1617,7 @@ function sendAdminNotificationEmail_(data,quote,koName,eventId,surveyStr,memo,is
   const confirmUrl=createHtmlActionLink_('confirm',eventId);const cancelUrl=createHtmlActionLink_('cancel',eventId);
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
   const td=(l,v)=>`<tr><td style="padding:10px 14px;background:#f8fafc;font-weight:700;width:110px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${l}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">${v}</td></tr>`;
-  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;"><h2 style="margin:0;color:#fff;font-size:18px;">🆕 새 예약${isReturn?' ⭐재방문':''}</h2></div><div style="padding:25px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">${td('고객명',`<b>${data.name}</b>${isReturn?' <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">재방문</span>':''}`)}${td('연락처',data.phone)}${td('이메일',data.email)}${td('상품',`<b style="color:#2563eb;">${koName}</b>${allCountries?' ('+allCountries+')':''}`)}${td('일시',`<b>${data.date} ${data.time}</b>`)}${td('인원',quote.people+'명')}${td('총금액',`<b style="color:#10b981;">${quote.totalPrice}€</b>`)}${quote.isDeposit?td('계약금',`<span style="color:#ef4444;">${quote.depositAmount}€ 입금 필요</span>`):''} ${surveyStr?td('분위기',surveyStr):''}${memo?td('요청사항',`<div style="white-space:pre-wrap;">${memo}</div>`):''}</table><div style="text-align:center;margin:25px 0;display:flex;gap:12px;justify-content:center;"><a href="${confirmUrl}" style="background:#10b981;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">✅ 예약 확정하기</a><a href="${cancelUrl}" style="background:#ef4444;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">❌ 예약 취소하기</a></div><p style="text-align:center;font-size:12px;color:#94a3b8;">이 링크는 14일 후 만료됩니다.</p></div></div>`;
+  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;"><h2 style="margin:0;color:#fff;font-size:18px;">🆕 새 예약${isReturn?' ⭐재방문':''}</h2></div><div style="padding:25px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">${td('고객명',`<b>${data.name}</b>${isReturn?' <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">재방문</span>':''}`)}${td('연락처',data.phone)}${td('이메일',data.email)}${quote.isDeposit&&data.payerName?td('입금자명',data.payerName):''}${td('상품',`<b style="color:#2563eb;">${koName}</b>${allCountries?' ('+allCountries+')':''}`)}${td('일시',`<b>${data.date} ${data.time}</b>`)}${td('인원',quote.people+'명')}${td('총금액',`<b style="color:#10b981;">${quote.totalPrice}€</b>`)}${quote.isDeposit?td('계약금',`<span style="color:#ef4444;">${quote.depositAmount}€ 입금 필요</span>`):''} ${surveyStr?td('분위기',surveyStr):''}${memo?td('요청사항',`<div style="white-space:pre-wrap;">${memo}</div>`):''}</table><div style="text-align:center;margin:25px 0;display:flex;gap:12px;justify-content:center;"><a href="${confirmUrl}" style="background:#10b981;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">✅ 예약 확정하기</a><a href="${cancelUrl}" style="background:#ef4444;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">❌ 예약 취소하기</a></div><p style="text-align:center;font-size:12px;color:#94a3b8;">이 링크는 14일 후 만료됩니다.</p></div></div>`;
   MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[새 예약${isReturn?' ⭐재방문':''}] ${data.name}님 — ${koName} (${data.date} ${data.time})`,htmlBody});
 }
 
@@ -2090,7 +2090,7 @@ function addManualBookingAdmin(token, data) {
       `${data.date} ${data.time}`, '확정됨', data.name, data.phone, emailToSave, langToSave, groupToSave, data.product,
       optionsStr, peopleToSave, priceText, depositAmt > 0 ? String(depositAmt)+'€' : '0',
       balanceAmt > 0 ? String(balanceAmt)+'€' : priceText, data.payMethod, '수기등록', data.memo, eventId,
-      depPayMethod, '', '수기', '', '', '', '', '', '', String(data.address||'').trim()
+      depPayMethod, '', '수기', '', '', '', '', '', '', String(data.address||'').trim(), String(data.payerName||'').trim()
     ]);
 
     bumpCalCacheVer_();
@@ -2196,6 +2196,7 @@ function getDashboardData_(){
       itemGroup:g,product:row[7],optionStr:row[8],people:row[9],price,deposit:depositRaw,depositRaw,balance:balanceRaw,
       payMethod:payStr,depPayMethod:row[17],extraItem:row[18],memo:row[15],isReturn:String(row[19]||'')==='재방문',
       balanceDate:bDate,rescheduleReq,address:String(row[26]||''),
+      payerName:String(row[BOOKING_COL['입금자명']]||''),
       depositPaid:String(row[BOOKING_COL['계약금입금여부']]||''),
       depositPaidAt:String(row[BOOKING_COL['계약금입금일']]||''),
       depositPaidAmount:String(row[BOOKING_COL['계약금입금금액']]||''),
