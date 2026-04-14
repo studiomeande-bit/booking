@@ -168,13 +168,26 @@
           <div class="consent-box">
             <div id="consentTitle" class="consent-title">이용 동의</div>
             <p id="consentLead" class="consent-copy">개인정보 수집 및 이용 동의가 필요합니다.</p>
-            <label class="checkbox-row">
+            <label class="checkbox-row consent-row">
               <input type="checkbox" name="gdprConsent">
-              <span id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</span>
+              <span>
+                <b id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</b>
+                <small id="gdprSub" class="consent-sub">서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.</small>
+              </span>
             </label>
-            <label class="checkbox-row">
+            <label class="checkbox-row consent-row">
+              <input type="checkbox" name="aiConsent">
+              <span>
+                <b id="aiLabel">[필수] AI 보정 및 처리 안내에 동의합니다.</b>
+                <small id="aiSub" class="consent-sub">촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.</small>
+              </span>
+            </label>
+            <label class="checkbox-row consent-row">
               <input type="checkbox" name="marketing">
-              <span id="marketingLabel">[선택] Studio mean 포트폴리오 및 SNS 활용에 동의합니다.</span>
+              <span>
+                <b id="marketingLabel">[선택] Studio mean 포트폴리오 및 SNS 활용에 동의합니다.</b>
+                <small id="marketingSub" class="consent-sub">촬영 결과물을 Studio mean의 웹사이트 및 SNS 홍보 용도로 활용하는 것에 동의합니다.</small>
+              </span>
             </label>
           </div>
           <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
@@ -191,6 +204,6 @@
     </section>
   </main>
 
-  <script type="module" src="./promo.js?v=20260414-2"></script>
+  <script type="module" src="./promo.js?v=20260414-3"></script>
 </body>
 </html>

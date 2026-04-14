@@ -36,7 +36,11 @@ const COPY = {
     consentTitle: '이용 동의',
     consentLead: '개인정보 수집 및 이용 동의가 필요합니다.',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    gdprSub: '서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.',
+    aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
+    aiSub: '촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.',
     marketingLabel: '[선택] Studio mean 포트폴리오 및 SNS 활용에 동의합니다.',
+    marketingSub: '촬영 결과물을 Studio mean의 웹사이트 및 SNS 홍보 용도로 활용하는 것에 동의합니다.',
     next: '다음',
     back: '이전',
     submit: '예약 신청',
@@ -116,7 +120,11 @@ const COPY = {
     consentTitle: 'Consent',
     consentLead: 'Personal data consent is required.',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
+    gdprSub: 'I agree to the minimum data processing needed to confirm the booking and deliver the final images.',
+    aiLabel: '[Required] I agree to the AI retouching and processing notice.',
+    aiSub: 'AI-based tools may be used as supportive tools during retouching and production of the final images.',
     marketingLabel: '[Optional] I agree to the use of the photos for Studio mean portfolio and social channels.',
+    marketingSub: 'I agree that the final images may be used on Studio mean website and social media for promotion.',
     next: 'Next',
     back: 'Back',
     submit: 'Submit booking',
@@ -196,7 +204,11 @@ const COPY = {
     consentTitle: 'Einwilligung',
     consentLead: 'Die Einwilligung zur Datenverarbeitung ist erforderlich.',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
+    gdprSub: 'Ich stimme der minimalen Datenverarbeitung zu, die für Buchungsbestätigung und Bildübergabe erforderlich ist.',
+    aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-gestützten Retusche und Verarbeitung zu.',
+    aiSub: 'KI-basierte Tools können unterstützend bei Retusche und Erstellung der Ergebnisse eingesetzt werden.',
     marketingLabel: '[Optional] Ich stimme der Nutzung der Fotos für Portfolio und soziale Medien von Studio mean zu.',
+    marketingSub: 'Ich bin einverstanden, dass die Ergebnisse zu Werbezwecken auf der Website und in sozialen Medien von Studio mean genutzt werden dürfen.',
     next: 'Weiter',
     back: 'Zurück',
     submit: 'Buchung senden',
@@ -396,6 +408,32 @@ function buildQuotePayload() {
   };
 }
 
+function getPromoPreviewQuote() {
+  if (!state.selectedProduct) return null;
+  const people = getPeopleValue();
+  if (!people) return null;
+  let totalPrice = null;
+  if (state.selectedProduct.id === 'promo_kids_2026') {
+    totalPrice = people === 1 ? 69 : people === 2 ? 89 : 109;
+  } else if (state.selectedProduct.id === 'promo_family_2026') {
+    if (people <= 2) totalPrice = 129;
+    else if (people === 3) totalPrice = 149;
+    else if (people === 4) totalPrice = 169;
+    else totalPrice = 169 + ((people - 4) * 20);
+  }
+  if (totalPrice === null) return null;
+  const duration = Number(state.selectedProduct?.d || 0);
+  const prep = Number(state.selectedProduct?.prep || 0);
+  return {
+    itemId: state.selectedProduct.id,
+    people,
+    totalPrice,
+    duration,
+    prep,
+    totalDuration: duration + prep
+  };
+}
+
 function getCalendarDuration() {
   if (state.quote?.totalDuration !== undefined) return Number(state.quote.totalDuration) || 0;
   const shootDuration = Number(state.selectedProduct?.d || 0);
@@ -409,7 +447,7 @@ function getQuoteCacheKey(payload) {
 
 function syncQuoteFromCache() {
   const payload = buildQuotePayload();
-  state.quote = payload ? state.quoteCache.get(getQuoteCacheKey(payload)) || null : null;
+  state.quote = payload ? state.quoteCache.get(getQuoteCacheKey(payload)) || getPromoPreviewQuote() : null;
   renderPriceCard();
   updateReview();
   if (state.selectedProduct) {
@@ -430,6 +468,12 @@ async function refreshQuote() {
     renderPriceCard();
     updateReview();
     return cached;
+  }
+  const preview = getPromoPreviewQuote();
+  if (preview) {
+    state.quote = preview;
+    renderPriceCard();
+    updateReview();
   }
   const nextQuote = await fetchQuote(payload);
   if (token !== state.quoteToken) return state.quote;
@@ -455,35 +499,43 @@ function queueQuoteRefresh(delay = 0) {
 
 function renderStaticCopy() {
   const c = copy();
+  const setText = (id, value) => {
+    const node = document.getElementById(id);
+    if (node) node.textContent = value;
+  };
   document.documentElement.lang = state.lang;
   els.loadingCopy.textContent = c.loading;
-  document.getElementById('heroEyebrow').textContent = c.eyebrow;
-  document.getElementById('heroTitle').textContent = c.heroTitle;
-  document.getElementById('heroLead').textContent = c.heroLead;
-  document.getElementById('closedTitle').textContent = c.closedTitle;
-  document.getElementById('closedBody').textContent = c.closedBody;
-  document.getElementById('periodLabel').textContent = c.periodLabel;
-  document.getElementById('limitLabel').textContent = c.limitLabel;
-  document.getElementById('limitValue').textContent = c.limitValue;
-  document.getElementById('step1Title').textContent = c.step1Title;
-  document.getElementById('step1Lead').textContent = c.step1Lead;
-  document.getElementById('step2Title').textContent = c.step2Title;
-  document.getElementById('step2Lead').textContent = c.step2Lead;
-  document.getElementById('step3Title').textContent = c.step3Title;
-  document.getElementById('step4Title').textContent = c.step4Title;
-  document.getElementById('step4Lead').textContent = c.step4Lead;
-  document.getElementById('peopleLabel').textContent = c.peopleLabel;
-  document.getElementById('childAgeLabel').textContent = c.childAgeLabel;
-  document.getElementById('familyInfoLabel').textContent = c.familyInfoLabel;
-  document.getElementById('nameLabel').textContent = c.nameLabel;
-  document.getElementById('phoneLabel').textContent = c.phoneLabel;
-  document.getElementById('emailLabel').textContent = c.emailLabel;
-  document.getElementById('addressLabel').textContent = c.addressLabel;
-  document.getElementById('memoLabel').textContent = c.memoLabel;
-  document.getElementById('consentTitle').textContent = c.consentTitle;
-  document.getElementById('consentLead').textContent = c.consentLead;
-  document.getElementById('gdprLabel').textContent = c.gdprLabel;
-  document.getElementById('marketingLabel').textContent = c.marketingLabel;
+  setText('heroEyebrow', c.eyebrow);
+  setText('heroTitle', c.heroTitle);
+  setText('heroLead', c.heroLead);
+  setText('closedTitle', c.closedTitle);
+  setText('closedBody', c.closedBody);
+  setText('periodLabel', c.periodLabel);
+  setText('limitLabel', c.limitLabel);
+  setText('limitValue', c.limitValue);
+  setText('step1Title', c.step1Title);
+  setText('step1Lead', c.step1Lead);
+  setText('step2Title', c.step2Title);
+  setText('step2Lead', c.step2Lead);
+  setText('step3Title', c.step3Title);
+  setText('step4Title', c.step4Title);
+  setText('step4Lead', c.step4Lead);
+  setText('peopleLabel', c.peopleLabel);
+  setText('childAgeLabel', c.childAgeLabel);
+  setText('familyInfoLabel', c.familyInfoLabel);
+  setText('nameLabel', c.nameLabel);
+  setText('phoneLabel', c.phoneLabel);
+  setText('emailLabel', c.emailLabel);
+  setText('addressLabel', c.addressLabel);
+  setText('memoLabel', c.memoLabel);
+  setText('consentTitle', c.consentTitle);
+  setText('consentLead', c.consentLead);
+  setText('gdprLabel', c.gdprLabel);
+  setText('gdprSub', c.gdprSub);
+  setText('aiLabel', c.aiLabel);
+  setText('aiSub', c.aiSub);
+  setText('marketingLabel', c.marketingLabel);
+  setText('marketingSub', c.marketingSub);
   els.step1Next.textContent = c.next;
   els.step2Back.textContent = c.back;
   els.step2Next.textContent = c.next;
@@ -567,14 +619,15 @@ function renderConditionalFields() {
 
 function renderPriceCard() {
   const c = copy();
-  if (!state.quote || !state.selectedProduct) {
+  const quote = state.quote || getPromoPreviewQuote();
+  if (!quote || !state.selectedProduct) {
     els.priceCard.innerHTML = '';
     return;
   }
   const meta = c.groups[state.selectedProduct.id];
   els.priceCard.innerHTML = `
     <div class="price-label">${escapeHtml(c.price)}</div>
-    <div class="price-main">€${escapeHtml(state.quote.totalPrice)}</div>
+    <div class="price-main">€${escapeHtml(quote.totalPrice)}</div>
     <div class="price-sub">${escapeHtml(meta.title)} · ${escapeHtml(`${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`)}</div>
   `;
 }
@@ -715,14 +768,15 @@ async function loadSlots(dateStr) {
 
 function updateReview() {
   const c = copy();
-  if (!state.selectedProduct || !state.quote) {
+  const quote = state.quote || getPromoPreviewQuote();
+  if (!state.selectedProduct || !quote) {
     els.reviewBox.innerHTML = '';
     return;
   }
   const meta = c.groups[state.selectedProduct.id];
   const rows = [
     [c.packageName, meta.title],
-    [c.price, `€${state.quote.totalPrice}`],
+    [c.price, `€${quote.totalPrice}`],
     [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`]
   ];
   if (state.selectedDate && state.selectedSlot) rows.push([c.bookingTime, `${state.selectedDate} ${state.selectedSlot}`]);
@@ -751,7 +805,8 @@ function validateStep(step) {
     const ok = String(els.form.elements.name.value || '').trim() &&
       String(els.form.elements.phone.value || '').trim() &&
       email &&
-      !!els.form.elements.gdprConsent.checked;
+      !!els.form.elements.gdprConsent.checked &&
+      !!els.form.elements.aiConsent?.checked;
     if (!ok) return c.formRequired;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.invalidEmail;
     return '';
@@ -835,7 +890,7 @@ function buildSubmitPayload() {
     address: String(els.form.elements.address.value || '').trim(),
     memo: String(els.form.elements.memo.value || '').trim(),
     gdprConsent: !!els.form.elements.gdprConsent.checked,
-    aiConsent: false,
+    aiConsent: !!els.form.elements.aiConsent?.checked,
     marketing: !!els.form.elements.marketing.checked,
     lang: state.lang,
     optionKeys: [],
@@ -963,6 +1018,7 @@ function bindEvents() {
   });
   els.step4Back.addEventListener('click', () => showStep(3));
   els.form.addEventListener('input', updateStepButtons);
+  els.form.addEventListener('change', updateStepButtons);
   els.submitBtn.addEventListener('click', onSubmit);
   els.restartBtn.addEventListener('click', () => window.location.reload());
 }
