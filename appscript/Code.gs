@@ -245,6 +245,7 @@ function handlePublicApiRequest_(route,method,e){
 function sanitizeInitDataForApi_(data){
   return {
     products:data&&data.products||[],
+    promoProducts:data&&data.promoProducts||[],
     settings:data&&data.settings||{},
     serverTime:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss")
   };
