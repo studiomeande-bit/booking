@@ -721,7 +721,7 @@ function calculateQuote_(request){
   const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz';
-  const depositAmount=item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0);
+  const depositAmount=total<=100?0:(item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0));
   return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
 
@@ -2182,7 +2182,9 @@ function getDashboardData_(){
     const{obj:dObj,str:dStr}=parseDateSafe_(row[0]);const m=dObj.getMonth()+1;if(isNaN(m))continue;
     const status=String(row[1]||''),price=parseInt(String(row[10]||'0').replace(/[^0-9]/g,''))||0;
     const payStr=String(row[13]||''),g=String(row[6]||'');
-    const depositRaw=String(row[11]||''),balanceRaw=String(row[12]||'');
+    const effectiveDeposit=getEffectiveBookingDeposit_(row);
+    const depositRaw=effectiveDeposit>0?String(row[11]||''):'0';
+    const balanceRaw=String(row[12]||'');
     
     // ✅ 추가: 엑셀 21번째 칸(row[20])에서 balanceDate(잔금입금일) 읽어오기
     let bDate = String(row[20]||'').trim();
@@ -2211,7 +2213,20 @@ function getDashboardData_(){
     else if(status!=='취소됨'&&dObj.getTime()>now) totExp+=price;
   }
   customers.sort((a,b)=>b.dateObj-a.dateObj);
-  return{totalRealizedRevenue:totReal,totalExpectedRevenue:totExp,totalNet:Math.round(totReal/1.19),totalTax:totReal-Math.round(totReal/1.19),monthlyStats:monthly,payStats:pay,prodStats:prod,customers};
+  const recentAutoCancelled = customers
+    .filter(c=>String(c.autoCancelledAt||'').trim())
+    .sort((a,b)=>String(b.autoCancelledAt||'').localeCompare(String(a.autoCancelledAt||'')))
+    .slice(0,5)
+    .map(c=>({
+      rowIndex:c.rowIndex,
+      name:c.name||'',
+      product:c.product||'',
+      dateStr:c.dateStr||'',
+      autoCancelledAt:c.autoCancelledAt||'',
+      deposit:c.deposit||'',
+      memo:c.memo||''
+    }));
+  return{totalRealizedRevenue:totReal,totalExpectedRevenue:totExp,totalNet:Math.round(totReal/1.19),totalTax:totReal-Math.round(totReal/1.19),monthlyStats:monthly,payStats:pay,prodStats:prod,customers,recentAutoCancelled};
 }
 
 function sendTestSelectEmail(token){
@@ -2254,6 +2269,29 @@ function quickUpdateBookingStatus(token,rIdx,status){
   return{ok:true};
 }
 
+function confirmBookingDepositAdmin(token,rIdx,amount){
+  assertAdmin_(token);
+  const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const deposit=getEffectiveBookingDeposit_(row);
+  if(deposit<=0) throw new Error('예약금이 있는 예약만 입금 확인할 수 있습니다.');
+  if(String(row[BOOKING_COL['상태']]||'')==='취소됨') throw new Error('취소된 예약은 입금 확인할 수 없습니다.');
+  const paidAmount=parseMoneyValue_(amount)||deposit;
+  const now=new Date();
+  sh.getRange(rIdx,BOOKING_COL['계약금입금여부']+1).setValue('Y');
+  sh.getRange(rIdx,BOOKING_COL['계약금입금일']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd'));
+  sh.getRange(rIdx,BOOKING_COL['계약금입금금액']+1).setValue(paidAmount);
+  if(BOOKING_COL['입금경고일시']!=null) sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
+  if(BOOKING_COL['Lexware결제상태']!=null){
+    const current=String(row[BOOKING_COL['Lexware결제상태']]||'').trim();
+    if(!current) sh.getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue('manual_deposit_confirmed');
+  }
+  if(BOOKING_COL['Lexware동기화일시']!=null){
+    sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  }
+  return{ok:true,paidAmount:paidAmount,paidAt:Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd')};
+}
+
 function updateBookingAdmin(token,rIdx,d){
   assertAdmin_(token);const sh=getDbSheet();
   setBookingStatus_(sh,rIdx,d.status);sh.getRange(rIdx,3).setValue(d.name);sh.getRange(rIdx,4).setValue(d.phone);
@@ -2274,8 +2312,14 @@ function parseMoneyValue_(value){
   return Number(String(value||'').replace(/[^0-9.-]/g,''))||0;
 }
 
+function getEffectiveBookingDeposit_(row){
+  const total=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
+  if(total<=100) return 0;
+  return parseMoneyValue_(row[BOOKING_COL['계약금']]);
+}
+
 function bookingRequiresDepositConfirmation_(row){
-  return parseMoneyValue_(row[BOOKING_COL['계약금']])>0;
+  return getEffectiveBookingDeposit_(row)>0;
 }
 
 function setBookingStatus_(sheet,rowIndex,status){
@@ -2331,7 +2375,7 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
     const localPaidAmount = ((Number(row[BOOKING_COL['계약금입금금액']]||0)||0) + (Number(row[BOOKING_COL['잔금결제금액']]||0)||0));
     const linkedPaidAmount = linkedInvoice ? toNumberOrZero_(linkedInvoice.paidAmount) : 0;
     const effectivePaidAmount = Math.max(localPaidAmount, linkedPaidAmount);
-    const depositDue = Number(row[11]||0) || 0;
+    const depositDue = getEffectiveBookingDeposit_(row);
     const localDepositPaid = String(row[BOOKING_COL['계약금입금여부']]||'') === 'Y';
     const localBalancePaid = String(row[BOOKING_COL['잔금결제여부']]||'') === 'Y';
     const explicitlyUnpaid = /미결제|unpaid|offen/i.test(payMethod);
@@ -4801,7 +4845,7 @@ function syncPendingBookingPaymentsFromLexware_(){
   const rows=bookingSheet.getDataRange().getValues();
   rows.slice(1).forEach(function(row, idx){
     const status=String(row[BOOKING_COL['상태']]||'');
-    const deposit=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+    const deposit=getEffectiveBookingDeposit_(row);
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
     if(deposit<=0 || depositPaid) return;
     if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
@@ -4820,7 +4864,7 @@ function flagAndCancelOverdueDepositBookings_(){
   rows.slice(1).forEach(function(row, idx){
     const rowIndex=idx+2;
     const status=String(row[BOOKING_COL['상태']]||'');
-    const deposit=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+    const deposit=getEffectiveBookingDeposit_(row);
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
     if(deposit<=0 || depositPaid || status==='취소됨') return;
     if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
@@ -4863,6 +4907,63 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
       });
     }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
   }
+}
+
+function debugListAutoCancelledBookings(){
+  const {bookingSheet}=ensureSheets_();
+  const rows=bookingSheet.getDataRange().getValues();
+  return rows.slice(1).map(function(row, idx){
+    return {
+      rowIndex: idx + 2,
+      date: String(row[BOOKING_COL['예약일시']] || ''),
+      status: String(row[BOOKING_COL['상태']] || ''),
+      name: String(row[BOOKING_COL['고객명']] || ''),
+      product: String(row[BOOKING_COL['상품']] || ''),
+      total: parseMoneyValue_(row[BOOKING_COL['총결제액']]),
+      deposit: getEffectiveBookingDeposit_(row),
+      depositPaid: String(row[BOOKING_COL['계약금입금여부']] || ''),
+      depositPaidAt: String(row[BOOKING_COL['계약금입금일']] || ''),
+      confirmedAt: String(row[BOOKING_COL['확정일시']] || row[BOOKING_COL['동의시각']] || ''),
+      warnedAt: String(row[BOOKING_COL['입금경고일시']] || ''),
+      autoCancelledAt: String(row[BOOKING_COL['자동취소일시']] || ''),
+      memo: String(row[BOOKING_COL['요청사항']] || '')
+    };
+  }).filter(function(row){
+    return row.autoCancelledAt;
+  }).sort(function(a,b){
+    return String(b.autoCancelledAt).localeCompare(String(a.autoCancelledAt));
+  }).slice(0, 20);
+}
+
+function debugFindBookingsByNames(names){
+  const queries=(Array.isArray(names)?names:[names]).map(function(v){
+    return String(v||'').trim().toLowerCase();
+  }).filter(Boolean);
+  const {bookingSheet}=ensureSheets_();
+  const rows=bookingSheet.getDataRange().getValues();
+  return rows.slice(1).map(function(row, idx){
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    return {
+      rowIndex: idx + 2,
+      date: String(row[BOOKING_COL['예약일시']]||''),
+      status: String(row[BOOKING_COL['상태']]||''),
+      name: name,
+      phone: String(row[BOOKING_COL['연락처']]||''),
+      email: String(row[BOOKING_COL['이메일']]||''),
+      product: String(row[BOOKING_COL['상품']]||''),
+      total: parseMoneyValue_(row[BOOKING_COL['총결제액']]),
+      deposit: getEffectiveBookingDeposit_(row),
+      depositPaid: String(row[BOOKING_COL['계약금입금여부']]||''),
+      depositPaidAt: String(row[BOOKING_COL['계약금입금일']]||''),
+      autoCancelledAt: String(row[BOOKING_COL['자동취소일시']]||''),
+      memo: String(row[BOOKING_COL['요청사항']]||'')
+    };
+  }).filter(function(item){
+    const target=item.name.toLowerCase();
+    return queries.some(function(q){ return target.indexOf(q)!==-1; });
+  }).sort(function(a,b){
+    return String(b.date).localeCompare(String(a.date));
+  });
 }
 
 function sendBookingReminders_(){

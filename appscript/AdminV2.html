@@ -195,16 +195,31 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="card" style="margin-bottom:0;"><div class="card-title">📈 월별 매출</div><div id="monthlyChart" style="overflow-x:auto;"></div></div>
       <div class="card" style="margin-bottom:0;"><div class="card-title">🔀 결제수단 / 촬영종류</div><div id="payProdChart"></div></div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px;">
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-title">⛔ 최근 자동취소 예약</div>
+        <div id="recentAutoCancelledList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
   </div>
 
   <div class="content" id="tab_booking">
     <div class="card">
       <div class="filter-bar">
-        <input type="text" id="searchInput" placeholder="🔍 이름·상품·메모 검색..." oninput="debouncedRenderTable()">
+        <input type="text" id="searchInput" placeholder="🔍 이름·연락처·이메일·상품·메모 검색..." oninput="debouncedRenderTable()">
         <select id="statusFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 상태</option><option>대기중</option><option>확정됨</option><option>촬영완료</option><option>셀렉완료</option><option>작업완료</option><option>취소됨</option></select>
         <select id="monthFilter" onchange="renderTable()" style="width:auto;"></select>
         <select id="groupFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 종류</option><option value="pass">여권/비자</option><option value="prof">프로필</option><option value="stud">스튜디오</option><option value="snap">야외스냅</option><option value="wed">프리웨딩</option><option value="biz">기업/행사</option></select>
         <select id="payFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 결제</option><option>미결제</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select>
+        <select id="depositFilter" onchange="renderTable()" style="width:auto;">
+          <option value="">전체 계약금</option>
+          <option value="needed">입금확인 필요</option>
+          <option value="done">입금완료</option>
+          <option value="warning">5일 경과 경고</option>
+          <option value="cancelled">자동취소</option>
+          <option value="none">계약금 없음</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="resetBookingFilters()">필터 초기화</button>
       </div>
       <div class="action-bar">
         <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">전체선택</button>
@@ -220,7 +235,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
             <th class="sortable" onclick="sortTable('dateObj')">일시 <span class="sort-icon" id="sort_dateObj">↕</span></th>
             <th>상태</th><th class="sortable" onclick="sortTable('name')">고객명 <span class="sort-icon" id="sort_name">↕</span></th>
             <th>종류</th><th>상품</th><th class="sortable" onclick="sortTable('price')">금액 <span class="sort-icon" id="sort_price">↕</span></th>
-            <th>계약금</th><th>결제수단</th>
+            <th>계약금 / 입금확인</th><th>결제수단</th>
             <th>잔금 입금일</th>
             <th>메모</th><th>관리</th>
           </tr></thead>
@@ -1073,6 +1088,18 @@ function renderDashboard(d){
     <div><div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#475569;">결제 수단</div>${Object.entries(pL).filter(([k])=>ps[k]>0).map(([k,l])=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f1f5f9;"><span>${l}</span><span style="font-weight:700;">${ps[k]}€</span></div>`).join('')||'<div style="color:#94a3b8;font-size:12px;">없음</div>'}</div>
     <div><div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#475569;">촬영 종류별 매출</div>${Object.entries(G_LABELS).filter(([k])=>pr[k]>0).map(([k,l])=>prodBar(k,l,pr[k])).join('')||'<div style="color:#94a3b8;font-size:12px;">없음</div>'}</div>
   </div>`;
+  const recentWrap=document.getElementById('recentAutoCancelledList');
+  const recent=(d.recentAutoCancelled||[]);
+  recentWrap.innerHTML=recent.length?recent.map(item=>`
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid #fecaca;background:#fff7f7;border-radius:12px;">
+      <div style="min-width:0;">
+        <div style="font-weight:700;color:#7f1d1d;">${item.name||'-'} · ${item.product||'-'}</div>
+        <div style="font-size:12px;color:#991b1b;margin-top:4px;">예약: ${item.dateStr||'-'} · 자동취소: ${item.autoCancelledAt||'-'}</div>
+        <div style="font-size:11px;color:#7c2d12;margin-top:4px;">계약금 ${item.deposit||'-'} · ${item.memo||'예약 확정 후 10일 내 예약금 미확인'}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="gotoBookingDetail(${item.rowIndex})">열기</button>
+    </div>
+  `).join(''):'<div style="padding:12px;border:1px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:12px;">최근 자동취소 예약이 없습니다.</div>';
 }
 
 function renderWeekGrid(customers){
@@ -1100,24 +1127,77 @@ const debouncedRenderTable=(()=>function(){clearTimeout(debounceTimer);debounceT
 function sortTable(f){if(sortField===f)sortDir*=-1;else{sortField=f;sortDir=-1;}document.querySelectorAll('.sort-icon').forEach(el=>el.textContent='↕');const ic=document.getElementById('sort_'+f);if(ic)ic.textContent=sortDir>0?'↑':'↓';renderTable();}
 
 function renderTable(){
-  const q=(document.getElementById('searchInput').value||'').toLowerCase(),sf=document.getElementById('statusFilter').value,mf=document.getElementById('monthFilter').value,gf=document.getElementById('groupFilter').value,pf=document.getElementById('payFilter').value;
-  let data=allCustomers.filter(c=>{if(sf&&c.status!==sf)return false;if(mf&&!(c.dateStr||'').startsWith(mf))return false;if(gf&&c.itemGroup!==gf)return false;if(pf&&!String(c.payMethod||'').includes(pf))return false;if(q&&!(c.name+c.product+(c.memo||'')+(c.email||'')).toLowerCase().includes(q))return false;return true;});
+  const q=(document.getElementById('searchInput').value||'').toLowerCase(),
+        sf=document.getElementById('statusFilter').value,
+        mf=document.getElementById('monthFilter').value,
+        gf=document.getElementById('groupFilter').value,
+        pf=document.getElementById('payFilter').value,
+        df=document.getElementById('depositFilter')?.value||'';
+  const money=v=>Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
+  const effectiveDeposit=c=>{
+    const total=money(c.price);
+    const group=String(c.itemGroup||'');
+    if(total<=100) return 0;
+    if(group==='pass' || group==='biz') return 0;
+    const raw=money(c.deposit);
+    if(raw>0) return raw;
+    return group==='wed' ? Math.round(total*0.20) : 50;
+  };
+  const requiresDeposit=c=>effectiveDeposit(c)>0;
+  const depositPending=c=>requiresDeposit(c) && c.depositPaid!=='Y';
+  let data=allCustomers.filter(c=>{
+    if(sf&&c.status!==sf)return false;
+    if(mf&&!(c.dateStr||'').startsWith(mf))return false;
+    if(gf&&c.itemGroup!==gf)return false;
+    if(pf&&!String(c.payMethod||'').includes(pf))return false;
+    if(df==='needed' && !depositPending(c)) return false;
+    if(df==='done' && !(requiresDeposit(c) && c.depositPaid==='Y')) return false;
+    if(df==='warning' && !c.depositWarnedAt) return false;
+    if(df==='cancelled' && !c.autoCancelledAt) return false;
+    if(df==='none' && requiresDeposit(c)) return false;
+    if(q){
+      const haystack=[
+        c.name,c.phone,c.email,c.product,c.memo,c.extraItem,c.dateStr,c.status,c.payMethod
+      ].join(' ').toLowerCase();
+      if(!haystack.includes(q)) return false;
+    }
+    return true;
+  });
   data.sort((a,b)=>{let va=a[sortField],vb=b[sortField];if(typeof va==='string'){va=va.toLowerCase();vb=(vb||'').toLowerCase();}return va<vb?-sortDir:va>vb?sortDir:0;});
   const STATUS_CLASS={대기중:'s-wait',확정됨:'s-ok',촬영완료:'s-shoot',셀렉완료:'s-select',작업완료:'s-work',취소됨:'s-cancel'};
   const STATUS_LIST=['대기중','확정됨','촬영완료','셀렉완료','작업완료','취소됨'];
   const sd=(rowIndex,cur)=>`<select class="status-sel ${STATUS_CLASS[cur]||''}" onchange="quickStatusUpdate(${rowIndex},this.value)">${STATUS_LIST.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('')}</select>`;
   const gt=g=>`<span class="group-tag ${GT_CLASS[g]||'gt-etc'}">${G_LABELS[g]||g}</span>`;
-  const dc=dep=>{if(!dep||dep==='-')return '<span class="dep-none">-</span>';if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 미입금</span>`;if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ 완료</span>`;return `<span style="font-size:11px;color:#475569;">${dep}</span>`;};
+  const dc=(dep,c)=>{
+    const amount=effectiveDeposit(c);
+    if(amount<=0) return '<span class="dep-none">-</span>';
+    if(c.depositPaid==='Y') return `<span class="dep-done">✅ ${amount}€</span>`;
+    if(!dep||dep==='-') return `<span class="dep-pending">💳 ${amount}€</span>`;
+    if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 ${amount}€</span>`;
+    if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ ${amount}€</span>`;
+    return `<span style="font-size:11px;color:#475569;">${dep}</span>`;
+  };
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
-  const money=v=>Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
-  const depositPending=c=>money(c.deposit)>0 && c.depositPaid!=='Y';
 
   document.getElementById('tableBody').innerHTML=data.map(c=>{
+    const depositAction=(depositPending(c)&&c.status!=='취소됨')
+      ? `<button class="btn btn-sm" style="margin-top:6px;font-size:11px;background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;" onclick="confirmBookingDeposit(${c.rowIndex})">💳입금확인</button>`
+      : '';
     let actions=`<button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">💶결제</button>`;
     if(c.status!=='취소됨') actions+=` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`;
-    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}${(c.depositPaid==='Y'||c.balancePaid==='Y'||c.lexwarePaymentStatus||depositPending(c)||c.depositWarnedAt||c.autoCancelledAt)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#475569;">${c.depositPaid==='Y'?`💳 계약금 ${c.depositPaidAmount||''}€`:'💳 계약금 미입금'}${c.balancePaid==='Y'?`<br>✅ 잔금 ${c.balancePaidAmount||''}€`:(c.balanceDate?`<br>📅 잔금일 ${c.balanceDate}`:'')}${c.lexwarePaymentStatus?`<br>📚 ${c.lexwarePaymentStatus}`:''}${c.depositWarnedAt?`<br><span style="color:#b45309;font-weight:700;">⚠️ 5일 경과 입금 미확인</span>`:''}${c.autoCancelledAt?`<br><span style="color:#dc2626;font-weight:700;">⛔ 10일 경과 자동취소</span>`:''}</div>`:''}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
+    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit,c)}${(requiresDeposit(c)||c.balancePaid==='Y'||c.lexwarePaymentStatus||c.depositWarnedAt||c.autoCancelledAt)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#475569;">${requiresDeposit(c)?(c.depositPaid==='Y'?`💳 계약금 ${c.depositPaidAmount||effectiveDeposit(c)}€`:`💳 계약금 미입금`):'계약금 없음'}${c.balancePaid==='Y'?`<br>✅ 잔금 ${c.balancePaidAmount||''}€`:(c.balanceDate?`<br>📅 잔금일 ${c.balanceDate}`:'')}${c.lexwarePaymentStatus?`<br>📚 ${c.lexwarePaymentStatus}`:''}${c.depositWarnedAt?`<br><span style="color:#b45309;font-weight:700;">⚠️ 5일 경과 입금 미확인</span>`:''}${c.autoCancelledAt?`<br><span style="color:#dc2626;font-weight:700;">⛔ 10일 경과 자동취소</span>`:''}</div>`:''}${depositAction}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
   }).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
+}
+
+function resetBookingFilters(){
+  ['searchInput','statusFilter','monthFilter','groupFilter','payFilter','depositFilter'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(el.tagName==='INPUT') el.value='';
+    else el.selectedIndex=0;
+  });
+  renderTable();
 }
 
 function toggleSelectAll(){const chk=document.getElementById('selectAllChk');document.querySelectorAll('.row-chk').forEach(c=>c.checked=chk.checked);updateSelectedCount();}
@@ -1829,7 +1909,7 @@ function calcManualPrice(){
 
   // 예약금 자동 계산
   const isDeposit = total > 100 && pGroup !== 'pass' && pGroup !== 'biz';
-  const deposit = pGroup === 'wed' ? Math.round(total * 0.20) : (isDeposit ? 50 : 0);
+  const deposit = total <= 100 ? 0 : (pGroup === 'wed' ? Math.round(total * 0.20) : (isDeposit ? 50 : 0));
   document.getElementById('m_deposit').value = deposit;
   document.getElementById('m_balance').value = Math.max(0, total - deposit);
 }
@@ -2585,6 +2665,16 @@ function quickStatusUpdate(rowIndex,newStatus){
     .withSuccessHandler(()=>loadAll())
     .withFailureHandler(e=>{handleApiError(e);c.status=c._prevStatus||c.status;renderTable();})
     .quickUpdateBookingStatus(adminToken,rowIndex,newStatus);
+}
+function confirmBookingDeposit(rowIndex){
+  const c=allCustomers.find(x=>x.rowIndex===rowIndex);if(!c)return;
+  const amount=Number(String(c.deposit||'').replace(/[^0-9.-]/g,''))||0;
+  if(!amount){alert('예약금이 없는 예약입니다.');return;}
+  if(!confirm(`예약금 ${amount}€ 입금을 확인 처리할까요?`)) return;
+  google.script.run
+    .withSuccessHandler(()=>{alert('예약금 입금 확인이 저장되었습니다.');loadAll();})
+    .withFailureHandler(handleApiError)
+    .confirmBookingDepositAdmin(adminToken,rowIndex,amount);
 }
 function gotoBookings(statusFilter){switchTab('booking');const el=document.getElementById('statusFilter');if(el){el.value=statusFilter||'';renderTable();}}
 function gotoBookingsByMonth(month){switchTab('booking');const el=document.getElementById('monthFilter');if(el){el.value=month;renderTable();}}
