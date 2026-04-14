@@ -577,6 +577,23 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <button class="btn btn-primary btn-sm" onclick="loadInvoiceList()">🔄 새로고침</button>
         </div>
       </div>
+      <div class="filter-bar">
+        <input type="text" id="invoiceSearchInput" placeholder="🔍 번호·고객명·사업자명·이메일·VAT·참조 검색..." oninput="renderInvoiceTable()">
+        <select id="invoiceTypeFilter" onchange="renderInvoiceTable()" style="width:auto;">
+          <option value="">전체 타입</option>
+          <option value="예약">예약</option>
+          <option value="수기">수기</option>
+          <option value="취소/환불">취소/환불</option>
+          <option value="셀렉추가금">셀렉추가금</option>
+        </select>
+        <select id="invoiceBusinessFilter" onchange="renderInvoiceTable()" style="width:auto;">
+          <option value="">전체 송장</option>
+          <option value="b2b">B2B만</option>
+          <option value="b2c">B2C만</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="resetInvoiceFilters()">필터 초기화</button>
+        <span id="invoiceSummaryLabel" style="font-size:12px;color:#64748b;margin-left:auto;"></span>
+      </div>
       <div class="table-wrap">
         <table id="invoiceTable">
           <thead><tr>
@@ -3475,10 +3492,43 @@ function loadInvoiceList(){
     .withFailureHandler(handleApiError)
     .getInvoiceList(adminToken);
 }
+function resetInvoiceFilters(){
+  document.getElementById('invoiceSearchInput').value='';
+  document.getElementById('invoiceTypeFilter').value='';
+  document.getElementById('invoiceBusinessFilter').value='';
+  renderInvoiceTable();
+}
+function getFilteredInvoices(){
+  const search=(document.getElementById('invoiceSearchInput')?.value||'').trim().toLowerCase();
+  const typeFilter=document.getElementById('invoiceTypeFilter')?.value||'';
+  const businessFilter=document.getElementById('invoiceBusinessFilter')?.value||'';
+  return (allInvoices||[]).filter(inv=>{
+    if(typeFilter && inv.type!==typeFilter) return false;
+    if(businessFilter==='b2b' && !inv.businessInvoiceNeeded) return false;
+    if(businessFilter==='b2c' && inv.businessInvoiceNeeded) return false;
+    if(!search) return true;
+    const haystack=[
+      inv.number,
+      inv.name,
+      inv.email,
+      inv.customerAddress,
+      inv.product,
+      inv.memo,
+      inv.businessCompanyName,
+      inv.businessInvoiceEmail,
+      inv.businessVatId,
+      inv.businessInvoiceRef
+    ].join(' ').toLowerCase();
+    return haystack.includes(search);
+  });
+}
 function renderInvoiceTable(){
   const TYPE_COLOR={'예약':'#dbeafe','취소/환불':'#fee2e2','수기':'#f1f5f9','셀렉추가금':'#fef3c7'};
-  document.getElementById('invoiceBody').innerHTML=allInvoices.length
-    ?allInvoices.map(inv=>{
+  const filteredInvoices=getFilteredInvoices();
+  const b2bCount=filteredInvoices.filter(inv=>inv.businessInvoiceNeeded).length;
+  document.getElementById('invoiceSummaryLabel').textContent=`총 ${filteredInvoices.length}건 · B2B ${b2bCount}건`;
+  document.getElementById('invoiceBody').innerHTML=filteredInvoices.length
+    ?filteredInvoices.map(inv=>{
       const pdfLink=inv.pdfUrl?`<a href="${inv.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
       const b2bBadge=inv.businessInvoiceNeeded?`<div style="display:inline-flex;align-items:center;gap:4px;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;margin-bottom:4px;">🏢 B2B</div>`:'';
       const b2bMeta=inv.businessInvoiceNeeded
