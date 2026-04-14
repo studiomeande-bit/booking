@@ -1316,6 +1316,13 @@ function refreshStepLocks() {
   renderStepWarnings();
 }
 
+function needsReshootingConsent(product = state.selectedProduct) {
+  if (!product) return false;
+  if (product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) return true;
+  if (product.g === 'stud' && state.surveyKeys.includes('baby')) return true;
+  return false;
+}
+
 function getMaxUnlockedStep() {
   const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
@@ -1404,7 +1411,7 @@ function renderStepWarnings() {
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
   const babyNameOk = !((product?.g === 'prof' && product?.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
-  const reshootingOk = !(product?.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
+  const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
     step5Message = state.lang === 'en'
@@ -2502,7 +2509,7 @@ function syncConditionalFields() {
   els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
   els.payerNameField.classList.toggle('hidden-field', !needsPayerName);
-  els.reshootingField.classList.toggle('hidden-field', !(group === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')));
+  els.reshootingField.classList.toggle('hidden-field', !needsReshootingConsent(state.selectedProduct));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
   if (group === 'biz') renderBusinessOptions();
   syncMemoPlaceholder();
@@ -3087,7 +3094,7 @@ function updateSubmitState() {
   const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
-  const reshootingOk = !(product.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby')) || !!els.reshootingConsent?.checked;
+  const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk);
 }
 
@@ -3214,7 +3221,7 @@ async function onSubmit(event) {
     setBanner(getCopy().consentRequired, 'error');
     return;
   }
-  if (state.selectedProduct.g === 'prof' && (state.ageGroup === 'kids' || state.ageGroup === 'baby') && !els.reshootingConsent?.checked) {
+  if (needsReshootingConsent(state.selectedProduct) && !els.reshootingConsent?.checked) {
     setBanner(
       state.lang === 'en'
         ? 'Please agree to the reshooting policy.'
