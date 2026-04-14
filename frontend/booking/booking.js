@@ -286,6 +286,7 @@ const COPY = {
     passportCountryLabel: '원하는 촬영국가 선택',
     generalPeopleLabel: '인원',
     ageFieldLabel: '촬영 대상 연령',
+    ageFieldHint: '영유아(만 0~2세) · 키즈(만 3~13세) · 성인(만 14~69세) · 시니어(만 70세 이상)',
     babyTypeFieldLabel: '촬영 종류',
     reshootingTitle: '재촬영 약관 동의',
     passAddonTitle: '여권사진 추가 촬영',
@@ -400,6 +401,7 @@ const COPY = {
     passportCountryLabel: 'Choose desired countries',
     generalPeopleLabel: 'People',
     ageFieldLabel: 'Age Group',
+    ageFieldHint: 'Infant (0-2) · Kids (3-13) · Adult (14-69) · Senior (70+)',
     babyTypeFieldLabel: 'Session Type',
     reshootingTitle: 'Reshooting Consent',
     passAddonTitle: 'Passport Add-on',
@@ -514,6 +516,7 @@ const COPY = {
     passportCountryLabel: 'Gewünschte Aufnahmeländer',
     generalPeopleLabel: 'Personen',
     ageFieldLabel: 'Altersgruppe',
+    ageFieldHint: 'Säugling (0-2) · Kinder (3-13) · Erwachsene (14-69) · Senioren (ab 70)',
     babyTypeFieldLabel: 'Aufnahmetyp',
     reshootingTitle: 'Einwilligung zum Nachshooting',
     passAddonTitle: 'Passfoto Zusatz',
@@ -1029,6 +1032,7 @@ function applyCopy() {
   setText('passportAddConfigBtn', copy.passportConfigAdd);
   setText('generalPeopleLabel', copy.generalPeopleLabel);
   setText('ageFieldLabel', copy.ageFieldLabel);
+  setText('ageFieldHint', copy.ageFieldHint);
   setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
   setText('reshootingTitle', copy.reshootingTitle);
   setText('passAddonTitle', copy.passAddonTitle);
