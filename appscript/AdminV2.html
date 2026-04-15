@@ -1035,6 +1035,22 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   </div>
 </div>
 
+<div class="modal-overlay" id="invoiceValidationModal">
+  <div class="modal" style="max-width:760px;">
+    <div class="modal-title">🧪 XRechnung 준비 상태</div>
+    <div id="invoiceValidationInfo" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
+    <div id="invoiceValidationSummary" style="margin-bottom:12px;font-size:13px;"></div>
+    <div id="invoiceValidationList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div style="font-size:11px;color:#64748b;margin-top:12px;line-height:1.6;">
+      이 패널은 다운로드 전에 필수값 누락 여부를 빠르게 확인하기 위한 진단용입니다.
+      저장은 하지 않고 현재 인보이스 데이터만 검사합니다.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-outline btn-sm" onclick="closeInvoiceValidationModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="printEditModal">
   <div class="modal">
     <div class="modal-title">🖨️ 인화/보정 주문 수정</div>
@@ -3092,6 +3108,67 @@ function downloadTextFile(fileName,text,mimeType){
   a.click();
   URL.revokeObjectURL(url);
 }
+function validateXRechnungInvoice(inv){
+  const items=[];
+  const push=(ok,label,detail)=>items.push({ok,label,detail});
+  if(!inv){
+    push(false,'인보이스 로드','인보이스 정보를 찾을 수 없습니다.');
+    return items;
+  }
+  push(!!inv.businessInvoiceNeeded,'B2B 송장 여부',inv.businessInvoiceNeeded?'사업자 송장':'사업자 송장이 아님');
+  const sellerEndpoint=getVatEndpointInfo(STUDIO_BUSINESS_INFO.vatId);
+  push(!!sellerEndpoint,'판매자 VAT / Endpoint',sellerEndpoint?`${sellerEndpoint.value} · scheme ${sellerEndpoint.schemeID}`:'Studio VAT 정보를 확인해야 합니다.');
+  const buyerEndpoint=getVatEndpointInfo(inv.businessVatId);
+  push(!!buyerEndpoint,'구매자 VAT / Endpoint',buyerEndpoint?`${buyerEndpoint.value} · scheme ${buyerEndpoint.schemeID}`:'사업자 VAT 번호가 필요합니다.');
+  const buyerReference=String(inv.businessInvoiceRef||'').trim();
+  push(!!buyerReference,'Buyer reference',buyerReference||'참조번호 / PO가 필요합니다.');
+  const buyerName=String(inv.businessCompanyName||inv.name||'').trim();
+  push(!!buyerName,'구매자명',buyerName||'사업자명이 필요합니다.');
+  const issuedAt=(inv.issuedAt||'').slice(0,10);
+  push(!!issuedAt,'발행일',issuedAt||'발행일이 없습니다.');
+  const address=parseInvoiceAddressParts(inv.customerAddress||'',buyerEndpoint&&buyerEndpoint.countryCode||'DE');
+  push(!!address.streetName,'주소 Street',address.streetName||'Straße 정보 없음');
+  push(!!address.postalCode,'주소 PLZ',address.postalCode||'우편번호 없음');
+  push(!!address.city,'주소 City',address.city||'도시 정보 없음');
+  const lineItems=(inv.items&&inv.items.length?inv.items:[{description:inv.product||'',qty:1,unitGross:Number(inv.total)||0}]).filter(item=>String(item.description||'').trim());
+  push(lineItems.length>0,'라인 항목',lineItems.length?`${lineItems.length}개`:'항목이 없습니다.');
+  if(inv.type==='취소/환불' || Number(inv.refund||0)>0){
+    const refundAmount=Math.max(0,Number(inv.refund||0));
+    push(refundAmount>0,'CreditNote 환불금액',refundAmount>0?`${refundAmount.toFixed(2)}€`:'환불금액이 필요합니다.');
+    const refInv=findReferencedInvoiceForCreditNote(inv);
+    push(!!refInv,'원본 Invoice 참조',refInv?refInv.number:'같은 예약행의 원본 일반 인보이스가 있으면 더 좋습니다.');
+  } else {
+    push(Math.max(0,Number(inv.total||0))>0,'Invoice 총금액',Math.max(0,Number(inv.total||0))>0?`${Number(inv.total||0).toFixed(2)}€`:'총금액이 0입니다.');
+  }
+  return items;
+}
+function openInvoiceValidationModal(invNumber){
+  const inv=getInvoiceByNumber(invNumber);
+  const checks=validateXRechnungInvoice(inv);
+  const okCount=checks.filter(item=>item.ok).length;
+  const failCount=checks.length-okCount;
+  document.getElementById('invoiceValidationInfo').innerHTML=inv?`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <div><span style="color:#64748b;">인보이스</span><br><b>${inv.number||'-'}</b></div>
+      <div><span style="color:#64748b;">문서형태</span><br><b>${inv.type==='취소/환불' || Number(inv.refund||0)>0?'CreditNote':'Invoice'}</b></div>
+      <div><span style="color:#64748b;">고객</span><br><b>${inv.businessCompanyName||inv.name||'-'}</b></div>
+      <div><span style="color:#64748b;">VAT</span><br>${inv.businessVatId||'-'}</div>
+    </div>`:'인보이스 정보를 찾을 수 없습니다.';
+  document.getElementById('invoiceValidationSummary').innerHTML=
+    failCount===0
+      ?`<span style="display:inline-block;background:#ecfdf5;color:#047857;padding:6px 10px;border-radius:999px;font-weight:700;">검증 통과 · ${okCount}/${checks.length}</span>`
+      :`<span style="display:inline-block;background:#fef2f2;color:#b91c1c;padding:6px 10px;border-radius:999px;font-weight:700;">보완 필요 · 실패 ${failCount}건</span>`;
+  document.getElementById('invoiceValidationList').innerHTML=checks.map(item=>`
+    <div style="border:1px solid ${item.ok?'#bbf7d0':'#fecaca'};background:${item.ok?'#f0fdf4':'#fff7f7'};border-radius:10px;padding:10px 12px;">
+      <div style="font-weight:700;color:${item.ok?'#166534':'#b91c1c'};">${item.ok?'✅':'⚠️'} ${item.label}</div>
+      <div style="font-size:12px;color:#475569;margin-top:4px;">${item.detail||''}</div>
+    </div>
+  `).join('');
+  document.getElementById('invoiceValidationModal').classList.add('open');
+}
+function closeInvoiceValidationModal(){
+  document.getElementById('invoiceValidationModal').classList.remove('open');
+}
 function normalizeVatId(vatId){
   return String(vatId||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
@@ -3807,7 +3884,8 @@ function renderInvoiceTable(){
           <div style="font-size:10px;color:#475569;margin-top:2px;">${inv.lexwarePaymentStatus||inv.lexwareSyncStatus||'synced'}${inv.lexwareOpenAmount!==''?` · open ${inv.lexwareOpenAmount}€`:''}</div>`
         :`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Lexware 미전송</div>`;
       const businessActions=inv.businessInvoiceNeeded
-        ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ ${inv.type==='취소/환불' || Number(inv.refund||0)>0?'CreditNote':'XRechnung'}</button>
+        ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="openInvoiceValidationModal('${inv.number}')">🧪 검증</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ ${inv.type==='취소/환불' || Number(inv.refund||0)>0?'CreditNote':'XRechnung'}</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"csv")'>⬇ CSV</button>`
         :'';
       return `<tr>
