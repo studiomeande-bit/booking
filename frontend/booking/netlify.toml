@@ -5,8 +5,19 @@
 [build.environment]
   SITE_MODE = "production"
 
+[[redirects]]
+  from = "/promo"
+  to = "/promo/index.html"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/promo"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 

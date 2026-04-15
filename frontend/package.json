@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "scripts": {
     "dev": "echo \"frontend scaffold pending\"",
-    "build:booking": "esbuild booking/booking.js --bundle --minify --target=es2020 --outfile=booking/booking.min.js",
-    "build:select": "esbuild select/select.js --bundle --minify --target=es2020 --outfile=select/select.min.js",
-    "build:promo": "esbuild booking/promo/promo.js --bundle --minify --target=es2020 --outfile=booking/promo/promo.min.js",
+    "build:booking": "esbuild booking/booking.js --bundle --minify --drop:console --target=es2020 --outfile=booking/booking.min.js",
+    "build:select": "esbuild select/select.js --bundle --minify --drop:console --target=es2020 --outfile=select/select.min.js",
+    "build:promo": "esbuild booking/promo/promo.js --bundle --minify --drop:console --target=es2020 --outfile=booking/promo/promo.min.js",
     "build:css:booking": "esbuild booking/booking.css --minify --outfile=booking/booking.min.css",
     "build:css:select": "esbuild select/select.css --minify --outfile=select/select.min.css",
     "build:css:promo": "esbuild booking/promo/promo.css --minify --outfile=booking/promo/promo.min.css",
