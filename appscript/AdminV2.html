@@ -4016,6 +4016,7 @@ function renderInvoiceTable(){
   document.getElementById('invoiceSummaryLabel').textContent=`총 ${filteredInvoices.length}건 · B2B ${b2bCount}건`;
   document.getElementById('invoiceBody').innerHTML=filteredInvoices.length
     ?filteredInvoices.map(inv=>{
+      const isRefund=inv.type==='취소/환불' || Number(inv.refund||0)>0;
       const pdfLink=inv.pdfUrl?`<a href="${inv.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
       const b2bBadge=inv.businessInvoiceNeeded?`<div style="display:inline-flex;align-items:center;gap:4px;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:800;margin-bottom:4px;">🏢 B2B</div>`:'';
       const b2bMeta=inv.businessInvoiceNeeded
@@ -4025,12 +4026,12 @@ function renderInvoiceTable(){
         :'';
       const mailBadge=inv.mailSentAt?`<div style="font-size:10px;color:#059669;margin-top:4px;">발송 ${inv.mailSentAt}</div>`:'<div style="font-size:10px;color:#94a3b8;margin-top:4px;">미발송</div>';
       const lexBadge=inv.lexwareInvoiceId
-        ?`<div style="font-size:10px;color:#0f766e;margin-top:4px;">Lexware ${inv.lexwareVoucherNumber||inv.lexwareInvoiceId}</div>
+        ?`<div style="font-size:10px;color:#0f766e;margin-top:4px;">Lexware ${isRefund?'Credit Note ':''}${inv.lexwareVoucherNumber||inv.lexwareInvoiceId}</div>
           <div style="font-size:10px;color:#475569;margin-top:2px;">${inv.lexwarePaymentStatus||inv.lexwareSyncStatus||'synced'}${inv.lexwareOpenAmount!==''?` · open ${inv.lexwareOpenAmount}€`:''}</div>`
         :`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Lexware 미전송</div>`;
       const businessActions=inv.businessInvoiceNeeded
         ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="openInvoiceValidationModal('${inv.number}')">🧪 검증</button>
-          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ ${inv.type==='취소/환불' || Number(inv.refund||0)>0?'CreditNote':'XRechnung'}</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ ${isRefund?'CreditNote':'XRechnung'}</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"csv")'>⬇ CSV</button>`
         :'';
       return `<tr>
@@ -4049,8 +4050,8 @@ function renderInvoiceTable(){
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"en")'>🖨️ EN</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#475569;border-color:#cbd5e1;" onclick="openInvoiceEditModal('${inv.number}',false)">✏️ 수정</button>
           ${businessActions}
-          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#7c3aed;border-color:#ddd6fe;" onclick="syncInvoiceLexware('${inv.number}')">📚 전송</button>
-          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="syncInvoiceLexwareStatus('${inv.number}')">💶 상태</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#7c3aed;border-color:#ddd6fe;" onclick="syncInvoiceLexware('${inv.number}')">${isRefund?'↩ CreditNote':'📚 전송'}</button>
+          ${isRefund?'':`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="syncInvoiceLexwareStatus('${inv.number}')">💶 상태</button>`}
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#2563eb;border-color:#bfdbfe;" onclick="openInvoiceMailModal('${inv.number}')">✉️ 메일</button>
           <button class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="deleteInvoice('${inv.number}')">🗑️</button>
         </td>
@@ -4224,10 +4225,14 @@ function deleteInvoice(invNumber){
 }
 
 function syncInvoiceLexware(invNumber){
-  if(!confirm(`Lexware로 ${invNumber} 인보이스를 전송할까요?`)) return;
+  const inv=(allInvoices||[]).find(item=>item.number===invNumber)||null;
+  const isRefund=!!(inv&&(inv.type==='취소/환불' || Number(inv.refund||0)>0));
+  if(!confirm(isRefund
+    ?`Lexware로 ${invNumber} Credit Note를 전송할까요?`
+    :`Lexware로 ${invNumber} 인보이스를 전송할까요?`)) return;
   google.script.run
     .withSuccessHandler(res=>{
-      alert(`Lexware 전송 완료\nVoucher: ${res.voucherNumber||'-'}`);
+      alert(`${isRefund?'Lexware Credit Note 전송 완료':'Lexware 전송 완료'}\nVoucher: ${res.voucherNumber||'-'}`);
       loadInvoiceList();
     })
     .withFailureHandler(handleApiError)

@@ -4448,17 +4448,31 @@ function updateInvoiceLexwareFields_(rowIndex, fields){
   });
 }
 
+function isRefundInvoice_(inv){
+  return String(inv&&inv.type||'')==='취소/환불' || toNumberOrZero_(inv&&inv.refund)>0;
+}
+
 function getLexwarePushEligibility_(inv){
   if(!inv || !inv.number) return {ok:false, reason:'missing-number', message:'인보이스 번호가 없습니다.'};
   if(inv.lexwareInvoiceId) return {ok:false, reason:'already-synced', message:'이미 Lexware로 전송된 인보이스입니다.'};
-  if(String(inv.type||'')==='취소/환불' || toNumberOrZero_(inv.refund)>0 || toNumberOrZero_(inv.total)<=0){
+  if(isRefundInvoice_(inv)){
+    if(toNumberOrZero_(inv.refund)<=0){
+      return {
+        ok:false,
+        reason:'refund-zero',
+        message:'환불 금액이 없는 취소/환불 인보이스는 Lexware 전송 대상이 아닙니다.'
+      };
+    }
+    return {ok:true, mode:'creditnote'};
+  }
+  if(toNumberOrZero_(inv.total)<=0){
     return {
       ok:false,
-      reason:'refund-credit',
-      message:'취소/환불 인보이스는 Lexware 자동 전송 대상이 아닙니다. 별도 Credit Note로 수동 처리해 주세요.'
+      reason:'invalid-total',
+      message:'총액이 0 이하인 인보이스는 Lexware 전송 대상이 아닙니다.'
     };
   }
-  return {ok:true};
+  return {ok:true, mode:'invoice'};
 }
 
 function isRecentLexwareSyncState_(inv, expectedStatus){
@@ -4478,10 +4492,92 @@ function countRemainingLexwarePushCandidates_(rows, startIdx){
 function countRemainingLexwareStatusCandidates_(rows, startIdx){
   return rows.slice(startIdx||0).reduce(function(count, row, idx){
     const inv=invoiceRowToObject_(row, (startIdx||0)+idx+2);
-    if(!inv.number || !inv.lexwareInvoiceId) return count;
+    if(!inv.number || !inv.lexwareInvoiceId || isRefundInvoice_(inv)) return count;
     if(isRecentLexwareSyncState_(inv, 'status-synced')) return count;
     return count+1;
   }, 0);
+}
+
+function findReferencedLexwareInvoiceForCreditNote_(inv){
+  if(!inv || !inv.bookingRowIndex) return null;
+  const {invoiceSheet}=ensureSheets_();
+  const rows=invoiceSheet.getDataRange().getValues();
+  const candidates=rows.slice(1)
+    .map(function(row, idx){return invoiceRowToObject_(row, idx+2);})
+    .filter(function(candidate){
+      return candidate &&
+        candidate.number!==inv.number &&
+        Number(candidate.bookingRowIndex||0)===Number(inv.bookingRowIndex||0) &&
+        candidate.lexwareInvoiceId &&
+        !isRefundInvoice_(candidate) &&
+        candidate.type!=='셀렉추가금';
+    });
+  if(!candidates.length) return null;
+  return candidates.sort(function(a,b){return (b.rowIndex||0)-(a.rowIndex||0);})[0];
+}
+
+function resolveCreditNoteReference_(inv){
+  const baseInvoice=findReferencedLexwareInvoiceForCreditNote_(inv);
+  if(!baseInvoice || !baseInvoice.lexwareInvoiceId){
+    return {baseInvoice:null, canReference:false, reason:'no-base-invoice'};
+  }
+  try{
+    const remoteInvoice=lexwareRequest_('get','/v1/invoices/'+encodeURIComponent(baseInvoice.lexwareInvoiceId));
+    const status=String(remoteInvoice&&remoteInvoice.voucherStatus||'').toLowerCase();
+    if(status==='draft'){
+      return {baseInvoice, canReference:false, reason:'base-draft'};
+    }
+    if(remoteInvoice&&remoteInvoice.closingInvoice){
+      return {baseInvoice, canReference:false, reason:'closing-invoice'};
+    }
+    return {
+      baseInvoice:{
+        ...baseInvoice,
+        lexwareVoucherNumber:String(remoteInvoice&&remoteInvoice.voucherNumber||baseInvoice.lexwareVoucherNumber||'')
+      },
+      canReference:true,
+      reason:'linked'
+    };
+  }catch(e){
+    Logger.log('resolveCreditNoteReference_ '+String(inv&&inv.number||'')+': '+e.message);
+    return {baseInvoice, canReference:false, reason:'reference-check-failed'};
+  }
+}
+
+function buildLexwareCreditNotePayload_(inv, contactId, baseInvoice){
+  const voucherDate=parseDateSafe_(inv.issuedAtRaw||inv.issuedAt||new Date()).date||new Date();
+  const formattedVoucherDate=Utilities.formatDate(voucherDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'00:00:00.000XXX");
+  const refundGross=Math.round(Math.max(0,toNumberOrZero_(inv.refund)||toNumberOrZero_(inv.total))*100)/100;
+  const baseLabel=String(baseInvoice&&((baseInvoice.lexwareVoucherNumber||'').trim() || (baseInvoice.number||'').trim()) || '').trim();
+  const introBase=baseLabel ? 'Rechnungskorrektur zur Rechnung '+baseLabel : 'Rechnungskorrektur '+String(inv.number||'');
+  return {
+    voucherDate:formattedVoucherDate,
+    address:{
+      contactId
+    },
+    lineItems:[{
+      id:'credit-1',
+      type:'custom',
+      name:String(inv.product||'Refund'),
+      quantity:1,
+      unitName:'Stk',
+      unitPrice:{
+        currency:'EUR',
+        grossAmount:refundGross,
+        taxRatePercentage:19
+      },
+      lineItemAmount:refundGross
+    }],
+    totalPrice:{
+      currency:'EUR'
+    },
+    taxConditions:{
+      taxType:'gross'
+    },
+    title:'Rechnungskorrektur',
+    introduction:String(introBase).slice(0,250),
+    remark:String(inv.memo||'Refund issued by Studio mean reservation system').slice(0,250)
+  };
 }
 
 function pushInvoiceToLexwareCore_(rowIndex){
@@ -4493,9 +4589,9 @@ function pushInvoiceToLexwareCore_(rowIndex){
     const inv=invoiceRowToObject_(row,rowIndex);
     const eligibility=getLexwarePushEligibility_(inv);
     if(!eligibility.ok){
-      if(eligibility.reason==='refund-credit'){
+      if(eligibility.reason==='refund-zero'){
         updateInvoiceLexwareFields_(rowIndex,{
-          LexwareSyncStatus:'skipped-refund',
+          LexwareSyncStatus:'skipped-creditnote',
           LexwareSyncedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')
         });
       }
@@ -4516,19 +4612,37 @@ function pushInvoiceToLexwareCore_(rowIndex){
       LexwareSyncedAt:syncingAt
     });
     const contactId=ensureLexwareContactForInvoice_(inv);
-    const payload=buildLexwareInvoicePayload_(inv,contactId);
-    const created=lexwareRequest_('post','/v1/invoices',payload);
+    const pushPlan=getLexwarePushEligibility_(inv);
+    let payload;
+    let created;
+    let syncStatus='synced';
+    if(pushPlan.mode==='creditnote'){
+      const reference=resolveCreditNoteReference_(inv);
+      payload=buildLexwareCreditNotePayload_(inv,contactId,reference.baseInvoice);
+      const path='/v1/credit-notes?finalize=true'+(reference.canReference&&reference.baseInvoice&&reference.baseInvoice.lexwareInvoiceId
+        ?'&precedingSalesVoucherId='+encodeURIComponent(reference.baseInvoice.lexwareInvoiceId)
+        :'');
+      created=lexwareRequest_('post',path,payload);
+      syncStatus='creditnote-synced';
+    }else{
+      payload=buildLexwareInvoicePayload_(inv,contactId);
+      created=lexwareRequest_('post','/v1/invoices',payload);
+    }
     updateInvoiceLexwareFields_(rowIndex,{
       LexwareContactId:contactId,
       LexwareInvoiceId:String(created.id||''),
       LexwareVoucherNumber:String(created.voucherNumber||''),
-      LexwareSyncStatus:'synced',
+      LexwareSyncStatus:syncStatus,
+      LexwarePaymentStatus:pushPlan.mode==='creditnote'?'creditnote':'',
+      LexwareOpenAmount:'',
+      LexwarePaidAt:'',
       LexwareSyncedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')
     });
     return {
       ok:true,
       pushed:true,
       invoiceNumber:inv.number||'',
+      mode:pushPlan.mode,
       contactId,
       invoiceId:String(created.id||''),
       voucherNumber:String(created.voucherNumber||'')
@@ -4563,9 +4677,9 @@ function batchPushPendingInvoicesToLexwareCore_(options){
     if(inv.lexwareInvoiceId){ skipped++; continue; }
     const eligibility=getLexwarePushEligibility_(inv);
     if(!eligibility.ok){
-      if(eligibility.reason==='refund-credit'){
+      if(eligibility.reason==='refund-zero'){
         updateInvoiceLexwareFields_(rowIndex,{
-          LexwareSyncStatus:'skipped-refund',
+          LexwareSyncStatus:'skipped-creditnote',
           LexwareSyncedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')
         });
       }
@@ -4603,7 +4717,7 @@ function batchSyncLexwarePaymentStatusesCore_(options){
     const row=rows[idx];
     const rowIndex=idx+2;
     const inv=invoiceRowToObject_(row,rowIndex);
-    if(!inv.number || !inv.lexwareInvoiceId){ skipped++; continue; }
+    if(!inv.number || !inv.lexwareInvoiceId || isRefundInvoice_(inv)){ skipped++; continue; }
     if(isRecentLexwareSyncState_(inv, 'status-synced')){ skipped++; continue; }
     if(synced+failed >= maxItems || (Date.now()-startedAt) >= timeBudgetMs){
       hasMore=true;
@@ -5287,6 +5401,7 @@ function syncLexwareInvoiceStatusCore_(invNumber){
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const rowIndex=idx+2;
   const inv=invoiceRowToObject_(rows[idx+1],rowIndex);
+  if(isRefundInvoice_(inv)) throw new Error('환불 Credit Note는 결제 상태 동기화 대상이 아닙니다.');
   if(!inv.lexwareInvoiceId) throw new Error('먼저 Lexware 전송을 진행해 주세요.');
   const payment=lexwareRequest_('get','/v1/payments/'+encodeURIComponent(inv.lexwareInvoiceId));
   const syncedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
@@ -5327,7 +5442,7 @@ function syncBookingLexwarePaymentInternal_(bookingRowIndex){
   const candidates=rows.slice(1)
     .map(function(row, idx){return invoiceRowToObject_(row, idx+2);})
     .filter(function(inv){
-      return inv.bookingRowIndex===parseInt(bookingRowIndex,10) && inv.lexwareInvoiceId && inv.type!=='셀렉추가금';
+      return inv.bookingRowIndex===parseInt(bookingRowIndex,10) && inv.lexwareInvoiceId && inv.type!=='셀렉추가금' && !isRefundInvoice_(inv);
     });
   if(!candidates.length) throw new Error('연결된 Lexware 인보이스가 없습니다.');
   const target=candidates.sort(function(a,b){return (b.rowIndex||0)-(a.rowIndex||0);})[0];
