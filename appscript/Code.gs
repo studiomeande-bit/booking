@@ -4931,6 +4931,43 @@ function sendInvoiceEmailAdmin(token, invNumber, subject, body){
   return sendInvoiceEmailInternal_(inv,subject||inv.mailSubject||'',body||inv.mailBody||'');
 }
 
+function updateInvoiceAdmin(token, payload){
+  assertAdmin_(token);
+  const {invoiceSheet}=ensureSheets_();
+  const invNumber=String(payload&& (payload.invNumber||payload.invoiceNumber) || '').trim();
+  if(!invNumber) throw new Error('인보이스 번호가 없습니다.');
+  const rows=invoiceSheet.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===invNumber);
+  if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
+  const rowIndex=idx+2;
+  const current=invoiceRowToObject_(rows[idx+1],rowIndex);
+  const businessInvoiceNeeded=payload.businessInvoiceNeeded===undefined ? current.businessInvoiceNeeded : !!payload.businessInvoiceNeeded;
+  const updates={
+    '고객명': String(payload.customerName!=null ? payload.customerName : current.name).trim(),
+    '이메일': String(payload.customerEmail!=null ? payload.customerEmail : current.email).trim(),
+    '연락처': String(payload.customerPhone!=null ? payload.customerPhone : current.phone).trim(),
+    '고객주소': String(payload.customerAddress!=null ? payload.customerAddress : current.customerAddress).trim(),
+    '메모': String(payload.memo!=null ? payload.memo : current.memo).trim(),
+    '사업자송장필요': businessInvoiceNeeded?'Y':'',
+    '사업자명': String(payload.businessCompanyName!=null ? payload.businessCompanyName : current.businessCompanyName).trim(),
+    '사업자VAT번호': String(payload.businessVatId!=null ? payload.businessVatId : current.businessVatId).trim(),
+    '사업자송장이메일': String(payload.businessInvoiceEmail!=null ? payload.businessInvoiceEmail : current.businessInvoiceEmail).trim(),
+    '사업자송장참조': String(payload.businessInvoiceRef!=null ? payload.businessInvoiceRef : current.businessInvoiceRef).trim()
+  };
+  if(!updates['고객명']) throw new Error('고객명을 입력해 주세요.');
+  if(businessInvoiceNeeded && !updates['사업자명']) throw new Error('사업자명을 입력해 주세요.');
+  Object.keys(updates).forEach(function(key){
+    if(!(key in INVOICE_COL)) return;
+    invoiceSheet.getRange(rowIndex,INVOICE_COL[key]+1).setValue(updates[key]);
+  });
+  const refreshedRow=invoiceSheet.getRange(rowIndex,1,1,invoiceSheet.getLastColumn()).getValues()[0];
+  const inv=invoiceRowToObject_(refreshedRow,rowIndex);
+  const pdf=createInvoicePdf_(inv,'de');
+  invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
+  invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
+  return {ok:true, invoiceNumber:inv.number, pdfUrl:pdf.url};
+}
+
 function deleteInvoiceAdmin(token, invNumber){
   assertAdmin_(token);
   const {invoiceSheet}=ensureSheets_();

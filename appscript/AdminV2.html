@@ -1038,6 +1038,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 <div class="modal-overlay" id="invoiceValidationModal">
   <div class="modal" style="max-width:760px;">
     <div class="modal-title">🧪 XRechnung 준비 상태</div>
+    <input type="hidden" id="invoiceValidationNumber">
     <div id="invoiceValidationInfo" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
     <div id="invoiceValidationSummary" style="margin-bottom:12px;font-size:13px;"></div>
     <div id="invoiceValidationList" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -1046,7 +1047,48 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       저장은 하지 않고 현재 인보이스 데이터만 검사합니다.
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-primary btn-sm" onclick="openInvoiceEditFromValidation()">바로 수정</button>
       <button class="btn btn-outline btn-sm" onclick="closeInvoiceValidationModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="invoiceEditModal">
+  <div class="modal" style="max-width:760px;">
+    <div class="modal-title">✏️ 인보이스 정보 수정</div>
+    <input type="hidden" id="editInv_number">
+    <div style="font-size:12px;color:#64748b;margin-bottom:12px;">검증과 XRechnung export에 필요한 메타 정보만 수정합니다. 금액과 품목은 바꾸지 않습니다.</div>
+    <div class="form-row">
+      <div class="form-group"><label>고객명</label><input type="text" id="editInv_customerName"></div>
+      <div class="form-group"><label>이메일</label><input type="email" id="editInv_customerEmail"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>연락처</label><input type="text" id="editInv_customerPhone"></div>
+      <div class="form-group"><label>메모</label><input type="text" id="editInv_memo"></div>
+    </div>
+    <div class="form-group">
+      <label>고객 주소</label>
+      <textarea id="editInv_customerAddress" rows="3" placeholder="Straße, Hausnummer, PLZ, Stadt"></textarea>
+    </div>
+    <div class="form-group" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="editInv_businessInvoiceNeeded" style="width:auto;" onchange="syncInvoiceEditBusinessFields()">
+        <span>사업자 송장으로 유지</span>
+      </label>
+    </div>
+    <div id="editInv_businessFields" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+      <div class="form-row">
+        <div class="form-group"><label>사업자명</label><input type="text" id="editInv_businessCompanyName"></div>
+        <div class="form-group"><label>VAT 번호</label><input type="text" id="editInv_businessVatId"></div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;">
+        <div class="form-group"><label>송장 이메일</label><input type="email" id="editInv_businessInvoiceEmail"></div>
+        <div class="form-group"><label>참조번호 / Buyer reference</label><input type="text" id="editInv_businessInvoiceRef"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-outline btn-sm" onclick="closeInvoiceEditModal()">닫기</button>
+      <button class="btn btn-primary btn-sm" onclick="saveInvoiceEdit()">저장</button>
     </div>
   </div>
 </div>
@@ -1108,6 +1150,7 @@ const STUDIO_BUSINESS_INFO={
   bic:'DEUTDEFFXXX',
   bank:'Deutsche Bank'
 };
+let invoiceEditReturnToValidation=false;
 
 /* ===== 로그인 ===== */
 function doLogin(){
@@ -3147,6 +3190,7 @@ function openInvoiceValidationModal(invNumber){
   const checks=validateXRechnungInvoice(inv);
   const okCount=checks.filter(item=>item.ok).length;
   const failCount=checks.length-okCount;
+  document.getElementById('invoiceValidationNumber').value=invNumber||'';
   document.getElementById('invoiceValidationInfo').innerHTML=inv?`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
       <div><span style="color:#64748b;">인보이스</span><br><b>${inv.number||'-'}</b></div>
@@ -3168,6 +3212,74 @@ function openInvoiceValidationModal(invNumber){
 }
 function closeInvoiceValidationModal(){
   document.getElementById('invoiceValidationModal').classList.remove('open');
+}
+function syncInvoiceEditBusinessFields(){
+  const enabled=!!document.getElementById('editInv_businessInvoiceNeeded').checked;
+  document.getElementById('editInv_businessFields').style.display=enabled?'block':'none';
+}
+function openInvoiceEditModal(invNumber,reopenValidation){
+  const inv=getInvoiceByNumber(invNumber);
+  if(!inv){alert('인보이스 정보를 찾을 수 없습니다.');return;}
+  invoiceEditReturnToValidation=!!reopenValidation;
+  document.getElementById('editInv_number').value=inv.number||'';
+  document.getElementById('editInv_customerName').value=inv.name||'';
+  document.getElementById('editInv_customerEmail').value=inv.email||'';
+  document.getElementById('editInv_customerPhone').value=inv.phone||'';
+  document.getElementById('editInv_memo').value=inv.memo||'';
+  document.getElementById('editInv_customerAddress').value=inv.customerAddress||'';
+  document.getElementById('editInv_businessInvoiceNeeded').checked=!!inv.businessInvoiceNeeded;
+  document.getElementById('editInv_businessCompanyName').value=inv.businessCompanyName||'';
+  document.getElementById('editInv_businessVatId').value=inv.businessVatId||'';
+  document.getElementById('editInv_businessInvoiceEmail').value=inv.businessInvoiceEmail||'';
+  document.getElementById('editInv_businessInvoiceRef').value=inv.businessInvoiceRef||'';
+  syncInvoiceEditBusinessFields();
+  document.getElementById('invoiceEditModal').classList.add('open');
+}
+function openInvoiceEditFromValidation(){
+  const invNumber=document.getElementById('invoiceValidationNumber').value;
+  if(!invNumber) return;
+  closeInvoiceValidationModal();
+  openInvoiceEditModal(invNumber,true);
+}
+function closeInvoiceEditModal(){
+  document.getElementById('invoiceEditModal').classList.remove('open');
+}
+function saveInvoiceEdit(){
+  const payload={
+    invNumber:document.getElementById('editInv_number').value.trim(),
+    customerName:document.getElementById('editInv_customerName').value.trim(),
+    customerEmail:document.getElementById('editInv_customerEmail').value.trim(),
+    customerPhone:document.getElementById('editInv_customerPhone').value.trim(),
+    customerAddress:document.getElementById('editInv_customerAddress').value.trim(),
+    memo:document.getElementById('editInv_memo').value.trim(),
+    businessInvoiceNeeded:document.getElementById('editInv_businessInvoiceNeeded').checked,
+    businessCompanyName:document.getElementById('editInv_businessCompanyName').value.trim(),
+    businessVatId:document.getElementById('editInv_businessVatId').value.trim(),
+    businessInvoiceEmail:document.getElementById('editInv_businessInvoiceEmail').value.trim(),
+    businessInvoiceRef:document.getElementById('editInv_businessInvoiceRef').value.trim()
+  };
+  if(!payload.invNumber){alert('인보이스 번호가 없습니다.');return;}
+  if(!payload.customerName){alert('고객명을 입력해 주세요.');return;}
+  if(payload.businessInvoiceNeeded && !payload.businessCompanyName){alert('사업자명을 입력해 주세요.');return;}
+  google.script.run
+    .withSuccessHandler(res=>{
+      closeInvoiceEditModal();
+      google.script.run
+        .withSuccessHandler(r=>{
+          allInvoices=r.invoices||[];
+          renderInvoiceTable();
+          if(invoiceEditReturnToValidation){
+            invoiceEditReturnToValidation=false;
+            openInvoiceValidationModal(payload.invNumber);
+            return;
+          }
+          alert(`인보이스 수정 완료${res&&res.pdfUrl?'\nPDF 재생성 완료':''}`);
+        })
+        .withFailureHandler(handleApiError)
+        .getInvoiceList(adminToken);
+    })
+    .withFailureHandler(handleApiError)
+    .updateInvoiceAdmin(adminToken,payload);
 }
 function normalizeVatId(vatId){
   return String(vatId||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -3902,6 +4014,7 @@ function renderInvoiceTable(){
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"de")'>🖨️ DE</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"ko")'>🖨️ KO</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;" onclick='printInvoice(${JSON.stringify(inv).replace(/'/g,"&#39;")},"en")'>🖨️ EN</button>
+          <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#475569;border-color:#cbd5e1;" onclick="openInvoiceEditModal('${inv.number}',false)">✏️ 수정</button>
           ${businessActions}
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#7c3aed;border-color:#ddd6fe;" onclick="syncInvoiceLexware('${inv.number}')">📚 전송</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#0f766e;border-color:#99f6e4;" onclick="syncInvoiceLexwareStatus('${inv.number}')">💶 상태</button>
