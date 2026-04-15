@@ -54,7 +54,9 @@ const COPY = {
     addressLabel: '주소 (인보이스용, 선택)',
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
-    consentLead: '개인정보 수집 및 이용 동의가 필요합니다.',
+    consentLead: '가장 위의 전체 선택으로 필수 항목을 한 번에 체크할 수 있습니다.',
+    selectAllLabel: '필수 항목 전체 선택',
+    selectAllSub: '개인정보 및 AI 필수 항목을 한 번에 체크합니다.',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
     gdprSub: '서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
@@ -138,7 +140,9 @@ const COPY = {
     addressLabel: 'Address (optional, for invoice)',
     memoLabel: 'Notes',
     consentTitle: 'Consent',
-    consentLead: 'Personal data consent is required.',
+    consentLead: 'Use the first option to check all required items at once before submitting.',
+    selectAllLabel: 'Select all required items',
+    selectAllSub: 'Checks the personal data and AI consent items together.',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
     gdprSub: 'I agree to the minimum data processing needed to confirm the booking and deliver the final images.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
@@ -222,7 +226,9 @@ const COPY = {
     addressLabel: 'Adresse (optional, für Rechnung)',
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
-    consentLead: 'Die Einwilligung zur Datenverarbeitung ist erforderlich.',
+    consentLead: 'Mit der ersten Option können alle Pflichtangaben auf einmal bestätigt werden.',
+    selectAllLabel: 'Alle Pflichtangaben auswählen',
+    selectAllSub: 'Bestätigt Datenschutz und KI-Hinweis zusammen.',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
     gdprSub: 'Ich stimme der minimalen Datenverarbeitung zu, die für Buchungsbestätigung und Bildübergabe erforderlich ist.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-gestützten Retusche und Verarbeitung zu.',
@@ -566,6 +572,8 @@ function renderStaticCopy() {
   setText('memoLabel', c.memoLabel);
   setText('consentTitle', c.consentTitle);
   setText('consentLead', c.consentLead);
+  setText('selectAllLabel', c.selectAllLabel);
+  setText('selectAllSub', c.selectAllSub);
   setText('gdprLabel', c.gdprLabel);
   setText('gdprSub', c.gdprSub);
   setText('aiLabel', c.aiLabel);
@@ -850,6 +858,20 @@ function validateStep(step) {
   return '';
 }
 
+function toggleAllRequired(event) {
+  const checked = !!event?.target?.checked;
+  if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
+  if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = checked;
+  syncSelectAllRequired();
+  updateStepButtons();
+}
+
+function syncSelectAllRequired() {
+  const selectAll = document.getElementById('selectAllRequired');
+  if (!selectAll) return;
+  selectAll.checked = !!els.form.elements.gdprConsent?.checked && !!els.form.elements.aiConsent?.checked;
+}
+
 function updateStepButtons() {
   setStepWarning(1, validateStep(1));
   setStepWarning(2, validateStep(2));
@@ -1045,6 +1067,9 @@ function bindEvents() {
     showStep(4);
   });
   els.step4Back.addEventListener('click', () => showStep(3));
+  document.getElementById('selectAllRequired')?.addEventListener('change', toggleAllRequired);
+  els.form.elements.gdprConsent?.addEventListener('change', syncSelectAllRequired);
+  els.form.elements.aiConsent?.addEventListener('change', syncSelectAllRequired);
   els.form.addEventListener('input', updateStepButtons);
   els.form.addEventListener('change', updateStepButtons);
   els.submitBtn.addEventListener('click', onSubmit);
@@ -1053,6 +1078,7 @@ function bindEvents() {
 
 async function init() {
   renderStaticCopy();
+  syncSelectAllRequired();
   bindEvents();
   try {
     setStatus(copy().statusLoading, 'loading');

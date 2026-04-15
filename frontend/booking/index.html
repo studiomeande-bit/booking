@@ -8,14 +8,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260415-opt1" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260415-consent1" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260415-opt1">
+  <link rel="stylesheet" href="./booking.min.css?v=20260415-consent1">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
@@ -293,9 +293,12 @@
         <div id="consentBox" class="consent-box">
           <div id="consentTitle" class="consent-title">이용 동의</div>
           <p id="consentCopy" class="consent-copy">필수 항목을 체크해야 예약을 제출할 수 있습니다.</p>
-          <label id="selectAllRow" class="checkbox-row consent-row">
+          <label id="selectAllRow" class="checkbox-row consent-row consent-row-highlight">
             <input type="checkbox" id="selectAllRequired">
-            <span id="selectAllLabel">[선택] 필수 동의 항목 한 번에 체크</span>
+            <span>
+              <b id="selectAllLabel">필수 항목 전체 선택</b>
+              <small id="selectAllSub" class="consent-sub">개인정보 및 AI 필수 항목을 한 번에 체크합니다.</small>
+            </span>
           </label>
           <label id="gdprRow" class="checkbox-row consent-row">
             <input type="checkbox" name="gdprConsent">
@@ -331,6 +334,6 @@
       </form>
     </section>
   </main>
-  <script src="./booking.min.js?v=20260415-opt1"></script>
+  <script src="./booking.min.js?v=20260415-consent1"></script>
 </body>
 </html>

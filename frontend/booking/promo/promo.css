@@ -183,6 +183,17 @@ textarea { resize:vertical; min-height:120px; }
 }
 .consent-row > span { display:grid; gap:6px; min-width:0; }
 .consent-row b { font-size:17px; line-height:1.45; }
+.consent-row-highlight {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px solid #dcc8a8;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff7e8 0%, #fcf2e0 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85);
+}
+.consent-row-highlight > span { gap:4px; }
+.consent-row-highlight b { font-size:18px; line-height:1.35; }
+.consent-row-highlight .consent-sub { color:#7a6246; }
 .consent-sub {
   display:block;
   color:var(--muted);
