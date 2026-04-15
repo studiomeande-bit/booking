@@ -3152,9 +3152,6 @@ function parseInvoiceAddressParts(addressText,fallbackCountryCode){
 }
 function ensureXRechnungExportReady(inv){
   if(!inv||!inv.businessInvoiceNeeded) throw new Error('사업자 송장만 XRechnung export를 지원합니다.');
-  if(inv.type==='취소/환불' || Number(inv.refund||0)>0){
-    throw new Error('취소/환불 인보이스는 현재 XRechnung export를 지원하지 않습니다.');
-  }
   const sellerEndpoint=getVatEndpointInfo(STUDIO_BUSINESS_INFO.vatId);
   const buyerEndpoint=getVatEndpointInfo(inv.businessVatId);
   if(!sellerEndpoint) throw new Error('판매자 VAT 번호가 올바르지 않아 XRechnung export를 만들 수 없습니다.');
@@ -3175,7 +3172,68 @@ function ensureXRechnungExportReady(inv){
   if(!items.length) throw new Error('인보이스 항목이 없습니다.');
   return {sellerEndpoint,buyerEndpoint,buyerReference,buyerName,buyerAddress,items};
 }
-function buildXRechnungXml(inv){
+function buildXRechnungPartyXml(info){
+  return {
+    sellerAddress:{streetName:STUDIO_BUSINESS_INFO.address[0],postalCode:'61440',city:'Oberursel (Taunus)',countryCode:'DE'},
+    buyerTaxSchemeXml:info.buyerEndpoint.value?`
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${escapeXmlText(info.buyerEndpoint.value)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`:'',
+    supplierPartyXml:`<cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="${info.sellerEndpoint.schemeID}">${escapeXmlText(info.sellerEndpoint.value)}</cbc:EndpointID>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="${info.sellerEndpoint.schemeID}">${escapeXmlText(info.sellerEndpoint.value)}</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName><cbc:Name>${escapeXmlText(STUDIO_BUSINESS_INFO.studioName)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXmlText(STUDIO_BUSINESS_INFO.address[0])}</cbc:StreetName>
+        <cbc:CityName>Oberursel (Taunus)</cbc:CityName>
+        <cbc:PostalZone>61440</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${escapeXmlText(info.sellerEndpoint.value)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXmlText(STUDIO_BUSINESS_INFO.name)}</cbc:RegistrationName></cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>${escapeXmlText(STUDIO_BUSINESS_INFO.studioName)}</cbc:Name>
+        <cbc:Telephone>${escapeXmlText(STUDIO_BUSINESS_INFO.phone)}</cbc:Telephone>
+        <cbc:ElectronicMail>${escapeXmlText(STUDIO_BUSINESS_INFO.email)}</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>`,
+    customerPartyXml:`<cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="${info.buyerEndpoint.schemeID}">${escapeXmlText(info.buyerEndpoint.value)}</cbc:EndpointID>
+      <cac:PartyIdentification>
+        <cbc:ID schemeID="${info.buyerEndpoint.schemeID}">${escapeXmlText(info.buyerEndpoint.value)}</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName><cbc:Name>${escapeXmlText(info.buyerName)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXmlText(info.buyerAddress.streetName)}</cbc:StreetName>${info.buyerAddress.additionalStreetName?`
+        <cbc:AdditionalStreetName>${escapeXmlText(info.buyerAddress.additionalStreetName)}</cbc:AdditionalStreetName>`:''}
+        <cbc:CityName>${escapeXmlText(info.buyerAddress.city)}</cbc:CityName>
+        <cbc:PostalZone>${escapeXmlText(info.buyerAddress.postalCode)}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>${escapeXmlText(info.buyerAddress.countryCode)}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>${info.buyerTaxSchemeXml}
+      <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXmlText(info.buyerName)}</cbc:RegistrationName></cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>`
+  };
+}
+function findReferencedInvoiceForCreditNote(inv){
+  if(!inv || !inv.bookingRowIndex) return null;
+  return (allInvoices||[]).find(candidate=>
+    candidate &&
+    candidate.number!==inv.number &&
+    Number(candidate.bookingRowIndex||0)===Number(inv.bookingRowIndex||0) &&
+    candidate.type!=='취소/환불'
+  )||null;
+}
+function buildXRechnungInvoiceXml(inv,info){
   const ready=ensureXRechnungExportReady(inv);
   const issuedAt=(inv.issuedAt||'').slice(0,10);
   if(!issuedAt) throw new Error('발행일이 없습니다.');
@@ -3183,13 +3241,7 @@ function buildXRechnungXml(inv){
   const gross=Math.round(Math.max(0,Number(inv.total)||0)*100)/100;
   const net=Math.round((gross/1.19)*100)/100;
   const vat=Math.round((gross-net)*100)/100;
-  const sellerAddress={streetName:STUDIO_BUSINESS_INFO.address[0],postalCode:'61440',city:'Oberursel (Taunus)',countryCode:'DE'};
   const noteXml=inv.memo?`\n  <cbc:Note>${escapeXmlText(inv.memo)}</cbc:Note>`:'';
-  const buyerTaxSchemeXml=ready.buyerEndpoint.value?`
-    <cac:PartyTaxScheme>
-      <cbc:CompanyID>${escapeXmlText(ready.buyerEndpoint.value)}</cbc:CompanyID>
-      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-    </cac:PartyTaxScheme>`:'';
   const lineXml=ready.items.map((item,idx)=>{
     const qty=item.qty;
     const unitGross=item.unitGross;
@@ -3228,48 +3280,8 @@ function buildXRechnungXml(inv){
   <cac:OrderReference>
     <cbc:ID>NA</cbc:ID>
   </cac:OrderReference>
-  <cac:AccountingSupplierParty>
-    <cac:Party>
-      <cbc:EndpointID schemeID="${ready.sellerEndpoint.schemeID}">${escapeXmlText(ready.sellerEndpoint.value)}</cbc:EndpointID>
-      <cac:PartyIdentification>
-        <cbc:ID schemeID="${ready.sellerEndpoint.schemeID}">${escapeXmlText(ready.sellerEndpoint.value)}</cbc:ID>
-      </cac:PartyIdentification>
-      <cac:PartyName><cbc:Name>${escapeXmlText(STUDIO_BUSINESS_INFO.studioName)}</cbc:Name></cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:StreetName>${escapeXmlText(sellerAddress.streetName)}</cbc:StreetName>
-        <cbc:CityName>${escapeXmlText(sellerAddress.city)}</cbc:CityName>
-        <cbc:PostalZone>${escapeXmlText(sellerAddress.postalCode)}</cbc:PostalZone>
-        <cac:Country><cbc:IdentificationCode>${escapeXmlText(sellerAddress.countryCode)}</cbc:IdentificationCode></cac:Country>
-      </cac:PostalAddress>
-      <cac:PartyTaxScheme>
-        <cbc:CompanyID>${escapeXmlText(ready.sellerEndpoint.value)}</cbc:CompanyID>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:PartyTaxScheme>
-      <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXmlText(STUDIO_BUSINESS_INFO.name)}</cbc:RegistrationName></cac:PartyLegalEntity>
-      <cac:Contact>
-        <cbc:Name>${escapeXmlText(STUDIO_BUSINESS_INFO.studioName)}</cbc:Name>
-        <cbc:Telephone>${escapeXmlText(STUDIO_BUSINESS_INFO.phone)}</cbc:Telephone>
-        <cbc:ElectronicMail>${escapeXmlText(STUDIO_BUSINESS_INFO.email)}</cbc:ElectronicMail>
-      </cac:Contact>
-    </cac:Party>
-  </cac:AccountingSupplierParty>
-  <cac:AccountingCustomerParty>
-    <cac:Party>
-      <cbc:EndpointID schemeID="${ready.buyerEndpoint.schemeID}">${escapeXmlText(ready.buyerEndpoint.value)}</cbc:EndpointID>
-      <cac:PartyIdentification>
-        <cbc:ID schemeID="${ready.buyerEndpoint.schemeID}">${escapeXmlText(ready.buyerEndpoint.value)}</cbc:ID>
-      </cac:PartyIdentification>
-      <cac:PartyName><cbc:Name>${escapeXmlText(ready.buyerName)}</cbc:Name></cac:PartyName>
-      <cac:PostalAddress>
-        <cbc:StreetName>${escapeXmlText(ready.buyerAddress.streetName)}</cbc:StreetName>${ready.buyerAddress.additionalStreetName?`
-        <cbc:AdditionalStreetName>${escapeXmlText(ready.buyerAddress.additionalStreetName)}</cbc:AdditionalStreetName>`:''}
-        <cbc:CityName>${escapeXmlText(ready.buyerAddress.city)}</cbc:CityName>
-        <cbc:PostalZone>${escapeXmlText(ready.buyerAddress.postalCode)}</cbc:PostalZone>
-        <cac:Country><cbc:IdentificationCode>${escapeXmlText(ready.buyerAddress.countryCode)}</cbc:IdentificationCode></cac:Country>
-      </cac:PostalAddress>${buyerTaxSchemeXml}
-      <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXmlText(ready.buyerName)}</cbc:RegistrationName></cac:PartyLegalEntity>
-    </cac:Party>
-  </cac:AccountingCustomerParty>
+${info.supplierPartyXml}
+${info.customerPartyXml}
   <cac:PaymentMeans>
     <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
     <cbc:PaymentID>${escapeXmlText(inv.number||'')}</cbc:PaymentID>
@@ -3299,6 +3311,110 @@ function buildXRechnungXml(inv){
   </cac:LegalMonetaryTotal>
 ${lineXml}
 </Invoice>`;
+}
+function buildXRechnungCreditNoteXml(inv,info){
+  const issuedAt=(inv.issuedAt||'').slice(0,10);
+  if(!issuedAt) throw new Error('발행일이 없습니다.');
+  const ready=ensureXRechnungExportReady(inv);
+  const referencedInvoice=findReferencedInvoiceForCreditNote(inv);
+  const gross=Math.round(Math.max(0,Number(inv.refund||inv.total||0))*100)/100;
+  if(gross<=0) throw new Error('환불 금액이 있어야 CreditNote를 만들 수 있습니다.');
+  const net=Math.round((gross/1.19)*100)/100;
+  const vat=Math.round((gross-net)*100)/100;
+  const reasonText=String(inv.memo||'취소/환불 Credit Note').trim();
+  const billingReferenceXml=referencedInvoice
+    ?`
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${escapeXmlText(referencedInvoice.number||'')}</cbc:ID>${referencedInvoice.issuedAt?`
+      <cbc:IssueDate>${escapeXmlText(String(referencedInvoice.issuedAt).slice(0,10))}</cbc:IssueDate>`:''}
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>`:'';
+  const lineXml=ready.items.map((item,idx)=>{
+    const qty=item.qty;
+    const baseGross=Math.round(qty*item.unitGross*100)/100;
+    const sourceTotal=Math.max(0,Number(inv.total)||0);
+    const ratio=sourceTotal>0 ? gross/sourceTotal : 1;
+    const adjustedGross=Math.round(baseGross*ratio*100)/100;
+    const unitNet=Math.round((item.unitGross/1.19)*100)/100;
+    const lineNet=Math.round((adjustedGross/1.19)*100)/100;
+    return `  <cac:CreditNoteLine>
+    <cbc:ID>${idx+1}</cbc:ID>
+    <cbc:CreditedQuantity unitCode="C62">${qty}</cbc:CreditedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">${lineNet.toFixed(2)}</cbc:LineExtensionAmount>
+    <cac:DocumentReference>
+      <cbc:ID>${escapeXmlText(inv.number||'')}</cbc:ID>
+    </cac:DocumentReference>
+    <cac:Item>
+      <cbc:Name>${escapeXmlText(item.description)}</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">${unitNet.toFixed(2)}</cbc:PriceAmount>
+      <cbc:BaseQuantity unitCode="C62">1</cbc:BaseQuantity>
+    </cac:Price>
+  </cac:CreditNoteLine>`;
+  }).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+  xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>${escapeXmlText(inv.number||'')}</cbc:ID>
+  <cbc:IssueDate>${escapeXmlText(issuedAt)}</cbc:IssueDate>
+  <cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>${escapeXmlText(ready.buyerReference)}</cbc:BuyerReference>
+  <cbc:Note>${escapeXmlText(reasonText)}</cbc:Note>
+  <cac:OrderReference>
+    <cbc:ID>NA</cbc:ID>
+  </cac:OrderReference>${billingReferenceXml}
+${info.supplierPartyXml}
+${info.customerPartyXml}
+  <cac:PaymentTerms>
+    <cbc:Note>Refund within 14 days / Rueckerstattung innerhalb von 14 Tagen</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">${vat.toFixed(2)}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${net.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${vat.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">${net.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">${net.toFixed(2)}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">${gross.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">${gross.toFixed(2)}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+${lineXml}
+</CreditNote>`;
+}
+function buildXRechnungXml(inv){
+  const ready=ensureXRechnungExportReady(inv);
+  const partyInfo=buildXRechnungPartyXml({
+    ...ready,
+    buyerTaxSchemeXml:ready.buyerEndpoint.value?`
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${escapeXmlText(ready.buyerEndpoint.value)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`:''
+  });
+  if(inv.type==='취소/환불' || Number(inv.refund||0)>0){
+    return buildXRechnungCreditNoteXml(inv,partyInfo);
+  }
+  return buildXRechnungInvoiceXml(inv,partyInfo);
 }
 function buildBusinessInvoiceCsv(inv){
   const rows=[
@@ -3691,7 +3807,7 @@ function renderInvoiceTable(){
           <div style="font-size:10px;color:#475569;margin-top:2px;">${inv.lexwarePaymentStatus||inv.lexwareSyncStatus||'synced'}${inv.lexwareOpenAmount!==''?` · open ${inv.lexwareOpenAmount}€`:''}</div>`
         :`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Lexware 미전송</div>`;
       const businessActions=inv.businessInvoiceNeeded
-        ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ XRechnung</button>
+        ?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"xrechnung")'>⬇ ${inv.type==='취소/환불' || Number(inv.refund||0)>0?'CreditNote':'XRechnung'}</button>
           <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#6d28d9;border-color:#ddd6fe;" onclick='downloadBusinessInvoiceExport(${JSON.stringify(inv).replace(/'/g,"&#39;")},"csv")'>⬇ CSV</button>`
         :'';
       return `<tr>
