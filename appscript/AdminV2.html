@@ -730,6 +730,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;">
         <button class="btn btn-primary btn-sm" onclick="saveLexwareSettings()">💾 저장</button>
         <button class="btn btn-outline btn-sm" onclick="testLexwareConnectionUi()">🔌 연결 테스트</button>
+        <button class="btn btn-outline btn-sm" onclick="batchPushLexwareUi()">🚀 전체 전송</button>
+        <button class="btn btn-outline btn-sm" onclick="batchSyncLexwareStatusesUi()">🔄 전체 상태 동기화</button>
         <span id="lex_status" style="font-size:12px;color:#64748b;"></span>
       </div>
       <div id="lex_result" style="margin-top:10px;font-size:13px;"></div>
@@ -2506,6 +2508,37 @@ function testLexwareConnectionUi(){
     r.style.color='#ef4444';
     r.textContent='❌ '+e.message;
   }).testLexwareConnection(adminToken);
+}
+function batchPushLexwareUi(){
+  const r=document.getElementById('lex_result');
+  r.style.color='#64748b';
+  r.textContent='전체 전송 중... (잠시 기다려주세요)';
+  google.script.run.withSuccessHandler(res=>{
+    r.style.color='#10b981';
+    let msg=`✅ 전체 전송 완료: ${res.pushed}건 전송, ${res.skipped}건 이미 전송됨`;
+    if(res.failed) msg+=`, ${res.failed}건 실패`;
+    if(res.hasMore) msg+=` · ${res.remaining}건 남음 (한 번 더 실행해 주세요)`;
+    if(res.errors&&res.errors.length) msg+=' | '+res.errors.slice(0,2).join(' / ');
+    r.textContent=msg;
+  }).withFailureHandler(e=>{
+    r.style.color='#ef4444';
+    r.textContent='❌ '+e.message;
+  }).batchPushPendingInvoicesToLexware(adminToken);
+}
+function batchSyncLexwareStatusesUi(){
+  const r=document.getElementById('lex_result');
+  r.style.color='#64748b';
+  r.textContent='전체 상태 동기화 중...';
+  google.script.run.withSuccessHandler(res=>{
+    r.style.color='#10b981';
+    r.textContent=`✅ 상태 동기화 완료: ${res.synced}건 동기화, ${res.skipped}건 스킵`;
+    if(res.failed) r.textContent+=`, ${res.failed}건 실패`;
+    if(res.hasMore) r.textContent+=` · ${res.remaining}건 남음 (잠시 후 다시 실행해 주세요)`;
+    loadAccountingData();
+  }).withFailureHandler(e=>{
+    r.style.color='#ef4444';
+    r.textContent='❌ '+e.message;
+  }).batchSyncAllLexwarePaymentStatuses(adminToken);
 }
 
 /* ===== 사진셀렉 ===== */
