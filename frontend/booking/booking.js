@@ -2386,8 +2386,22 @@ async function warmCalendarRange(tasks) {
 }
 
 function startCalendarWarmup() {
-  // Initial global warmup is intentionally disabled.
-  // Calendar prefetch starts after a concrete product is chosen.
+  window.setTimeout(() => {
+    const now = new Date();
+    const warmGroups = [
+      { g: 'stud', d: 60 },
+      { g: 'prof', d: 45 },
+      { g: 'pass', d: 30 }
+    ];
+    for (const { g, d } of warmGroups) {
+      const key = `${now.getFullYear()}_${now.getMonth()}_${g}_${d}`;
+      if (state.calendarCache.has(key) || state.calendarWarmupInFlight.has(key)) continue;
+      state.calendarWarmupInFlight.add(key);
+      fetchAndStoreCalendarBatch(now.getFullYear(), now.getMonth(), d, g)
+        .catch(() => {})
+        .finally(() => state.calendarWarmupInFlight.delete(key));
+    }
+  }, 1500);
 }
 
 async function warmSelectedProductCalendar(product, durationOverride) {

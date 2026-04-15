@@ -651,7 +651,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
     : getUnavailableDays(y,m,totalDur,itemGroup,true);
   const out={};
   out[key]={unavail:monthSummary.unavail||[],slotCounts:{},slotsByDate:{}};
-  try{cache.put(cacheKey,JSON.stringify(out),300);}catch(e){}
+  try{cache.put(cacheKey,JSON.stringify(out),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
   return out;
 }
 
@@ -5138,6 +5138,38 @@ function installDailyTrigger(){
     .timeBased().atHour(8).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
   return 'Daily trigger installed (08:00 Berlin)';
+}
+
+/* ====== B2A: 캘린더 캐시 웜업 트리거 ====== */
+function warmupCacheTrigger(){
+  const targets=[
+    {itemGroup:'stud',totalDur:60},
+    {itemGroup:'prof',totalDur:45},
+    {itemGroup:'pass',totalDur:30}
+  ];
+  const now=new Date();
+  targets.forEach(function(target){
+    for(let offset=0;offset<2;offset++){
+      const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
+      try{
+        getPublicCalendarBatch_(d.getFullYear(),d.getMonth(),target.totalDur,target.itemGroup);
+      }catch(e){
+        Logger.log('warmupCacheTrigger '+target.itemGroup+' '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message);
+      }
+    }
+  });
+}
+
+function setupWarmupTrigger(){
+  ScriptApp.getProjectTriggers()
+    .filter(t=>t.getHandlerFunction()==='warmupCacheTrigger')
+    .forEach(t=>ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('warmupCacheTrigger')
+    .timeBased()
+    .everyMinutes(5)
+    .inTimezone(CONFIG.TIMEZONE)
+    .create();
+  return 'Warmup trigger installed (every 5 minutes)';
 }
 
 function dailyTasks(){
