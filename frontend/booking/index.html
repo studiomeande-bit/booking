@@ -8,14 +8,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260415-consent1" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260415-consent2" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260415-consent1">
+  <link rel="stylesheet" href="./booking.min.css?v=20260415-consent2">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
@@ -293,34 +293,40 @@
         <div id="consentBox" class="consent-box">
           <div id="consentTitle" class="consent-title">이용 동의</div>
           <p id="consentCopy" class="consent-copy">필수 항목을 체크해야 예약을 제출할 수 있습니다.</p>
-          <label id="selectAllRow" class="checkbox-row consent-row consent-row-highlight">
-            <input type="checkbox" id="selectAllRequired">
-            <span>
-              <b id="selectAllLabel">필수 항목 전체 선택</b>
-              <small id="selectAllSub" class="consent-sub">개인정보 및 AI 필수 항목을 한 번에 체크합니다.</small>
-            </span>
-          </label>
-          <label id="gdprRow" class="checkbox-row consent-row">
-            <input type="checkbox" name="gdprConsent">
-            <span>
-              <b id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</b>
-              <small id="gdprSub" class="consent-sub">서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.</small>
-            </span>
-          </label>
-          <label id="aiRow" class="checkbox-row consent-row">
-            <input type="checkbox" name="aiConsent">
-            <span>
-              <b id="aiLabel">[필수] AI 보정 및 처리 안내에 동의합니다.</b>
-              <small id="aiSub" class="consent-sub">촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.</small>
-            </span>
-          </label>
-          <label id="marketingRow" class="checkbox-row consent-row">
-            <input type="checkbox" name="marketing">
-            <span>
-              <b id="marketingLabel">[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.</b>
-              <small id="marketingSub" class="consent-sub">촬영 결과물을 Studio mean의 웹사이트 및 SNS 홍보 용도로 활용하는 것에 동의합니다.</small>
-            </span>
-          </label>
+          <div id="requiredConsentGroup" class="consent-group consent-group-required">
+            <div id="requiredConsentLabel" class="consent-group-label">필수 동의</div>
+            <label id="selectAllRow" class="checkbox-row consent-row consent-row-highlight">
+              <input type="checkbox" id="selectAllRequired">
+              <span>
+                <b id="selectAllLabel">필수 항목 전체 선택</b>
+                <small id="selectAllSub" class="consent-sub">개인정보 및 AI 필수 항목을 한 번에 체크합니다.</small>
+              </span>
+            </label>
+            <label id="gdprRow" class="checkbox-row consent-row">
+              <input type="checkbox" name="gdprConsent">
+              <span>
+                <b id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</b>
+                <small id="gdprSub" class="consent-sub">서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.</small>
+              </span>
+            </label>
+            <label id="aiRow" class="checkbox-row consent-row">
+              <input type="checkbox" name="aiConsent">
+              <span>
+                <b id="aiLabel">[필수] AI 보정 및 처리 안내에 동의합니다.</b>
+                <small id="aiSub" class="consent-sub">촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.</small>
+              </span>
+            </label>
+          </div>
+          <div id="optionalConsentGroup" class="consent-group consent-group-optional">
+            <div id="optionalConsentLabel" class="consent-group-label">선택 동의</div>
+            <label id="marketingRow" class="checkbox-row consent-row">
+              <input type="checkbox" name="marketing">
+              <span>
+                <b id="marketingLabel">[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.</b>
+                <small id="marketingSub" class="consent-sub">촬영 결과물을 Studio mean의 웹사이트 및 SNS 홍보 용도로 활용하는 것에 동의합니다.</small>
+              </span>
+            </label>
+          </div>
         </div>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off">
         <div class="wizard-nav form-nav">
@@ -334,6 +340,6 @@
       </form>
     </section>
   </main>
-  <script src="./booking.min.js?v=20260415-consent1"></script>
+  <script src="./booking.min.js?v=20260415-consent2"></script>
 </body>
 </html>

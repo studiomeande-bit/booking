@@ -854,11 +854,31 @@ h1 {
   color: #6d655d;
   line-height: 1.6;
 }
+.consent-group + .consent-group {
+  margin-top: 18px;
+}
+.consent-group {
+  padding: 16px 16px 4px;
+  border: 1px solid rgba(220, 206, 189, 0.9);
+  border-radius: 18px;
+  background: #fffdf9;
+}
+.consent-group-required {
+  background: linear-gradient(180deg, #fffdf6 0%, #fbf5ea 100%);
+}
+.consent-group-label {
+  margin-bottom: 4px;
+  color: #7f6b50;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .consent-row {
   padding-left: 0;
 }
 .consent-row-highlight {
-  margin-top: 14px;
+  margin-top: 10px;
   padding: 16px 18px;
   border: 1px solid #dcc8a8;
   border-radius: 18px;

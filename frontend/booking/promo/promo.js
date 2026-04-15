@@ -55,6 +55,8 @@ const COPY = {
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
     consentLead: '가장 위의 전체 선택으로 필수 항목을 한 번에 체크할 수 있습니다.',
+    requiredConsentLabel: '필수 동의',
+    optionalConsentLabel: '선택 동의',
     selectAllLabel: '필수 항목 전체 선택',
     selectAllSub: '개인정보 및 AI 필수 항목을 한 번에 체크합니다.',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
@@ -141,6 +143,8 @@ const COPY = {
     memoLabel: 'Notes',
     consentTitle: 'Consent',
     consentLead: 'Use the first option to check all required items at once before submitting.',
+    requiredConsentLabel: 'Required',
+    optionalConsentLabel: 'Optional',
     selectAllLabel: 'Select all required items',
     selectAllSub: 'Checks the personal data and AI consent items together.',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
@@ -227,6 +231,8 @@ const COPY = {
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
     consentLead: 'Mit der ersten Option können alle Pflichtangaben auf einmal bestätigt werden.',
+    requiredConsentLabel: 'Pflicht',
+    optionalConsentLabel: 'Optional',
     selectAllLabel: 'Alle Pflichtangaben auswählen',
     selectAllSub: 'Bestätigt Datenschutz und KI-Hinweis zusammen.',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
@@ -572,6 +578,8 @@ function renderStaticCopy() {
   setText('memoLabel', c.memoLabel);
   setText('consentTitle', c.consentTitle);
   setText('consentLead', c.consentLead);
+  setText('requiredConsentLabel', c.requiredConsentLabel);
+  setText('optionalConsentLabel', c.optionalConsentLabel);
   setText('selectAllLabel', c.selectAllLabel);
   setText('selectAllSub', c.selectAllSub);
   setText('gdprLabel', c.gdprLabel);

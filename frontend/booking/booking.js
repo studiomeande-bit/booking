@@ -340,6 +340,8 @@ const COPY = {
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
     consentCopy: '가장 위의 전체 선택으로 필수 항목을 한 번에 체크할 수 있습니다.',
+    requiredConsentLabel: '필수 동의',
+    optionalConsentLabel: '선택 동의',
     selectAllLabel: '필수 항목 전체 선택',
     selectAllSub: '개인정보 및 AI 필수 항목을 한 번에 체크합니다.',
     gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
@@ -473,6 +475,8 @@ const COPY = {
     memoLabel: 'Notes',
     consentTitle: 'Consent',
     consentCopy: 'Use the first option to check all required items at once before submitting.',
+    requiredConsentLabel: 'Required',
+    optionalConsentLabel: 'Optional',
     selectAllLabel: 'Select all required items',
     selectAllSub: 'Checks the personal data and AI consent items together.',
     gdprLabel: '[Required] I agree to the collection and use of personal data.',
@@ -606,6 +610,8 @@ const COPY = {
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
     consentCopy: 'Mit der ersten Option können alle Pflichtangaben auf einmal bestätigt werden.',
+    requiredConsentLabel: 'Pflicht',
+    optionalConsentLabel: 'Optional',
     selectAllLabel: 'Alle Pflichtangaben auswählen',
     selectAllSub: 'Bestätigt Datenschutz und KI-Hinweis zusammen.',
     gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
@@ -1163,6 +1169,8 @@ function applyCopy() {
   setText('memoLabel', copy.memoLabel);
   setText('consentTitle', copy.consentTitle);
   setText('consentCopy', copy.consentCopy);
+  setText('requiredConsentLabel', copy.requiredConsentLabel);
+  setText('optionalConsentLabel', copy.optionalConsentLabel);
   setText('selectAllLabel', copy.selectAllLabel);
   setText('selectAllSub', copy.selectAllSub);
   setText('gdprLabel', copy.gdprLabel);
@@ -1307,6 +1315,7 @@ function syncConsentVisibility() {
   const marketingRow = document.getElementById('marketingRow');
   const aiRow = document.getElementById('aiRow');
   const selectAllRow = document.getElementById('selectAllRow');
+  const optionalConsentGroup = document.getElementById('optionalConsentGroup');
   if (consentBox) consentBox.classList.toggle('pass-mode', isPass);
   const toggleRow = (row, hidden) => {
     if (!row) return;
@@ -1321,6 +1330,7 @@ function syncConsentVisibility() {
   toggleRow(marketingRow, isPass);
   toggleRow(aiRow, isPass);
   toggleRow(selectAllRow, isPass);
+  if (optionalConsentGroup) optionalConsentGroup.classList.toggle('hidden-field', isPass);
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
     if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = false;
