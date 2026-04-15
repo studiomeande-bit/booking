@@ -3,14 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Studio mean Booking</title>
-  <link rel="stylesheet" href="./booking.css">
+  <title>Studio mean - Fotoshooting Booking</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <link rel="preload" href="./booking.min.css?v=20260415-opt1" as="style">
+  <link rel="icon" href="./studio-mean-logo.svg" type="image/svg+xml">
+  <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
+  <meta property="og:title" content="Studio mean Booking">
+  <meta property="og:description" content="Fotoshooting in Oberursel buchen">
+  <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="./booking.min.css?v=20260415-opt1">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
     <div class="loading-card">
       <div class="brand-lockup centered">
-        <img class="brand-logo-image" src="./studio-mean-logo.png" alt="Studio mean logo">
+        <img class="brand-logo-image" src="./studio-mean-logo.svg" alt="Studio mean logo" width="160" height="48">
       </div>
       <div id="loadingCopy" class="loading-copy">예약 페이지를 준비하고 있습니다.</div>
       <div class="loading-dots" aria-hidden="true">
@@ -22,7 +33,7 @@
     <section class="hero">
       <div class="hero-top">
         <div class="brand-lockup">
-          <img class="brand-logo-image header-logo" src="./studio-mean-logo.png" alt="Studio mean logo">
+          <img class="brand-logo-image header-logo" src="./studio-mean-logo.svg" alt="Studio mean logo" width="160" height="48">
         </div>
         <div class="lang-row">
           <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
@@ -320,6 +331,6 @@
       </form>
     </section>
   </main>
-  <script type="module" src="./booking.js?v=20260414-b2b1"></script>
+  <script src="./booking.min.js?v=20260415-opt1"></script>
 </body>
 </html>

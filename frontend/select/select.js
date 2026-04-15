@@ -1,5 +1,5 @@
-import { fetchSelectSession, submitSelect, updateSelect } from './shared/api.js';
-import { createRequestId, escapeHtml } from './shared/utils.js';
+import { fetchSelectSession, submitSelectSession, updateSelectSession } from '../shared/api-select.js';
+import { createRequestId, escapeHtml } from '../shared/utils.js';
 
 const PRINT_OPTIONS = [
   { id: 'basic_10x15', label: '기본 10×15cm', retouched: 0, additional: 5 },
@@ -699,8 +699,8 @@ async function onSubmit() {
   try {
     const requestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
     const result = state.editMode
-      ? await updateSelect(state.sessionId, payload, requestId)
-      : await submitSelect(state.sessionId, payload, requestId);
+      ? await updateSelectSession(state.sessionId, payload, requestId)
+      : await submitSelectSession(state.sessionId, payload, requestId);
     setBanner(state.editMode ? '수정 제출이 완료됐습니다.' : '셀렉 제출이 완료됐습니다.', 'success');
     renderSuccess(result);
   } catch (error) {

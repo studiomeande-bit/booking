@@ -3,19 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Studio mean Select</title>
-  <link rel="stylesheet" href="./select.css">
+  <title>Studio mean - Photo Select</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <link rel="preload" href="./select.min.css?v=20260415-opt1" as="style">
+  <link rel="icon" href="./studio-mean-logo.svg" type="image/svg+xml">
+  <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
+  <meta property="og:title" content="Studio mean Select">
+  <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
+  <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="./select.min.css?v=20260415-opt1">
 </head>
 <body>
   <main class="shell">
     <div id="loadingScreen" class="loading-screen">
       <div class="loading-card">
-        <img src="./studio-mean-logo.png" alt="Studio mean" class="loading-logo">
+        <img src="./studio-mean-logo.svg" alt="Studio mean" class="loading-logo" width="160" height="48">
         <p class="loading-copy">셀렉 정보를 불러오는 중입니다.</p>
       </div>
     </div>
     <section class="hero">
-      <img src="./studio-mean-logo.png" alt="Studio mean" class="brand-logo">
+      <img src="./studio-mean-logo.svg" alt="Studio mean" class="brand-logo" width="160" height="48">
       <h1>사진 셀렉</h1>
       <p class="lede">보정할 사진과 추가 인화 옵션을 선택한 뒤 제출해 주세요.</p>
       <div id="statusBanner" class="banner loading">세션 정보를 불러오는 중입니다.</div>
@@ -165,6 +176,6 @@
       </section>
     </section>
   </main>
-  <script type="module" src="./select.js"></script>
+  <script src="./select.min.js?v=20260415-opt1"></script>
 </body>
 </html>

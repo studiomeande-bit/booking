@@ -1,5 +1,25 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, submitBooking } from './shared/api.js';
-import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from './shared/utils.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, submitBooking } from '../shared/api-booking.js';
+import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
+
+const LANG_STORAGE_KEY = 'studio-mean-lang';
+const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
+
+function readStoredLang() {
+  try {
+    const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
+    return SUPPORTED_LANGS.has(saved) ? saved : 'ko';
+  } catch {
+    return 'ko';
+  }
+}
+
+function persistLang(lang) {
+  try {
+    globalThis.localStorage?.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    // Ignore storage errors and keep runtime language in memory.
+  }
+}
 
 const COUNTRY_OPTIONS = [
   { code: 'KR', flag: '🇰🇷', label: { ko: '한국', en: 'Korea', de: 'Korea' } },
@@ -643,7 +663,7 @@ const COPY = {
 
 const state = {
   init: null,
-  lang: 'ko',
+  lang: readStoredLang(),
   selectedGroup: '',
   selectedProduct: null,
   calendarYear: new Date().getFullYear(),
@@ -951,26 +971,32 @@ function wireEvents() {
   els.passAddonPeople?.addEventListener('change', handleQuoteInputChange);
   els.langButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      state.lang = button.dataset.lang;
-      els.langButtons.forEach((item) => item.classList.toggle('active', item === button));
-      applyCopy();
-      renderGroups();
-      renderProducts((state.init?.products || []).filter((item) => !state.selectedGroup || item.g === state.selectedGroup));
-      renderPassportCountries();
-      renderSurveyChips();
-      renderGeneralPanel();
-      renderProductDetail();
-      renderReview();
-      refreshStepLocks();
-      if (state.selectedProduct) {
-        els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
-      }
+      if (button.dataset.lang) setLang(button.dataset.lang);
     });
   });
 }
 
 function getCopy() {
   return COPY[state.lang] || COPY.ko;
+}
+
+function setLang(lang) {
+  if (!SUPPORTED_LANGS.has(lang)) return;
+  state.lang = lang;
+  persistLang(lang);
+  els.langButtons.forEach((item) => item.classList.toggle('active', item.dataset.lang === lang));
+  applyCopy();
+  renderGroups();
+  renderProducts((state.init?.products || []).filter((item) => !state.selectedGroup || item.g === state.selectedGroup));
+  renderPassportCountries();
+  renderSurveyChips();
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
+  refreshStepLocks();
+  if (state.selectedProduct) {
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
+  }
 }
 
 function createDefaultPassportConfig(defaultCountries = []) {

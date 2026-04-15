@@ -1,5 +1,25 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchSlots, submitBooking } from '../shared/api.js';
-import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchSlots, submitBooking } from '../../shared/api-booking.js';
+import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../shared/utils.js';
+
+const LANG_STORAGE_KEY = 'studio-mean-lang';
+const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
+
+function readStoredLang() {
+  try {
+    const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
+    return SUPPORTED_LANGS.has(saved) ? saved : 'ko';
+  } catch {
+    return 'ko';
+  }
+}
+
+function persistLang(lang) {
+  try {
+    globalThis.localStorage?.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    // Ignore storage errors and keep runtime language in memory.
+  }
+}
 
 const PROMO_END_LIMIT = '2026-12-31';
 const QUOTE_REFRESH_DEBOUNCE_MS = 180;
@@ -260,7 +280,7 @@ const COPY = {
 };
 
 const state = {
-  lang: 'ko',
+  lang: readStoredLang(),
   promoEnabled: false,
   promoStart: '2026-04-20',
   promoEnd: '2026-05-10',
@@ -406,6 +426,22 @@ function buildQuotePayload() {
     surveyKeys: [],
     optionKeys: []
   };
+}
+
+function setLang(lang) {
+  if (!SUPPORTED_LANGS.has(lang)) return;
+  state.lang = lang;
+  persistLang(lang);
+  renderStaticCopy();
+  renderProducts();
+  renderDetailCard();
+  renderPeopleOptions();
+  renderPriceCard();
+  updateReview();
+  if (state.currentMonth) {
+    renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
+  }
+  updateStepButtons();
 }
 
 function getPromoPreviewQuote() {
@@ -924,15 +960,7 @@ async function onSubmit(event) {
 
 function bindEvents() {
   els.langBtns.forEach((btn) => btn.addEventListener('click', () => {
-    state.lang = btn.dataset.lang;
-    renderStaticCopy();
-    renderProducts();
-    renderDetailCard();
-    renderPeopleOptions();
-    renderPriceCard();
-    updateReview();
-    if (state.currentMonth) renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
-    updateStepButtons();
+    if (btn.dataset.lang) setLang(btn.dataset.lang);
   }));
   els.productGrid.addEventListener('click', async (event) => {
     const btn = event.target.closest('[data-product-id]');

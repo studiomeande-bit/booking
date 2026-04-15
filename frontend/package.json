@@ -1,9 +1,20 @@
 {
   "name": "studio-mean-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "scripts": {
     "dev": "echo \"frontend scaffold pending\"",
-    "build": "echo \"frontend build pending\""
+    "build:booking": "esbuild booking/booking.js --bundle --minify --target=es2020 --outfile=booking/booking.min.js",
+    "build:select": "esbuild select/select.js --bundle --minify --target=es2020 --outfile=select/select.min.js",
+    "build:promo": "esbuild booking/promo/promo.js --bundle --minify --target=es2020 --outfile=booking/promo/promo.min.js",
+    "build:css:booking": "esbuild booking/booking.css --minify --outfile=booking/booking.min.css",
+    "build:css:select": "esbuild select/select.css --minify --outfile=select/select.min.css",
+    "build:css:promo": "esbuild booking/promo/promo.css --minify --outfile=booking/promo/promo.min.css",
+    "build:booking-site": "npm run build:booking && npm run build:promo && npm run build:css:booking && npm run build:css:promo",
+    "build:select-site": "npm run build:select && npm run build:css:select",
+    "build": "npm run build:booking-site && npm run build:select-site"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
   }
 }
