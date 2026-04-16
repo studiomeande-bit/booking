@@ -272,7 +272,7 @@ const COPY = {
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     loadingCopy: '예약 페이지를 준비하고 있습니다.',
     noticeTitle: '공지사항',
-    promoHighlightEyebrow: 'Special Event',
+    promoHighlightEyebrow: 'Sonderaktion',
     promoHighlightTitle: '가정의 달 이벤트',
     promoHighlightBody(names) {
       return names
@@ -317,6 +317,7 @@ const COPY = {
     passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
     passportPeopleLabel: '인원수',
+    peopleCustomPlaceholder: '6명 이상 직접입력',
     passportConfigLabel: '구성 {index}',
     passportConfigAdd: '구성 추가하기',
     passportCountryLabel: '원하는 촬영국가 선택',
@@ -329,18 +330,21 @@ const COPY = {
     passAddonCopy: '프로필/스튜디오와 함께 여권사진을 추가합니다.',
     passAddonPeopleLabel: '여권 인원',
     locationLabel: '희망 촬영 장소',
+    locationPlaceholder: '예: Frankfurt Römer, Heidelberg Old Town',
     businessLabel: '행사 상세 내용',
     bizModeLabel: '촬영 유형',
     bizHoursLabel: '촬영 시간',
     bizEditLabel: '영상 편집',
     bizAddonLabel: '추가 요청',
     bizAddonHelp: '추가 요청은 예약 접수 후 세부 내용에 따라 별도 비용이 안내될 수 있습니다.',
+    businessPlaceholder: '예: 돌잔치촬영 / 결혼식 / 암트결혼식 / 기업행사 · 예상 인원, 필요한 결과물을 적어 주세요.',
     surveyFieldLabel: '원하는 분위기',
     bgFieldLabel: '배경 선택',
     nameLabel: '이름',
     phoneLabel: '연락처',
     emailLabel: '이메일',
     addressLabel: '주소 (인보이스용, 선택)',
+    addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
     businessInvoiceLabel: '사업자용 인보이스 필요',
     businessInvoiceSub: '기업/프리랜서/기관 명의의 송장이 필요한 경우에만 체크해 주세요.',
     businessInvoiceFieldsTitle: '기업 송장 정보',
@@ -351,8 +355,11 @@ const COPY = {
     businessVatIdLabel: 'USt-IdNr. / VAT ID',
     businessInvoiceRefLabel: '주문번호 / 참조번호',
     payerNameLabel: '입금자명 (계좌이체 시)',
+    payerNamePlaceholder: '예약금 입금 시 사용할 예금주명을 적어 주세요',
     babyNameLabel: '아기 이름',
+    babyNamePlaceholder: '백일/돌 촬영 아기 이름',
     otherCountryLabel: '기타 국가명',
+    otherCountryPlaceholder: '예: France, Canada',
     memoLabel: '요청사항',
     consentTitle: '이용 동의',
     consentCopy: '가장 위의 전체 선택으로 필수 항목을 한 번에 체크할 수 있습니다.',
@@ -369,10 +376,12 @@ const COPY = {
     submitLabel: '예약 제출',
     submitLoading: '제출 중...',
     calendarPrompt: '상품을 먼저 선택하세요.',
+    calendarEmpty: '상품 선택 후 달력을 불러옵니다.',
     calendarLoadedHint: '예약 가능 날짜를 선택해 주세요.',
     monthPrev: '이전 달',
     monthNext: '다음 달',
     slotPanelTitle: '예약 가능 시간',
+    slotGridEmpty: '아직 선택된 날짜가 없습니다.',
     selectProductDetailEmpty: '상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.',
     selectCategoryEmpty: '카테고리를 먼저 선택해 주세요.',
     noOptions: '추가 옵션이 없습니다.',
@@ -464,6 +473,7 @@ const COPY = {
     passportCopy: 'Add each country and people combination to reflect the correct passport / visa quote.',
     passportHint: 'One country is included. Each additional country adds €5.',
     passportPeopleLabel: 'People',
+    peopleCustomPlaceholder: '6+ people (enter manually)',
     passportConfigLabel: 'Configuration {index}',
     passportConfigAdd: 'Add another configuration',
     passportCountryLabel: 'Choose desired countries',
@@ -476,18 +486,21 @@ const COPY = {
     passAddonCopy: 'Add passport photos together with profile/studio.',
     passAddonPeopleLabel: 'Passport People',
     locationLabel: 'Preferred Location',
+    locationPlaceholder: 'e.g. Frankfurt Römer, Heidelberg Old Town',
     businessLabel: 'Event Details',
     bizModeLabel: 'Session Type',
     bizHoursLabel: 'Coverage',
     bizEditLabel: 'Video Edit',
     bizAddonLabel: 'Optional Requests',
     bizAddonHelp: 'Optional requests are reviewed after booking and may require an extra quote.',
+    businessPlaceholder: 'e.g. birthday party / wedding / city hall wedding / corporate event · expected guests and required deliverables',
     surveyFieldLabel: 'Preferred Mood',
     bgFieldLabel: 'Background Selection',
     nameLabel: 'Name',
     phoneLabel: 'Phone',
     emailLabel: 'Email',
     addressLabel: 'Address (optional, for invoice)',
+    addressPlaceholder: 'Enter only if you need an invoice',
     businessInvoiceLabel: 'Business invoice needed',
     businessInvoiceSub: 'Check this only if the invoice should be issued to a company, freelancer, or organization.',
     businessInvoiceFieldsTitle: 'Business invoice details',
@@ -498,8 +511,11 @@ const COPY = {
     businessVatIdLabel: 'USt-IdNr. / VAT ID',
     businessInvoiceRefLabel: 'PO / reference number',
     payerNameLabel: 'Payer name (bank transfer)',
+    payerNamePlaceholder: 'Enter the account holder name used for the deposit transfer',
     babyNameLabel: 'Baby Name',
+    babyNamePlaceholder: 'Baby name for baby / first birthday session',
     otherCountryLabel: 'Other Country',
+    otherCountryPlaceholder: 'e.g. France, Canada',
     memoLabel: 'Notes',
     consentTitle: 'Consent',
     consentCopy: 'Use the first option to check all required items at once before submitting.',
@@ -516,10 +532,12 @@ const COPY = {
     submitLabel: 'Submit Booking',
     submitLoading: 'Submitting...',
     calendarPrompt: 'Choose a package first.',
+    calendarEmpty: 'Choose a package to load the calendar.',
     calendarLoadedHint: 'Choose an available date.',
     monthPrev: 'Previous month',
     monthNext: 'Next month',
     slotPanelTitle: 'Available Times',
+    slotGridEmpty: 'No date selected yet.',
     selectProductDetailEmpty: 'Select a package to see the description and estimated price.',
     selectCategoryEmpty: 'Please choose a category first.',
     noOptions: 'No additional options available.',
@@ -611,6 +629,7 @@ const COPY = {
     passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
     passportPeopleLabel: 'Personenzahl',
+    peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
     passportConfigLabel: 'Konfiguration {index}',
     passportConfigAdd: 'Weitere Konfiguration hinzufügen',
     passportCountryLabel: 'Gewünschte Aufnahmeländer',
@@ -623,18 +642,21 @@ const COPY = {
     passAddonCopy: 'Passfotos zusammen mit Profil/Studio hinzufügen.',
     passAddonPeopleLabel: 'Passfoto Personen',
     locationLabel: 'Gewünschter Aufnahmeort',
+    locationPlaceholder: 'z. B. Frankfurt Römer, Heidelberger Altstadt',
     businessLabel: 'Eventdetails',
     bizModeLabel: 'Aufnahmetyp',
     bizHoursLabel: 'Stunden',
     bizEditLabel: 'Videoschnitt',
     bizAddonLabel: 'Zusatzanfragen',
     bizAddonHelp: 'Zusatzwünsche werden nach der Buchung geprüft und ggf. separat angeboten.',
+    businessPlaceholder: 'z. B. Geburtstag / Hochzeit / standesamtliche Trauung / Firmenevent · erwartete Personenzahl und gewünschte Ergebnisse',
     surveyFieldLabel: 'Gewünschte Stimmung',
     bgFieldLabel: 'Hintergrundauswahl',
     nameLabel: 'Name',
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
     addressLabel: 'Adresse (optional, für Rechnung)',
+    addressPlaceholder: 'Nur eingeben, wenn eine Rechnung benötigt wird',
     businessInvoiceLabel: 'Geschäftsrechnung erforderlich',
     businessInvoiceSub: 'Nur ankreuzen, wenn die Rechnung auf eine Firma, freiberufliche Tätigkeit oder Organisation ausgestellt werden soll.',
     businessInvoiceFieldsTitle: 'Angaben für Geschäftsrechnung',
@@ -645,8 +667,11 @@ const COPY = {
     businessVatIdLabel: 'USt-IdNr. / VAT ID',
     businessInvoiceRefLabel: 'Bestell- / Referenznummer',
     payerNameLabel: 'Name des Kontoinhabers (Überweisung)',
+    payerNamePlaceholder: 'Bitte den Kontoinhaber für die Anzahlung per Überweisung eintragen',
     babyNameLabel: 'Babyname',
+    babyNamePlaceholder: 'Babyname für Baby- / 1. Geburtstag-Shooting',
     otherCountryLabel: 'Anderes Land',
+    otherCountryPlaceholder: 'z. B. Frankreich, Kanada',
     memoLabel: 'Hinweise',
     consentTitle: 'Einwilligung',
     consentCopy: 'Mit der ersten Option können alle Pflichtangaben auf einmal bestätigt werden.',
@@ -663,10 +688,12 @@ const COPY = {
     submitLabel: 'Buchung senden',
     submitLoading: 'Wird gesendet...',
     calendarPrompt: 'Bitte zuerst ein Paket wählen.',
+    calendarEmpty: 'Bitte zuerst ein Paket wählen, um den Kalender zu laden.',
     calendarLoadedHint: 'Bitte wählen Sie ein verfügbares Datum.',
     monthPrev: 'Vorheriger Monat',
     monthNext: 'Nächster Monat',
     slotPanelTitle: 'Verfügbare Zeiten',
+    slotGridEmpty: 'Noch kein Datum ausgewählt.',
     selectProductDetailEmpty: 'Wählen Sie ein Paket, um Beschreibung und geschätzten Preis zu sehen.',
     selectCategoryEmpty: 'Bitte zuerst eine Kategorie wählen.',
     noOptions: 'Keine zusätzlichen Optionen verfügbar.',
@@ -938,6 +965,10 @@ function wireEvents() {
       return;
     }
     if (getMaxUnlockedStep() < 3) return;
+    els.calendarGrid.classList.remove('empty-state');
+    els.calendarGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+    els.slotGrid.classList.add('empty-state');
+    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().slotGridEmpty)}</div>`;
     goToStep(3);
     await refreshQuote();
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
@@ -1171,6 +1202,7 @@ function getBusinessInvoiceFormData(source = null) {
 
 function applyCopy() {
   const copy = getCopy();
+  document.documentElement.lang = state.lang;
   if (els.heroTitle) els.heroTitle.textContent = copy.heroTitle;
   if (els.noticeTitle) els.noticeTitle.textContent = copy.noticeTitle;
   els.heroLead.textContent = copy.hero;
@@ -1186,6 +1218,7 @@ function applyCopy() {
   setText('generalTitle', copy.generalTitle);
   setText('generalCopy', copy.generalCopy);
   setText('passportTitle', copy.passportTitle);
+  setText('passportCopy', copy.passportCopy);
   setText('passportPeopleLabel', copy.passportPeopleLabel);
   setText('passportCountryLabel', copy.passportCountryLabel);
   setText('passportAddConfigBtn', copy.passportConfigAdd);
@@ -1199,6 +1232,10 @@ function applyCopy() {
   setText('passAddonPeopleLabel', copy.passAddonPeopleLabel);
   setText('locationLabel', copy.locationLabel);
   setText('businessLabel', copy.businessLabel);
+  setText('bizModeLabel', copy.bizModeLabel);
+  setText('bizHoursLabel', copy.bizHoursLabel);
+  setText('bizEditLabel', copy.bizEditLabel);
+  setText('bizAddonLabel', copy.bizAddonLabel);
   setText('surveyFieldLabel', copy.surveyFieldLabel);
   setText('bgFieldLabel', copy.bgFieldLabel);
   setText('nameLabel', copy.nameLabel);
@@ -1236,6 +1273,13 @@ function applyCopy() {
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   if (els.slotPanelTitle) els.slotPanelTitle.textContent = copy.slotPanelTitle;
   els.submitBtn.textContent = copy.submitLabel;
+  if (els.generalPeopleCustom) els.generalPeopleCustom.placeholder = copy.peopleCustomPlaceholder;
+  if (els.locationInput) els.locationInput.placeholder = copy.locationPlaceholder;
+  if (els.businessInput) els.businessInput.placeholder = copy.businessPlaceholder;
+  if (els.form?.elements?.address) els.form.elements.address.placeholder = copy.addressPlaceholder;
+  if (els.form?.elements?.payerName) els.form.elements.payerName.placeholder = copy.payerNamePlaceholder;
+  if (els.form?.elements?.babyName) els.form.elements.babyName.placeholder = copy.babyNamePlaceholder;
+  if (els.form?.elements?.otherCountry) els.form.elements.otherCountry.placeholder = copy.otherCountryPlaceholder;
   const prevLabel = state.lang === 'en' ? 'Back' : state.lang === 'de' ? 'Zurück' : '이전';
   const nextLabel = state.lang === 'en' ? 'Next' : state.lang === 'de' ? 'Weiter' : '다음';
   setText('step1NextBtn', nextLabel);
@@ -1253,7 +1297,15 @@ function applyCopy() {
   if (!state.selectedProduct && !els.reviewBox.querySelector('.review-list')) {
     els.reviewBox.textContent = copy.reviewEmpty;
   }
-  if (!state.selectedProduct) els.calendarHint.textContent = copy.calendarPrompt;
+  if (!state.selectedProduct) {
+    els.calendarHint.textContent = copy.calendarPrompt;
+    els.calendarGrid.classList.add('empty-state');
+    els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(copy.calendarEmpty)}</div>`;
+    els.slotGrid.classList.add('empty-state');
+    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(copy.slotGridEmpty)}</div>`;
+  } else if (!state.selectedDate && els.slotGrid.classList.contains('empty-state')) {
+    els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(copy.slotGridEmpty)}</div>`;
+  }
   if (els.locationInfo) {
     els.locationInfo.textContent = state.lang === 'en'
       ? 'Shoots within 50 km of Frankfurt are included in the base price. Additional travel costs may apply outside this area.'
@@ -1694,7 +1746,7 @@ function renderStepWarnings() {
     step5Message = state.lang === 'en'
       ? 'Enter the baby name for baby/first birthday sessions.'
       : state.lang === 'de'
-        ? 'Geben Sie den Namen des Babys für 백일/돌 촬영 ein.'
+        ? 'Geben Sie den Babynamen für Baby- oder 1. Geburtstag-Shootings ein.'
         : '백일/돌 촬영은 아기 이름 입력이 필요합니다.';
   } else if (!reshootingOk) {
     step5Message = state.lang === 'en'
@@ -3394,7 +3446,7 @@ function clearCalendarSelection() {
   state.slotRequestToken += 1;
   state.selectedDate = '';
   state.selectedSlot = '';
-  els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotHintEmpty}</div>`;
+  els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotGridEmpty}</div>`;
   els.slotHint.textContent = getCopy().slotHintEmpty;
   updateSubmitState();
   syncStepPanels();

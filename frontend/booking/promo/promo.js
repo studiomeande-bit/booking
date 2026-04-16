@@ -98,6 +98,7 @@ const COPY = {
     customerName: '이름',
     customerEmail: '이메일',
     calendarHintProduct(name) { return `${name} · 예약 가능한 날짜와 시간을 선택해 주세요.`; },
+    peopleCustomPlaceholder: '6명 이상 직접입력',
     childAgePlaceholder: '예: 만 4세',
     familyInfoPlaceholder: '예: 부모 + 아이 2명',
     memoPlaceholder: '전달할 요청사항이 있다면 적어 주세요.',
@@ -186,6 +187,7 @@ const COPY = {
     customerName: 'Name',
     customerEmail: 'Email',
     calendarHintProduct(name) { return `${name} · Choose an available date and time.`; },
+    peopleCustomPlaceholder: '6+ custom input',
     childAgePlaceholder: 'e.g. 4 years old',
     familyInfoPlaceholder: 'e.g. parents + 2 children',
     memoPlaceholder: 'Share any requests or notes for the shoot.',
@@ -274,6 +276,7 @@ const COPY = {
     customerName: 'Name',
     customerEmail: 'E-Mail',
     calendarHintProduct(name) { return `${name} · Wählen Sie ein verfügbares Datum und eine Uhrzeit.`; },
+    peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
     childAgePlaceholder: 'z. B. 4 Jahre',
     familyInfoPlaceholder: 'z. B. Eltern + 2 Kinder',
     memoPlaceholder: 'Notieren Sie Wünsche oder Hinweise zum Shooting.',
@@ -454,8 +457,24 @@ function setLang(lang) {
   renderPeopleOptions();
   renderPriceCard();
   updateReview();
+  if (state.selectedProduct) {
+    els.calendarHint.textContent = copy().calendarHintProduct(copy().groups[state.selectedProduct.id].title);
+  } else {
+    els.calendarHint.textContent = copy().dateHint;
+  }
   if (state.currentMonth) {
     renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
+  }
+  if (state.selectedDate) {
+    const cachedSlots = state.slotCache.get(`${state.selectedDate}_${getCalendarDuration()}`);
+    renderSlots(Array.isArray(cachedSlots) ? cachedSlots : []);
+  }
+  if (!state.promoEnabled) {
+    setStatus(copy().statusClosed, 'error');
+  } else if (els.statusBanner.classList.contains('loading')) {
+    setStatus(copy().statusLoading, 'loading');
+  } else if (!els.statusBanner.classList.contains('error')) {
+    setStatus(copy().statusReady, 'ready');
   }
   updateStepButtons();
 }
@@ -602,8 +621,12 @@ function renderStaticCopy() {
   els.restartBtn.textContent = c.restart;
   els.prevMonthBtn.textContent = c.back;
   els.nextMonthBtn.textContent = c.next;
+  els.peopleCustom.placeholder = c.peopleCustomPlaceholder;
   els.slotTitle.textContent = c.slotTitle;
-  els.slotHint.textContent = c.slotEmpty;
+  els.slotHint.textContent = state.selectedDate ? `${c.bookingTime}: ${state.selectedDate}` : c.slotEmpty;
+  els.calendarHint.textContent = state.selectedProduct
+    ? c.calendarHintProduct(c.groups[state.selectedProduct.id].title)
+    : c.dateHint;
   els.calendarGrid.textContent = c.loadingCalendar;
   els.slotGrid.textContent = c.loadingSlots;
   els.form.elements.address.placeholder = c.addressPlaceholder;
