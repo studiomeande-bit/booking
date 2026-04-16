@@ -24,6 +24,10 @@ function persistLang(lang) {
 const PROMO_END_LIMIT = '2026-12-31';
 const QUOTE_REFRESH_DEBOUNCE_MS = 180;
 
+function trimPromoDate(dateStr) {
+  return String(dateStr || '').trim().slice(0, 10);
+}
+
 const COPY = {
   ko: {
     loading: '프로모션 예약 페이지를 준비하고 있습니다.',
@@ -70,7 +74,7 @@ const COPY = {
     submit: '예약 신청',
     submitBusy: '제출 중...',
     restart: '새 예약 시작',
-    periodValue(start, end) { return `${start.replaceAll('-', '.')} - ${end.replaceAll('-', '.')}`; },
+    periodValue(start, end) { return `${trimPromoDate(start).replaceAll('-', '.')} - ${trimPromoDate(end).replaceAll('-', '.')}`; },
     packageSummary: '포함 구성',
     dateHint: '예약 가능한 날짜와 시간을 선택해 주세요.',
     loadingCalendar: '달력을 불러오는 중입니다.',
@@ -158,7 +162,7 @@ const COPY = {
     submit: 'Submit booking',
     submitBusy: 'Submitting...',
     restart: 'Start another booking',
-    periodValue(start, end) { return `${start} - ${end}`; },
+    periodValue(start, end) { return `${trimPromoDate(start)} - ${trimPromoDate(end)}`; },
     packageSummary: 'What is included',
     dateHint: 'Choose an available date and time.',
     loadingCalendar: 'Loading calendar...',
@@ -246,7 +250,7 @@ const COPY = {
     submit: 'Buchung senden',
     submitBusy: 'Wird gesendet...',
     restart: 'Neue Buchung starten',
-    periodValue(start, end) { return `${start.split('-').reverse().join('.')} - ${end.split('-').reverse().join('.')}`; },
+    periodValue(start, end) { return `${trimPromoDate(start).split('-').reverse().join('.')} - ${trimPromoDate(end).split('-').reverse().join('.')}`; },
     packageSummary: 'Leistungsumfang',
     dateHint: 'Wählen Sie ein verfügbares Datum und eine Uhrzeit.',
     loadingCalendar: 'Kalender wird geladen...',

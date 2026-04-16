@@ -193,6 +193,86 @@ h1 {
   line-height: 1.7;
   color: var(--muted);
 }
+.promo-highlight {
+  margin-top: 14px;
+  padding: 20px 20px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(35, 56, 75, 0.14);
+  background:
+    linear-gradient(135deg, rgba(255, 252, 246, 0.98) 0%, rgba(237, 228, 214, 0.92) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 16px 28px rgba(38, 34, 29, 0.06);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.promo-highlight-copy {
+  min-width: 0;
+}
+.promo-highlight-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-blue);
+}
+.promo-highlight-title {
+  margin-top: 8px;
+  font-size: clamp(20px, 3vw, 28px);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: var(--text);
+}
+.promo-highlight-body {
+  margin-top: 10px;
+  max-width: 640px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #534a40;
+}
+.promo-highlight-tags {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.promo-highlight-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(35, 56, 75, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  color: #4d443a;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.promo-highlight-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 156px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--brand-blue);
+  color: #fff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 650;
+  box-shadow: 0 12px 20px rgba(35, 56, 75, 0.16);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+.promo-highlight-button:hover {
+  transform: translateY(-1px);
+  background: #1b2f40;
+  box-shadow: 0 16px 24px rgba(35, 56, 75, 0.2);
+}
 .panel {
   margin-top: 18px;
   padding: 24px;
@@ -1075,6 +1155,16 @@ h1 {
   .hero { padding-bottom: 12px; }
   .panel { padding: 16px; border-radius: 22px; }
   .notice-panel { padding: 16px; border-radius: 18px; }
+  .promo-highlight {
+    padding: 18px 16px;
+    border-radius: 20px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .promo-highlight-button {
+    width: 100%;
+    min-width: 0;
+  }
   .booking-form { grid-template-columns: 1fr; }
   .invoice-fields-grid { grid-template-columns: 1fr; }
   .hero-top { flex-direction: row; align-items: flex-start; justify-content: space-between; }
@@ -1173,6 +1263,9 @@ h1 {
   .notice-title { font-size: 12px; }
   .notice-body,
   .notice-meta { font-size: 13px; }
+  .promo-highlight-title { font-size: 22px; }
+  .promo-highlight-body { font-size: 13px; line-height: 1.65; }
+  .promo-highlight-tag { width: 100%; justify-content: flex-start; }
   .panel { padding: 14px; border-radius: 20px; }
   .panel-head h2 { font-size: 19px; }
   .panel-head p { font-size: 13px; }

@@ -4,6 +4,10 @@ import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/u
 const LANG_STORAGE_KEY = 'studio-mean-lang';
 const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
 
+function trimPromoDate(dateStr) {
+  return String(dateStr || '').trim().slice(0, 10);
+}
+
 function readStoredLang() {
   try {
     const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
@@ -268,6 +272,16 @@ const COPY = {
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     loadingCopy: '예약 페이지를 준비하고 있습니다.',
     noticeTitle: '공지사항',
+    promoHighlightEyebrow: 'Special Event',
+    promoHighlightTitle: '가정의 달 이벤트',
+    promoHighlightBody(names) {
+      return names
+        ? `${names} 예약을 전용 이벤트 페이지에서 바로 진행하실 수 있습니다.`
+        : '현재 진행 중인 이벤트를 전용 이벤트 페이지에서 확인하고 예약하실 수 있습니다.';
+    },
+    promoHighlightNamesLabel: '이벤트',
+    promoHighlightPeriodLabel: '기간',
+    promoHighlightButton: '이벤트 페이지 보기',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 및 시간 선택',
@@ -403,6 +417,16 @@ const COPY = {
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
     loadingCopy: 'Preparing the booking page.',
     noticeTitle: 'Notice',
+    promoHighlightEyebrow: 'Special Event',
+    promoHighlightTitle: 'Family Month Promotion',
+    promoHighlightBody(names) {
+      return names
+        ? `You can view and book ${names} directly on the event page.`
+        : 'You can view the current special event and book it directly on the event page.';
+    },
+    promoHighlightNamesLabel: 'Events',
+    promoHighlightPeriodLabel: 'Period',
+    promoHighlightButton: 'Open event page',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date & Time',
@@ -538,6 +562,16 @@ const COPY = {
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     loadingCopy: 'Buchungsseite wird vorbereitet.',
     noticeTitle: 'Hinweis',
+    promoHighlightEyebrow: 'Special Event',
+    promoHighlightTitle: 'Familienmonat Aktion',
+    promoHighlightBody(names) {
+      return names
+        ? `${names} können direkt über die Event-Seite angesehen und gebucht werden.`
+        : 'Die aktuelle Spezialaktion kann direkt über die Event-Seite angesehen und gebucht werden.';
+    },
+    promoHighlightNamesLabel: 'Events',
+    promoHighlightPeriodLabel: 'Zeitraum',
+    promoHighlightButton: 'Event-Seite öffnen',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum & Uhrzeit wählen',
@@ -714,6 +748,13 @@ const els = {
   noticeTitle: document.getElementById('noticeTitle'),
   noticeBody: document.getElementById('noticeBody'),
   noticeMeta: document.getElementById('noticeMeta'),
+  promoHighlightPanel: document.getElementById('promoHighlightPanel'),
+  promoHighlightEyebrow: document.getElementById('promoHighlightEyebrow'),
+  promoHighlightTitle: document.getElementById('promoHighlightTitle'),
+  promoHighlightBody: document.getElementById('promoHighlightBody'),
+  promoHighlightNames: document.getElementById('promoHighlightNames'),
+  promoHighlightPeriod: document.getElementById('promoHighlightPeriod'),
+  promoHighlightButton: document.getElementById('promoHighlightButton'),
   heroLead: document.getElementById('heroLead'),
   loadingCopy: document.getElementById('loadingCopy'),
   groupHelp: document.getElementById('groupHelp'),
@@ -820,6 +861,7 @@ async function boot() {
     renderReview();
     refreshStepLocks();
     renderNoticePanel();
+    renderPromoHighlightPanel();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
@@ -1221,6 +1263,7 @@ function applyCopy() {
   renderWeekdayHeader();
   renderReturnNotice();
   renderNoticePanel();
+  renderPromoHighlightPanel();
   syncConsentVisibility();
   syncSelectAllRequired();
   refreshBannerCopy();
@@ -1243,6 +1286,78 @@ function renderNoticePanel() {
   }
   els.noticePanel.classList.remove('hidden-field');
   els.noticeBody.innerHTML = notice ? escapeHtml(notice).replace(/\n/g, '<br>') : '';
+}
+
+function getPromoOverrideCopy() {
+  const override = state.init?.settings?.promoContent?.[state.lang];
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return null;
+  return override;
+}
+
+function formatPromoDateLabel(dateStr) {
+  const trimmed = trimPromoDate(dateStr);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return '';
+  if (state.lang === 'de') return trimmed.split('-').reverse().join('.');
+  if (state.lang === 'ko') return trimmed.replaceAll('-', '.');
+  return trimmed;
+}
+
+function formatPromoPeriodLabel(start, end) {
+  const startLabel = formatPromoDateLabel(start);
+  const endLabel = formatPromoDateLabel(end);
+  if (!startLabel || !endLabel) return '';
+  return `${startLabel} - ${endLabel}`;
+}
+
+function getPromoProductLabels() {
+  const promoProducts = Array.isArray(state.init?.promoProducts) ? state.init.promoProducts : [];
+  return promoProducts.map((item) => {
+    if (state.lang === 'en') return String(item?.nameEn || item?.nameKo || '').trim();
+    if (state.lang === 'de') return String(item?.nameDe || item?.nameKo || '').trim();
+    return String(item?.nameKo || '').trim();
+  }).filter(Boolean);
+}
+
+function renderPromoHighlightPanel() {
+  if (!els.promoHighlightPanel) return;
+  const settings = state.init?.settings || {};
+  if (!settings.promoEnabled) {
+    els.promoHighlightPanel.classList.add('hidden-field');
+    return;
+  }
+  const copy = getCopy();
+  const override = getPromoOverrideCopy();
+  const productLabels = getPromoProductLabels();
+  const eyebrow = String(override?.eyebrow || copy.promoHighlightEyebrow || '').trim();
+  const title = String(override?.heroTitle || copy.promoHighlightTitle || '').trim();
+  const lead = String(override?.heroLead || '').trim();
+  const period = formatPromoPeriodLabel(settings.promoStart, settings.promoEnd);
+  const defaultBody = typeof copy.promoHighlightBody === 'function'
+    ? copy.promoHighlightBody(productLabels.join(' · '))
+    : String(copy.promoHighlightBody || '').trim();
+
+  if (els.promoHighlightEyebrow) els.promoHighlightEyebrow.textContent = eyebrow;
+  if (els.promoHighlightTitle) els.promoHighlightTitle.textContent = title;
+  if (els.promoHighlightBody) els.promoHighlightBody.textContent = lead || defaultBody;
+  if (els.promoHighlightButton) els.promoHighlightButton.textContent = copy.promoHighlightButton;
+
+  if (els.promoHighlightNames) {
+    const hasNames = productLabels.length > 0;
+    els.promoHighlightNames.classList.toggle('hidden-field', !hasNames);
+    els.promoHighlightNames.textContent = hasNames
+      ? `${copy.promoHighlightNamesLabel} · ${productLabels.join(' · ')}`
+      : '';
+  }
+
+  if (els.promoHighlightPeriod) {
+    const hasPeriod = !!period;
+    els.promoHighlightPeriod.classList.toggle('hidden-field', !hasPeriod);
+    els.promoHighlightPeriod.textContent = hasPeriod
+      ? `${copy.promoHighlightPeriodLabel} · ${period}`
+      : '';
+  }
+
+  els.promoHighlightPanel.classList.remove('hidden-field');
 }
 
 function refreshBannerCopy() {
