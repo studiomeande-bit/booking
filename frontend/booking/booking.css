@@ -355,6 +355,58 @@ h1 {
     0 22px 32px rgba(35, 56, 75, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
+@media (min-width: 769px) {
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-areas:
+      "top lang"
+      "title lang"
+      "lead lang"
+      "banner banner"
+      "notice notice"
+      "promo promo";
+    column-gap: 28px;
+    align-items: start;
+  }
+  .hero-top { grid-area: top; }
+  #heroTitle {
+    grid-area: title;
+    margin-top: 6px;
+  }
+  .lede { grid-area: lead; }
+  .lang-panel {
+    grid-area: lang;
+    width: 100%;
+    margin-top: 8px;
+    justify-self: end;
+    align-self: center;
+  }
+  .banner { grid-area: banner; }
+  .notice-panel { grid-area: notice; }
+  .promo-highlight {
+    grid-area: promo;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 22px;
+  }
+  .promo-highlight-copy {
+    flex: 1 1 auto;
+    padding-right: 8px;
+  }
+  .promo-highlight-cta {
+    flex: 0 0 min(320px, 34%);
+    align-items: stretch;
+    justify-content: space-between;
+  }
+  .promo-highlight-state {
+    align-self: flex-start;
+  }
+  .promo-highlight-button {
+    width: 100%;
+  }
+}
 .panel {
   margin-top: 18px;
   padding: 24px;

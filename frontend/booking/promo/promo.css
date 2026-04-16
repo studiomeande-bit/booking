@@ -87,6 +87,33 @@ h1 { margin:0; font-size:clamp(34px, 6vw, 56px); line-height:1; font-weight:600;
 .status-banner.loading { background:#f7f5ef; border-color:#ddd3c4; color:#786f62; }
 .status-banner.error { background:var(--err-bg); border-color:var(--err-line); color:var(--err-ink); }
 
+@media (min-width: 961px) {
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-areas:
+      "top lang"
+      "eyebrow lang"
+      "title lang"
+      "lead lang"
+      "status status";
+    column-gap: 28px;
+    align-items: start;
+  }
+  .hero-top { grid-area: top; }
+  .eyebrow { grid-area: eyebrow; }
+  #heroTitle { grid-area: title; }
+  .hero-lead { grid-area: lead; }
+  .lang-panel {
+    grid-area: lang;
+    width: 100%;
+    margin-top: 8px;
+    justify-self: end;
+    align-self: center;
+  }
+  .status-banner { grid-area: status; }
+}
+
 .promo-content { display:grid; gap:18px; }
 .panel { border:1px solid var(--line); background:var(--panel); border-radius:30px; padding:28px; }
 .intro-grid, .product-grid, .detail-grid, .calendar-stage, .success-grid { display:grid; gap:18px; }
