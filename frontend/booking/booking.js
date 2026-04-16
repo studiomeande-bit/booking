@@ -748,6 +748,7 @@ const state = {
 const els = {
   shell: document.querySelector('.shell'),
   hero: document.querySelector('.hero'),
+  heroLangPanel: document.getElementById('heroLangPanel'),
   heroTitle: document.getElementById('heroTitle'),
   banner: document.getElementById('statusBanner'),
   noticePanel: document.getElementById('noticePanel'),
@@ -1317,6 +1318,10 @@ function formatPromoPeriodLabel(start, end) {
   return `${startLabel} - ${endLabel}`;
 }
 
+function isHeroIntroStepVisible() {
+  return !els.hero?.classList.contains('hidden-step') && state.activeStep === 1;
+}
+
 function getPromoProductLabels() {
   const promoProducts = Array.isArray(state.init?.promoProducts) ? state.init.promoProducts : [];
   return promoProducts.map((item) => {
@@ -1329,7 +1334,7 @@ function getPromoProductLabels() {
 function renderPromoHighlightPanel() {
   if (!els.promoHighlightPanel) return;
   const settings = state.init?.settings || {};
-  if (!settings.promoEnabled) {
+  if (!settings.promoEnabled || !isHeroIntroStepVisible()) {
     els.promoHighlightPanel.classList.add('hidden-field');
     return;
   }
@@ -1368,6 +1373,12 @@ function renderPromoHighlightPanel() {
   }
 
   els.promoHighlightPanel.classList.remove('hidden-field');
+}
+
+function syncHeroIntroPanels() {
+  const isIntroStep = isHeroIntroStepVisible();
+  els.heroLangPanel?.classList.toggle('hidden-field', !isIntroStep);
+  renderPromoHighlightPanel();
 }
 
 function refreshBannerCopy() {
@@ -1555,6 +1566,7 @@ function syncStepPanels() {
     panel.classList.toggle('hidden-step', step !== state.activeStep || step > maxStep);
   });
   updateWizardButtons(maxStep);
+  syncHeroIntroPanels();
 }
 
 function refreshStepLocks() {
@@ -3563,6 +3575,7 @@ function clearSubmitResult() {
   els.successPanel?.classList.add('hidden-step');
   els.hero?.classList.remove('hidden-step');
   Object.values(els.stepPanels).forEach((panel) => panel?.classList.remove('hidden-step'));
+  syncHeroIntroPanels();
 }
 
 function resetBookingFlow() {
@@ -3825,6 +3838,7 @@ function renderSubmitResult(payload, result) {
   els.hero?.classList.add('hidden-step');
   Object.values(els.stepPanels).forEach((panel) => panel?.classList.add('hidden-step'));
   els.successPanel?.classList.remove('hidden-step');
+  syncHeroIntroPanels();
   els.resultBox.hidden = false;
   els.resultBox.innerHTML = `
     <h3>${escapeHtml(copy.submitCardTitle)}</h3>

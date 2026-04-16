@@ -117,11 +117,20 @@ body {
 .hero-top {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+  justify-content: flex-start;
+}
+.lang-panel {
+  width: min(100%, 420px);
+  margin-top: 18px;
+  padding: 8px;
+  border: 1px solid rgba(35, 56, 75, 0.12);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 253, 249, 0.98) 0%, rgba(245, 238, 227, 0.94) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 .lang-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 .lang-btn {
@@ -129,9 +138,10 @@ body {
   border-radius: 999px;
   background: rgba(255,255,255,.92);
   color: #5b5045;
-  padding: 8px 12px;
+  min-height: 48px;
+  padding: 10px 14px;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -1227,6 +1237,12 @@ h1 {
   .hero { padding: 4px 0 12px; }
   .panel { padding: 16px; border-radius: 22px; }
   .notice-panel { padding: 16px 14px; border-radius: 18px; }
+  .lang-panel {
+    width: 100%;
+    margin-top: 16px;
+    padding: 6px;
+    border-radius: 20px;
+  }
   .promo-highlight {
     padding: 18px 14px 16px;
     border-radius: 20px;
@@ -1242,9 +1258,9 @@ h1 {
   }
   .booking-form { grid-template-columns: 1fr; }
   .invoice-fields-grid { grid-template-columns: 1fr; }
-  .hero-top { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 12px; }
-  .lang-row { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-left: 0; }
-  .lang-btn { min-height: 44px; padding: 10px 8px; font-size: 13px; }
+  .hero-top { gap: 0; }
+  .lang-row { width: 100%; gap: 8px; }
+  .lang-btn { min-height: 46px; padding: 10px 8px; font-size: 13px; }
   .header-logo { width: min(220px, 62vw); }
   h1 { font-size: 26px; }
   .lede { font-size: 14px; line-height: 1.55; }
@@ -1345,9 +1361,14 @@ h1 {
     padding-top: calc(8px + var(--safe-top));
     padding-bottom: calc(108px + var(--safe-bottom));
   }
-  .hero-top { gap: 10px; }
+  .hero-top { gap: 0; }
+  .lang-panel {
+    margin-top: 14px;
+    padding: 5px;
+    border-radius: 18px;
+  }
   .lang-row { gap: 6px; }
-  .lang-btn { min-height: 42px; font-size: 12px; }
+  .lang-btn { min-height: 44px; font-size: 12px; }
   .header-logo { width: min(188px, 58vw); }
   h1 { font-size: 24px; }
   .notice-title { font-size: 12px; }
