@@ -279,9 +279,11 @@ const COPY = {
         ? `${names} 예약을 전용 이벤트 페이지에서 바로 진행하실 수 있습니다.`
         : '현재 진행 중인 이벤트를 전용 이벤트 페이지에서 확인하고 예약하실 수 있습니다.';
     },
+    promoHighlightState: '예약 진행 중',
     promoHighlightNamesLabel: '이벤트',
     promoHighlightPeriodLabel: '기간',
-    promoHighlightButton: '이벤트 페이지 보기',
+    promoHighlightButton: '이벤트 예약 바로가기',
+    promoHighlightButtonSub: '기간 한정 이벤트 전용 페이지로 이동',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 및 시간 선택',
@@ -424,9 +426,11 @@ const COPY = {
         ? `You can view and book ${names} directly on the event page.`
         : 'You can view the current special event and book it directly on the event page.';
     },
+    promoHighlightState: 'Now Booking',
     promoHighlightNamesLabel: 'Events',
     promoHighlightPeriodLabel: 'Period',
-    promoHighlightButton: 'Open event page',
+    promoHighlightButton: 'Book the event now',
+    promoHighlightButtonSub: 'Open the limited promotion page',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date & Time',
@@ -569,9 +573,11 @@ const COPY = {
         ? `${names} können direkt über die Event-Seite angesehen und gebucht werden.`
         : 'Die aktuelle Spezialaktion kann direkt über die Event-Seite angesehen und gebucht werden.';
     },
+    promoHighlightState: 'Jetzt buchbar',
     promoHighlightNamesLabel: 'Events',
     promoHighlightPeriodLabel: 'Zeitraum',
-    promoHighlightButton: 'Event-Seite öffnen',
+    promoHighlightButton: 'Event jetzt buchen',
+    promoHighlightButtonSub: 'Zur zeitlich begrenzten Aktionsseite wechseln',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum & Uhrzeit wählen',
@@ -752,9 +758,11 @@ const els = {
   promoHighlightEyebrow: document.getElementById('promoHighlightEyebrow'),
   promoHighlightTitle: document.getElementById('promoHighlightTitle'),
   promoHighlightBody: document.getElementById('promoHighlightBody'),
+  promoHighlightState: document.getElementById('promoHighlightState'),
   promoHighlightNames: document.getElementById('promoHighlightNames'),
   promoHighlightPeriod: document.getElementById('promoHighlightPeriod'),
   promoHighlightButton: document.getElementById('promoHighlightButton'),
+  promoHighlightButtonSub: document.getElementById('promoHighlightButtonSub'),
   heroLead: document.getElementById('heroLead'),
   loadingCopy: document.getElementById('loadingCopy'),
   groupHelp: document.getElementById('groupHelp'),
@@ -1339,7 +1347,9 @@ function renderPromoHighlightPanel() {
   if (els.promoHighlightEyebrow) els.promoHighlightEyebrow.textContent = eyebrow;
   if (els.promoHighlightTitle) els.promoHighlightTitle.textContent = title;
   if (els.promoHighlightBody) els.promoHighlightBody.textContent = lead || defaultBody;
+  if (els.promoHighlightState) els.promoHighlightState.textContent = copy.promoHighlightState;
   if (els.promoHighlightButton) els.promoHighlightButton.textContent = copy.promoHighlightButton;
+  if (els.promoHighlightButtonSub) els.promoHighlightButtonSub.textContent = copy.promoHighlightButtonSub;
 
   if (els.promoHighlightNames) {
     const hasNames = productLabels.length > 0;
