@@ -28,3 +28,7 @@ export function fetchReturnEligibility(data) {
 export function submitBooking(data, requestId) {
   return requestJson(buildPayloadUrl('booking', data, { requestId }));
 }
+
+export function submitWalkinIntake(data, requestId) {
+  return requestJson(buildPayloadUrl('walkin-intake', data, { requestId }));
+}

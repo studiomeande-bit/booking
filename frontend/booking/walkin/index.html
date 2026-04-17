@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Studio mean - Walk-in Info</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <link rel="preload" href="./walkin.min.css?v=20260417-walkin1" as="style">
+  <link rel="icon" href="../studio-mean-logo.png" type="image/png">
+  <meta name="description" content="Studio mean walk-in customer info form">
+  <meta property="og:title" content="Studio mean Walk-in Form">
+  <meta property="og:description" content="Fill in your customer information for Studio mean">
+  <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="./walkin.min.css?v=20260417-walkin1">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <img class="brand-logo-image" src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean logo" width="160" height="48">
+        <div class="lang-panel" aria-label="Language selection">
+          <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+        </div>
+      </div>
+      <h1 id="heroTitle">워크인 고객 정보 작성</h1>
+      <p id="heroLead" class="lede">직원 안내에 따라 기본 정보와 송장 정보를 입력해 주세요.</p>
+      <div id="statusBanner" class="status-banner info">현장 안내용 정보 입력 폼입니다.</div>
+    </section>
+
+    <section class="panel note-panel">
+      <div id="noteTitle" class="panel-title">입력 안내</div>
+      <p id="noteCopy" class="panel-copy">이 링크는 일정 예약용이 아니라 현장 정보 접수용입니다.</p>
+    </section>
+
+    <section id="successPanel" class="panel success-panel hidden-field">
+      <div id="successTitle" class="panel-title">워크인 정보가 접수되었습니다.</div>
+      <p id="successCopy" class="panel-copy">스튜디오에서 내용을 확인해 안내에 반영하겠습니다.</p>
+      <div id="successSummary" class="summary-box"></div>
+      <button type="button" id="restartBtn" class="primary-btn secondary">다른 고객 정보 입력</button>
+    </section>
+
+    <section id="formPanel" class="panel">
+      <form id="walkinForm" novalidate>
+        <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+        <div class="form-grid">
+          <div class="form-field full">
+            <label for="serviceGroup" id="serviceLabel">촬영 종류</label>
+            <select id="serviceGroup" name="serviceGroup"></select>
+          </div>
+
+          <div class="form-field">
+            <label for="name" id="nameLabel">이름</label>
+            <input id="name" name="name" autocomplete="name" required>
+          </div>
+          <div class="form-field">
+            <label for="phone" id="phoneLabel">연락처</label>
+            <input id="phone" name="phone" autocomplete="tel" inputmode="tel" required>
+          </div>
+          <div class="form-field">
+            <label for="email" id="emailLabel">이메일</label>
+            <input id="email" name="email" type="email" autocomplete="email">
+          </div>
+          <div class="form-field">
+            <label for="address" id="addressLabel">주소</label>
+            <input id="address" name="address" autocomplete="street-address">
+          </div>
+          <div class="form-field">
+            <label for="payerName" id="payerNameLabel">입금자명</label>
+            <input id="payerName" name="payerName" autocomplete="off">
+          </div>
+          <div class="form-field">
+            <label for="babyName" id="babyNameLabel">아기 이름</label>
+            <input id="babyName" name="babyName" autocomplete="off">
+          </div>
+          <div class="form-field full">
+            <label for="memo" id="memoLabel">메모 / 요청사항</label>
+            <textarea id="memo" name="memo" rows="4"></textarea>
+          </div>
+        </div>
+
+        <section class="subcard">
+          <label class="toggle-row">
+            <input id="businessInvoiceNeeded" name="businessInvoiceNeeded" type="checkbox">
+            <span id="businessInvoiceToggle">사업자 송장 필요</span>
+          </label>
+          <p id="businessInvoiceCopy" class="subcopy">사업자 송장이 필요하면 아래 정보를 추가로 입력해 주세요.</p>
+
+          <div id="businessFields" class="form-grid hidden-field">
+            <div class="form-field">
+              <label for="businessCompanyName" id="companyNameLabel">사업자명</label>
+              <input id="businessCompanyName" name="businessCompanyName" autocomplete="organization">
+            </div>
+            <div class="form-field">
+              <label for="businessInvoiceEmail" id="invoiceEmailLabel">송장 받을 이메일</label>
+              <input id="businessInvoiceEmail" name="businessInvoiceEmail" type="email" autocomplete="email">
+            </div>
+            <div class="form-field full">
+              <label for="businessCompanyAddress" id="companyAddressLabel">사업자 주소</label>
+              <input id="businessCompanyAddress" name="businessCompanyAddress" autocomplete="street-address">
+            </div>
+            <div class="form-field">
+              <label for="businessVatId" id="vatIdLabel">VAT 번호</label>
+              <input id="businessVatId" name="businessVatId" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label for="businessInvoiceRef" id="invoiceRefLabel">참조 번호 / 메모</label>
+              <input id="businessInvoiceRef" name="businessInvoiceRef" autocomplete="off">
+            </div>
+          </div>
+        </section>
+
+        <section class="subcard">
+          <div id="consentTitle" class="panel-title small">동의</div>
+          <p id="consentCopy" class="subcopy">현장 확인과 결과 안내를 위해 필요한 항목입니다.</p>
+
+          <label class="consent-item">
+            <input id="gdprConsent" name="gdprConsent" type="checkbox" required>
+            <span class="consent-copy-wrap">
+              <strong id="gdprLabel">[필수] 개인정보 수집 및 이용에 동의합니다.</strong>
+              <small id="gdprSub">연락 및 송장 발행, 촬영 결과 안내를 위한 최소한의 정보를 처리합니다.</small>
+            </span>
+          </label>
+
+          <label class="consent-item">
+            <input id="aiConsent" name="aiConsent" type="checkbox" required>
+            <span class="consent-copy-wrap">
+              <strong id="aiLabel">[필수] AI 리터칭/보정 보조 사용 안내에 동의합니다.</strong>
+              <small id="aiSub">리터칭 및 전달 과정에서 AI 보조 도구가 함께 사용될 수 있습니다.</small>
+            </span>
+          </label>
+
+          <label class="consent-item optional">
+            <input id="marketing" name="marketing" type="checkbox">
+            <span class="consent-copy-wrap">
+              <strong id="marketingLabel">[선택] 포트폴리오/SNS 활용에 동의합니다.</strong>
+              <small id="marketingSub">완성본 일부가 웹사이트나 SNS 예시 이미지로 사용될 수 있습니다.</small>
+            </span>
+          </label>
+        </section>
+
+        <div class="submit-row">
+          <button type="submit" id="submitBtn" class="primary-btn">정보 보내기</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="./walkin.min.js?v=20260417-walkin1" defer></script>
+</body>
+</html>

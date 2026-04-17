@@ -8,6 +8,7 @@ const CONFIG = {
   TIMEZONE: 'Europe/Berlin',
   DB_NAME: 'Studio mean 예약 DB',
   BOOKING_SHEET: '예약장부',
+  WALKIN_SHEET: '워크인접수',
   SETTINGS_SHEET: '설정',
   PRODUCTS_SHEET: '상품설정',
   PRINT_SHEET: '인화주문',
@@ -31,12 +32,14 @@ const CONFIG = {
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
   BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조'],
+  WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
 };
 const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PRINT_COL=CONFIG.PRINT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PUBLIC_API_CONFIG = {
   ALLOWED_ORIGINS: [
@@ -54,8 +57,18 @@ const PROMO_CONFIG = {
   END: '2026-05-10',
   ITEM_IDS: ['promo_kids_2026', 'promo_family_2026']
 };
+const DEFAULT_BOOKING_HOURS = {
+  weekday: '09:30-11:40,15:00-17:30',
+  saturday: '09:00-16:00'
+};
+const WEEKDAY_MORNING_END_MIN = 11 * 60 + 40;
+const SELECT_PICKUP_DURATION_MIN = 15;
+const SELECT_PICKUP_LOOKAHEAD_DAYS = 120;
+const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
+const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+let SETTINGS_MAP_CACHE = null;
 
 function doGet(e) {
   e = e||{parameter:{}}; const p = e.parameter||{};
@@ -93,22 +106,22 @@ function normalizePrintRow_(row, rowIdx, colMap) {
     !String(row[colMap['매출날짜']]).match(/^\d{4}-\d{2}-\d{2}/);
 
   if (hasLegacyHeader) {
-    const legacyItems = String(row[3] || '').trim();
-    const legacyRetouch = String(row[4] || '').trim();
-    const legacyMemo = String(row[8] || '').trim();
+    const legacyItems = String(row[4] || '').trim();
+    const legacyRetouch = String(row[5] || '').trim();
+    const legacyMemo = String(row[9] || '').trim();
     return {
       rowIdx,
       dateStr: parseDateSafe_(row[0]).str,
-      salesDate: String(row[10] || '').trim(),
-      name: String(row[1] || ''),
-      phone: String(row[2] || ''),
+      salesDate: parseDateSafe_(row[1]).str.slice(0,10),
+      name: String(row[2] || ''),
+      phone: String(row[3] || ''),
       items: legacyItems || (legacyMemo && !/셀렉:/i.test(legacyMemo) ? legacyMemo : ''),
       retouchItems: legacyRetouch,
-      qty: Number(row[5] || 0) || 0,
-      total: Number(row[6] || 0) || 0,
-      payMethod: String(row[7] || ''),
-      memo: String(row[8] || ''),
-      status: String(row[9] || '완료')
+      qty: Number(row[6] || 0) || 0,
+      total: Number(row[7] || 0) || 0,
+      payMethod: String(row[8] || ''),
+      memo: String(row[9] || ''),
+      status: String(row[10] || '완료')
     };
   }
 
@@ -217,12 +230,36 @@ function handlePublicApiRequest_(route,method,e){
       if(!result||!result.ok) return jsonError_('BOOKING_FAILED',(result&&result.message)||'Booking failed');
       return jsonOk_(result);
     }
+    if(route==='walkin-intake'){
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/walkin-intake');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body;
+      const payload=request.payload;
+      assertPublicWalkinPayload_(payload,body);
+      return jsonOk_(submitWalkinIntake_(payload));
+    }
     if(route==='select-session'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-session');
       const p=(e&&e.parameter)||{};
       const sessionId=String(p.id||'').trim();
       if(!sessionId) return jsonError_('INVALID_SESSION','Missing session id');
       return jsonOk_(getSelectSession(sessionId));
+    }
+    if(route==='select-pickup-calendar'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-pickup-calendar');
+      const p=(e&&e.parameter)||{};
+      const year=asNumber_(p.year);
+      const month=asNumber_(p.month);
+      if(!isFinite(year)||!isFinite(month)) return jsonError_('INVALID_ARGUMENT','Missing pickup calendar parameters');
+      return jsonOk_(getSelectPickupCalendarBatch_(year,month));
+    }
+    if(route==='select-pickup-slots'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-pickup-slots');
+      const p=(e&&e.parameter)||{};
+      const date=String(p.date||'').trim();
+      const ignoreEventId=String(p.ignoreEventId||'').trim();
+      if(!date) return jsonError_('INVALID_ARGUMENT','Missing pickup slot date');
+      return jsonOk_(getSelectPickupSlots_(date,ignoreEventId));
     }
     if(route==='select-submit'){
       if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-submit');
@@ -283,6 +320,18 @@ function assertPublicBookingPayload_(payload,body){
   if(!payload||!payload.name||!payload.phone||!payload.email||!payload.date||!payload.time) throw new Error('Missing required booking fields');
 }
 
+function assertPublicWalkinPayload_(payload,body){
+  const honeypotField=PUBLIC_API_CONFIG.HONEYPOT_FIELD;
+  if(String((payload&&payload[honeypotField])||(body&&body[honeypotField])||'').trim()) throw new Error('Spam submission detected');
+  assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
+  if(!payload||!String(payload.name||'').trim()||!String(payload.phone||'').trim()) throw new Error('이름과 연락처는 필수입니다.');
+  const email=String(payload.email||'').trim();
+  if(email&&email.indexOf('@')===-1) throw new Error('이메일 형식이 올바르지 않습니다.');
+  if(!payload.gdprConsent) throw new Error('개인정보 수집 동의가 필요합니다.');
+  if(!payload.aiConsent) throw new Error('AI 리터칭 안내 동의가 필요합니다.');
+  if(payload.businessInvoiceNeeded && !String(payload.businessCompanyName||'').trim()) throw new Error('사업자 송장이 필요하면 사업자명을 입력해 주세요.');
+}
+
 function assertPublicRequestId_(requestId){
   const id=String(requestId||'').trim();
   if(!id) throw new Error('Missing requestId');
@@ -323,11 +372,12 @@ function ensureSheets_() {
   if (dbId) { try { ss=SpreadsheetApp.openById(dbId); } catch(e){ss=null;} }
   if (!ss) { ss=SpreadsheetApp.create(CONFIG.DB_NAME); props.setProperty('DB_SHEET_ID',ss.getId()); }
   const bookingSheet=ensureBookingSheet_(ss), settingsSheet=ensureSettingsSheet_(ss);
+  const walkinSheet=ensureWalkinSheet_(ss);
   const productsSheet=ensureProductsSheet_(ss), printSheet=ensurePrintSheet_(ss);
   const invoiceSheet=ensureInvoiceSheet_(ss);
   const expenseSheet=ensureExpenseSheet_(ss);
   ensureSecrets_();
-  return {ss,bookingSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,expenseSheet};
+  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,expenseSheet};
 }
 
 function ensureBookingSheet_(ss) {
@@ -347,6 +397,22 @@ function ensureBookingSheet_(ss) {
   }
   return sh;
 }
+function ensureWalkinSheet_(ss) {
+  let sh=ss.getSheetByName(CONFIG.WALKIN_SHEET);
+  if (!sh) {
+    sh=ss.insertSheet(CONFIG.WALKIN_SHEET);
+    sh.appendRow(CONFIG.WALKIN_HEADERS);
+    sh.getRange(1,1,1,CONFIG.WALKIN_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+    sh.setFrozenRows(1);
+  } else {
+    const lastCol = sh.getLastColumn();
+    if(lastCol < CONFIG.WALKIN_HEADERS.length) {
+      sh.getRange(1, lastCol+1, 1, CONFIG.WALKIN_HEADERS.length-lastCol)
+        .setValues([CONFIG.WALKIN_HEADERS.slice(lastCol)]);
+    }
+  }
+  return sh;
+}
 function ensureSettingsSheet_(ss) {
   let sh=ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh){sh=ss.insertSheet(CONFIG.SETTINGS_SHEET);sh.appendRow(['항목','값']);}
@@ -355,6 +421,8 @@ function ensureSettingsSheet_(ss) {
     ['notice_en',''],
     ['notice_de',''],
     ['custom_holidays',''],
+    ['weekday_hours',DEFAULT_BOOKING_HOURS.weekday],
+    ['saturday_hours',DEFAULT_BOOKING_HOURS.saturday],
     ['event_rate','0'],
     ['event_start',''],
     ['event_end',''],
@@ -524,12 +592,15 @@ function verifyAdmin(password){
 
 /* ====== 설정 ====== */
 function getSettingsMap_() {
+  if(SETTINGS_MAP_CACHE) return SETTINGS_MAP_CACHE;
   const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues(),map={};
   for(let i=1;i<vals.length;i++) if(vals[i][0]) map[String(vals[i][0])]=parseDateSafe_(vals[i][1]).str;
+  SETTINGS_MAP_CACHE=map;
   return map;
 }
 function upsertSetting_(key,value) {
   const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues();
+  SETTINGS_MAP_CACHE=null;
   for(let i=1;i<vals.length;i++) if(vals[i][0]===key){sh.getRange(i+1,2).setValue(value);return;}
   sh.appendRow([key,value]);
 }
@@ -555,6 +626,10 @@ function getPromoContent_(){
   }catch(e){
     return {};
   }
+}
+
+function formatHourMin_(hour,min){
+  return `${('0'+hour).slice(-2)}:${('0'+min).slice(-2)}`;
 }
 
 /* ====== 상품 캐시 ====== */
@@ -613,7 +688,7 @@ function isPromoDateAllowed_(dateStr){
 function getInitDataCustomer() {
   const s=getSettingsMap_();
   const promo=getPromoConfig_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',eventRate:s.event_rate||'',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_()},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:s.event_rate||'0',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_()},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -704,13 +779,22 @@ function saveProductsData(token,arr){
 }
 function saveSiteSettings(token,s){
   assertAdmin_(token);
+  const weekdayHours=String(s.weekdayHours||'').trim()||DEFAULT_BOOKING_HOURS.weekday;
+  const saturdayHours=String(s.saturdayHours||'').trim()||DEFAULT_BOOKING_HOURS.saturday;
+  const weekdayBlocks=normalizeWeekdayBookingBlocks_(parseTimeBlocksSetting_(weekdayHours,''));
+  const saturdayBlocks=parseTimeBlocksSetting_(saturdayHours,'');
+  if(!weekdayBlocks.length) throw new Error('화-금 영업시간 형식이 올바르지 않습니다. 예: 09:30-11:40,15:00-17:30');
+  if(!saturdayBlocks.length) throw new Error('토요일 영업시간 형식이 올바르지 않습니다. 예: 09:00-16:00');
+  const normalizedWeekdayHours=blocksToSettingString_(weekdayBlocks);
+  const normalizedSaturdayHours=blocksToSettingString_(saturdayBlocks);
   upsertSetting_('notice_ko',s.ko||'');upsertSetting_('notice_en',s.en||'');upsertSetting_('notice_de',s.de||'');
-  upsertSetting_('custom_holidays',s.customHolidays||'');upsertSetting_('event_rate',s.eventRate||'');
+  upsertSetting_('custom_holidays',s.customHolidays||'');upsertSetting_('weekday_hours',normalizedWeekdayHours);upsertSetting_('saturday_hours',normalizedSaturdayHours);upsertSetting_('event_rate',s.eventRate||'');
   upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',s.returnDiscount||'10');upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
   upsertSetting_('promo_end',s.promoEnd||PROMO_CONFIG.END);
   upsertSetting_('promo_content_json',JSON.stringify(s.promoContent||{}));
   if(s.newPassword) PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(s.newPassword));
+  bumpCalCacheVer_();
   return{ok:true};
 }
 
@@ -1423,17 +1507,64 @@ function isWeekendOrHolidayBlocked_(dateStr,itemGroup){
   return String(getSettingsMap_().custom_holidays||'').split(',').map(s=>s.trim()).filter(Boolean).includes(dateStr);
 }
 
+function parseTimeBlock_(raw){
+  const match=String(raw||'').trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if(!match) return null;
+  const startHour=parseInt(match[1],10),startMin=parseInt(match[2],10),endHour=parseInt(match[3],10),endMin=parseInt(match[4],10);
+  if([startHour,endHour].some(v=>!isFinite(v)||v<0||v>23)) return null;
+  if([startMin,endMin].some(v=>![0,15,30,45].includes(v))) return null;
+  if(startHour*60+startMin>=endHour*60+endMin) return null;
+  return {startHour,startMin,endHour,endMin};
+}
+
+function parseTimeBlocksSetting_(raw,fallback){
+  const source=String(raw||'').trim();
+  const blocks=(source||String(fallback||'').trim()).split(',').map(parseTimeBlock_).filter(Boolean);
+  if(blocks.length) return blocks;
+  if(source&&fallback&&source!==String(fallback).trim()) return String(fallback).split(',').map(parseTimeBlock_).filter(Boolean);
+  return [];
+}
+
+function normalizeWeekdayBookingBlocks_(blocks){
+  return (blocks||[]).map(block=>{
+    const startMin=block.startHour*60+block.startMin;
+    const endMin=block.endHour*60+block.endMin;
+    if(startMin>=12*60||endMin<=WEEKDAY_MORNING_END_MIN) return block;
+    if(startMin>=WEEKDAY_MORNING_END_MIN) return null;
+    return {startHour:block.startHour,startMin:block.startMin,endHour:11,endMin:40};
+  }).filter(Boolean);
+}
+
+function blocksToSettingString_(blocks){
+  return (blocks||[]).map(block=>`${formatHourMin_(block.startHour,block.startMin)}-${formatHourMin_(block.endHour,block.endMin)}`).join(',');
+}
+
+function getWeekdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return normalizeWeekdayBookingBlocks_(parseTimeBlocksSetting_(settings.weekday_hours,DEFAULT_BOOKING_HOURS.weekday));
+}
+
+function getWeekdayBookingHours_(){
+  return blocksToSettingString_(getWeekdayBookingBlocks_())||DEFAULT_BOOKING_HOURS.weekday;
+}
+
+function getSaturdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return parseTimeBlocksSetting_(settings.saturday_hours,DEFAULT_BOOKING_HOURS.saturday);
+}
+
+function getSaturdayBookingHours_(){
+  return blocksToSettingString_(getSaturdayBookingBlocks_())||DEFAULT_BOOKING_HOURS.saturday;
+}
+
 /**
- * ✅ 영업시간: 평일 9:30-12:00 / 15:00-17:30 (12-15시 쉬는 시간)
+ * 예약 슬롯 계산용 영업시간. 설정 시트 값이 있으면 우선 사용합니다.
  */
 function getTimeBlocksForDate_(dateStr,itemGroup){
   const day=new Date(`${dateStr}T00:00:00`).getDay();
   if(itemGroup==='wed'||itemGroup==='biz') return[{startHour:8,startMin:0,endHour:22,endMin:0}];
-  if(day>=2&&day<=5) return[
-    {startHour:9,startMin:30,endHour:12,endMin:0},
-    {startHour:15,startMin:0,endHour:17,endMin:30}
-  ];
-  if(day===6) return[{startHour:9,startMin:0,endHour:16,endMin:0}];
+  if(day>=2&&day<=5) return getWeekdayBookingBlocks_();
+  if(day===6) return getSaturdayBookingBlocks_();
   return[];
 }
 
@@ -1516,6 +1647,167 @@ function slotAvailable_(dateStr,timeStr,totalDur,itemGroup,newLocation){
   });
   if(!inBlock) return false;
   return!checkConflict_(getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`)),start,end,itemGroup,newLocation||'');
+}
+
+function isSelectPickupEventTitle_(title){
+  return String(title||'').indexOf(SELECT_PICKUP_EVENT_PREFIX)===0;
+}
+
+function isStudioPresenceEventTitle_(title,isPersonal){
+  if(isPersonal) return false;
+  const safeTitle=String(title||'');
+  if(!safeTitle||isSelectPickupEventTitle_(safeTitle)) return false;
+  if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(kw=>safeTitle.indexOf(kw)>=0)) return false;
+  if(/기업|행사|영상|Corporate|Event|Video|Firmen|Individualangebot/i.test(safeTitle)) return false;
+  if(/여권|비자|Passfoto|Passport|passport/i.test(safeTitle)) return true;
+  return /프로필|profile|Profil|스튜디오|studio/i.test(safeTitle);
+}
+
+function getBusyEventsDetailedForRange_(start,end){
+  const events=[];
+  const personalCalNames=new Set(CONFIG.PERSONAL_CALENDAR_NAMES);
+  getBusyCalendarIds_().forEach(id=>{
+    try{
+      const cal=CalendarApp.getCalendarById(id);
+      if(!cal) return;
+      const isPersonal=personalCalNames.has(cal.getName());
+      cal.getEvents(start,end).forEach(ev=>{
+        if(ev.isAllDayEvent()) return;
+        events.push({
+          id:ev.getId()||'',
+          start:ev.getStartTime().getTime(),
+          end:ev.getEndTime().getTime(),
+          title:ev.getTitle()||'',
+          location:ev.getLocation()||'',
+          isPersonal
+        });
+      });
+    }catch(e){
+      Logger.log('pickup calendar detail error: '+e.message);
+    }
+  });
+  return events;
+}
+
+function isSelectPickupDateAllowed_(dateStr){
+  if(!dateStr) return false;
+  const target=new Date(`${dateStr}T00:00:00`);
+  if(isNaN(target.getTime())) return false;
+  const today=new Date();
+  const dayStart=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  const maxDate=new Date(dayStart.getTime());
+  maxDate.setDate(maxDate.getDate()+SELECT_PICKUP_LOOKAHEAD_DAYS);
+  return target.getTime()>=dayStart.getTime()&&target.getTime()<=maxDate.getTime();
+}
+
+function roundUpToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.ceil(ms/step)*step;
+}
+
+function buildSelectPickupWindows_(events){
+  const studioEvents=(events||[])
+    .filter(ev=>isStudioPresenceEventTitle_(ev.title,ev.isPersonal))
+    .sort((a,b)=>a.start-b.start);
+  if(!studioEvents.length) return [];
+  if(studioEvents.length===1){
+    return [{start:studioEvents[0].start,end:studioEvents[0].end}];
+  }
+  return [{
+    start:studioEvents[0].start,
+    end:studioEvents[studioEvents.length-1].end
+  }];
+}
+
+function getSelectPickupSlotsFromDetailedEvents_(dateStr,events,ignoreEventId){
+  if(!isSelectPickupDateAllowed_(dateStr)) return [];
+  const windows=buildSelectPickupWindows_(events);
+  if(!windows.length) return [];
+
+  const leadTimeCutoff=new Date().getTime()+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+  const ignoredId=String(ignoreEventId||'').trim();
+  const pickupEvents=(events||[]).filter(ev=>isSelectPickupEventTitle_(ev.title)&&String(ev.id||'')!==ignoredId);
+  const awayEvents=(events||[]).filter(ev=>{
+    if(isSelectPickupEventTitle_(ev.title)) return false;
+    return !isStudioPresenceEventTitle_(ev.title,ev.isPersonal);
+  });
+  const slotSet={};
+
+  windows.forEach(window=>{
+    for(let t=roundUpToQuarterHour_(window.start);t+SELECT_PICKUP_DURATION_MIN*60000<=window.end;t+=15*60000){
+      if(t<leadTimeCutoff) continue;
+      const slotEnd=t+SELECT_PICKUP_DURATION_MIN*60000;
+      const blocked=pickupEvents.some(ev=>t<ev.end&&slotEnd>ev.start)
+        ||awayEvents.some(ev=>t<ev.end&&slotEnd>ev.start);
+      if(blocked) continue;
+      const dt=new Date(t);
+      const key=`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`;
+      slotSet[key]=true;
+    }
+  });
+
+  return Object.keys(slotSet).sort();
+}
+
+function getSelectPickupCalendarBatch_(year,month){
+  const y=parseInt(year,10);
+  const m=parseInt(month,10);
+  if(!isFinite(y)||!isFinite(m)) return {unavail:[],slotCounts:{},slotsByDate:{}};
+  const ver=getCalCacheVer_();
+  const cacheKey=`select_pickup_batch_v1_${ver}_${y}_${m}`;
+  const cache=CacheService.getScriptCache();
+  try{
+    const hit=cache.get(cacheKey);
+    if(hit) return JSON.parse(hit);
+  }catch(e){}
+
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const start=new Date(y,m,1);
+  const end=new Date(y,m,daysInMonth,23,59,59);
+  const events=getBusyEventsDetailedForRange_(start,end);
+  const eventsByDate={};
+  events.forEach(ev=>{
+    const dateKey=Utilities.formatDate(new Date(ev.start),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    if(!eventsByDate[dateKey]) eventsByDate[dateKey]=[];
+    eventsByDate[dateKey].push(ev);
+  });
+
+  const result={unavail:[],slotCounts:{},slotsByDate:{}};
+  for(let d=1;d<=daysInMonth;d+=1){
+    const dateStr=`${y}-${('0'+(m+1)).slice(-2)}-${('0'+d).slice(-2)}`;
+    const slots=getSelectPickupSlotsFromDetailedEvents_(dateStr,eventsByDate[dateStr]||[]);
+    if(!slots.length){
+      result.unavail.push(dateStr);
+      continue;
+    }
+    result.slotCounts[dateStr]=slots.length;
+    result.slotsByDate[dateStr]=slots;
+  }
+  try{cache.put(cacheKey,JSON.stringify(result),CONFIG.SLOTS_CACHE_TTL_SEC);}catch(e){}
+  return result;
+}
+
+function getSelectPickupSlots_(dateStr,ignoreEventId){
+  const date=String(dateStr||'').trim();
+  if(!date||!isSelectPickupDateAllowed_(date)) return [];
+  const ignoredId=String(ignoreEventId||'').trim();
+  const ver=getCalCacheVer_();
+  const cacheKey=`select_pickup_slots_v1_${ver}_${date}_${ignoredId||'none'}`;
+  const cache=CacheService.getScriptCache();
+  try{
+    const hit=cache.get(cacheKey);
+    if(hit) return JSON.parse(hit);
+  }catch(e){}
+  const events=getBusyEventsDetailedForRange_(new Date(`${date}T00:00:00`),new Date(`${date}T23:59:59`));
+  const slots=getSelectPickupSlotsFromDetailedEvents_(date,events,ignoredId);
+  try{cache.put(cacheKey,JSON.stringify(slots),CONFIG.SLOTS_CACHE_TTL_SEC);}catch(e){}
+  return slots;
+}
+
+function selectPickupSlotAvailable_(dateStr,timeStr,ignoreEventId){
+  const time=String(timeStr||'').trim();
+  if(!time) return false;
+  return getSelectPickupSlots_(dateStr,ignoreEventId).indexOf(time)>=0;
 }
 
 /* ====== 주소/이메일 ====== */
@@ -1716,6 +2008,137 @@ function processForm(data){
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
     return{ok:true,quote,isReturn};
   }catch(err){return{ok:false,message:err.message};}
+}
+
+function normalizeWalkinLang_(lang){
+  const safe=String(lang||'').trim().toLowerCase();
+  return safe==='en'||safe==='de' ? safe : 'ko';
+}
+
+function getWalkinServiceLabel_(serviceGroup,lang){
+  const key=String(serviceGroup||'').trim();
+  const labels={
+    pass:{ko:'여권 / 비자',en:'Passport / Visa',de:'Pass / Visum'},
+    prof:{ko:'프로필',en:'Profile',de:'Profil'},
+    stud:{ko:'스튜디오',en:'Studio',de:'Studio'},
+    snap:{ko:'야외 스냅',en:'Outdoor',de:'Outdoor'},
+    wed:{ko:'프리웨딩',en:'Pre-Wedding',de:'Pre-Wedding'},
+    biz:{ko:'기업 / 행사',en:'Corporate / Event',de:'Firma / Event'},
+    other:{ko:'기타',en:'Other',de:'Andere'}
+  };
+  const entry=labels[key]||labels.other;
+  return entry[lang]||entry.ko;
+}
+
+function sendWalkinAdminEmail_(payload,submittedAt){
+  const td=(label,value)=>`<tr><td style="padding:10px 14px;background:#f8fafc;font-weight:700;width:120px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${label}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">${value||'-'}</td></tr>`;
+  const invoiceNeeded=payload.businessInvoiceNeeded?'필요':'불필요';
+  const serviceKo=getWalkinServiceLabel_(payload.serviceGroup,'ko');
+  const serviceDisplay=payload.serviceLabel&&payload.serviceLabel!==serviceKo ? `${serviceKo} / ${payload.serviceLabel}` : serviceKo;
+  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 24px;"><h2 style="margin:0;color:#fff;font-size:18px;">🧾 워크인 고객 정보 접수</h2></div><div style="padding:24px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">${td('접수시각',submittedAt)}${td('고객명',payload.name)}${td('연락처',payload.phone)}${td('이메일',payload.email||'-')}${td('언어',payload.lang.toUpperCase())}${td('서비스',serviceDisplay)}${td('주소',payload.address||'-')}${td('입금자명',payload.payerName||'-')}${td('아기이름',payload.babyName||'-')}${td('사업자 송장',invoiceNeeded)}${payload.businessInvoiceNeeded?td('사업자명',payload.businessCompanyName||'-'):''}${payload.businessInvoiceNeeded?td('사업자주소',payload.businessCompanyAddress||'-'):''}${payload.businessInvoiceNeeded?td('VAT 번호',payload.businessVatId||'-'):''}${payload.businessInvoiceNeeded?td('송장이메일',payload.businessInvoiceEmail||payload.email||'-'):''}${payload.businessInvoiceNeeded?td('참조',payload.businessInvoiceRef||'-'):''}${td('요청사항',payload.memo ? `<div style="white-space:pre-wrap;">${payload.memo}</div>` : '-')} ${td('동의',`GDPR ${payload.gdprConsent?'Y':'N'} / AI ${payload.aiConsent?'Y':'N'} / Marketing ${payload.marketing?'Y':'N'}`)}</table><p style="margin:16px 0 0;font-size:12px;color:#64748b;">예약장부에는 아직 생성되지 않았습니다. 필요 시 수기 등록 또는 예약 연결 작업을 진행해 주세요.</p></div></div>`;
+  MailApp.sendEmail({
+    to:CONFIG.ADMIN_EMAIL,
+    subject:`[워크인 접수] ${payload.name} — ${serviceKo}`,
+    htmlBody:htmlBody
+  });
+}
+
+function sendWalkinCustomerReceipt_(payload,submittedAt){
+  const email=String(payload.email||'').trim();
+  if(!email||email.indexOf('@')===-1) return;
+  const lang=payload.lang;
+  const subjects={
+    ko:'[Studio mean] 워크인 정보가 접수되었습니다',
+    en:'[Studio mean] Your walk-in information has been received',
+    de:'[Studio mean] Ihre Walk-in-Informationen sind eingegangen'
+  };
+  const greetings={
+    ko:`안녕하세요 <b>${payload.name}</b>님,`,
+    en:`Hello <b>${payload.name}</b>,`,
+    de:`Hallo <b>${payload.name}</b>,`
+  };
+  const intros={
+    ko:'현장에서 안내드린 워크인 고객 정보가 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',
+    en:'The walk-in information requested by our studio has been received successfully. Please review the summary below.',
+    de:'Die von unserem Studio angefragten Walk-in-Informationen wurden erfolgreich übermittelt. Bitte prüfen Sie die Zusammenfassung unten.'
+  };
+  const nexts={
+    ko:'스튜디오에서 입력 내용을 확인한 뒤 현장 안내 또는 후속 연락에 반영하겠습니다.',
+    en:'We will review the submitted information and use it for on-site guidance or follow-up contact if needed.',
+    de:'Wir prüfen Ihre Angaben und verwenden sie bei Bedarf für die Betreuung vor Ort oder die weitere Kommunikation.'
+  };
+  const labels={
+    ko:{service:'서비스',phone:'연락처',email:'이메일',address:'주소',payer:'입금자명',baby:'아기이름',invoice:'사업자 송장',memo:'요청사항',submitted:'접수 시각'},
+    en:{service:'Service',phone:'Phone',email:'Email',address:'Address',payer:'Payer name',baby:'Baby name',invoice:'Business invoice',memo:'Notes',submitted:'Submitted at'},
+    de:{service:'Leistung',phone:'Telefon',email:'E-Mail',address:'Adresse',payer:'Kontoinhaber',baby:'Babyname',invoice:'Firmenrechnung',memo:'Hinweis',submitted:'Übermittelt am'}
+  };
+  const label=labels[lang]||labels.ko;
+  const invoiceValue=lang==='en' ? (payload.businessInvoiceNeeded?'Needed':'Not needed') : lang==='de' ? (payload.businessInvoiceNeeded?'Benötigt':'Nicht benötigt') : (payload.businessInvoiceNeeded?'필요':'불필요');
+  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 24px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">Studio mean</h2></div><div style="padding:24px;color:#334155;font-size:14px;line-height:1.8;">${greetings[lang]||greetings.ko}<br><br>${intros[lang]||intros.ko}<div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin:18px 0;"><b>${label.submitted}</b>: ${submittedAt}<br><b>${label.service}</b>: ${payload.serviceLabel}<br><b>${label.phone}</b>: ${payload.phone}<br>${email?`<b>${label.email}</b>: ${email}<br>`:''}${payload.address?`<b>${label.address}</b>: ${payload.address}<br>`:''}${payload.payerName?`<b>${label.payer}</b>: ${payload.payerName}<br>`:''}${payload.babyName?`<b>${label.baby}</b>: ${payload.babyName}<br>`:''}<b>${label.invoice}</b>: ${invoiceValue}${payload.memo?`<br><b>${label.memo}</b>: <span style="white-space:pre-wrap;">${payload.memo}</span>`:''}</div>${nexts[lang]||nexts.ko}<br><br>${_getSignatureHtml()}</div></div>`;
+  MailApp.sendEmail({
+    to:email,
+    subject:subjects[lang]||subjects.ko,
+    htmlBody:htmlBody
+  });
+}
+
+function submitWalkinIntake_(payload){
+  const sheets=ensureSheets_();
+  const sh=sheets.walkinSheet;
+  const now=new Date();
+  const submittedAt=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const lang=normalizeWalkinLang_(payload.lang);
+  const serviceGroup=String(payload.serviceGroup||'other').trim()||'other';
+  const serviceLabel=String(payload.serviceLabel||'').trim()||getWalkinServiceLabel_(serviceGroup,lang);
+  const cleanPayload={
+    name:String(payload.name||'').trim(),
+    phone:String(payload.phone||'').trim(),
+    email:String(payload.email||'').trim(),
+    lang,
+    serviceGroup,
+    serviceLabel,
+    address:String(payload.address||'').trim(),
+    payerName:String(payload.payerName||'').trim(),
+    babyName:String(payload.babyName||'').trim(),
+    memo:String(payload.memo||'').trim(),
+    gdprConsent:!!payload.gdprConsent,
+    aiConsent:!!payload.aiConsent,
+    marketing:!!payload.marketing,
+    businessInvoiceNeeded:!!payload.businessInvoiceNeeded,
+    businessCompanyName:String(payload.businessCompanyName||'').trim(),
+    businessCompanyAddress:String(payload.businessCompanyAddress||'').trim(),
+    businessVatId:String(payload.businessVatId||'').trim(),
+    businessInvoiceEmail:String(payload.businessInvoiceEmail||'').trim(),
+    businessInvoiceRef:String(payload.businessInvoiceRef||'').trim(),
+    source:'public-link'
+  };
+  const row=new Array(CONFIG.WALKIN_HEADERS.length).fill('');
+  row[WALKIN_COL['접수일시']]=submittedAt;
+  row[WALKIN_COL['상태']]='신규';
+  row[WALKIN_COL['고객명']]=cleanPayload.name;
+  row[WALKIN_COL['연락처']]=cleanPayload.phone;
+  row[WALKIN_COL['이메일']]=cleanPayload.email;
+  row[WALKIN_COL['언어']]=cleanPayload.lang;
+  row[WALKIN_COL['서비스분류']]=cleanPayload.serviceGroup;
+  row[WALKIN_COL['서비스표시명']]=cleanPayload.serviceLabel;
+  row[WALKIN_COL['고객주소']]=cleanPayload.address;
+  row[WALKIN_COL['입금자명']]=cleanPayload.payerName;
+  row[WALKIN_COL['아기이름']]=cleanPayload.babyName;
+  row[WALKIN_COL['요청사항']]=cleanPayload.memo;
+  row[WALKIN_COL['GDPR동의']]=cleanPayload.gdprConsent?'Y':'N';
+  row[WALKIN_COL['AI동의']]=cleanPayload.aiConsent?'Y':'N';
+  row[WALKIN_COL['마케팅동의']]=cleanPayload.marketing?'Y':'N';
+  row[WALKIN_COL['사업자송장필요']]=cleanPayload.businessInvoiceNeeded?'Y':'';
+  row[WALKIN_COL['사업자명']]=cleanPayload.businessCompanyName;
+  row[WALKIN_COL['사업자주소']]=cleanPayload.businessCompanyAddress;
+  row[WALKIN_COL['사업자VAT번호']]=cleanPayload.businessVatId;
+  row[WALKIN_COL['사업자송장이메일']]=cleanPayload.businessInvoiceEmail;
+  row[WALKIN_COL['사업자송장참조']]=cleanPayload.businessInvoiceRef;
+  row[WALKIN_COL['접수경로']]=cleanPayload.source;
+  sh.appendRow(row);
+  try{sendWalkinAdminEmail_(cleanPayload,submittedAt);}catch(e){Logger.log('walkin admin mail error: '+e.message);}
+  try{sendWalkinCustomerReceipt_(cleanPayload,submittedAt);}catch(e){Logger.log('walkin customer mail error: '+e.message);}
+  return {submittedAt,serviceLabel:cleanPayload.serviceLabel};
 }
 
 /* ====== 이메일 발송 ====== */
@@ -2018,7 +2441,7 @@ function submitRescheduleRequest(eventId,preferredDate,note){
   const dateStr=parseDateSafe_(row[0]).str||'';
   const phone=String(row[3]||'');
   const email=String(row[4]||'');
-  const reqText=`[${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')}] 희망: ${preferredDate} / ${note||'-'}`;
+  const reqText=`[${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')}] 기존: ${dateStr} / 희망: ${preferredDate} / 사유: ${note||'-'}`;
   sh.getRange(idx+2,25).setValue(reqText);
   // ✅ 캘린더 이벤트 자동 반영
   let calUpdated=false;
@@ -2061,12 +2484,72 @@ function submitRescheduleRequest(eventId,preferredDate,note){
   return{ok:true,calUpdated};
 }
 
+function parseRescheduleRequest_(reqText){
+  const raw=String(reqText||'').trim();
+  const result={raw,requestedAt:'',originalDate:'',preferredDate:'',note:''};
+  if(!raw) return result;
+  const tsMatch=raw.match(/^\[([^\]]+)\]\s*/);
+  if(tsMatch) result.requestedAt=tsMatch[1];
+  const body=raw.replace(/^\[[^\]]+\]\s*/,'');
+  let match=body.match(/기존:\s*([^/]+?)\s*\/\s*희망:\s*([^/]+?)\s*\/\s*사유:\s*(.*)$/);
+  if(match){
+    result.originalDate=String(match[1]||'').trim();
+    result.preferredDate=String(match[2]||'').trim();
+    result.note=String(match[3]||'').trim();
+    return result;
+  }
+  match=body.match(/희망:\s*([^/]+?)(?:\s*\/\s*(.*))?$/);
+  if(match){
+    result.preferredDate=String(match[1]||'').trim();
+    result.note=String(match[2]||'').trim();
+  }
+  return result;
+}
+
+function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisplay,memo){
+  const email=String(row[4]||'');
+  if(!email||!email.includes('@')||email.includes('수기등록')) return;
+  const lang=String(row[5]||'ko').toLowerCase().trim();
+  const name=String(row[2]||'');
+  const product=String(row[7]||'');
+  const originalDate=requestInfo.originalDate||parseDateSafe_(row[0]).str||'';
+  const preferredDate=requestInfo.preferredDate||'-';
+  const note=requestInfo.note&&requestInfo.note!=='-'?requestInfo.note:'';
+  const extraMemo=memo?String(memo).trim():'';
+  if(decision==='approved'){
+    const subjects={
+      ko:`[Studio mean] ${name}님, 일정 변경 요청이 확인되었습니다`,
+      en:`[Studio mean] ${name}, your reschedule request has been approved`,
+      de:`[Studio mean] ${name}, Ihre Terminänderung wurde bestätigt`
+    };
+    const bodies={
+      ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      en:`Dear ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      de:`Liebe/r ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
+    };
+    MailApp.sendEmail({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+    return;
+  }
+  const subjects={
+    ko:`[Studio mean] ${name}님, 일정 변경 요청 결과 안내`,
+    en:`[Studio mean] ${name}, update on your reschedule request`,
+    de:`[Studio mean] ${name}, Rückmeldung zu Ihrer Terminänderung`
+  };
+  const bodies={
+    ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경은 이번에는 반영되지 않았습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>현재 예약 기준으로 다시 진행됩니다. 다른 가능한 일정이 필요하시면 회신 또는 studio.mean.de@gmail.com 으로 연락해 주세요.<br><br><b>Studio mean</b>`,
+    en:`Dear ${name},<br><br>Unfortunately we could not approve your reschedule request this time.<br><br>📅 Current booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Your booking will remain on the current schedule. If you would like to discuss other options, please reply to this email or contact studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`,
+    de:`Liebe/r ${name},<br><br>Ihre Anfrage zur Terminänderung konnte diesmal leider nicht bestätigt werden.<br><br>📅 Aktueller Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Ihre Buchung bleibt beim aktuellen Termin. Wenn Sie andere Optionen besprechen möchten, antworten Sie bitte auf diese E-Mail oder schreiben Sie an studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`
+  };
+  MailApp.sendEmail({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+}
+
 function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
   assertAdmin_(token);
   const {bookingSheet}=ensureSheets_();
   const data=bookingSheet.getDataRange().getValues();
   if(bookingRowIndex<2||bookingRowIndex>data.length) throw new Error('잘못된 행 번호');
   const row=data[bookingRowIndex-1];
+  const requestInfo=parseRescheduleRequest_(row[BOOKING_COL['변경요청']]);
   const newDate=new Date(newDateTimeStr);
   if(isNaN(newDate.getTime())) throw new Error('유효하지 않은 날짜: '+newDateTimeStr);
   // 상품 duration 조회
@@ -2093,13 +2576,7 @@ function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
   const name=String(row[2]||'');
   const newDateDisplay=Utilities.formatDate(newDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   if(email&&email.includes('@')&&!email.includes('수기등록')){
-    const subjects={ko:`[Studio mean] ${name}님, 예약 일정이 변경되었습니다`,en:`[Studio mean] ${name}, your booking has been rescheduled`,de:`[Studio mean] ${name}, Ihr Termin wurde bestätigt`};
-    const bodies={
-      ko:`안녕하세요, ${name}님!<br><br>예약 일정이 변경되었습니다.<br><br>📅 새 예약 일시: <b>${newDateDisplay}</b><br>🛍 상품: ${row[7]}${memo?'<br><br>메모: '+memo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      en:`Dear ${name},<br><br>Your booking has been rescheduled.<br><br>📅 New date & time: <b>${newDateDisplay}</b><br>🛍 Service: ${row[7]}${memo?'<br><br>Note: '+memo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      de:`Liebe/r ${name},<br><br>Ihr Termin wurde geändert.<br><br>📅 Neuer Termin: <b>${newDateDisplay}</b><br>🛍 Leistung: ${row[7]}${memo?'<br><br>Hinweis: '+memo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
-    };
-    MailApp.sendEmail({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+    sendRescheduleDecisionEmail_(row,requestInfo,'approved',newDateDisplay,memo);
   }
   bumpCalCacheVer_();
   return{ok:true,newDate:newFmt};
@@ -2536,6 +3013,58 @@ function clearRescheduleRequest(token,bookingRowIndex){
   const {bookingSheet}=ensureSheets_();
   bookingSheet.getRange(bookingRowIndex,25).setValue('');
   return{ok:true};
+}
+
+function approveRescheduleRequest(token,bookingRowIndex,memo){
+  assertAdmin_(token);
+  const {bookingSheet}=ensureSheets_();
+  const data=bookingSheet.getDataRange().getValues();
+  if(bookingRowIndex<2||bookingRowIndex>data.length) throw new Error('잘못된 행 번호');
+  const row=data[bookingRowIndex-1];
+  const requestInfo=parseRescheduleRequest_(row[BOOKING_COL['변경요청']]);
+  if(!requestInfo.raw) throw new Error('변경 요청 내역이 없습니다.');
+  bookingSheet.getRange(bookingRowIndex,BOOKING_COL['변경요청']+1).setValue('');
+  if(String(row[BOOKING_COL['상태']]||'')==='변경대기'){
+    setBookingStatus_(bookingSheet,bookingRowIndex,'확정됨');
+  }
+  const confirmedDateDisplay=parseDateSafe_(row[BOOKING_COL['예약일시']]).str||String(row[BOOKING_COL['예약일시']]||'');
+  sendRescheduleDecisionEmail_(row,requestInfo,'approved',confirmedDateDisplay,memo||'');
+  bumpCalCacheVer_();
+  return {ok:true};
+}
+
+function rejectRescheduleRequest(token,bookingRowIndex,memo){
+  assertAdmin_(token);
+  const {bookingSheet}=ensureSheets_();
+  const data=bookingSheet.getDataRange().getValues();
+  if(bookingRowIndex<2||bookingRowIndex>data.length) throw new Error('잘못된 행 번호');
+  const row=data[bookingRowIndex-1];
+  const requestInfo=parseRescheduleRequest_(row[BOOKING_COL['변경요청']]);
+  if(!requestInfo.raw) throw new Error('변경 요청 내역이 없습니다.');
+
+  const originalDate=new Date(String(requestInfo.originalDate||'').replace(' ','T'));
+  if(!isNaN(originalDate.getTime())){
+    const products=getCachedProducts_();
+    const prod=products.find(p=>p.nameKo===String(row[BOOKING_COL['상품']]||''));
+    const durationMin=prod?(prod.d+(prod.prep||0)):60;
+    const endDate=new Date(originalDate.getTime()+durationMin*60000);
+    const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+    if(eventId){
+      try{
+        const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+        const ev=cal.getEventById(eventId);
+        if(ev) ev.setTime(originalDate,endDate);
+      }catch(e){Logger.log('reject reschedule calendar revert error: '+e.message);}
+    }
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['예약일시']+1).setValue(Utilities.formatDate(originalDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss"));
+  }
+  bookingSheet.getRange(bookingRowIndex,BOOKING_COL['변경요청']+1).setValue('');
+  if(String(row[BOOKING_COL['상태']]||'')==='변경대기'){
+    setBookingStatus_(bookingSheet,bookingRowIndex,'확정됨');
+  }
+  sendRescheduleDecisionEmail_(row,requestInfo,'rejected','',memo||'');
+  bumpCalCacheVer_();
+  return {ok:true};
 }
 
 function batchUpdateAdvanced(token,list,type,val){
@@ -3274,7 +3803,7 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -3480,12 +4009,14 @@ function getSelectSession(sessionId){
     if(!row)return{ok:false,message:'유효하지 않은 링크입니다.'};
     // 예약장부에서 마케팅 동의 여부 확인 (이미 동의했으면 셀렉 페이지에서 재요청 불필요)
     let bookingMarketing='';
+    let bookingAddress='';
     try{
       const bri=parseInt(row[SELECT_COL['예약장부행']])||0;
       if(bri>=2){
         const bookSh=ensureSheets_().bookingSheet;
         const bRow=bookSh.getRange(bri,1,1,bookSh.getLastColumn()).getValues()[0];
         bookingMarketing=String(bRow[21]||''); // col22 = 마케팅동의
+        bookingAddress=String(bRow[26]||'');
       }
     }catch(e){}
     const base={
@@ -3499,9 +4030,14 @@ function getSelectSession(sessionId){
       lang:row[SELECT_COL['언어']]||'ko',
       driveLink:row[SELECT_COL['드라이브링크']]||'',
       bookingMarketing,
+      bookingAddress,
       deadline:String(row[SELECT_COL['셀렉마감일']]||''),
       revisionCount:parseInt(row[SELECT_COL['재수정요청횟수']])||0,
-      extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||'')
+      extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
+      existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
+      existingPickupAt:String(row[SELECT_COL['픽업일시']]||''),
+      existingMailAddress:String(row[SELECT_COL['우편주소']]||''),
+      existingPickupEventId:String(row[SELECT_COL['픽업캘린더ID']]||'')
     };
     if(row[SELECT_COL['상태']]==='제출완료'){
       let existingPhotos=[],existingPrints=[];
@@ -3514,8 +4050,142 @@ function getSelectSession(sessionId){
 }
 
 /* 인화 사이즈 ID → 라벨/단가 매핑 */
-const PRINT_LABELS={'basic_10x15':{label:'기본 10×15cm',price:5},'premium_10x15':{label:'프리미엄 10×15cm',price:8},'basic_a4':{label:'기본 A4',price:15},'premium_a4':{label:'프리미엄 A4',price:20},'premium_a3':{label:'프리미엄 A3',price:50}};
-function _enrichPrint(p){if(p.label!==undefined&&p.price!==undefined)return p;const info=PRINT_LABELS[p.printId]||{label:p.printId||'인화',price:0};return{...p,label:info.label,price:info.price};}
+const PRINT_LABELS={
+  'photocard_single':{label:'포토카드 프린트 (단면)',price:5},
+  'photocard_double':{label:'포토카드 프린트 (양면)',price:8},
+  'basic_10x15':{label:'기본 10×15cm',price:5},
+  'premium_10x15':{label:'프리미엄 10×15cm',price:8},
+  'basic_a4':{label:'기본 A4',price:15},
+  'premium_a4':{label:'프리미엄 A4',price:20},
+  'premium_a3':{label:'프리미엄 A3',price:50}
+};
+function getPrintInfo_(printId){
+  const key=String(printId||'').replace(/_(r|e)$/,'').trim();
+  return PRINT_LABELS[key]||{label:key||'인화',price:0};
+}
+function _enrichPrint(p){
+  if(p.label!==undefined&&p.price!==undefined)return p;
+  const info=getPrintInfo_(p.printId);
+  return{...p,label:info.label,price:info.price};
+}
+function enrichSelectPhoto_(photo){
+  const raw=photo||{};
+  const printType=String(raw.printType||'basic_10x15').replace(/_(r|e)$/,'').trim()||'basic_10x15';
+  const info=getPrintInfo_(printType);
+  return {
+    ...raw,
+    num:String(raw.num||''),
+    note:String(raw.note||''),
+    printType,
+    printTypeLabel:String(raw.printTypeLabel||info.label||'')
+  };
+}
+function getSelectPhotoPrintLabel_(photo){
+  if(photo&&String(photo.printTypeLabel||'').trim()) return String(photo.printTypeLabel).trim();
+  return getPrintInfo_(photo&&photo.printType).label;
+}
+function buildSelectPhotoLineHtml_(photo){
+  const num=String((photo&&photo.num)||'-');
+  const note=String((photo&&photo.note)||'').trim();
+  const printLabel=getSelectPhotoPrintLabel_(photo);
+  return `<li style="margin-bottom:6px;"><b>${num}번</b> · ${printLabel}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}</li>`;
+}
+function findSelectPrintOrderRow_(sh,sessionId){
+  const colMap=getPrintSheetColMap_(sh);
+  const memoIdx=colMap['메모'];
+  if(memoIdx===undefined) return 0;
+  const candidates=new Set([`셀렉:${sessionId}`,`셀렉:${String(sessionId||'').slice(0,8)}`]);
+  const rows=sh.getDataRange().getValues();
+  for(let i=1;i<rows.length;i+=1){
+    const memo=String(rows[i][memoIdx]||'').trim();
+    if(candidates.has(memo)) return i+1;
+  }
+  return 0;
+}
+function syncSelectPrintOrder_(sh,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now){
+  const rowIdx=findSelectPrintOrderRow_(sh,sessionId);
+  if(totalExtra<=0){
+    if(rowIdx>1) sh.deleteRow(rowIdx);
+    return;
+  }
+  const colMap=getPrintSheetColMap_(sh);
+  const printItems=prints.map(p=>`${p.photoNum}번 ${p.label}×${p.qty}(${p.price}€)`).join(', ');
+  const retouchItems=extraRetouch>0?`추가보정×${extraRetouch}(${retouchPrice}€)`:'';
+  const totalQty=prints.reduce((s,p)=>s+(Number(p.qty)||1),0)+extraRetouch;
+  const salesDate=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const rowData=buildPrintSheetRow_(colMap,{
+    '주문일시':now,
+    '매출날짜':salesDate,
+    '고객명':String(row[SELECT_COL['고객명']]||''),
+    '연락처':String(row[SELECT_COL['연락처']]||''),
+    '인화항목':printItems||'-',
+    '보정항목':retouchItems||'-',
+    '총수량':totalQty,
+    '금액':totalExtra,
+    '결제수단':'미결제',
+    '메모':`셀렉:${sessionId}`,
+    '상태':'대기중'
+  });
+  if(rowIdx>1){
+    sh.getRange(rowIdx,1,1,rowData.length).setValues([rowData]);
+    return;
+  }
+  sh.appendRow(rowData);
+}
+
+function validateSelectDelivery_(sub,existingPickupEventId){
+  const method=String(sub.deliveryMethod||'').trim();
+  if(method!=='pickup'&&method!=='mail') throw new Error('수령 방식을 선택해 주세요.');
+  if(method==='pickup'){
+    const pickupDate=String(sub.pickupDate||'').trim();
+    const pickupTime=String(sub.pickupTime||'').trim();
+    if(!pickupDate||!pickupTime) throw new Error('픽업 날짜와 시간을 선택해 주세요.');
+    if(!selectPickupSlotAvailable_(pickupDate,pickupTime,existingPickupEventId)) throw new Error('선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.');
+    return {method,pickupDate,pickupTime,mailAddress:''};
+  }
+  const mailAddress=String(sub.mailAddress||'').trim();
+  if(!mailAddress) throw new Error('우편 수령 주소를 입력해 주세요.');
+  return {method,pickupDate:'',pickupTime:'',mailAddress};
+}
+
+function syncSelectPickupEvent_(existingEventId,row,sessionId,delivery){
+  const currentId=String(existingEventId||'').trim();
+  if(delivery.method!=='pickup'){
+    if(currentId){
+      try{
+        const current=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(currentId);
+        if(current) current.deleteEvent();
+      }catch(e){}
+    }
+    return '';
+  }
+
+  const startTime=new Date(`${delivery.pickupDate}T${delivery.pickupTime}:00`);
+  const endTime=new Date(startTime.getTime()+SELECT_PICKUP_DURATION_MIN*60000);
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const title=`${SELECT_PICKUP_EVENT_PREFIX} ${row[SELECT_COL['고객명']]} | ${row[SELECT_COL['상품']]}`;
+  const description=[
+    '사진셀렉 픽업 예약',
+    `세션ID=${sessionId}`,
+    `고객명=${row[SELECT_COL['고객명']]||''}`,
+    `이메일=${row[SELECT_COL['이메일']]||''}`,
+    `연락처=${row[SELECT_COL['연락처']]||''}`,
+    `상품=${row[SELECT_COL['상품']]||''}`
+  ].join('\n');
+
+  let event=null;
+  if(currentId){
+    try{event=calendar.getEventById(currentId);}catch(e){event=null;}
+  }
+  if(event){
+    event.setTitle(title);
+    event.setTime(startTime,endTime);
+    event.setLocation(STUDIO_ADDRESS);
+    event.setDescription(description);
+    return event.getId();
+  }
+  return calendar.createEvent(title,startTime,endTime,{location:STUDIO_ADDRESS,description}).getId();
+}
 
 function submitPhotoSelection(sessionId,sub){
   try{
@@ -3528,7 +4198,7 @@ function submitPhotoSelection(sessionId,sub){
     const row=rows[idx+1];
     if(row[SELECT_COL['상태']]==='제출완료')return{ok:false,submitted:true};
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
-    const photos=sub.photos||[];
+    const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     const prints=(sub.prints||[]).map(_enrichPrint);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
@@ -3536,8 +4206,16 @@ function submitPhotoSelection(sessionId,sub){
     const extraRetouchAmt=extraRetouch*retouchPrice;
     const extraPrintsAmt=prints.reduce((s,p)=>s+(Number(p.price)||0)*(Number(p.qty)||1),0);
     const totalExtra=extraRetouchAmt+extraPrintsAmt;
+    const delivery=validateSelectDelivery_(sub,row[SELECT_COL['픽업캘린더ID']]);
     const rowNum=idx+2;
+    const pickupEventId=syncSelectPickupEvent_(row[SELECT_COL['픽업캘린더ID']],row,sessionId,delivery);
     selSh.getRange(rowNum,SELECT_COL['제출일시']+1,1,9).setValues([[now,JSON.stringify(photos),extraRetouch,extraRetouchAmt,JSON.stringify(prints),extraPrintsAmt,sub.marketing||'N',totalExtra,'제출완료']]);
+    selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([[
+      delivery.method,
+      delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      delivery.mailAddress||'',
+      pickupEventId||''
+    ]]);
     const bookingRow=parseInt(row[SELECT_COL['예약장부행']]);
     let extraInvoiceNumber='';
     if(bookingRow>1){
@@ -3545,18 +4223,16 @@ function submitPhotoSelection(sessionId,sub){
         const bSh=sheets.bookingSheet;
         bSh.getRange(bookingRow,2).setValue('셀렉완료');
         const existing=String(bSh.getRange(bookingRow,19).getValue()||'');
-        const summary=`[셀렉${now.slice(0,10)}]보정${photos.length}장(+${extraRetouch})${prints.length?'/인화'+prints.length+'건':''}${sub.marketing==='Y'?'/마케팅동의':''}`;
+        const deliverySummary=delivery.method==='pickup'
+          ? `/픽업:${delivery.pickupDate} ${delivery.pickupTime}`
+          : '/우편수령';
+        const summary=`[셀렉${now.slice(0,10)}]보정${photos.length}장(+${extraRetouch})${prints.length?'/인화'+prints.length+'건':''}${sub.marketing==='Y'?'/마케팅동의':''}${deliverySummary}`;
         bSh.getRange(bookingRow,19).setValue(existing?existing+' | '+summary:summary);
       }catch(e){}
     }
     if(totalExtra>0){
       try{
-        const pSh=sheets.printSheet;
-        const printItems=prints.map(p=>`${p.photoNum}번 ${p.label}×${p.qty}(${p.price}€)`).join(', ');
-        const retouchItems=extraRetouch>0?`추가보정×${extraRetouch}(${retouchPrice}€)`:'';
-        const totalQty=prints.reduce((s,p)=>s+(Number(p.qty)||1),0)+extraRetouch;
-        const salesDate=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
-        pSh.appendRow([now,row[2],row[3],printItems||'-',retouchItems||'-',totalQty,totalExtra,'미결제','셀렉:'+sessionId.slice(0,8),'대기중',salesDate]);
+        syncSelectPrintOrder_(sheets.printSheet,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now);
       }catch(e){}
       try{
         const items=[];
@@ -3576,10 +4252,10 @@ function submitPhotoSelection(sessionId,sub){
             try{
               if(bookingRow>1){
                 const bookRow=sheets.bookingSheet.getRange(bookingRow,1,1,sheets.bookingSheet.getLastColumn()).getValues()[0];
-                return String(bookRow[26]||'');
+                return String(bookRow[26]||'')||String(delivery.mailAddress||'');
               }
             }catch(e){}
-            return '';
+            return String(delivery.mailAddress||'');
           })(),
           dateStr:String(row[SELECT_COL['촬영일']]||''),
           customProduct:'셀렉 추가금',
@@ -3589,30 +4265,59 @@ function submitPhotoSelection(sessionId,sub){
         extraInvoiceNumber=res.invoiceNumber||'';
         if(extraInvoiceNumber) selSh.getRange(rowNum,SELECT_COL['추가금인보이스번호']+1).setValue(extraInvoiceNumber);
       }catch(e){Logger.log('submitPhotoSelection invoice error: '+e.message);}
+    }else{
+      try{
+        syncSelectPrintOrder_(sheets.printSheet,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now);
+      }catch(e){}
     }
-    _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);
+    bumpCalCacheVer_();
+    _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing,delivery);
     if(!sub.suppressCustomerEmail){
-      try{_sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+      try{_sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,sub.marketing,delivery);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
     }
-    return{ok:true,totalExtra,extraRetouch,extraRetouchAmt,extraPrintsAmt,invoiceNumber:extraInvoiceNumber||''};
+    return{
+      ok:true,
+      totalExtra,
+      extraRetouch,
+      extraRetouchAmt,
+      extraPrintsAmt,
+      invoiceNumber:extraInvoiceNumber||'',
+      deliveryMethod:delivery.method,
+      pickupAt:delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      mailAddress:delivery.mailAddress||''
+    };
   }catch(e){return{ok:false,message:e.message};}
 }
 
-function _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing){
+function _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery){
   const td=(l,v)=>`<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:90px;border-bottom:1px solid #e2e8f0;font-size:12px;">${l}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${v}</td></tr>`;
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('추가인화',prints.length?`${prints.length}건 (${extraPrintsAmt}€)`:'없음')}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table><b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(p=>`<li><b>${p.num}번</b>${p.note?': '+String(p.note).replace(/\n/g,'<br>'):''}</li>`).join('')}</ul><b>추가 인화:</b><ul style="margin:6px 0;">${prints.length?prints.map(p=>`<li>${p.photoNum}번 — ${p.label} ×${p.qty} (${Number(p.price)*Number(p.qty)}€)</li>`).join(''):'<li>없음</li>'}</ul></div></div>`;
+  const deliveryText=delivery.method==='pickup'
+    ? `픽업 예약 (${delivery.pickupDate} ${delivery.pickupTime})`
+    : `우편 발송 (${delivery.mailAddress})`;
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('추가인화',prints.length?`${prints.length}건 (${extraPrintsAmt}€)`:'없음')}${td('수령방식',deliveryText)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table><b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul><b>추가 인화:</b><ul style="margin:6px 0;">${prints.length?prints.map(p=>`<li>${p.photoNum}번 — ${p.label} ×${p.qty} (${Number(p.price)*Number(p.qty)}€)</li>`).join(''):'<li>없음</li>'}</ul></div></div>`;
   MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉] ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html});
 }
 
-function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing){
+function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery){
   const email=String(row[3]||'');if(!email||!email.includes('@'))return;
   const lang=String(row[10]||'ko');
   const subj={ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
   const greet={ko:`안녕하세요 <b>${row[2]}</b>님,`,en:`Dear <b>${row[2]}</b>,`,de:`Hallo <b>${row[2]}</b>,`};
   const intro={ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl wurde eingegangen. Bitte überprüfen Sie die Details unten.'};
-  const photoListHtml=`<ul style="margin:6px 0 0;padding-left:18px;">${photos.map(p=>`<li style="margin-bottom:6px;"><b>${p.num}번</b>${p.note?'<br><span style="color:#475569;font-size:12px;">'+String(p.note).replace(/\n/g,'<br>')+'</span>':''}</li>`).join('')}</ul>`;
+  const photoListHtml=`<ul style="margin:6px 0 0;padding-left:18px;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul>`;
   const printListHtml=prints.length?`<ul style="margin:6px 0 0;padding-left:18px;">${prints.map(p=>`<li>${p.photoNum}번 — ${p.label} ×${p.qty} (${p.price}€/장)</li>`).join('')}</ul>`:'';
-  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${prints.length?`• ${lang==='ko'?'추가 인화':lang==='en'?'Extra prints':'Zusätzliche Drucke'}: ${prints.length}건 (${extraPrintsAmt}€)<br>`:''}<br>• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
+  const deliveryLine=delivery.method==='pickup'
+    ? (lang==='en'
+      ? `• Pickup appointment: ${delivery.pickupDate} ${delivery.pickupTime}<br>`
+      : lang==='de'
+        ? `• Abholung: ${delivery.pickupDate} ${delivery.pickupTime}<br>`
+        : `• 픽업 예약: ${delivery.pickupDate} ${delivery.pickupTime}<br>`)
+    : (lang==='en'
+      ? `• Delivery address: ${delivery.mailAddress}<br>`
+      : lang==='de'
+        ? `• Versandadresse: ${delivery.mailAddress}<br>`
+        : `• 우편 주소: ${delivery.mailAddress}<br>`);
+  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${prints.length?`• ${lang==='ko'?'추가 인화':lang==='en'?'Extra prints':'Zusätzliche Drucke'}: ${prints.length}건 (${extraPrintsAmt}€)<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${prints.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Prints':'추가 인화 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
   MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
 }
@@ -3660,7 +4365,7 @@ function updatePhotoSelection(sessionId,sub){
     if(idx===-1)return{ok:false,message:'세션을 찾을 수 없습니다.'};
     const row=rows[idx+1];
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
-    const photos=sub.photos||[];
+    const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     const prints=(sub.prints||[]).map(_enrichPrint);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
@@ -3668,13 +4373,38 @@ function updatePhotoSelection(sessionId,sub){
     const extraRetouchAmt=extraRetouch*retouchPrice;
     const extraPrintsAmt=prints.reduce((s,p)=>s+(Number(p.price)||0)*(Number(p.qty)||1),0);
     const totalExtra=extraRetouchAmt+extraPrintsAmt;
+    const delivery=validateSelectDelivery_(sub,row[SELECT_COL['픽업캘린더ID']]);
     const rowNum=idx+2;
+    const pickupEventId=syncSelectPickupEvent_(row[SELECT_COL['픽업캘린더ID']],row,sessionId,delivery);
     selSh.getRange(rowNum,SELECT_COL['제출일시']+1,1,9).setValues([[now,JSON.stringify(photos),extraRetouch,extraRetouchAmt,JSON.stringify(prints),extraPrintsAmt,sub.marketing||'N',totalExtra,'제출완료']]);
+    selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([[
+      delivery.method,
+      delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      delivery.mailAddress||'',
+      pickupEventId||''
+    ]]);
+    try{
+      syncSelectPrintOrder_(sheets.printSheet,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now);
+    }catch(e){}
+    bumpCalCacheVer_();
     // 어드민 수정 알림 메일
     const td=(l,v)=>`<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:90px;border-bottom:1px solid #e2e8f0;font-size:12px;">${l}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${v}</td></tr>`;
-    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('추가인화',prints.length?`${prints.length}건 (${extraPrintsAmt}€)`:'없음')}${td('마케팅',sub.marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table><b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(p=>`<li><b>${p.num}번</b>${p.note?': '+p.note:''}</li>`).join('')}</ul></div></div>`;
+    const deliveryText=delivery.method==='pickup'
+      ? `픽업 예약 (${delivery.pickupDate} ${delivery.pickupTime})`
+      : `우편 발송 (${delivery.mailAddress})`;
+    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('추가인화',prints.length?`${prints.length}건 (${extraPrintsAmt}€)`:'없음')}${td('수령방식',deliveryText)}${td('마케팅',sub.marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table><b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul></div></div>`;
     MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정] ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html});
-    return{ok:true,totalExtra,extraRetouch,extraRetouchAmt,extraPrintsAmt,invoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||'')};
+    return{
+      ok:true,
+      totalExtra,
+      extraRetouch,
+      extraRetouchAmt,
+      extraPrintsAmt,
+      invoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
+      deliveryMethod:delivery.method,
+      pickupAt:delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      mailAddress:delivery.mailAddress||''
+    };
   }catch(e){return{ok:false,message:e.message};}
 }
 
@@ -3694,7 +4424,10 @@ function getPhotoSelectionsAdmin(token){
       resendCount:parseInt(r[SELECT_COL['재발송횟수']])||0,resendAt:String(r[SELECT_COL['재발송일시']]||'').slice(0,16),
       retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
-      extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||'')
+      extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
+      deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
+      pickupAt:String(r[SELECT_COL['픽업일시']]||''),
+      mailAddress:String(r[SELECT_COL['우편주소']]||'')
     };
   }).reverse();
 }
