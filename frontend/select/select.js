@@ -1,5 +1,11 @@
-import { fetchSelectSession, submitSelectSession, updateSelectSession } from '../shared/api-select.js';
-import { createRequestId, escapeHtml } from '../shared/utils.js';
+import {
+  fetchSelectPickupCalendar,
+  fetchSelectPickupSlots,
+  fetchSelectSession,
+  submitSelectSession,
+  updateSelectSession
+} from '../shared/api-select.js';
+import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const PRINT_OPTIONS = [
   { id: 'basic_10x15', label: '기본 10×15cm', retouched: 0, additional: 5 },
@@ -27,6 +33,15 @@ const state = {
   photos: [],
   prints: [],
   marketing: '',
+  deliveryMethod: '',
+  pickupDate: '',
+  pickupTime: '',
+  pickupSlots: [],
+  pickupCalendarCache: new Map(),
+  pickupCalendarYear: 0,
+  pickupCalendarMonth: 0,
+  pickupEventId: '',
+  mailAddress: '',
   editMode: false,
   step: 0,
   submitted: false
@@ -61,6 +76,19 @@ const els = {
   reviewPhotos: document.getElementById('reviewPhotos'),
   reviewPrints: document.getElementById('reviewPrints'),
   reviewMarketing: document.getElementById('reviewMarketing'),
+  deliveryPickupCard: document.getElementById('deliveryPickupCard'),
+  deliveryMailCard: document.getElementById('deliveryMailCard'),
+  pickupScheduler: document.getElementById('pickupScheduler'),
+  pickupCalendarStatus: document.getElementById('pickupCalendarStatus'),
+  pickupPrevMonthBtn: document.getElementById('pickupPrevMonthBtn'),
+  pickupNextMonthBtn: document.getElementById('pickupNextMonthBtn'),
+  pickupMonthLabel: document.getElementById('pickupMonthLabel'),
+  pickupCalendarGrid: document.getElementById('pickupCalendarGrid'),
+  pickupSlotHint: document.getElementById('pickupSlotHint'),
+  pickupSlotGrid: document.getElementById('pickupSlotGrid'),
+  mailAddressBox: document.getElementById('mailAddressBox'),
+  mailAddressInput: document.getElementById('mailAddressInput'),
+  reviewDelivery: document.getElementById('reviewDelivery'),
   reviewTotal: document.getElementById('reviewTotal'),
   submitHint: document.getElementById('submitHint'),
   submitBtn: document.getElementById('submitBtn'),
@@ -104,6 +132,12 @@ async function boot() {
     updateReview();
     updateSubmitState();
     showApp();
+    if (state.deliveryMethod === 'pickup') {
+      await ensurePickupCalendarLoaded();
+      if (state.pickupDate) await loadPickupSlots(state.pickupDate);
+      updateReview();
+      updateSubmitState();
+    }
     setBanner(state.editMode ? '기존 제출 내용을 불러왔습니다. 수정 후 다시 제출할 수 있습니다.' : '셀렉 세션을 불러왔습니다.', 'success');
   } catch (error) {
     console.error(error);
@@ -123,6 +157,15 @@ function wireEvents() {
   document.querySelectorAll('input[name="marketing"]').forEach((input) => {
     input.addEventListener('change', () => setMarketing(input.value));
   });
+  document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
+    input.addEventListener('change', () => setDeliveryMethod(input.value));
+  });
+  els.mailAddressInput?.addEventListener('input', () => {
+    state.mailAddress = els.mailAddressInput.value;
+    updateReview();
+  });
+  els.pickupPrevMonthBtn?.addEventListener('click', () => movePickupMonth(-1));
+  els.pickupNextMonthBtn?.addEventListener('click', () => movePickupMonth(1));
 }
 
 function showError(message) {
@@ -151,6 +194,14 @@ function hydrateSession(session) {
   state.session = session;
   state.editMode = !!session.canEdit;
   state.marketing = session.bookingMarketing || session.existingMarketing || '';
+  state.deliveryMethod = session.existingDeliveryMethod || '';
+  if (session.existingPickupAt) {
+    const [pickupDate = '', pickupTime = ''] = String(session.existingPickupAt).trim().split(' ');
+    state.pickupDate = pickupDate;
+    state.pickupTime = pickupTime;
+  }
+  state.pickupEventId = session.existingPickupEventId || '';
+  state.mailAddress = session.existingMailAddress || session.bookingAddress || '';
   state.photos = state.editMode && Array.isArray(session.existingPhotos)
     ? session.existingPhotos.map(normalizePhoto)
     : buildDefaultPhotos(session.baseRetouchCount || 0, session.itemGroup);
@@ -161,6 +212,8 @@ function hydrateSession(session) {
     state.marketing = 'Y';
   }
   syncMarketingUi();
+  syncDeliveryUi();
+  seedPickupCalendarCursor();
 }
 
 function buildDefaultPhotos(count, itemGroup) {
@@ -336,6 +389,50 @@ function syncMarketingUi() {
     els.marketingBox.querySelector('.detail-copy').textContent = '예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 아래에서 다시 한 번 확인만 해주시면 됩니다.';
   }
   updateSubmitState();
+}
+
+function seedPickupCalendarCursor() {
+  if (state.pickupDate) {
+    const seeded = new Date(`${state.pickupDate}T00:00:00`);
+    if (!Number.isNaN(seeded.getTime())) {
+      state.pickupCalendarYear = seeded.getFullYear();
+      state.pickupCalendarMonth = seeded.getMonth();
+      return;
+    }
+  }
+  const today = new Date();
+  state.pickupCalendarYear = today.getFullYear();
+  state.pickupCalendarMonth = today.getMonth();
+}
+
+function setDeliveryMethod(value) {
+  state.deliveryMethod = value;
+  syncDeliveryUi();
+  if (value === 'pickup') {
+    ensurePickupCalendarLoaded()
+      .then(() => {
+        if (state.pickupDate) return loadPickupSlots(state.pickupDate).then(() => updateReview());
+        renderPickupSlots([]);
+        return null;
+      })
+      .catch((error) => {
+        console.error(error);
+        setBanner(`픽업 일정 조회 실패: ${error.message}`, 'error');
+      });
+  }
+  updateReview();
+}
+
+function syncDeliveryUi() {
+  const method = state.deliveryMethod;
+  document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
+    input.checked = input.value === method;
+  });
+  els.deliveryPickupCard?.classList.toggle('active', method === 'pickup');
+  els.deliveryMailCard?.classList.toggle('active', method === 'mail');
+  els.pickupScheduler?.classList.toggle('hidden', method !== 'pickup');
+  els.mailAddressBox?.classList.toggle('hidden', method !== 'mail');
+  if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
 }
 
 function getQuotaMap() {
@@ -550,6 +647,159 @@ function renderPrints() {
   });
 }
 
+function buildPickupCacheKey(year, month) {
+  return `${year}_${month}`;
+}
+
+async function ensurePickupCalendarLoaded() {
+  const key = buildPickupCacheKey(state.pickupCalendarYear, state.pickupCalendarMonth);
+  if (!state.pickupCalendarCache.has(key)) {
+    const calendar = await fetchSelectPickupCalendar(state.pickupCalendarYear, state.pickupCalendarMonth);
+    state.pickupCalendarCache.set(key, calendar || { unavail: [], slotCounts: {}, slotsByDate: {} });
+  }
+  renderPickupCalendar();
+}
+
+async function movePickupMonth(offset) {
+  const next = new Date(state.pickupCalendarYear, state.pickupCalendarMonth + offset, 1);
+  state.pickupCalendarYear = next.getFullYear();
+  state.pickupCalendarMonth = next.getMonth();
+  await ensurePickupCalendarLoaded();
+  if (state.pickupDate && !state.pickupDate.startsWith(`${state.pickupCalendarYear}-${pad2(state.pickupCalendarMonth + 1)}`)) {
+    renderPickupSlots([]);
+  }
+}
+
+function renderPickupCalendar() {
+  if (!els.pickupMonthLabel || !els.pickupCalendarGrid) return;
+  const key = buildPickupCacheKey(state.pickupCalendarYear, state.pickupCalendarMonth);
+  const calendar = state.pickupCalendarCache.get(key) || { unavail: [], slotCounts: {}, slotsByDate: {} };
+  const unavailable = new Set(Array.isArray(calendar.unavail) ? calendar.unavail : []);
+  const slotCounts = calendar.slotCounts || {};
+  const firstWeekday = new Date(state.pickupCalendarYear, state.pickupCalendarMonth, 1).getDay();
+  const daysInMonth = new Date(state.pickupCalendarYear, state.pickupCalendarMonth + 1, 0).getDate();
+  const cells = [];
+
+  els.pickupMonthLabel.textContent = formatMonthLabel(state.pickupCalendarYear, state.pickupCalendarMonth);
+  els.pickupCalendarStatus.textContent = '외부 일정으로 스튜디오에 있는 시간만 표시됩니다.';
+
+  for (let index = 0; index < firstWeekday; index += 1) {
+    cells.push('<div class="pickup-day is-empty" aria-hidden="true"></div>');
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateStr = `${state.pickupCalendarYear}-${pad2(state.pickupCalendarMonth + 1)}-${pad2(day)}`;
+    const isDisabled = unavailable.has(dateStr);
+    const isSelected = state.pickupDate === dateStr;
+    const slotCount = Number(slotCounts[dateStr] || 0);
+    cells.push(`
+      <button type="button" class="pickup-day${isDisabled ? ' is-disabled' : ''}${isSelected ? ' selected' : ''}" data-pickup-date="${dateStr}" ${isDisabled ? 'disabled' : ''}>
+        <span>${day}</span>
+        ${slotCount ? `<small>${slotCount}개</small>` : ''}
+      </button>
+    `);
+  }
+
+  els.pickupCalendarGrid.innerHTML = cells.join('');
+  els.pickupCalendarGrid.querySelectorAll('[data-pickup-date]').forEach((button) => {
+    button.addEventListener('click', () => selectPickupDate(button.dataset.pickupDate));
+  });
+}
+
+async function selectPickupDate(date) {
+  state.pickupDate = date;
+  state.pickupTime = '';
+  renderPickupCalendar();
+  await loadPickupSlots(date);
+  updateReview();
+}
+
+async function loadPickupSlots(date) {
+  const key = buildPickupCacheKey(state.pickupCalendarYear, state.pickupCalendarMonth);
+  const calendar = state.pickupCalendarCache.get(key) || {};
+  const monthSlots = calendar.slotsByDate || {};
+  const slots = monthSlots[date] || await fetchSelectPickupSlots(date, state.pickupEventId);
+  state.pickupSlots = Array.isArray(slots) ? slots : [];
+  if (state.pickupTime && !state.pickupSlots.includes(state.pickupTime)) {
+    state.pickupTime = '';
+  }
+  if (calendar && !calendar.slotsByDate) {
+    calendar.slotsByDate = monthSlots;
+  }
+  if (calendar && monthSlots && !monthSlots[date]) {
+    monthSlots[date] = state.pickupSlots;
+  }
+  if (calendar) {
+    const unavailable = Array.isArray(calendar.unavail) ? new Set(calendar.unavail) : new Set();
+    const slotCounts = calendar.slotCounts || {};
+    if (state.pickupSlots.length) {
+      unavailable.delete(date);
+      slotCounts[date] = state.pickupSlots.length;
+    } else {
+      unavailable.add(date);
+      delete slotCounts[date];
+    }
+    calendar.unavail = Array.from(unavailable);
+    calendar.slotCounts = slotCounts;
+    state.pickupCalendarCache.set(key, calendar);
+  }
+  els.pickupSlotHint.textContent = state.pickupDate
+    ? `${state.pickupDate} 픽업 가능 시간입니다.`
+    : '날짜를 선택하면 픽업 가능한 시간이 표시됩니다.';
+  renderPickupCalendar();
+  renderPickupSlots(state.pickupSlots);
+}
+
+function renderPickupSlots(slots) {
+  const list = Array.isArray(slots) ? slots : [];
+  if (!list.length) {
+    els.pickupSlotGrid.innerHTML = `<div class="empty-state">${state.pickupDate ? '선택한 날짜에 가능한 픽업 시간이 없습니다.' : '아직 선택한 날짜가 없습니다.'}</div>`;
+    return;
+  }
+  els.pickupSlotGrid.innerHTML = list.map((time) => `
+    <button type="button" class="pickup-slot-btn${state.pickupTime === time ? ' selected' : ''}" data-pickup-time="${escapeHtml(time)}">${escapeHtml(time)}</button>
+  `).join('');
+  els.pickupSlotGrid.querySelectorAll('[data-pickup-time]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.pickupTime = button.dataset.pickupTime;
+      renderPickupSlots(state.pickupSlots);
+      updateReview();
+    });
+  });
+}
+
+function getDeliveryReviewText() {
+  if (state.deliveryMethod === 'pickup') {
+    if (state.pickupDate && state.pickupTime) return `스튜디오 픽업 · ${state.pickupDate} ${state.pickupTime}`;
+    return '스튜디오 픽업 · 날짜와 시간을 선택해 주세요.';
+  }
+  if (state.deliveryMethod === 'mail') {
+    return state.mailAddress
+      ? `우편 수령 · ${state.mailAddress}`
+      : '우편 수령 · 주소를 입력해 주세요.';
+  }
+  return '아직 수령 방식을 선택하지 않았습니다.';
+}
+
+function validateDeliverySelection() {
+  if (!state.deliveryMethod) {
+    setBanner('수령 방식을 먼저 선택해 주세요.', 'error');
+    return false;
+  }
+  if (state.deliveryMethod === 'pickup') {
+    if (!state.pickupDate || !state.pickupTime) {
+      setBanner('픽업 날짜와 시간을 모두 선택해 주세요.', 'error');
+      return false;
+    }
+    return true;
+  }
+  if (!String(state.mailAddress || '').trim()) {
+    setBanner('우편 수령 주소를 입력해 주세요.', 'error');
+    return false;
+  }
+  return true;
+}
+
 function updateReview() {
   const base = Number(state.session?.baseRetouchCount || 0);
   const retouchPrice = Number(state.session?.retouchPrice || 0);
@@ -587,6 +837,7 @@ function updateReview() {
     : '<div class="empty-state">추가 인화 없음</div>';
 
   els.reviewMarketing.textContent = state.marketing === 'Y' ? '동의' : '미동의';
+  els.reviewDelivery.textContent = getDeliveryReviewText();
   els.reviewTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
   updateSubmitState();
   renderStepWarnings();
@@ -638,6 +889,9 @@ function canSubmit() {
   if (!state.photos.length) return false;
   if (state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+  if (!state.deliveryMethod) return false;
+  if (state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)) return false;
+  if (state.deliveryMethod === 'mail' && !String(state.mailAddress || '').trim()) return false;
   return true;
 }
 
@@ -671,7 +925,13 @@ function renderStepWarnings() {
     : '추가 인화의 사진 번호를 모두 입력해야 다음 단계로 이동할 수 있습니다.';
   const step3Message = canSubmit()
     ? ''
-    : '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.';
+    : !state.deliveryMethod
+      ? '수령 방식을 선택해야 제출할 수 있습니다.'
+      : state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)
+        ? '픽업 날짜와 시간을 선택해야 제출할 수 있습니다.'
+        : state.deliveryMethod === 'mail' && !String(state.mailAddress || '').trim()
+          ? '우편 수령 주소를 입력해야 제출할 수 있습니다.'
+          : '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.';
 
   if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
   if (els.stepWarnings.step2) els.stepWarnings.step2.textContent = step2Message;
@@ -679,7 +939,7 @@ function renderStepWarnings() {
 }
 
 async function onSubmit() {
-  if (!validateStep1() || !validateStep2()) return;
+  if (!validateStep1() || !validateStep2() || !validateDeliverySelection()) return;
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = state.editMode ? '수정 제출 중...' : '제출 중...';
   const payload = {
@@ -694,6 +954,10 @@ async function onSubmit() {
       };
     }),
     marketing: state.marketing,
+    deliveryMethod: state.deliveryMethod,
+    pickupDate: state.deliveryMethod === 'pickup' ? state.pickupDate : '',
+    pickupTime: state.deliveryMethod === 'pickup' ? state.pickupTime : '',
+    mailAddress: state.deliveryMethod === 'mail' ? String(state.mailAddress || '').trim() : '',
     suppressCustomerEmail: state.testMode
   };
   try {
@@ -736,6 +1000,7 @@ function renderSuccess(result) {
   els.successGuide.innerHTML = `
     <div class="detail-title">선택 요약</div>
     <div class="guide-copy">보정 선택 ${state.photos.length}장 · 추가 인화 ${state.prints.length}건 · 마케팅 동의 ${state.marketing === 'Y' ? '동의' : '미동의'}</div>
+    <div class="guide-copy">수령 방식: ${escapeHtml(getDeliveryReviewText())}</div>
     ${result?.invoiceNumber ? `<div class="guide-copy">추가 비용 인보이스: <b>${escapeHtml(result.invoiceNumber)}</b></div>` : ''}
   `;
   if (state.session?.driveLink) {

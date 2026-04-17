@@ -8,14 +8,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=20260415-opt1" as="style">
+  <link rel="preload" href="./select.min.css?v=20260417-pickup2" as="style">
   <link rel="icon" href="./studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=20260415-opt1">
+  <link rel="stylesheet" href="./select.min.css?v=20260417-pickup2">
 </head>
 <body>
   <main class="shell">
@@ -132,6 +132,59 @@
           <div class="review-title">마케팅 동의</div>
           <div id="reviewMarketing" class="review-line"></div>
         </div>
+        <div class="review-block">
+          <div class="review-title">수령 방식</div>
+          <div id="deliveryChoiceBox" class="detail-box delivery-choice-box">
+            <div class="detail-title">인화 수령 방식 선택</div>
+            <div class="guide-copy">원하시는 수령 방식을 선택해 주세요.</div>
+            <div class="radio-grid delivery-grid">
+              <label class="radio-card" id="deliveryPickupCard">
+                <input type="radio" name="deliveryMethod" value="pickup">
+                <span>스튜디오 픽업</span>
+              </label>
+              <label class="radio-card" id="deliveryMailCard">
+                <input type="radio" name="deliveryMethod" value="mail">
+                <span>우편 수령</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="pickupScheduler" class="detail-box delivery-panel hidden">
+            <div class="detail-title">픽업 시간 예약</div>
+            <div class="guide-copy">외부 일정 때문에 스튜디오에 있는 시간에만 픽업이 가능합니다. 여권, 프로필, 스튜디오 촬영 일정이 있는 날만 열리며, 같은 날 스튜디오 일정이 여러 건이면 그 사이 가능한 시간도 함께 표시됩니다.</div>
+            <div id="pickupCalendarStatus" class="pickup-status">픽업 가능 날짜를 불러오는 중입니다.</div>
+            <div class="pickup-calendar-shell">
+              <div class="pickup-calendar-toolbar">
+                <button id="pickupPrevMonthBtn" type="button" class="ghost-btn compact-btn">이전 달</button>
+                <strong id="pickupMonthLabel">-</strong>
+                <button id="pickupNextMonthBtn" type="button" class="ghost-btn compact-btn">다음 달</button>
+              </div>
+              <div class="pickup-weekdays">
+                <span>일</span>
+                <span>월</span>
+                <span>화</span>
+                <span>수</span>
+                <span>목</span>
+                <span>금</span>
+                <span>토</span>
+              </div>
+              <div id="pickupCalendarGrid" class="pickup-calendar-grid"></div>
+            </div>
+            <div id="pickupSlotHint" class="detail-copy">날짜를 선택하면 픽업 가능한 시간이 표시됩니다.</div>
+            <div id="pickupSlotGrid" class="pickup-slot-grid">
+              <div class="empty-state">아직 선택한 날짜가 없습니다.</div>
+            </div>
+          </div>
+
+          <div id="mailAddressBox" class="detail-box delivery-panel hidden">
+            <div class="detail-title">우편 수령 주소</div>
+            <div class="guide-copy">인화물을 받아보실 주소를 정확히 입력해 주세요.</div>
+            <label class="delivery-field" for="mailAddressInput">배송 주소</label>
+            <textarea id="mailAddressInput" rows="4" placeholder="우편번호와 상세 주소까지 입력해 주세요."></textarea>
+          </div>
+
+          <div id="reviewDelivery" class="review-line"></div>
+        </div>
         <div class="total-box">
           <span>추가 비용 합계</span>
           <strong id="reviewTotal">€0</strong>
@@ -176,6 +229,6 @@
       </section>
     </section>
   </main>
-  <script src="./select.min.js?v=20260415-opt1"></script>
+  <script src="./select.min.js?v=20260417-pickup2"></script>
 </body>
 </html>

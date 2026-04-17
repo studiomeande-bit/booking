@@ -33,3 +33,13 @@ export async function updateSelectSession(sessionId, submission, requestId) {
   );
   return parseJsonResponse(response);
 }
+
+export async function fetchSelectPickupCalendar(year, month) {
+  const response = await fetch(buildUrl('select-pickup-calendar', { year, month }), { cache: 'no-store' });
+  return parseJsonResponse(response);
+}
+
+export async function fetchSelectPickupSlots(date, ignoreEventId = '') {
+  const response = await fetch(buildUrl('select-pickup-slots', { date, ignoreEventId }), { cache: 'no-store' });
+  return parseJsonResponse(response);
+}
