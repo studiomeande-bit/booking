@@ -66,7 +66,10 @@ const SELECT_PICKUP_DURATION_MIN = 15;
 const SELECT_PICKUP_LOOKAHEAD_DAYS = 120;
 const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
-const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조'];
+const WEDDING_EARLY_BOOKING_MONTHS = 6;
+const WEDDING_EARLY_BOOKING_DISCOUNT = 100;
+const WEDDING_MARKETING_DISCOUNT = 100;
+const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조','언어'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 let SETTINGS_MAP_CACHE = null;
 
@@ -804,6 +807,37 @@ function getProductById_(itemId){
   if(!p)throw new Error('유효하지 않은 상품입니다.');
   return p;
 }
+function parseYmdDateAtNoon_(dateStr){
+  const m=String(dateStr||'').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0,0);
+}
+function addMonthsClamped_(date,months){
+  const d=new Date(date.getTime());
+  const originalDay=d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth()+months);
+  const lastDay=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  d.setDate(Math.min(originalDay,lastDay));
+  return d;
+}
+function isWeddingEarlyBookingEligible_(shootDateStr,baseDate){
+  const shootDate=parseYmdDateAtNoon_(shootDateStr);
+  if(!shootDate) return false;
+  const base=baseDate instanceof Date?new Date(baseDate.getTime()):new Date();
+  const thresholdBase=new Date(base.getFullYear(),base.getMonth(),base.getDate(),12,0,0,0);
+  const threshold=addMonthsClamped_(thresholdBase,WEDDING_EARLY_BOOKING_MONTHS);
+  return shootDate.getTime()>=threshold.getTime();
+}
+function getWeddingRefundPolicyHtml_(lang){
+  if(lang==='en'){
+    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Wedding Deposit & Refund Guide</b><br>• The deposit is fully refundable only up to 60 days before the shoot.<br>• After that, the refundable amount decreases step by step as the shoot date gets closer.<br>• The final refundable amount is reviewed based on the cancellation date.</div>';
+  }
+  if(lang==='de'){
+    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Info zur Hochzeits-Anzahlung & Rückerstattung</b><br>• Die Anzahlung ist nur bis 60 Tage vor dem Shooting zu 100% erstattbar.<br>• Danach verringert sich der erstattbare Betrag stufenweise, je näher der Termin rückt.<br>• Der endgültige Rückerstattungsbetrag wird nach dem Stornierungszeitpunkt geprüft.</div>';
+  }
+  return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 웨딩 예약금 환불 안내</b><br>• 예약금은 촬영일 60일 전까지 100% 환불됩니다.<br>• 이후에는 촬영일이 가까워질수록 환불 가능 금액이 단계적으로 줄어듭니다.<br>• 최종 환불 금액은 실제 취소 시점을 기준으로 안내드립니다.</div>';
+}
 function calculateQuote_(request){
   const item=getProductById_(request.itemId);
   const people=Math.max(1,parseInt(request.people)||1);
@@ -896,8 +930,10 @@ function calculateQuote_(request){
   const settings=getSettingsMap_();const evRate=parseInt(settings.event_rate)||0;
   if(evRate>0&&settings.event_start&&settings.event_end&&request.date&&request.date>=settings.event_start&&request.date<=settings.event_end){eventDiscount=Math.round(total*(evRate/100));total-=eventDiscount;}
   if(request.isReturn){const rate=parseInt(settings.return_discount)||10;returnDiscount=Math.round(total*(rate/100));total-=returnDiscount;}
+  let earlyBirdDiscount=0;
+  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=WEDDING_EARLY_BOOKING_DISCOUNT;total-=earlyBirdDiscount;}
   let marketingDiscount=0;
-  if(item.g==='wed'&&request.marketing){marketingDiscount=50;total-=marketingDiscount;}
+  if(item.g==='wed'&&request.marketing){marketingDiscount=WEDDING_MARKETING_DISCOUNT;total-=marketingDiscount;}
   const PASS_DUR=[0,15,20,30,40];
   const duration=item.g==='biz'
     ? businessHours*60
@@ -911,7 +947,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo';
   const depositAmount=total<=100?0:(item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
 
 /* ====== 재방문 감지 ====== */
@@ -2163,10 +2199,11 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
           ? '■ Preis: Ein individuelles Angebot senden wir nach Prüfung.<br>'
           : '■ 가격 안내: 세부 내용 확인 후 맞춤 견적을 보내드립니다.<br>')
     : (quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`);
-  const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Rabatt:'};
-  const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:''].filter(Boolean).join('<br>');
+  const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Einwilligungsrabatt:'};
+  const earlyDiscLabel={ko:'■ 얼리 예약 할인:',en:'■ Early booking discount:',de:'■ Frühbucher-Rabatt:'};
+  const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.earlyBirdDiscount>0?`${earlyDiscLabel[lang]||earlyDiscLabel.ko} -${quote.earlyBirdDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:'' ].filter(Boolean).join('<br>');
   const returnBadge=isReturn?`<br><b style="color:#8b5cf6;">${T.return_badge}</b>`:'';
-  const refundBox=(quote.isDeposit&&quote.depositAmount>0&&quote.itemGroup!=='wed')?(T.refund_policy||''):'';
+  const refundBox=(quote.isDeposit&&quote.depositAmount>0)?(quote.itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang):(T.refund_policy||'')):'';
   // 취소/변경 신청 링크
   let cancelSection='';
   if(eventId){
@@ -2194,7 +2231,7 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const bal=parseInt(balanceAmount)||0;
   const isBiz=itemGroup==='biz';
   const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
-  const refundBox=(dep>0&&itemGroup!=='wed'&&itemGroup!=='biz')?(T.refund_policy||''):'';
+  const refundBox=(dep>0&&itemGroup!=='biz')?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'';
   const priceHtml=isBiz
     ? (lang==='en'
         ? '■ Pricing: A detailed quote will be sent after reviewing your request.'
@@ -5559,23 +5596,181 @@ function escapeHtml_(s){
     .replace(/'/g,'&#39;');
 }
 
+function normalizeInvoiceLang_(lang){
+  const raw=String(lang||'').trim().toLowerCase();
+  if(raw==='ko'||raw==='en'||raw==='de') return raw;
+  return 'de';
+}
+
+function getBookingLangByRowIndex_(bookingRowIndex){
+  const rowIndex=parseInt(bookingRowIndex,10)||0;
+  if(rowIndex<2) return 'de';
+  try{
+    const sh=getDbSheet();
+    if(rowIndex>sh.getLastRow()) return 'de';
+    const langCol=(BOOKING_COL['언어']!=null?BOOKING_COL['언어']:5)+1;
+    return normalizeInvoiceLang_(sh.getRange(rowIndex,langCol).getValue());
+  }catch(e){
+    return 'de';
+  }
+}
+
+function resolveInvoiceLang_(invoiceLang, bookingRowIndex){
+  const raw=String(invoiceLang||'').trim().toLowerCase();
+  if(raw) return normalizeInvoiceLang_(raw);
+  return getBookingLangByRowIndex_(bookingRowIndex);
+}
+
+function normalizeInvoiceLookupKey_(value){
+  return String(value||'').trim().toLowerCase();
+}
+
+function findInvoiceProductMatch_(item, inv){
+  const products=getCachedProducts_();
+  const productId=String(item&&item.productId||'').trim();
+  if(productId){
+    const byId=products.find(p=>String(p.id||'').trim()===productId);
+    if(byId) return byId;
+  }
+  const candidates=[
+    item&&item.description,
+    inv&&inv.product
+  ].map(normalizeInvoiceLookupKey_).filter(Boolean);
+  if(!candidates.length) return null;
+  return products.find(function(p){
+    const keys=[
+      p.id,
+      p.nameKo,
+      p.nameEn,
+      p.nameDe
+    ].map(normalizeInvoiceLookupKey_).filter(Boolean);
+    return candidates.some(function(candidate){ return keys.indexOf(candidate)!==-1; });
+  })||null;
+}
+
+function getLocalizedInvoiceProductName_(product, lang, fallback){
+  const rawFallback=String(fallback||'').trim()||'-';
+  if(!product) return rawFallback;
+  const L=normalizeInvoiceLang_(lang);
+  if(L==='ko') return String(product.nameKo||product.nameEn||product.nameDe||rawFallback).trim()||rawFallback;
+  if(L==='en') return String(product.nameEn||product.nameDe||product.nameKo||rawFallback).trim()||rawFallback;
+  return String(product.nameDe||product.nameEn||product.nameKo||rawFallback).trim()||rawFallback;
+}
+
+function getInvoicePrintLabelCatalog_(){
+  return {
+    photocard_single:{ko:'포토카드 프린트 (단면)',en:'Photo card print (single-sided)',de:'Fotokarten-Druck (einseitig)'},
+    photocard_double:{ko:'포토카드 프린트 (양면)',en:'Photo card print (double-sided)',de:'Fotokarten-Druck (doppelseitig)'},
+    basic_10x15:{ko:'기본 10×15cm',en:'Basic 10×15cm',de:'Basic 10×15cm'},
+    premium_10x15:{ko:'프리미엄 10×15cm',en:'Premium 10×15cm',de:'Premium 10×15cm'},
+    basic_a4:{ko:'기본 A4',en:'Basic A4',de:'Basic A4'},
+    premium_a4:{ko:'프리미엄 A4',en:'Premium A4',de:'Premium A4'},
+    premium_a3:{ko:'프리미엄 A3',en:'Premium A3',de:'Premium A3'}
+  };
+}
+
+function getInvoicePrintSuffixCatalog_(){
+  return {
+    retouched:{ko:'보정본포함',en:'retouched file included',de:'inkl. Retusche'},
+    extra:{ko:'추가인화',en:'extra print',de:'Zusatzdruck'}
+  };
+}
+
+function getInvoicePrintSuffixType_(label){
+  const target=String(label||'').trim().toLowerCase();
+  if(!target) return '';
+  if(['보정본포함','retouched file included','retouched included','inkl. retusche'].indexOf(target)!==-1) return 'retouched';
+  if(['추가인화','extra print','zusatzdruck'].indexOf(target)!==-1) return 'extra';
+  return '';
+}
+
+function getInvoicePrintLabelKey_(label){
+  const raw=String(label||'').trim();
+  if(!raw) return '';
+  const catalog=getInvoicePrintLabelCatalog_();
+  return Object.keys(catalog).find(function(key){
+    const labels=catalog[key];
+    return [key,labels.ko,labels.en,labels.de].some(function(candidate){
+      return normalizeInvoiceLookupKey_(candidate)===normalizeInvoiceLookupKey_(raw);
+    });
+  })||'';
+}
+
+function getLocalizedInvoicePrintLabel_(label, lang){
+  const raw=String(label||'').trim();
+  if(!raw) return '';
+  const L=normalizeInvoiceLang_(lang);
+  const suffixMatch=raw.match(/^(.*)\(([^)]+)\)\s*$/);
+  const baseLabel=suffixMatch?String(suffixMatch[1]||'').trim():raw;
+  const suffixType=suffixMatch?getInvoicePrintSuffixType_(suffixMatch[2]):'';
+  const key=getInvoicePrintLabelKey_(baseLabel)||getInvoicePrintLabelKey_(raw);
+  if(!key) return raw;
+  const catalog=getInvoicePrintLabelCatalog_();
+  const suffixCatalog=getInvoicePrintSuffixCatalog_();
+  const entry=catalog[key]||{};
+  const localizedBase=String(entry[L]||entry.de||entry.en||entry.ko||raw).trim()||raw;
+  if(!suffixType) return localizedBase;
+  const localizedSuffix=((suffixCatalog[suffixType]||{})[L])||((suffixCatalog[suffixType]||{}).de)||suffixMatch[2];
+  return `${localizedBase} (${localizedSuffix})`;
+}
+
+function getLocalizedInvoiceGeneratedDescription_(description, lang){
+  const raw=String(description||'').trim();
+  if(!raw) return '';
+  const L=normalizeInvoiceLang_(lang);
+  const retouchMatch=raw.match(/^추가\s*보정\s*(\d+)장$/i)||raw.match(/^additional retouch(?:ing)?\s*(\d+)\s*(?:photos?)?$/i)||raw.match(/^zusätzliche retusche\s*(\d+)\s*fotos?$/i);
+  if(retouchMatch){
+    const count=parseInt(retouchMatch[1],10)||0;
+    if(L==='ko') return `추가 보정 ${count}장`;
+    if(L==='en') return `Additional retouching ${count} photo${count===1?'':'s'}`;
+    return `Zusätzliche Retusche ${count} Foto${count===1?'':'s'}`;
+  }
+  const photoMatch=raw.match(/^(\d+)번\s+(.+)$/)||raw.match(/^no\.?\s*(\d+)\s+(.+)$/i)||raw.match(/^nr\.?\s*(\d+)\s+(.+)$/i);
+  if(photoMatch){
+    const photoNum=photoMatch[1];
+    const localizedLabel=getLocalizedInvoicePrintLabel_(photoMatch[2], L);
+    if(L==='ko') return `${photoNum}번 ${localizedLabel}`;
+    if(L==='en') return `No. ${photoNum} ${localizedLabel}`;
+    return `Nr. ${photoNum} ${localizedLabel}`;
+  }
+  return getLocalizedInvoicePrintLabel_(raw, L);
+}
+
+function getLocalizedInvoiceItemDescription_(item, inv, lang){
+  const fallback=String(item&&item.description||inv&&inv.product||'-').trim()||'-';
+  const product=findInvoiceProductMatch_(item, inv);
+  if(product) return getLocalizedInvoiceProductName_(product, lang, fallback);
+  return getLocalizedInvoiceGeneratedDescription_(fallback, lang)||fallback;
+}
+
+function getInvoiceRecipientEmail_(inv){
+  const primary=String(inv&&inv.businessInvoiceEmail||'').trim();
+  if(primary&&primary.indexOf('@')!==-1) return primary;
+  const fallback=String(inv&&inv.email||'').trim();
+  return fallback&&fallback.indexOf('@')!==-1 ? fallback : '';
+}
+
 function buildInvoiceEmailDefaults_(inv, lang){
-  const L=lang||'de';
+  const L=resolveInvoiceLang_(lang||inv.lang, inv.bookingRowIndex);
+  const rawName=String(inv.businessCompanyName||inv.name||'').trim();
+  const koName=(rawName||'고객').replace(/님$/,'');
+  const enName=rawName||'Customer';
+  const deName=rawName||'Kundin/Kunde';
   const subjectMap={
     ko:`[Studio mean] 인보이스 ${inv.number}`,
     en:`[Studio mean] Invoice ${inv.number}`,
     de:`[Studio mean] Rechnung ${inv.number}`
   };
   const bodyMap={
-    ko:`안녕하세요 ${inv.name||''}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${inv.number}\n총 금액: €${Number(inv.total||0).toFixed(2)}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`,
-    en:`Hello ${inv.name||''},\n\nPlease find your invoice attached.\nInvoice number: ${inv.number}\nTotal amount: €${Number(inv.total||0).toFixed(2)}\n\nIf you have any questions, please contact us.\nStudio mean`,
-    de:`Hallo ${inv.name||''},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${Number(inv.total||0).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
+    ko:`안녕하세요 ${koName}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${inv.number}\n총 금액: €${Number(inv.total||0).toFixed(2)}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`,
+    en:`Hello ${enName},\n\nPlease find your invoice attached.\nInvoice number: ${inv.number}\nTotal amount: €${Number(inv.total||0).toFixed(2)}\n\nIf you have any questions, please contact us.\nStudio mean`,
+    de:`Hallo ${deName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${Number(inv.total||0).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
   };
   return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
 }
 
 function buildInvoiceHtml_(inv, lang){
-  const L=lang||'de';
+  const L=resolveInvoiceLang_(lang||inv.lang, inv.bookingRowIndex);
   const isRefund=inv.type==='취소/환불';
   const items=(inv.items&&inv.items.length)?inv.items:[{description:inv.product||'-',qty:1,unitGross:parseFloat(inv.total)||0}];
   const brutto=parseFloat(inv.total)||items.reduce((sum,item)=>sum+((parseInt(item.qty,10)||1)*(parseFloat(item.unitGross)||0)),0);
@@ -5586,7 +5781,7 @@ function buildInvoiceHtml_(inv, lang){
   const dtParts=(inv.issuedAt||'').split('-');
   const fmtDate=dtParts.length===3?`${dtParts[2]}/${dtParts[1]}/${dtParts[0]}`:(inv.issuedAt||'');
   const T={
-    de:{invLabel:'Rechnungnummer',dateLabel:'Rechnungdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Qty',ep:'Einzelpreis',gp:'Gesamtpreis(netto)',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
+    de:{invLabel:'Rechnungsnummer',dateLabel:'Rechnungsdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
     ko:{invLabel:'인보이스 번호',dateLabel:'발행일',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',net:'공급가액',mwst:'부가세 19%',end:'최종 금액',dep:'계약금 (기납부)',ref:'환불 금액',notes:'기타사항'},
     en:{invLabel:'Invoice No.',dateLabel:'Invoice Date',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',net:'Net Total',mwst:'VAT 19%',end:'Total Amount',dep:'Deposit (already paid)',ref:'Refund',notes:'Notes'}
   };
@@ -5646,7 +5841,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;backgro
   <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.dateLabel}</span><span class="inv-meta-colon" style="font-size:11px;font-weight:400;">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtDate)}</span></div>
 </div>
 <table class="invoice-table"><thead><tr><th style="width:36px;">${t.pos}</th><th>${t.bez}</th><th style="width:36px;text-align:center;">${t.qty}</th><th style="width:110px;text-align:right;">${t.ep}</th><th style="width:140px;text-align:right;">${t.gp}</th></tr></thead><tbody>
-${items.map((item,idx)=>{const qty=Math.max(1,parseInt(item.qty,10)||1);const lineGross=qty*(parseFloat(item.unitGross)||0);const unitNet=Math.round((((parseFloat(item.unitGross)||0)/1.19))*100)/100;const lineNet=Math.round(((lineGross/1.19))*100)/100;return `<tr><td>${idx+1}</td><td>${escapeHtml_(item.description||inv.product||'-')}</td><td class="r">${qty}</td><td class="r">€${unitNet.toFixed(2)}</td><td class="r">€${lineNet.toFixed(2)}</td></tr>`;}).join('')}
+${items.map((item,idx)=>{const qty=Math.max(1,parseInt(item.qty,10)||1);const lineGross=qty*(parseFloat(item.unitGross)||0);const unitNet=Math.round((((parseFloat(item.unitGross)||0)/1.19))*100)/100;const lineNet=Math.round(((lineGross/1.19))*100)/100;const localizedDescription=getLocalizedInvoiceItemDescription_(item,inv,L);return `<tr><td>${idx+1}</td><td>${escapeHtml_(localizedDescription)}</td><td class="r">${qty}</td><td class="r">€${unitNet.toFixed(2)}</td><td class="r">€${lineNet.toFixed(2)}</td></tr>`;}).join('')}
 ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="r">1</td><td class="r" style="color:#c00;">-€${refund.toFixed(2)}</td><td class="r" style="color:#c00;">-€${refund.toFixed(2)}</td></tr>`:''}
 </tbody></table>
 <div class="totals">
@@ -5661,51 +5856,47 @@ ${inv.memo?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div
 }
 
 function createInvoicePdf_(inv, lang){
+  const effectiveLang=resolveInvoiceLang_(lang||inv.lang, inv.bookingRowIndex);
   const folder=ensureInvoiceFolder_();
   const safeName=String(inv.name||'').replace(/\s+/g,'').replace(/[^a-zA-Z0-9가-힣]/g,'');
   const safeNum=String(inv.number||'').replace(/-/g,'_');
   const fileName=`Studiomean_${safeNum}_${safeName||'customer'}_${Number(inv.total||0).toFixed(2)}EUR.pdf`;
-  const html=buildInvoiceHtml_(inv, lang||'de');
+  const html=buildInvoiceHtml_(inv, effectiveLang);
   const pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
   const file=folder.createFile(pdfBlob);
   return {fileId:file.getId(), url:file.getUrl(), name:file.getName()};
 }
 
-function sendInvoiceEmailInternal_(inv, subject, body){
-  if(!inv.email||!String(inv.email).includes('@')) throw new Error('고객 이메일이 없습니다.');
+function sendInvoiceEmailInternal_(inv, subject, body, mailLang){
+  const recipientEmail=getInvoiceRecipientEmail_(inv);
+  if(!recipientEmail) throw new Error('고객 이메일이 없습니다.');
   const invoiceSheet=ensureSheets_().invoiceSheet;
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'')===String(inv.number||''));
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const rowIndex=idx+2;
-  let pdfFileId=String(rows[idx+1][INVOICE_COL['PDF파일ID']]||'');
-  let pdfUrl=String(rows[idx+1][INVOICE_COL['PDF링크']]||'');
-  let file=null;
-  if(pdfFileId){
-    try{file=DriveApp.getFileById(pdfFileId);}catch(e){file=null;}
-  }
-  if(!file){
-    const pdf=createInvoicePdf_(inv,'de');
-    pdfFileId=pdf.fileId;
-    pdfUrl=pdf.url;
-    file=DriveApp.getFileById(pdf.fileId);
-    invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdfFileId);
-    invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).setValue(pdfUrl);
-  }
-  const finalSubject=String(subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
-  const finalBody=String(body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const currentRow=rows[idx+1]||[];
+  const effectiveLang=resolveInvoiceLang_(mailLang||inv.lang||currentRow[INVOICE_COL['언어']], inv.bookingRowIndex);
+  const defaults=buildInvoiceEmailDefaults_(inv, effectiveLang);
+  const finalSubject=String(subject||inv.mailSubject||defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const finalBody=String(body||inv.mailBody||defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const pdf=createInvoicePdf_(Object.assign({}, inv, { lang: effectiveLang }), effectiveLang);
+  const file=DriveApp.getFileById(pdf.fileId);
   const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;color:#334155;white-space:pre-line;">${escapeHtml_(finalBody).replace(/\n/g,'<br>')}<br><br>${_getSignatureHtml()}</div>`;
   MailApp.sendEmail({
-    to:inv.email,
+    to:recipientEmail,
     subject:finalSubject,
     htmlBody,
     attachments:[file.getBlob()]
   });
   const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
+  invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['메일제목']+1).setValue(finalSubject);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['메일본문']+1).setValue(finalBody);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['메일발송일시']+1).setValue(sentAt);
-  return {ok:true, sentAt, pdfUrl};
+  if(INVOICE_COL['언어']!=null) invoiceSheet.getRange(rowIndex,INVOICE_COL['언어']+1).setValue(effectiveLang);
+  return {ok:true, sentAt, pdfUrl:pdf.url, language:effectiveLang, recipientEmail};
 }
 
 function invoiceRowToObject_(row,rowIndex){
@@ -5749,7 +5940,8 @@ function invoiceRowToObject_(row,rowIndex){
     businessCompanyName:String(row[INVOICE_COL['사업자명']]||''),
     businessVatId:String(row[INVOICE_COL['사업자VAT번호']]||''),
     businessInvoiceEmail:String(row[INVOICE_COL['사업자송장이메일']]||''),
-    businessInvoiceRef:String(row[INVOICE_COL['사업자송장참조']]||'')
+    businessInvoiceRef:String(row[INVOICE_COL['사업자송장참조']]||''),
+    lang:resolveInvoiceLang_(row[INVOICE_COL['언어']], parseInt(row[INVOICE_COL['예약행번호']],10)||0)
   };
 }
 
@@ -5860,7 +6052,7 @@ function createInvoiceRecord_(payload){
   const customerAddress=String(payload.customerAddress|| (bookingBusinessMeta.needed?bookingBusinessMeta.companyAddress:'') || (row?row[26]:'') || '').trim();
   const invoiceBusinessMeta=mergeInvoiceBusinessMeta_(bookingBusinessMeta,payloadBusinessMeta,customerName,customerEmail);
   const invoiceMemo=String(payload.memo|| buildBookingBusinessInvoiceMemo_(invoiceBusinessMeta) || '').trim();
-  const mailLang=String(payload.mailLang||'de').toLowerCase();
+  const mailLang=resolveInvoiceLang_(payload.mailLang, linkedBookingRow);
   if(!customerName) throw new Error('고객명을 입력해 주세요.');
   if(!product&&!items.length) throw new Error('인보이스 항목을 입력해 주세요.');
   const defaults=buildInvoiceEmailDefaults_({
@@ -5879,7 +6071,8 @@ function createInvoiceRecord_(payload){
     invoiceBusinessMeta.companyName,
     invoiceBusinessMeta.vatId,
     invoiceBusinessMeta.invoiceEmail,
-    invoiceBusinessMeta.reference
+    invoiceBusinessMeta.reference,
+    mailLang
   ]);
   const newRowIndex=invoiceSheet.getLastRow();
   const inv={
@@ -5900,6 +6093,7 @@ function createInvoiceRecord_(payload){
     status:'발행',
     customerAddress,
     items,
+    lang:mailLang,
     businessInvoiceNeeded:invoiceBusinessMeta.needed,
     businessCompanyName:invoiceBusinessMeta.companyName,
     businessVatId:invoiceBusinessMeta.vatId,
@@ -5911,7 +6105,7 @@ function createInvoiceRecord_(payload){
   invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
   let mailSentAt='';
   if(payload.sendMail){
-    const sent=sendInvoiceEmailInternal_(inv,mailSubject,mailBody);
+    const sent=sendInvoiceEmailInternal_(inv,mailSubject,mailBody,mailLang);
     mailSentAt=sent.sentAt||'';
   }
   // Lexware 자동 전송 (비차단 — 인보이스 생성은 실패해도 진행)
@@ -5959,14 +6153,14 @@ function createInvoiceAdmin(token, bookingRowIndex, type, refundAmount, memo, cu
   return createInvoiceRecord_(payload);
 }
 
-function sendInvoiceEmailAdmin(token, invNumber, subject, body){
+function sendInvoiceEmailAdmin(token, invNumber, subject, body, mailLang){
   assertAdmin_(token);
   const {invoiceSheet}=ensureSheets_();
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===String(invNumber||'').trim());
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const inv=invoiceRowToObject_(rows[idx+1],idx+2);
-  return sendInvoiceEmailInternal_(inv,subject||inv.mailSubject||'',body||inv.mailBody||'');
+  return sendInvoiceEmailInternal_(inv,subject||inv.mailSubject||'',body||inv.mailBody||'',mailLang);
 }
 
 function updateInvoiceAdmin(token, payload){
@@ -5980,6 +6174,7 @@ function updateInvoiceAdmin(token, payload){
   const rowIndex=idx+2;
   const current=invoiceRowToObject_(rows[idx+1],rowIndex);
   const businessInvoiceNeeded=payload.businessInvoiceNeeded===undefined ? current.businessInvoiceNeeded : !!payload.businessInvoiceNeeded;
+  const invoiceLang=resolveInvoiceLang_(payload.mailLang!=null ? payload.mailLang : current.lang, current.bookingRowIndex);
   const updates={
     '고객명': String(payload.customerName!=null ? payload.customerName : current.name).trim(),
     '이메일': String(payload.customerEmail!=null ? payload.customerEmail : current.email).trim(),
@@ -5990,7 +6185,8 @@ function updateInvoiceAdmin(token, payload){
     '사업자명': String(payload.businessCompanyName!=null ? payload.businessCompanyName : current.businessCompanyName).trim(),
     '사업자VAT번호': String(payload.businessVatId!=null ? payload.businessVatId : current.businessVatId).trim(),
     '사업자송장이메일': String(payload.businessInvoiceEmail!=null ? payload.businessInvoiceEmail : current.businessInvoiceEmail).trim(),
-    '사업자송장참조': String(payload.businessInvoiceRef!=null ? payload.businessInvoiceRef : current.businessInvoiceRef).trim()
+    '사업자송장참조': String(payload.businessInvoiceRef!=null ? payload.businessInvoiceRef : current.businessInvoiceRef).trim(),
+    '언어': invoiceLang
   };
   if(!updates['고객명']) throw new Error('고객명을 입력해 주세요.');
   if(businessInvoiceNeeded && !updates['사업자명']) throw new Error('사업자명을 입력해 주세요.');
@@ -6000,7 +6196,7 @@ function updateInvoiceAdmin(token, payload){
   });
   const refreshedRow=invoiceSheet.getRange(rowIndex,1,1,invoiceSheet.getLastColumn()).getValues()[0];
   const inv=invoiceRowToObject_(refreshedRow,rowIndex);
-  const pdf=createInvoicePdf_(inv,'de');
+  const pdf=createInvoicePdf_(inv,invoiceLang);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
   return {ok:true, invoiceNumber:inv.number, pdfUrl:pdf.url};

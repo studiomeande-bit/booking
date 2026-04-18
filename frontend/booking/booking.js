@@ -3,6 +3,9 @@ import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/u
 
 const LANG_STORAGE_KEY = 'studio-mean-lang';
 const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
+const WEDDING_EARLY_BOOKING_MONTHS = 6;
+const WEDDING_EARLY_BOOKING_DISCOUNT = 100;
+const WEDDING_MARKETING_DISCOUNT = 100;
 
 function trimPromoDate(dateStr) {
   return String(dateStr || '').trim().slice(0, 10);
@@ -23,6 +26,100 @@ function persistLang(lang) {
   } catch {
     // Ignore storage errors and keep runtime language in memory.
   }
+}
+
+function parseLocalDateOnly(dateStr) {
+  const match = String(dateStr || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+}
+
+function addMonthsClamped(date, months) {
+  const result = new Date(date.getTime());
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(originalDay, lastDay));
+  return result;
+}
+
+function isWeddingEarlyBookingEligible(dateStr, baseDate = new Date()) {
+  const shootDate = parseLocalDateOnly(dateStr);
+  if (!shootDate) return false;
+  const thresholdBase = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 12, 0, 0, 0);
+  const threshold = addMonthsClamped(thresholdBase, WEDDING_EARLY_BOOKING_MONTHS);
+  return shootDate.getTime() >= threshold.getTime();
+}
+
+function getWeddingCopy() {
+  if (state.lang === 'en') {
+    return {
+      benefitEyebrow: 'Wedding Benefit',
+      benefitTitle: 'Reserve early and stack up to -€200 in wedding savings.',
+      benefitBody: 'Book at least 6 months ahead for -€100, and add another -€100 when you agree to marketing / portfolio usage.',
+      earlyTitle: 'Early booking discount',
+      earlyBody: 'Automatically applies when the selected shoot date is at least 6 months away from today.',
+      earlyPendingNoDate: 'Select the shoot date to check this benefit.',
+      earlyPendingDate: `Available for bookings made ${WEDDING_EARLY_BOOKING_MONTHS} months or more in advance.`,
+      earlyActive: `Scheduled · -€${WEDDING_EARLY_BOOKING_DISCOUNT}`,
+      marketingTitle: 'Marketing consent discount',
+      marketingBody: 'Agree to website / SNS / portfolio usage and receive an additional wedding discount.',
+      marketingPending: `Agree to receive -€${WEDDING_MARKETING_DISCOUNT} extra.`,
+      marketingActive: `Scheduled · -€${WEDDING_MARKETING_DISCOUNT}`,
+      refundTitle: 'Deposit refund guide',
+      refundBody: 'The deposit is fully refundable only up to 60 days before the shoot. After that, the refundable amount decreases step by step as the shoot date gets closer.',
+      refundSub: 'The final refundable amount is reviewed based on the cancellation date.',
+      appliedLabel: 'Current estimated savings',
+      marketingLabel: `[Optional] Agree to marketing / SNS / portfolio usage for an extra -€${WEDDING_MARKETING_DISCOUNT} wedding discount.`,
+      marketingSub: 'If you agree, the final images may be used for Studio mean website, social media, and portfolio promotion.',
+      reviewDiscounts: 'Applied discounts'
+    };
+  }
+  if (state.lang === 'de') {
+    return {
+      benefitEyebrow: 'Wedding Benefit',
+      benefitTitle: 'Früh buchen und bis zu -200€ Hochzeitsrabatt sichern.',
+      benefitBody: 'Bei einer Reservierung mindestens 6 Monate im Voraus erhalten Sie -100€. Mit Marketing-/Portfolio-Einwilligung kommen weitere -100€ dazu.',
+      earlyTitle: 'Frühbucher-Rabatt',
+      earlyBody: 'Wird automatisch angewendet, wenn der gewählte Shooting-Termin mindestens 6 Monate ab heute entfernt ist.',
+      earlyPendingNoDate: 'Bitte zuerst das Shooting-Datum wählen.',
+      earlyPendingDate: `Gilt bei Buchungen mindestens ${WEDDING_EARLY_BOOKING_MONTHS} Monate im Voraus.`,
+      earlyActive: `Vorgemerkt · -${WEDDING_EARLY_BOOKING_DISCOUNT}€`,
+      marketingTitle: 'Marketing-Einwilligungsrabatt',
+      marketingBody: 'Bei Einwilligung für Website / SNS / Portfolio gibt es zusätzlich einen Hochzeitsrabatt.',
+      marketingPending: `Mit Einwilligung zusätzliche -${WEDDING_MARKETING_DISCOUNT}€.`,
+      marketingActive: `Vorgemerkt · -${WEDDING_MARKETING_DISCOUNT}€`,
+      refundTitle: 'Info zur Anzahlung & Rückerstattung',
+      refundBody: 'Die Anzahlung ist nur bis 60 Tage vor dem Shooting zu 100% erstattbar. Danach verringert sich der erstattbare Betrag stufenweise, je näher der Termin rückt.',
+      refundSub: 'Der endgültige Rückerstattungsbetrag wird nach dem Stornierungszeitpunkt geprüft.',
+      appliedLabel: 'Aktuell geplanter Rabatt',
+      marketingLabel: `[Optional] Marketing / SNS / Portfolio-Nutzung zustimmen und zusätzliche -${WEDDING_MARKETING_DISCOUNT}€ Hochzeitsrabatt erhalten.`,
+      marketingSub: 'Bei Zustimmung dürfen die finalen Bilder für die Website, Social Media und das Portfolio von Studio mean verwendet werden.',
+      reviewDiscounts: 'Angewendete Rabatte'
+    };
+  }
+  return {
+    benefitEyebrow: 'Wedding Benefit',
+    benefitTitle: '웨딩은 미리 예약하면 최대 -€200까지 할인됩니다.',
+    benefitBody: '촬영일이 오늘 기준 6개월 이상 남아 있으면 -€100, 마케팅/포트폴리오 활용에 동의하면 추가 -€100이 더해집니다.',
+    earlyTitle: '얼리 예약 할인',
+    earlyBody: '선택한 촬영일이 오늘 기준 6개월 이상 남아 있으면 자동 적용됩니다.',
+    earlyPendingNoDate: '촬영 날짜를 선택하면 적용 여부를 바로 확인할 수 있습니다.',
+    earlyPendingDate: `촬영일이 ${WEDDING_EARLY_BOOKING_MONTHS}개월 이상 남아 있으면 적용됩니다.`,
+    earlyActive: `적용 예정 · -€${WEDDING_EARLY_BOOKING_DISCOUNT}`,
+    marketingTitle: '마케팅 동의 할인',
+    marketingBody: '웹사이트 / SNS / 포트폴리오 활용에 동의하시면 웨딩 예약에 추가 할인이 적용됩니다.',
+    marketingPending: `동의 시 추가 -€${WEDDING_MARKETING_DISCOUNT}`,
+    marketingActive: `적용 예정 · -€${WEDDING_MARKETING_DISCOUNT}`,
+    refundTitle: '예약금 환불 안내',
+    refundBody: '예약금은 촬영일 60일 전까지 100% 환불되며, 그 이후에는 촬영일이 가까워질수록 환불 가능 금액이 단계적으로 줄어듭니다.',
+    refundSub: '최종 환불 금액은 실제 취소 시점을 기준으로 안내드립니다.',
+    appliedLabel: '현재 예상 할인',
+    marketingLabel: `[선택] 마케팅/SNS/포트폴리오 활용 동의 시 추가 -€${WEDDING_MARKETING_DISCOUNT} 할인`,
+    marketingSub: '동의하시면 촬영 결과물을 Studio mean 웹사이트, SNS, 포트폴리오 홍보 용도로 활용할 수 있으며 웨딩 추가 할인도 함께 적용됩니다.',
+    reviewDiscounts: '적용 할인'
+  };
 }
 
 const COUNTRY_OPTIONS = [
@@ -1265,8 +1362,7 @@ function applyCopy() {
   setText('gdprSub', copy.gdprSub);
   setText('aiLabel', copy.aiLabel);
   setText('aiSub', copy.aiSub);
-  setText('marketingLabel', copy.marketingLabel);
-  setText('marketingSub', copy.marketingSub);
+  syncMarketingConsentCopy(copy);
   els.passportHint.textContent = copy.passportHint;
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
@@ -1328,6 +1424,13 @@ function applyCopy() {
   syncConsentVisibility();
   syncSelectAllRequired();
   refreshBannerCopy();
+}
+
+function syncMarketingConsentCopy(copy = getCopy()) {
+  const weddingCopy = getWeddingCopy();
+  const isWedding = state.selectedProduct?.g === 'wed';
+  setText('marketingLabel', isWedding ? weddingCopy.marketingLabel : copy.marketingLabel);
+  setText('marketingSub', isWedding ? weddingCopy.marketingSub : copy.marketingSub);
 }
 
 function getLocalizedNoticeText() {
@@ -1944,11 +2047,17 @@ function getPreviewQuote() {
     }
   }
 
+  let earlyBirdDiscount = 0;
+  if (item.g === 'wed' && state.selectedDate && isWeddingEarlyBookingEligible(state.selectedDate)) {
+    earlyBirdDiscount = WEDDING_EARLY_BOOKING_DISCOUNT;
+    total -= earlyBirdDiscount;
+  }
+
   let marketingDiscount = 0;
   const marketing = els.form.elements.marketing?.checked || false;
   if (item.g === 'wed' && marketing) {
-    marketingDiscount = 50;
-    total -= 50;
+    marketingDiscount = WEDDING_MARKETING_DISCOUNT;
+    total -= marketingDiscount;
   }
   let passAddonDur = 0;
   let passAddonPrice = 0;
@@ -1975,6 +2084,7 @@ function getPreviewQuote() {
     prep,
     totalDuration: duration + prep + passAddonDur,
     product: item,
+    earlyBirdDiscount,
     marketingDiscount,
     passAddon,
     passAddonPeople,
@@ -2443,23 +2553,24 @@ function getEventPeriodLabel() {
       : `이벤트 ${rate}% 할인`;
 }
 
-function getAppliedDiscountNote() {
+function getAppliedDiscountLines() {
   const item = state.selectedProduct;
-  if (!item || !state.quote) return '';
+  if (!item || !state.quote) return [];
+  const lines = [];
   if (state.quote.eventDiscount > 0) {
-    return state.lang === 'en'
+    lines.push(state.lang === 'en'
       ? `Event discount -€${state.quote.eventDiscount} applied.`
       : state.lang === 'de'
         ? `Aktionsrabatt -${state.quote.eventDiscount}€ angewendet.`
-        : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`;
+        : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`);
   }
   if (item.g === 'prof') {
     if (state.ageGroup === 'kids') {
-      return state.lang === 'en'
+      lines.push(state.lang === 'en'
         ? 'Kids discount -€10 applied.'
         : state.lang === 'de'
           ? 'Kinderrabatt -10€ angewendet.'
-          : '키즈 할인 -€10이 적용되었습니다.';
+          : '키즈 할인 -€10이 적용되었습니다.');
     }
     if (state.ageGroup === 'senior' && state.selectedDate) {
       const d = new Date(`${state.selectedDate}T12:00:00`);
@@ -2467,58 +2578,111 @@ function getAppliedDiscountNote() {
       const isWd = day >= 2 && day <= 5;
       const isSat = day === 6;
       if (item.id === 'pb' && isWd && state.quote.totalPrice === 0) {
-        return state.lang === 'en'
+        lines.push(state.lang === 'en'
           ? 'Senior weekday free benefit applied.'
           : state.lang === 'de'
             ? 'Senioren-Vorteil werktags kostenlos angewendet.'
-            : '시니어 평일 무료 혜택이 적용되었습니다.';
+            : '시니어 평일 무료 혜택이 적용되었습니다.');
       }
       if ((item.id === 'pbus' || item.id === 'pp') && isWd) {
-        return state.lang === 'en'
+        lines.push(state.lang === 'en'
           ? 'Senior weekday discount -€50 applied.'
           : state.lang === 'de'
             ? 'Seniorenrabatt werktags -50€ angewendet.'
-            : '시니어 평일 할인 -€50이 적용되었습니다.';
+            : '시니어 평일 할인 -€50이 적용되었습니다.');
       }
       if (item.id === 'pp' && isSat) {
-        return state.lang === 'en'
+        lines.push(state.lang === 'en'
           ? 'Senior Saturday discount -€30 applied.'
           : state.lang === 'de'
             ? 'Seniorenrabatt Samstag -30€ angewendet.'
-            : '시니어 토요일 할인 -€30이 적용되었습니다.';
+            : '시니어 토요일 할인 -€30이 적용되었습니다.');
       }
     }
   }
   if (item.t === 'snap' && getPeopleCount() === 1) {
-    return state.lang === 'en'
+    lines.push(state.lang === 'en'
       ? 'Solo outdoor discount -€30 applied.'
       : state.lang === 'de'
         ? 'Solo-Outdoor-Rabatt -30€ angewendet.'
-        : '야외 1인 촬영 할인 -€30이 적용되었습니다.';
+        : '야외 1인 촬영 할인 -€30이 적용되었습니다.');
   }
-  if (item.g === 'wed' && (els.form.elements.marketing?.checked || false)) {
-    return state.lang === 'en'
-      ? 'Marketing consent discount -€50 applied.'
+  if (item.g === 'wed' && state.quote.earlyBirdDiscount > 0) {
+    lines.push(state.lang === 'en'
+      ? `Early booking discount -€${state.quote.earlyBirdDiscount} applied.`
       : state.lang === 'de'
-        ? 'Rabatt für Marketing-Einwilligung -50€ angewendet.'
-        : '마케팅 동의 할인 -€50이 적용되었습니다.';
+        ? `Frühbucher-Rabatt -${state.quote.earlyBirdDiscount}€ angewendet.`
+        : `얼리 예약 할인 -€${state.quote.earlyBirdDiscount}가 적용되었습니다.`);
+  }
+  if (item.g === 'wed' && state.quote.marketingDiscount > 0) {
+    lines.push(state.lang === 'en'
+      ? `Marketing consent discount -€${state.quote.marketingDiscount} applied.`
+      : state.lang === 'de'
+        ? `Marketing-Einwilligungsrabatt -${state.quote.marketingDiscount}€ angewendet.`
+        : `마케팅 동의 할인 -€${state.quote.marketingDiscount}가 적용되었습니다.`);
   }
   if ((item.g === 'prof' || item.g === 'stud') && els.passAddonToggle?.checked) {
-    return state.lang === 'en'
+    lines.push(state.lang === 'en'
       ? `Passport add-on applied (+€${state.quote.passAddonPrice || 0}).`
       : state.lang === 'de'
         ? `Passfoto-Zusatz wurde angewendet (+€${state.quote.passAddonPrice || 0}).`
-        : `여권 추가촬영이 적용되었습니다 (+€${state.quote.passAddonPrice || 0}).`;
+        : `여권 추가촬영이 적용되었습니다 (+€${state.quote.passAddonPrice || 0}).`);
   }
-  return '';
+  return lines;
+}
+
+function getAppliedDiscountNote() {
+  return getAppliedDiscountLines().join(' ');
+}
+
+function getWeddingBenefitBoxHtml() {
+  if (state.selectedProduct?.g !== 'wed') return '';
+  const copy = getWeddingCopy();
+  const earlyActive = Number(state.quote?.earlyBirdDiscount || 0) > 0;
+  const marketingActive = Number(state.quote?.marketingDiscount || 0) > 0;
+  const totalDiscount = Number(state.quote?.earlyBirdDiscount || 0) + Number(state.quote?.marketingDiscount || 0);
+  const appliedLine = totalDiscount > 0
+    ? `<div class="wedding-benefit-applied">${escapeHtml(copy.appliedLabel)} <strong>-€${totalDiscount}</strong></div>`
+    : '';
+  const earlyStatus = !state.selectedDate
+    ? copy.earlyPendingNoDate
+    : earlyActive
+      ? copy.earlyActive
+      : copy.earlyPendingDate;
+  const marketingStatus = marketingActive ? copy.marketingActive : copy.marketingPending;
+  return `
+    <section class="wedding-benefit-box">
+      <div class="wedding-benefit-eyebrow">${escapeHtml(copy.benefitEyebrow)}</div>
+      <div class="wedding-benefit-title">${escapeHtml(copy.benefitTitle)}</div>
+      <div class="wedding-benefit-body">${escapeHtml(copy.benefitBody)}</div>
+      ${appliedLine}
+      <div class="wedding-benefit-grid">
+        <article class="wedding-benefit-card${earlyActive ? ' active' : ''}">
+          <div class="wedding-benefit-card-title">${escapeHtml(copy.earlyTitle)}</div>
+          <div class="wedding-benefit-card-body">${escapeHtml(copy.earlyBody)}</div>
+          <div class="wedding-benefit-status${earlyActive ? ' active' : ''}">${escapeHtml(earlyStatus)}</div>
+        </article>
+        <article class="wedding-benefit-card${marketingActive ? ' active' : ''}">
+          <div class="wedding-benefit-card-title">${escapeHtml(copy.marketingTitle)}</div>
+          <div class="wedding-benefit-card-body">${escapeHtml(copy.marketingBody)}</div>
+          <div class="wedding-benefit-status${marketingActive ? ' active' : ''}">${escapeHtml(marketingStatus)}</div>
+        </article>
+      </div>
+      <div class="wedding-refund-box">
+        <div class="wedding-refund-title">${escapeHtml(copy.refundTitle)}</div>
+        <div class="wedding-refund-copy">${escapeHtml(copy.refundBody)}</div>
+        <div class="wedding-refund-sub">${escapeHtml(copy.refundSub)}</div>
+      </div>
+    </section>
+  `;
 }
 
 function getSecondaryPriceNote() {
   const item = state.selectedProduct;
   if (!item) return '';
-  const discountNote = getAppliedDiscountNote();
+  const discountNote = getAppliedDiscountLines();
   const peopleNote = getPeoplePricingNote(item, getPeopleCount());
-  if (!discountNote) return peopleNote;
+  if (!discountNote.length) return peopleNote;
   if (!peopleNote) return '';
   if (item.t === 'snap' && getPeopleCount() === 1) return '';
   return peopleNote;
@@ -2841,6 +3005,7 @@ function syncConditionalFields() {
   els.reshootingField.classList.toggle('hidden-field', !needsReshootingConsent(state.selectedProduct));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
   if (group === 'biz') renderBusinessOptions();
+  syncMarketingConsentCopy();
   syncMemoPlaceholder();
 }
 
@@ -3027,6 +3192,11 @@ function renderProductDetail() {
     : getProductDescription(state.selectedProduct);
   const price = getEstimatedPrice();
   const hideBizPrice = state.selectedProduct.g === 'biz';
+  const discountLines = getAppliedDiscountLines();
+  const discountHtml = discountLines.length
+    ? `<div class="discount-note-list">${discountLines.map((line) => `<div class="discount-note-item">${escapeHtml(line)}</div>`).join('')}</div>`
+    : '';
+  const weddingBenefitHtml = getWeddingBenefitBoxHtml();
   const productGuideList = getProductGuideList(state.selectedProduct);
   const visitGuideList = getVisitGuideList(state.selectedProduct);
   const eventBadge = state.quote?.eventDiscount > 0
@@ -3094,10 +3264,11 @@ function renderProductDetail() {
             ? `Ca. ${getShootDuration()} Min`
             : `촬영 약 ${getShootDuration()}분`}</div>
       </div>
-      ${getAppliedDiscountNote() ? `<div class="muted-copy" style="margin-top:10px;font-weight:700;color:#2563eb;">${escapeHtml(getAppliedDiscountNote())}</div>` : ''}
+      ${discountHtml}
       ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
       ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
     `}
+    ${weddingBenefitHtml}
     <div class="guide-grid">
       <div class="guide-box">
         <div class="guide-title">${state.lang === 'en' ? 'Booking Guide' : state.lang === 'de' ? 'Buchungshinweise' : '예약 안내'}</div>
@@ -3320,6 +3491,13 @@ function renderReview() {
   const copy = getCopy();
   const rows = [[copy.reviewProduct, getProductLabel(state.selectedProduct)]];
   if (state.selectedProduct.g !== 'biz') rows.push([copy.reviewPrice, `€${getEstimatedPrice()}`]);
+  const discountLines = getAppliedDiscountLines();
+  if (discountLines.length) {
+    const label = state.selectedProduct.g === 'wed'
+      ? getWeddingCopy().reviewDiscounts
+      : (state.lang === 'en' ? 'Applied discounts' : state.lang === 'de' ? 'Angewendete Rabatte' : '적용 할인');
+    rows.push([label, discountLines.join(' / ')]);
+  }
   if (state.selectedDate) rows.push([copy.reviewDate, state.selectedDate]);
   if (state.selectedSlot) rows.push([copy.reviewTime, state.selectedSlot]);
   if (state.selectedProduct.g === 'pass') {

@@ -433,6 +433,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="card"><div class="card-title">🎉 이벤트 할인</div><div class="form-row"><div class="form-group"><label>할인율 (%)</label><input type="number" id="s_rate" min="0" max="100" placeholder="0"></div><div class="form-group"><label>시작일</label><input type="date" id="s_start"></div></div><div class="form-group"><label>종료일</label><input type="date" id="s_end"></div></div>
     <div class="card"><div class="card-title">🌷 프로모션 페이지</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">`booking.studio-mean.com/promo/` 페이지 노출 여부를 제어합니다.</div><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="s_promo_enabled"><span>프로모션 페이지 활성화</span></label></div>
     <div class="card"><div class="card-title">⭐ 당일 재방문 할인</div><div class="form-row"><div class="form-group"><label>재방문 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div></div></div>
+    <div class="card"><div class="card-title">🕒 예약 영업시간</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">형식 예: <code>09:30-11:40,15:00-17:30</code>. 비워두면 기본값으로 저장됩니다.</div><div class="form-row"><div class="form-group"><label>화-금 공개 예약</label><input type="text" id="s_weekday_hours" placeholder="09:30-11:40,15:00-17:30"></div><div class="form-group"><label>토요일 공개 예약</label><input type="text" id="s_saturday_hours" placeholder="09:00-16:00"></div></div><div style="font-size:12px;color:#64748b;">월요일/일요일 공개 예약 차단과 웨딩·기업 예약의 별도 운영시간은 기존 규칙을 유지합니다.</div></div>
     <div class="card"><div class="card-title">📅 휴무일 설정</div><div class="hcal-wrap"><div class="hcal-header"><button class="hcal-nav" onclick="changeHolidayCal(-1)">◀</button><div style="font-size:14px;font-weight:700;" id="hcalMonthLabel"></div><button class="hcal-nav" onclick="changeHolidayCal(1)">▶</button></div><div class="hcal-grid" id="hcalGrid"></div><div style="font-size:12px;color:#64748b;margin-top:8px;" id="hcalSummary"></div><div id="hcalSelectedList" style="margin-top:6px;"></div></div></div>
     <div class="card"><div class="card-title">🔒 비밀번호 변경</div><div class="form-group"><label>새 비밀번호</label><input type="password" id="s_pw" placeholder="새 비밀번호"></div></div>
     <button class="btn btn-primary" style="padding:12px 28px;" onclick="saveSettings()">💾 설정 저장</button>
@@ -740,6 +741,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div style="font-size:11px;color:#94a3b8;">`{{invoiceNumber}}`는 실제 인보이스 번호로 자동 치환됩니다.</div>
     </div>
     <div class="form-group">
+      <label>메일 / PDF 언어</label>
+      <select id="inv_mailLang" onchange="refreshIssueInvoiceMailDefaults(true)">
+        <option value="de">Deutsch</option>
+        <option value="en">English</option>
+        <option value="ko">한국어</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label>메일 제목</label>
       <input type="text" id="inv_mailSubject" placeholder="[Studio mean] Rechnung {{invoiceNumber}}">
     </div>
@@ -759,6 +768,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="modal-title">✉️ 인보이스 메일 발송</div>
     <input type="hidden" id="mail_invoiceNumber">
     <div id="mail_invoiceInfo" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;"></div>
+    <div class="form-group">
+      <label>메일 / PDF 언어</label>
+      <select id="mail_lang" onchange="refreshInvoiceMailDefaults(true)">
+        <option value="de">Deutsch</option>
+        <option value="en">English</option>
+        <option value="ko">한국어</option>
+      </select>
+    </div>
     <div class="form-group">
       <label>메일 제목</label>
       <input type="text" id="mail_subject" placeholder="[Studio mean] Rechnung {{invoiceNumber}}">
@@ -993,7 +1010,9 @@ function openEdit(rowIndex){
   const alertEl=document.getElementById('edit_rescheduleAlert');
   if(c.rescheduleReq){
     alertEl.style.display='block';
-    alertEl.innerHTML=`📅 <b>일정 변경 요청:</b> ${c.rescheduleReq} <button class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;" onclick="clearRescheduleReq(${rowIndex})">확인 처리</button>`;
+    alertEl.innerHTML=`📅 <b>일정 변경 요청:</b> ${c.rescheduleReq}
+      <button class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;" onclick="approveRescheduleReq(${rowIndex})">확인</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:6px;font-size:11px;border-color:#fca5a5;color:#b91c1c;" onclick="rejectRescheduleReq(${rowIndex})">거절</button>`;
   } else {
     alertEl.style.display='none';
   }
@@ -1014,6 +1033,22 @@ function openEdit(rowIndex){
 }
 function clearRescheduleReq(rowIndex){
   google.script.run.withSuccessHandler(()=>{loadAll();document.getElementById('edit_rescheduleAlert').style.display='none';}).withFailureHandler(handleApiError).clearRescheduleRequest(adminToken,rowIndex);
+}
+function approveRescheduleReq(rowIndex){
+  const memo=prompt('고객에게 함께 전달할 메모가 있으면 입력해 주세요. 없으면 비워두셔도 됩니다.','')||'';
+  google.script.run.withSuccessHandler(()=>{
+    alert('일정 변경 승인 메일을 발송했습니다.');
+    loadAll();
+    document.getElementById('edit_rescheduleAlert').style.display='none';
+  }).withFailureHandler(handleApiError).approveRescheduleRequest(adminToken,rowIndex,memo);
+}
+function rejectRescheduleReq(rowIndex){
+  const memo=prompt('거절 사유나 안내 메모를 입력해 주세요. 없으면 비워두셔도 됩니다.','')||'';
+  google.script.run.withSuccessHandler(()=>{
+    alert('일정 변경 거절 메일을 발송했습니다.');
+    loadAll();
+    document.getElementById('edit_rescheduleAlert').style.display='none';
+  }).withFailureHandler(handleApiError).rejectRescheduleRequest(adminToken,rowIndex,memo);
 }
 
 function closeModal(){document.getElementById('editModal').classList.remove('open');}
@@ -1507,8 +1542,8 @@ function toggleHoliday(d){if(selectedHolidays.has(d))selectedHolidays.delete(d);
 function removeHoliday(d){selectedHolidays.delete(d);renderHolidayCal();}
 
 /* ===== 설정 ===== */
-function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
-function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',promoEnabled:document.getElementById('s_promo_enabled').checked,customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
+function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-11:40,15:00-17:30';document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
+function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',weekdayHours:document.getElementById('s_weekday_hours').value||'',saturdayHours:document.getElementById('s_saturday_hours').value||'',promoEnabled:document.getElementById('s_promo_enabled').checked,customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
 
 /* ===== Twilio SMS 설정 ===== */
 function saveInvoiceSeq(){
@@ -2109,20 +2144,134 @@ function guessInvoiceProduct(productName){
     (p.nameDe||'')===target
   )||null;
 }
+const INVOICE_PRINT_LABELS={
+  photocard_single:{ko:'포토카드 프린트 (단면)',en:'Photo card print (single-sided)',de:'Fotokarten-Druck (einseitig)'},
+  photocard_double:{ko:'포토카드 프린트 (양면)',en:'Photo card print (double-sided)',de:'Fotokarten-Druck (doppelseitig)'},
+  basic_10x15:{ko:'기본 10×15cm',en:'Basic 10×15cm',de:'Basic 10×15cm'},
+  premium_10x15:{ko:'프리미엄 10×15cm',en:'Premium 10×15cm',de:'Premium 10×15cm'},
+  basic_a4:{ko:'기본 A4',en:'Basic A4',de:'Basic A4'},
+  premium_a4:{ko:'프리미엄 A4',en:'Premium A4',de:'Premium A4'},
+  premium_a3:{ko:'프리미엄 A3',en:'Premium A3',de:'Premium A3'}
+};
+const INVOICE_PRINT_SUFFIXES={
+  retouched:{ko:'보정본포함',en:'retouched file included',de:'inkl. Retusche'},
+  extra:{ko:'추가인화',en:'extra print',de:'Zusatzdruck'}
+};
+function getInvoicePrintSuffixType(label){
+  const target=String(label||'').trim().toLowerCase();
+  if(!target) return '';
+  if(['보정본포함','retouched file included','retouched included','inkl. retusche'].includes(target)) return 'retouched';
+  if(['추가인화','extra print','zusatzdruck'].includes(target)) return 'extra';
+  return '';
+}
+function getInvoicePrintLabelKey(label){
+  const target=String(label||'').trim();
+  if(!target) return '';
+  return Object.keys(INVOICE_PRINT_LABELS).find(key=>{
+    const entry=INVOICE_PRINT_LABELS[key];
+    return [key,entry.ko,entry.en,entry.de].includes(target);
+  })||'';
+}
+function getLocalizedInvoicePrintLabel(label, lang){
+  const safeLang=normalizeInvoiceMailLang(lang);
+  const raw=String(label||'').trim();
+  if(!raw) return '';
+  const suffixMatch=raw.match(/^(.*)\(([^)]+)\)\s*$/);
+  const baseLabel=suffixMatch?String(suffixMatch[1]||'').trim():raw;
+  const suffixType=suffixMatch?getInvoicePrintSuffixType(suffixMatch[2]):'';
+  const key=getInvoicePrintLabelKey(baseLabel)||getInvoicePrintLabelKey(raw);
+  if(!key) return raw;
+  const entry=INVOICE_PRINT_LABELS[key]||{};
+  const localizedBase=entry[safeLang]||entry.de||entry.en||entry.ko||raw;
+  if(!suffixType) return localizedBase;
+  const localizedSuffix=(INVOICE_PRINT_SUFFIXES[suffixType]||{})[safeLang]||(INVOICE_PRINT_SUFFIXES[suffixType]||{}).de||suffixMatch[2];
+  return `${localizedBase} (${localizedSuffix})`;
+}
+function getLocalizedInvoiceItemDescription(item, inv, lang){
+  const safeLang=normalizeInvoiceMailLang(lang);
+  const fallback=String((item&&item.description)||(inv&&inv.product)||'-').trim()||'-';
+  const productId=String(item&&item.productId||'').trim();
+  const product=productId
+    ? (cmsProducts||[]).find(p=>(p.id||'')===productId)
+    : guessInvoiceProduct((item&&item.description)||'')||guessInvoiceProduct(inv&&inv.product||'');
+  if(product){
+    if(safeLang==='ko') return product.nameKo||product.nameEn||product.nameDe||fallback;
+    if(safeLang==='en') return product.nameEn||product.nameDe||product.nameKo||fallback;
+    return product.nameDe||product.nameEn||product.nameKo||fallback;
+  }
+  const retouchMatch=fallback.match(/^추가\s*보정\s*(\d+)장$/i)||fallback.match(/^additional retouch(?:ing)?\s*(\d+)\s*(?:photos?)?$/i)||fallback.match(/^zusätzliche retusche\s*(\d+)\s*fotos?$/i);
+  if(retouchMatch){
+    const count=parseInt(retouchMatch[1],10)||0;
+    if(safeLang==='ko') return `추가 보정 ${count}장`;
+    if(safeLang==='en') return `Additional retouching ${count} photo${count===1?'':'s'}`;
+    return `Zusätzliche Retusche ${count} Foto${count===1?'':'s'}`;
+  }
+  const photoMatch=fallback.match(/^(\d+)번\s+(.+)$/)||fallback.match(/^no\.?\s*(\d+)\s+(.+)$/i)||fallback.match(/^nr\.?\s*(\d+)\s+(.+)$/i);
+  if(photoMatch){
+    const photoNum=photoMatch[1];
+    const localizedLabel=getLocalizedInvoicePrintLabel(photoMatch[2], safeLang);
+    if(safeLang==='ko') return `${photoNum}번 ${localizedLabel}`;
+    if(safeLang==='en') return `No. ${photoNum} ${localizedLabel}`;
+    return `Nr. ${photoNum} ${localizedLabel}`;
+  }
+  return getLocalizedInvoicePrintLabel(fallback, safeLang)||fallback;
+}
 function getInvoiceBookingByRow(rowIndex){
   return allCustomers.find(x=>x.rowIndex===rowIndex)||null;
 }
 function getInvoiceByNumber(invNumber){
   return (allInvoices||[]).find(inv=>inv.number===invNumber)||null;
 }
-function buildInvoiceMailDefaults(name,invoiceNumber,total){
-  const safeName=name||'고객님';
+function normalizeInvoiceMailLang(lang){
+  const raw=String(lang||'').trim().toLowerCase();
+  return ['ko','en','de'].includes(raw)?raw:'de';
+}
+function buildInvoiceMailDefaults(lang,name,invoiceNumber,total){
+  const safeLang=normalizeInvoiceMailLang(lang);
+  const rawName=(name||'').trim();
+  const safeName=safeLang==='ko'
+    ? (rawName||'고객').replace(/님$/,'')
+    : rawName||(safeLang==='en'?'Customer':'Kundin/Kunde');
   const num=invoiceNumber||'{{invoiceNumber}}';
   const amount=Number(total||0).toFixed(2);
-  return {
-    subject:`[Studio mean] Rechnung ${num}`,
-    body:`Hallo ${safeName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${num}\nGesamtbetrag: €${amount}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
+  const defaults={
+    ko:{
+      subject:`[Studio mean] 인보이스 ${num}`,
+      body:`안녕하세요 ${safeName}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${num}\n총 금액: €${amount}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`
+    },
+    en:{
+      subject:`[Studio mean] Invoice ${num}`,
+      body:`Hello ${safeName},\n\nPlease find your invoice attached.\nInvoice number: ${num}\nTotal amount: €${amount}\n\nIf you have any questions, please contact us.\nStudio mean`
+    },
+    de:{
+      subject:`[Studio mean] Rechnung ${num}`,
+      body:`Hallo ${safeName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${num}\nGesamtbetrag: €${amount}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
+    }
   };
+  return defaults[safeLang]||defaults.de;
+}
+function getIssueInvoiceGrossTotal(){
+  return invoiceItems.reduce((sum,item)=>sum+(Math.max(1,parseInt(item.qty,10)||1)*Math.max(0,Number(item.unitGross)||0)),0);
+}
+function refreshIssueInvoiceMailDefaults(force){
+  const subjectEl=document.getElementById('inv_mailSubject');
+  const bodyEl=document.getElementById('inv_mailBody');
+  if(!force && (subjectEl.value.trim()||bodyEl.value.trim())) return;
+  const lang=normalizeInvoiceMailLang(document.getElementById('inv_mailLang').value);
+  const defaults=buildInvoiceMailDefaults(lang,document.getElementById('inv_customerName').value.trim(),document.getElementById('inv_number').value.trim(),getIssueInvoiceGrossTotal());
+  subjectEl.value=defaults.subject;
+  bodyEl.value=defaults.body;
+}
+function refreshInvoiceMailDefaults(force){
+  const inv=getInvoiceByNumber(document.getElementById('mail_invoiceNumber').value);
+  if(!inv) return;
+  const subjectEl=document.getElementById('mail_subject');
+  const bodyEl=document.getElementById('mail_body');
+  if(!force && (subjectEl.value.trim()||bodyEl.value.trim())) return;
+  const lang=normalizeInvoiceMailLang(document.getElementById('mail_lang').value||inv.lang);
+  const defaults=buildInvoiceMailDefaults(lang,inv.businessCompanyName||inv.name||'',inv.number,inv.total||0);
+  subjectEl.value=defaults.subject;
+  bodyEl.value=defaults.body;
 }
 function resetInvoiceModal(){
   document.getElementById('inv_rowIndex').value='';
@@ -2135,6 +2284,7 @@ function resetInvoiceModal(){
   document.getElementById('inv_customerAddress').value='';
   document.getElementById('inv_memo').value='';
   document.getElementById('inv_sendMail').checked=false;
+  document.getElementById('inv_mailLang').value='de';
   document.getElementById('inv_mailSubject').value='';
   document.getElementById('inv_mailBody').value='';
   document.getElementById('inv_info').style.display='none';
@@ -2144,11 +2294,13 @@ function resetInvoiceModal(){
 }
 function fillInvoiceFromBooking(c){
   if(!c)return;
+  const invoiceLang=normalizeInvoiceMailLang(c.lang||'de');
   document.getElementById('inv_rowIndex').value=c.rowIndex;
   document.getElementById('inv_customerName').value=c.name||'';
   document.getElementById('inv_customerEmail').value=c.email||'';
   document.getElementById('inv_customerPhone').value=c.phone||'';
   document.getElementById('inv_customerAddress').value=c.address||'';
+  document.getElementById('inv_mailLang').value=invoiceLang;
   document.getElementById('inv_info').style.display='block';
   document.getElementById('inv_info').innerHTML=
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
@@ -2159,7 +2311,7 @@ function fillInvoiceFromBooking(c){
       <div><span style="color:#7c3aed;font-weight:600;">계약금</span><br>${c.depositRaw||'-'}</div>
       <div><span style="color:#7c3aed;font-weight:600;">주소</span><br><span style="font-size:11px;">${c.address||'-'}</span></div>
     </div>`;
-  const defaults=buildInvoiceMailDefaults(c.name||'',document.getElementById('inv_number').value.trim(),Number(c.price)||0);
+  const defaults=buildInvoiceMailDefaults(invoiceLang,c.name||'',document.getElementById('inv_number').value.trim(),Number(c.price)||0);
   document.getElementById('inv_sendMail').checked=!!(c.email||'').includes('@');
   document.getElementById('inv_mailSubject').value=defaults.subject;
   document.getElementById('inv_mailBody').value=defaults.body;
@@ -2178,7 +2330,8 @@ function openManualInvoiceModal(){
   resetInvoiceModal();
   invoiceItems=[{productId:'',description:'',qty:1,unitGross:0}];
   renderInvoiceItems();
-  const defaults=buildInvoiceMailDefaults('',document.getElementById('inv_number').value.trim(),0);
+  document.getElementById('inv_mailLang').value='de';
+  const defaults=buildInvoiceMailDefaults('de','',document.getElementById('inv_number').value.trim(),0);
   document.getElementById('inv_mailSubject').value=defaults.subject;
   document.getElementById('inv_mailBody').value=defaults.body;
   document.getElementById('invIssueModal').classList.add('open');
@@ -2187,17 +2340,20 @@ function closeInvIssueModal(){document.getElementById('invIssueModal').classList
 function openInvoiceMailModal(invNumber){
   const inv=getInvoiceByNumber(invNumber);
   if(!inv){alert('인보이스 정보를 찾을 수 없습니다.');return;}
+  const invoiceLang=normalizeInvoiceMailLang(inv.lang||'de');
   document.getElementById('mail_invoiceNumber').value=inv.number;
+  document.getElementById('mail_lang').value=invoiceLang;
   document.getElementById('mail_invoiceInfo').innerHTML=
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
       <div><span style="color:#64748b;">인보이스</span><br><b>${inv.number}</b></div>
       <div><span style="color:#64748b;">고객</span><br><b>${inv.name||'-'}</b></div>
-      <div><span style="color:#64748b;">이메일</span><br>${inv.email||'-'}</div>
+      <div><span style="color:#64748b;">이메일</span><br>${inv.businessInvoiceEmail||inv.email||'-'}</div>
       <div><span style="color:#64748b;">최근 발송</span><br>${inv.mailSentAt||'미발송'}</div>
     </div>`;
-  const defaults=buildInvoiceMailDefaults(inv.name||'',inv.number,inv.total||0);
-  document.getElementById('mail_subject').value=inv.mailSubject||defaults.subject;
-  document.getElementById('mail_body').value=inv.mailBody||defaults.body;
+  const defaults=buildInvoiceMailDefaults(invoiceLang,inv.businessCompanyName||inv.name||'',inv.number,inv.total||0);
+  const useStoredTemplate=!!(inv.mailSentAt&&((inv.mailSubject||'').trim()||(inv.mailBody||'').trim()));
+  document.getElementById('mail_subject').value=useStoredTemplate?(inv.mailSubject||defaults.subject):defaults.subject;
+  document.getElementById('mail_body').value=useStoredTemplate?(inv.mailBody||defaults.body):defaults.body;
   document.getElementById('invoiceMailModal').classList.add('open');
 }
 function closeInvoiceMailModal(){document.getElementById('invoiceMailModal').classList.remove('open');}
@@ -2308,6 +2464,7 @@ function confirmIssueInvoice(){
     customerEmail:document.getElementById('inv_customerEmail').value.trim(),
     customerPhone:document.getElementById('inv_customerPhone').value.trim(),
     customerAddress:document.getElementById('inv_customerAddress').value.trim(),
+    mailLang:document.getElementById('inv_mailLang').value,
     memo:document.getElementById('inv_memo').value.trim(),
     sendMail:document.getElementById('inv_sendMail').checked,
     mailSubject:document.getElementById('inv_mailSubject').value.trim(),
@@ -2333,7 +2490,7 @@ function confirmIssueInvoice(){
           const newInv=allInvoices.find(i=>i.number===res.invoiceNumber);
           const mailMsg=res.mailSentAt?`\n메일 발송: ${res.mailSentAt}`:'';
           if(newInv&&confirm(`✅ 인보이스 ${res.invoiceNumber} 발행 완료!${mailMsg}\n지금 바로 출력하시겠습니까?`)){
-            printInvoice(newInv,'de');
+            printInvoice(newInv,newInv.lang||'de');
           }
         })
         .withFailureHandler(handleApiError)
@@ -2422,6 +2579,7 @@ function renderInvoiceTable(){
 
 function sendInvoiceMailNow(){
   const invNumber=document.getElementById('mail_invoiceNumber').value;
+  const mailLang=document.getElementById('mail_lang').value;
   const subject=document.getElementById('mail_subject').value.trim();
   const body=document.getElementById('mail_body').value.trim();
   if(!invNumber){alert('인보이스 번호가 없습니다.');return;}
@@ -2433,7 +2591,7 @@ function sendInvoiceMailNow(){
       loadInvoiceList();
     })
     .withFailureHandler(handleApiError)
-    .sendInvoiceEmailAdmin(adminToken,invNumber,subject,body);
+    .sendInvoiceEmailAdmin(adminToken,invNumber,subject,body,mailLang);
 }
 
 function printInvoice(inv, lang){
@@ -2452,12 +2610,9 @@ function printInvoice(inv, lang){
   const safeName=(inv.name||'').replace(/\s+/g,'').replace(/[^a-zA-Z0-9가-힣]/g,'');
   const safeNum=(inv.number||'').replace(/-/g,'_');
   const fileName=`Studiomean_${safeNum}_${safeName}_${brutto}EUR`;
-  // 상품명 다국어 번역
-  const prodObj=cmsProducts.find(p=>p.nameKo===inv.product||p.nameEn===inv.product||p.nameDe===inv.product);
-  const productName=prodObj?(lang==='en'?prodObj.nameEn:lang==='ko'?prodObj.nameKo:prodObj.nameDe):(inv.product||'-');
   // 번역 테이블
   const T={
-    de:{invLabel:'Rechnungnummer',dateLabel:'Rechnungdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Qty',ep:'Einzelpreis',gp:'Gesamtpreis(netto)',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
+    de:{invLabel:'Rechnungsnummer',dateLabel:'Rechnungsdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
     ko:{invLabel:'인보이스 번호',dateLabel:'발행일',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',net:'공급가액',mwst:'부가세 19%',end:'최종 금액',dep:'계약금 (기납부)',ref:'환불 금액',notes:'기타사항'},
     en:{invLabel:'Invoice No.',dateLabel:'Invoice Date',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',net:'Net Total',mwst:'VAT 19%',end:'Total Amount',dep:'Deposit (already paid)',ref:'Refund',notes:'Notes'}
   };
@@ -2543,7 +2698,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;backgro
       const lineGross=qty*(parseFloat(item.unitGross)||0);
       const unitNet=Math.round((((parseFloat(item.unitGross)||0)/1.19))*100)/100;
       const lineNet=Math.round(((lineGross/1.19))*100)/100;
-      const desc=item.description||productName;
+      const desc=getLocalizedInvoiceItemDescription(item, inv, lang);
       return `<tr><td>${idx+1}</td><td>${desc}</td><td class="r">${qty}</td><td class="r">€${unitNet.toFixed(2)}</td><td class="r">€${lineNet.toFixed(2)}</td></tr>`;
     }).join('')}
     ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="r">1</td><td class="r" style="color:#c00;">-€${refund.toFixed(2)}</td><td class="r" style="color:#c00;">-€${refund.toFixed(2)}</td></tr>`:''}
