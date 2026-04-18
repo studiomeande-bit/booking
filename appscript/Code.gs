@@ -67,8 +67,9 @@ const SELECT_PICKUP_LOOKAHEAD_DAYS = 120;
 const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
 const WEDDING_EARLY_BOOKING_MONTHS = 6;
-const WEDDING_EARLY_BOOKING_DISCOUNT = 100;
-const WEDDING_MARKETING_DISCOUNT = 100;
+const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
+const WEDDING_MARKETING_DISCOUNT_RATE = 5;
+const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조','언어'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 let SETTINGS_MAP_CACHE = null;
@@ -829,6 +830,13 @@ function isWeddingEarlyBookingEligible_(shootDateStr,baseDate){
   const threshold=addMonthsClamped_(thresholdBase,WEDDING_EARLY_BOOKING_MONTHS);
   return shootDate.getTime()>=threshold.getTime();
 }
+function roundCurrency_(value){
+  return Math.round((Number(value)||0)*100)/100;
+}
+function formatEuroAmount_(value){
+  const rounded=roundCurrency_(value);
+  return Number.isInteger(rounded)?String(rounded):rounded.toFixed(2);
+}
 function getWeddingRefundPolicyHtml_(lang){
   if(lang==='en'){
     return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Wedding Deposit & Refund Guide</b><br>• 60+ days before the shoot: 100% refund<br>• 59 to 30 days before: 70% refund<br>• 29 to 14 days before: 50% refund<br>• 13 to 7 days before: 30% refund<br>• 6 days before to same day: no refund<br><span style="display:block;margin-top:6px;color:#8a6d15;">The refund amount is calculated based on the date when the cancellation request is received.</span></div>';
@@ -930,10 +938,12 @@ function calculateQuote_(request){
   const settings=getSettingsMap_();const evRate=parseInt(settings.event_rate)||0;
   if(evRate>0&&settings.event_start&&settings.event_end&&request.date&&request.date>=settings.event_start&&request.date<=settings.event_end){eventDiscount=Math.round(total*(evRate/100));total-=eventDiscount;}
   if(request.isReturn){const rate=parseInt(settings.return_discount)||10;returnDiscount=Math.round(total*(rate/100));total-=returnDiscount;}
+  const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=WEDDING_EARLY_BOOKING_DISCOUNT;total-=earlyBirdDiscount;}
+  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
-  if(item.g==='wed'&&request.marketing){marketingDiscount=WEDDING_MARKETING_DISCOUNT;total-=marketingDiscount;}
+  if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
+  if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
   const PASS_DUR=[0,15,20,30,40];
   const duration=item.g==='biz'
     ? businessHours*60
@@ -946,8 +956,8 @@ function calculateQuote_(request){
   const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo';
-  const depositAmount=total<=100?0:(item.g==='wed'?Math.round(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:Math.max(0,total),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:Math.max(0,total-depositAmount),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
+  const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,isReturn:request.isReturn||false,marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys};
 }
 
 /* ====== 재방문 감지 ====== */
@@ -2183,7 +2193,7 @@ function sendAdminNotificationEmail_(data,quote,koName,eventId,surveyStr,memo,is
   const allCountries=[...(quote.passCountries||[]),...(quote.otherCountry?[quote.otherCountry]:[])].join(', ');
   const businessInvoiceNeeded=!!data.businessInvoiceNeeded;
   const td=(l,v)=>`<tr><td style="padding:10px 14px;background:#f8fafc;font-weight:700;width:110px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${l}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">${v}</td></tr>`;
-  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;"><h2 style="margin:0;color:#fff;font-size:18px;">🆕 새 예약${isReturn?' ⭐재방문':''}</h2></div><div style="padding:25px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">${td('고객명',`<b>${data.name}</b>${isReturn?' <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">재방문</span>':''}`)}${td('연락처',data.phone)}${td('이메일',data.email)}${businessInvoiceNeeded?td('사업자송장',`<b>필요</b>${data.businessCompanyName?` · ${data.businessCompanyName}`:''}`):''}${data.businessInvoiceEmail?td('송장이메일',data.businessInvoiceEmail):''}${data.businessVatId?td('VAT 번호',data.businessVatId):''}${data.businessInvoiceRef?td('참조번호',data.businessInvoiceRef):''}${quote.isDeposit&&data.payerName?td('입금자명',data.payerName):''}${td('상품',`<b style="color:#2563eb;">${koName}</b>${allCountries?' ('+allCountries+')':''}`)}${td('일시',`<b>${data.date} ${data.time}</b>`)}${td('인원',quote.people+'명')}${td('총금액',`<b style="color:#10b981;">${quote.totalPrice}€</b>`)}${quote.isDeposit?td('계약금',`<span style="color:#ef4444;">${quote.depositAmount}€ 입금 필요</span>`):''} ${surveyStr?td('분위기',surveyStr):''}${memo?td('요청사항',`<div style="white-space:pre-wrap;">${memo}</div>`):''}</table><div style="text-align:center;margin:25px 0;display:flex;gap:12px;justify-content:center;"><a href="${confirmUrl}" style="background:#10b981;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">✅ 예약 확정하기</a><a href="${cancelUrl}" style="background:#ef4444;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">❌ 예약 취소하기</a></div><p style="text-align:center;font-size:12px;color:#94a3b8;">이 링크는 14일 후 만료됩니다.</p></div></div>`;
+  const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;"><h2 style="margin:0;color:#fff;font-size:18px;">🆕 새 예약${isReturn?' ⭐재방문':''}</h2></div><div style="padding:25px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">${td('고객명',`<b>${data.name}</b>${isReturn?' <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">재방문</span>':''}`)}${td('연락처',data.phone)}${td('이메일',data.email)}${businessInvoiceNeeded?td('사업자송장',`<b>필요</b>${data.businessCompanyName?` · ${data.businessCompanyName}`:''}`):''}${data.businessInvoiceEmail?td('송장이메일',data.businessInvoiceEmail):''}${data.businessVatId?td('VAT 번호',data.businessVatId):''}${data.businessInvoiceRef?td('참조번호',data.businessInvoiceRef):''}${quote.isDeposit&&data.payerName?td('입금자명',data.payerName):''}${td('상품',`<b style="color:#2563eb;">${koName}</b>${allCountries?' ('+allCountries+')':''}`)}${td('일시',`<b>${data.date} ${data.time}</b>`)}${td('인원',quote.people+'명')}${td('총금액',`<b style="color:#10b981;">${formatEuroAmount_(quote.totalPrice)}€</b>`)}${quote.isDeposit?td('계약금',`<span style="color:#ef4444;">${formatEuroAmount_(quote.depositAmount)}€ 입금 필요</span>`):''} ${surveyStr?td('분위기',surveyStr):''}${memo?td('요청사항',`<div style="white-space:pre-wrap;">${memo}</div>`):''}</table><div style="text-align:center;margin:25px 0;display:flex;gap:12px;justify-content:center;"><a href="${confirmUrl}" style="background:#10b981;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">✅ 예약 확정하기</a><a href="${cancelUrl}" style="background:#ef4444;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">❌ 예약 취소하기</a></div><p style="text-align:center;font-size:12px;color:#94a3b8;">이 링크는 14일 후 만료됩니다.</p></div></div>`;
   MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[새 예약${isReturn?' ⭐재방문':''}] ${data.name}님 — ${koName} (${data.date} ${data.time})`,htmlBody});
 }
 
@@ -2198,10 +2208,10 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
         : lang==='de'
           ? '■ Preis: Ein individuelles Angebot senden wir nach Prüfung.<br>'
           : '■ 가격 안내: 세부 내용 확인 후 맞춤 견적을 보내드립니다.<br>')
-    : (quote.isDeposit?`${T.lbl_total} ${quote.totalPrice}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${quote.depositAmount}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${quote.balanceAmount}€`:`${T.lbl_total} ${quote.totalPrice}€`);
-  const mktDiscLabel={ko:'■ 마케팅 동의 할인:',en:'■ Marketing consent discount:',de:'■ Marketing-Einwilligungsrabatt:'};
-  const earlyDiscLabel={ko:'■ 얼리 예약 할인:',en:'■ Early booking discount:',de:'■ Frühbucher-Rabatt:'};
-  const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${quote.productDiscount}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${quote.returnDiscount}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${quote.eventDiscount}€`:'',quote.earlyBirdDiscount>0?`${earlyDiscLabel[lang]||earlyDiscLabel.ko} -${quote.earlyBirdDiscount}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${quote.marketingDiscount}€`:'' ].filter(Boolean).join('<br>');
+    : (quote.isDeposit?`${T.lbl_total} ${formatEuroAmount_(quote.totalPrice)}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${formatEuroAmount_(quote.depositAmount)}€</span> ${T.deposit_note}<br>${T.lbl_balance} ${formatEuroAmount_(quote.balanceAmount)}€`:`${T.lbl_total} ${formatEuroAmount_(quote.totalPrice)}€`);
+  const mktDiscLabel={ko:`■ 마케팅 동의 할인 (${WEDDING_MARKETING_DISCOUNT_RATE}%):`,en:`■ Marketing consent discount (${WEDDING_MARKETING_DISCOUNT_RATE}%):`,de:`■ Marketing-Einwilligungsrabatt (${WEDDING_MARKETING_DISCOUNT_RATE}%):`};
+  const earlyDiscLabel={ko:`■ 얼리 예약 할인 (${WEDDING_EARLY_BOOKING_DISCOUNT_RATE}%):`,en:`■ Early booking discount (${WEDDING_EARLY_BOOKING_DISCOUNT_RATE}%):`,de:`■ Frühbucher-Rabatt (${WEDDING_EARLY_BOOKING_DISCOUNT_RATE}%):`};
+  const discHtml=isBiz ? '' : [quote.productDiscount>0?`${T.lbl_disc_product} -${formatEuroAmount_(quote.productDiscount)}€`:'',quote.returnDiscount>0?`${T.lbl_disc_return} -${formatEuroAmount_(quote.returnDiscount)}€ ${T.return_auto}`:'',quote.eventDiscount>0?`${T.lbl_disc_event} -${formatEuroAmount_(quote.eventDiscount)}€`:'',quote.earlyBirdDiscount>0?`${earlyDiscLabel[lang]||earlyDiscLabel.ko} -${formatEuroAmount_(quote.earlyBirdDiscount)}€`:'',quote.marketingDiscount>0?`${mktDiscLabel[lang]||mktDiscLabel.ko} -${formatEuroAmount_(quote.marketingDiscount)}€`:'' ].filter(Boolean).join('<br>');
   const returnBadge=isReturn?`<br><b style="color:#8b5cf6;">${T.return_badge}</b>`:'';
   const refundBox=(quote.isDeposit&&quote.depositAmount>0)?(quote.itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang):(T.refund_policy||'')):'';
   // 취소/변경 신청 링크
@@ -2227,8 +2237,9 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const formattedTime=Utilities.formatDate(dt,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const allCountries=(passCountries||[]).join(', ');
   const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup});
-  const dep=parseInt(depositAmount)||0;
-  const bal=parseInt(balanceAmount)||0;
+  const dep=roundCurrency_(toNumberOrZero_(depositAmount));
+  const bal=roundCurrency_(toNumberOrZero_(balanceAmount));
+  const totalPrice=roundCurrency_(toNumberOrZero_(price));
   const isBiz=itemGroup==='biz';
   const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
   const refundBox=(dep>0&&itemGroup!=='biz')?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'';
@@ -2238,7 +2249,7 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
         : lang==='de'
           ? '■ Preis: Ein detailliertes Angebot senden wir nach Prüfung Ihrer Anfrage.'
           : '■ 가격 안내: 요청하신 내용을 검토한 후 상세 견적을 보내드립니다.')
-    : (dep>0?`${T.lbl_total} ${price}<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${dep}€</span><br>${T.lbl_balance} ${bal}€${depositBox}`:`${T.lbl_total} ${price}€`);
+    : (dep>0?`${T.lbl_total} ${formatEuroAmount_(totalPrice)}€<br>${T.lbl_deposit} <span style="color:#ef4444;font-weight:bold;">${formatEuroAmount_(dep)}€</span><br>${T.lbl_balance} ${formatEuroAmount_(bal)}€${depositBox}`:`${T.lbl_total} ${formatEuroAmount_(totalPrice)}€`);
   // 고객 취소요청 링크
   let cancelSection='';
   if(eventId){
@@ -2289,10 +2300,8 @@ function confirmBooking(eventId){
     const products=getCachedProducts_();const product=products.find(p=>p.nameKo===row[7]);
     const prodLocal=product?(lang==='en'?product.nameEn:(lang==='de'?product.nameDe:product.nameKo)):row[7];
     const passCountries=String(row[8]||'').split('|').map(s=>s.trim()).filter(s=>s&&!['kids','dog','bg','outfit'].includes(s));
-    // row[11] = 계약금 문자열(예: "입금전(50€)"), row[12] = 잔금
-    const depMatch=String(row[11]||'').match(/\d+/);
-    const depAmt=depMatch?parseInt(depMatch[0]):0;
-    const balAmt=parseInt(String(row[12]||'').replace(/[^0-9]/g,''))||0;
+    const depAmt=parseMoneyValue_(row[11]);
+    const balAmt=parseMoneyValue_(row[12]);
     _sendConfirmEmail(row[2],row[4],lang,row[6],prodLocal,row[10],row[0],passCountries,String(row[14]||'').split(','),depAmt,balAmt,eventId);
     return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2 style="color:#10b981;">✅ 예약 확정 완료</h2><p>고객에게 확정 이메일이 발송되었습니다.</p></div>');
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
@@ -2700,8 +2709,8 @@ function addManualBookingAdmin(token, data) {
       eventId = ev.getId();
     }
     
-    const depositAmt = parseInt(data.deposit) || 0;
-    const balanceAmt = parseInt(data.balance) || Math.max(0, (parseInt(data.price) || 0) - depositAmt);
+    const depositAmt = roundCurrency_(toNumberOrZero_(data.deposit));
+    const balanceAmt = roundCurrency_(toNumberOrZero_(data.balance) || Math.max(0, toNumberOrZero_(data.price) - depositAmt));
     const depPayMethod = data.depositPayMethod || '-';
     const optionsStr = data.options || '';
 
@@ -2709,8 +2718,8 @@ function addManualBookingAdmin(token, data) {
     // [예약일시,상태,고객명,연락처,이메일,언어,촬영종류,상품,옵션,인원,총결제액,계약금,잔금,결제수단,분위기,요청사항,캘린더ID,계약금수단,추가항목,재방문,잔금결제일]
     sh.appendRow([
       `${data.date} ${data.time}`, '확정됨', data.name, data.phone, emailToSave, langToSave, groupToSave, data.product,
-      optionsStr, peopleToSave, priceText, depositAmt > 0 ? String(depositAmt)+'€' : '0',
-      balanceAmt > 0 ? String(balanceAmt)+'€' : priceText, data.payMethod, '수기등록', data.memo, eventId,
+      optionsStr, peopleToSave, priceText, depositAmt > 0 ? formatEuroAmount_(depositAmt)+'€' : '0',
+      balanceAmt > 0 ? formatEuroAmount_(balanceAmt)+'€' : priceText, data.payMethod, '수기등록', data.memo, eventId,
       depPayMethod, '', '수기', '', '', '', '', '', '', String(data.address||'').trim(), String(data.payerName||'').trim()
     ]);
 
@@ -2801,7 +2810,7 @@ function getDashboardData_(){
   for(let r=1;r<data.length;r++){
     const row=data[r];if(!row[0])continue;
     const{obj:dObj,str:dStr}=parseDateSafe_(row[0]);const m=dObj.getMonth()+1;if(isNaN(m))continue;
-    const status=String(row[1]||''),price=parseInt(String(row[10]||'0').replace(/[^0-9]/g,''))||0;
+    const status=String(row[1]||''),price=parseMoneyValue_(row[10]);
     const payStr=String(row[13]||''),g=String(row[6]||'');
     const effectiveDeposit=getEffectiveBookingDeposit_(row);
     const depositRaw=effectiveDeposit>0?String(row[11]||''):'0';
@@ -3133,7 +3142,7 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh) {
     if(startDate && dateOnly < startDate) continue;
     if(endDate && dateOnly > endDate) continue;
     if(!['촬영완료','셀렉완료','작업완료'].includes(String(row[1]))) continue;
-    const gross = parseInt(String(row[10]||'0').replace(/[^0-9]/g,''))||0;
+    const gross = parseMoneyValue_(row[10]);
     if(gross===0) continue;
     const net = Math.round(gross/1.19);
     const tax = gross - net;
@@ -6040,8 +6049,8 @@ function createInvoiceRecord_(payload){
   const dateStr=row?parseDateSafe_(row[0]).str.slice(0,16):String(payload.dateStr||'');
   const price=items.length
     ?Math.round(items.reduce((sum,item)=>sum+(item.qty*item.unitGross),0)*100)/100
-    :(payload.customAmount!=null&&payload.customAmount!==''?parseFloat(payload.customAmount)||0:(row?parseInt(String(row[10]||'0').replace(/[^0-9]/g,''))||0:0));
-  const deposit=row?(parseInt(String(row[11]||'0').replace(/[^0-9]/g,''))||0):(parseFloat(payload.depositAmount)||0);
+    :(payload.customAmount!=null&&payload.customAmount!==''?parseFloat(payload.customAmount)||0:(row?parseMoneyValue_(row[10]):0));
+  const deposit=row?parseMoneyValue_(row[11]):(parseFloat(payload.depositAmount)||0);
   const refund=parseFloat(payload.refundAmount)||0;
   const product=payload.customProduct||(row?String(row[7]||'').trim():'')||(items[0]&&items[0].description)||'';
   const bookingBusinessMeta=getBookingBusinessInvoiceMeta_(row);
