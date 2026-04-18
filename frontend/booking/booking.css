@@ -1174,6 +1174,16 @@ h1 {
   line-height: 1.75;
   color: #6f5630;
 }
+.wedding-refund-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #6f5630;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.wedding-refund-list li + li {
+  margin-top: 4px;
+}
 .wedding-refund-sub {
   margin-top: 8px;
   font-size: 12px;

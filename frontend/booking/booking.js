@@ -68,8 +68,15 @@ function getWeddingCopy() {
       marketingPending: `Agree to receive -€${WEDDING_MARKETING_DISCOUNT} extra.`,
       marketingActive: `Scheduled · -€${WEDDING_MARKETING_DISCOUNT}`,
       refundTitle: 'Deposit refund guide',
-      refundBody: 'The deposit is fully refundable only up to 60 days before the shoot. After that, the refundable amount decreases step by step as the shoot date gets closer.',
-      refundSub: 'The final refundable amount is reviewed based on the cancellation date.',
+      refundBody: 'Wedding deposit refunds are handled according to the cancellation timing below.',
+      refundRanges: [
+        '60+ days before the shoot: 100% refund',
+        '59 to 30 days before: 70% refund',
+        '29 to 14 days before: 50% refund',
+        '13 to 7 days before: 30% refund',
+        '6 days before to same day: no refund'
+      ],
+      refundSub: 'The refund is calculated based on the date when the cancellation request is received.',
       appliedLabel: 'Current estimated savings',
       marketingLabel: `[Optional] Agree to marketing / SNS / portfolio usage for an extra -€${WEDDING_MARKETING_DISCOUNT} wedding discount.`,
       marketingSub: 'If you agree, the final images may be used for Studio mean website, social media, and portfolio promotion.',
@@ -91,8 +98,15 @@ function getWeddingCopy() {
       marketingPending: `Mit Einwilligung zusätzliche -${WEDDING_MARKETING_DISCOUNT}€.`,
       marketingActive: `Vorgemerkt · -${WEDDING_MARKETING_DISCOUNT}€`,
       refundTitle: 'Info zur Anzahlung & Rückerstattung',
-      refundBody: 'Die Anzahlung ist nur bis 60 Tage vor dem Shooting zu 100% erstattbar. Danach verringert sich der erstattbare Betrag stufenweise, je näher der Termin rückt.',
-      refundSub: 'Der endgültige Rückerstattungsbetrag wird nach dem Stornierungszeitpunkt geprüft.',
+      refundBody: 'Für die Hochzeits-Anzahlung gelten je nach Stornozeitpunkt folgende Erstattungsstufen.',
+      refundRanges: [
+        'Ab 60 Tagen vor dem Shooting: 100% Rückerstattung',
+        '59 bis 30 Tage vorher: 70% Rückerstattung',
+        '29 bis 14 Tage vorher: 50% Rückerstattung',
+        '13 bis 7 Tage vorher: 30% Rückerstattung',
+        'Ab 6 Tagen vorher bis am Shootingtag: keine Rückerstattung'
+      ],
+      refundSub: 'Maßgeblich ist das Datum, an dem die Stornierungsanfrage bei uns eingeht.',
       appliedLabel: 'Aktuell geplanter Rabatt',
       marketingLabel: `[Optional] Marketing / SNS / Portfolio-Nutzung zustimmen und zusätzliche -${WEDDING_MARKETING_DISCOUNT}€ Hochzeitsrabatt erhalten.`,
       marketingSub: 'Bei Zustimmung dürfen die finalen Bilder für die Website, Social Media und das Portfolio von Studio mean verwendet werden.',
@@ -113,8 +127,15 @@ function getWeddingCopy() {
     marketingPending: `동의 시 추가 -€${WEDDING_MARKETING_DISCOUNT}`,
     marketingActive: `적용 예정 · -€${WEDDING_MARKETING_DISCOUNT}`,
     refundTitle: '예약금 환불 안내',
-    refundBody: '예약금은 촬영일 60일 전까지 100% 환불되며, 그 이후에는 촬영일이 가까워질수록 환불 가능 금액이 단계적으로 줄어듭니다.',
-    refundSub: '최종 환불 금액은 실제 취소 시점을 기준으로 안내드립니다.',
+    refundBody: '웨딩 예약금은 취소 접수 시점에 따라 아래 기준으로 환불됩니다.',
+    refundRanges: [
+      '촬영일 60일 전까지: 100% 환불',
+      '촬영일 59~30일 전: 70% 환불',
+      '촬영일 29~14일 전: 50% 환불',
+      '촬영일 13~7일 전: 30% 환불',
+      '촬영일 6일 전부터 당일: 환불 불가'
+    ],
+    refundSub: '환불 금액은 실제 취소 요청이 접수된 날짜를 기준으로 계산됩니다.',
     appliedLabel: '현재 예상 할인',
     marketingLabel: `[선택] 마케팅/SNS/포트폴리오 활용 동의 시 추가 -€${WEDDING_MARKETING_DISCOUNT} 할인`,
     marketingSub: '동의하시면 촬영 결과물을 Studio mean 웹사이트, SNS, 포트폴리오 홍보 용도로 활용할 수 있으며 웨딩 추가 할인도 함께 적용됩니다.',
@@ -2650,6 +2671,9 @@ function getWeddingBenefitBoxHtml() {
       ? copy.earlyActive
       : copy.earlyPendingDate;
   const marketingStatus = marketingActive ? copy.marketingActive : copy.marketingPending;
+  const refundRanges = Array.isArray(copy.refundRanges) && copy.refundRanges.length
+    ? `<ul class="wedding-refund-list">${copy.refundRanges.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+    : '';
   return `
     <section class="wedding-benefit-box">
       <div class="wedding-benefit-eyebrow">${escapeHtml(copy.benefitEyebrow)}</div>
@@ -2671,6 +2695,7 @@ function getWeddingBenefitBoxHtml() {
       <div class="wedding-refund-box">
         <div class="wedding-refund-title">${escapeHtml(copy.refundTitle)}</div>
         <div class="wedding-refund-copy">${escapeHtml(copy.refundBody)}</div>
+        ${refundRanges}
         <div class="wedding-refund-sub">${escapeHtml(copy.refundSub)}</div>
       </div>
     </section>

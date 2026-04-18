@@ -831,12 +831,12 @@ function isWeddingEarlyBookingEligible_(shootDateStr,baseDate){
 }
 function getWeddingRefundPolicyHtml_(lang){
   if(lang==='en'){
-    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Wedding Deposit & Refund Guide</b><br>• The deposit is fully refundable only up to 60 days before the shoot.<br>• After that, the refundable amount decreases step by step as the shoot date gets closer.<br>• The final refundable amount is reviewed based on the cancellation date.</div>';
+    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Wedding Deposit & Refund Guide</b><br>• 60+ days before the shoot: 100% refund<br>• 59 to 30 days before: 70% refund<br>• 29 to 14 days before: 50% refund<br>• 13 to 7 days before: 30% refund<br>• 6 days before to same day: no refund<br><span style="display:block;margin-top:6px;color:#8a6d15;">The refund amount is calculated based on the date when the cancellation request is received.</span></div>';
   }
   if(lang==='de'){
-    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Info zur Hochzeits-Anzahlung & Rückerstattung</b><br>• Die Anzahlung ist nur bis 60 Tage vor dem Shooting zu 100% erstattbar.<br>• Danach verringert sich der erstattbare Betrag stufenweise, je näher der Termin rückt.<br>• Der endgültige Rückerstattungsbetrag wird nach dem Stornierungszeitpunkt geprüft.</div>';
+    return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Info zur Hochzeits-Anzahlung & Rückerstattung</b><br>• Ab 60 Tagen vor dem Shooting: 100% Rückerstattung<br>• 59 bis 30 Tage vorher: 70% Rückerstattung<br>• 29 bis 14 Tage vorher: 50% Rückerstattung<br>• 13 bis 7 Tage vorher: 30% Rückerstattung<br>• Ab 6 Tagen vorher bis am Shootingtag: keine Rückerstattung<br><span style="display:block;margin-top:6px;color:#8a6d15;">Maßgeblich ist das Datum, an dem die Stornierungsanfrage bei uns eingeht.</span></div>';
   }
-  return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 웨딩 예약금 환불 안내</b><br>• 예약금은 촬영일 60일 전까지 100% 환불됩니다.<br>• 이후에는 촬영일이 가까워질수록 환불 가능 금액이 단계적으로 줄어듭니다.<br>• 최종 환불 금액은 실제 취소 시점을 기준으로 안내드립니다.</div>';
+  return '<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 웨딩 예약금 환불 안내</b><br>• 촬영일 60일 전까지: 100% 환불<br>• 촬영일 59~30일 전: 70% 환불<br>• 촬영일 29~14일 전: 50% 환불<br>• 촬영일 13~7일 전: 30% 환불<br>• 촬영일 6일 전부터 당일: 환불 불가<br><span style="display:block;margin-top:6px;color:#8a6d15;">환불 금액은 실제 취소 요청이 접수된 날짜를 기준으로 계산됩니다.</span></div>';
 }
 function calculateQuote_(request){
   const item=getProductById_(request.itemId);
