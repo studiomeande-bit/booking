@@ -3535,6 +3535,31 @@ function parseInvoiceAddressParts(addressText,fallbackCountryCode){
     countryCode
   };
 }
+
+function buildInvoiceIssueAlertMessage(res){
+  const lines=[`✅ 인보이스 ${res.invoiceNumber} 발행 완료`];
+  const mail=res&&res.mailResult;
+  if(mail&&mail.requested){
+    if(mail.sent){
+      lines.push(`메일 발송 완료: ${mail.sentAt||'-'}`);
+      if(mail.recipientEmail) lines.push(`수신: ${mail.recipientEmail}`);
+    }else{
+      lines.push('메일 발송 실패');
+      if(mail.recipientEmail) lines.push(`수신: ${mail.recipientEmail}`);
+      if(mail.error) lines.push(`사유: ${mail.error}`);
+    }
+  }else{
+    lines.push('메일 발송: 요청 안함');
+  }
+  return lines.join('\n');
+}
+
+function buildInvoiceMailSentAlertMessage(res){
+  const lines=['메일 발송 완료'];
+  if(res&&res.sentAt) lines.push(`시각: ${res.sentAt}`);
+  if(res&&res.recipientEmail) lines.push(`수신: ${res.recipientEmail}`);
+  return lines.join('\n');
+}
 function ensureXRechnungExportReady(inv){
   if(!inv||!inv.businessInvoiceNeeded) throw new Error('사업자 송장만 XRechnung export를 지원합니다.');
   const sellerEndpoint=getVatEndpointInfo(STUDIO_BUSINESS_INFO.vatId);
@@ -4095,9 +4120,11 @@ function confirmIssueInvoice(){
           allInvoices=r.invoices||[];
           renderInvoiceTable();
           const newInv=allInvoices.find(i=>i.number===res.invoiceNumber);
-          const mailMsg=res.mailSentAt?`\n메일 발송: ${res.mailSentAt}`:'';
-          if(newInv&&confirm(`✅ 인보이스 ${res.invoiceNumber} 발행 완료!${mailMsg}\n지금 바로 출력하시겠습니까?`)){
+          const baseMsg=buildInvoiceIssueAlertMessage(res);
+          if(newInv&&confirm(`${baseMsg}\n\n지금 바로 출력하시겠습니까?`)){
             printInvoice(newInv,newInv.lang||'de');
+          }else if(!newInv){
+            alert(baseMsg);
           }
         })
         .withFailureHandler(handleApiError)
@@ -4241,7 +4268,7 @@ function sendInvoiceMailNow(){
   google.script.run
     .withSuccessHandler(res=>{
       closeInvoiceMailModal();
-      alert(`메일 발송 완료${res&&res.sentAt?`\n${res.sentAt}`:''}`);
+      alert(buildInvoiceMailSentAlertMessage(res||{}));
       loadInvoiceList();
     })
     .withFailureHandler(handleApiError)
@@ -4275,8 +4302,10 @@ function printInvoice(inv, lang){
 <html><head><meta charset="utf-8"><title>${fileName}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;background:#fff;padding:22px 34px;margin:0 auto;}
-.page{min-height:250mm;display:flex;flex-direction:column;}
+@page{size:A4 portrait;margin:12mm;}
+html,body{margin:0;padding:0;background:#fff;}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:186mm;min-height:273mm;margin:0 auto;}
+.page{min-height:273mm;display:flex;flex-direction:column;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;}
 .logo-wrap{flex:1;max-width:52%;}
 .logo-img{width:240px;height:auto;display:block;}
@@ -4307,7 +4336,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;backgro
 .footer{margin-top:auto;padding-top:18px;}
 .footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
 .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
-@media print{body{padding:18px 26px;}@page{size:A4;margin:10mm 12mm;}}
+@media print{html,body{width:auto;min-height:auto;}body{margin:0;}}
 </style></head><body>
 <div class="page">
 <div class="header">

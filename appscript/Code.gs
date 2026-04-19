@@ -5799,8 +5799,10 @@ function buildInvoiceHtml_(inv, lang){
 <html><head><meta charset="utf-8"><title>${escapeHtml_(inv.number||'Invoice')}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;background:#fff;padding:22px 34px;margin:0 auto;}
-.page{min-height:250mm;display:flex;flex-direction:column;}
+@page{size:A4 portrait;margin:12mm;}
+html,body{margin:0;padding:0;background:#fff;}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:186mm;min-height:273mm;margin:0 auto;}
+.page{min-height:273mm;display:flex;flex-direction:column;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;}
 .logo-wrap{flex:1;max-width:52%;}
 .logo-img{width:240px;height:auto;display:block;}
@@ -5830,6 +5832,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;backgro
 .footer{margin-top:auto;padding-top:18px;}
 .footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
 .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
+@media print{html,body{width:auto;min-height:auto;}body{margin:0;}}
 </style></head><body>
 <div class="page">
 <div class="header">
@@ -5876,9 +5879,17 @@ function createInvoicePdf_(inv, lang){
   return {fileId:file.getId(), url:file.getUrl(), name:file.getName()};
 }
 
+function isValidEmailAddress_(email){
+  const value=String(email||'').trim();
+  if(!value) return false;
+  if(value.includes('수기등록')) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function sendInvoiceEmailInternal_(inv, subject, body, mailLang){
   const recipientEmail=getInvoiceRecipientEmail_(inv);
-  if(!recipientEmail) throw new Error('고객 이메일이 없습니다.');
+  if(!recipientEmail) throw new Error('인보이스 수신 이메일이 없습니다.');
+  if(!isValidEmailAddress_(recipientEmail)) throw new Error('인보이스 수신 이메일 형식이 올바르지 않습니다.');
   const invoiceSheet=ensureSheets_().invoiceSheet;
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'')===String(inv.number||''));
@@ -6033,6 +6044,15 @@ function createInvoiceRecord_(payload){
   const data=bookingSheet.getDataRange().getValues();
   const linkedBookingRow=parseInt(payload.bookingRowIndex)||0;
   const row=(linkedBookingRow>=2&&linkedBookingRow<=data.length)?data[linkedBookingRow-1]:null;
+  const requestedType=String(payload.type||(linkedBookingRow?'예약':'수기')).trim();
+  const duplicated=findExistingInvoiceForPayload_(invoiceSheet,{
+    bookingRowIndex:linkedBookingRow,
+    type:requestedType,
+    refundAmount:payload.refundAmount
+  });
+  if(duplicated){
+    throw new Error(`이미 발행된 인보이스가 있습니다. 기존 번호: ${duplicated.number}`);
+  }
   let invNo=String(payload.customInvNumber||payload.invoiceNumber||'').trim();
   if(!invNo) invNo=generateInvoiceNumber_(invoiceSheet);
   if(invoiceSheet.getLastRow()>1){
@@ -6072,7 +6092,7 @@ function createInvoiceRecord_(payload){
   const mailSubject=String(payload.mailSubject||defaults.subject||'').trim();
   const mailBody=String(payload.mailBody||defaults.body||'').trim();
   invoiceSheet.appendRow([
-    invNo, now, payload.type||(linkedBookingRow?'예약':'수기'), linkedBookingRow||'',
+    invNo, now, requestedType, linkedBookingRow||'',
     customerName, customerEmail, customerPhone, dateStr, row?row[6]:'', product,
     price, deposit, refund, invoiceMemo, '발행', customerAddress, JSON.stringify(items),
     '', '', mailSubject, mailBody, '', '', '', '', '', '', '', '', '',
@@ -6087,7 +6107,7 @@ function createInvoiceRecord_(payload){
   const inv={
     number:invNo,
     issuedAt:now.slice(0,10),
-    type:payload.type||(linkedBookingRow?'예약':'수기'),
+    type:requestedType,
     bookingRowIndex:linkedBookingRow||0,
     name:customerName,
     email:customerEmail,
@@ -6113,9 +6133,34 @@ function createInvoiceRecord_(payload){
   invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
   invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
   let mailSentAt='';
+  let mailResult={
+    requested:!!payload.sendMail,
+    sent:false,
+    recipientEmail:getInvoiceRecipientEmail_(inv)||'',
+    sentAt:'',
+    error:''
+  };
   if(payload.sendMail){
-    const sent=sendInvoiceEmailInternal_(inv,mailSubject,mailBody,mailLang);
-    mailSentAt=sent.sentAt||'';
+    try{
+      const sent=sendInvoiceEmailInternal_(inv,mailSubject,mailBody,mailLang);
+      mailSentAt=sent.sentAt||'';
+      mailResult={
+        requested:true,
+        sent:true,
+        recipientEmail:sent.recipientEmail||mailResult.recipientEmail,
+        sentAt:sent.sentAt||'',
+        error:''
+      };
+    }catch(mailErr){
+      mailResult={
+        requested:true,
+        sent:false,
+        recipientEmail:mailResult.recipientEmail,
+        sentAt:'',
+        error:String((mailErr&&mailErr.message)||mailErr||'메일 발송 실패')
+      };
+      Logger.log('createInvoiceRecord_ send mail failed: '+mailResult.error);
+    }
   }
   // Lexware 자동 전송 (비차단 — 인보이스 생성은 실패해도 진행)
   try{
@@ -6126,7 +6171,33 @@ function createInvoiceRecord_(payload){
   }catch(e){
     Logger.log('createInvoiceRecord_ Lexware auto-push failed: ' + e.message);
   }
-  return {ok:true, invoiceNumber:invNo, pdfUrl:pdf.url, mailSentAt, mailSubject, mailBody};
+  return {ok:true, invoiceNumber:invNo, pdfUrl:pdf.url, mailSentAt, mailSubject, mailBody, mailResult};
+}
+
+function findExistingInvoiceForPayload_(invoiceSheet,payload){
+  const bookingRowIndex=parseInt(payload&&payload.bookingRowIndex,10)||0;
+  if(!bookingRowIndex) return null;
+  const requestedType=String(payload&&payload.type||'').trim()||'예약';
+  const isRefundRequest=requestedType==='취소/환불' || toNumberOrZero_(payload&&payload.refundAmount)>0;
+  const rows=(invoiceSheet||ensureSheets_().invoiceSheet).getDataRange().getValues();
+  const invoices=rows.slice(1)
+    .map(function(row,idx){return invoiceRowToObject_(row,idx+2);})
+    .filter(function(inv){return Number(inv&&inv.bookingRowIndex||0)===bookingRowIndex;});
+  if(!invoices.length) return null;
+  if(isRefundRequest){
+    return invoices.find(function(inv){
+      return String(inv&&inv.type||'')==='취소/환불' || toNumberOrZero_(inv&&inv.refund)>0;
+    })||null;
+  }
+  if(requestedType==='셀렉추가금'){
+    return invoices.find(function(inv){
+      return String(inv&&inv.type||'')==='셀렉추가금';
+    })||null;
+  }
+  return invoices.find(function(inv){
+    const type=String(inv&&inv.type||'').trim();
+    return type!=='취소/환불' && type!=='셀렉추가금';
+  })||null;
 }
 
 function setInvoiceSeq(token, yy, lastNum){
