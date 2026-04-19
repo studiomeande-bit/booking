@@ -510,8 +510,18 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>상품명 *</label><select id="m_product" onchange="onManualProductChange()"><option value="">-- 촬영종류 먼저 선택 --</option></select></div>
       </div>
       <div class="form-row">
+        <div class="form-group"><label>예약 채널</label><select id="m_source" onchange="onManualSourceChange()"><option value="direct">직접 예약</option><option value="myrealtrip">마이리얼트립</option></select></div>
+        <div class="form-group"><label>통화</label><input type="text" id="m_currency_display" value="EUR 직접 입력" readonly style="background:#f8fafc;color:#64748b;"></div>
+      </div>
+      <div class="form-row">
         <div class="form-group"><label>인원수</label><input type="number" id="m_people" value="1" min="1" onchange="calcManualPrice()"></div>
         <div class="form-group"><label>촬영 시간(분)</label><input type="number" id="m_dur" value="60" min="15" step="15"></div>
+      </div>
+      <div id="m_krw_wrap" class="form-group" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">
+        <div class="form-row">
+          <div class="form-group"><label>마이리얼트립 결제금액 (₩)</label><input type="number" id="m_krw_total" min="0" step="1" placeholder="예: 150000" oninput="onManualKrwInput()"></div>
+          <div class="form-group"><label>환산 안내</label><div id="m_krw_preview" style="padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:12px;line-height:1.5;">원화 금액을 입력하면 현재 환율 기준으로 유로 금액이 자동 계산됩니다.</div></div>
+        </div>
       </div>
       <div id="m_options_wrap" class="form-group" style="display:none;">
         <label>옵션</label>
@@ -523,12 +533,12 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>총 금액 (€)</label><input type="number" id="m_price" min="0" placeholder="0" oninput="calcManualBalance()"></div>
-        <div class="form-group"><label>예약금 (€)</label><input type="number" id="m_deposit" min="0" value="0" oninput="calcManualBalance()"></div>
+        <div class="form-group"><label>총 금액 (€)</label><input type="number" id="m_price" min="0" step="0.01" placeholder="0" oninput="calcManualBalance()"></div>
+        <div class="form-group"><label>예약금 (€)</label><input type="number" id="m_deposit" min="0" step="0.01" value="0" oninput="calcManualBalance()"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>잔금 (€)</label><input type="number" id="m_balance" readonly style="background:#f1f5f9;color:#64748b;"></div>
-        <div class="form-group"><label>결제 수단</label><select id="m_pay"><option>계좌이체</option><option>현금</option><option>카드</option><option>마이리얼트립</option><option>미결제</option></select></div>
+        <div class="form-group"><label>잔금 (€)</label><input type="number" id="m_balance" step="0.01" readonly style="background:#f1f5f9;color:#64748b;"></div>
+        <div class="form-group"><label>결제 수단</label><select id="m_pay" onchange="onManualPayMethodChange()"><option>계좌이체</option><option>현금</option><option>카드</option><option>마이리얼트립</option><option>미결제</option></select></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>예약금 결제 수단</label><select id="m_dep_pay"><option value="-">-</option><option>계좌이체</option><option>현금</option><option>카드</option><option>미수령</option></select></div>
@@ -2064,6 +2074,8 @@ function translatePaymentStateDe(r){
 }
 
 /* ===== 수기 등록 ===== */
+let manualKrwQuoteTimer=null;
+
 function buildManualTimeSlots(){
   const sel = document.getElementById('m_time');
   if(!sel) return;
@@ -2077,6 +2089,61 @@ function buildManualTimeSlots(){
       if(h===10&&m===0) opt.selected=true;
       sel.appendChild(opt);
     }
+  }
+}
+
+function isManualMyRealTripMode(){
+  const source=document.getElementById('m_source');
+  return !!source && source.value==='myrealtrip';
+}
+
+function refreshManualCurrencyState(){
+  const isMyRealTrip=isManualMyRealTripMode();
+  const payEl=document.getElementById('m_pay');
+  const priceEl=document.getElementById('m_price');
+  const sourceEl=document.getElementById('m_source');
+  const wrap=document.getElementById('m_krw_wrap');
+  const currencyDisplay=document.getElementById('m_currency_display');
+  if(wrap) wrap.style.display=isMyRealTrip?'block':'none';
+  if(currencyDisplay) currencyDisplay.value=isMyRealTrip?'KRW 입력 → EUR 자동환산':'EUR 직접 입력';
+  if(priceEl){
+    priceEl.readOnly=isMyRealTrip;
+    priceEl.style.background=isMyRealTrip?'#f8fafc':'#fff';
+    priceEl.style.color=isMyRealTrip?'#64748b':'#111827';
+  }
+  if(payEl){
+    if(isMyRealTrip){
+      payEl.value='마이리얼트립';
+      payEl.disabled=true;
+      payEl.style.background='#f8fafc';
+      payEl.style.color='#64748b';
+    }else{
+      payEl.disabled=false;
+      payEl.style.background='#fff';
+      payEl.style.color='#111827';
+      if(payEl.value==='마이리얼트립') payEl.value='계좌이체';
+    }
+  }
+  if(!isMyRealTrip){
+    const preview=document.getElementById('m_krw_preview');
+    if(preview) preview.textContent='원화 금액을 입력하면 현재 환율 기준으로 유로 금액이 자동 계산됩니다.';
+    const krwEl=document.getElementById('m_krw_total');
+    if(krwEl) krwEl.value='';
+  }
+  if(sourceEl && sourceEl.value!=='myrealtrip') calcManualPrice();
+}
+
+function onManualSourceChange(){
+  refreshManualCurrencyState();
+  if(isManualMyRealTripMode()) onManualKrwInput();
+}
+
+function onManualPayMethodChange(){
+  const payEl=document.getElementById('m_pay');
+  const sourceEl=document.getElementById('m_source');
+  if(payEl && sourceEl && payEl.value==='마이리얼트립'){
+    sourceEl.value='myrealtrip';
+    refreshManualCurrencyState();
   }
 }
 
@@ -2114,6 +2181,7 @@ function onManualGroupChange(){
     opt.textContent = '(등록된 상품 없음 — 직접 입력)';
     sel.appendChild(opt);
   }
+  if(isManualMyRealTripMode()) onManualKrwInput();
 }
 
 function onManualProductChange(){
@@ -2123,10 +2191,52 @@ function onManualProductChange(){
   document.getElementById('m_dur').value = opt.dataset.dur || '60';
   document.getElementById('m_options_wrap').style.display = 'block';
   ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => document.getElementById(id).checked = false);
+  if(isManualMyRealTripMode()){
+    calcManualBalance();
+    return;
+  }
   calcManualPrice();
 }
 
+function onManualKrwInput(){
+  if(!isManualMyRealTripMode()) return;
+  const krwEl=document.getElementById('m_krw_total');
+  const priceEl=document.getElementById('m_price');
+  const preview=document.getElementById('m_krw_preview');
+  const amount=parseInt(String(krwEl.value||'').replace(/[^0-9]/g,''),10)||0;
+  if(manualKrwQuoteTimer) clearTimeout(manualKrwQuoteTimer);
+  if(!amount){
+    priceEl.value='';
+    calcManualBalance();
+    if(preview) preview.textContent='원화 금액을 입력하면 현재 환율 기준으로 유로 금액이 자동 계산됩니다.';
+    return;
+  }
+  if(preview) preview.textContent='환율 조회 중...';
+  manualKrwQuoteTimer=setTimeout(()=>{
+    google.script.run
+      .withSuccessHandler(r=>{
+        if(!r||!r.ok){
+          if(preview) preview.textContent='환율 계산에 실패했습니다.';
+          return;
+        }
+        priceEl.value=Number(r.eurAmount||0).toFixed(2);
+        calcManualBalance();
+        if(preview){
+          preview.textContent=`₩${Number(r.krwAmount||0).toLocaleString()} → €${Number(r.eurAmount||0).toFixed(2)} / 환율 ${Number(r.rate||0).toFixed(6)} / 기준 ${r.fetchedAt||'-'}`;
+        }
+      })
+      .withFailureHandler(e=>{
+        if(preview) preview.textContent='환율 계산에 실패했습니다: '+(e&&e.message?e.message:'오류');
+      })
+      .getManualKrwQuoteAdmin(adminToken, amount);
+  },350);
+}
+
 function calcManualPrice(){
+  if(isManualMyRealTripMode()){
+    calcManualBalance();
+    return;
+  }
   const sel = document.getElementById('m_product');
   const opt = sel.options[sel.selectedIndex];
   if(!opt || !opt.dataset.price) { calcManualBalance(); return; }
@@ -2165,9 +2275,10 @@ function calcManualPrice(){
 }
 
 function calcManualBalance(){
-  const price = parseInt(document.getElementById('m_price').value) || 0;
-  const deposit = parseInt(document.getElementById('m_deposit').value) || 0;
-  document.getElementById('m_balance').value = Math.max(0, price - deposit);
+  const price = Number(document.getElementById('m_price').value) || 0;
+  const deposit = Number(document.getElementById('m_deposit').value) || 0;
+  const balance=Math.max(0, Math.round((price-deposit)*100)/100);
+  document.getElementById('m_balance').value = balance ? balance.toFixed(2) : '0';
 }
 
 function saveManual(){
@@ -2187,6 +2298,9 @@ function saveManual(){
     time: document.getElementById('m_time').value,
     itemGroup: document.getElementById('m_group').value,
     product: document.getElementById('m_product').value,
+    bookingSource: document.getElementById('m_source').value,
+    currencyMode: isManualMyRealTripMode() ? 'krw' : 'eur',
+    krwTotal: document.getElementById('m_krw_total').value,
     price: document.getElementById('m_price').value,
     deposit: document.getElementById('m_deposit').value || '0',
     balance: document.getElementById('m_balance').value || '0',
@@ -2204,6 +2318,10 @@ function saveManual(){
     alert('이름, 날짜, 촬영종류, 상품명은 필수 항목입니다.');
     return;
   }
+  if(data.currencyMode==='krw' && !(parseInt(String(data.krwTotal||'').replace(/[^0-9]/g,''),10)>0)){
+    alert('마이리얼트립 예약은 원화 금액을 입력해 주세요.');
+    return;
+  }
   if(data.sendEmail && (!data.email || !data.email.includes('@'))){
     alert('확정 메일을 발송하려면 유효한 이메일 주소가 필요합니다.');
     return;
@@ -2214,7 +2332,7 @@ function saveManual(){
 
   google.script.run.withSuccessHandler(r => {
     if(r.ok){
-      alert('✅ 등록 완료!\n금액: ' + r.priceText + (r.depositText ? '\n예약금: ' + r.depositText : '') + (data.sendEmail ? '\n📧 확정 메일이 발송되었습니다.' : ''));
+      alert('✅ 등록 완료!\n금액: ' + (r.priceDisplayText || r.priceText) + (r.depositText ? '\n예약금: ' + r.depositText : '') + (data.sendEmail ? '\n📧 확정 메일이 발송되었습니다.' : ''));
       res.textContent = '';
       document.getElementById('m_name').value = '';
       document.getElementById('m_phone').value = '';
@@ -2224,6 +2342,8 @@ function saveManual(){
       document.getElementById('m_date').value = '';
       document.getElementById('m_group').value = '';
       document.getElementById('m_product').innerHTML = '<option value="">-- 촬영종류 먼저 선택 --</option>';
+      document.getElementById('m_source').value = 'direct';
+      document.getElementById('m_krw_total').value = '';
       document.getElementById('m_price').value = '';
       document.getElementById('m_deposit').value = '0';
       document.getElementById('m_balance').value = '';
@@ -2236,6 +2356,7 @@ function saveManual(){
       document.getElementById('m_memo').value = '';
       document.getElementById('m_cal').checked = true;
       document.getElementById('m_send_email').checked = false;
+      refreshManualCurrencyState();
       loadAll();
     } else {
       res.style.color = '#ef4444';
@@ -3043,6 +3164,7 @@ function gotoBookingDetail(rowIndex){switchTab('booking');renderTable();setTimeo
 
 window.onload=function(){
   buildManualTimeSlots();
+  refreshManualCurrencyState();
   const expDate=document.getElementById('exp_date');
   if(expDate && !expDate.value) expDate.value=new Date().toISOString().slice(0,10);
   if(adminToken){

@@ -2666,61 +2666,115 @@ function reviseRetouch_(sessionId,p){
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
 }
 
+function KRW_TO_EUR_RATE_CACHE_KEY_(){return 'krw_to_eur_rate_v1';}
+
+function getKrwToEurRate_(){
+  const cache=CacheService.getScriptCache();
+  try{
+    const hit=cache.get(KRW_TO_EUR_RATE_CACHE_KEY_());
+    if(hit){
+      const parsed=JSON.parse(hit);
+      if(parsed&&Number(parsed.rate)>0) return parsed;
+    }
+  }catch(e){}
+  const res=UrlFetchApp.fetch('https://open.er-api.com/v6/latest/KRW',{muteHttpExceptions:true});
+  if(res.getResponseCode()!==200) throw new Error('원화 환율 정보를 가져오지 못했습니다.');
+  const data=JSON.parse(res.getContentText()||'{}');
+  const rate=Number(data&&data.rates&&data.rates.EUR)||0;
+  if(rate<=0) throw new Error('원화 환율 정보가 올바르지 않습니다.');
+  const out={
+    rate:rate,
+    fetchedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyy-MM-dd HH:mm:ss")
+  };
+  try{cache.put(KRW_TO_EUR_RATE_CACHE_KEY_(),JSON.stringify(out),60*60);}catch(e){}
+  return out;
+}
+
+function convertKrwToEur_(krwAmount){
+  const amount=parseInt(String(krwAmount||'').replace(/[^0-9]/g,''),10)||0;
+  if(amount<=0) throw new Error('원화 금액을 입력해 주세요.');
+  const rateInfo=getKrwToEurRate_();
+  const eurAmount=roundCurrency_(amount*Number(rateInfo.rate||0));
+  if(eurAmount<=0) throw new Error('원화 금액을 유로로 환산하지 못했습니다.');
+  return{
+    krwAmount:amount,
+    eurAmount:eurAmount,
+    rate:Number(rateInfo.rate||0),
+    fetchedAt:rateInfo.fetchedAt||''
+  };
+}
+
+function getManualKrwQuoteAdmin(token,krwAmount){
+  assertAdmin_(token);
+  const quote=convertKrwToEur_(krwAmount);
+  return{
+    ok:true,
+    krwAmount:quote.krwAmount,
+    eurAmount:quote.eurAmount,
+    eurText:formatEuroAmount_(quote.eurAmount),
+    rate:quote.rate,
+    fetchedAt:quote.fetchedAt
+  };
+}
+
 /* ====== 강화된 수기 등록 ====== */
 function addManualBookingAdmin(token, data) {
   try {
     assertAdmin_(token);
     const sh = getDbSheet(), cal = CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID) || CalendarApp.getDefaultCalendar();
-    
-    // 원화 입력 시 환전 로직
-    let priceText = String(data.price).trim();
-    if (priceText.indexOf('원') > -1) {
-      const krw = parseInt(priceText.replace(/[^0-9]/g, ''), 10);
-      if (krw > 0) {
-        try {
-          const res = UrlFetchApp.fetch('https://open.er-api.com/v6/latest/KRW', {muteHttpExceptions:true});
-          if (res.getResponseCode() === 200) {
-            const rd = JSON.parse(res.getContentText());
-            if (rd.rates && rd.rates.EUR) {
-              priceText = `${Math.round(krw * rd.rates.EUR)}€ (${krw.toLocaleString()}원)`;
-            }
-          }
-        } catch(e) { priceText = `${krw.toLocaleString()}원 (환전실패)`; }
-      }
+
+    const bookingSource=String(data.bookingSource||'direct').trim().toLowerCase()==='myrealtrip'?'마이리얼트립':'직접예약';
+    const currencyMode=String(data.currencyMode||'eur').trim().toLowerCase();
+    const useKrwMode=bookingSource==='마이리얼트립'||currencyMode==='krw'||String(data.payMethod||'').trim()==='마이리얼트립';
+    let priceEuro=roundCurrency_(toNumberOrZero_(data.price));
+    let priceText=`${formatEuroAmount_(priceEuro)}€`;
+    let priceDisplayText=priceText;
+    let extraMetaToSave='';
+    let exchangeNote='';
+    if(useKrwMode){
+      const quote=convertKrwToEur_(data.krwTotal||data.krwAmount||data.price);
+      priceEuro=quote.eurAmount;
+      priceText=`${formatEuroAmount_(priceEuro)}€`;
+      priceDisplayText=`${priceText} (₩${quote.krwAmount.toLocaleString()} / MyRealTrip)`;
+      exchangeNote=`마이리얼트립 원화결제 ${quote.krwAmount.toLocaleString()}원 / 환율 ${quote.rate.toFixed(6)} / 환산 ${priceText} / 기준 ${quote.fetchedAt}`;
+      extraMetaToSave=exchangeNote;
     }
-    
+
     const emailToSave = data.email || '수기등록(메일없음)';
     const langToSave = data.lang || 'ko';
     const groupToSave = data.itemGroup || '기타';
     const peopleToSave = parseInt(data.people) || 1;
-    
+
     // 캘린더 등록 로직
     let eventId = '';
     if (data.addCalendar) {
       const s = new Date(`${data.date}T${data.time}:00`);
       const e2 = new Date(s.getTime() + (Number(data.duration) || 60) * 60000);
-      const priceLabel = priceText.replace(/€.*$/, '€').trim();
-      
+      const priceLabel = priceText;
+
       const ev = cal.createEvent(`[수기/확정] ${data.product} | ${data.name} | ${peopleToSave}인 | ${priceLabel}`, s, e2, {
-        description: `이름=${data.name}\n전화=${data.phone}\n이메일=${emailToSave}\n분류=${data.product}\n인원=${peopleToSave}\n총비용=${priceText}\n마케팅=N\n상태=확정\n---\n메모: ${data.memo||''}`,
+        description: `이름=${data.name}\n전화=${data.phone}\n이메일=${emailToSave}\n분류=${data.product}\n인원=${peopleToSave}\n총비용=${priceDisplayText}\n예약채널=${bookingSource}\n마케팅=N\n상태=확정${exchangeNote?`\n환전정보=${exchangeNote}`:''}\n---\n메모: ${data.memo||''}`,
         location: 'Holzweg-passage 3, 61440 Oberursel'
       });
       ev.setColor(CalendarApp.EventColor.PALE_GREEN);
       eventId = ev.getId();
     }
-    
+
     const depositAmt = roundCurrency_(toNumberOrZero_(data.deposit));
-    const balanceAmt = roundCurrency_(toNumberOrZero_(data.balance) || Math.max(0, toNumberOrZero_(data.price) - depositAmt));
+    const balanceInput = roundCurrency_(toNumberOrZero_(data.balance));
+    const balanceAmt = roundCurrency_((String(data.balance||'').trim()!==''?balanceInput:Math.max(0, priceEuro - depositAmt)));
     const depPayMethod = data.depositPayMethod || '-';
     const optionsStr = data.options || '';
+    const payMethodToSave = useKrwMode ? '마이리얼트립' : (data.payMethod || '계좌이체');
+    const memoToSave = [String(data.memo||'').trim(), exchangeNote].filter(Boolean).join('\n');
 
     // 엑셀 장부 등록
     // [예약일시,상태,고객명,연락처,이메일,언어,촬영종류,상품,옵션,인원,총결제액,계약금,잔금,결제수단,분위기,요청사항,캘린더ID,계약금수단,추가항목,재방문,잔금결제일]
     sh.appendRow([
       `${data.date} ${data.time}`, '확정됨', data.name, data.phone, emailToSave, langToSave, groupToSave, data.product,
       optionsStr, peopleToSave, priceText, depositAmt > 0 ? formatEuroAmount_(depositAmt)+'€' : '0',
-      balanceAmt > 0 ? formatEuroAmount_(balanceAmt)+'€' : priceText, data.payMethod, '수기등록', data.memo, eventId,
-      depPayMethod, '', '수기', '', '', '', '', '', '', String(data.address||'').trim(), String(data.payerName||'').trim()
+      balanceAmt > 0 ? formatEuroAmount_(balanceAmt)+'€' : priceText, payMethodToSave, '수기등록', memoToSave, eventId,
+      depPayMethod, extraMetaToSave, '수기', '', '', '', '', '', '', String(data.address||'').trim(), String(data.payerName||'').trim()
     ]);
 
     bumpCalCacheVer_();
@@ -2728,12 +2782,19 @@ function addManualBookingAdmin(token, data) {
     // 📧 메일 즉시 발송 체크 시 메일 발송 실행
     if (data.sendEmail && emailToSave.includes('@') && !emailToSave.includes('수기등록')) {
       try {
-        _sendConfirmEmail(data.name, emailToSave, langToSave, groupToSave, data.product, priceText, `${data.date} ${data.time}`, [], [], depositAmt, balanceAmt);
+        _sendConfirmEmail(data.name, emailToSave, langToSave, groupToSave, data.product, priceDisplayText, `${data.date} ${data.time}`, [], [], depositAmt, balanceAmt);
       } catch(e) { Logger.log('수기등록 메일 발송 실패: ' + e.message); }
     }
 
     const depositText = depositAmt > 0 ? depositAmt + '€' : '';
-    return {ok: true, priceText, depositText};
+    return {
+      ok: true,
+      priceText,
+      priceDisplayText,
+      depositText,
+      bookingSource,
+      currencyMode: useKrwMode ? 'krw' : 'eur'
+    };
   } catch(err) { 
     return {ok: false, message: err.message}; 
   }
