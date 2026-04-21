@@ -21,7 +21,7 @@ const CONFIG = {
   ACTION_LINK_TTL_SEC: 60 * 60 * 24 * 14,
   PRODUCTS_CACHE_TTL_SEC: 3600,
   UNAVAIL_CACHE_TTL_SEC: 1800,
-  SLOTS_CACHE_TTL_SEC: 900,
+  SLOTS_CACHE_TTL_SEC: 1800,
   LEXWARE_PUSH_BATCH_MAX: 40,
   LEXWARE_STATUS_BATCH_MAX: 60,
   LEXWARE_BATCH_TIME_BUDGET_MS: 240000,
@@ -280,6 +280,19 @@ function handlePublicApiRequest_(route,method,e){
       const payload=request.payload;
       assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
       return jsonOk_(updatePhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
+    }
+    if(route==='waitlist-join'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/waitlist-join');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload;
+      if(!payload) return jsonError_('INVALID_ARGUMENT','Missing payload');
+      return jsonOk_(joinWaitlist_(payload));
+    }
+    if(route==='contact-lookup'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/contact-lookup');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      return jsonOk_(lookupContactHistory_(payload));
     }
     return jsonError_('NOT_FOUND','Unknown API route');
   }catch(err){
@@ -572,6 +585,15 @@ function assertAdmin_(token) {
     p.setProperty('ADMIN_SESSIONS',JSON.stringify(sessions.filter(s=>s.t!==token)));
     throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
   }
+  // ✅ 슬라이딩 만료: 남은 시간이 임계치 이하이면 만료시각을 TTL만큼 연장
+  try{
+    const remain=session.exp-now;
+    const slideThreshold=(typeof ADMIN_SESSION_SLIDE_THRESHOLD_SEC!=='undefined')?ADMIN_SESSION_SLIDE_THRESHOLD_SEC:60*60*2;
+    if(remain<slideThreshold){
+      session.exp=now+CONFIG.ADMIN_SESSION_TTL_SEC;
+      p.setProperty('ADMIN_SESSIONS',JSON.stringify(sessions));
+    }
+  }catch(e){}
 }
 function logoutAdmin(token){
   try{
@@ -993,13 +1015,36 @@ function checkReturnCustomer_(name,phone,email){
 function getCalCacheVer_(){return PropertiesService.getScriptProperties().getProperty('CAL_CACHE_VER')||'1';}
 function bumpCalCacheVer_(){const v=(parseInt(getCalCacheVer_(),10)||1)+1;PropertiesService.getScriptProperties().setProperty('CAL_CACHE_VER',String(v%99999));}
 function getBusyCalendarIds_(){
+  return getBusyCalendarMeta_().map(m=>m.id);
+}
+
+/** {id, name, isPersonal} 형태로 메타데이터 함께 캐싱 — cal.getName() 반복 호출 제거용 */
+function getBusyCalendarMeta_(){
   const cache=CacheService.getScriptCache();
-  try{const h=cache.get('busy_cal_ids');if(h)return JSON.parse(h);}catch(e){}
-  const ids=new Set([CONFIG.MAIN_CALENDAR_ID]);
-  CalendarApp.getAllCalendars().forEach(cal=>{const name=cal.getName();if(CONFIG.TARGET_CALENDAR_NAMES.includes(name)||CONFIG.PERSONAL_CALENDAR_NAMES.includes(name))ids.add(cal.getId());});
-  const result=Array.from(ids);
-  try{cache.put('busy_cal_ids',JSON.stringify(result),600);}catch(e){}  // 10분 캐시
-  return result;
+  try{const h=cache.get('busy_cal_meta_v2');if(h)return JSON.parse(h);}catch(e){}
+  const personalSet=new Set(CONFIG.PERSONAL_CALENDAR_NAMES);
+  const targetSet=new Set(CONFIG.TARGET_CALENDAR_NAMES);
+  const mainId=CONFIG.MAIN_CALENDAR_ID;
+  const meta=[];
+  const seenIds=new Set();
+  // 메인 캘린더를 항상 포함
+  try{
+    const mainCal=CalendarApp.getCalendarById(mainId);
+    const mainName=mainCal?mainCal.getName():'';
+    meta.push({id:mainId,name:mainName,isPersonal:personalSet.has(mainName)});
+    seenIds.add(mainId);
+  }catch(e){meta.push({id:mainId,name:'',isPersonal:false});seenIds.add(mainId);}
+  // 대상/개인 캘린더 추가
+  CalendarApp.getAllCalendars().forEach(cal=>{
+    const name=cal.getName(),id=cal.getId();
+    if(seenIds.has(id))return;
+    if(targetSet.has(name)||personalSet.has(name)){
+      meta.push({id,name,isPersonal:personalSet.has(name)});
+      seenIds.add(id);
+    }
+  });
+  try{cache.put('busy_cal_meta_v2',JSON.stringify(meta),600);}catch(e){}  // 10분 캐시
+  return meta;
 }
 
 /**
@@ -1122,15 +1167,17 @@ function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
  */
 function getEventsForRange_(start,end){
   const events=[];
-  const personalCalNames=new Set(CONFIG.PERSONAL_CALENDAR_NAMES);
-  getBusyCalendarIds_().forEach(id=>{
+  const titleTypeCache={};
+  getBusyCalendarMeta_().forEach(m=>{
     try{
-      const cal=CalendarApp.getCalendarById(id);if(!cal)return;
-      const isPersonal=personalCalNames.has(cal.getName());
+      const cal=CalendarApp.getCalendarById(m.id);if(!cal)return;
+      const isPersonal=m.isPersonal;
       cal.getEvents(start,end).forEach(ev=>{
         if(ev.isAllDayEvent())return;
         const title=ev.getTitle()||'';
-        const type=classifyEventType_(title,isPersonal);
+        const cacheKey=(isPersonal?'P|':'')+title;
+        let type=titleTypeCache[cacheKey];
+        if(type===undefined){type=classifyEventType_(title,isPersonal);titleTypeCache[cacheKey]=type;}
         const location=isPersonal?'':(ev.getLocation()||'');
         events.push({start:ev.getStartTime().getTime(),end:ev.getEndTime().getTime(),type,location});
       });
@@ -1144,6 +1191,8 @@ function getEventsForRange_(start,end){
       fetchAppleCalendarEvents_(start,end).forEach(ev=>events.push(ev));
     }catch(e){Logger.log('iCloud 통합 오류: '+e.message);}
   }
+  // 정렬 (start 오름차순) — checkConflict_ 조기 종료 지원
+  events.sort((a,b)=>a.start-b.start);
   return events;
 }
 
@@ -1160,11 +1209,18 @@ function getEventsForRange_(start,end){
 function checkConflict_(events,slotStart,slotEnd,itemGroup,newLocation){
   const newType=classifyBookingType_(itemGroup);
   const newLoc=newLocation||'';
-  return events.some(ev=>{
+  const MAX_BUF_MS=CONFIG.BUFFER_OUTDOOR_MIN*60000;  // 최대 버퍼 (60분)
+  // events가 start asc로 정렬되어 있다고 가정 → 조기 종료 적용
+  for(let i=0;i<events.length;i++){
+    const ev=events[i];
+    // 이벤트 시작이 slotEnd + MAX_BUF 이후면 이후 이벤트도 모두 범위 밖 → 종료
+    if(ev.start>=slotEnd+MAX_BUF_MS) break;
+    // 이벤트 종료가 slotStart - MAX_BUF 이전이면 이 이벤트는 무관 → 다음
+    if(ev.end<=slotStart-MAX_BUF_MS) continue;
     const bufMs=getRequiredBuffer_(newType,newLoc,ev.type,ev.location)*60000;
-    // [slotStart - buf, slotEnd + buf] must not overlap [ev.start, ev.end]
-    return (slotStart-bufMs)<ev.end&&(slotEnd+bufMs)>ev.start;
-  });
+    if((slotStart-bufMs)<ev.end&&(slotEnd+bufMs)>ev.start) return true;
+  }
+  return false;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -2016,8 +2072,28 @@ function _buildBookingExtraItem_(data, quote, surveyStr){
 
 /* ====== 예약 처리 ====== */
 function processForm(data){
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(15000);}
+  catch(e){return{ok:false,message:'동시 예약 처리 중입니다. 잠시 후 다시 시도해 주세요.'};}
   try{
     if(!data.name||!data.phone||!data.email) throw new Error('필수 정보 누락');
+    // 2차 중복 차단: 동일 이메일+일시+취소되지 않은 활성 예약이 이미 있으면 거부
+    const _dbSheet=getDbSheet();
+    const _allBookings=_dbSheet.getDataRange().getValues();
+    const _normalizedEmail=String(data.email||'').trim().toLowerCase();
+    const _targetDateTime=`${data.date} ${data.time}`;
+    const _cleanNewPhone=String(data.phone||'').replace(/[\s\-]/g,'');
+    const _duplicate=_allBookings.slice(1).find(r=>{
+      const status=String(r[1]||'').trim();
+      if(status==='취소됨'||status==='자동취소') return false;
+      const rowDateTime=parseDateSafe_(r[0]).str.slice(0,16);
+      if(rowDateTime!==_targetDateTime) return false;
+      const rowEmail=String(r[4]||'').trim().toLowerCase();
+      if(rowEmail&&rowEmail===_normalizedEmail) return true;
+      const rowPhone=String(r[3]||'').replace(/[\s\-]/g,'');
+      return rowPhone&&_cleanNewPhone&&rowPhone===_cleanNewPhone;
+    });
+    if(_duplicate) throw new Error('같은 일시에 이미 접수된 예약이 있습니다. 관리자에게 문의해 주세요.');
     const isReturn=checkReturnCustomer_(data.name,data.phone,data.email);
     const quote=calculateQuote_({...data,isReturn});
     if(quote.itemGroup==='promo' && !isPromoDateAllowed_(data.date)) throw new Error('프로모션 예약 가능 기간이 아닙니다.');
@@ -2054,6 +2130,7 @@ function processForm(data){
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
     return{ok:true,quote,isReturn};
   }catch(err){return{ok:false,message:err.message};}
+  finally{try{lock.releaseLock();}catch(e){}}
 }
 
 function normalizeWalkinLang_(lang){
@@ -2194,7 +2271,9 @@ function sendAdminNotificationEmail_(data,quote,koName,eventId,surveyStr,memo,is
   const businessInvoiceNeeded=!!data.businessInvoiceNeeded;
   const td=(l,v)=>`<tr><td style="padding:10px 14px;background:#f8fafc;font-weight:700;width:110px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${l}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">${v}</td></tr>`;
   const htmlBody=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;"><h2 style="margin:0;color:#fff;font-size:18px;">🆕 새 예약${isReturn?' ⭐재방문':''}</h2></div><div style="padding:25px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">${td('고객명',`<b>${data.name}</b>${isReturn?' <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">재방문</span>':''}`)}${td('연락처',data.phone)}${td('이메일',data.email)}${businessInvoiceNeeded?td('사업자송장',`<b>필요</b>${data.businessCompanyName?` · ${data.businessCompanyName}`:''}`):''}${data.businessInvoiceEmail?td('송장이메일',data.businessInvoiceEmail):''}${data.businessVatId?td('VAT 번호',data.businessVatId):''}${data.businessInvoiceRef?td('참조번호',data.businessInvoiceRef):''}${quote.isDeposit&&data.payerName?td('입금자명',data.payerName):''}${td('상품',`<b style="color:#2563eb;">${koName}</b>${allCountries?' ('+allCountries+')':''}`)}${td('일시',`<b>${data.date} ${data.time}</b>`)}${td('인원',quote.people+'명')}${td('총금액',`<b style="color:#10b981;">${formatEuroAmount_(quote.totalPrice)}€</b>`)}${quote.isDeposit?td('계약금',`<span style="color:#ef4444;">${formatEuroAmount_(quote.depositAmount)}€ 입금 필요</span>`):''} ${surveyStr?td('분위기',surveyStr):''}${memo?td('요청사항',`<div style="white-space:pre-wrap;">${memo}</div>`):''}</table><div style="text-align:center;margin:25px 0;display:flex;gap:12px;justify-content:center;"><a href="${confirmUrl}" style="background:#10b981;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">✅ 예약 확정하기</a><a href="${cancelUrl}" style="background:#ef4444;color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;display:inline-block;">❌ 예약 취소하기</a></div><p style="text-align:center;font-size:12px;color:#94a3b8;">이 링크는 14일 후 만료됩니다.</p></div></div>`;
-  MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[새 예약${isReturn?' ⭐재방문':''}] ${data.name}님 — ${koName} (${data.date} ${data.time})`,htmlBody});
+  try{
+    MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[새 예약${isReturn?' ⭐재방문':''}] ${data.name}님 — ${koName} (${data.date} ${data.time})`,htmlBody});
+  }catch(e){Logger.log('sendAdminNotificationEmail_ 실패: '+e.message);}
 }
 
 function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,eventId){
@@ -2227,7 +2306,9 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
     }catch(e){Logger.log('pending cancelSection 오류:'+e.message);}
   }
   const body=`${T.greeting(request.name)}<br><br>${T.pending_intro}${returnBadge}<br><br><b>${T.receipt_title}</b><br>${T.lbl_product} ${localProductName}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} ${request.date} ${request.time}<br>${priceHtml}${discHtml?'<br>'+discHtml:''}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${guide}<br><br><hr><br>${_getDirectionHtml(lang)}<br><br>${cancelSection}${_getSignatureHtml()}`;
-  MailApp.sendEmail({to:request.email,subject:T.pending_subject(request.name,localProductName),htmlBody:body});
+  try{
+    MailApp.sendEmail({to:request.email,subject:T.pending_subject(request.name,localProductName),htmlBody:body});
+  }catch(e){Logger.log('sendCustomerPendingEmail_ 실패 ('+request.email+'): '+e.message);}
 }
 
 function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,passCountries,surveyKeys,depositAmount,balanceAmount,eventId){
@@ -2263,7 +2344,9 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
     }catch(e){Logger.log('cancelSection 오류:'+e.message);}
   }
   const body=`${T.greeting(name)}<br><br>${T.confirmed_intro}<br><br>${T.lbl_product} ${prodLocal}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} <b>${formattedTime}</b><br>${priceHtml}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${guide}<br><br><hr><br>${_getDirectionHtml(lang||'ko')}${cancelSection}${_getSignatureHtml()}`;
-  MailApp.sendEmail({to:email,subject:T.confirmed_subject(name,prodLocal,formattedTime),htmlBody:body});
+  try{
+    MailApp.sendEmail({to:email,subject:T.confirmed_subject(name,prodLocal,formattedTime),htmlBody:body});
+  }catch(e){Logger.log('_sendConfirmEmail 실패 ('+email+'): '+e.message);}
 }
 
 /* ====== 액션 링크 ====== */
@@ -2322,6 +2405,12 @@ function cancelBooking(eventId){
     const prodLocal=product?(rowLang==='en'?product.nameEn:(rowLang==='de'?product.nameDe:product.nameKo)):row[7];
     if(email&&!email.includes('수기등록')&&email.includes('@')) MailApp.sendEmail({to:email,subject:TC.cancelled_subject(row[2],prodLocal),htmlBody:`${TC.greeting(row[2])}<br><br>${TC.cancelled_intro}<br><br>${TC.lbl_product} ${prodLocal}<br>${TC.lbl_datetime} ${formattedDt}<br><br>${TC.cancelled_contact}<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com`});
     bumpCalCacheVer_();
+    // ✅ 대기자 알림: 취소된 날짜와 같은 상품그룹 대기자에게 메일
+    try{
+      const cancelledDate=parseDateSafe_(row[0]).str.slice(0,10);
+      const itemGroup=product&&product.itemGroup?String(product.itemGroup):_guessItemGroupFromProduct_(row[7]);
+      if(cancelledDate) notifyWaitlistForDate_(cancelledDate,itemGroup);
+    }catch(wlErr){Logger.log('waitlist notify after cancel failed: '+wlErr.message);}
     return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2 style="color:#ef4444;">🚫 예약이 취소되었습니다.</h2></div>');
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
 }
@@ -5961,15 +6050,24 @@ function sendInvoiceEmailInternal_(inv, subject, body, mailLang){
   const defaults=buildInvoiceEmailDefaults_(inv, effectiveLang);
   const finalSubject=String(subject||inv.mailSubject||defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
   const finalBody=String(body||inv.mailBody||defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
-  const pdf=createInvoicePdf_(Object.assign({}, inv, { lang: effectiveLang }), effectiveLang);
+  let pdf;
+  try{
+    pdf=createInvoicePdf_(Object.assign({}, inv, { lang: effectiveLang }), effectiveLang);
+  }catch(pdfErr){
+    throw new Error('PDF 생성 오류: '+String(pdfErr&&pdfErr.message||pdfErr));
+  }
   const file=DriveApp.getFileById(pdf.fileId);
   const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;color:#334155;white-space:pre-line;">${escapeHtml_(finalBody).replace(/\n/g,'<br>')}<br><br>${_getSignatureHtml()}</div>`;
-  MailApp.sendEmail({
-    to:recipientEmail,
-    subject:finalSubject,
-    htmlBody,
-    attachments:[file.getBlob()]
-  });
+  try{
+    MailApp.sendEmail({
+      to:recipientEmail,
+      subject:finalSubject,
+      htmlBody,
+      attachments:[file.getBlob()]
+    });
+  }catch(mailErr){
+    throw new Error('이메일 발송 오류 (PDF는 Drive에 저장됨 — '+pdf.url+'): '+String(mailErr&&mailErr.message||mailErr));
+  }
   const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
   invoiceSheet.getRange(rowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
@@ -6085,9 +6183,11 @@ function mergeInvoiceBusinessMeta_(bookingMeta, payloadMeta, fallbackName, fallb
 
 function generateInvoiceNumber_(invSh){
   const yy=new Date().getFullYear().toString().slice(-2);
-  // PropertiesService에 저장된 오프셋 읽기 (수기 발행분 반영)
-  const offset=parseInt(PropertiesService.getScriptProperties().getProperty('INVOICE_SEQ_'+yy)||'0');
-  let maxNum=offset;
+  const props=PropertiesService.getScriptProperties();
+  // 수기 오프셋(관리자 조정용) + 마지막 발번(이전 발행분 캐시) 중 큰 값 기준
+  const offset=parseInt(props.getProperty('INVOICE_SEQ_'+yy)||'0');
+  const lastSeq=parseInt(props.getProperty('INVOICE_LAST_SEQ_'+yy)||'0');
+  let maxNum=Math.max(offset,lastSeq);
   if(invSh.getLastRow()>1){
     invSh.getDataRange().getValues().slice(1).forEach(r=>{
       const num=String(r[0]||'');
@@ -6097,10 +6197,24 @@ function generateInvoiceNumber_(invSh){
       }
     });
   }
-  return 'STMIN-'+yy+String(maxNum+1).padStart(4,'0');
+  const nextNum=maxNum+1;
+  // 발번 즉시 저장 — 중복 발번 방지 (동시 호출 시 LockService로 순차화)
+  try{props.setProperty('INVOICE_LAST_SEQ_'+yy,String(nextNum));}catch(e){Logger.log('INVOICE_LAST_SEQ 저장 실패: '+e.message);}
+  return 'STMIN-'+yy+String(nextNum).padStart(4,'0');
 }
 
 function createInvoiceRecord_(payload){
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(15000);}
+  catch(e){throw new Error('다른 인보이스 생성이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
+  try{
+    return _createInvoiceRecordCore_(payload);
+  }finally{
+    try{lock.releaseLock();}catch(e){}
+  }
+}
+
+function _createInvoiceRecordCore_(payload){
   const {bookingSheet, invoiceSheet}=ensureSheets_();
   const data=bookingSheet.getDataRange().getValues();
   const linkedBookingRow=parseInt(payload.bookingRowIndex)||0;
@@ -6190,9 +6304,17 @@ function createInvoiceRecord_(payload){
     businessInvoiceEmail:invoiceBusinessMeta.invoiceEmail,
     businessInvoiceRef:invoiceBusinessMeta.reference
   };
-  const pdf=createInvoicePdf_(inv,mailLang);
-  invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
-  invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
+  let pdf={fileId:'',url:''};
+  try{
+    pdf=createInvoicePdf_(inv,mailLang);
+    invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF파일ID']+1).setValue(pdf.fileId);
+    invoiceSheet.getRange(newRowIndex,INVOICE_COL['PDF링크']+1).setValue(pdf.url);
+  }catch(pdfErr){
+    const pdfErrMsg='PDF 생성 실패: '+String(pdfErr&&pdfErr.message||pdfErr);
+    Logger.log('createInvoiceRecord_ '+pdfErrMsg);
+    try{invoiceSheet.getRange(newRowIndex,INVOICE_COL['상태']+1).setValue('PDF오류');}catch(e){}
+    return {ok:false,invoiceNumber:invNo,pdfUrl:'',mailSentAt:'',mailSubject,mailBody,mailResult:{requested:!!payload.sendMail,sent:false,recipientEmail:'',sentAt:'',error:pdfErrMsg},error:pdfErrMsg};
+  }
   let mailSentAt='';
   let mailResult={
     requested:!!payload.sendMail,
@@ -6221,6 +6343,7 @@ function createInvoiceRecord_(payload){
         error:String((mailErr&&mailErr.message)||mailErr||'메일 발송 실패')
       };
       Logger.log('createInvoiceRecord_ send mail failed: '+mailResult.error);
+      try{invoiceSheet.getRange(newRowIndex,INVOICE_COL['메일발송일시']+1).setValue('ERROR: '+mailResult.error.slice(0,100));}catch(e){}
     }
   }
   // Lexware 자동 전송 (비차단 — 인보이스 생성은 실패해도 진행)
@@ -6394,6 +6517,12 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
     });
   }
   bumpCalCacheVer_();
+  // ✅ 대기자 알림
+  try{
+    const cancelledDate=parseDateSafe_(row[0]).str.slice(0,10);
+    const itemGroup=product&&product.itemGroup?String(product.itemGroup):_guessItemGroupFromProduct_(row[7]);
+    if(cancelledDate) notifyWaitlistForDate_(cancelledDate,itemGroup);
+  }catch(wlErr){Logger.log('waitlist notify (admin cancel) failed: '+wlErr.message);}
   // 인보이스 발행
   let invoiceNumber=null;
   if(issueInvoice){
@@ -6564,6 +6693,7 @@ function setupWarmupTrigger(){
 }
 
 function dailyTasks(){
+  try{backupSpreadsheetDaily_();}catch(e){Logger.log('D1 error: '+e.message);}
   try{sendBookingReminders_();}catch(e){Logger.log('B2 error: '+e.message);}
   try{batchPushPendingInvoicesToLexware_();}catch(e){Logger.log('L0 error: '+e.message);}
   try{syncPendingBookingPaymentsFromLexware_();}catch(e){Logger.log('L1 error: '+e.message);}
@@ -6725,9 +6855,9 @@ function sendBookingReminders_(){
     const product=String(row[7]||'');
     const dateStr=dateInfo.str;
     const T={
-      ko:{subject:`[Studio mean] 내일 촬영 일정 안내 — ${name}님`,body:`안녕하세요, ${name}님! 😊<br><br>내일 촬영 일정을 안내드립니다.<br><br>📅 <b>촬영 일시:</b> ${dateStr}<br>🛍 <b>상품:</b> ${product}<br>📍 <b>주소:</b> Holzweg-passage 3, 61440 Oberursel<br><br>🚗 <a href="${MAP_URL}">오시는 길 보기</a><br><br>촬영 당일 <b>10분 전</b>까지 도착해 주시면 감사하겠습니다.<br>문의: ${CONFIG.ADMIN_EMAIL}<br><br>${_getSignatureHtml()}`},
-      en:{subject:`[Studio mean] Your session is tomorrow — ${name}`,body:`Dear ${name},<br><br>This is a friendly reminder of your upcoming session tomorrow.<br><br>📅 <b>Date & Time:</b> ${dateStr}<br>🛍 <b>Service:</b> ${product}<br>📍 <b>Address:</b> Holzweg-passage 3, 61440 Oberursel<br><br>🚗 <a href="${MAP_URL}">Get directions</a><br><br>Please arrive <b>10 minutes early</b>.<br>Questions? ${CONFIG.ADMIN_EMAIL}<br><br>${_getSignatureHtml()}`},
-      de:{subject:`[Studio mean] Ihr Termin ist morgen — ${name}`,body:`Liebe/r ${name},<br><br>Wir möchten Sie an Ihren morgigen Fototermin erinnern.<br><br>📅 <b>Datum & Uhrzeit:</b> ${dateStr}<br>🛍 <b>Leistung:</b> ${product}<br>📍 <b>Adresse:</b> Holzweg-passage 3, 61440 Oberursel<br><br>🚗 <a href="${MAP_URL}">Route anzeigen</a><br><br>Bitte kommen Sie <b>10 Minuten früher</b>.<br>Fragen? ${CONFIG.ADMIN_EMAIL}<br><br>${_getSignatureHtml()}`}
+      ko:{subject:`[Studio mean] 내일 촬영 일정 안내 — ${name}님`,body:`${name}님, 안녕하세요.<br><br>내일로 예약해 주신 촬영 일정을 다시 한 번 안내드립니다.<br><br>📅 <b>일시</b> ${dateStr}<br>🛍 <b>상품</b> ${product}<br>📍 <b>장소</b> Holzweg-Passage 3, 61440 Oberursel<br>🚗 <a href="${MAP_URL}">오시는 길 안내</a><br><br>원활한 준비를 위해 촬영 시작 <b>10분 전</b>까지 도착을 부탁드립니다. 주차는 건물 뒤편 공용 주차장을 이용하실 수 있습니다.<br><br>당일 일정이 변경되거나 궁금하신 점이 있으시면 이 메일로 회신해 주시거나 ${CONFIG.ADMIN_EMAIL} 로 편하게 연락 주세요.<br><br>내일 스튜디오에서 뵙겠습니다.<br><br>${_getSignatureHtml()}`},
+      en:{subject:`[Studio mean] A reminder for tomorrow's session — ${name}`,body:`Dear ${name},<br><br>This is a friendly reminder that your session at Studio mean is scheduled for tomorrow.<br><br>📅 <b>Date & Time</b> ${dateStr}<br>🛍 <b>Service</b> ${product}<br>📍 <b>Location</b> Holzweg-Passage 3, 61440 Oberursel<br>🚗 <a href="${MAP_URL}">Directions</a><br><br>To help the session start smoothly, we kindly ask you to arrive about <b>10 minutes in advance</b>. Public parking is available behind the building.<br><br>If anything changes or you have a question before tomorrow, simply reply to this email or contact us at ${CONFIG.ADMIN_EMAIL}.<br><br>We look forward to welcoming you.<br><br>${_getSignatureHtml()}`},
+      de:{subject:`[Studio mean] Erinnerung an Ihren Termin morgen — ${name}`,body:`Liebe/r ${name},<br><br>wir möchten Sie freundlich an Ihren morgigen Fototermin bei Studio mean erinnern.<br><br>📅 <b>Datum & Uhrzeit</b> ${dateStr}<br>🛍 <b>Leistung</b> ${product}<br>📍 <b>Ort</b> Holzweg-Passage 3, 61440 Oberursel<br>🚗 <a href="${MAP_URL}">Wegbeschreibung</a><br><br>Damit das Shooting ruhig beginnen kann, bitten wir Sie, etwa <b>10 Minuten vor Beginn</b> einzutreffen. Öffentliche Parkplätze finden Sie hinter dem Gebäude.<br><br>Falls sich kurzfristig etwas ändert oder Sie noch eine Frage haben, antworten Sie gern direkt auf diese E-Mail oder erreichen uns unter ${CONFIG.ADMIN_EMAIL}.<br><br>Wir freuen uns auf Sie.<br><br>${_getSignatureHtml()}`}
     };
     const msg=T[lang]||T.de;
     try{
@@ -6750,20 +6880,20 @@ function _followupCommonHtml_(lang){
   const links=_getReviewLinks_();
   const reviewLine=links.google
     ? (lang==='en'
-        ? `If you enjoyed the session, a short <a href="${links.google}" style="color:#2563eb;font-weight:700;">Google review</a> would really help our studio.`
+        ? `If the session met your expectations, we would truly appreciate a short <a href="${links.google}" style="color:#2563eb;font-weight:700;">review on Google</a>. A few honest words help new clients discover us and are one of the most meaningful ways to support a small studio.`
         : lang==='de'
-          ? `Wenn Ihnen das Shooting gefallen hat, freuen wir uns sehr über eine kurze <a href="${links.google}" style="color:#2563eb;font-weight:700;">Google-Bewertung</a>.`
-          : `촬영이 만족스러우셨다면 짧은 <a href="${links.google}" style="color:#2563eb;font-weight:700;">구글 리뷰</a>를 남겨 주시면 큰 힘이 됩니다.`)
+          ? `Falls Ihnen das Shooting gefallen hat, würden wir uns sehr über eine kurze <a href="${links.google}" style="color:#2563eb;font-weight:700;">Bewertung bei Google</a> freuen. Bereits wenige ehrliche Zeilen helfen neuen Kundinnen und Kunden, unser Studio zu entdecken.`
+          : `촬영이 만족스러우셨다면 짧은 <a href="${links.google}" style="color:#2563eb;font-weight:700;">구글 리뷰</a> 한 줄이 작은 스튜디오를 운영하는 저희에게 큰 응원이 됩니다.`)
     : (lang==='en'
-        ? 'If you enjoyed the session, we would be grateful if you could recommend Studio mean to others.'
+        ? 'If the session met your expectations, recommending Studio mean to friends or family means a great deal to a small studio like ours.'
         : lang==='de'
-          ? 'Wenn Ihnen das Shooting gefallen hat, empfehlen Sie Studio mean gerne weiter.'
-          : '촬영이 만족스러우셨다면 주변에 Studio mean을 추천해 주시면 큰 힘이 됩니다.');
+          ? 'Falls Ihnen das Shooting gefallen hat, ist eine Weiterempfehlung an Freunde oder Familie für ein kleines Studio wie unseres besonders wertvoll.'
+          : '촬영이 만족스러우셨다면 가까운 분들께 Studio mean을 추천해 주시는 것만으로도 큰 힘이 됩니다.');
   const instaLine=lang==='en'
-    ? `If you share your photos on Instagram, feel free to tag <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>.`
+    ? `When you share your photos on Instagram, feel free to tag <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a> — we love seeing how the images live on with you.`
     : lang==='de'
-      ? `Wenn Sie Ihre Fotos auf Instagram teilen, markieren Sie gerne <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>.`
-      : `인스타그램에 사진을 올리실 때 <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a> 태그를 남겨 주시면 정말 감사하겠습니다.`;
+      ? `Wenn Sie Ihre Bilder auf Instagram teilen, markieren Sie uns gerne mit <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>. Wir freuen uns immer, Ihre Bilder in ihrem neuen Kontext zu sehen.`
+      : `인스타그램에 사진을 올리실 때 <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a> 태그를 남겨 주시면, 저희도 즐겁게 감상할 수 있어 감사한 마음입니다.`;
   return `${reviewLine}<br><br>${instaLine}`;
 }
 
@@ -6793,14 +6923,14 @@ function sendPostShootFollowupEmails_(){
     const name=String(row[2]||'');
     const product=String(row[7]||'');
     const subj={
-      ko:`[Studio mean] 촬영해 주셔서 감사합니다 — ${name}님`,
-      en:`[Studio mean] Thank you for your session — ${name}`,
-      de:`[Studio mean] Vielen Dank für Ihr Shooting — ${name}`
+      ko:`[Studio mean] 촬영 후 감사 인사 — ${name}님`,
+      en:`[Studio mean] Thank you for visiting us — ${name}`,
+      de:`[Studio mean] Vielen Dank für Ihren Besuch — ${name}`
     };
     const body={
-      ko:`안녕하세요 <b>${name}</b>님,<br><br>Studio mean과 함께해 주셔서 진심으로 감사합니다.<br>${product} 촬영이 좋은 기억으로 남으셨기를 바랍니다.<br><br>${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
-      en:`Hello <b>${name}</b>,<br><br>Thank you sincerely for booking with Studio mean.<br>We hope your ${product} session was a meaningful experience.<br><br>${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
-      de:`Hallo <b>${name}</b>,<br><br>Vielen Dank, dass Sie sich für Studio mean entschieden haben.<br>Wir hoffen, dass Ihnen Ihr ${product}-Shooting in guter Erinnerung bleibt.<br><br>${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+      ko:`${name}님, 안녕하세요.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 스튜디오에서 함께한 시간이 편안한 기억으로 남으셨기를 바랍니다.<br><br>보정 작업은 순차적으로 진행되며, 완료되는 대로 별도 메일로 안내드리겠습니다. 촬영 중 미처 여쭙지 못한 점이나 추가 요청이 있으시면 이 메일로 회신해 주셔도 좋습니다.<br><br>${_followupCommonHtml_('ko')}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${_getSignatureHtml()}`,
+      en:`Dear ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. It was a pleasure to have you at the studio, and we hope you left with a calm and memorable experience.<br><br>Retouching is handled in the order of each session, and we will send your final images as soon as they are ready. If there is anything you would like to add or ask about in the meantime, feel free to reply to this email.<br><br>${_followupCommonHtml_('en')}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${_getSignatureHtml()}`,
+      de:`Liebe/r ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Es war uns eine Freude, Sie im Studio begrüßen zu dürfen, und wir hoffen, dass Ihnen der Termin in ruhiger Erinnerung bleibt.<br><br>Die Bildbearbeitung erfolgt in der Reihenfolge der Termine; sobald Ihre Bilder fertig sind, erhalten Sie eine weitere Nachricht von uns. Falls Sie noch eine Anmerkung oder Frage haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_followupCommonHtml_('de')}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${_getSignatureHtml()}`
     };
     MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['촬영후감사메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -6823,14 +6953,14 @@ function sendDolRecommendationEmails_(){
     const lang=String(row[5]||'ko').toLowerCase().trim();
     const name=String(row[2]||'');
     const subj={
-      ko:`[Studio mean] 돌촬영 시기 안내 — ${name}님`,
-      en:`[Studio mean] First birthday session timing — ${name}`,
-      de:`[Studio mean] Empfehlung für das 1. Geburtstagsshooting — ${name}`
+      ko:`[Studio mean] 돌촬영 준비 시기를 미리 안내드립니다 — ${name}님`,
+      en:`[Studio mean] Planning ahead for the first birthday session — ${name}`,
+      de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`안녕하세요 <b>${name}</b>님,<br><br>백일 촬영을 함께했던 시간이 벌써 많이 지났네요. 아이가 걷기 전인 <b>10~11개월 무렵</b>은 돌촬영을 준비하시기에 가장 좋은 시기입니다.<br><br>원하시면 돌상 무료 셋팅과 함께 자연스러운 돌촬영 구성을 안내드릴 수 있습니다.<br><br>${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
-      en:`Hello <b>${name}</b>,<br><br>It has already been some time since your baby's 100-day session. The period around <b>10–11 months, before walking steadily</b>, is usually ideal for planning a first birthday session.<br><br>If you would like, we can guide you through a birthday shoot setup with our complimentary basic dol table styling.<br><br>${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
-      de:`Hallo <b>${name}</b>,<br><br>Seit Ihrem 100-Tage-Shooting ist schon etwas Zeit vergangen. Die Zeit um den <b>10.–11. Monat, bevor das Kind sicher läuft</b>, ist ideal für ein Geburtstagsshooting.<br><br>Gerne beraten wir Sie zu einem natürlichen Geburtstagsshooting inklusive kostenlosem Basic-Dol-Table-Setup.<br><br>${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+      ko:`${name}님, 안녕하세요.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
+      en:`Dear ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
+      de:`Liebe/r ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
     };
     MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -6860,21 +6990,21 @@ function sendPostRetouchFollowupEmails_(){
     const name=String(row[SELECT_COL['고객명']]||'');
     const driveLink=String(row[SELECT_COL['드라이브링크']]||'').trim();
     const subj={
-      ko:`[Studio mean] 보정본 안내 및 감사 인사 — ${name}님`,
-      en:`[Studio mean] Thank you and your final photos — ${name}`,
-      de:`[Studio mean] Vielen Dank und Ihre finalen Fotos — ${name}`
+      ko:`[Studio mean] 보정본을 잘 받아보셨는지 여쭙습니다 — ${name}님`,
+      en:`[Studio mean] A short note after your final photos — ${name}`,
+      de:`[Studio mean] Ein kurzer Gruß nach Ihren finalen Fotos — ${name}`
     };
     const driveLine=driveLink
       ? (lang==='en'
           ? `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">Open your photo folder</a><br><br>`
           : lang==='de'
             ? `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">Fotomappe öffnen</a><br><br>`
-            : `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">사진 폴더 열기</a><br><br>`)
+            : `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">사진 폴더 다시 보기</a><br><br>`)
       : '';
     const body={
-      ko:`안녕하세요 <b>${name}</b>님,<br><br>보정본을 확인해 주셔서 감사합니다. 촬영이 좋은 기억으로 남으셨기를 바랍니다.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('ko')}<br><br>${_getSignatureHtml()}`,
-      en:`Hello <b>${name}</b>,<br><br>Thank you for reviewing your final retouched photos. We hope the session remains a meaningful memory.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('en')}<br><br>${_getSignatureHtml()}`,
-      de:`Hallo <b>${name}</b>,<br><br>Vielen Dank, dass Sie Ihre finalen bearbeiteten Fotos überprüft haben. Wir hoffen, dass das Shooting in guter Erinnerung bleibt.<br><br>${driveLine?driveLine:''}${_followupCommonHtml_('de')}<br><br>${_getSignatureHtml()}`
+      ko:`${name}님, 안녕하세요.<br><br>보내드린 보정본을 잘 받아보셨는지, 결과물은 마음에 드셨는지 여쭙고 싶어 다시 인사드립니다. 혹시 확인에 불편한 점이 있으셨다면 편하게 알려 주세요.<br><br>${driveLine?driveLine:''}보정 범위 안에서 조정이 필요한 부분이 있다면, 이 메일에 사진 번호와 함께 회신해 주시면 신속히 반영하겠습니다.<br><br>${_followupCommonHtml_('ko')}<br><br>좋은 한 주 보내시길 바랍니다.<br><br>${_getSignatureHtml()}`,
+      en:`Dear ${name},<br><br>We wanted to check in a few days after sending your final photos to make sure everything arrived smoothly and that you are happy with the results. If anything looked off on your end, please let us know — we are glad to help.<br><br>${driveLine?driveLine:''}If there is any fine-tuning you would like within the scope of the delivered retouch, simply reply to this email with the photo numbers and we will take care of it promptly.<br><br>${_followupCommonHtml_('en')}<br><br>We hope you have a lovely week ahead.<br><br>${_getSignatureHtml()}`,
+      de:`Liebe/r ${name},<br><br>wir melden uns einige Tage nach dem Versand Ihrer finalen Fotos, um zu hören, ob alles gut bei Ihnen angekommen ist und Sie mit dem Ergebnis zufrieden sind. Sollte etwas auf Ihrer Seite nicht richtig dargestellt werden, lassen Sie es uns bitte wissen.<br><br>${driveLine?driveLine:''}Falls Sie sich innerhalb der vereinbarten Bildbearbeitung noch kleine Anpassungen wünschen, antworten Sie einfach auf diese E-Mail mit der jeweiligen Bildnummer — wir kümmern uns zeitnah darum.<br><br>${_followupCommonHtml_('de')}<br><br>Wir wünschen Ihnen eine schöne Woche.<br><br>${_getSignatureHtml()}`
     };
     MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     selSh.getRange(idx+2,SELECT_COL['보정후안내메일발송일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -6884,4 +7014,252 @@ function sendPostRetouchFollowupEmails_(){
 /* ====== C2: 셀렉 미제출 리마인더 (3일 후) ====== */
 function sendSelectReminders_(){
   autoSelectDailyCheck();
+}
+
+/* ====== D1: 시트 자동 백업 (매일 03:00 Berlin) ====== */
+const BACKUP_FOLDER_NAME='Studio mean DB Backups';
+const BACKUP_RETENTION_DAYS=30;
+
+function _getOrCreateBackupFolder_(){
+  const props=PropertiesService.getScriptProperties();
+  const cachedId=props.getProperty('BACKUP_FOLDER_ID');
+  if(cachedId){
+    try{return DriveApp.getFolderById(cachedId);}catch(e){}
+  }
+  const found=DriveApp.getFoldersByName(BACKUP_FOLDER_NAME);
+  let folder;
+  if(found.hasNext()) folder=found.next();
+  else folder=DriveApp.createFolder(BACKUP_FOLDER_NAME);
+  try{props.setProperty('BACKUP_FOLDER_ID',folder.getId());}catch(e){}
+  return folder;
+}
+
+function backupSpreadsheetDaily_(){
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){Logger.log('backupSpreadsheetDaily_ lock busy: '+e.message);return;}
+  try{
+    const sheets=ensureSheets_();
+    const srcFile=DriveApp.getFileById(sheets.ss.getId());
+    const folder=_getOrCreateBackupFolder_();
+    const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    const copyName='StudioMeanDB_'+stamp;
+    const existing=folder.getFilesByName(copyName);
+    if(existing.hasNext()){Logger.log('backup already exists for '+stamp);}
+    else{
+      srcFile.makeCopy(copyName,folder);
+      Logger.log('backup created: '+copyName);
+    }
+    _pruneOldBackups_(folder);
+  }catch(err){
+    Logger.log('backupSpreadsheetDaily_ error: '+err.message);
+    try{
+      MailApp.sendEmail({
+        to:CONFIG.ADMIN_EMAIL,
+        subject:'[Studio mean] ⚠️ 일일 DB 백업 실패',
+        body:'백업 작업 중 오류가 발생했습니다.\n\n'+err.message+'\n\n시간: '+new Date()
+      });
+    }catch(mailErr){}
+  }finally{
+    try{lock.releaseLock();}catch(e){}
+  }
+}
+
+function _pruneOldBackups_(folder){
+  const cutoff=Date.now()-BACKUP_RETENTION_DAYS*86400000;
+  const files=folder.getFiles();
+  while(files.hasNext()){
+    const f=files.next();
+    if(String(f.getName()||'').indexOf('StudioMeanDB_')!==0) continue;
+    if(f.getDateCreated().getTime()<cutoff){
+      try{f.setTrashed(true);Logger.log('pruned backup: '+f.getName());}catch(e){Logger.log('prune fail: '+e.message);}
+    }
+  }
+}
+
+function installBackupTrigger(){
+  ScriptApp.getProjectTriggers()
+    .filter(t=>t.getHandlerFunction()==='backupSpreadsheetDaily_')
+    .forEach(t=>ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('backupSpreadsheetDaily_')
+    .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.TIMEZONE).create();
+  return 'Backup trigger installed (03:00 Berlin daily, '+BACKUP_RETENTION_DAYS+'-day retention)';
+}
+
+/* ====== D2: 대기 등록 (waitlist) ====== */
+const WAITLIST_SHEET_NAME='대기자';
+const WAITLIST_HEADERS=['등록일시','상태','고객명','이메일','연락처','언어','희망상품','상품그룹','희망날짜','희망시간대','총소요(분)','요청메모','알림발송일시','알림횟수'];
+const WAITLIST_COL=WAITLIST_HEADERS.reduce((a,h,i)=>{a[h]=i;return a;},{});
+
+function ensureWaitlistSheet_(ss){
+  let sh=ss.getSheetByName(WAITLIST_SHEET_NAME);
+  if(!sh){
+    sh=ss.insertSheet(WAITLIST_SHEET_NAME);
+    sh.appendRow(WAITLIST_HEADERS);
+    sh.getRange(1,1,1,WAITLIST_HEADERS.length).setFontWeight('bold').setBackground('#f8fafc');
+    sh.setFrozenRows(1);
+  }else if(sh.getLastColumn()<WAITLIST_HEADERS.length){
+    sh.getRange(1,sh.getLastColumn()+1,1,WAITLIST_HEADERS.length-sh.getLastColumn())
+      .setValues([WAITLIST_HEADERS.slice(sh.getLastColumn())]);
+  }
+  return sh;
+}
+
+function joinWaitlist_(payload){
+  const data=payload||{};
+  const name=String(data.name||'').trim();
+  const email=String(data.email||'').trim().toLowerCase();
+  const phone=String(data.phone||'').trim();
+  const lang=String(data.lang||'ko').toLowerCase().trim();
+  const productName=String(data.product||'').trim();
+  const itemGroup=String(data.itemGroup||'').trim();
+  const desiredDate=String(data.date||'').trim();
+  const desiredTime=String(data.time||'').trim();
+  const totalDur=parseInt(data.totalDur||0,10)||0;
+  const memo=String(data.memo||'').trim();
+
+  if(!name||!email||!email.includes('@')||!desiredDate||!itemGroup){
+    return {ok:false,message:'필수 항목이 누락되었습니다.'};
+  }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(desiredDate)){
+    return {ok:false,message:'날짜 형식이 올바르지 않습니다.'};
+  }
+
+  const sh=ensureWaitlistSheet_(ensureSheets_().ss);
+  const all=sh.getDataRange().getValues().slice(1);
+  const dup=all.some(r=>
+    String(r[WAITLIST_COL['상태']]||'')==='대기중' &&
+    String(r[WAITLIST_COL['이메일']]||'').toLowerCase().trim()===email &&
+    String(r[WAITLIST_COL['희망날짜']]||'').trim()===desiredDate &&
+    String(r[WAITLIST_COL['상품그룹']]||'').trim()===itemGroup
+  );
+  if(dup) return {ok:true,message:'이미 해당 날짜에 대기 등록되어 있습니다.',duplicate:true};
+
+  sh.appendRow([
+    Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+    '대기중', name, email, phone, lang, productName, itemGroup,
+    desiredDate, desiredTime, totalDur, memo, '', 0
+  ]);
+
+  _sendWaitlistConfirmEmail_(email,name,lang,desiredDate,productName);
+  return {ok:true,message:'대기 등록이 완료되었습니다.'};
+}
+
+function _sendWaitlistConfirmEmail_(email,name,lang,dateStr,product){
+  const subj={
+    ko:`[Studio mean] 대기 등록 접수 안내 — ${name}님`,
+    en:`[Studio mean] Waitlist confirmation — ${name}`,
+    de:`[Studio mean] Warteliste – Bestätigung — ${name}`
+  };
+  const body={
+    ko:`${name}님, 안녕하세요.<br><br>요청해 주신 <b>${dateStr}</b> 날짜의 ${product?product+' ':''}대기 등록이 정상적으로 접수되었습니다.<br><br>해당 날짜에 예약 취소가 발생하면 즉시 이메일로 안내드리며, 선착순으로 예약 페이지에서 일정을 확정하실 수 있습니다. 별도로 등록 취소를 원하시면 이 메일로 회신해 주세요.<br><br>${_getSignatureHtml()}`,
+    en:`Dear ${name},<br><br>Your waitlist request for <b>${dateStr}</b>${product?' ('+product+')':''} has been received. If a slot opens on that day, we will notify you by email right away so you can confirm the time on our booking page on a first-come basis.<br><br>If you wish to withdraw from the waitlist later, just reply to this email.<br><br>${_getSignatureHtml()}`,
+    de:`Liebe/r ${name},<br><br>Ihre Anfrage für die Warteliste am <b>${dateStr}</b>${product?' ('+product+')':''} ist bei uns eingegangen. Sobald an diesem Tag ein Termin frei wird, informieren wir Sie umgehend per E-Mail, sodass Sie den Termin nach dem Prinzip „wer zuerst kommt, bucht zuerst" bestätigen können.<br><br>Möchten Sie die Warteliste später verlassen, antworten Sie einfach auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+  };
+  try{
+    MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+  }catch(e){Logger.log('waitlist confirm mail failed: '+e.message);}
+}
+
+function notifyWaitlistForDate_(dateStr,itemGroup){
+  if(!dateStr) return {notified:0};
+  try{
+    const sh=ensureWaitlistSheet_(ensureSheets_().ss);
+    const lastRow=sh.getLastRow();
+    if(lastRow<2) return {notified:0};
+    const data=sh.getDataRange().getValues();
+    const settings=getSettingsMap_();
+    const bookingBase=String(settings['BOOKING_SITE_URL']||'https://booking.studio-mean.com').replace(/\/$/,'');
+    let notified=0;
+    const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    const targetDate=String(dateStr).slice(0,10);
+    const targetGroup=String(itemGroup||'').trim();
+
+    for(let i=1;i<data.length;i++){
+      const row=data[i];
+      if(String(row[WAITLIST_COL['상태']]||'')!=='대기중') continue;
+      if(String(row[WAITLIST_COL['희망날짜']]||'').trim()!==targetDate) continue;
+      if(targetGroup && String(row[WAITLIST_COL['상품그룹']]||'').trim() && String(row[WAITLIST_COL['상품그룹']]||'').trim()!==targetGroup) continue;
+      const email=String(row[WAITLIST_COL['이메일']]||'').trim();
+      if(!email||!email.includes('@')) continue;
+      const name=String(row[WAITLIST_COL['고객명']]||'');
+      const lang=String(row[WAITLIST_COL['언어']]||'ko').toLowerCase();
+      const product=String(row[WAITLIST_COL['희망상품']]||'');
+      const subj={
+        ko:`[Studio mean] 대기 중이던 ${targetDate} 일정이 열렸습니다 — ${name}님`,
+        en:`[Studio mean] A slot opened on ${targetDate} — ${name}`,
+        de:`[Studio mean] Ein Termin am ${targetDate} ist freigeworden — ${name}`
+      };
+      const body={
+        ko:`${name}님, 안녕하세요.<br><br>대기 등록해 두신 <b>${targetDate}</b>${product?' '+product:''} 일정에 취소가 발생하여 예약이 가능해졌습니다. 같은 날짜에 여러 분이 대기 중일 수 있어, 다음 링크에서 먼저 확정해 주시는 순서로 일정이 배정됩니다.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">예약 페이지에서 일정 선택</a><br><br>다른 날짜나 시간을 희망하시는 경우에도 편하게 알려 주세요.<br><br>${_getSignatureHtml()}`,
+        en:`Dear ${name},<br><br>A slot has just opened up on <b>${targetDate}</b>${product?' for '+product:''}, which you are on our waitlist for. As several guests may be waiting for the same day, reservations are confirmed on a first-come basis through the link below.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Open the booking page</a><br><br>If you would prefer a different date or time, feel free to let us know.<br><br>${_getSignatureHtml()}`,
+        de:`Liebe/r ${name},<br><br>am <b>${targetDate}</b>${product?' für '+product:''}, wofür Sie auf der Warteliste stehen, ist soeben ein Termin freigeworden. Da möglicherweise mehrere Gäste für diesen Tag warten, werden Termine über den folgenden Link nach dem Prinzip „wer zuerst kommt, bucht zuerst" vergeben.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Zur Buchungsseite</a><br><br>Falls ein anderes Datum oder eine andere Uhrzeit passen würde, sagen Sie uns gern Bescheid.<br><br>${_getSignatureHtml()}`
+      };
+      try{
+        MailApp.sendEmail({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+        const prev=parseInt(row[WAITLIST_COL['알림횟수']]||0,10)||0;
+        sh.getRange(i+1,WAITLIST_COL['알림발송일시']+1).setValue(now);
+        sh.getRange(i+1,WAITLIST_COL['알림횟수']+1).setValue(prev+1);
+        notified++;
+      }catch(e){Logger.log('waitlist notify fail ('+email+'): '+e.message);}
+    }
+    return {notified};
+  }catch(err){
+    Logger.log('notifyWaitlistForDate_ error: '+err.message);
+    return {notified:0,error:err.message};
+  }
+}
+
+function _guessItemGroupFromProduct_(productName){
+  const s=String(productName||'').toLowerCase();
+  if(/웨딩|wedding/i.test(s)) return 'wed';
+  if(/여권|passport/i.test(s)) return 'pass';
+  if(/프로필|bewerbung|profile/i.test(s)) return 'prof';
+  if(/야외|snap|outdoor/i.test(s)) return 'snap';
+  return 'stud';
+}
+
+/* ====== D3: 관리자 세션 유휴기준 자동 갱신 ====== */
+const ADMIN_SESSION_SLIDE_THRESHOLD_SEC=60*60*2;
+
+/* ====== D4: 연락처 히스토리 조회 (자동 채움용) ====== */
+function lookupContactHistory_(payload){
+  const email=String((payload&&payload.email)||'').trim().toLowerCase();
+  const phone=String((payload&&payload.phone)||'').replace(/[\s\-\(\)]/g,'');
+  if(!email&&!phone) return {found:false};
+  try{
+    const sh=getDbSheet();
+    const data=sh.getDataRange().getValues();
+    const now=Date.now();
+    let latestRow=null;let latestTs=0;let visits=0;
+    for(let i=1;i<data.length;i++){
+      const r=data[i];
+      if(String(r[1]||'')==='취소됨'||String(r[1]||'')==='자동취소') continue;
+      const rEmail=String(r[4]||'').trim().toLowerCase();
+      const rPhone=String(r[3]||'').replace(/[\s\-\(\)]/g,'');
+      let match=false;
+      if(email&&rEmail===email) match=true;
+      else if(phone&&phone.length>=6&&rPhone===phone) match=true;
+      if(!match) continue;
+      const dt=parseDateSafe_(r[0]).obj;
+      if(!dt) continue;
+      if(dt.getTime()<=now) visits++;
+      if(dt.getTime()>latestTs){latestTs=dt.getTime();latestRow=r;}
+    }
+    if(!latestRow) return {found:false};
+    return {
+      found:true,
+      name:String(latestRow[2]||''),
+      phone:String(latestRow[3]||''),
+      email:String(latestRow[4]||''),
+      lang:String(latestRow[5]||''),
+      address:String(latestRow[BOOKING_COL['고객주소']]||''),
+      lastProduct:String(latestRow[7]||''),
+      lastDate:parseDateSafe_(latestRow[0]).str||'',
+      visitCount:visits
+    };
+  }catch(err){
+    Logger.log('lookupContactHistory_ error: '+err.message);
+    return {found:false,error:err.message};
+  }
 }

@@ -146,6 +146,65 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .lexware-hub{grid-template-columns:1fr;}
   .lexware-status-grid{grid-template-columns:1fr;}
 }
+/* ====== 반응형 확장 — 태블릿/모바일 ====== */
+@media(max-width:960px){
+  .content{padding:16px 12px;}
+  .card{padding:16px;}
+  .lexware-hub{grid-template-columns:1fr;}
+  .lexware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .stat-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));}
+}
+@media(max-width:768px){
+  .top-bar{padding:0 12px;height:52px;}
+  .logo{font-size:15px;}
+  .top-btn{padding:7px 10px;font-size:12px;}
+  .top-actions{gap:6px;}
+  .tab-bar{padding:0 8px;-webkit-overflow-scrolling:touch;}
+  .tab-bar::-webkit-scrollbar{display:none;}
+  .tab{padding:12px 14px;font-size:13px;min-height:44px;display:flex;align-items:center;}
+  .content{padding:12px 10px;}
+  .card{padding:14px;border-radius:12px;margin-bottom:12px;}
+  .card-title{font-size:14px;margin-bottom:12px;}
+  .btn{padding:10px 16px;font-size:13px;min-height:42px;}
+  .btn-sm{padding:7px 12px;font-size:12px;min-height:34px;}
+  .form-row{grid-template-columns:1fr;gap:10px;}
+  .modal-overlay{align-items:flex-end;}
+  .modal{width:100%;max-width:100%;max-height:92vh;border-radius:16px 16px 0 0;padding:18px;}
+  .modal-title{font-size:16px;margin-bottom:14px;}
+  .modal-footer{flex-wrap:wrap;gap:8px;}
+  .modal-footer .btn{flex:1 1 auto;min-width:120px;}
+  .table-wrap{margin-left:-10px;margin-right:-10px;padding:0 10px;}
+  .table-wrap table{font-size:12px;}
+  .accounting-toolbar{padding:10px;}
+  .accounting-toolbar-row{flex-direction:column;align-items:stretch;}
+  .accounting-toolbar .toolbar-group{min-width:0;}
+  .accounting-toolbar .toolbar-spacer{margin-left:0;}
+  .lexware-status-grid{grid-template-columns:1fr;}
+  .lexware-status-card{padding:12px;}
+  .lexware-status-card .v{font-size:18px;}
+  .stat-grid{grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;}
+  .stat-card{padding:14px 16px;}
+  .dashboard-grid{grid-template-columns:1fr !important;gap:10px;}
+  .week-grid{gap:3px;}
+  .week-day-cell{padding:6px;min-height:60px;}
+  .wev{font-size:9px;}
+  input,select,textarea{font-size:16px;}
+}
+@media(max-width:480px){
+  .top-bar{height:48px;padding:0 10px;}
+  .logo{font-size:14px;letter-spacing:0;}
+  .top-btn{padding:6px 8px;font-size:11px;}
+  .tab{padding:11px 12px;font-size:12px;}
+  .content{padding:10px 8px;}
+  .card{padding:12px;}
+  .card-title{font-size:13px;}
+  .btn{padding:9px 14px;font-size:12px;}
+  .modal{padding:14px;}
+  .modal-title{font-size:15px;}
+  .stat-grid{grid-template-columns:repeat(auto-fit,minmax(100px,1fr));}
+  .stat-card{padding:12px 14px;}
+  .stat-title{font-size:11px;}
+}
 </style>
 </head>
 <body>

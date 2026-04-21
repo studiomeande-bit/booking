@@ -1,4 +1,4 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, submitBooking } from '../shared/api-booking.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, joinWaitlist, lookupContact, submitBooking } from '../shared/api-booking.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const LANG_STORAGE_KEY = 'studio-mean-lang';
@@ -1138,8 +1138,10 @@ function wireEvents() {
   els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   els.form.elements.name?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
-  els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
-  els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
+  els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); scheduleContactLookup(); });
+  els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); scheduleContactLookup(); });
+  els.form.elements.email?.addEventListener('change', maybeLookupContact);
+  els.form.elements.phone?.addEventListener('change', maybeLookupContact);
   els.form.elements.address?.addEventListener('input', refreshStepLocks);
   els.form.elements.businessInvoiceNeeded?.addEventListener('change', () => {
     syncConditionalFields();
@@ -3486,7 +3488,8 @@ async function selectDate(dateKey) {
 function renderSlots(slots) {
   if (!Array.isArray(slots) || slots.length === 0) {
     els.slotGrid.classList.add('empty-state');
-    els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().noSlots}</div>`;
+    els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().noSlots}</div>${renderWaitlistBlock()}`;
+    bindWaitlistHandlers();
     els.submitBtn.disabled = true;
     return;
   }
@@ -3514,6 +3517,243 @@ function renderSlots(slots) {
     });
   });
   updateSubmitState();
+}
+
+function getWaitlistCopy() {
+  const lang = state.lang;
+  if (lang === 'en') {
+    return {
+      intro: 'Fully booked — join the waitlist and we will email you the moment a slot opens.',
+      nameLbl: 'Name', emailLbl: 'Email', phoneLbl: 'Phone (optional)',
+      submit: 'Join waitlist', submitting: 'Submitting…',
+      success: 'You are on the list. We will notify you as soon as a slot opens.',
+      duplicate: 'You are already on the waitlist for this date.',
+      fail: 'Could not register your waitlist entry. Please try again.',
+      requireFields: 'Please enter name and a valid email address.'
+    };
+  }
+  if (lang === 'de') {
+    return {
+      intro: 'Dieser Tag ist ausgebucht. Lassen Sie sich auf die Warteliste setzen — wir schreiben Ihnen, sobald ein Termin frei wird.',
+      nameLbl: 'Name', emailLbl: 'E-Mail', phoneLbl: 'Telefon (optional)',
+      submit: 'Auf Warteliste setzen', submitting: 'Wird gesendet…',
+      success: 'Sie stehen auf der Warteliste. Wir informieren Sie, sobald ein Termin frei wird.',
+      duplicate: 'Sie stehen für diesen Tag bereits auf der Warteliste.',
+      fail: 'Eintrag konnte nicht gespeichert werden. Bitte erneut versuchen.',
+      requireFields: 'Bitte Name und eine gültige E-Mail-Adresse eingeben.'
+    };
+  }
+  return {
+    intro: '이 날짜는 예약이 마감되었습니다. 대기 등록을 남겨 두시면 취소 발생 시 즉시 메일로 안내드립니다.',
+    nameLbl: '이름', emailLbl: '이메일', phoneLbl: '연락처 (선택)',
+    submit: '대기 등록 신청', submitting: '등록 중…',
+    success: '대기 등록이 완료되었습니다. 자리가 열리면 즉시 안내드리겠습니다.',
+    duplicate: '이미 해당 날짜에 대기 등록이 되어 있습니다.',
+    fail: '대기 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+    requireFields: '이름과 올바른 이메일을 입력해 주세요.'
+  };
+}
+
+function renderWaitlistBlock() {
+  if (!state.selectedProduct || !state.selectedDate) return '';
+  const c = getWaitlistCopy();
+  return `
+    <div class="waitlist-box" data-role="waitlist-box" style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+      <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.5;">${escapeHtml(c.intro)}</p>
+      <div style="display:grid;gap:8px;">
+        <input type="text" data-role="wl-name" placeholder="${escapeHtml(c.nameLbl)}" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">
+        <input type="email" data-role="wl-email" placeholder="${escapeHtml(c.emailLbl)}" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">
+        <input type="tel" data-role="wl-phone" placeholder="${escapeHtml(c.phoneLbl)}" style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">
+      </div>
+      <button type="button" data-role="wl-submit" style="margin-top:12px;padding:10px 16px;background:#0f172a;color:#fff;border:0;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">${escapeHtml(c.submit)}</button>
+      <p data-role="wl-msg" style="margin:10px 0 0;font-size:13px;min-height:18px;"></p>
+    </div>`;
+}
+
+function bindWaitlistHandlers() {
+  const box = els.slotGrid.querySelector('[data-role="waitlist-box"]');
+  if (!box) return;
+  const btn = box.querySelector('[data-role="wl-submit"]');
+  const msg = box.querySelector('[data-role="wl-msg"]');
+  const c = getWaitlistCopy();
+  // Pre-fill from contact form if already typed
+  try {
+    const formName = String(els.form?.elements?.name?.value || '').trim();
+    const formEmail = String(els.form?.elements?.email?.value || '').trim();
+    const formPhone = String(els.form?.elements?.phone?.value || '').trim();
+    if (formName) box.querySelector('[data-role="wl-name"]').value = formName;
+    if (formEmail) box.querySelector('[data-role="wl-email"]').value = formEmail;
+    if (formPhone) box.querySelector('[data-role="wl-phone"]').value = formPhone;
+  } catch {}
+  btn?.addEventListener('click', async () => {
+    const name = String(box.querySelector('[data-role="wl-name"]').value || '').trim();
+    const email = String(box.querySelector('[data-role="wl-email"]').value || '').trim();
+    const phone = String(box.querySelector('[data-role="wl-phone"]').value || '').trim();
+    if (!name || !/\S+@\S+\.\S+/.test(email)) {
+      msg.textContent = c.requireFields;
+      msg.style.color = '#dc2626';
+      return;
+    }
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = c.submitting;
+    msg.textContent = '';
+    try {
+      const product = state.selectedProduct;
+      const res = await joinWaitlist({
+        name, email, phone,
+        lang: state.lang || 'ko',
+        date: state.selectedDate,
+        itemGroup: product?.g || '',
+        product: getProductLabel(product) || '',
+        totalDur: getSelectedDuration() || 0
+      }, createRequestId());
+      if (res?.duplicate) {
+        msg.textContent = c.duplicate;
+        msg.style.color = '#b45309';
+      } else if (res?.ok) {
+        msg.textContent = c.success;
+        msg.style.color = '#047857';
+        btn.disabled = true;
+      } else {
+        msg.textContent = res?.message || c.fail;
+        msg.style.color = '#dc2626';
+        btn.disabled = false;
+      }
+    } catch (err) {
+      msg.textContent = err?.message || c.fail;
+      msg.style.color = '#dc2626';
+      btn.disabled = false;
+    } finally {
+      if (!btn.disabled) btn.textContent = originalLabel;
+    }
+  });
+}
+
+let _contactLookupTimer = null;
+let _contactLookupLastKey = '';
+let _contactLookupApplied = false;
+
+function getContactLookupCopy() {
+  const lang = state.lang;
+  if (lang === 'en') {
+    return {
+      hi: (name, visits) => `Welcome back, ${name}. We found ${visits} previous session${visits === 1 ? '' : 's'} on file.`,
+      apply: 'Autofill name, phone & address',
+      applied: 'Contact details filled in from your last booking.',
+      dismiss: 'Dismiss'
+    };
+  }
+  if (lang === 'de') {
+    return {
+      hi: (name, visits) => `Willkommen zurück, ${name}. Wir finden ${visits} frühere${visits === 1 ? 's' : ''} Termin${visits === 1 ? '' : 'e'} auf Ihrem Namen.`,
+      apply: 'Name, Telefon & Adresse übernehmen',
+      applied: 'Kontaktdaten aus Ihrem letzten Termin wurden übernommen.',
+      dismiss: 'Ausblenden'
+    };
+  }
+  return {
+    hi: (name, visits) => `${name}님, 다시 만나 반갑습니다. 지난 방문 기록 ${visits}건을 찾았습니다.`,
+    apply: '이름·연락처·주소 자동 채우기',
+    applied: '지난 예약 정보로 연락처가 자동 채워졌습니다.',
+    dismiss: '닫기'
+  };
+}
+
+function ensureContactSuggestionBox() {
+  let box = document.getElementById('contactSuggestion');
+  if (box) return box;
+  const emailInput = els.form?.elements?.email;
+  if (!emailInput) return null;
+  box = document.createElement('div');
+  box.id = 'contactSuggestion';
+  box.setAttribute('role', 'status');
+  box.style.cssText = 'margin:8px 0 12px;padding:12px 14px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;font-size:13px;color:#1e3a8a;display:none;';
+  const container = emailInput.closest('.form-row') || emailInput.parentElement;
+  container?.parentElement?.insertBefore(box, container);
+  return box;
+}
+
+function hideContactSuggestion() {
+  const box = document.getElementById('contactSuggestion');
+  if (box) box.style.display = 'none';
+}
+
+function applyContactSuggestion(contact) {
+  if (!contact) return;
+  try {
+    const form = els.form?.elements;
+    if (form) {
+      if (contact.name && form.name && !form.name.value) form.name.value = contact.name;
+      if (contact.phone && form.phone && !form.phone.value) form.phone.value = contact.phone;
+      if (contact.address && form.address && !form.address.value) form.address.value = contact.address;
+      ['name', 'phone', 'address'].forEach((k) => {
+        try { form[k]?.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+      });
+    }
+    _contactLookupApplied = true;
+    const c = getContactLookupCopy();
+    const box = document.getElementById('contactSuggestion');
+    if (box) {
+      box.style.background = '#ecfdf5';
+      box.style.borderColor = '#a7f3d0';
+      box.style.color = '#065f46';
+      box.textContent = c.applied;
+      setTimeout(hideContactSuggestion, 4000);
+    }
+  } catch {}
+}
+
+function showContactSuggestion(contact) {
+  const box = ensureContactSuggestionBox();
+  if (!box) return;
+  const c = getContactLookupCopy();
+  const visits = Math.max(1, Number(contact.visitCount) || 1);
+  const safeName = escapeHtml(contact.name || '');
+  box.style.display = '';
+  box.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;">
+      <span>${escapeHtml(c.hi(safeName, visits))}</span>
+      <span style="display:flex;gap:8px;">
+        <button type="button" data-role="cl-apply" style="padding:6px 12px;background:#1d4ed8;color:#fff;border:0;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">${escapeHtml(c.apply)}</button>
+        <button type="button" data-role="cl-close" style="padding:6px 10px;background:transparent;color:#1e3a8a;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;cursor:pointer;">${escapeHtml(c.dismiss)}</button>
+      </span>
+    </div>`;
+  box.querySelector('[data-role="cl-apply"]')?.addEventListener('click', () => applyContactSuggestion(contact));
+  box.querySelector('[data-role="cl-close"]')?.addEventListener('click', hideContactSuggestion);
+}
+
+async function maybeLookupContact() {
+  if (_contactLookupApplied) return;
+  try {
+    const emailRaw = String(els.form?.elements?.email?.value || '').trim();
+    const phoneRaw = String(els.form?.elements?.phone?.value || '').trim();
+    const email = emailRaw && /\S+@\S+\.\S+/.test(emailRaw) ? emailRaw.toLowerCase() : '';
+    const phone = phoneRaw.replace(/[\s\-()]/g, '');
+    if (!email && (!phone || phone.length < 6)) return;
+    const key = email + '|' + phone;
+    if (key === _contactLookupLastKey) return;
+    _contactLookupLastKey = key;
+    const res = await lookupContact({ email, phone });
+    if (res?.found) {
+      showContactSuggestion(res);
+    } else {
+      hideContactSuggestion();
+    }
+  } catch {
+    // Silent fail - suggestion is purely optional
+  }
+}
+
+function scheduleContactLookup() {
+  if (_contactLookupTimer) clearTimeout(_contactLookupTimer);
+  _contactLookupTimer = setTimeout(maybeLookupContact, 500);
+}
+
+function getSelectedDuration() {
+  const p = state.selectedProduct;
+  if (!p) return 0;
+  return Number(p.totalDur || p.duration || p.dur || 0) || 0;
 }
 
 function renderReview() {
