@@ -3438,10 +3438,16 @@ function renderCalendar(data) {
   for (let i = 0; i < firstDay; i += 1) cells.push('<div class="calendar-cell muted"></div>');
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
-    const disabled = unavail.has(dateKey) || dateKey < todayKey;
+    const isPast = dateKey < todayKey;
+    const isFull = unavail.has(dateKey) && !isPast;
+    const disabled = isPast;
     const selected = state.selectedDate === dateKey;
+    const classes = ['calendar-cell'];
+    if (disabled) classes.push('muted');
+    if (isFull) classes.push('full');
+    if (selected) classes.push('selected');
     cells.push(`
-      <button type="button" class="calendar-cell${disabled ? ' muted' : ''}${selected ? ' selected' : ''}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}>
+      <button type="button" class="${classes.join(' ')}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}${isFull ? ' data-full="1"' : ''}>
         ${day}
       </button>
     `);

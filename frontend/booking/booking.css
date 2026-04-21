@@ -800,6 +800,31 @@ h1 {
 .calendar-cell:disabled {
   opacity: .56;
 }
+.calendar-cell.full {
+  color: #9a6b4a;
+  background: #fdf4ec;
+  border-color: #e9d3bf;
+  position: relative;
+  cursor: pointer;
+}
+.calendar-cell.full::after {
+  content: '마감';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: #c96f39;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.calendar-cell.full.selected {
+  background: #c96f39;
+  color: #fff;
+  border-color: #c96f39;
+}
+.calendar-cell.full.selected::after { color: #fff; }
 .calendar-cell.selected,
 .slot-btn.selected {
   background: #2d2a26;
