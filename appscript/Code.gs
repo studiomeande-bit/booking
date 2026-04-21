@@ -755,7 +755,7 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
     ? getPublicCalendarMonthLite_(y,m,itemGroup)
     : getUnavailableDays(y,m,totalDur,itemGroup,true);
   const out={};
-  out[key]={unavail:monthSummary.unavail||[],slotCounts:{},slotsByDate:{}};
+  out[key]={unavail:monthSummary.unavail||[],closed:monthSummary.closed||[],slotCounts:{},slotsByDate:{}};
   try{cache.put(cacheKey,JSON.stringify(out),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
   return out;
 }
@@ -768,16 +768,17 @@ function getPublicSlots_(dateStr,totalDur,itemGroup){
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
-  const unavail=[],slotCounts={},slotsByDate={};
+  const unavail=[],closed=[],slotCounts={},slotsByDate={};
   const daysInMonth=new Date(year,month+1,0).getDate();
   const now=new Date().getTime();
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
-    if(new Date(`${dStr}T23:59:59`).getTime()<now||isWeekendOrHolidayBlocked_(dStr,itemGroup)||(itemGroup==='promo'&&!isPromoDateAllowed_(dStr))){
-      unavail.push(dStr);
-    }
+    const isPast=new Date(`${dStr}T23:59:59`).getTime()<now;
+    const isClosed=isWeekendOrHolidayBlocked_(dStr,itemGroup)||(itemGroup==='promo'&&!isPromoDateAllowed_(dStr));
+    if(isPast){unavail.push(dStr);continue;}
+    if(isClosed){unavail.push(dStr);closed.push(dStr);}
   }
-  return {unavail,slotCounts,slotsByDate};
+  return {unavail,closed,slotCounts,slotsByDate};
 }
 
 function isBeyondPublicBookingRange_(dateStr){
@@ -791,7 +792,7 @@ function buildClosedMonthSummary_(year,month){
     unavail.push(`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`);
   }
   const out={};
-  out[`${year}_${month}`]={unavail,slotCounts:{},slotsByDate:{}};
+  out[`${year}_${month}`]={unavail,closed:unavail.slice(),slotCounts:{},slotsByDate:{}};
   return out;
 }
 
@@ -1687,16 +1688,20 @@ function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation){
 }
 
 function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
-  const ver=getCalCacheVer_(),cacheKey=`unavail_v8_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
+  const ver=getCalCacheVer_(),cacheKey=`unavail_v9_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
-  const unavail=[],slotCounts={},slotsByDate={},daysInMonth=new Date(year,month+1,0).getDate();
+  const unavail=[],closed=[],slotCounts={},slotsByDate={},daysInMonth=new Date(year,month+1,0).getDate();
   const events=getEventsForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59));
   const now=new Date().getTime();
   const slotsTTL=Math.min(CONFIG.SLOTS_CACHE_TTL_SEC,CONFIG.UNAVAIL_CACHE_TTL_SEC);
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
-    if(new Date(`${dStr}T23:59:59`).getTime()<now||isBeyondPublicBookingRange_(dStr)||isWeekendOrHolidayBlocked_(dStr,itemGroup)){unavail.push(dStr);continue;}
+    const isPast=new Date(`${dStr}T23:59:59`).getTime()<now;
+    const isOutOfRange=isBeyondPublicBookingRange_(dStr);
+    const isClosed=isWeekendOrHolidayBlocked_(dStr,itemGroup);
+    if(isPast||isOutOfRange){unavail.push(dStr);continue;}
+    if(isClosed){unavail.push(dStr);closed.push(dStr);continue;}
     const daySlots=lightMode?null:computeSlots_(dStr,events,totalDur,itemGroup);
     const hasSlots=lightMode?hasAnySlot_(dStr,events,totalDur,itemGroup):!!daySlots.length;
     if(!hasSlots){unavail.push(dStr);}else if(daySlots){
@@ -1706,7 +1711,7 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
       try{cache.put(sKey,JSON.stringify(daySlots),slotsTTL);}catch(e){}
     }
   }
-  const result={unavail,slotCounts,slotsByDate};
+  const result={unavail,closed,slotCounts,slotsByDate};
   try{cache.put(cacheKey,JSON.stringify(result),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
   return result;
 }

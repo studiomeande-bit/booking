@@ -806,6 +806,7 @@ h1 {
   border-color: #e9d3bf;
   position: relative;
   cursor: pointer;
+  opacity: 1;
 }
 .calendar-cell.full::after {
   content: '마감';
@@ -825,6 +826,46 @@ h1 {
   border-color: #c96f39;
 }
 .calendar-cell.full.selected::after { color: #fff; }
+.calendar-cell.closed {
+  color: #a8a29a;
+  background: #f0ece5;
+  border-color: #e3ddd1;
+  position: relative;
+  cursor: not-allowed;
+}
+.calendar-cell.closed::after {
+  content: '휴무';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: #8a8178;
+  line-height: 1;
+}
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #6b6253;
+}
+.calendar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.calendar-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.calendar-legend i.full { background: #fdf4ec; border-color: #e9d3bf; }
+.calendar-legend i.closed { background: #f0ece5; border-color: #e3ddd1; }
 .calendar-cell.selected,
 .slot-btn.selected {
   background: #2d2a26;

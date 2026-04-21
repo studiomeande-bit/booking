@@ -1857,7 +1857,7 @@ function renderStepWarnings() {
   const emailOk = /\S+@\S+\.\S+/.test(email);
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
-  const babyNameOk = !((product?.g === 'prof' && product?.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
+  const babyNameOk = !((product?.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
@@ -3024,7 +3024,7 @@ function renderGeneralPanel() {
 
 function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
-  const needsBabyName = (group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')
+  const needsBabyName = (group === 'prof' && state.ageGroup === 'baby')
     || state.surveyKeys.includes('baby');
   const needsPayerName = Number(state.quote?.depositAmount || getPreviewQuote()?.depositAmount || 0) > 0;
   const needsBusinessInvoice = !!els.form?.elements?.businessInvoiceNeeded?.checked;
@@ -3036,7 +3036,7 @@ function syncConditionalFields() {
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
-  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby'));
+  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.ageGroup === 'baby'));
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
   els.payerNameField.classList.toggle('hidden-field', !needsPayerName);
   els.reshootingField.classList.toggle('hidden-field', !needsReshootingConsent(state.selectedProduct));
@@ -3049,7 +3049,7 @@ function syncConditionalFields() {
 function syncMemoPlaceholder() {
   const memo = els.form?.elements?.memo;
   if (!memo) return;
-  if (state.surveyKeys.includes('baby') || (state.selectedProduct?.g === 'prof' && state.selectedProduct?.id === 'pp' && state.ageGroup === 'baby')) {
+  if (state.surveyKeys.includes('baby') || (state.selectedProduct?.g === 'prof' && state.ageGroup === 'baby')) {
     memo.placeholder = state.lang === 'en'
       ? "Please write the baby's name in Korean or English. Add any requests here as well."
       : state.lang === 'de'
@@ -3428,8 +3428,10 @@ async function loadSlotsForDate(dateKey) {
 function renderCalendar(data) {
   const safeData = data && typeof data === 'object' ? data : {};
   const unavailSource = Array.isArray(safeData.unavail) ? safeData.unavail : [];
+  const closedSource = Array.isArray(safeData.closed) ? safeData.closed : [];
   els.calendarGrid.classList.remove('empty-state');
   const unavail = new Set(unavailSource);
+  const closed = new Set(closedSource);
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
@@ -3439,15 +3441,17 @@ function renderCalendar(data) {
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
     const isPast = dateKey < todayKey;
-    const isFull = unavail.has(dateKey) && !isPast;
-    const disabled = isPast;
+    const isClosed = closed.has(dateKey) && !isPast;
+    const isFull = !isClosed && unavail.has(dateKey) && !isPast;
+    const disabled = isPast || isClosed;
     const selected = state.selectedDate === dateKey;
     const classes = ['calendar-cell'];
     if (disabled) classes.push('muted');
+    if (isClosed) classes.push('closed');
     if (isFull) classes.push('full');
     if (selected) classes.push('selected');
     cells.push(`
-      <button type="button" class="${classes.join(' ')}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}${isFull ? ' data-full="1"' : ''}>
+      <button type="button" class="${classes.join(' ')}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}${isFull ? ' data-full="1"' : ''}${isClosed ? ' data-closed="1"' : ''}>
         ${day}
       </button>
     `);
@@ -3456,6 +3460,20 @@ function renderCalendar(data) {
   els.calendarGrid.querySelectorAll('.calendar-cell[data-date]').forEach((button) => {
     button.addEventListener('click', () => selectDate(button.dataset.date));
   });
+  const legendFull = document.getElementById('legendFullLabel');
+  const legendClosed = document.getElementById('legendClosedLabel');
+  if (legendFull && legendClosed) {
+    if (state.lang === 'en') {
+      legendFull.textContent = 'Fully booked (waitlist)';
+      legendClosed.textContent = 'Closed day';
+    } else if (state.lang === 'de') {
+      legendFull.textContent = 'Ausgebucht (Warteliste)';
+      legendClosed.textContent = 'Ruhetag';
+    } else {
+      legendFull.textContent = '마감 (대기 등록)';
+      legendClosed.textContent = '휴무일';
+    }
+  }
 }
 
 function getNearestAvailableDate(data) {
@@ -3890,7 +3908,7 @@ function updateSubmitState() {
   const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
   const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
   const babyName = String(formData.get('babyName') || '').trim();
-  const babyNameOk = !((product.g === 'prof' && product.id === 'pp' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
+  const babyNameOk = !((product.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
@@ -3989,7 +4007,7 @@ async function onSubmit(event) {
   const userMemo = String(formData.get('memo') || '').trim();
   const passMemoPrefix = buildPassportMemoPrefix();
   payload.memo = [passMemoPrefix, userMemo].filter(Boolean).join('\n');
-  if (state.selectedProduct.g === 'prof' && state.selectedProduct.id === 'pp' && state.ageGroup === 'baby' && !payload.babyName) {
+  if (state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' && !payload.babyName) {
     setBanner(
       state.lang === 'en'
         ? 'Please enter the baby name for the 100-day / 1st birthday session.'
