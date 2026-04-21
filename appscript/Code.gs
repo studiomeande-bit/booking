@@ -14,6 +14,10 @@ const CONFIG = {
   PRINT_SHEET: '인화주문',
   INVOICE_SHEET: '인보이스',
   INVOICE_FOLDER_NAME: 'Studio mean Invoices',
+  QUOTE_SHEET: '견적서',
+  QUOTE_FOLDER_NAME: 'Studio mean Angebote',
+  QUOTE_VALID_DAYS: 30,
+  QUOTE_VAT_RATE: 0.19,
   EXPENSE_SHEET: '지출장부',
   ADMIN_EMAIL: 'studio.mean.de@gmail.com',
   MAIN_CALENDAR_ID: 'studio.mean.de@gmail.com',
@@ -72,6 +76,9 @@ const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
 const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조','언어'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시'];
+const QUOTE_COL=QUOTE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
 let SETTINGS_MAP_CACHE = null;
 
 function doGet(e) {
@@ -393,8 +400,25 @@ function ensureSheets_() {
   const productsSheet=ensureProductsSheet_(ss), printSheet=ensurePrintSheet_(ss);
   const invoiceSheet=ensureInvoiceSheet_(ss);
   const expenseSheet=ensureExpenseSheet_(ss);
+  const quoteSheet=ensureQuoteSheet_(ss);
   ensureSecrets_();
-  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,expenseSheet};
+  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,expenseSheet,quoteSheet};
+}
+
+function ensureQuoteSheet_(ss){
+  let sh=ss.getSheetByName(CONFIG.QUOTE_SHEET);
+  if(!sh){
+    sh=ss.insertSheet(CONFIG.QUOTE_SHEET);
+    sh.appendRow(QUOTE_HEADERS);
+    sh.getRange(1,1,1,QUOTE_HEADERS.length).setFontWeight('bold').setBackground('#fef3c7');
+    sh.setFrozenRows(1);
+  } else {
+    const lastCol=sh.getLastColumn();
+    if(lastCol<QUOTE_HEADERS.length){
+      sh.getRange(1,lastCol+1,1,QUOTE_HEADERS.length-lastCol).setValues([QUOTE_HEADERS.slice(lastCol)]);
+    }
+  }
+  return sh;
 }
 
 function ensureBookingSheet_(ss) {
@@ -6707,6 +6731,7 @@ function dailyTasks(){
   try{sendPostShootFollowupEmails_();}catch(e){Logger.log('B3 error: '+e.message);}
   try{sendDolRecommendationEmails_();}catch(e){Logger.log('B4 error: '+e.message);}
   try{sendPostRetouchFollowupEmails_();}catch(e){Logger.log('C3 error: '+e.message);}
+  try{_expireStaleQuotes_();}catch(e){Logger.log('D5 error: '+e.message);}
 }
 
 function syncPendingBookingPaymentsFromLexware_(){
@@ -7267,4 +7292,617 @@ function lookupContactHistory_(payload){
     Logger.log('lookupContactHistory_ error: '+err.message);
     return {found:false,error:err.message};
   }
+}
+
+/* ====== D5: 견적서(Angebot) 모듈 ====== */
+function ensureQuoteFolder_(){
+  const props=PropertiesService.getScriptProperties();
+  const existingId=props.getProperty('QUOTE_FOLDER_ID');
+  if(existingId){ try{return DriveApp.getFolderById(existingId);}catch(e){} }
+  const folders=DriveApp.getFoldersByName(CONFIG.QUOTE_FOLDER_NAME);
+  const folder=folders.hasNext()?folders.next():DriveApp.createFolder(CONFIG.QUOTE_FOLDER_NAME);
+  props.setProperty('QUOTE_FOLDER_ID',folder.getId());
+  return folder;
+}
+
+function normalizeQuoteLang_(lang){
+  const raw=String(lang||'').trim().toLowerCase();
+  if(raw==='ko'||raw==='en'||raw==='de') return raw;
+  return 'de';
+}
+
+function generateQuoteNumber_(quoteSh){
+  const yy=new Date().getFullYear().toString().slice(-2);
+  const props=PropertiesService.getScriptProperties();
+  const offset=parseInt(props.getProperty('QUOTE_SEQ_'+yy)||'1');
+  const lastSeq=parseInt(props.getProperty('QUOTE_LAST_SEQ_'+yy)||'0');
+  let maxNum=Math.max(offset,lastSeq);
+  if(quoteSh.getLastRow()>1){
+    quoteSh.getDataRange().getValues().slice(1).forEach(r=>{
+      const num=String(r[QUOTE_COL['견적번호']]||'');
+      if(num.indexOf('AN-'+yy)===0){
+        const n=parseInt(num.slice(-4))||0;
+        if(n>maxNum) maxNum=n;
+      }
+    });
+  }
+  const nextNum=maxNum+1;
+  try{props.setProperty('QUOTE_LAST_SEQ_'+yy,String(nextNum));}catch(e){Logger.log('QUOTE_LAST_SEQ 저장 실패: '+e.message);}
+  return 'AN-'+yy+String(nextNum).padStart(4,'0');
+}
+
+function _parseQuoteItems_(raw){
+  try{
+    const arr=typeof raw==='string'?JSON.parse(raw||'[]'):(Array.isArray(raw)?raw:[]);
+    return Array.isArray(arr)?arr.map(function(item){
+      return {
+        description:String(item&&item.description||'').trim(),
+        qty:Math.max(1,parseInt(item&&item.qty,10)||1),
+        unitGross:Math.max(0,Number(item&&item.unitGross)||0),
+        productId:String(item&&item.productId||'')
+      };
+    }).filter(function(x){return x.description||x.unitGross>0;}):[];
+  }catch(e){return[];}
+}
+
+function _calcQuoteTotals_(items,discountAmt){
+  const brutto=items.reduce(function(s,it){return s+(it.qty*it.unitGross);},0);
+  const discount=Math.max(0,Number(discountAmt)||0);
+  const subtotal=Math.round(brutto*100)/100;
+  const afterDisc=Math.max(0,subtotal-discount);
+  const netto=Math.round((afterDisc/(1+CONFIG.QUOTE_VAT_RATE))*100)/100;
+  const vat=Math.round((afterDisc-netto)*100)/100;
+  const total=Math.round(afterDisc*100)/100;
+  return {subtotal,discount,netto,vat,total};
+}
+
+function quoteRowToObject_(row,rowIndex){
+  const issued=parseDateSafe_(row[QUOTE_COL['발행일']]||'').str||String(row[QUOTE_COL['발행일']]||'');
+  const valid=parseDateSafe_(row[QUOTE_COL['유효기한']]||'').str||String(row[QUOTE_COL['유효기한']]||'');
+  return {
+    rowIndex:rowIndex||0,
+    number:String(row[QUOTE_COL['견적번호']]||''),
+    issuedAt:issued.slice(0,10),
+    validUntil:valid.slice(0,10),
+    status:String(row[QUOTE_COL['상태']]||QUOTE_STATUS.DRAFT),
+    lang:normalizeQuoteLang_(row[QUOTE_COL['언어']]),
+    name:String(row[QUOTE_COL['고객명']]||''),
+    email:String(row[QUOTE_COL['이메일']]||''),
+    phone:String(row[QUOTE_COL['연락처']]||''),
+    customerAddress:String(row[QUOTE_COL['고객주소']]||''),
+    companyName:String(row[QUOTE_COL['회사명']]||''),
+    vatId:String(row[QUOTE_COL['VAT번호']]||''),
+    billingAddress:String(row[QUOTE_COL['청구지']]||''),
+    itemGroup:String(row[QUOTE_COL['촬영종류']]||''),
+    product:String(row[QUOTE_COL['상품']]||''),
+    shootDate:String(row[QUOTE_COL['촬영예정일']]||''),
+    items:_parseQuoteItems_(row[QUOTE_COL['품목JSON']]||'[]'),
+    subtotal:parseFloat(row[QUOTE_COL['소계(€)']])||0,
+    discount:parseFloat(row[QUOTE_COL['할인(€)']])||0,
+    netto:parseFloat(row[QUOTE_COL['순액(€)']])||0,
+    vat:parseFloat(row[QUOTE_COL['부가세(€)']])||0,
+    total:parseFloat(row[QUOTE_COL['총액(€)']])||0,
+    depositAmount:parseFloat(row[QUOTE_COL['계약금(€)']])||0,
+    depositRate:parseFloat(row[QUOTE_COL['계약금비율']])||0,
+    memo:String(row[QUOTE_COL['메모']]||''),
+    terms:String(row[QUOTE_COL['조건']]||''),
+    pdfFileId:String(row[QUOTE_COL['PDF파일ID']]||''),
+    pdfUrl:String(row[QUOTE_COL['PDF링크']]||''),
+    mailSubject:String(row[QUOTE_COL['메일제목']]||''),
+    mailBody:String(row[QUOTE_COL['메일본문']]||''),
+    mailSentAt:String(row[QUOTE_COL['메일발송일시']]||''),
+    acceptedAt:String(row[QUOTE_COL['수락일시']]||''),
+    rejectReason:String(row[QUOTE_COL['거절사유']]||''),
+    linkedBookingRow:parseInt(row[QUOTE_COL['연결예약행']])||0,
+    author:String(row[QUOTE_COL['작성자']]||''),
+    updatedAt:String(row[QUOTE_COL['수정일시']]||'')
+  };
+}
+
+function _findQuoteRow_(quoteSh,number){
+  const target=String(number||'').trim();
+  if(!target) return {rowIndex:-1};
+  const rows=quoteSh.getDataRange().getValues();
+  for(let i=1;i<rows.length;i++){
+    if(String(rows[i][QUOTE_COL['견적번호']]||'').trim()===target){
+      return {rowIndex:i+1,row:rows[i]};
+    }
+  }
+  return {rowIndex:-1};
+}
+
+function _defaultQuoteTerms_(lang){
+  const L=normalizeQuoteLang_(lang);
+  const map={
+    ko:'• 본 견적은 발행일로부터 30일간 유효합니다.\n• 예약 확정은 계약금 입금 후 이루어집니다.\n• 금액은 19% 부가가치세가 포함되어 있습니다.',
+    en:'• This quotation is valid for 30 days from the issue date.\n• Your booking is confirmed upon receipt of the deposit.\n• All amounts include 19% VAT.',
+    de:'• Dieses Angebot ist 30 Tage ab Ausstellungsdatum gültig.\n• Die Buchung wird nach Eingang der Anzahlung bestätigt.\n• Alle Beträge enthalten 19% MwSt.'
+  };
+  return map[L]||map.de;
+}
+
+function buildQuoteEmailDefaults_(q){
+  const L=normalizeQuoteLang_(q.lang);
+  const nameRaw=String(q.companyName||q.name||'').trim();
+  const koName=(nameRaw||'고객').replace(/님$/,'');
+  const enName=nameRaw||'Customer';
+  const deName=nameRaw||'Kundin/Kunde';
+  const total=Number(q.total||0).toFixed(2);
+  const subjectMap={
+    ko:`[Studio mean] 견적서 ${q.number}`,
+    en:`[Studio mean] Quotation ${q.number}`,
+    de:`[Studio mean] Angebot ${q.number}`
+  };
+  const bodyMap={
+    ko:`안녕하세요 ${koName}님,\n\n요청 주신 내용을 바탕으로 견적서를 첨부드립니다.\n• 견적번호: ${q.number}\n• 총 금액(부가세 포함): €${total}\n• 유효기한: ${q.validUntil}\n\n내용 확인 후 진행 의사를 회신 주시면 빠르게 일정 확정을 도와드리겠습니다. 문의사항은 언제든 편하게 연락 주세요.\n\nStudio mean`,
+    en:`Hello ${enName},\n\nPlease find our quotation attached based on your request.\n• Quotation No.: ${q.number}\n• Total (incl. VAT): €${total}\n• Valid until: ${q.validUntil}\n\nIf you wish to proceed, a short reply is all we need — we will arrange the schedule right away. Feel free to reach out with any questions.\n\nBest regards,\nStudio mean`,
+    de:`Guten Tag ${deName},\n\nanbei senden wir Ihnen unser Angebot gemäß Ihrer Anfrage.\n• Angebotsnummer: ${q.number}\n• Gesamtbetrag (inkl. MwSt.): €${total}\n• Gültig bis: ${q.validUntil}\n\nFür eine Beauftragung genügt eine kurze Rückmeldung — wir stimmen den Termin dann umgehend mit Ihnen ab. Bei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nStudio mean`
+  };
+  return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
+}
+
+function buildQuoteHtml_(q){
+  const L=normalizeQuoteLang_(q.lang);
+  const items=(q.items&&q.items.length)?q.items:[{description:q.product||'-',qty:1,unitGross:parseFloat(q.total)||0}];
+  const totals=_calcQuoteTotals_(items,q.discount);
+  const dtParts=(q.issuedAt||'').split('-');
+  const fmtDate=dtParts.length===3?`${dtParts[2]}/${dtParts[1]}/${dtParts[0]}`:(q.issuedAt||'');
+  const vdParts=(q.validUntil||'').split('-');
+  const fmtValid=vdParts.length===3?`${vdParts[2]}/${vdParts[1]}/${vdParts[0]}`:(q.validUntil||'');
+  const T={
+    de:{title:'Angebot',invLabel:'Angebotsnummer',dateLabel:'Angebotsdatum',validLabel:'Gültig bis',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',subtotal:'Zwischensumme',disc:'Rabatt',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Gesamtbetrag',dep:'Anzahlung',notes:'Anmerkungen',terms:'Bedingungen'},
+    ko:{title:'견적서',invLabel:'견적 번호',dateLabel:'발행일',validLabel:'유효 기한',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',subtotal:'소계',disc:'할인',net:'공급가액',mwst:'부가세 19%',end:'총 금액',dep:'계약금',notes:'메모',terms:'조건'},
+    en:{title:'Quotation',invLabel:'Quotation No.',dateLabel:'Issue Date',validLabel:'Valid Until',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',subtotal:'Subtotal',disc:'Discount',net:'Net Total',mwst:'VAT 19%',end:'Total Amount',dep:'Deposit',notes:'Notes',terms:'Terms'}
+  };
+  const t=T[L]||T.de;
+  const customerName=escapeHtml_(q.companyName||q.name||'');
+  const customerAddr=escapeHtml_(q.billingAddress||q.customerAddress||'');
+  const vatLine=q.vatId?`<div>USt-IdNr: ${escapeHtml_(q.vatId)}</div>`:'';
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${escapeHtml_(q.number||'Angebot')}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+@page{size:A4 portrait;margin:12mm;}
+html,body{margin:0;padding:0;background:#fff;}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:186mm;min-height:273mm;margin:0 auto;}
+.page{min-height:273mm;display:flex;flex-direction:column;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;}
+.logo-wrap{flex:1;max-width:52%;}
+.brand{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:28px;font-weight:600;color:#1f2937;}
+.sender-line{border-top:1px solid #aaa;width:74%;margin-top:10px;padding-top:5px;font-size:9.5px;color:#666;}
+.customer-block{margin-top:28px;font-size:11px;line-height:1.55;min-height:90px;white-space:pre-line;}
+.customer-name{font-weight:700;margin-bottom:4px;}
+.biz-info{text-align:left;font-size:11px;line-height:1.75;min-width:215px;}
+.doc-title{font-size:22px;font-weight:700;margin-top:18px;letter-spacing:1.2px;}
+.inv-meta{margin:10px 0 18px;}
+.inv-meta-row{display:flex;align-items:flex-end;gap:8px;margin-bottom:4px;}
+.inv-meta-main{margin-bottom:2px;}
+.inv-meta-label{font-size:15px;font-weight:700;white-space:nowrap;}
+.inv-meta-label-sm{font-size:11px;white-space:nowrap;}
+.inv-meta-colon{font-size:15px;font-weight:700;line-height:1;}
+.inv-meta-value{font-size:15px;font-weight:700;white-space:nowrap;}
+.inv-meta-value-sm{font-size:11px;white-space:nowrap;}
+.invoice-table{width:100%;border-collapse:collapse;margin-top:16px;}
+.invoice-table thead tr{border-top:1px solid #bbb;border-bottom:1px solid #bbb;}
+.invoice-table th{padding:7px 10px;text-align:left;font-size:11px;font-weight:normal;background:#fff;}
+.invoice-table td{padding:7px 10px;font-size:11px;}
+.invoice-table tbody tr{border-bottom:1px solid #ddd;}
+.r{text-align:right;}
+.totals{margin-top:28px;margin-left:auto;width:260px;}
+.t-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;}
+.t-end{font-weight:bold;font-size:12px;border-top:1px solid #1a1a1a;margin-top:5px;padding-top:6px;}
+.t-dep{color:#2563eb;margin-top:4px;}
+.memo-block{margin:18px 0 0 auto;width:360px;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;color:#555;}
+.memo-title{font-weight:700;color:#1f2937;margin-bottom:4px;}
+.terms-block{margin:22px 0 0;border-top:1px dashed #d1d5db;padding-top:12px;font-size:10.5px;line-height:1.7;color:#444;white-space:pre-line;}
+.terms-title{font-weight:700;color:#1f2937;margin-bottom:6px;font-size:11px;}
+.footer{margin-top:auto;padding-top:18px;}
+.footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
+.footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
+@media print{html,body{width:auto;min-height:auto;}body{margin:0;}}
+</style></head><body>
+<div class="page">
+<div class="header">
+  <div class="logo-wrap">
+    <div class="brand">Studio mean</div>
+    <div class="sender-line">Taewoong Min _ Holzwegpassage 3, 61440 Oberursel</div>
+    <div class="customer-block">${customerName?`<div class="customer-name">${customerName}</div>`:''}${customerAddr}${vatLine}</div>
+  </div>
+  <div class="biz-info">
+    Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland<br><br>
+    Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>
+    Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941<br>
+    Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX
+  </div>
+</div>
+<div class="doc-title">${t.title}</div>
+<div class="inv-meta">
+  <div class="inv-meta-row inv-meta-main"><span class="inv-meta-label">${t.invLabel}</span><span class="inv-meta-colon">:</span><span class="inv-meta-value">${escapeHtml_(q.number||'')}</span></div>
+  <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.dateLabel}</span><span class="inv-meta-colon" style="font-size:11px;font-weight:400;">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtDate)}</span></div>
+  <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.validLabel}</span><span class="inv-meta-colon" style="font-size:11px;font-weight:400;">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtValid)}</span></div>
+</div>
+<table class="invoice-table"><thead><tr><th style="width:36px;">${t.pos}</th><th>${t.bez}</th><th style="width:36px;text-align:center;">${t.qty}</th><th style="width:110px;text-align:right;">${t.ep}</th><th style="width:140px;text-align:right;">${t.gp}</th></tr></thead><tbody>
+${items.map(function(item,idx){
+  const qty=Math.max(1,parseInt(item.qty,10)||1);
+  const lineGross=qty*(parseFloat(item.unitGross)||0);
+  const unitNet=Math.round((((parseFloat(item.unitGross)||0)/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
+  const lineNet=Math.round(((lineGross/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
+  return `<tr><td>${idx+1}</td><td>${escapeHtml_(item.description||'')}</td><td class="r">${qty}</td><td class="r">€${unitNet.toFixed(2)}</td><td class="r">€${lineNet.toFixed(2)}</td></tr>`;
+}).join('')}
+</tbody></table>
+<div class="totals">
+  <div class="t-row"><span>${t.subtotal}</span><span>€${totals.subtotal.toFixed(2)}</span></div>
+  ${totals.discount>0?`<div class="t-row" style="color:#c00;"><span>${t.disc}</span><span>-€${totals.discount.toFixed(2)}</span></div>`:''}
+  <div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>
+  <div class="t-row"><span>${t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
+  <div class="t-row t-end"><span>${t.end}</span><span>€${totals.total.toFixed(2)}</span></div>
+  ${q.depositAmount>0?`<div class="t-row t-dep"><span>${t.dep}${q.depositRate>0?' ('+q.depositRate+'%)':''}</span><span>€${Number(q.depositAmount).toFixed(2)}</span></div>`:''}
+</div>
+${q.memo?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div style="white-space:pre-line;">${escapeHtml_(q.memo)}</div></div>`:''}
+<div class="terms-block"><div class="terms-title">${t.terms}</div>${escapeHtml_(q.terms||_defaultQuoteTerms_(L))}</div>
+<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(q.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
+</div></body></html>`;
+}
+
+function createQuotePdf_(q){
+  const folder=ensureQuoteFolder_();
+  const safeName=String(q.companyName||q.name||'').replace(/\s+/g,'').replace(/[^a-zA-Z0-9가-힣]/g,'');
+  const safeNum=String(q.number||'').replace(/-/g,'_');
+  const fileName=`Studiomean_${safeNum}_${safeName||'customer'}_${Number(q.total||0).toFixed(2)}EUR.pdf`;
+  const html=buildQuoteHtml_(q);
+  const pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
+  const file=folder.createFile(pdfBlob);
+  return {fileId:file.getId(), url:file.getUrl(), name:file.getName()};
+}
+
+function _persistQuotePdfToRow_(quoteSh,rowIndex,q){
+  try{
+    const pdf=createQuotePdf_(q);
+    quoteSh.getRange(rowIndex,QUOTE_COL['PDF파일ID']+1).setValue(pdf.fileId);
+    quoteSh.getRange(rowIndex,QUOTE_COL['PDF링크']+1).setValue(pdf.url);
+    return pdf;
+  }catch(e){
+    Logger.log('createQuotePdf_ failed: '+e.message);
+    return {fileId:'',url:'',error:e.message};
+  }
+}
+
+function _buildQuotePayloadFromRequest_(payload,existing){
+  const base=existing||{};
+  const lang=normalizeQuoteLang_(payload.lang||base.lang);
+  const items=_parseQuoteItems_(payload.items!=null?payload.items:base.items||[]);
+  const discount=Math.max(0,Number(payload.discount!=null?payload.discount:base.discount)||0);
+  const totals=_calcQuoteTotals_(items,discount);
+  const depositRate=Math.max(0,Math.min(100,Number(payload.depositRate!=null?payload.depositRate:base.depositRate)||0));
+  const depositAmount=(payload.depositAmount!=null&&payload.depositAmount!=='')
+    ? Math.max(0,Number(payload.depositAmount)||0)
+    : (depositRate>0?Math.round(totals.total*depositRate)/100:Number(base.depositAmount)||0);
+  return {
+    lang,
+    items,
+    discount,
+    totals,
+    depositAmount:Math.round(depositAmount*100)/100,
+    depositRate,
+    name:String(payload.name!=null?payload.name:(base.name||'')).trim(),
+    email:String(payload.email!=null?payload.email:(base.email||'')).trim(),
+    phone:String(payload.phone!=null?payload.phone:(base.phone||'')).trim(),
+    customerAddress:String(payload.customerAddress!=null?payload.customerAddress:(base.customerAddress||'')).trim(),
+    companyName:String(payload.companyName!=null?payload.companyName:(base.companyName||'')).trim(),
+    vatId:String(payload.vatId!=null?payload.vatId:(base.vatId||'')).trim(),
+    billingAddress:String(payload.billingAddress!=null?payload.billingAddress:(base.billingAddress||'')).trim(),
+    itemGroup:String(payload.itemGroup!=null?payload.itemGroup:(base.itemGroup||'')).trim(),
+    product:String(payload.product!=null?payload.product:(base.product||'')).trim(),
+    shootDate:String(payload.shootDate!=null?payload.shootDate:(base.shootDate||'')).trim(),
+    memo:String(payload.memo!=null?payload.memo:(base.memo||'')).trim(),
+    terms:String(payload.terms!=null?payload.terms:(base.terms||'')).trim(),
+    mailSubject:String(payload.mailSubject!=null?payload.mailSubject:(base.mailSubject||'')).trim(),
+    mailBody:String(payload.mailBody!=null?payload.mailBody:(base.mailBody||'')).trim()
+  };
+}
+
+function createQuoteAdmin(token, payload){
+  const session=assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(12000);}catch(e){throw new Error('다른 견적서 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
+  try{
+    const {quoteSheet}=ensureSheets_();
+    const input=payload||{};
+    const data=_buildQuotePayloadFromRequest_(input,null);
+    if(!data.name&&!data.companyName) throw new Error('고객명 또는 회사명을 입력해 주세요.');
+    if(!data.items.length) throw new Error('견적 품목을 최소 1개 이상 입력해 주세요.');
+    const customNum=String(input.customQuoteNumber||input.number||'').trim();
+    let number=customNum;
+    if(number){
+      if(_findQuoteRow_(quoteSheet,number).rowIndex!==-1) throw new Error(`견적번호 ${number}가 이미 존재합니다.`);
+    } else {
+      number=generateQuoteNumber_(quoteSheet);
+    }
+    const tz=CONFIG.TIMEZONE;
+    const now=new Date();
+    const issuedAt=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+    const validDays=Math.max(1,parseInt(input.validDays||CONFIG.QUOTE_VALID_DAYS,10)||CONFIG.QUOTE_VALID_DAYS);
+    const validUntil=Utilities.formatDate(new Date(now.getTime()+validDays*86400000),tz,'yyyy-MM-dd');
+    const updatedAt=Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss');
+    const status=String(input.status||QUOTE_STATUS.DRAFT);
+    const author=String((session&&session.email)||CONFIG.ADMIN_EMAIL);
+    const terms=data.terms||_defaultQuoteTerms_(data.lang);
+    const defaults=buildQuoteEmailDefaults_({number,lang:data.lang,name:data.name,companyName:data.companyName,total:data.totals.total,validUntil});
+    const mailSubject=data.mailSubject||defaults.subject;
+    const mailBody=data.mailBody||defaults.body;
+    quoteSheet.appendRow([
+      number,issuedAt,validUntil,status,data.lang,
+      data.name,data.email,data.phone,data.customerAddress,
+      data.companyName,data.vatId,data.billingAddress,
+      data.itemGroup,data.product,data.shootDate,
+      JSON.stringify(data.items),
+      data.totals.subtotal,data.totals.discount,data.totals.netto,data.totals.vat,data.totals.total,
+      data.depositAmount,data.depositRate,
+      data.memo,terms,
+      '','',mailSubject,mailBody,'',
+      '','','',author,updatedAt
+    ]);
+    const rowIndex=quoteSheet.getLastRow();
+    const quoteObj={
+      number,issuedAt,validUntil,status,lang:data.lang,
+      name:data.name,email:data.email,phone:data.phone,customerAddress:data.customerAddress,
+      companyName:data.companyName,vatId:data.vatId,billingAddress:data.billingAddress,
+      itemGroup:data.itemGroup,product:data.product,shootDate:data.shootDate,
+      items:data.items,
+      subtotal:data.totals.subtotal,discount:data.totals.discount,netto:data.totals.netto,vat:data.totals.vat,total:data.totals.total,
+      depositAmount:data.depositAmount,depositRate:data.depositRate,
+      memo:data.memo,terms
+    };
+    const pdf=_persistQuotePdfToRow_(quoteSheet,rowIndex,quoteObj);
+    let mailResult={requested:!!input.sendMail,sent:false,error:''};
+    if(input.sendMail){
+      try{
+        const sent=_sendQuoteEmailInternal_(quoteSheet,rowIndex,quoteObj,mailSubject,mailBody);
+        mailResult={requested:true,sent:true,sentAt:sent.sentAt,recipientEmail:sent.recipientEmail,error:''};
+        quoteSheet.getRange(rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
+      }catch(mailErr){
+        mailResult={requested:true,sent:false,error:String(mailErr&&mailErr.message||mailErr)};
+      }
+    }
+    return {ok:true,number,pdfUrl:pdf.url||'',rowIndex,mailResult};
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+function updateQuoteAdmin(token, number, payload){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const existing=quoteRowToObject_(found.row,found.rowIndex);
+  if(existing.status!==QUOTE_STATUS.DRAFT && existing.status!==QUOTE_STATUS.SENT){
+    throw new Error(`상태가 "${existing.status}"인 견적서는 수정할 수 없습니다.`);
+  }
+  const data=_buildQuotePayloadFromRequest_(payload||{},existing);
+  const updatedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const rowIndex=found.rowIndex;
+  const set=function(col,val){quoteSheet.getRange(rowIndex,QUOTE_COL[col]+1).setValue(val);};
+  set('언어',data.lang);
+  set('고객명',data.name);set('이메일',data.email);set('연락처',data.phone);set('고객주소',data.customerAddress);
+  set('회사명',data.companyName);set('VAT번호',data.vatId);set('청구지',data.billingAddress);
+  set('촬영종류',data.itemGroup);set('상품',data.product);set('촬영예정일',data.shootDate);
+  set('품목JSON',JSON.stringify(data.items));
+  set('소계(€)',data.totals.subtotal);set('할인(€)',data.totals.discount);set('순액(€)',data.totals.netto);set('부가세(€)',data.totals.vat);set('총액(€)',data.totals.total);
+  set('계약금(€)',data.depositAmount);set('계약금비율',data.depositRate);
+  set('메모',data.memo);set('조건',data.terms||_defaultQuoteTerms_(data.lang));
+  set('수정일시',updatedAt);
+  if(data.mailSubject) set('메일제목',data.mailSubject);
+  if(data.mailBody) set('메일본문',data.mailBody);
+  const merged=Object.assign({},existing,{
+    lang:data.lang,name:data.name,email:data.email,phone:data.phone,customerAddress:data.customerAddress,
+    companyName:data.companyName,vatId:data.vatId,billingAddress:data.billingAddress,
+    itemGroup:data.itemGroup,product:data.product,shootDate:data.shootDate,
+    items:data.items,subtotal:data.totals.subtotal,discount:data.totals.discount,netto:data.totals.netto,vat:data.totals.vat,total:data.totals.total,
+    depositAmount:data.depositAmount,depositRate:data.depositRate,memo:data.memo,terms:data.terms||_defaultQuoteTerms_(data.lang)
+  });
+  _persistQuotePdfToRow_(quoteSheet,rowIndex,merged);
+  return {ok:true,number:existing.number};
+}
+
+function listQuotesAdmin(token, filters){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const rows=quoteSheet.getDataRange().getValues();
+  if(rows.length<2) return {ok:true,items:[]};
+  const f=filters||{};
+  const status=String(f.status||'').trim();
+  const keyword=String(f.keyword||'').trim().toLowerCase();
+  const from=String(f.from||'').trim();
+  const to=String(f.to||'').trim();
+  const items=rows.slice(1).map(function(row,idx){return quoteRowToObject_(row,idx+2);})
+    .filter(function(q){
+      if(status&&q.status!==status) return false;
+      if(from&&q.issuedAt<from) return false;
+      if(to&&q.issuedAt>to) return false;
+      if(keyword){
+        const hay=[q.number,q.name,q.companyName,q.email,q.phone,q.vatId,q.product].join(' ').toLowerCase();
+        if(hay.indexOf(keyword)===-1) return false;
+      }
+      return true;
+    })
+    .sort(function(a,b){return b.number.localeCompare(a.number);});
+  return {ok:true,items};
+}
+
+function getQuoteAdmin(token, number){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  return {ok:true,quote:quoteRowToObject_(found.row,found.rowIndex)};
+}
+
+function deleteQuoteAdmin(token, number){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status!==QUOTE_STATUS.DRAFT) throw new Error('초안 상태의 견적서만 삭제할 수 있습니다.');
+  if(q.pdfFileId){ try{DriveApp.getFileById(q.pdfFileId).setTrashed(true);}catch(e){Logger.log('quote pdf trash fail: '+e.message);} }
+  quoteSheet.deleteRow(found.rowIndex);
+  return {ok:true};
+}
+
+function _sendQuoteEmailInternal_(quoteSh,rowIndex,q,subject,body){
+  const to=String(q.email||'').trim();
+  if(!to||!isValidEmailAddress_(to)) throw new Error('수신 이메일이 유효하지 않습니다.');
+  const defaults=buildQuoteEmailDefaults_(q);
+  const finalSubject=String(subject||q.mailSubject||defaults.subject||'').replace(/\{\{quoteNumber\}\}/g,q.number||'').trim();
+  const finalBody=String(body||q.mailBody||defaults.body||'').replace(/\{\{quoteNumber\}\}/g,q.number||'').trim();
+  let pdf=null;
+  if(q.pdfFileId){
+    try{pdf=DriveApp.getFileById(q.pdfFileId);}catch(e){pdf=null;}
+  }
+  if(!pdf){
+    const created=createQuotePdf_(q);
+    pdf=DriveApp.getFileById(created.fileId);
+    quoteSh.getRange(rowIndex,QUOTE_COL['PDF파일ID']+1).setValue(created.fileId);
+    quoteSh.getRange(rowIndex,QUOTE_COL['PDF링크']+1).setValue(created.url);
+  }
+  const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;color:#334155;white-space:pre-line;">${escapeHtml_(finalBody).replace(/\n/g,'<br>')}<br><br>${_getSignatureHtml()}</div>`;
+  MailApp.sendEmail({to,subject:finalSubject,htmlBody,attachments:[pdf.getBlob()]});
+  const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  quoteSh.getRange(rowIndex,QUOTE_COL['메일제목']+1).setValue(finalSubject);
+  quoteSh.getRange(rowIndex,QUOTE_COL['메일본문']+1).setValue(finalBody);
+  quoteSh.getRange(rowIndex,QUOTE_COL['메일발송일시']+1).setValue(sentAt);
+  return {sentAt,recipientEmail:to};
+}
+
+function sendQuoteEmailAdmin(token, number, subject, body){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status===QUOTE_STATUS.EXPIRED||q.status===QUOTE_STATUS.REJECTED) throw new Error(`상태가 "${q.status}"인 견적서는 발송할 수 없습니다.`);
+  const sent=_sendQuoteEmailInternal_(quoteSheet,found.rowIndex,q,subject,body);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
+  return {ok:true,sentAt:sent.sentAt,recipientEmail:sent.recipientEmail};
+}
+
+function markQuoteAcceptedAdmin(token, number){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status===QUOTE_STATUS.CONVERTED) throw new Error('이미 예약으로 전환된 견적서입니다.');
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.ACCEPTED);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['수락일시']+1).setValue(now);
+  return {ok:true};
+}
+
+function markQuoteRejectedAdmin(token, number, reason){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.REJECTED);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['거절사유']+1).setValue(String(reason||''));
+  return {ok:true};
+}
+
+function convertQuoteToBookingAdmin(token, number, overrides){
+  assertAdmin_(token);
+  const {quoteSheet,bookingSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status===QUOTE_STATUS.CONVERTED) throw new Error('이미 예약으로 전환된 견적서입니다.');
+  if(q.status===QUOTE_STATUS.REJECTED||q.status===QUOTE_STATUS.EXPIRED) throw new Error(`상태가 "${q.status}"인 견적서는 예약으로 전환할 수 없습니다.`);
+  const o=overrides||{};
+  const dateStr=String(o.date||q.shootDate||'').trim();
+  const timeStr=String(o.time||'').trim();
+  if(!dateStr||!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('촬영 날짜(YYYY-MM-DD)를 지정해 주세요.');
+  if(!timeStr||!/^\d{2}:\d{2}$/.test(timeStr)) throw new Error('촬영 시간(HH:MM)을 지정해 주세요.');
+  const durationMin=Math.max(30,parseInt(o.durationMin||q.items.reduce(function(s,it){return s+(parseInt(it.qty,10)||1)*60;},0),10)||60);
+  const startTime=new Date(`${dateStr}T${timeStr}:00`);
+  const endTime=new Date(startTime.getTime()+durationMin*60000);
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const displayName=q.companyName||q.name||'고객';
+  const productLabel=q.product||q.items[0]&&q.items[0].description||'맞춤 촬영';
+  const priceLabel=Number(q.total||0).toFixed(0)+'€';
+  const descLines=[
+    `이름=${displayName}`,
+    `전화=${q.phone}`,
+    `이메일=${q.email}`,
+    `분류=${productLabel}`,
+    `패키지=${productLabel}`,
+    `인원=${o.people||1}`,
+    `총비용=${priceLabel}`,
+    `계약금=${q.depositAmount||0}|DB|${dateStr}`,
+    `잔금=${Math.round((q.total-q.depositAmount)*100)/100}|미정|${dateStr}`,
+    `마케팅=N`,
+    `상태=대기`,
+    `---`,
+    `견적서: ${q.number}`
+  ];
+  if(q.vatId) descLines.push(`VAT: ${q.vatId}`);
+  if(q.memo) descLines.push(`메모: ${q.memo}`);
+  const event=calendar.createEvent(
+    `${productLabel} | ${displayName} | ${priceLabel}`,
+    startTime,endTime,
+    {description:descLines.join('\n'),location:'Holzweg-passage 3, 61440 Oberursel'}
+  );
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const extraItem=`[견적: ${q.number}] ${q.items.map(function(it){return `${it.description} x${it.qty}`;}).join(' | ')}`;
+  bookingSheet.appendRow([
+    `${dateStr} ${timeStr}`, '확정됨', q.name||q.companyName, q.phone, q.email, q.lang,
+    q.itemGroup||'biz', productLabel,
+    (q.items[0]&&q.items[0].description)||'', Number(o.people||1),
+    Number(q.total||0), q.depositAmount>0?`입금전(${q.depositAmount}€)`:'0', Math.round((q.total-q.depositAmount)*100)/100,
+    '미결제', '', q.memo||'', event.getId(), q.depositAmount>0?'계좌이체':'-',
+    extraItem, q.companyName?'기업':'신규', '',
+    'Y', 'N', now, '', 'N', q.customerAddress||q.billingAddress||'',
+    '','','','','','','','','',now,
+    '', '', '',
+    q.vatId?'Y':'', q.companyName||'', q.billingAddress||'', q.vatId||'', q.email||'', q.number
+  ]);
+  bumpCalCacheVer_();
+  const bookingRowIndex=bookingSheet.getLastRow();
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.CONVERTED);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['연결예약행']+1).setValue(bookingRowIndex);
+  if(!q.acceptedAt) quoteSheet.getRange(found.rowIndex,QUOTE_COL['수락일시']+1).setValue(now);
+  return {ok:true,bookingRowIndex,eventId:event.getId(),startAt:`${dateStr} ${timeStr}`};
+}
+
+function _expireStaleQuotes_(){
+  const {quoteSheet}=ensureSheets_();
+  const rows=quoteSheet.getDataRange().getValues();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  let expired=0;
+  rows.slice(1).forEach(function(row,idx){
+    const status=String(row[QUOTE_COL['상태']]||'');
+    const validUntil=String(row[QUOTE_COL['유효기한']]||'').slice(0,10);
+    if((status===QUOTE_STATUS.SENT||status===QUOTE_STATUS.DRAFT)&&validUntil&&validUntil<today){
+      quoteSheet.getRange(idx+2,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.EXPIRED);
+      expired++;
+    }
+  });
+  return expired;
+}
+
+function setQuoteSeq(token, yy, lastNum){
+  assertAdmin_(token);
+  const key='QUOTE_SEQ_'+String(yy).slice(-2);
+  PropertiesService.getScriptProperties().setProperty(key,String(parseInt(lastNum)||0));
+  return {ok:true,key,value:parseInt(lastNum)||0};
+}
+
+function getQuoteSeq(token){
+  assertAdmin_(token);
+  const yy=new Date().getFullYear().toString().slice(-2);
+  const val=parseInt(PropertiesService.getScriptProperties().getProperty('QUOTE_SEQ_'+yy)||'0');
+  return {ok:true,yy,lastNum:val};
+}
+
+function lookupContactHistoryAdmin(token, payload){
+  assertAdmin_(token);
+  return lookupContactHistory_(payload||{});
 }

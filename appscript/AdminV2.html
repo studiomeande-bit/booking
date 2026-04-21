@@ -235,6 +235,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="tab" onclick="switchTab('product')">🛍 상품 관리</div>
     <div class="tab" onclick="switchTab('select');loadSelectHistory()">📷 사진셀렉</div>
     <div class="tab" onclick="switchTab('invoice');loadInvoiceList()">📄 인보이스</div>
+    <div class="tab" onclick="switchTab('quote');loadQuoteList()">📝 견적서</div>
     <div class="tab" onclick="switchTab('settings');loadInvoiceSeqSetting()">⚙️ 설정</div>
   </div>
 
@@ -671,6 +672,150 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           </tr></thead>
           <tbody id="invoiceBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="content" id="tab_quote">
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📝 견적서 목록</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openQuoteCreateModal()">＋ 새 견적서</button>
+          <button class="btn btn-outline btn-sm" onclick="loadQuoteList()">🔄 새로고침</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <input type="text" id="quoteSearchInput" placeholder="🔍 번호·고객명·회사·이메일·상품 검색..." oninput="renderQuoteTable()">
+        <select id="quoteStatusFilter" onchange="renderQuoteTable()" style="width:auto;">
+          <option value="">전체 상태</option>
+          <option value="초안">초안</option>
+          <option value="발송">발송</option>
+          <option value="수락">수락</option>
+          <option value="거절">거절</option>
+          <option value="만료">만료</option>
+          <option value="전환">전환</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="resetQuoteFilters()">필터 초기화</button>
+        <span id="quoteSummaryLabel" style="font-size:12px;color:#64748b;margin-left:auto;"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="quoteTable">
+          <thead><tr>
+            <th>번호</th><th>상태</th><th>발행일</th><th>유효기한</th><th>고객</th><th>상품</th>
+            <th>총액</th><th>계약금</th><th>언어</th><th>관리</th>
+          </tr></thead>
+          <tbody id="quoteBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="quoteCreateModal">
+    <div class="modal" style="max-width:860px;">
+      <div class="modal-title" id="quoteCreateTitle">📝 새 견적서 작성</div>
+      <input type="hidden" id="qc_mode" value="create">
+      <input type="hidden" id="qc_number" value="">
+      <div class="form-row">
+        <div class="form-group"><label>고객명 *</label><input type="text" id="qc_name" placeholder="홍길동" oninput="quoteLookupContact()"></div>
+        <div class="form-group"><label>회사명 (B2B)</label><input type="text" id="qc_companyName" placeholder="Example GmbH"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>이메일 *</label><input type="email" id="qc_email" placeholder="customer@example.com" oninput="quoteLookupContact()"></div>
+        <div class="form-group"><label>연락처</label><input type="text" id="qc_phone" placeholder="+49 ..."></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>VAT 번호</label><input type="text" id="qc_vatId" placeholder="DE123456789"></div>
+        <div class="form-group"><label>언어</label>
+          <select id="qc_lang">
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+            <option value="ko">한국어</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>고객 주소</label><textarea id="qc_customerAddress" rows="2" placeholder="Straße, PLZ, Stadt"></textarea></div>
+      <div class="form-group"><label>청구지 (다를 경우)</label><textarea id="qc_billingAddress" rows="2" placeholder="생략 시 고객 주소와 동일"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>촬영 종류</label>
+          <select id="qc_itemGroup">
+            <option value="biz">기업/행사</option>
+            <option value="wed">프리웨딩</option>
+            <option value="snap">야외 스냅</option>
+            <option value="stud">스튜디오</option>
+            <option value="prof">프로필</option>
+            <option value="pass">여권/비자</option>
+            <option value="other">기타</option>
+          </select>
+        </div>
+        <div class="form-group"><label>상품명 (요약)</label><input type="text" id="qc_product" placeholder="예: Firmenevent - 2h Fotoshooting"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>촬영 예정일</label><input type="date" id="qc_shootDate"></div>
+        <div class="form-group"><label>유효 일수</label><input type="number" id="qc_validDays" value="30" min="1" max="365"></div>
+      </div>
+
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <label style="margin:0;">품목 (Brutto 단가 / 19% VAT 포함)</label>
+          <button class="btn btn-outline btn-sm" type="button" onclick="addQuoteItemRow()">＋ 항목 추가</button>
+        </div>
+        <div id="qc_itemsWrap"></div>
+      </div>
+
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;margin-top:10px;">
+        <div class="form-row" style="margin-bottom:6px;">
+          <div class="form-group" style="margin:0;"><label>할인 (€)</label><input type="number" id="qc_discount" min="0" step="0.01" value="0" oninput="recalcQuoteTotals()"></div>
+          <div class="form-group" style="margin:0;"><label>계약금 비율 (%)</label><input type="number" id="qc_depositRate" min="0" max="100" step="1" value="30" oninput="recalcQuoteTotals()"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;font-size:12px;color:#475569;margin-top:6px;">
+          <div style="display:flex;justify-content:space-between;"><span>소계 (Brutto)</span><b id="qc_subtotalLbl">0.00€</b></div>
+          <div style="display:flex;justify-content:space-between;"><span>할인 후 순액 (Netto)</span><b id="qc_nettoLbl">0.00€</b></div>
+          <div style="display:flex;justify-content:space-between;"><span>MwSt. 19%</span><b id="qc_vatLbl">0.00€</b></div>
+          <div style="display:flex;justify-content:space-between;color:#0f172a;font-size:14px;"><span>총액</span><b id="qc_totalLbl">0.00€</b></div>
+          <div style="display:flex;justify-content:space-between;color:#2563eb;"><span>계약금</span><b id="qc_depositLbl">0.00€</b></div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:12px;"><label>메모</label><textarea id="qc_memo" rows="2" placeholder="내부/고객 메모"></textarea></div>
+      <div class="form-group"><label>조건 (Terms)</label><textarea id="qc_terms" rows="3" placeholder="비우면 기본 조건 (유효기한/계약금/VAT 안내)이 자동 삽입됩니다."></textarea></div>
+
+      <details style="margin-top:8px;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;">✉️ 메일 옵션</summary>
+        <div class="form-group" style="margin-top:10px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="qc_sendMail" style="width:auto;margin:0;">
+            <span>저장과 동시에 고객에게 메일 발송</span>
+          </label>
+        </div>
+        <div class="form-group"><label>메일 제목</label><input type="text" id="qc_mailSubject" placeholder="비우면 자동"></div>
+        <div class="form-group" style="margin-bottom:0;"><label>메일 본문</label><textarea id="qc_mailBody" rows="5" placeholder="비우면 자동"></textarea></div>
+      </details>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline btn-sm" onclick="closeQuoteCreateModal()">닫기</button>
+        <button class="btn btn-primary btn-sm" onclick="submitQuoteCreate()" id="qc_submitBtn">💾 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="quoteConvertModal">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-title">🔁 견적 → 예약 전환</div>
+      <input type="hidden" id="qcv_number">
+      <div id="qcv_info" style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;"></div>
+      <div class="form-row">
+        <div class="form-group"><label>촬영 날짜 *</label><input type="date" id="qcv_date"></div>
+        <div class="form-group"><label>촬영 시간 *</label><input type="time" id="qcv_time" step="900"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>소요 (분)</label><input type="number" id="qcv_duration" value="120" min="30" step="15"></div>
+        <div class="form-group"><label>인원</label><input type="number" id="qcv_people" value="1" min="1"></div>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:10px;">예약장부에 행이 추가되고 캘린더 이벤트가 자동 생성됩니다. 고객에게 별도 메일이 발송되지 않으므로 필요 시 직접 안내해 주세요.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline btn-sm" onclick="closeQuoteConvertModal()">닫기</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmQuoteConvert()">🔁 전환</button>
       </div>
     </div>
   </div>
@@ -4638,6 +4783,298 @@ function syncBookingLexware(rowIndex){
     })
     .withFailureHandler(handleApiError)
     .syncBookingLexwarePayment(adminToken,rowIndex);
+}
+
+/* ===== 견적서(Angebot) ===== */
+let allQuotes=[];
+const QUOTE_STATUS_COLOR={'초안':'#e2e8f0','발송':'#dbeafe','수락':'#bbf7d0','거절':'#fecaca','만료':'#fed7aa','전환':'#c7d2fe'};
+const QUOTE_VAT_RATE=0.19;
+
+function loadQuoteList(){
+  google.script.run
+    .withSuccessHandler(res=>{allQuotes=(res&&res.items)||[];renderQuoteTable();})
+    .withFailureHandler(handleApiError)
+    .listQuotesAdmin(adminToken,{});
+}
+function resetQuoteFilters(){
+  document.getElementById('quoteSearchInput').value='';
+  document.getElementById('quoteStatusFilter').value='';
+  renderQuoteTable();
+}
+function getFilteredQuotes(){
+  const search=(document.getElementById('quoteSearchInput')?.value||'').trim().toLowerCase();
+  const statusFilter=document.getElementById('quoteStatusFilter')?.value||'';
+  return (allQuotes||[]).filter(q=>{
+    if(statusFilter && q.status!==statusFilter) return false;
+    if(!search) return true;
+    const hay=[q.number,q.name,q.companyName,q.email,q.phone,q.vatId,q.product,q.memo].join(' ').toLowerCase();
+    return hay.includes(search);
+  });
+}
+function renderQuoteTable(){
+  const filtered=getFilteredQuotes();
+  const total=filtered.reduce((s,q)=>s+Number(q.total||0),0);
+  document.getElementById('quoteSummaryLabel').textContent=`총 ${filtered.length}건 · 합계 €${total.toFixed(2)}`;
+  document.getElementById('quoteBody').innerHTML=filtered.length
+    ?filtered.map(q=>{
+      const color=QUOTE_STATUS_COLOR[q.status]||'#e2e8f0';
+      const statusBadge=`<span style="display:inline-block;background:${color};color:#1f2937;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;">${q.status}</span>`;
+      const customer=q.companyName?`<div style="font-weight:700;">${q.companyName}</div><div style="font-size:11px;color:#64748b;">${q.name||''}</div>`:(q.name||'-');
+      const pdfLink=q.pdfUrl?`<a href="${q.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
+      const actions=[];
+      if(q.status==='초안'||q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="openQuoteEditModal('${q.number}')">✏️</button>`);
+      if(q.status!=='만료'&&q.status!=='거절'&&q.status!=='전환') actions.push(`<button class="btn btn-primary btn-sm" onclick="sendQuoteMailQuick('${q.number}')">✉️</button>`);
+      if(q.status==='발송'||q.status==='수락') actions.push(`<button class="btn btn-sm" style="background:#10b981;color:#fff;" onclick="openQuoteConvertModal('${q.number}')">🔁 예약</button>`);
+      if(q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteAcceptedUI('${q.number}')">✓ 수락</button>`);
+      if(q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteRejectedUI('${q.number}')">✗ 거절</button>`);
+      if(q.status==='초안') actions.push(`<button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="deleteQuoteUI('${q.number}')">🗑</button>`);
+      return `<tr>
+        <td><div style="font-weight:700;">${q.number}</div>${pdfLink}</td>
+        <td>${statusBadge}</td>
+        <td>${q.issuedAt||'-'}</td>
+        <td>${q.validUntil||'-'}</td>
+        <td>${customer}<div style="font-size:11px;color:#64748b;">${q.email||''}</div></td>
+        <td>${q.product||'-'}</td>
+        <td style="text-align:right;font-weight:700;">€${Number(q.total||0).toFixed(2)}</td>
+        <td style="text-align:right;color:#2563eb;">${q.depositAmount>0?'€'+Number(q.depositAmount).toFixed(2):'-'}</td>
+        <td>${(q.lang||'de').toUpperCase()}</td>
+        <td style="white-space:nowrap;"><div style="display:flex;gap:4px;flex-wrap:wrap;">${actions.join('')}</div></td>
+      </tr>`;
+    }).join('')
+    :'<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:32px;">발행된 견적서가 없습니다. [＋ 새 견적서] 버튼으로 작성해 주세요.</td></tr>';
+}
+
+function openQuoteCreateModal(){
+  document.getElementById('qc_mode').value='create';
+  document.getElementById('qc_number').value='';
+  document.getElementById('quoteCreateTitle').textContent='📝 새 견적서 작성';
+  document.getElementById('qc_submitBtn').textContent='💾 저장';
+  ['qc_name','qc_companyName','qc_email','qc_phone','qc_vatId','qc_customerAddress','qc_billingAddress','qc_product','qc_shootDate','qc_memo','qc_terms','qc_mailSubject','qc_mailBody'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('qc_lang').value='de';
+  document.getElementById('qc_itemGroup').value='biz';
+  document.getElementById('qc_validDays').value='30';
+  document.getElementById('qc_discount').value='0';
+  document.getElementById('qc_depositRate').value='30';
+  document.getElementById('qc_sendMail').checked=false;
+  document.getElementById('qc_itemsWrap').innerHTML='';
+  addQuoteItemRow();
+  recalcQuoteTotals();
+  document.getElementById('quoteCreateModal').classList.add('active');
+}
+function closeQuoteCreateModal(){document.getElementById('quoteCreateModal').classList.remove('active');}
+
+function addQuoteItemRow(desc,qty,unitGross){
+  const wrap=document.getElementById('qc_itemsWrap');
+  const row=document.createElement('div');
+  row.style.cssText='display:grid;grid-template-columns:1fr 70px 130px 30px;gap:8px;margin-bottom:6px;align-items:center;';
+  row.innerHTML=`
+    <input type="text" placeholder="항목 설명" value="${desc?String(desc).replace(/"/g,'&quot;'):''}" oninput="recalcQuoteTotals()">
+    <input type="number" placeholder="수량" value="${qty||1}" min="1" step="1" oninput="recalcQuoteTotals()">
+    <input type="number" placeholder="단가 €" value="${unitGross||''}" min="0" step="0.01" oninput="recalcQuoteTotals()">
+    <button class="btn btn-outline btn-sm" onclick="this.parentElement.remove();recalcQuoteTotals()" style="padding:4px 8px;">✕</button>`;
+  wrap.appendChild(row);
+}
+function readQuoteItems(){
+  return Array.from(document.querySelectorAll('#qc_itemsWrap > div')).map(row=>{
+    const inputs=row.querySelectorAll('input');
+    return {
+      description:(inputs[0].value||'').trim(),
+      qty:Math.max(1,parseInt(inputs[1].value,10)||1),
+      unitGross:Math.max(0,Number(inputs[2].value)||0)
+    };
+  }).filter(it=>it.description||it.unitGross>0);
+}
+function recalcQuoteTotals(){
+  const items=readQuoteItems();
+  const subtotal=items.reduce((s,it)=>s+(it.qty*it.unitGross),0);
+  const discount=Math.max(0,Number(document.getElementById('qc_discount').value)||0);
+  const afterDisc=Math.max(0,subtotal-discount);
+  const netto=afterDisc/(1+QUOTE_VAT_RATE);
+  const vat=afterDisc-netto;
+  const depRate=Math.max(0,Math.min(100,Number(document.getElementById('qc_depositRate').value)||0));
+  const deposit=afterDisc*depRate/100;
+  document.getElementById('qc_subtotalLbl').textContent='€'+subtotal.toFixed(2);
+  document.getElementById('qc_nettoLbl').textContent='€'+netto.toFixed(2);
+  document.getElementById('qc_vatLbl').textContent='€'+vat.toFixed(2);
+  document.getElementById('qc_totalLbl').textContent='€'+afterDisc.toFixed(2);
+  document.getElementById('qc_depositLbl').textContent='€'+deposit.toFixed(2);
+}
+
+let _quoteLookupTimer=null;
+function quoteLookupContact(){
+  clearTimeout(_quoteLookupTimer);
+  const email=document.getElementById('qc_email').value.trim();
+  if(!email||email.indexOf('@')===-1) return;
+  _quoteLookupTimer=setTimeout(()=>{
+    google.script.run
+      .withSuccessHandler(res=>{
+        if(!res||!res.found) return;
+        const setIfEmpty=(id,val)=>{const el=document.getElementById(id);if(el&&!el.value&&val) el.value=val;};
+        setIfEmpty('qc_name',res.name);
+        setIfEmpty('qc_phone',res.phone);
+        setIfEmpty('qc_customerAddress',res.address);
+        if(res.lang&&!document.getElementById('qc_lang').dataset.touched){document.getElementById('qc_lang').value=res.lang;}
+      })
+      .withFailureHandler(()=>{})
+      .lookupContactHistoryAdmin(adminToken,{email});
+  },500);
+}
+
+function buildQuotePayload(){
+  const items=readQuoteItems();
+  return {
+    lang:document.getElementById('qc_lang').value,
+    name:document.getElementById('qc_name').value.trim(),
+    companyName:document.getElementById('qc_companyName').value.trim(),
+    email:document.getElementById('qc_email').value.trim(),
+    phone:document.getElementById('qc_phone').value.trim(),
+    vatId:document.getElementById('qc_vatId').value.trim(),
+    customerAddress:document.getElementById('qc_customerAddress').value.trim(),
+    billingAddress:document.getElementById('qc_billingAddress').value.trim(),
+    itemGroup:document.getElementById('qc_itemGroup').value,
+    product:document.getElementById('qc_product').value.trim(),
+    shootDate:document.getElementById('qc_shootDate').value,
+    validDays:parseInt(document.getElementById('qc_validDays').value,10)||30,
+    items,
+    discount:Number(document.getElementById('qc_discount').value)||0,
+    depositRate:Number(document.getElementById('qc_depositRate').value)||0,
+    memo:document.getElementById('qc_memo').value.trim(),
+    terms:document.getElementById('qc_terms').value.trim(),
+    sendMail:document.getElementById('qc_sendMail').checked,
+    mailSubject:document.getElementById('qc_mailSubject').value.trim(),
+    mailBody:document.getElementById('qc_mailBody').value.trim()
+  };
+}
+function submitQuoteCreate(){
+  const payload=buildQuotePayload();
+  if(!payload.name&&!payload.companyName){alert('고객명 또는 회사명을 입력해 주세요.');return;}
+  if(!payload.email){alert('이메일을 입력해 주세요.');return;}
+  if(!payload.items.length){alert('품목을 1개 이상 입력해 주세요.');return;}
+  const btn=document.getElementById('qc_submitBtn');
+  btn.disabled=true;btn.textContent='저장 중...';
+  const mode=document.getElementById('qc_mode').value;
+  const number=document.getElementById('qc_number').value;
+  const done=res=>{
+    btn.disabled=false;btn.textContent='💾 저장';
+    if(res&&res.ok){
+      closeQuoteCreateModal();
+      loadQuoteList();
+      if(res.mailResult&&res.mailResult.requested){
+        alert(res.mailResult.sent?`저장 완료 — 메일 발송됨 (${res.mailResult.recipientEmail||''})`:`저장 완료 — 메일 발송 실패: ${res.mailResult.error||''}`);
+      }
+    } else {
+      alert('저장 실패: '+((res&&res.message)||'알 수 없는 오류'));
+    }
+  };
+  if(mode==='edit'&&number){
+    google.script.run.withSuccessHandler(done).withFailureHandler(e=>{btn.disabled=false;btn.textContent='💾 저장';handleApiError(e);}).updateQuoteAdmin(adminToken,number,payload);
+  } else {
+    google.script.run.withSuccessHandler(done).withFailureHandler(e=>{btn.disabled=false;btn.textContent='💾 저장';handleApiError(e);}).createQuoteAdmin(adminToken,payload);
+  }
+}
+
+function openQuoteEditModal(number){
+  google.script.run
+    .withSuccessHandler(res=>{
+      if(!res||!res.ok||!res.quote){alert('불러오기 실패');return;}
+      const q=res.quote;
+      document.getElementById('qc_mode').value='edit';
+      document.getElementById('qc_number').value=q.number;
+      document.getElementById('quoteCreateTitle').textContent=`✏️ 견적서 수정 — ${q.number}`;
+      document.getElementById('qc_submitBtn').textContent='💾 저장';
+      document.getElementById('qc_name').value=q.name||'';
+      document.getElementById('qc_companyName').value=q.companyName||'';
+      document.getElementById('qc_email').value=q.email||'';
+      document.getElementById('qc_phone').value=q.phone||'';
+      document.getElementById('qc_vatId').value=q.vatId||'';
+      document.getElementById('qc_customerAddress').value=q.customerAddress||'';
+      document.getElementById('qc_billingAddress').value=q.billingAddress||'';
+      document.getElementById('qc_lang').value=q.lang||'de';
+      document.getElementById('qc_itemGroup').value=q.itemGroup||'biz';
+      document.getElementById('qc_product').value=q.product||'';
+      document.getElementById('qc_shootDate').value=q.shootDate||'';
+      document.getElementById('qc_validDays').value='30';
+      document.getElementById('qc_discount').value=q.discount||0;
+      document.getElementById('qc_depositRate').value=q.depositRate||0;
+      document.getElementById('qc_memo').value=q.memo||'';
+      document.getElementById('qc_terms').value=q.terms||'';
+      document.getElementById('qc_mailSubject').value=q.mailSubject||'';
+      document.getElementById('qc_mailBody').value=q.mailBody||'';
+      document.getElementById('qc_sendMail').checked=false;
+      const wrap=document.getElementById('qc_itemsWrap');
+      wrap.innerHTML='';
+      (q.items||[]).forEach(it=>addQuoteItemRow(it.description,it.qty,it.unitGross));
+      if(!wrap.children.length) addQuoteItemRow();
+      recalcQuoteTotals();
+      document.getElementById('quoteCreateModal').classList.add('active');
+    })
+    .withFailureHandler(handleApiError)
+    .getQuoteAdmin(adminToken,number);
+}
+
+function sendQuoteMailQuick(number){
+  if(!confirm(`${number} 견적서를 고객에게 메일로 발송할까요?\n(저장된 제목/본문 또는 자동 문안 사용)`)) return;
+  google.script.run
+    .withSuccessHandler(res=>{
+      if(res&&res.ok){alert('메일 발송됨: '+res.recipientEmail);loadQuoteList();}
+      else alert('발송 실패: '+((res&&res.message)||''));
+    })
+    .withFailureHandler(handleApiError)
+    .sendQuoteEmailAdmin(adminToken,number,'','');
+}
+function markQuoteAcceptedUI(number){
+  if(!confirm(`${number}을(를) "수락" 상태로 표시할까요?`)) return;
+  google.script.run
+    .withSuccessHandler(()=>loadQuoteList())
+    .withFailureHandler(handleApiError)
+    .markQuoteAcceptedAdmin(adminToken,number);
+}
+function markQuoteRejectedUI(number){
+  const reason=prompt('거절 사유를 입력하세요 (선택)')||'';
+  google.script.run
+    .withSuccessHandler(()=>loadQuoteList())
+    .withFailureHandler(handleApiError)
+    .markQuoteRejectedAdmin(adminToken,number,reason);
+}
+function deleteQuoteUI(number){
+  if(!confirm(`초안 견적서 ${number}을(를) 삭제할까요? PDF도 휴지통으로 이동됩니다.`)) return;
+  google.script.run
+    .withSuccessHandler(()=>loadQuoteList())
+    .withFailureHandler(handleApiError)
+    .deleteQuoteAdmin(adminToken,number);
+}
+
+function openQuoteConvertModal(number){
+  const q=(allQuotes||[]).find(x=>x.number===number);
+  if(!q){alert('견적서를 찾을 수 없습니다.');return;}
+  document.getElementById('qcv_number').value=number;
+  document.getElementById('qcv_info').innerHTML=`<b>${q.number}</b> — ${q.companyName||q.name||''}<br>상품: ${q.product||'-'} · 총액 €${Number(q.total||0).toFixed(2)}`;
+  document.getElementById('qcv_date').value=q.shootDate||'';
+  document.getElementById('qcv_time').value='10:00';
+  document.getElementById('qcv_duration').value='120';
+  document.getElementById('qcv_people').value='1';
+  document.getElementById('quoteConvertModal').classList.add('active');
+}
+function closeQuoteConvertModal(){document.getElementById('quoteConvertModal').classList.remove('active');}
+function confirmQuoteConvert(){
+  const number=document.getElementById('qcv_number').value;
+  const date=document.getElementById('qcv_date').value;
+  const time=document.getElementById('qcv_time').value;
+  const durationMin=parseInt(document.getElementById('qcv_duration').value,10)||120;
+  const people=parseInt(document.getElementById('qcv_people').value,10)||1;
+  if(!date||!time){alert('촬영 날짜와 시간을 지정해 주세요.');return;}
+  google.script.run
+    .withSuccessHandler(res=>{
+      if(res&&res.ok){
+        alert(`예약으로 전환됨\n예약행: ${res.bookingRowIndex}\n일시: ${res.startAt}`);
+        closeQuoteConvertModal();
+        loadQuoteList();
+      } else {
+        alert('전환 실패: '+((res&&res.message)||''));
+      }
+    })
+    .withFailureHandler(handleApiError)
+    .convertQuoteToBookingAdmin(adminToken,number,{date,time,durationMin,people});
 }
 </script>
 </body>
