@@ -370,6 +370,13 @@ function handlePublicApiRequest_(route,method,e){
       if(!sessionId) return jsonError_('INVALID_SESSION','Missing session id');
       return jsonOk_(listSelectPhotosPublic_(sessionId));
     }
+    if(route==='select-photos-preview'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-photos-preview');
+      const p=(e&&e.parameter)||{};
+      const folderRef=String(p.folder||'').trim();
+      if(!folderRef) return jsonError_('INVALID_ARGUMENT','Missing drive folder');
+      return jsonOk_(listDriveFolderPhotosPublic_(folderRef));
+    }
     if(route==='gutschein-ticket'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/gutschein-ticket');
       const p=(e&&e.parameter)||{};
@@ -3442,7 +3449,7 @@ function sendTestSelectEmail(token){
     product:'스튜디오 촬영 스탠다드'
   };
   const testUrl='https://script.google.com/macros/s/TEST_SESSION_ID/exec?session=TESTSESSION123';
-  const testDriveLink='https://drive.google.com/drive/folders/example';
+  const testDriveLink='https://drive.google.com/drive/folders/1J3p6L1xmYnGSi4TzxzOz5Ket2uvkGMLP?usp=drive_link';
   _sendSelectLinkEmail(testData,testUrl,testDriveLink,3,10);
   return{ok:true,message:'테스트 메일이 studio.mean.de@gmail.com 으로 발송되었습니다.'};
 }
@@ -9268,7 +9275,13 @@ function listSelectPhotosPublic_(sessionId){
   const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
   if(!row) return{ok:false,message:'Invalid session'};
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
-  const folderId=_extractDriveFolderId_(driveLink);
+  const out=listDriveFolderPhotosPublic_(driveLink);
+  if(!out||out.ok===false) return out||{ok:false,message:'Drive folder not linked'};
+  try{cache.put(key,JSON.stringify(out),900);}catch(e){} // 15min
+  return out;
+}
+function listDriveFolderPhotosPublic_(folderRef){
+  const folderId=_extractDriveFolderId_(folderRef);
   if(!folderId) return{ok:false,message:'Drive folder not linked'};
   let folder;
   try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
@@ -9292,7 +9305,6 @@ function listSelectPhotosPublic_(sessionId){
   }catch(e){return{ok:false,message:'Drive listing failed: '+e.message};}
   photos.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true,sensitivity:'base'}));
   const out={ok:true,folderId,count:photos.length,photos};
-  try{cache.put(key,JSON.stringify(out),900);}catch(e){} // 15min
   return out;
 }
 function _extractDriveFolderId_(url){

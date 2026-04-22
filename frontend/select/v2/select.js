@@ -1,4 +1,5 @@
 import {
+  fetchSelectPreviewPhotos,
   fetchSelectPhotos,
   fetchSelectPickupCalendar,
   fetchSelectPickupSlots,
@@ -33,6 +34,7 @@ const state = {
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
   testMode: new URLSearchParams(globalThis.location.search).get('test') === '1',
   previewMode: new URLSearchParams(globalThis.location.search).get('preview') === '1',
+  previewFolder: new URLSearchParams(globalThis.location.search).get('folder') || '',
   session: null,
   photos: [],
   prints: [],
@@ -565,7 +567,11 @@ async function loadGallery() {
   try {
     let res;
     if (state.previewMode) {
-      res = { photos: buildMockGalleryPhotos(80) };
+      if (state.previewFolder || state.session?.driveLink) {
+        res = await fetchSelectPreviewPhotos(state.previewFolder || state.session.driveLink);
+      } else {
+        res = { photos: buildMockGalleryPhotos(80) };
+      }
     } else {
       res = await fetchSelectPhotos(state.sessionId);
     }
@@ -1501,7 +1507,7 @@ function buildMockSession() {
     baseRetouchCount: 10,
     retouchPrice: 10,
     lang: 'ko',
-    driveLink: 'https://drive.google.com/drive/folders/mock-preview',
+    driveLink: state.previewFolder || 'https://drive.google.com/drive/folders/1J3p6L1xmYnGSi4TzxzOz5Ket2uvkGMLP?usp=drive_link',
     bookingMarketing: '',
     bookingAddress: '',
     deadline: '',

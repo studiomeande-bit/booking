@@ -43,3 +43,27 @@ export async function fetchSelectPickupSlots(date, ignoreEventId = '') {
   const response = await fetch(buildUrl('select-pickup-slots', { date, ignoreEventId }), { cache: 'no-store' });
   return parseJsonResponse(response);
 }
+
+export async function fetchSelectPhotos(sessionId) {
+  const response = await fetch(buildUrl('select-photos', { id: sessionId }), { cache: 'default' });
+  const text = await response.text();
+  let payload;
+  try { payload = JSON.parse(text); } catch { throw new Error('Invalid response'); }
+  if (payload.ok) {
+    if (payload.data?.ok === false) throw new Error(payload.data?.message || 'Listing failed');
+    return payload.data;
+  }
+  throw new Error(payload.error?.message || payload.message || 'Listing failed');
+}
+
+export async function fetchSelectPreviewPhotos(folder) {
+  const response = await fetch(buildUrl('select-photos-preview', { folder }), { cache: 'default' });
+  const text = await response.text();
+  let payload;
+  try { payload = JSON.parse(text); } catch { throw new Error('Invalid response'); }
+  if (payload.ok) {
+    if (payload.data?.ok === false) throw new Error(payload.data?.message || 'Listing failed');
+    return payload.data;
+  }
+  throw new Error(payload.error?.message || payload.message || 'Listing failed');
+}
