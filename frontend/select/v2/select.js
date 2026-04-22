@@ -1007,7 +1007,7 @@ function renderLightbox() {
   const img = document.getElementById('lb-img');
   if (img) img.src = p.full || p.thumb;
   const nameEl = document.getElementById('lb-name');
-  if (nameEl) nameEl.textContent = `${p.name} (${lb.index + 1} / ${lb.list.length})`;
+  if (nameEl) nameEl.textContent = `${stripExt(p.name)} · ${lb.index + 1} / ${lb.list.length}`;
   const key = stripExt(p.name);
   const star = getStarOf(key);
   document.querySelectorAll('#lb-stars .lb-star').forEach((btn) => {
