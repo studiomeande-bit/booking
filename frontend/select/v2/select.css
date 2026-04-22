@@ -534,9 +534,13 @@ h1 {
     gap: 6px;
     max-height: none;
   }
-  .gallery-cell {
-    border-radius: 10px;
-  }
+  .gallery-cell.size-wide,
+  .gallery-cell.size-hero { grid-column: span 2; }
+  .gallery-cell.size-small { grid-row: span 16; }
+  .gallery-cell.size-square { grid-row: span 20; }
+  .gallery-cell.size-tall { grid-row: span 26; }
+  .gallery-cell.size-wide { grid-row: span 18; }
+  .gallery-cell.size-hero { grid-row: span 24; }
   .cell-stars {
     left: 8px;
     right: 8px;
@@ -780,8 +784,11 @@ h1 {
 /* ===== Gallery grid (stage 1) ===== */
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
-  gap: 8px;
+  --gallery-row: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-auto-flow: dense;
+  grid-auto-rows: var(--gallery-row);
+  gap: 6px;
   padding: 6px 0 10px;
   max-height: 70vh;
   overflow-y: auto;
@@ -792,8 +799,7 @@ h1 {
 .gallery-grid:focus-visible { box-shadow: 0 0 0 2px #2f2924 inset; border-radius: 10px; }
 .gallery-cell {
   position: relative;
-  aspect-ratio: 1;
-  border-radius: 10px;
+  min-height: calc(var(--gallery-row) * 18);
   overflow: hidden;
   background: #efe7db;
   cursor: pointer;
@@ -801,8 +807,13 @@ h1 {
   box-shadow: 0 3px 12px rgba(69, 51, 35, .06);
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
   content-visibility: auto;
-  contain-intrinsic-size: 156px 156px;
+  contain-intrinsic-size: 160px 220px;
 }
+.gallery-cell.size-small { grid-row: span 18; }
+.gallery-cell.size-square { grid-row: span 22; }
+.gallery-cell.size-tall { grid-row: span 30; }
+.gallery-cell.size-wide { grid-column: span 2; grid-row: span 20; }
+.gallery-cell.size-hero { grid-column: span 2; grid-row: span 30; }
 .gallery-cell::after {
   content: "";
   position: absolute;
@@ -811,6 +822,8 @@ h1 {
   pointer-events: none;
 }
 .gallery-cell img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1104,3 +1117,58 @@ h1 {
 .lightbox-nav:hover { background: rgba(255,255,255,.3); }
 .lightbox-prev { left: 20px; } .lightbox-next { right: 20px; }
 .lightbox-nav:disabled { opacity: .3; cursor: not-allowed; }
+
+/* ===== Sharp brand mode ===== */
+.loading-card,
+.banner,
+.panel,
+.summary-item,
+.detail-box,
+.empty-state,
+.price-guide,
+.counter-box,
+.drive-btn,
+.radio-card,
+#mailAddressInput,
+.pickup-status,
+.pickup-day,
+.pickup-slot-btn,
+.entry-card,
+.bonus-badge,
+.extra-badge,
+.entry-card input,
+.entry-card textarea,
+.entry-card select,
+.price-line,
+.remove-btn,
+.ghost-btn,
+.primary-btn,
+.total-box,
+.success-badge,
+.gallery-stage-toolbar,
+.gallery-search,
+.gallery-status,
+.gallery-count,
+.star-filter-bar,
+.star-filter,
+.gallery-stage-summary,
+.gallery-grid:focus-visible,
+.gallery-cell,
+.gallery-cell .gallery-name,
+.gallery-more,
+.cell-star-badge,
+.cell-stars,
+.cell-star,
+.gallery-zoom,
+.hover-preview,
+.hover-preview img,
+.entry-thumb,
+.entry-thumb-zoom,
+.entry-star-chip,
+.lightbox-img,
+.lightbox-btn,
+.lightbox-btn-close,
+.lightbox-nav,
+.step-dot {
+  border-radius: 0 !important;
+}

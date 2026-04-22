@@ -748,14 +748,34 @@ function galleryCellHtml(p, idx) {
   const star = getStarOf(key);
   const selected = star > 0 ? ' has-star' : '';
   const focused = idx === state.gallery.focusIndex ? ' focused' : '';
+  const layoutClass = galleryLayoutClass(p, idx);
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
-  return `<div class="gallery-cell${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
+  return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
       <img src="${escapeHtml(p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
       <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">🔍</button>
       ${star > 0 ? `<div class="cell-star-badge">⭐${star}</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
       <div class="gallery-name">${escapeHtml(p.name)}</div>
     </div>`;
+}
+
+function galleryLayoutClass(photo, idx) {
+  const seed = `${stripExt(photo?.name || '')}:${idx}`;
+  const value = hashString(seed) % 12;
+  if (value === 0 || value === 7) return 'size-hero';
+  if (value === 1 || value === 5 || value === 10) return 'size-tall';
+  if (value === 2 || value === 8) return 'size-wide';
+  if (value === 3 || value === 11) return 'size-small';
+  return 'size-square';
+}
+
+function hashString(input) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
 }
 
 function renderGalleryCell(photoKey) {

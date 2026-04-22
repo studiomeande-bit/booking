@@ -354,3 +354,35 @@ textarea { resize:vertical; min-height:120px; }
   .wizard-actions .ghost-btn,
   .wizard-actions .primary-btn { width:100%; flex-basis:auto; }
 }
+
+/* ===== Sharp brand mode ===== */
+.loading-card,
+.loading-dots span,
+.lang-panel,
+.lang-btn,
+.status-banner,
+.panel,
+.intro-card,
+.detail-card,
+.note-box,
+.consent-box,
+.review-box,
+.success-item,
+.product-card,
+.card-badge,
+input,
+select,
+textarea,
+.price-card,
+.day-btn,
+.slot-btn,
+.loading-box,
+.slot-empty,
+.slot-panel,
+.consent-group,
+.consent-row-highlight,
+.ghost-btn,
+.primary-btn,
+.success-guide {
+  border-radius: 0 !important;
+}
