@@ -1,4 +1,6 @@
 :root {
+  --font-sans: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
+  --font-display: "Cormorant Garamond", "Iowan Old Style", "Times New Roman", serif;
   --bg: #f3ede2;
   --paper: #fdf9f2;
   --paper-strong: #fffdf8;
@@ -16,13 +18,14 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "Noto Sans KR", sans-serif;
+  font-family: var(--font-sans);
   background:
     radial-gradient(circle at top left, rgba(221, 206, 180, 0.72), transparent 26%),
     linear-gradient(180deg, var(--bg) 0%, #f8f3ea 100%);
   color: var(--text);
   line-height: 1.55;
   font-weight: 450;
+  letter-spacing: -0.01em;
   overflow-x: hidden;
   -webkit-tap-highlight-color: rgba(35, 56, 75, 0.08);
 }
@@ -153,9 +156,10 @@ body {
 h1 {
   margin: 0;
   font-size: clamp(30px, 5vw, 44px);
-  line-height: 1.02;
+  line-height: 0.96;
   letter-spacing: -.03em;
-  font-weight: 700;
+  font-weight: 600;
+  font-family: var(--font-display);
 }
 .lede {
   width: min(640px, 100%);
@@ -245,7 +249,8 @@ h1 {
   font-size: clamp(22px, 3vw, 30px);
   line-height: 1.08;
   letter-spacing: -0.03em;
-  font-weight: 700;
+  font-weight: 600;
+  font-family: var(--font-display);
   color: var(--text);
 }
 .promo-highlight-body {
@@ -441,7 +446,8 @@ h1 {
   margin: 0;
   font-size: 22px;
   letter-spacing: -.02em;
-  font-weight: 650;
+  font-weight: 600;
+  font-family: var(--font-display);
 }
 .panel-head p {
   margin: 8px 0 0;
@@ -486,7 +492,8 @@ h1 {
 .group-card-title {
   margin-top: 10px;
   font-size: 20px;
-  font-weight: 650;
+  font-weight: 600;
+  font-family: var(--font-display);
   letter-spacing: -.02em;
 }
 .group-card-sub {
@@ -528,7 +535,8 @@ h1 {
   margin: 0;
   font-size: 18px;
   line-height: 1.25;
-  font-weight: 650;
+  font-weight: 600;
+  font-family: var(--font-display);
 }
 .product-badge {
   display: inline-flex;
@@ -572,7 +580,8 @@ h1 {
 }
 .detail-title {
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
+  font-family: var(--font-display);
 }
 .detail-copy {
   margin: 8px 0 0;

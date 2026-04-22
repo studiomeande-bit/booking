@@ -1,9 +1,14 @@
+:root {
+  --font-sans: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
+  --font-display: "Cormorant Garamond", "Iowan Old Style", "Times New Roman", serif;
+}
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: "Avenir Next", "Noto Sans KR", sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(180deg, #f6f2ea 0%, #f2ede4 100%);
   color: #2f2924;
+  letter-spacing: -0.01em;
 }
 .shell {
   width: min(1240px, calc(100% - 32px));
@@ -50,8 +55,10 @@ body {
 h1 {
   margin: 0;
   font-size: clamp(28px, 5vw, 40px);
-  line-height: 1.08;
+  line-height: 0.98;
   font-weight: 600;
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
 }
 .lede {
   max-width: 680px;
@@ -77,7 +84,7 @@ h1 {
   background: rgba(255, 252, 247, .95);
   box-shadow: none;
 }
-.panel-head h2 { margin: 0; font-size: 19px; font-weight: 600; }
+.panel-head h2 { margin: 0; font-size: 24px; line-height: 1.04; font-weight: 600; font-family: var(--font-display); letter-spacing: -0.02em; }
 .panel-head p { margin: 6px 0 0; color: #74675a; }
 .progress-row {
   display: flex;
@@ -110,11 +117,13 @@ h1 {
   font-size: 12px;
   color: #87786a;
   text-transform: uppercase;
-  letter-spacing: .05em;
+  letter-spacing: .12em;
 }
 .summary-value {
   margin-top: 6px;
   font-weight: 600;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 .detail-box, .empty-state, .price-guide, .counter-box {
   margin-top: 16px;
@@ -127,6 +136,8 @@ h1 {
 .detail-title {
   font-size: 15px;
   font-weight: 600;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
   color: #3b3129;
 }
 .detail-copy, .guide-copy {
