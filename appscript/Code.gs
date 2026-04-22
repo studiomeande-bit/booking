@@ -8130,6 +8130,11 @@ function _buildDefaultGutscheinValidUntil_(issueDate){
   return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd');
 }
 
+function normalizeGutscheinDateCell_(value){
+  if(value===undefined || value===null || value==='') return '';
+  return String(parseDateSafe_(value).str||'').slice(0,10);
+}
+
 function _findGutscheinRow_(gutscheinSheet, code){
   const target=extractGutscheinCode_(code);
   if(!target) return {rowIndex:-1};
@@ -8154,8 +8159,8 @@ function gutscheinRowToObject_(row,rowIndex){
     recipientName:String(row[GUTSCHEIN_COL['받는분명']]||'').trim(),
     message:String(row[GUTSCHEIN_COL['메시지']]||'').trim(),
     amount:Math.round((Number(row[GUTSCHEIN_COL['발행금액(€)']]||0)||0)*100)/100,
-    issuedAt:String(row[GUTSCHEIN_COL['발행일']]||'').slice(0,10),
-    validUntil:String(row[GUTSCHEIN_COL['유효기한']]||'').slice(0,10),
+    issuedAt:normalizeGutscheinDateCell_(row[GUTSCHEIN_COL['발행일']]),
+    validUntil:normalizeGutscheinDateCell_(row[GUTSCHEIN_COL['유효기한']]),
     status:normalizeGutscheinStatus_(row[GUTSCHEIN_COL['상태']]),
     buyerRegistered:String(row[GUTSCHEIN_COL['구매자등록여부']]||'').trim()==='Y',
     used:String(row[GUTSCHEIN_COL['사용여부']]||'').trim()==='Y',
