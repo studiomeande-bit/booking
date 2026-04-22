@@ -9283,6 +9283,10 @@ function listSelectPhotosPublic_(sessionId){
 function listDriveFolderPhotosPublic_(folderRef){
   const folderId=_extractDriveFolderId_(folderRef);
   if(!folderId) return{ok:false,message:'Drive folder not linked'};
+  const cache=CacheService.getScriptCache();
+  const cacheKey='selphotos_folder:'+folderId;
+  const cached=cache.get(cacheKey);
+  if(cached){try{return JSON.parse(cached);}catch(e){}}
   let folder;
   try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
   const photos=[];
@@ -9293,18 +9297,18 @@ function listDriveFolderPhotosPublic_(folderRef){
       const f=it.next();
       const mime=String(f.getMimeType()||'');
       if(mime.indexOf('image/')!==0) continue;
-      const id=f.getId();
       photos.push({
-        id,
-        name:f.getName(),
-        thumb:'https://drive.google.com/thumbnail?id='+id+'&sz=w240',
-        full:'https://drive.google.com/thumbnail?id='+id+'&sz=w1600',
-        view:'https://drive.google.com/file/d/'+id+'/view'
+        id:f.getId(),
+        name:f.getName()
       });
     }
   }catch(e){return{ok:false,message:'Drive listing failed: '+e.message};}
   photos.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true,sensitivity:'base'}));
   const out={ok:true,folderId,count:photos.length,photos};
+  try{
+    const raw=JSON.stringify(out);
+    if(raw.length < 90000) cache.put(cacheKey,raw,900);
+  }catch(e){}
   return out;
 }
 function _extractDriveFolderId_(url){

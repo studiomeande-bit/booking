@@ -29,6 +29,8 @@ const INCLUDED_PRINT_QUOTA = {
 };
 
 const TOTAL_STEPS = 5; // 0:welcome 1:gallery 2:retouch 3:print 4:review
+const GALLERY_INITIAL_RENDER = 48;
+const GALLERY_RENDER_INCREMENT = 72;
 
 const state = {
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
@@ -60,7 +62,9 @@ const state = {
     starFilter: 'all',
     ratings: new Map(),     // key: stripExt(name) -> star (1~5)
     filteredList: [],
-    focusIndex: -1
+    focusIndex: -1,
+    renderCount: GALLERY_INITIAL_RENDER,
+    warmupStarted: false
   },
   lightbox: null
 };
@@ -205,6 +209,7 @@ function wireEvents() {
   if (els.gallerySearch) {
     els.gallerySearch.addEventListener('input', (ev) => {
       state.gallery.filter = String(ev.target.value || '').trim().toLowerCase();
+      state.gallery.renderCount = GALLERY_INITIAL_RENDER;
       renderGallery();
     });
   }
@@ -214,6 +219,7 @@ function wireEvents() {
   els.starFilters.forEach((btn) => {
     btn.addEventListener('click', () => {
       state.gallery.starFilter = btn.dataset.starFilter;
+      state.gallery.renderCount = GALLERY_INITIAL_RENDER;
       els.starFilters.forEach((b) => b.classList.toggle('active', b === btn));
       renderGallery();
     });
@@ -221,6 +227,7 @@ function wireEvents() {
   wireLightboxOnce();
   wireGalleryKeyboard();
   wireHoverPreview();
+  wireGalleryScrollOnce();
   els.addPrintBtn.addEventListener('click', addPrintRow);
   els.submitBtn.addEventListener('click', onSubmit);
   els.navButtons.forEach((button) => {
@@ -256,6 +263,7 @@ function showApp() {
   els.progressRow.classList.remove('hidden');
   els.stepPanels.forEach((panel, index) => panel.classList.toggle('hidden', index !== 0));
   goStep(0);
+  scheduleGalleryWarmup();
 }
 
 function hideLoading() {
@@ -565,6 +573,14 @@ async function loadGallery() {
   state.gallery.loading = true;
   if (els.galleryStatus) els.galleryStatus.textContent = '불러오는 중...';
   try {
+    const cacheKey = getGalleryCacheKey();
+    const cached = cacheKey ? readGalleryCache(cacheKey) : null;
+    if (cached?.photos?.length) {
+      applyGalleryPayload(cached);
+      if (els.galleryLoadingHint) els.galleryLoadingHint.style.display = 'none';
+      if (els.galleryStatus) els.galleryStatus.textContent = '빠르게 불러왔습니다.';
+      return;
+    }
     let res;
     if (state.previewMode) {
       if (state.previewFolder || state.session?.driveLink) {
@@ -575,29 +591,92 @@ async function loadGallery() {
     } else {
       res = await fetchSelectPhotos(state.sessionId);
     }
-    const photos = Array.isArray(res?.photos) ? res.photos : [];
-    state.gallery.photos = photos;
-    state.gallery.byKey = new Map();
-    photos.forEach((p) => state.gallery.byKey.set(stripExt(p.name), p));
-    // 기존 선택된 사진들(편집 모드)에 대해 별점 5점 자동 부여
-    state.photos.forEach((ph) => {
-      if (ph.isBonus) return;
-      const key = stripExt(ph.num);
-      if (key && state.gallery.byKey.has(key) && !state.gallery.ratings.has(key)) {
-        state.gallery.ratings.set(key, 5);
-      }
-    });
-    state.gallery.loaded = true;
+    applyGalleryPayload(res);
+    if (cacheKey && res?.photos?.length) writeGalleryCache(cacheKey, res);
     if (els.galleryStatus) els.galleryStatus.textContent = '';
     if (els.galleryLoadingHint) els.galleryLoadingHint.style.display = 'none';
-    renderGallery();
-    renderPhotos();
   } catch (err) {
     if (els.galleryLoadingHint) {
       els.galleryLoadingHint.textContent = '갤러리 불러오기 실패: ' + (err.message || err);
     }
   } finally {
     state.gallery.loading = false;
+  }
+}
+
+function applyGalleryPayload(res) {
+  const photos = normalizeGalleryPhotos(Array.isArray(res?.photos) ? res.photos : []);
+  state.gallery.photos = photos;
+  state.gallery.byKey = new Map();
+  state.gallery.renderCount = Math.min(GALLERY_INITIAL_RENDER, photos.length || GALLERY_INITIAL_RENDER);
+  photos.forEach((p) => state.gallery.byKey.set(stripExt(p.name), p));
+  state.photos.forEach((ph) => {
+    if (ph.isBonus) return;
+    const key = stripExt(ph.num);
+    if (key && state.gallery.byKey.has(key) && !state.gallery.ratings.has(key)) {
+      state.gallery.ratings.set(key, 5);
+    }
+  });
+  state.gallery.loaded = true;
+  renderGallery();
+  renderPhotos();
+}
+
+function normalizeGalleryPhotos(photos) {
+  return photos.map((photo) => {
+    const id = String(photo?.id || '').trim();
+    const name = String(photo?.name || '').trim();
+    return {
+      ...photo,
+      id,
+      name,
+      thumb: photo?.thumb || buildDriveThumbUrl(id, 200),
+      full: photo?.full || buildDriveThumbUrl(id, 1600),
+      view: photo?.view || (id ? `https://drive.google.com/file/d/${id}/view` : '#')
+    };
+  });
+}
+
+function buildDriveThumbUrl(id, width) {
+  if (!id) return '';
+  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
+}
+
+function getGalleryCacheKey() {
+  if (state.previewMode) return `preview:${state.previewFolder || state.session?.driveLink || 'mock'}`;
+  return state.sessionId ? `session:${state.sessionId}` : '';
+}
+
+function readGalleryCache(cacheKey) {
+  try {
+    const raw = globalThis.sessionStorage?.getItem(`selectGallery:${cacheKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.photos?.length) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeGalleryCache(cacheKey, payload) {
+  try {
+    globalThis.sessionStorage?.setItem(`selectGallery:${cacheKey}`, JSON.stringify({
+      photos: Array.isArray(payload?.photos) ? payload.photos : []
+    }));
+  } catch {}
+}
+
+function scheduleGalleryWarmup() {
+  if (state.gallery.warmupStarted || state.gallery.loaded || state.gallery.loading) return;
+  state.gallery.warmupStarted = true;
+  const startWarmup = () => {
+    if (!state.gallery.loaded && !state.gallery.loading) loadGallery();
+  };
+  if (typeof globalThis.requestIdleCallback === 'function') {
+    globalThis.requestIdleCallback(startWarmup, { timeout: 1200 });
+  } else {
+    globalThis.setTimeout(startWarmup, 180);
   }
 }
 
@@ -651,9 +730,15 @@ function renderGallery() {
   }
   state.gallery.filteredList = list;
   if (state.gallery.focusIndex >= list.length) state.gallery.focusIndex = list.length - 1;
-
-  const html = list.map((p, idx) => galleryCellHtml(p, idx)).join('');
-  els.galleryGrid.innerHTML = html || '<div class="empty-state" style="grid-column:1/-1;">표시할 사진이 없습니다.</div>';
+  const visibleCount = Math.min(state.gallery.renderCount || GALLERY_INITIAL_RENDER, list.length);
+  const visible = list.slice(0, visibleCount);
+  const html = visible.map((p, idx) => galleryCellHtml(p, idx)).join('');
+  const moreHtml = visibleCount < list.length
+    ? `<button type="button" class="gallery-more" data-gallery-more>사진 더 보기 · ${visibleCount} / ${list.length}</button>`
+    : '';
+  els.galleryGrid.innerHTML = html
+    ? `${html}${moreHtml}`
+    : '<div class="empty-state" style="grid-column:1/-1;">표시할 사진이 없습니다.</div>';
   bindGalleryCellEvents();
   renderGalleryCounts();
 }
@@ -665,7 +750,7 @@ function galleryCellHtml(p, idx) {
   const focused = idx === state.gallery.focusIndex ? ' focused' : '';
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
   return `<div class="gallery-cell${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
-      <img src="${escapeHtml(p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
+      <img src="${escapeHtml(p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
       <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">🔍</button>
       ${star > 0 ? `<div class="cell-star-badge">⭐${star}</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
@@ -674,19 +759,7 @@ function galleryCellHtml(p, idx) {
 }
 
 function renderGalleryCell(photoKey) {
-  if (!els.galleryGrid) return;
-  const list = state.gallery.filteredList;
-  const idx = list.findIndex((p) => stripExt(p.name) === photoKey);
-  if (idx < 0) {
-    // 필터 때문에 사라졌을 수 있음 — 전체 재렌더
-    renderGallery();
-    return;
-  }
-  const p = list[idx];
-  const cell = els.galleryGrid.querySelector(`[data-gallery-key="${cssEscape(photoKey)}"]`);
-  if (!cell) return;
-  cell.outerHTML = galleryCellHtml(p, idx);
-  bindGalleryCellEvents();
+  renderGallery();
 }
 
 function cssEscape(s) {
@@ -697,10 +770,10 @@ function bindGalleryCellEvents() {
   els.galleryGrid.querySelectorAll('.gallery-cell').forEach((cell) => {
     cell.addEventListener('click', (ev) => {
       if (ev.target.closest('.gallery-zoom') || ev.target.closest('.cell-star')) return;
-      // 셀 자체 클릭: 포커스 이동
       state.gallery.focusIndex = Number(cell.dataset.galleryIdx || 0);
       els.galleryGrid.querySelectorAll('.gallery-cell.focused').forEach((c) => c.classList.remove('focused'));
       cell.classList.add('focused');
+      openLightboxByKey(cell.dataset.galleryKey);
     });
   });
   els.galleryGrid.querySelectorAll('.gallery-zoom').forEach((btn) => {
@@ -715,6 +788,25 @@ function bindGalleryCellEvents() {
       setStarFor(key, curr === val ? 0 : val); // 같은 별 누르면 해제
     });
   });
+  els.galleryGrid.querySelectorAll('[data-gallery-more]').forEach((button) => {
+    button.addEventListener('click', () => expandGalleryRenderCount());
+  });
+}
+
+function expandGalleryRenderCount() {
+  const total = state.gallery.filteredList.length;
+  if ((state.gallery.renderCount || 0) >= total) return;
+  state.gallery.renderCount = Math.min(total, (state.gallery.renderCount || GALLERY_INITIAL_RENDER) + GALLERY_RENDER_INCREMENT);
+  renderGallery();
+}
+
+function wireGalleryScrollOnce() {
+  if (state._galleryScrollWired || !els.galleryGrid) return;
+  state._galleryScrollWired = true;
+  els.galleryGrid.addEventListener('scroll', () => {
+    const remaining = els.galleryGrid.scrollHeight - (els.galleryGrid.scrollTop + els.galleryGrid.clientHeight);
+    if (remaining < 520) expandGalleryRenderCount();
+  }, { passive: true });
 }
 
 function renderGalleryCounts() {
@@ -795,6 +887,10 @@ function moveGalleryFocus(delta) {
   const prev = state.gallery.focusIndex < 0 ? 0 : state.gallery.focusIndex;
   const next = Math.max(0, Math.min(list.length - 1, prev + delta));
   state.gallery.focusIndex = next;
+  while (state.gallery.renderCount <= next) {
+    state.gallery.renderCount = Math.min(list.length, state.gallery.renderCount + GALLERY_RENDER_INCREMENT);
+  }
+  renderGallery();
   els.galleryGrid.querySelectorAll('.gallery-cell.focused').forEach((c) => c.classList.remove('focused'));
   const target = els.galleryGrid.querySelector(`[data-gallery-idx="${next}"]`);
   if (target) {
@@ -971,8 +1067,8 @@ function thumbHtmlForNum(num) {
   if (!key) return '<div class="entry-thumb placeholder">사진 번호를 입력하면 썸네일이 표시됩니다</div>';
   const p = state.gallery.byKey.get(key);
   if (!p) return `<div class="entry-thumb placeholder">갤러리에서 ${escapeHtml(key)}를 찾지 못했습니다 <br><small>(갤러리를 먼저 불러오면 미리보기가 표시됩니다)</small></div>`;
-  return `<div class="entry-thumb">
-    <img src="${escapeHtml(p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" referrerpolicy="no-referrer" loading="lazy">
+  return `<div class="entry-thumb" data-zoom-entry="${escapeHtml(key)}">
+    <img src="${escapeHtml(p.full || p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" referrerpolicy="no-referrer" loading="lazy" decoding="async">
     <button type="button" class="entry-thumb-zoom" data-zoom-entry="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기">🔍</button>
   </div>`;
 }
@@ -1005,7 +1101,7 @@ function renderPhotos() {
           ${photo.isBonus ? '' : `<button type="button" class="remove-btn" data-remove-photo="${index}">삭제</button>`}
         </div>
         <div class="entry-grid">
-          <div class="field">
+          <div class="field field-photo field-full">
             <label>사진 번호</label>
             <input data-photo-num="${index}" value="${escapeHtml(photo.num || '')}" placeholder="예: IMG_0023 또는 0023">
             ${thumbHtmlForNum(photo.num || '')}
@@ -1082,6 +1178,9 @@ function renderPhotos() {
   // 엔트리 썸네일 확대
   els.photoList.querySelectorAll('[data-zoom-entry]').forEach((btn) => {
     btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLightboxByKey(btn.dataset.zoomEntry); });
+  });
+  els.photoList.querySelectorAll('.entry-thumb[data-zoom-entry]').forEach((thumb) => {
+    thumb.addEventListener('click', () => openLightboxByKey(thumb.dataset.zoomEntry));
   });
 }
 
@@ -1190,6 +1289,9 @@ function renderPrints() {
   });
   els.printList.querySelectorAll('[data-zoom-entry]').forEach((btn) => {
     btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLightboxByKey(btn.dataset.zoomEntry); });
+  });
+  els.printList.querySelectorAll('.entry-thumb[data-zoom-entry]').forEach((thumb) => {
+    thumb.addEventListener('click', () => openLightboxByKey(thumb.dataset.zoomEntry));
   });
 }
 
@@ -1426,7 +1528,6 @@ function goStep(step) {
   els.stepDots.forEach((dot, index) => {
     dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
   });
-  // 갤러리 단계 진입 시 자동 로드
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
   if (step === 4) updateReview();
   globalThis.scrollTo({ top: 0, behavior: 'smooth' });
