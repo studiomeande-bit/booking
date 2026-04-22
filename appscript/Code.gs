@@ -18,7 +18,7 @@ const CONFIG = {
   QUOTE_FOLDER_NAME: 'Studio mean Angebote',
   GUTSCHEIN_SHEET: '굿샤인',
   GUTSCHEIN_FOLDER_NAME: 'Studio mean Gutscheine',
-  GUTSCHEIN_VALID_MONTHS: 24,
+  GUTSCHEIN_VALID_MONTHS: 36,
   QUOTE_VALID_DAYS: 30,
   QUOTE_VAT_RATE: 0.19,
   EXPENSE_SHEET: '지출장부',
@@ -170,6 +170,14 @@ function doPost(e){
 function adminRpc(token, action, payload){
   const act=String(action||'').trim();
   switch(act){
+    case 'debugListDbCandidates':
+      assertAdmin_(token);
+      return debugListDbCandidates_();
+    case 'mergeDuplicateDbFiles':
+      assertAdmin_(token);
+      return mergeDuplicateDbFiles_();
+    case 'cancelGutschein':
+      return cancelGutscheinAdmin(token, String(payload&&payload.code||''), String(payload&&payload.reason||''));
     case 'listGutscheins':
       return listGutscheinsAdmin(token, payload||{});
     case 'getGutschein':
@@ -244,6 +252,22 @@ function getPublicApiRoute_(e){
 function handlePublicApiRequest_(route,method,e){
   try{
     assertPublicOrigin_(e);
+    if(route==='admin-db-maint'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/admin-db-maint');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const password=String(payload.password||p.password||'').trim();
+      const action=String(payload.action||p.action||'').trim().toLowerCase();
+      if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
+      if(action==='list'){
+        return jsonOk_({candidates:_listDbCandidateSpreadsheets_()});
+      }
+      if(action==='merge'){
+        return jsonOk_(mergeDuplicateDbFiles_());
+      }
+      return jsonError_('INVALID_ACTION','Unknown admin db action');
+    }
     if(route==='init'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/init');
       return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
@@ -455,11 +479,276 @@ function asNumber_(value){
 
 function getDbSheet() { return ensureSheets_().bookingSheet; }
 
+function _openSpreadsheetByIdSafe_(id){
+  const safeId=String(id||'').trim();
+  if(!safeId) return null;
+  try{
+    return SpreadsheetApp.openById(safeId);
+  }catch(e){
+    return null;
+  }
+}
+
+function _scoreDbSpreadsheet_(ss, preferredId){
+  if(!ss) return -1;
+  const bookingSheet=ss.getSheetByName(CONFIG.BOOKING_SHEET);
+  if(!bookingSheet) return -1;
+  const bookingRows=Math.max((bookingSheet.getLastRow()||0)-1,0);
+  const helperSheets=[
+    CONFIG.SETTINGS_SHEET,
+    CONFIG.WALKIN_SHEET,
+    CONFIG.PRODUCTS_SHEET,
+    CONFIG.PRINT_SHEET,
+    CONFIG.INVOICE_SHEET,
+    CONFIG.QUOTE_SHEET,
+    CONFIG.EXPENSE_SHEET,
+    CONFIG.GUTSCHEIN_SHEET
+  ];
+  const helperScore=helperSheets.reduce(function(sum,name){
+    return sum + (ss.getSheetByName(name)?100:0);
+  },0);
+  return bookingRows*10 + helperScore + (ss.getId()===preferredId?5:0);
+}
+
+function _resolveDbSpreadsheet_(preferredId){
+  const props=PropertiesService.getScriptProperties();
+  const seen={};
+  const candidates=[];
+  const pushCandidate=function(ss){
+    if(!ss) return;
+    const id=ss.getId();
+    if(seen[id]) return;
+    seen[id]=true;
+    candidates.push(ss);
+  };
+  pushCandidate(_openSpreadsheetByIdSafe_(preferredId));
+  const files=DriveApp.getFilesByName(CONFIG.DB_NAME);
+  while(files.hasNext()){
+    const file=files.next();
+    if(file.getMimeType()!==MimeType.GOOGLE_SHEETS) continue;
+    pushCandidate(_openSpreadsheetByIdSafe_(file.getId()));
+  }
+  let best=null;
+  let bestScore=-1;
+  candidates.forEach(function(candidate){
+    const score=_scoreDbSpreadsheet_(candidate,preferredId);
+    if(score>bestScore){
+      bestScore=score;
+      best=candidate;
+    }
+  });
+  if(best){
+    if(best.getId()!==String(preferredId||'')) props.setProperty('DB_SHEET_ID',best.getId());
+    return best;
+  }
+  const created=SpreadsheetApp.create(CONFIG.DB_NAME);
+  props.setProperty('DB_SHEET_ID',created.getId());
+  return created;
+}
+
+function _listDbCandidateSpreadsheets_(){
+  const props=PropertiesService.getScriptProperties();
+  const preferredId=String(props.getProperty('DB_SHEET_ID')||'').trim();
+  const seen={};
+  const items=[];
+  const pushCandidate=function(ss){
+    if(!ss) return;
+    const id=ss.getId();
+    if(seen[id]) return;
+    seen[id]=true;
+    const bookingSheet=ss.getSheetByName(CONFIG.BOOKING_SHEET);
+    const info={
+      id,
+      name:ss.getName(),
+      url:ss.getUrl(),
+      preferred:id===preferredId,
+      score:_scoreDbSpreadsheet_(ss,preferredId),
+      bookingRows:bookingSheet?Math.max((bookingSheet.getLastRow()||0)-1,0):0,
+      sheets:ss.getSheets().map(function(sh){
+        return {name:sh.getName(), rows:Math.max((sh.getLastRow()||0)-1,0), cols:sh.getLastColumn()||0};
+      })
+    };
+    items.push(info);
+  };
+  pushCandidate(_openSpreadsheetByIdSafe_(preferredId));
+  const files=DriveApp.getFilesByName(CONFIG.DB_NAME);
+  while(files.hasNext()){
+    const file=files.next();
+    if(file.getMimeType()!==MimeType.GOOGLE_SHEETS) continue;
+    pushCandidate(_openSpreadsheetByIdSafe_(file.getId()));
+  }
+  return items.sort(function(a,b){
+    return (b.score-a.score) || (b.bookingRows-a.bookingRows) || String(a.id).localeCompare(String(b.id));
+  });
+}
+
+function debugListDbCandidates_(){
+  return _listDbCandidateSpreadsheets_();
+}
+
+function debugListDbCandidates(){
+  return debugListDbCandidates_();
+}
+
+function _mergeManagedSheetNames_(){
+  return [
+    CONFIG.BOOKING_SHEET,
+    CONFIG.WALKIN_SHEET,
+    CONFIG.PRINT_SHEET,
+    CONFIG.INVOICE_SHEET,
+    CONFIG.QUOTE_SHEET,
+    CONFIG.EXPENSE_SHEET,
+    CONFIG.GUTSCHEIN_SHEET,
+    SELECT_SHEET_NAME,
+    WAITLIST_SHEET_NAME
+  ];
+}
+
+function _rowValueByHeader_(headers,row,headerName){
+  const idx=headers.indexOf(headerName);
+  return idx>-1 ? row[idx] : '';
+}
+
+function _sheetRowMergeKey_(sheetName, headers, row){
+  const pick=function(headerName){ return String(_rowValueByHeader_(headers,row,headerName)||'').trim(); };
+  switch(sheetName){
+    case CONFIG.BOOKING_SHEET:
+      return pick('캘린더ID') || [pick('예약일시'),pick('고객명'),pick('연락처'),pick('이메일'),pick('상품')].join('|');
+    case CONFIG.WALKIN_SHEET:
+      return [pick('접수일시'),pick('고객명'),pick('연락처'),pick('이메일')].join('|');
+    case CONFIG.PRINT_SHEET:
+      return [pick('주문일시'),pick('고객명'),pick('연락처'),pick('금액'),pick('메모')].join('|');
+    case CONFIG.INVOICE_SHEET:
+      return pick('인보이스번호');
+    case CONFIG.QUOTE_SHEET:
+      return pick('견적번호');
+    case CONFIG.EXPENSE_SHEET:
+      return [pick('지출일'),pick('거래처'),pick('총액(Brutto)'),pick('설명')].join('|');
+    case CONFIG.GUTSCHEIN_SHEET:
+      return pick('코드');
+    case SELECT_SHEET_NAME:
+      return pick('세션ID');
+    case WAITLIST_SHEET_NAME:
+      return [pick('등록일시'),pick('고객명'),pick('이메일'),pick('희망날짜'),pick('희망상품')].join('|');
+    default:
+      return JSON.stringify(row);
+  }
+}
+
+function _ensureHeadersForMerge_(sheet, headersToEnsure, accentColor){
+  const currentCols=sheet.getLastColumn()||0;
+  const existing=currentCols>0 ? sheet.getRange(1,1,1,currentCols).getValues()[0] : [];
+  const merged=existing.slice();
+  headersToEnsure.forEach(function(header){
+    if(header && merged.indexOf(header)===-1) merged.push(header);
+  });
+  if(!merged.length) return [];
+  if(currentCols!==merged.length || merged.some(function(h,idx){ return h!==existing[idx]; })){
+    sheet.getRange(1,1,1,merged.length).setValues([merged]);
+    sheet.getRange(1,1,1,merged.length).setFontWeight('bold').setBackground(accentColor||'#f1f5f9');
+    sheet.setFrozenRows(1);
+  }
+  return merged;
+}
+
+function _copyEntireSheetForMerge_(targetSs, sourceSheet){
+  const copied=sourceSheet.copyTo(targetSs).setName(sourceSheet.getName());
+  copied.setFrozenRows(1);
+  return copied;
+}
+
+function _mergeSingleSheetIntoPrimary_(targetSs, sourceSs, sheetName){
+  const sourceSheet=sourceSs.getSheetByName(sheetName);
+  if(!sourceSheet) return {sheetName,added:0,skipped:0,created:false};
+  let targetSheet=targetSs.getSheetByName(sheetName);
+  if(!targetSheet){
+    _copyEntireSheetForMerge_(targetSs,sourceSheet);
+    return {sheetName,added:Math.max((sourceSheet.getLastRow()||0)-1,0),skipped:0,created:true};
+  }
+  const sourceCols=sourceSheet.getLastColumn()||0;
+  if(sourceCols===0 || sourceSheet.getLastRow()<=1) return {sheetName,added:0,skipped:0,created:false};
+  const sourceHeaders=sourceSheet.getRange(1,1,1,sourceCols).getValues()[0].map(function(v){return String(v||'').trim();});
+  const targetHeaders=_ensureHeadersForMerge_(targetSheet,sourceHeaders,'#f1f5f9');
+  const targetRows=targetSheet.getLastRow()>1 ? targetSheet.getRange(2,1,targetSheet.getLastRow()-1,targetHeaders.length).getValues() : [];
+  const existingKeys=new Set();
+  targetRows.forEach(function(row){
+    const key=_sheetRowMergeKey_(sheetName,targetHeaders,row);
+    if(key) existingKeys.add(key);
+  });
+  const sourceRows=sourceSheet.getRange(2,1,sourceSheet.getLastRow()-1,sourceCols).getValues();
+  const rowsToAppend=[];
+  let skipped=0;
+  sourceRows.forEach(function(sourceRow){
+    const projected=new Array(targetHeaders.length).fill('');
+    sourceHeaders.forEach(function(header,idx){
+      const targetIdx=targetHeaders.indexOf(header);
+      if(targetIdx>-1) projected[targetIdx]=sourceRow[idx];
+    });
+    const key=_sheetRowMergeKey_(sheetName,targetHeaders,projected);
+    if(key && existingKeys.has(key)){
+      skipped++;
+      return;
+    }
+    if(key) existingKeys.add(key);
+    rowsToAppend.push(projected);
+  });
+  if(rowsToAppend.length){
+    targetSheet.getRange(targetSheet.getLastRow()+1,1,rowsToAppend.length,targetHeaders.length).setValues(rowsToAppend);
+  }
+  return {sheetName,added:rowsToAppend.length,skipped,created:false};
+}
+
+function _backupSpreadsheetForMerge_(spreadsheetId, label){
+  const file=DriveApp.getFileById(spreadsheetId);
+  const folder=_getOrCreateBackupFolder_();
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyyMMdd_HHmmss');
+  const copyName=`DBMergeBackup_${label}_${stamp}_${spreadsheetId.slice(0,8)}`;
+  const copy=file.makeCopy(copyName,folder);
+  return {id:copy.getId(), name:copy.getName(), url:copy.getUrl()};
+}
+
+function mergeDuplicateDbFiles_(){
+  const props=PropertiesService.getScriptProperties();
+  const candidates=_listDbCandidateSpreadsheets_();
+  if(candidates.length<2){
+    return {ok:true,message:'중복 DB가 없어 병합할 대상이 없습니다.',candidates};
+  }
+  const primaryInfo=candidates[0];
+  const primarySs=SpreadsheetApp.openById(primaryInfo.id);
+  const backups=[_backupSpreadsheetForMerge_(primaryInfo.id,'primary')];
+  const mergedFrom=[];
+  candidates.slice(1).forEach(function(candidate,idx){
+    backups.push(_backupSpreadsheetForMerge_(candidate.id,`secondary${idx+1}`));
+    const sourceSs=SpreadsheetApp.openById(candidate.id);
+    const summary=_mergeManagedSheetNames_().map(function(sheetName){
+      return _mergeSingleSheetIntoPrimary_(primarySs,sourceSs,sheetName);
+    });
+    try{
+      DriveApp.getFileById(candidate.id).setName(`${CONFIG.DB_NAME} [merged backup ${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')}]`);
+    }catch(e){}
+    mergedFrom.push({id:candidate.id,name:candidate.name,url:candidate.url,summary});
+  });
+  props.setProperty('DB_SHEET_ID',primaryInfo.id);
+  return {
+    ok:true,
+    primary:{id:primaryInfo.id,name:primaryInfo.name,url:primaryInfo.url},
+    backups,
+    mergedFrom
+  };
+}
+
+function mergeDuplicateDbFiles(){
+  return mergeDuplicateDbFiles_();
+}
+
 function ensureSheets_() {
   const props = PropertiesService.getScriptProperties();
-  let ss = null; const dbId = props.getProperty('DB_SHEET_ID');
-  if (dbId) { try { ss=SpreadsheetApp.openById(dbId); } catch(e){ss=null;} }
-  if (!ss) { ss=SpreadsheetApp.create(CONFIG.DB_NAME); props.setProperty('DB_SHEET_ID',ss.getId()); }
+  const dbId = props.getProperty('DB_SHEET_ID');
+  let ss = _openSpreadsheetByIdSafe_(dbId);
+  const needsResolution=!ss || _scoreDbSpreadsheet_(ss,dbId)<900;
+  if(needsResolution){
+    ss=_resolveDbSpreadsheet_(dbId);
+  }
   const bookingSheet=ensureBookingSheet_(ss), settingsSheet=ensureSettingsSheet_(ss);
   const walkinSheet=ensureWalkinSheet_(ss);
   const productsSheet=ensureProductsSheet_(ss), printSheet=ensurePrintSheet_(ss);
@@ -719,11 +1008,18 @@ function verifyAdmin(password){
     // ✅ 로그인 시 ensureSheets_ 제거 → 속도 개선 + 타임아웃 방지
     // ensureSheets_는 첫 getInitDataAdmin 때 호출됨
     ensureSecrets_(); // 비밀번호 해시만 초기화
-    const p=PropertiesService.getScriptProperties();
-    if(hashText_(String(password||'').trim())===p.getProperty('ADMIN_PASSWORD_HASH')||String(password).trim()==='1234')
+    if(isValidAdminPassword_(password))
       return{ok:true,token:createAdminSessionToken_()};
     return{ok:false,message:'비밀번호가 틀렸습니다.'};
   }catch(e){return{ok:false,message:e.message};}
+}
+
+function isValidAdminPassword_(password){
+  ensureSecrets_();
+  const safePassword=String(password||'').trim();
+  if(!safePassword) return false;
+  const p=PropertiesService.getScriptProperties();
+  return hashText_(safePassword)===p.getProperty('ADMIN_PASSWORD_HASH') || safePassword==='1234';
 }
 
 /* ====== 설정 ====== */
@@ -4120,9 +4416,20 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
+
+function normalizeSelectPageVersion_(value){
+  return String(value||'').toLowerCase().trim()==='v2' ? 'v2' : 'classic';
+}
+
+function buildSelectSessionUrl_(sessionId,pageVersion){
+  const base='https://select.studio-mean.com';
+  return normalizeSelectPageVersion_(pageVersion)==='v2'
+    ? `${base}/v2/?id=${encodeURIComponent(sessionId)}`
+    : `${base}/?id=${encodeURIComponent(sessionId)}`;
+}
 
 function ensureSelectSheet_(ss){
   let sh=ss.getSheetByName(SELECT_SHEET_NAME);
@@ -4189,6 +4496,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['최종알림단계']]='';
   row[SELECT_COL['재수정요청횟수']]=0;
   row[SELECT_COL['추가금인보이스번호']]='';
+  row[SELECT_COL['페이지버전']]=normalizeSelectPageVersion_(data.pageVersion||'v2');
   return {sessionId,row,now,schedule};
 }
 
@@ -4260,7 +4568,7 @@ function createSelectSession(token,data){
       bookingRowIndex:data.bookingRowIndex||''
     });
     selSh.appendRow(built.row);
-    const url='https://select.studio-mean.com?id='+encodeURIComponent(built.sessionId);
+    const url=buildSelectSessionUrl_(built.sessionId,'v2');
     _sendSelectLinkEmail(data,url,driveLink,baseCount,retouchPrice);
     return{ok:true,sessionId:built.sessionId,selectUrl:url};
   }catch(err){return{ok:false,message:err.message};}
@@ -4351,6 +4659,7 @@ function getSelectSession(sessionId){
       deadline:String(row[SELECT_COL['셀렉마감일']]||''),
       revisionCount:parseInt(row[SELECT_COL['재수정요청횟수']])||0,
       extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
+      pageVersion:normalizeSelectPageVersion_(row[SELECT_COL['페이지버전']]),
       existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
       existingPickupAt:String(row[SELECT_COL['픽업일시']]||''),
       existingMailAddress:String(row[SELECT_COL['우편주소']]||''),
@@ -4660,7 +4969,7 @@ function _sendSelectReminderEmail_(row, stage){
   const lang=String(row[SELECT_COL['언어']]||'ko');
   const name=String(row[SELECT_COL['고객명']]||'');
   const sessionId=String(row[SELECT_COL['세션ID']]||'');
-  const selectUrl='https://select.studio-mean.com?id='+encodeURIComponent(sessionId);
+  const selectUrl=buildSelectSessionUrl_(sessionId,row[SELECT_COL['페이지버전']]);
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
   const deadline=String(row[SELECT_COL['셀렉마감일']]||'');
   const stageText={ko:`${stage}차`,en:`Reminder ${stage}`,de:`Erinnerung ${stage}`};
@@ -4757,6 +5066,7 @@ function getPhotoSelectionsAdmin(token){
       retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
       extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
+      pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
       pickupAt:String(r[SELECT_COL['픽업일시']]||''),
       mailAddress:String(r[SELECT_COL['우편주소']]||'')
@@ -4963,9 +5273,11 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
       resendCount:existingRow?(parseInt(selRows[existingRow-1][SELECT_COL['재발송횟수']])||0)+1:1,
       resendAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
     });
-    const url='https://select.studio-mean.com?id='+encodeURIComponent(built.sessionId);
+    const existingPageVersion=existingRow ? normalizeSelectPageVersion_(selRows[existingRow-1][SELECT_COL['페이지버전']]) : 'classic';
+    const url=buildSelectSessionUrl_(built.sessionId,existingPageVersion);
 
     if(existingRow){
+      built.row[SELECT_COL['페이지버전']]=existingPageVersion;
       selSh.getRange(existingRow,1,1,SELECT_HEADERS.length).setValues([built.row]);
     } else {
       // Drive 폴더 찾기 시도
@@ -4980,7 +5292,8 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
       const first=_makeSelectRow_({
         name:data.name,email:data.email,phone:data.phone,date:data.dateStr,itemGroup:data.itemGroup,
         product:data.product,baseRetouchCount:baseCount,retouchPrice,lang:data.lang,driveLink:dLink,bookingRowIndex:data.bookingRowIndex,
-        resendCount:1,resendAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
+        resendCount:1,resendAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'),
+        pageVersion:'v2'
       });
       selSh.appendRow(first.row);
     }
@@ -8083,8 +8396,7 @@ function ensureGutscheinFolder_(){
 }
 
 function normalizeGutscheinLang_(lang){
-  const raw=String(lang||'').trim().toLowerCase();
-  return (raw==='ko'||raw==='en'||raw==='de') ? raw : 'de';
+  return 'de';
 }
 
 function normalizeGutscheinType_(type){
@@ -8121,6 +8433,15 @@ function _guessGutscheinTaxType_(voucherType){
 
 function _guessGutscheinTaxRecognition_(taxType){
   return taxType==='SPV' ? 'issue' : 'redeem';
+}
+
+function _guessGutscheinTaxMeta_(voucherType){
+  const taxType=_guessGutscheinTaxType_(voucherType);
+  const taxRecognition=_guessGutscheinTaxRecognition_(taxType);
+  const taxMemo=taxType==='SPV'
+    ? 'Automatisch als SPV geführt: Die Umsatzsteuer entsteht bei Ausgabe des produktgebundenen Gutscheins.'
+    : 'Automatisch als MPV geführt: Die Umsatzsteuer entsteht erst bei Einlösung des Wertgutscheins.';
+  return {taxType,taxRecognition,taxMemo};
 }
 
 function _buildDefaultGutscheinValidUntil_(issueDate){
@@ -8233,7 +8554,7 @@ function buildPublicGutscheinTicketPayload_(g){
 function getPublicGutscheinTicket_(code){
   const gutscheinSheet=getGutscheinSheet_();
   const found=_findGutscheinRow_(gutscheinSheet,code);
-  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  if(found.rowIndex===-1) throw new Error('Der Gutschein konnte nicht gefunden werden.');
   const g=gutscheinRowToObject_(found.row,found.rowIndex);
   return buildPublicGutscheinTicketPayload_(g);
 }
@@ -8256,13 +8577,14 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
   const base=existing||{};
   const voucherType=normalizeGutscheinType_(payload.voucherType!=null?payload.voucherType:base.voucherType);
   const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId);
+  const taxMeta=_guessGutscheinTaxMeta_(voucherType);
   const amountRaw=voucherType==='product'
     ? productMeta.price
     : (payload.amount!=null&&payload.amount!=='' ? payload.amount : base.amount);
   const amount=Math.max(0,Math.round((Number(amountRaw)||0)*100)/100);
   const issueModeRaw=String(payload.issueMode!=null?payload.issueMode:base.issueMode||'').trim();
   const issueMode=(issueModeRaw==='재고인쇄'||issueModeRaw==='stock') ? '재고인쇄' : '즉시발행';
-  const lang=normalizeGutscheinLang_(payload.lang!=null?payload.lang:base.lang);
+  const lang='de';
   const issuedAt=String(payload.issuedAt!=null?payload.issuedAt:base.issuedAt||Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')).slice(0,10);
   const validUntil=String(payload.validUntil!=null?payload.validUntil:base.validUntil||_buildDefaultGutscheinValidUntil_(issuedAt)).slice(0,10);
   const purchaserName=String(payload.purchaserName!=null?payload.purchaserName:base.purchaserName||'').trim();
@@ -8277,9 +8599,9 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
   const status=desiredStatus
     ? normalizeGutscheinStatus_(desiredStatus)
     : (buyerRegistered==='Y' ? GUTSCHEIN_STATUS.SOLD : GUTSCHEIN_STATUS.STOCK);
-  const taxType=String(payload.taxType!=null?payload.taxType:base.taxType||_guessGutscheinTaxType_(voucherType)).trim()||_guessGutscheinTaxType_(voucherType);
-  const taxRecognition=String(payload.taxRecognition!=null?payload.taxRecognition:base.taxRecognition||_guessGutscheinTaxRecognition_(taxType)).trim()||_guessGutscheinTaxRecognition_(taxType);
-  const taxMemo=String(payload.taxMemo!=null?payload.taxMemo:base.taxMemo||`V1 default: ${voucherType==='product'?'상품권':'금액권'} 기준 ${taxType}`).trim();
+  const taxType=taxMeta.taxType;
+  const taxRecognition=taxMeta.taxRecognition;
+  const taxMemo=taxMeta.taxMemo;
   const productSnapshot=voucherType==='product' ? (productMeta.name||String(payload.productSnapshot||base.productSnapshot||'').trim()) : '';
   return {
     voucherType,
@@ -8306,24 +8628,16 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
 }
 
 function buildGutscheinEmailDefaults_(g){
-  const L=normalizeGutscheinLang_(g.lang);
   const code=g.code||'{{code}}';
   const valueLabel=g.voucherType==='product'
     ? (g.productSnapshot||'Studio mean Gutschein')
     : `€${Number(g.amount||0).toFixed(2)}`;
-  const customerName=String(g.purchaserName||g.recipientName||'Customer').trim();
+  const customerName=String(g.purchaserName||g.recipientName||'').trim();
   const ticketUrl=buildGutscheinTicketUrl_(code);
-  const subj={
-    ko:`[Studio mean] 굿샤인 ${code}`,
-    en:`[Studio mean] Gutschein ${code}`,
-    de:`[Studio mean] Gutschein ${code}`
-  };
-  const body={
-    ko:`안녕하세요 ${customerName}님,\n\nStudio mean 굿샤인을 첨부드립니다.\n코드: ${code}\n권종: ${valueLabel}\n유효기한: ${g.validUntil}\n모바일 티켓: ${ticketUrl}\n\n현장에서 모바일 티켓 또는 QR, 코드로 확인해 주세요.\n감사합니다.\n\nStudio mean`,
-    en:`Hello ${customerName},\n\nPlease find your Studio mean voucher attached.\nCode: ${code}\nVoucher: ${valueLabel}\nValid until: ${g.validUntil}\nMobile ticket: ${ticketUrl}\n\nPlease show the mobile ticket, QR, or code at the studio.\n\nStudio mean`,
-    de:`Guten Tag ${customerName},\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\nGültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`
-  };
-  return {subject:subj[L]||subj.de, body:body[L]||body.de, ticketUrl};
+  const greeting=customerName ? `Guten Tag ${customerName},` : 'Guten Tag,';
+  const subject=`[Studio mean] Gutschein ${code}`;
+  const body=`${greeting}\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\nGültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`;
+  return {subject, body, ticketUrl};
 }
 
 function _fetchQrDataUri_(text,size){
@@ -8342,68 +8656,28 @@ function _fetchQrDataUri_(text,size){
 }
 
 function buildGutscheinHtml_(g){
-  const L=normalizeGutscheinLang_(g.lang);
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? (g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
   const qrDataUri=_fetchQrDataUri_(ticketUrl,190);
-  const T={
-    de:{
-      title:'Geschenk Gutschein',
-      eyebrow:'Studio mean postcard voucher',
-      detailLabel:isProduct?'Produktgutschein':'Wertgutschein',
-      subLabel:isProduct?`Wert · €${Number(g.amount||0).toFixed(2)}`:'Gutschein',
-      forLabel:'Für',
-      fromLabel:'Von',
-      message:'Nachricht',
-      code:'Code',
-      valid:'Gültig bis',
-      amount:'Wert',
-      status:'Status',
-      contact:'Kontakt',
-      noteTitle:'Hinweise',
-      noteFallback:'Für einen besonderen Moment bei Studio mean.',
-      terms:'• Einlösung ausschließlich über Studio mean.\n• Einmalige Verwendung, Restwerte werden nicht übertragen.\n• Nach Einlösung wird der Gutschein gesperrt.\n• Keine Barauszahlung möglich.',
-      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
-    },
-    en:{
-      title:'Gift Voucher',
-      eyebrow:'Studio mean postcard voucher',
-      detailLabel:isProduct?'Service voucher':'Value voucher',
-      subLabel:isProduct?`Value · €${Number(g.amount||0).toFixed(2)}`:'Gift voucher',
-      forLabel:'For',
-      fromLabel:'From',
-      message:'Message',
-      code:'Code',
-      valid:'Valid until',
-      amount:'Value',
-      status:'Status',
-      contact:'Contact',
-      noteTitle:'Notes',
-      noteFallback:'For a meaningful moment at Studio mean.',
-      terms:'• Redeemable only through Studio mean.\n• Single-use voucher, no remaining balance transfer.\n• Once redeemed, the voucher is locked.\n• No cash payout possible.',
-      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
-    },
-    ko:{
-      title:'Gift Voucher',
-      eyebrow:'Studio mean postcard voucher',
-      detailLabel:isProduct?'상품권':'금액권',
-      subLabel:isProduct?`권면가 · €${Number(g.amount||0).toFixed(2)}`:'Studio mean voucher',
-      forLabel:'받는 분',
-      fromLabel:'보내는 분',
-      message:'메시지',
-      code:'코드',
-      valid:'유효기한',
-      amount:'권면금액',
-      status:'상태',
-      contact:'연락처',
-      noteTitle:'안내',
-      noteFallback:'Studio mean에서 특별한 순간을 선물해 보세요.',
-      terms:'• Studio mean 예약에만 사용할 수 있습니다.\n• 1회 사용권이며 잔액 이월은 지원하지 않습니다.\n• 사용 처리 후에는 다시 사용할 수 없습니다.\n• 현금 환급은 불가합니다.',
-      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
-    }
+  const t={
+    title:'Geschenk Gutschein',
+    eyebrow:'Studio mean postcard voucher',
+    detailLabel:isProduct?'Produktgutschein':'Wertgutschein',
+    subLabel:isProduct?`Wert · €${Number(g.amount||0).toFixed(2)}`:'Gutschein',
+    forLabel:'Für',
+    fromLabel:'Von',
+    message:'Nachricht',
+    code:'Code',
+    valid:'Gültig bis',
+    amount:'Wert',
+    status:'Status',
+    contact:'Kontakt',
+    noteTitle:'Hinweise',
+    noteFallback:'Für einen besonderen Moment bei Studio mean.',
+    terms:'• Einlösung ausschließlich über Studio mean.\n• Einmalige Verwendung, Restwerte werden nicht übertragen.\n• Nach Einlösung wird der Gutschein gesperrt.\n• Keine Barauszahlung möglich.',
+    footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
   };
-  const t=T[L]||T.de;
   const issueBadge=escapeHtml_(g.status||GUTSCHEIN_STATUS.SOLD);
   const messageText=String(g.message||'').trim() || t.noteFallback;
   const recipientText=String(g.recipientName||'').trim() || '__________';
@@ -8678,6 +8952,7 @@ function updateGutscheinAdmin(token, code, payload){
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const existing=gutscheinRowToObject_(found.row,found.rowIndex);
   if(existing.used || existing.status===GUTSCHEIN_STATUS.USED) throw new Error('이미 사용 완료된 굿샤인은 수정할 수 없습니다.');
+  if(existing.status===GUTSCHEIN_STATUS.CANCELLED) throw new Error('취소된 굿샤인은 수정할 수 없습니다.');
   const data=_buildGutscheinPayloadFromRequest_(payload||{},existing);
   const rowIndex=found.rowIndex;
   const set=function(col,val){gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL[col]+1).setValue(val);};
@@ -8711,12 +8986,35 @@ function updateGutscheinAdmin(token, code, payload){
   return {ok:true,code:existing.code};
 }
 
+function cancelGutscheinAdmin(token, code, reason){
+  assertAdmin_(token);
+  const targetCode=extractGutscheinCode_(code);
+  if(!targetCode) throw new Error('굿샤인 코드를 확인해 주세요.');
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,targetCode);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const existing=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(existing.used || existing.status===GUTSCHEIN_STATUS.USED || existing.linkedBookingRow){
+    throw new Error('이미 사용된 굿샤인은 취소할 수 없습니다.');
+  }
+  if(existing.status===GUTSCHEIN_STATUS.CANCELLED){
+    return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,alreadyCancelled:true};
+  }
+  const cancelledAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const note=String(reason||'').trim();
+  const adminMemoParts=[String(existing.adminMemo||'').trim(),`[${cancelledAt}] Gutschein 취소${note?` · ${note}`:''}`].filter(Boolean);
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.CANCELLED);
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(adminMemoParts.join('\n'));
+  return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt};
+}
+
 function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
   assertAdmin_(token);
   const gutscheinSheet=getGutscheinSheet_();
   const found=_findGutscheinRow_(gutscheinSheet,code);
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(g.status===GUTSCHEIN_STATUS.CANCELLED) throw new Error('취소된 굿샤인은 메일 발송할 수 없습니다.');
   const recipient=String(g.purchaserEmail||'').trim();
   if(!recipient || !isValidEmailAddress_(recipient)) throw new Error('수신 이메일이 유효하지 않습니다.');
   const effectiveLang=normalizeGutscheinLang_(mailLang||g.lang);
