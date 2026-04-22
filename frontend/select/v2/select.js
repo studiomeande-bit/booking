@@ -630,8 +630,9 @@ function normalizeGalleryPhotos(photos) {
       ...photo,
       id,
       name,
-      thumb: photo?.thumb || buildDriveThumbUrl(id, 200),
-      full: photo?.full || buildDriveThumbUrl(id, 1600),
+      thumb: photo?.thumb || buildDriveThumbUrl(id, 360),
+      thumbSet: photo?.thumbSet || buildDriveThumbSrcSet(id),
+      full: photo?.full || buildDriveThumbUrl(id, 1800),
       view: photo?.view || (id ? `https://drive.google.com/file/d/${id}/view` : '#')
     };
   });
@@ -640,6 +641,13 @@ function normalizeGalleryPhotos(photos) {
 function buildDriveThumbUrl(id, width) {
   if (!id) return '';
   return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
+}
+
+function buildDriveThumbSrcSet(id) {
+  if (!id) return '';
+  return [240, 360, 480, 720, 960, 1280]
+    .map((width) => `${buildDriveThumbUrl(id, width)} ${width}w`)
+    .join(', ');
 }
 
 function getGalleryCacheKey() {
@@ -749,9 +757,10 @@ function galleryCellHtml(p, idx) {
   const selected = star > 0 ? ' has-star' : '';
   const focused = idx === state.gallery.focusIndex ? ' focused' : '';
   const layoutClass = galleryLayoutClass(p, idx);
+  const sizes = galleryImageSizes(layoutClass);
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
   return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
-      <img src="${escapeHtml(p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
+      <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
       <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">🔍</button>
       ${star > 0 ? `<div class="cell-star-badge">⭐${star}</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
@@ -767,6 +776,13 @@ function galleryLayoutClass(photo, idx) {
   if (value === 2 || value === 8) return 'size-wide';
   if (value === 3 || value === 11) return 'size-small';
   return 'size-square';
+}
+
+function galleryImageSizes(layoutClass) {
+  if (layoutClass === 'size-wide' || layoutClass === 'size-hero') {
+    return '(max-width: 680px) 96vw, (max-width: 1100px) 62vw, 38vw';
+  }
+  return '(max-width: 680px) 48vw, (max-width: 1100px) 31vw, 19vw';
 }
 
 function hashString(input) {
