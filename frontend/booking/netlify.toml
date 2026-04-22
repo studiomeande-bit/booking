@@ -12,6 +12,12 @@
   force = true
 
 [[redirects]]
+  from = "/gutschein"
+  to = "/gutschein/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/walkin"
   to = "/walkin/index.html"
   status = 200
@@ -24,6 +30,11 @@
 
 [[headers]]
   for = "/promo"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/gutschein"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
@@ -43,12 +54,22 @@
     Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
+  for = "/gutschein/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
   for = "/walkin/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
   for = "/promo/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/gutschein/*.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
@@ -68,6 +89,11 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
+  for = "/gutschein/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
   for = "/walkin/*.js"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
@@ -79,6 +105,11 @@
 
 [[headers]]
   for = "/promo/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/gutschein/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 

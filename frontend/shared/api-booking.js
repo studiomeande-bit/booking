@@ -40,3 +40,7 @@ export function joinWaitlist(data, requestId) {
 export function lookupContact(data) {
   return requestJson(buildPayloadUrl('contact-lookup', data));
 }
+
+export function fetchGutscheinTicket(code) {
+  return requestJson(buildUrl('gutschein-ticket', { code }));
+}

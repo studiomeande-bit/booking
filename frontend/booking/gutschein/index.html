@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Studio mean - Gutschein Ticket</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <base href="/gutschein/">
+  <link rel="preload" href="./gutschein.min.css?v=20260422-gutschein-mobile1" as="style">
+  <link rel="icon" href="../studio-mean-logo.png" type="image/png">
+  <meta name="description" content="Studio mean mobile voucher ticket">
+  <meta property="og:title" content="Studio mean Gutschein Ticket">
+  <meta property="og:description" content="Open your Studio mean mobile voucher ticket">
+  <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="./gutschein.min.css?v=20260422-gutschein-mobile1">
+</head>
+<body>
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-card">
+      <img class="brand-logo" src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean logo" width="160" height="48">
+      <div id="loadingCopy" class="loading-copy">모바일 티켓을 준비하고 있습니다.</div>
+      <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <img class="header-logo" src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean logo" width="160" height="48">
+      </div>
+      <div id="heroEyebrow" class="eyebrow">Studio mean mobile voucher</div>
+      <h1 id="heroTitle">굿샤인 모바일 티켓</h1>
+      <p id="heroLead" class="hero-lead">현장에서 QR 또는 코드를 보여주시면 확인 후 적용해 드립니다.</p>
+      <div class="lang-panel" aria-label="Language selection">
+        <div class="lang-row">
+          <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="errorPanel" class="panel state-panel hidden">
+      <div id="errorTitle" class="panel-title">티켓을 불러올 수 없습니다.</div>
+      <p id="errorBody" class="panel-copy">링크를 다시 확인해 주세요.</p>
+    </section>
+
+    <section id="ticketPanel" class="ticket-layout hidden">
+      <article class="ticket-card">
+        <div class="ticket-card-top">
+          <div>
+            <div id="ticketEyebrow" class="ticket-eyebrow">Gift Voucher</div>
+            <div id="ticketValue" class="ticket-value">€100</div>
+            <div id="ticketSubValue" class="ticket-subvalue">Studio mean Gutschein</div>
+          </div>
+          <div id="stateBadge" class="state-badge">사용 가능</div>
+        </div>
+
+        <div class="ticket-qr-wrap">
+          <div class="ticket-qr-frame">
+            <img id="ticketQrImage" class="ticket-qr-image" alt="Voucher QR code">
+          </div>
+          <div class="ticket-code-block">
+            <div id="codeLabel" class="meta-label">코드</div>
+            <div id="ticketCode" class="ticket-code">----</div>
+            <button type="button" id="copyCodeBtn" class="copy-btn">코드 복사</button>
+          </div>
+        </div>
+
+        <div class="ticket-grid">
+          <div class="ticket-meta-card">
+            <div id="validLabel" class="meta-label">유효기한</div>
+            <div id="ticketValidUntil" class="meta-value">-</div>
+          </div>
+          <div class="ticket-meta-card">
+            <div id="issuedLabel" class="meta-label">발행일</div>
+            <div id="ticketIssuedAt" class="meta-value">-</div>
+          </div>
+        </div>
+
+        <div class="detail-list">
+          <div class="detail-item">
+            <div id="recipientLabel" class="meta-label">받는 분</div>
+            <div id="ticketRecipient" class="detail-value">-</div>
+          </div>
+          <div class="detail-item">
+            <div id="fromLabel" class="meta-label">보내는 분</div>
+            <div id="ticketPurchaser" class="detail-value">-</div>
+          </div>
+          <div class="detail-item">
+            <div id="messageLabel" class="meta-label">메시지</div>
+            <div id="ticketMessage" class="detail-copy">-</div>
+          </div>
+        </div>
+      </article>
+
+      <section class="panel guide-panel">
+        <div id="guideTitle" class="panel-title">사용 안내</div>
+        <p id="guideCopy" class="panel-copy">현장에서 모바일 티켓의 QR 또는 코드를 보여주시면 예약 장부에서 확인 후 적용해 드립니다.</p>
+        <div class="contact-box">
+          <div id="contactLabel" class="meta-label">Studio mean</div>
+          <div id="contactBody" class="detail-copy">Holzwegpassage 3, 61440 Oberursel<br>+49 176 6093 9400<br>studio.mean.de@gmail.com</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./gutschein.min.js?v=20260422-gutschein-mobile1"></script>
+</body>
+</html>

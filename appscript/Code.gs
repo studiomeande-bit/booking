@@ -16,6 +16,9 @@ const CONFIG = {
   INVOICE_FOLDER_NAME: 'Studio mean Invoices',
   QUOTE_SHEET: '견적서',
   QUOTE_FOLDER_NAME: 'Studio mean Angebote',
+  GUTSCHEIN_SHEET: '굿샤인',
+  GUTSCHEIN_FOLDER_NAME: 'Studio mean Gutscheine',
+  GUTSCHEIN_VALID_MONTHS: 24,
   QUOTE_VALID_DAYS: 30,
   QUOTE_VAT_RATE: 0.19,
   EXPENSE_SHEET: '지출장부',
@@ -35,7 +38,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -79,6 +82,9 @@ const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시'];
 const QUOTE_COL=QUOTE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
+const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모'];
+const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
 let SETTINGS_MAP_CACHE = null;
 
 function doGet(e) {
@@ -161,6 +167,28 @@ function doPost(e){
   return jsonError_('NOT_FOUND','Unsupported route');
 }
 
+function adminRpc(token, action, payload){
+  const act=String(action||'').trim();
+  switch(act){
+    case 'listGutscheins':
+      return listGutscheinsAdmin(token, payload||{});
+    case 'getGutschein':
+      return getGutscheinAdmin(token, String(payload&&payload.code||''));
+    case 'createGutschein':
+      return createGutscheinAdmin(token, payload||{});
+    case 'updateGutschein':
+      return updateGutscheinAdmin(token, String(payload&&payload.code||''), payload&&payload.data||{});
+    case 'sendGutscheinEmail':
+      return sendGutscheinEmailAdmin(token, String(payload&&payload.code||''), String(payload&&payload.subject||''), String(payload&&payload.body||''), String(payload&&payload.mailLang||''));
+    case 'previewGutscheinApply':
+      return previewGutscheinApplyAdmin(token, Number(payload&&payload.bookingRowIndex||0), String(payload&&payload.code||''));
+    case 'applyGutscheinToBooking':
+      return applyGutscheinToBookingAdmin(token, Number(payload&&payload.bookingRowIndex||0), String(payload&&payload.code||''), String(payload&&payload.method||'manual'));
+    default:
+      throw new Error('지원하지 않는 관리자 작업입니다: '+act);
+  }
+}
+
 function buildFrontendTargetUrl_(target, params){
   const base = target==='select' ? 'https://select.studio-mean.com' : 'https://booking.studio-mean.com';
   const query = [];
@@ -170,6 +198,29 @@ function buildFrontendTargetUrl_(target, params){
     if(value===undefined || value===null || value==='') return;
     query.push(encodeURIComponent(key)+'='+encodeURIComponent(String(value)));
   });
+  return query.length ? base+'?'+query.join('&') : base;
+}
+
+function getBookingSiteBaseUrl_(){
+  try{
+    const settings=getSettingsMap_();
+    const base=String(settings['BOOKING_SITE_URL']||'https://booking.studio-mean.com').trim().replace(/\/$/,'');
+    return base||'https://booking.studio-mean.com';
+  }catch(e){
+    return 'https://booking.studio-mean.com';
+  }
+}
+
+function buildGutscheinTicketUrl_(code, extraParams){
+  const cleanCode=extractGutscheinCode_(code);
+  const params=Object.assign({code:cleanCode}, extraParams||{});
+  const query=[];
+  Object.keys(params).forEach(function(key){
+    const value=params[key];
+    if(value===undefined || value===null || value==='') return;
+    query.push(encodeURIComponent(key)+'='+encodeURIComponent(String(value)));
+  });
+  const base=getBookingSiteBaseUrl_()+'/gutschein/';
   return query.length ? base+'?'+query.join('&') : base;
 }
 
@@ -288,6 +339,20 @@ function handlePublicApiRequest_(route,method,e){
       assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
       return jsonOk_(updatePhotoSelection(String(payload.sessionId||''),payload.submission||payload.sub||payload));
     }
+    if(route==='select-photos'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-photos');
+      const p=(e&&e.parameter)||{};
+      const sessionId=String(p.id||'').trim();
+      if(!sessionId) return jsonError_('INVALID_SESSION','Missing session id');
+      return jsonOk_(listSelectPhotosPublic_(sessionId));
+    }
+    if(route==='gutschein-ticket'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/gutschein-ticket');
+      const p=(e&&e.parameter)||{};
+      const code=String(p.code||'').trim();
+      if(!code) return jsonError_('INVALID_ARGUMENT','Missing voucher code');
+      return jsonOk_(getPublicGutscheinTicket_(code));
+    }
     if(route==='waitlist-join'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/waitlist-join');
       const request=getPublicPayloadFromRequest_(e);
@@ -402,7 +467,7 @@ function ensureSheets_() {
   const expenseSheet=ensureExpenseSheet_(ss);
   const quoteSheet=ensureQuoteSheet_(ss);
   ensureSecrets_();
-  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,expenseSheet,quoteSheet};
+  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,gutscheinSheet:null,expenseSheet,quoteSheet};
 }
 
 function ensureQuoteSheet_(ss){
@@ -419,6 +484,27 @@ function ensureQuoteSheet_(ss){
     }
   }
   return sh;
+}
+
+function ensureGutscheinSheet_(ss){
+  let sh=ss.getSheetByName(CONFIG.GUTSCHEIN_SHEET);
+  if(!sh){
+    sh=ss.insertSheet(CONFIG.GUTSCHEIN_SHEET);
+    sh.appendRow(GUTSCHEIN_HEADERS);
+    sh.getRange(1,1,1,GUTSCHEIN_HEADERS.length).setFontWeight('bold').setBackground('#fae8ff');
+    sh.setFrozenRows(1);
+  } else {
+    const lastCol=sh.getLastColumn();
+    if(lastCol<GUTSCHEIN_HEADERS.length){
+      sh.getRange(1,lastCol+1,1,GUTSCHEIN_HEADERS.length-lastCol).setValues([GUTSCHEIN_HEADERS.slice(lastCol)]);
+    }
+  }
+  return sh;
+}
+
+function getGutscheinSheet_(){
+  const {ss}=ensureSheets_();
+  return ensureGutscheinSheet_(ss);
 }
 
 function ensureBookingSheet_(ss) {
@@ -3021,7 +3107,13 @@ function getDashboardData_(){
       lexwareSyncedAt:String(row[BOOKING_COL['Lexware동기화일시']]||''),
       confirmedAt:String(row[BOOKING_COL['확정일시']]||row[BOOKING_COL['동의시각']]||''),
       depositWarnedAt:String(row[BOOKING_COL['입금경고일시']]||''),
-      autoCancelledAt:String(row[BOOKING_COL['자동취소일시']]||'')
+      autoCancelledAt:String(row[BOOKING_COL['자동취소일시']]||''),
+      gutscheinCode:String(row[BOOKING_COL['굿샤인코드']]||''),
+      gutscheinDiscount:String(row[BOOKING_COL['굿샤인차감금액']]||''),
+      gutscheinOriginalTotal:String(row[BOOKING_COL['적용전총액']]||''),
+      gutscheinAdjustedTotal:String(row[BOOKING_COL['적용후총액']]||''),
+      gutscheinAppliedAt:String(row[BOOKING_COL['굿샤인적용일시']]||''),
+      gutscheinApplyMethod:String(row[BOOKING_COL['굿샤인적용방식']]||'')
     });
     
     const CONFIRMED_STATUSES=['확정됨','촬영완료','셀렉완료','작업완료'];
@@ -4305,6 +4397,21 @@ function enrichSelectPhoto_(photo){
     printTypeLabel:String(raw.printTypeLabel||info.label||'')
   };
 }
+// 추가 보정(유료) 수 계산 - 프론트 getRetouchExtraCount()와 일치
+// - isBonus=true (마케팅 보너스) 는 항상 무료, 카운트 제외
+// - source='gallery' (1차 셀렉에서 별점으로 자동 추가됨) 는 항상 무료, 카운트 제외
+// - source='manual' (직접 입력) 만 순번상 baseCount 를 초과할 때 유료로 카운트
+function computeSelectExtraRetouch_(photos,baseCount){
+  var nonBonusIndex=0,paid=0;
+  (photos||[]).forEach(function(p){
+    if(p&&p.isBonus) return;
+    nonBonusIndex+=1;
+    var source=(p&&p.source)||'manual';
+    if(source==='gallery') return;
+    if(nonBonusIndex>baseCount) paid+=1;
+  });
+  return paid;
+}
 function getSelectPhotoPrintLabel_(photo){
   if(photo&&String(photo.printTypeLabel||'').trim()) return String(photo.printTypeLabel).trim();
   return getPrintInfo_(photo&&photo.printType).label;
@@ -4427,7 +4534,7 @@ function submitPhotoSelection(sessionId,sub){
     const prints=(sub.prints||[]).map(_enrichPrint);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=Math.max(0,photos.length-baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
     const extraRetouchAmt=extraRetouch*retouchPrice;
     const extraPrintsAmt=prints.reduce((s,p)=>s+(Number(p.price)||0)*(Number(p.qty)||1),0);
     const totalExtra=extraRetouchAmt+extraPrintsAmt;
@@ -4594,7 +4701,7 @@ function updatePhotoSelection(sessionId,sub){
     const prints=(sub.prints||[]).map(_enrichPrint);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=Math.max(0,photos.length-baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
     const extraRetouchAmt=extraRetouch*retouchPrice;
     const extraPrintsAmt=prints.reduce((s,p)=>s+(Number(p.price)||0)*(Number(p.qty)||1),0);
     const totalExtra=extraRetouchAmt+extraPrintsAmt;
@@ -6762,17 +6869,74 @@ function flagAndCancelOverdueDepositBookings_(){
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
     if(deposit<=0 || depositPaid || status==='취소됨') return;
     if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
-    const confirmedRaw=String(row[BOOKING_COL['확정일시']]||row[BOOKING_COL['동의시각']]||'').trim();
-    const confirmedDate=parseDateSafe_(confirmedRaw).obj;
-    if(isNaN(confirmedDate.getTime())) return;
-    const ageDays=Math.floor((now.getTime()-confirmedDate.getTime())/86400000);
-    if(ageDays>=5 && !String(row[BOOKING_COL['입금경고일시']]||'').trim()){
+    // 기준: 예약 생성일(동의시각) — "예약일로부터 10일" 규칙 적용
+    const bookedRaw=String(row[BOOKING_COL['동의시각']]||'').trim();
+    if(!bookedRaw) return;
+    const bookedDate=parseDateSafe_(bookedRaw).obj;
+    if(isNaN(bookedDate.getTime())) return;
+    const ageDays=Math.floor((now.getTime()-bookedDate.getTime())/86400000);
+    // 7일차: 입금 리마인더 메일 발송 (이전엔 타임스탬프만 기록)
+    if(ageDays>=7 && !String(row[BOOKING_COL['입금경고일시']]||'').trim()){
+      sendDepositReminderEmail_(rowIndex, row, deposit, ageDays);
       bookingSheet.getRange(rowIndex,BOOKING_COL['입금경고일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
     }
+    // 10일차: 자동취소 + 안내 메일
     if(ageDays>=10 && !String(row[BOOKING_COL['자동취소일시']]||'').trim()){
       autoCancelBookingForMissingDeposit_(rowIndex, row);
     }
   });
+}
+
+function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
+  const email=String(row[BOOKING_COL['이메일']]||'').trim();
+  if(!email || email.indexOf('@')<0 || email.indexOf('수기')>=0) return;
+  const name=String(row[BOOKING_COL['고객명']]||'');
+  const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase();
+  const product=String(row[BOOKING_COL['상품']]||'');
+  const shootAt=_formatBookingDate_(row[BOOKING_COL['예약일시']]);
+  const remainingDays=Math.max(0,10-ageDays);
+  const depositStr=(Math.round(deposit*100)/100).toFixed(2);
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const subj={
+    ko:`[Studio mean] 예약금 입금 리마인더 — ${name}님`,
+    en:`[Studio mean] Deposit payment reminder — ${name}`,
+    de:`[Studio mean] Erinnerung Anzahlung — ${name}`
+  };
+  const body={
+    ko:`<p><b>${escapeHtml_(name)}</b>님, 안녕하세요.</p>
+<p>현재 예약건의 <b>예약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
+<ul>
+  <li>📷 상품: ${escapeHtml_(product)}</li>
+  <li>📅 촬영일시: ${escapeHtml_(shootAt)}</li>
+  <li>💶 예약금: <b>€${depositStr}</b></li>
+  <li>⏳ 예약일로부터 <b>${ageDays}일</b> 경과 — ${remainingDays}일 이내 미입금 시 <b>자동 취소</b>됩니다.</li>
+</ul>
+<p>아래 계좌로 예약금 입금을 부탁드립니다:<br><b>Studio mean</b> · <i>studio.mean.de@gmail.com</i></p>
+<p>이미 입금하신 경우 이 메일은 무시해 주세요.</p>
+${_getSignatureHtml()}`,
+    en:`<p>Dear <b>${escapeHtml_(name)}</b>,</p>
+<p>This is a reminder that your <b>deposit has not yet been received</b>.</p>
+<ul>
+  <li>📷 Product: ${escapeHtml_(product)}</li>
+  <li>📅 Shoot date: ${escapeHtml_(shootAt)}</li>
+  <li>💶 Deposit: <b>€${depositStr}</b></li>
+  <li>⏳ <b>${ageDays} days</b> since booking — booking will be auto-cancelled if unpaid within ${remainingDays} more day(s).</li>
+</ul>
+<p>Please complete the deposit payment. If already sent, kindly ignore this message.</p>
+${_getSignatureHtml()}`,
+    de:`<p>Hallo <b>${escapeHtml_(name)}</b>,</p>
+<p>dies ist eine Erinnerung, dass Ihre <b>Anzahlung noch nicht eingegangen</b> ist.</p>
+<ul>
+  <li>📷 Produkt: ${escapeHtml_(product)}</li>
+  <li>📅 Aufnahmedatum: ${escapeHtml_(shootAt)}</li>
+  <li>💶 Anzahlung: <b>€${depositStr}</b></li>
+  <li>⏳ <b>${ageDays} Tage</b> seit Buchung — Bei Nichtzahlung innerhalb weiterer ${remainingDays} Tage erfolgt automatische Stornierung.</li>
+</ul>
+<p>Bitte überweisen Sie die Anzahlung. Falls bereits erfolgt, ignorieren Sie diese Nachricht.</p>
+${_getSignatureHtml()}`
+  };
+  try{MailApp.sendEmail({to:email,subject:subj[L],htmlBody:body[L]});}
+  catch(e){Logger.log('sendDepositReminderEmail_ row '+bookingRowIndex+': '+e.message);}
 }
 
 function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
@@ -6781,7 +6945,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['상태']+1).setValue('취소됨');
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['자동취소일시']+1).setValue(nowStr);
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
-  const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
+  const cancelMemo='[자동취소] 예약일로부터 10일 내 예약금 미확인';
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
   if(eventId){
@@ -6797,7 +6961,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
       MailApp.sendEmail({
         to:email,
         subject:'[Studio mean] 예약이 자동 취소되었습니다',
-        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약 확정 후 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
+        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약일로부터 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
       });
     }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
   }
@@ -7905,4 +8069,943 @@ function getQuoteSeq(token){
 function lookupContactHistoryAdmin(token, payload){
   assertAdmin_(token);
   return lookupContactHistory_(payload||{});
+}
+
+/* ====== D6: 굿샤인(Gutschein) 모듈 ====== */
+function ensureGutscheinFolder_(){
+  const props=PropertiesService.getScriptProperties();
+  const existingId=props.getProperty('GUTSCHEIN_FOLDER_ID');
+  if(existingId){ try{return DriveApp.getFolderById(existingId);}catch(e){} }
+  const folders=DriveApp.getFoldersByName(CONFIG.GUTSCHEIN_FOLDER_NAME);
+  const folder=folders.hasNext()?folders.next():DriveApp.createFolder(CONFIG.GUTSCHEIN_FOLDER_NAME);
+  props.setProperty('GUTSCHEIN_FOLDER_ID',folder.getId());
+  return folder;
+}
+
+function normalizeGutscheinLang_(lang){
+  const raw=String(lang||'').trim().toLowerCase();
+  return (raw==='ko'||raw==='en'||raw==='de') ? raw : 'de';
+}
+
+function normalizeGutscheinType_(type){
+  return String(type||'').trim().toLowerCase()==='product' ? 'product' : 'amount';
+}
+
+function normalizeGutscheinStatus_(status){
+  const raw=String(status||'').trim();
+  return Object.keys(GUTSCHEIN_STATUS).map(function(k){return GUTSCHEIN_STATUS[k];}).includes(raw) ? raw : GUTSCHEIN_STATUS.SOLD;
+}
+
+function extractGutscheinCode_(raw){
+  const s=String(raw||'').trim();
+  if(!s) return '';
+  const m=s.match(/[?&]code=([A-Za-z0-9-]+)/i);
+  if(m) return String(m[1]||'').trim().toUpperCase();
+  return s.replace(/[^A-Za-z0-9-]/g,'').toUpperCase();
+}
+
+function generateGutscheinCode_(){
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code='';
+  for(let block=0;block<3;block++){
+    let chunk='';
+    for(let i=0;i<4;i++) chunk+=chars[Math.floor(Math.random()*chars.length)];
+    code+=(block?'-':'')+chunk;
+  }
+  return code;
+}
+
+function _guessGutscheinTaxType_(voucherType){
+  return voucherType==='product' ? 'SPV' : 'MPV';
+}
+
+function _guessGutscheinTaxRecognition_(taxType){
+  return taxType==='SPV' ? 'issue' : 'redeem';
+}
+
+function _buildDefaultGutscheinValidUntil_(issueDate){
+  const base=parseDateSafe_(issueDate||new Date()).date||new Date();
+  const d=new Date(base.getTime());
+  d.setMonth(d.getMonth()+CONFIG.GUTSCHEIN_VALID_MONTHS);
+  return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd');
+}
+
+function _findGutscheinRow_(gutscheinSheet, code){
+  const target=extractGutscheinCode_(code);
+  if(!target) return {rowIndex:-1};
+  const rows=gutscheinSheet.getDataRange().getValues();
+  for(let i=1;i<rows.length;i++){
+    if(extractGutscheinCode_(rows[i][GUTSCHEIN_COL['코드']])===target){
+      return {rowIndex:i+1,row:rows[i]};
+    }
+  }
+  return {rowIndex:-1};
+}
+
+function gutscheinRowToObject_(row,rowIndex){
+  return {
+    rowIndex:rowIndex||0,
+    code:extractGutscheinCode_(row[GUTSCHEIN_COL['코드']]),
+    voucherType:normalizeGutscheinType_(row[GUTSCHEIN_COL['타입']]),
+    productId:String(row[GUTSCHEIN_COL['상품ID']]||'').trim(),
+    productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
+    purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
+    purchaserEmail:String(row[GUTSCHEIN_COL['구매자이메일']]||'').trim(),
+    recipientName:String(row[GUTSCHEIN_COL['받는분명']]||'').trim(),
+    message:String(row[GUTSCHEIN_COL['메시지']]||'').trim(),
+    amount:Math.round((Number(row[GUTSCHEIN_COL['발행금액(€)']]||0)||0)*100)/100,
+    issuedAt:String(row[GUTSCHEIN_COL['발행일']]||'').slice(0,10),
+    validUntil:String(row[GUTSCHEIN_COL['유효기한']]||'').slice(0,10),
+    status:normalizeGutscheinStatus_(row[GUTSCHEIN_COL['상태']]),
+    buyerRegistered:String(row[GUTSCHEIN_COL['구매자등록여부']]||'').trim()==='Y',
+    used:String(row[GUTSCHEIN_COL['사용여부']]||'').trim()==='Y',
+    usedAt:String(row[GUTSCHEIN_COL['사용일시']]||'').trim(),
+    usedAmount:Math.round((Number(row[GUTSCHEIN_COL['사용금액(€)']]||0)||0)*100)/100,
+    linkedBookingRow:parseInt(row[GUTSCHEIN_COL['연결예약행']],10)||0,
+    originalBookingTotal:Math.round((Number(row[GUTSCHEIN_COL['적용전예약총액(€)']]||0)||0)*100)/100,
+    adjustedBookingTotal:Math.round((Number(row[GUTSCHEIN_COL['적용후총액(€)']]||0)||0)*100)/100,
+    finalBalance:Math.round((Number(row[GUTSCHEIN_COL['최종잔금(€)']]||0)||0)*100)/100,
+    applyMethod:String(row[GUTSCHEIN_COL['굿샤인적용방식']]||'').trim(),
+    stockCreatedAt:String(row[GUTSCHEIN_COL['재고생성일']]||'').trim(),
+    saleRegisteredAt:String(row[GUTSCHEIN_COL['판매등록일']]||'').trim(),
+    issueMode:String(row[GUTSCHEIN_COL['발행방식']]||'').trim(),
+    qrValue:String(row[GUTSCHEIN_COL['QR값']]||'').trim(),
+    pdfFileId:String(row[GUTSCHEIN_COL['PDF파일ID']]||'').trim(),
+    pdfUrl:String(row[GUTSCHEIN_COL['PDF링크']]||'').trim(),
+    mailSubject:String(row[GUTSCHEIN_COL['메일제목']]||'').trim(),
+    mailBody:String(row[GUTSCHEIN_COL['메일본문']]||'').trim(),
+    mailSentAt:String(row[GUTSCHEIN_COL['메일발송일시']]||'').trim(),
+    lang:normalizeGutscheinLang_(row[GUTSCHEIN_COL['언어']]),
+    paymentMethod:String(row[GUTSCHEIN_COL['결제수단']]||'').trim(),
+    saleChannel:String(row[GUTSCHEIN_COL['판매채널']]||'').trim(),
+    taxType:String(row[GUTSCHEIN_COL['세무분류']]||'').trim(),
+    taxRecognition:String(row[GUTSCHEIN_COL['과세시점']]||'').trim(),
+    taxMemo:String(row[GUTSCHEIN_COL['세무메모']]||'').trim(),
+    adminMemo:String(row[GUTSCHEIN_COL['관리메모']]||'').trim()
+  };
+}
+
+function getGutscheinDisplayState_(g){
+  if(!g || !g.code) return 'invalid';
+  if(g.used || g.status===GUTSCHEIN_STATUS.USED) return 'used';
+  if(g.status===GUTSCHEIN_STATUS.CANCELLED) return 'cancelled';
+  if(g.status===GUTSCHEIN_STATUS.STOCK || !g.buyerRegistered) return 'inactive';
+  if(g.validUntil && String(g.validUntil).slice(0,10) < Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')) return 'expired';
+  return 'active';
+}
+
+function buildPublicGutscheinTicketPayload_(g){
+  const ticketUrl=buildGutscheinTicketUrl_(g.code);
+  const displayState=getGutscheinDisplayState_(g);
+  return {
+    code:g.code,
+    voucherType:g.voucherType,
+    productSnapshot:g.productSnapshot,
+    amount:g.amount,
+    issuedAt:g.issuedAt,
+    validUntil:g.validUntil,
+    recipientName:g.recipientName,
+    purchaserName:g.purchaserName,
+    message:g.message,
+    lang:g.lang,
+    status:g.status,
+    displayState,
+    buyerRegistered:!!g.buyerRegistered,
+    used:!!g.used,
+    isRedeemable:displayState==='active',
+    ticketUrl,
+    qrValue:ticketUrl,
+    qrDataUri:_fetchQrDataUri_(ticketUrl,320),
+    studio:{
+      name:'Studio mean',
+      phone:'+49 176 6093 9400',
+      email:'studio.mean.de@gmail.com',
+      address:'Holzwegpassage 3, 61440 Oberursel'
+    }
+  };
+}
+
+function getPublicGutscheinTicket_(code){
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  return buildPublicGutscheinTicketPayload_(g);
+}
+
+function _getGutscheinProductMeta_(productId){
+  const pid=String(productId||'').trim();
+  if(!pid) return {id:'',name:'',price:0};
+  const products=getCachedProducts_();
+  const found=products.find(function(p){return String(p.id||'').trim()===pid;});
+  if(!found) return {id:pid,name:'',price:0};
+  return {
+    id:String(found.id||'').trim(),
+    name:String(found.nameDe||found.nameEn||found.nameKo||'').trim(),
+    price:Math.round((Number(found.p||0)||0)*100)/100
+  };
+}
+
+function _buildGutscheinPayloadFromRequest_(payload, existing){
+  payload=payload||{};
+  const base=existing||{};
+  const voucherType=normalizeGutscheinType_(payload.voucherType!=null?payload.voucherType:base.voucherType);
+  const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId);
+  const amountRaw=voucherType==='product'
+    ? productMeta.price
+    : (payload.amount!=null&&payload.amount!=='' ? payload.amount : base.amount);
+  const amount=Math.max(0,Math.round((Number(amountRaw)||0)*100)/100);
+  const issueModeRaw=String(payload.issueMode!=null?payload.issueMode:base.issueMode||'').trim();
+  const issueMode=(issueModeRaw==='재고인쇄'||issueModeRaw==='stock') ? '재고인쇄' : '즉시발행';
+  const lang=normalizeGutscheinLang_(payload.lang!=null?payload.lang:base.lang);
+  const issuedAt=String(payload.issuedAt!=null?payload.issuedAt:base.issuedAt||Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')).slice(0,10);
+  const validUntil=String(payload.validUntil!=null?payload.validUntil:base.validUntil||_buildDefaultGutscheinValidUntil_(issuedAt)).slice(0,10);
+  const purchaserName=String(payload.purchaserName!=null?payload.purchaserName:base.purchaserName||'').trim();
+  const purchaserEmail=String(payload.purchaserEmail!=null?payload.purchaserEmail:base.purchaserEmail||'').trim();
+  const recipientName=String(payload.recipientName!=null?payload.recipientName:base.recipientName||'').trim();
+  const message=String(payload.message!=null?payload.message:base.message||'').trim();
+  const paymentMethod=String(payload.paymentMethod!=null?payload.paymentMethod:base.paymentMethod||'').trim();
+  const saleChannel=String(payload.saleChannel!=null?payload.saleChannel:base.saleChannel||'').trim();
+  const adminMemo=String(payload.adminMemo!=null?payload.adminMemo:base.adminMemo||'').trim();
+  const buyerRegistered=(purchaserName||purchaserEmail)?'Y':'N';
+  const desiredStatus=String(payload.status!=null?payload.status:'').trim();
+  const status=desiredStatus
+    ? normalizeGutscheinStatus_(desiredStatus)
+    : (buyerRegistered==='Y' ? GUTSCHEIN_STATUS.SOLD : GUTSCHEIN_STATUS.STOCK);
+  const taxType=String(payload.taxType!=null?payload.taxType:base.taxType||_guessGutscheinTaxType_(voucherType)).trim()||_guessGutscheinTaxType_(voucherType);
+  const taxRecognition=String(payload.taxRecognition!=null?payload.taxRecognition:base.taxRecognition||_guessGutscheinTaxRecognition_(taxType)).trim()||_guessGutscheinTaxRecognition_(taxType);
+  const taxMemo=String(payload.taxMemo!=null?payload.taxMemo:base.taxMemo||`V1 default: ${voucherType==='product'?'상품권':'금액권'} 기준 ${taxType}`).trim();
+  const productSnapshot=voucherType==='product' ? (productMeta.name||String(payload.productSnapshot||base.productSnapshot||'').trim()) : '';
+  return {
+    voucherType,
+    productId:voucherType==='product' ? productMeta.id : '',
+    productSnapshot,
+    amount,
+    issueMode,
+    issuedAt,
+    validUntil,
+    purchaserName,
+    purchaserEmail,
+    recipientName,
+    message,
+    lang,
+    paymentMethod,
+    saleChannel,
+    adminMemo,
+    buyerRegistered,
+    status,
+    taxType,
+    taxRecognition,
+    taxMemo
+  };
+}
+
+function buildGutscheinEmailDefaults_(g){
+  const L=normalizeGutscheinLang_(g.lang);
+  const code=g.code||'{{code}}';
+  const valueLabel=g.voucherType==='product'
+    ? (g.productSnapshot||'Studio mean Gutschein')
+    : `€${Number(g.amount||0).toFixed(2)}`;
+  const customerName=String(g.purchaserName||g.recipientName||'Customer').trim();
+  const ticketUrl=buildGutscheinTicketUrl_(code);
+  const subj={
+    ko:`[Studio mean] 굿샤인 ${code}`,
+    en:`[Studio mean] Gutschein ${code}`,
+    de:`[Studio mean] Gutschein ${code}`
+  };
+  const body={
+    ko:`안녕하세요 ${customerName}님,\n\nStudio mean 굿샤인을 첨부드립니다.\n코드: ${code}\n권종: ${valueLabel}\n유효기한: ${g.validUntil}\n모바일 티켓: ${ticketUrl}\n\n현장에서 모바일 티켓 또는 QR, 코드로 확인해 주세요.\n감사합니다.\n\nStudio mean`,
+    en:`Hello ${customerName},\n\nPlease find your Studio mean voucher attached.\nCode: ${code}\nVoucher: ${valueLabel}\nValid until: ${g.validUntil}\nMobile ticket: ${ticketUrl}\n\nPlease show the mobile ticket, QR, or code at the studio.\n\nStudio mean`,
+    de:`Guten Tag ${customerName},\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\nGültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`
+  };
+  return {subject:subj[L]||subj.de, body:body[L]||body.de, ticketUrl};
+}
+
+function _fetchQrDataUri_(text,size){
+  const payload=String(text||'').trim();
+  if(!payload) return '';
+  const qrUrl='https://quickchart.io/qr?margin=1&size='+(parseInt(size,10)||200)+'&text='+encodeURIComponent(payload);
+  try{
+    const resp=UrlFetchApp.fetch(qrUrl,{muteHttpExceptions:true});
+    if(resp.getResponseCode()>=200 && resp.getResponseCode()<300){
+      return 'data:image/png;base64,'+Utilities.base64Encode(resp.getContent());
+    }
+  }catch(e){
+    Logger.log('QR fetch failed: '+e.message);
+  }
+  return '';
+}
+
+function buildGutscheinHtml_(g){
+  const L=normalizeGutscheinLang_(g.lang);
+  const isProduct=g.voucherType==='product';
+  const amountLabel=isProduct ? (g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
+  const ticketUrl=buildGutscheinTicketUrl_(g.code);
+  const qrDataUri=_fetchQrDataUri_(ticketUrl,190);
+  const T={
+    de:{
+      title:'Geschenk Gutschein',
+      eyebrow:'Studio mean postcard voucher',
+      detailLabel:isProduct?'Produktgutschein':'Wertgutschein',
+      subLabel:isProduct?`Wert · €${Number(g.amount||0).toFixed(2)}`:'Gutschein',
+      forLabel:'Für',
+      fromLabel:'Von',
+      message:'Nachricht',
+      code:'Code',
+      valid:'Gültig bis',
+      amount:'Wert',
+      status:'Status',
+      contact:'Kontakt',
+      noteTitle:'Hinweise',
+      noteFallback:'Für einen besonderen Moment bei Studio mean.',
+      terms:'• Einlösung ausschließlich über Studio mean.\n• Einmalige Verwendung, Restwerte werden nicht übertragen.\n• Nach Einlösung wird der Gutschein gesperrt.\n• Keine Barauszahlung möglich.',
+      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
+    },
+    en:{
+      title:'Gift Voucher',
+      eyebrow:'Studio mean postcard voucher',
+      detailLabel:isProduct?'Service voucher':'Value voucher',
+      subLabel:isProduct?`Value · €${Number(g.amount||0).toFixed(2)}`:'Gift voucher',
+      forLabel:'For',
+      fromLabel:'From',
+      message:'Message',
+      code:'Code',
+      valid:'Valid until',
+      amount:'Value',
+      status:'Status',
+      contact:'Contact',
+      noteTitle:'Notes',
+      noteFallback:'For a meaningful moment at Studio mean.',
+      terms:'• Redeemable only through Studio mean.\n• Single-use voucher, no remaining balance transfer.\n• Once redeemed, the voucher is locked.\n• No cash payout possible.',
+      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
+    },
+    ko:{
+      title:'Gift Voucher',
+      eyebrow:'Studio mean postcard voucher',
+      detailLabel:isProduct?'상품권':'금액권',
+      subLabel:isProduct?`권면가 · €${Number(g.amount||0).toFixed(2)}`:'Studio mean voucher',
+      forLabel:'받는 분',
+      fromLabel:'보내는 분',
+      message:'메시지',
+      code:'코드',
+      valid:'유효기한',
+      amount:'권면금액',
+      status:'상태',
+      contact:'연락처',
+      noteTitle:'안내',
+      noteFallback:'Studio mean에서 특별한 순간을 선물해 보세요.',
+      terms:'• Studio mean 예약에만 사용할 수 있습니다.\n• 1회 사용권이며 잔액 이월은 지원하지 않습니다.\n• 사용 처리 후에는 다시 사용할 수 없습니다.\n• 현금 환급은 불가합니다.',
+      footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
+    }
+  };
+  const t=T[L]||T.de;
+  const issueBadge=escapeHtml_(g.status||GUTSCHEIN_STATUS.SOLD);
+  const messageText=String(g.message||'').trim() || t.noteFallback;
+  const recipientText=String(g.recipientName||'').trim() || '__________';
+  const purchaserText=String(g.purchaserName||'').trim() || '__________';
+  const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#23201d}
+@page{size:A6 landscape;margin:0}
+body{width:148mm}
+.page{width:148mm;height:105mm;padding:9mm 10mm 8.5mm;position:relative;page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;background:#fff}
+.page:last-child{page-break-after:auto}
+.page:before,.page:after,.corner-b:before,.corner-b:after{content:'';position:absolute;width:18mm;height:13mm;pointer-events:none}
+.page:before{top:5mm;left:5mm;border-top:0.7px solid #6f675f;border-left:0.7px solid #6f675f}
+.page:after{top:5mm;right:5mm;border-top:0.7px solid #6f675f;border-right:0.7px solid #6f675f}
+.corner-b:before{bottom:5mm;left:5mm;border-bottom:0.7px solid #6f675f;border-left:0.7px solid #6f675f}
+.corner-b:after{bottom:5mm;right:5mm;border-bottom:0.7px solid #6f675f;border-right:0.7px solid #6f675f}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#6e655d}
+.brand-wordmark{font-family:Georgia,serif;font-style:italic;font-size:17px;letter-spacing:.03em;font-weight:600;color:#1d1b18}
+.brand-tagline{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:#8f8376;margin-top:2px}
+.hero-card{margin-top:7mm;padding:10mm 12mm 9mm;border:0.8px solid #e7ddd0;background:linear-gradient(180deg,#f6f1e8 0%,#fbf8f3 100%);min-height:49mm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.eyebrow{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#7d7268}
+.hero-title{font-size:17px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin-top:7px}
+.hero-value{font-size:${isProduct?'22px':'34px'};font-weight:700;line-height:1.14;margin-top:9px;max-width:100%;word-break:break-word}
+.hero-sub{font-size:10.5px;color:#70665e;margin-top:6px}
+.people-row{display:grid;grid-template-columns:1fr 1fr;gap:12mm;margin-top:7mm}
+.person{border-bottom:0.8px solid #b7aea4;padding-bottom:2.5mm}
+.person .label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:4px}
+.person .value{font-size:14px;font-weight:600;min-height:16px}
+.message-strip{margin-top:6mm;padding:3.5mm 4.5mm;border-top:0.8px solid #ded4c6;border-bottom:0.8px solid #ded4c6;font-size:10.6px;line-height:1.65;color:#4e463f;text-align:center;min-height:16mm}
+.front-footer{display:grid;justify-items:center;gap:1.2mm;margin-top:6mm}
+.front-footer .footer-copy{font-size:9.5px;color:#6b625b;text-align:center}
+.back-layout{display:grid;grid-template-columns:54mm 1fr;gap:7mm;align-items:stretch;height:100%}
+.back-left,.back-right{display:flex;flex-direction:column}
+.back-left{justify-content:space-between;padding-top:10mm}
+.back-right{padding-top:10mm}
+.note-card{padding:5mm;border:0.8px solid #e2d8cc;background:#fbf8f3}
+.section-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:4px}
+.note-card .copy,.terms{font-size:10.4px;line-height:1.7;color:#4d453f;white-space:pre-line}
+.qr-card{display:grid;grid-template-columns:30mm 1fr;gap:5mm;padding:5mm;border:0.8px solid #e2d8cc;background:#fff}
+.qr-box{width:30mm;height:30mm;border:0.8px solid #e5ddd2;padding:3px;background:#fff;display:flex;align-items:center;justify-content:center}
+.qr-box img{width:100%;height:100%;object-fit:contain}
+.qr-fallback{font-size:9px;color:#999;text-align:center;line-height:1.4}
+.detail-stack{display:grid;gap:3.2mm}
+.detail-item{border-bottom:0.8px solid #ece3d7;padding-bottom:2.3mm}
+.detail-item:last-child{border-bottom:none;padding-bottom:0}
+.detail-item .label{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:2px}
+.detail-item .value{font-size:11.5px;line-height:1.45;font-weight:600;word-break:break-word}
+.code-line{font-size:15px;letter-spacing:.12em;font-weight:700}
+.status-pill{display:inline-block;padding:4px 10px;border:0.8px solid #d2c4b0;border-radius:999px;background:#f7f0e3;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.back-bottom{margin-top:auto;padding-top:5mm}
+.contact-copy{font-size:9.8px;color:#5d554e;line-height:1.7}
+.terms{margin-top:5mm}
+</style></head><body>
+<div class="page front">
+  <div class="corner-b"></div>
+  <div>
+    <div class="meta-row">
+      <div>${escapeHtml_(g.code||'')}</div>
+      <div>${t.valid} · ${validLabel}</div>
+    </div>
+    <div class="hero-card">
+      <div class="eyebrow">${t.eyebrow}</div>
+      <div class="hero-title">${t.title}</div>
+      <div class="hero-value">${escapeHtml_(amountLabel)}</div>
+      <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
+    </div>
+    <div class="people-row">
+      <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
+      <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
+    </div>
+    <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+  </div>
+  <div class="front-footer">
+    <div class="brand-wordmark">Studio_mean</div>
+    <div class="brand-tagline">make meaningful moment</div>
+    <div class="footer-copy">${escapeHtml_(t.footer)}</div>
+  </div>
+</div>
+<div class="page back">
+  <div class="corner-b"></div>
+  <div class="back-layout">
+    <div class="back-left">
+      <div>
+        <div class="brand-wordmark">Studio_mean</div>
+        <div class="brand-tagline">make meaningful moment</div>
+      </div>
+      <div class="note-card">
+        <div class="section-label">${t.noteTitle}</div>
+        <div class="copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+      </div>
+      <div class="back-bottom">
+        <div class="section-label">${t.contact}</div>
+        <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
+      </div>
+    </div>
+    <div class="back-right">
+      <div class="qr-card">
+        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
+        <div class="detail-stack">
+          <div class="detail-item">
+            <div class="label">${t.code}</div>
+            <div class="value code-line">${escapeHtml_(g.code||'')}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.amount}</div>
+            <div class="value">${escapeHtml_(amountLabel)}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.valid}</div>
+            <div class="value">${validLabel}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.status}</div>
+            <div class="value"><span class="status-pill">${issueBadge}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="terms">${escapeHtml_(t.terms)}</div>
+    </div>
+  </div>
+</div>
+</body></html>`;
+}
+
+function createGutscheinPdf_(g){
+  const folder=ensureGutscheinFolder_();
+  const safeName=String(g.purchaserName||g.recipientName||'voucher').replace(/\s+/g,'').replace(/[^a-zA-Z0-9가-힣]/g,'');
+  const fileName=`Studiomean_Gutschein_${String(g.code||'').replace(/-/g,'_')}_${safeName}.pdf`;
+  const html=buildGutscheinHtml_(g);
+  const pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
+  const file=folder.createFile(pdfBlob);
+  return {fileId:file.getId(),url:file.getUrl(),name:file.getName()};
+}
+
+function _persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,g){
+  try{
+    const pdf=createGutscheinPdf_(g);
+    gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['PDF파일ID']+1).setValue(pdf.fileId);
+    gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['PDF링크']+1).setValue(pdf.url);
+    return pdf;
+  }catch(e){
+    Logger.log('createGutscheinPdf_ failed: '+e.message);
+    return {fileId:'',url:'',error:e.message};
+  }
+}
+
+function listGutscheinsAdmin(token, filters){
+  assertAdmin_(token);
+  const gutscheinSheet=getGutscheinSheet_();
+  const rows=gutscheinSheet.getDataRange().getValues();
+  if(rows.length<2) return {ok:true,items:[]};
+  const f=filters||{};
+  const keyword=String(f.keyword||'').trim().toLowerCase();
+  const status=String(f.status||'').trim();
+  const type=String(f.type||'').trim();
+  const items=rows.slice(1).map(function(row,idx){return gutscheinRowToObject_(row,idx+2);})
+    .filter(function(g){
+      if(status && g.status!==status) return false;
+      if(type && g.voucherType!==type) return false;
+      if(keyword){
+        const hay=[g.code,g.purchaserName,g.purchaserEmail,g.recipientName,g.productSnapshot,g.adminMemo,g.saleChannel].join(' ').toLowerCase();
+        if(hay.indexOf(keyword)===-1) return false;
+      }
+      return true;
+    })
+    .sort(function(a,b){
+      const aa=String(a.issuedAt||a.stockCreatedAt||'');
+      const bb=String(b.issuedAt||b.stockCreatedAt||'');
+      return bb.localeCompare(aa)||String(b.code||'').localeCompare(String(a.code||''));
+    });
+  return {ok:true,items};
+}
+
+function getGutscheinAdmin(token, code){
+  assertAdmin_(token);
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  return {ok:true,gutschein:gutscheinRowToObject_(found.row,found.rowIndex)};
+}
+
+function createGutscheinAdmin(token, payload){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(12000);}catch(e){throw new Error('다른 굿샤인 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
+  try{
+    const gutscheinSheet=getGutscheinSheet_();
+    const data=_buildGutscheinPayloadFromRequest_(payload||{},null);
+    if(data.amount<=0) throw new Error('굿샤인 금액이 0보다 커야 합니다.');
+    let code='';
+    for(let i=0;i<10;i++){
+      code=generateGutscheinCode_();
+      if(_findGutscheinRow_(gutscheinSheet,code).rowIndex===-1) break;
+      code='';
+    }
+    if(!code) throw new Error('고유한 굿샤인 코드를 생성하지 못했습니다.');
+    const qrValue=buildGutscheinTicketUrl_(code);
+    const defaults=buildGutscheinEmailDefaults_({
+      code,
+      voucherType:data.voucherType,
+      productSnapshot:data.productSnapshot,
+      amount:data.amount,
+      validUntil:data.validUntil,
+      lang:data.lang,
+      purchaserName:data.purchaserName,
+      recipientName:data.recipientName
+    });
+    const nowTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    const stockCreatedAt=data.issueMode==='재고인쇄' ? nowTs : '';
+    const saleRegisteredAt=data.buyerRegistered==='Y' ? nowTs : '';
+    gutscheinSheet.appendRow([
+      code,
+      data.voucherType,
+      data.productId,
+      data.productSnapshot,
+      data.purchaserName,
+      data.purchaserEmail,
+      data.recipientName,
+      data.message,
+      data.amount,
+      data.issuedAt,
+      data.validUntil,
+      data.status,
+      data.buyerRegistered,
+      'N',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      stockCreatedAt,
+      saleRegisteredAt,
+      data.issueMode,
+      qrValue,
+      '',
+      '',
+      defaults.subject,
+      defaults.body,
+      '',
+      data.lang,
+      data.paymentMethod,
+      data.saleChannel,
+      data.taxType,
+      data.taxRecognition,
+      data.taxMemo,
+      data.adminMemo
+    ]);
+    const rowIndex=gutscheinSheet.getLastRow();
+    const gutschein=Object.assign({},data,{code,qrValue,rowIndex,mailSubject:defaults.subject,mailBody:defaults.body,status:data.status,buyerRegistered:data.buyerRegistered});
+    const pdf=_persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,gutschein);
+    let mailResult={requested:!!payload.sendMail,sent:false,error:''};
+    if(payload.sendMail){
+      try{
+        const sent=sendGutscheinEmailAdmin(token,code,'','',data.lang);
+        mailResult={requested:true,sent:true,sentAt:sent.sentAt,recipientEmail:sent.recipientEmail,error:''};
+      }catch(mailErr){
+        mailResult={requested:true,sent:false,error:String(mailErr&&mailErr.message||mailErr)};
+      }
+    }
+    return {ok:true,code,rowIndex,pdfUrl:pdf.url||'',mailResult};
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+function updateGutscheinAdmin(token, code, payload){
+  assertAdmin_(token);
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const existing=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(existing.used || existing.status===GUTSCHEIN_STATUS.USED) throw new Error('이미 사용 완료된 굿샤인은 수정할 수 없습니다.');
+  const data=_buildGutscheinPayloadFromRequest_(payload||{},existing);
+  const rowIndex=found.rowIndex;
+  const set=function(col,val){gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL[col]+1).setValue(val);};
+  set('타입',data.voucherType);
+  set('상품ID',data.productId);
+  set('상품명스냅샷',data.productSnapshot);
+  set('구매자명',data.purchaserName);
+  set('구매자이메일',data.purchaserEmail);
+  set('받는분명',data.recipientName);
+  set('메시지',data.message);
+  set('발행금액(€)',data.amount);
+  set('발행일',data.issuedAt);
+  set('유효기한',data.validUntil);
+  set('상태',data.status);
+  set('구매자등록여부',data.buyerRegistered);
+  if(data.buyerRegistered==='Y' && !existing.saleRegisteredAt) set('판매등록일',Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  set('발행방식',data.issueMode);
+  set('QR값',buildGutscheinTicketUrl_(existing.code));
+  const mailDefaults=buildGutscheinEmailDefaults_(Object.assign({},existing,data,{code:existing.code}));
+  set('메일제목',String(payload.mailSubject!=null ? payload.mailSubject : (existing.mailSubject||mailDefaults.subject)));
+  set('메일본문',String(payload.mailBody!=null ? payload.mailBody : (existing.mailBody||mailDefaults.body)));
+  set('언어',data.lang);
+  set('결제수단',data.paymentMethod);
+  set('판매채널',data.saleChannel);
+  set('세무분류',data.taxType);
+  set('과세시점',data.taxRecognition);
+  set('세무메모',data.taxMemo);
+  set('관리메모',data.adminMemo);
+  const merged=Object.assign({},existing,data,{code:existing.code,qrValue:buildGutscheinTicketUrl_(existing.code)});
+  _persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,merged);
+  return {ok:true,code:existing.code};
+}
+
+function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
+  assertAdmin_(token);
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  const recipient=String(g.purchaserEmail||'').trim();
+  if(!recipient || !isValidEmailAddress_(recipient)) throw new Error('수신 이메일이 유효하지 않습니다.');
+  const effectiveLang=normalizeGutscheinLang_(mailLang||g.lang);
+  const defaults=buildGutscheinEmailDefaults_(Object.assign({},g,{lang:effectiveLang}));
+  const finalSubject=String(subject||g.mailSubject||defaults.subject||'').replace(/\{\{code\}\}/g,g.code||'').trim();
+  const finalBody=String(body||g.mailBody||defaults.body||'').replace(/\{\{code\}\}/g,g.code||'').trim();
+  let pdf=null;
+  const expectedQrValue=buildGutscheinTicketUrl_(g.code);
+  if(g.pdfFileId){
+    try{pdf=DriveApp.getFileById(g.pdfFileId);}catch(e){pdf=null;}
+  }
+  if(!pdf || String(g.qrValue||'').trim()!==expectedQrValue){
+    const created=createGutscheinPdf_(Object.assign({},g,{lang:effectiveLang,qrValue:expectedQrValue}));
+    pdf=DriveApp.getFileById(created.fileId);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF파일ID']+1).setValue(created.fileId);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF링크']+1).setValue(created.url);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['QR값']+1).setValue(expectedQrValue);
+  }
+  const ticketUrl=buildGutscheinTicketUrl_(g.code);
+  const buttonLabel=effectiveLang==='ko' ? '모바일 티켓 열기' : (effectiveLang==='en' ? 'Open mobile ticket' : 'Mobiles Ticket öffnen');
+  const buttonNote=effectiveLang==='ko'
+    ? '현장에서 아래 모바일 티켓 또는 첨부 PDF를 보여주시면 됩니다.'
+    : (effectiveLang==='en'
+      ? 'You can show the mobile ticket below or the attached PDF at the studio.'
+      : 'Im Studio können Sie das mobile Ticket unten oder das angehängte PDF vorzeigen.');
+  const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;color:#334155;white-space:pre-line;">${escapeHtml_(finalBody).replace(/\n/g,'<br>')}<div style="margin:22px 0 18px;"><a href="${escapeHtml_(ticketUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#2f2a25;color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml_(buttonLabel)}</a></div><div style="font-size:13px;color:#64748b;">${escapeHtml_(buttonNote)}<br><a href="${escapeHtml_(ticketUrl)}" style="color:#334155;word-break:break-all;">${escapeHtml_(ticketUrl)}</a></div><br>${_getSignatureHtml()}</div>`;
+  MailApp.sendEmail({to:recipient,subject:finalSubject,htmlBody,attachments:[pdf.getBlob()]});
+  const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const nextStatus=(g.status===GUTSCHEIN_STATUS.USED || g.used)
+    ? GUTSCHEIN_STATUS.USED
+    : (g.status===GUTSCHEIN_STATUS.CANCELLED ? GUTSCHEIN_STATUS.CANCELLED : GUTSCHEIN_STATUS.MAILED);
+  const rowUpdates={};
+  rowUpdates[GUTSCHEIN_COL['메일제목']]=finalSubject;
+  rowUpdates[GUTSCHEIN_COL['메일본문']]=finalBody;
+  rowUpdates[GUTSCHEIN_COL['메일발송일시']]=sentAt;
+  rowUpdates[GUTSCHEIN_COL['상태']]=nextStatus;
+  Object.keys(rowUpdates).forEach(function(colIdx){
+    gutscheinSheet.getRange(found.rowIndex,Number(colIdx)+1).setValue(rowUpdates[colIdx]);
+  });
+  SpreadsheetApp.flush();
+  return {ok:true,sentAt,recipientEmail:recipient,status:nextStatus};
+}
+
+function _resolveBookingProductId_(row){
+  const raw=String(row[BOOKING_COL['상품']]||'').trim();
+  if(!raw) return '';
+  const products=getCachedProducts_();
+  const found=products.find(function(p){
+    return [p.nameKo,p.nameEn,p.nameDe].map(function(v){return String(v||'').trim();}).includes(raw);
+  });
+  return found ? String(found.id||'').trim() : '';
+}
+
+function _bookingMatchesGutschein_(row, g){
+  if(g.voucherType!=='product') return true;
+  const bookingProductName=String(row[BOOKING_COL['상품']]||'').trim();
+  const bookingProductId=_resolveBookingProductId_(row);
+  if(g.productId && bookingProductId) return g.productId===bookingProductId;
+  return bookingProductName && bookingProductName===String(g.productSnapshot||'').trim();
+}
+
+function previewGutscheinApplyAdmin(token, bookingRowIndex, rawCode){
+  assertAdmin_(token);
+  const code=extractGutscheinCode_(rawCode);
+  if(!code) throw new Error('굿샤인 코드를 입력해 주세요.');
+  const bookingSheet=getDbSheet();
+  const gutscheinSheet=getGutscheinSheet_();
+  const bookingRow=bookingSheet.getRange(bookingRowIndex,1,1,bookingSheet.getLastColumn()).getValues()[0];
+  if(!bookingRow||!bookingRow[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다.');
+  if(String(bookingRow[BOOKING_COL['상태']]||'').trim()==='취소됨') throw new Error('취소된 예약에는 적용할 수 없습니다.');
+  if(String(bookingRow[BOOKING_COL['굿샤인코드']]||'').trim()) throw new Error('이미 다른 굿샤인이 적용된 예약입니다.');
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(g.used || g.status===GUTSCHEIN_STATUS.USED) throw new Error('이미 사용 완료된 굿샤인입니다.');
+  if(g.status===GUTSCHEIN_STATUS.STOCK) throw new Error('구매자 등록이 끝난 굿샤인만 사용할 수 있습니다.');
+  if(g.status===GUTSCHEIN_STATUS.CANCELLED) throw new Error('취소된 굿샤인입니다.');
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(g.validUntil && g.validUntil<today){
+    try{gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.EXPIRED);}catch(e){}
+    throw new Error('유효기한이 지난 굿샤인입니다.');
+  }
+  if(!_bookingMatchesGutschein_(bookingRow,g)) throw new Error('이 예약 상품에는 사용할 수 없는 상품권입니다.');
+  const originalTotal=Math.round((parseMoneyValue_(bookingRow[BOOKING_COL['총결제액']])||0)*100)/100;
+  const depositTarget=Math.round((parseMoneyValue_(bookingRow[BOOKING_COL['계약금']])||0)*100)/100;
+  const discountAmount=Math.min(originalTotal,Math.round((Number(g.amount||0)||0)*100)/100);
+  const adjustedTotal=Math.max(0,Math.round((originalTotal-discountAmount)*100)/100);
+  const adjustedDeposit=Math.min(depositTarget,adjustedTotal);
+  const finalBalance=Math.max(0,Math.round((adjustedTotal-adjustedDeposit)*100)/100);
+  return {
+    ok:true,
+    code:g.code,
+    voucher:{
+      code:g.code,
+      voucherType:g.voucherType,
+      productSnapshot:g.productSnapshot,
+      amount:g.amount,
+      status:g.status,
+      validUntil:g.validUntil,
+      purchaserName:g.purchaserName,
+      taxType:g.taxType
+    },
+    booking:{
+      rowIndex:bookingRowIndex,
+      name:String(bookingRow[BOOKING_COL['고객명']]||''),
+      product:String(bookingRow[BOOKING_COL['상품']]||''),
+      total:originalTotal,
+      deposit:depositTarget
+    },
+    calculations:{
+      discountAmount,
+      adjustedTotal,
+      adjustedDeposit,
+      finalBalance
+    }
+  };
+}
+
+function _formatBookingDepositCellAfterGutschein_(row, adjustedDeposit){
+  if(adjustedDeposit<=0) return '0';
+  const paid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+  if(paid) return adjustedDeposit;
+  return `입금전(${adjustedDeposit}€)`;
+}
+
+function applyGutscheinToBookingAdmin(token, bookingRowIndex, rawCode, method){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(12000);}catch(e){throw new Error('다른 굿샤인 적용 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
+  try{
+    const preview=previewGutscheinApplyAdmin(token,bookingRowIndex,rawCode);
+    const bookingSheet=getDbSheet();
+    const gutscheinSheet=getGutscheinSheet_();
+    const row=bookingSheet.getRange(bookingRowIndex,1,1,bookingSheet.getLastColumn()).getValues()[0];
+    const found=_findGutscheinRow_(gutscheinSheet,preview.code);
+    if(found.rowIndex===-1) throw new Error('굿샤인을 다시 찾지 못했습니다.');
+    const g=gutscheinRowToObject_(found.row,found.rowIndex);
+    if(g.used || g.status===GUTSCHEIN_STATUS.USED) throw new Error('이미 사용 완료된 굿샤인입니다.');
+    const appliedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['총결제액']+1).setValue(preview.calculations.adjustedTotal);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['계약금']+1).setValue(_formatBookingDepositCellAfterGutschein_(row,preview.calculations.adjustedDeposit));
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['잔금']+1).setValue(preview.calculations.finalBalance);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['굿샤인코드']+1).setValue(preview.code);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['굿샤인차감금액']+1).setValue(preview.calculations.discountAmount);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['적용전총액']+1).setValue(preview.booking.total);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['적용후총액']+1).setValue(preview.calculations.adjustedTotal);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['굿샤인적용일시']+1).setValue(appliedAt);
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['굿샤인적용방식']+1).setValue(String(method||'manual'));
+    const existingMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+    const note=`[${appliedAt}] Gutschein 적용 ${preview.code} (-${preview.calculations.discountAmount}€)`;
+    bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(existingMemo?existingMemo+'\n'+note:note);
+
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.USED);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['사용여부']+1).setValue('Y');
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['사용일시']+1).setValue(appliedAt);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['사용금액(€)']+1).setValue(preview.calculations.discountAmount);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['연결예약행']+1).setValue(bookingRowIndex);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['적용전예약총액(€)']+1).setValue(preview.booking.total);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['적용후총액(€)']+1).setValue(preview.calculations.adjustedTotal);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['최종잔금(€)']+1).setValue(preview.calculations.finalBalance);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['굿샤인적용방식']+1).setValue(String(method||'manual'));
+    return {
+      ok:true,
+      code:preview.code,
+      discountAmount:preview.calculations.discountAmount,
+      adjustedTotal:preview.calculations.adjustedTotal,
+      finalBalance:preview.calculations.finalBalance,
+      appliedAt
+    };
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+/* ===== 여권사진 직접 발송 (셀렉 생략) ===== */
+function sendPassportPhotosAdmin(token, rowIndex, payload){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){return{ok:false,message:'다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.'};}
+  try{
+    payload=payload||{};
+    const driveUrl=String(payload.driveUrl||'').trim();
+    const note=String(payload.note||'').trim();
+    if(!driveUrl||!/^https?:\/\//i.test(driveUrl)) return{ok:false,message:'유효한 Drive 링크가 필요합니다.'};
+    const sh=getDbSheet();
+    const row=sh.getRange(rowIndex,1,1,sh.getLastColumn()).getValues()[0];
+    if(!row||!row[BOOKING_COL['고객명']]) return{ok:false,message:'예약 행을 찾지 못했습니다.'};
+    const group=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(group && group!=='pass' && group!=='여권' && group.indexOf('여권')<0 && group.indexOf('pass')<0){
+      return{ok:false,message:'여권 예약이 아닙니다. (촬영종류='+group+')'};
+    }
+    const name=String(row[BOOKING_COL['고객명']]||'');
+    const email=String(row[BOOKING_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')<0) return{ok:false,message:'고객 이메일이 없습니다.'};
+    const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase();
+    const product=String(row[BOOKING_COL['상품']]||'여권사진');
+    const dateStr=_formatBookingDate_(row[BOOKING_COL['예약일시']]);
+    const subj={
+      ko:`[Studio mean] ${name}님 여권사진 전달드립니다`,
+      en:`[Studio mean] Your passport photos — ${name}`,
+      de:`[Studio mean] Ihre Passfotos — ${name}`
+    };
+    const validityNote={
+      ko:'※ 유효기간: 촬영일로부터 6개월 (독일 관공서 기준)',
+      en:'※ Validity: 6 months from shoot date (German authorities)',
+      de:'※ Gültigkeit: 6 Monate ab Aufnahmedatum (deutsche Behörden)'
+    };
+    const body={
+      ko:`<p><b>${name}</b>님, 안녕하세요.<br>촬영해 드린 여권사진을 전달드립니다.</p>
+<p>📁 <b>사진 폴더:</b> <a href="${driveUrl}" target="_blank">${driveUrl}</a></p>
+<p>📷 상품: ${product}<br>📅 촬영일: ${dateStr}</p>
+${note?`<p>📝 ${note.replace(/\n/g,'<br>')}</p>`:''}
+<p style="color:#b45309;font-weight:600;">${validityNote.ko}</p>
+<p>이용해 주셔서 감사합니다.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
+      en:`<p>Dear <b>${name}</b>,<br>please find your passport photos below.</p>
+<p>📁 <b>Photo folder:</b> <a href="${driveUrl}" target="_blank">${driveUrl}</a></p>
+<p>📷 Product: ${product}<br>📅 Shoot date: ${dateStr}</p>
+${note?`<p>📝 ${note.replace(/\n/g,'<br>')}</p>`:''}
+<p style="color:#b45309;font-weight:600;">${validityNote.en}</p>
+<p>Thank you.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
+      de:`<p>Hallo <b>${name}</b>,<br>hier sind Ihre Passfotos.</p>
+<p>📁 <b>Fotoordner:</b> <a href="${driveUrl}" target="_blank">${driveUrl}</a></p>
+<p>📷 Produkt: ${product}<br>📅 Aufnahmedatum: ${dateStr}</p>
+${note?`<p>📝 ${note.replace(/\n/g,'<br>')}</p>`:''}
+<p style="color:#b45309;font-weight:600;">${validityNote.de}</p>
+<p>Vielen Dank.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`
+    };
+    const L=(lang==='en'||lang==='de')?lang:'ko';
+    MailApp.sendEmail({to:email,subject:subj[L],htmlBody:body[L]});
+    // 메모에 발송 이력 기록
+    const memoCol=BOOKING_COL['요청사항'];
+    const stamp=Utilities.formatDate(new Date(),CONFIG.TZ||'Europe/Berlin','yyyy-MM-dd HH:mm');
+    const existing=String(row[memoCol]||'');
+    const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${note?' ('+note+')':''}`;
+    sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
+    // 상태를 '작업완료'로 (셀렉 생략)
+    try{sh.getRange(rowIndex,BOOKING_COL['상태']+1).setValue('작업완료');}catch(e){}
+    try{MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[여권 발송] ${name} — ${dateStr}`,htmlBody:`<p>${name}님(${email})에게 여권사진 발송 완료.<br>링크: <a href="${driveUrl}">${driveUrl}</a></p>`});}catch(e){}
+    return{ok:true,to:email,lang:L};
+  } finally{try{lock.releaseLock();}catch(e){}}
+}
+
+/* ===== 셀렉 페이지 갤러리 ===== */
+function listSelectPhotosPublic_(sessionId){
+  const cache=CacheService.getScriptCache();
+  const key='selphotos:'+sessionId;
+  const cached=cache.get(key);
+  if(cached){try{return JSON.parse(cached);}catch(e){}}
+  const ss=ensureSheets_().ss;
+  const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return{ok:false,message:'Session store unavailable'};
+  const rows=sh.getDataRange().getValues();
+  const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
+  if(!row) return{ok:false,message:'Invalid session'};
+  const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
+  const folderId=_extractDriveFolderId_(driveLink);
+  if(!folderId) return{ok:false,message:'Drive folder not linked'};
+  let folder;
+  try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
+  const photos=[];
+  const MAX=2500;
+  try{
+    const it=folder.getFiles();
+    while(it.hasNext()&&photos.length<MAX){
+      const f=it.next();
+      const mime=String(f.getMimeType()||'');
+      if(mime.indexOf('image/')!==0) continue;
+      const id=f.getId();
+      photos.push({
+        id,
+        name:f.getName(),
+        thumb:'https://drive.google.com/thumbnail?id='+id+'&sz=w240',
+        full:'https://drive.google.com/thumbnail?id='+id+'&sz=w1600',
+        view:'https://drive.google.com/file/d/'+id+'/view'
+      });
+    }
+  }catch(e){return{ok:false,message:'Drive listing failed: '+e.message};}
+  photos.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true,sensitivity:'base'}));
+  const out={ok:true,folderId,count:photos.length,photos};
+  try{cache.put(key,JSON.stringify(out),900);}catch(e){} // 15min
+  return out;
+}
+function _extractDriveFolderId_(url){
+  if(!url)return'';
+  const m1=String(url).match(/\/folders\/([A-Za-z0-9_-]{10,})/);
+  if(m1)return m1[1];
+  const m2=String(url).match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+  if(m2)return m2[1];
+  const m3=String(url).match(/^([A-Za-z0-9_-]{15,})$/);
+  if(m3)return m3[1];
+  return'';
+}
+
+function _formatBookingDate_(v){
+  try{
+    if(v instanceof Date) return Utilities.formatDate(v,CONFIG.TZ||'Europe/Berlin','yyyy-MM-dd HH:mm');
+    return String(v||'');
+  }catch(e){return String(v||'');}
 }

@@ -5,14 +5,16 @@
   "scripts": {
     "dev": "echo \"frontend scaffold pending\"",
     "build:booking": "esbuild booking/booking.js --bundle --minify --drop:console --target=es2020 --outfile=booking/booking.min.js",
+    "build:gutschein": "esbuild booking/gutschein/gutschein.js --bundle --minify --drop:console --target=es2020 --outfile=booking/gutschein/gutschein.min.js",
     "build:walkin": "esbuild booking/walkin/walkin.js --bundle --minify --drop:console --target=es2020 --outfile=booking/walkin/walkin.min.js",
     "build:select": "esbuild select/select.js --bundle --minify --drop:console --target=es2020 --outfile=select/select.min.js",
     "build:promo": "esbuild booking/promo/promo.js --bundle --minify --drop:console --target=es2020 --outfile=booking/promo/promo.min.js",
     "build:css:booking": "esbuild booking/booking.css --minify --outfile=booking/booking.min.css",
+    "build:css:gutschein": "esbuild booking/gutschein/gutschein.css --minify --outfile=booking/gutschein/gutschein.min.css",
     "build:css:walkin": "esbuild booking/walkin/walkin.css --minify --outfile=booking/walkin/walkin.min.css",
     "build:css:select": "esbuild select/select.css --minify --outfile=select/select.min.css",
     "build:css:promo": "esbuild booking/promo/promo.css --minify --outfile=booking/promo/promo.min.css",
-    "build:booking-site": "npm run build:booking && npm run build:walkin && npm run build:promo && npm run build:css:booking && npm run build:css:walkin && npm run build:css:promo",
+    "build:booking-site": "npm run build:booking && npm run build:gutschein && npm run build:walkin && npm run build:promo && npm run build:css:booking && npm run build:css:gutschein && npm run build:css:walkin && npm run build:css:promo",
     "build:select-site": "npm run build:select && npm run build:css:select",
     "build": "npm run build:booking-site && npm run build:select-site"
   },
