@@ -682,20 +682,28 @@ h1 {
   padding: 0;
   margin: 10px 0 0;
   display: grid;
-  gap: 6px;
+  gap: 10px;
 }
 .gallery-tips .star-legend li {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13.5px;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.7;
   color: #5a4f41;
 }
 .gallery-tips .star-chip {
-  min-width: 110px;
-  color: #d97706;
-  letter-spacing: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  padding: 4px 10px;
+  background: #ece7df;
+  color: #3f342c;
+  font-size: 11px;
+  letter-spacing: .08em;
   font-weight: 700;
+  text-transform: uppercase;
 }
 .gallery-tips kbd {
   display: inline-block;
@@ -810,8 +818,8 @@ h1 {
   background: #f6f4ef;
   border: 0;
   color: #5a5045;
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.72;
   box-shadow: none;
 }
 

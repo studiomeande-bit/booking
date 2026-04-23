@@ -851,12 +851,12 @@ function renderGalleryCounts() {
   const byStar = [0, 0, 0, 0, 0, 0];
   state.gallery.ratings.forEach((v) => { byStar[v] = (byStar[v] || 0) + 1; });
   if (els.galleryCount) {
-    els.galleryCount.textContent = `${rated} / ${total}장 별점 부여됨`;
+    els.galleryCount.textContent = `${rated} / ${total}장 평점 선택 완료`;
   }
   if (els.gallerySelectedSummary) {
     els.gallerySelectedSummary.innerHTML = rated
-      ? `<b>현재 별점 분포:</b> ⭐5 ${byStar[5]}장 · ⭐4 ${byStar[4]}장 · ⭐3 ${byStar[3]}장 · ⭐2 ${byStar[2]}장 · ⭐1 ${byStar[1]}장 &nbsp;→&nbsp; 다음 단계에서 총 <b>${rated}장</b>이 보정 목록에 자동으로 담깁니다.`
-      : '아직 별점을 준 사진이 없습니다. 마음에 드는 사진에 1~5 숫자키 또는 별 아이콘으로 별점을 주세요.';
+      ? `<b>현재 평점 분포:</b> 5점 ${byStar[5]}장 · 4점 ${byStar[4]}장 · 3점 ${byStar[3]}장 · 2점 ${byStar[2]}장 · 1점 ${byStar[1]}장 &nbsp;→&nbsp; 다음 단계에서 총 <b>${rated}장</b>이 보정 목록에 자동으로 담깁니다.`
+      : '아직 평점을 준 사진이 없습니다. 마음에 드는 사진에 1~5 숫자키 또는 아래 평점 버튼으로 표시해 주세요.';
   }
   // 필터 버튼 카운트 업데이트
   els.starFilters.forEach((btn) => {

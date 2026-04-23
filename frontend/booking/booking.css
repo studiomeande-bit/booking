@@ -507,6 +507,9 @@ h1 {
   font-weight: 700;
   font-family: var(--font-sans);
   letter-spacing: -.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .group-card-sub {
   grid-area: sub;
@@ -1547,7 +1550,7 @@ h1 {
   .product-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-card { grid-template-columns: 1fr; min-height: 104px; padding: 20px 16px; border-radius: 0; column-gap: 0; row-gap: 8px; }
-  .group-card-title { font-size: 17px; }
+  .group-card-title { font-size: 17px; white-space: normal; overflow: visible; text-overflow: clip; }
   .group-card-sub { font-size: 12px; white-space: normal; overflow: visible; text-overflow: clip; }
   .product-card { min-height: auto; padding: 16px; border-radius: 18px; }
   .product-card h3 { font-size: 17px; }
