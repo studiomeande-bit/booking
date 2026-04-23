@@ -2173,14 +2173,24 @@ function isSelectPickupEventTitle_(title){
   return String(title||'').indexOf(SELECT_PICKUP_EVENT_PREFIX)===0;
 }
 
-function isStudioPresenceEventTitle_(title,isPersonal){
+function isStudioLocation_(location){
+  const safe=String(location||'').toLowerCase().replace(/[\s,.-]/g,'');
+  if(!safe) return false;
+  return safe.indexOf('holzwegpassage3')>=0
+    || safe.indexOf('61440oberursel')>=0
+    || safe.indexOf('holzwegpassgae3')>=0;
+}
+
+function isStudioPresenceEvent_(ev){
+  const isPersonal=!!(ev&&ev.isPersonal);
   if(isPersonal) return false;
-  const safeTitle=String(title||'');
+  const safeTitle=String(ev&&ev.title||'');
   if(!safeTitle||isSelectPickupEventTitle_(safeTitle)) return false;
+  if(isStudioLocation_(ev&&ev.location)) return true;
   if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(kw=>safeTitle.indexOf(kw)>=0)) return false;
   if(/기업|행사|영상|Corporate|Event|Video|Firmen|Individualangebot/i.test(safeTitle)) return false;
   if(/여권|비자|Passfoto|Passport|passport/i.test(safeTitle)) return true;
-  return /프로필|profile|Profil|스튜디오|studio/i.test(safeTitle);
+  return /프로필|profile|Profil|스튜디오|studio|가족|family|커플|couple|백일|돌|baby/i.test(safeTitle);
 }
 
 function getBusyEventsDetailedForRange_(start,end){
@@ -2227,7 +2237,7 @@ function roundUpToQuarterHour_(ms){
 
 function buildSelectPickupWindows_(events){
   const studioEvents=(events||[])
-    .filter(ev=>isStudioPresenceEventTitle_(ev.title,ev.isPersonal))
+    .filter(ev=>isStudioPresenceEvent_(ev))
     .sort((a,b)=>a.start-b.start);
   if(!studioEvents.length) return [];
   if(studioEvents.length===1){
@@ -2249,7 +2259,7 @@ function getSelectPickupSlotsFromDetailedEvents_(dateStr,events,ignoreEventId){
   const pickupEvents=(events||[]).filter(ev=>isSelectPickupEventTitle_(ev.title)&&String(ev.id||'')!==ignoredId);
   const awayEvents=(events||[]).filter(ev=>{
     if(isSelectPickupEventTitle_(ev.title)) return false;
-    return !isStudioPresenceEventTitle_(ev.title,ev.isPersonal);
+    return !isStudioPresenceEvent_(ev);
   });
   const slotSet={};
 
@@ -2274,7 +2284,7 @@ function getSelectPickupCalendarBatch_(year,month){
   const m=parseInt(month,10);
   if(!isFinite(y)||!isFinite(m)) return {unavail:[],slotCounts:{},slotsByDate:{}};
   const ver=getCalCacheVer_();
-  const cacheKey=`select_pickup_batch_v1_${ver}_${y}_${m}`;
+  const cacheKey=`select_pickup_batch_v2_${ver}_${y}_${m}`;
   const cache=CacheService.getScriptCache();
   try{
     const hit=cache.get(cacheKey);
@@ -2312,7 +2322,7 @@ function getSelectPickupSlots_(dateStr,ignoreEventId){
   if(!date||!isSelectPickupDateAllowed_(date)) return [];
   const ignoredId=String(ignoreEventId||'').trim();
   const ver=getCalCacheVer_();
-  const cacheKey=`select_pickup_slots_v1_${ver}_${date}_${ignoredId||'none'}`;
+  const cacheKey=`select_pickup_slots_v2_${ver}_${date}_${ignoredId||'none'}`;
   const cache=CacheService.getScriptCache();
   try{
     const hit=cache.get(cacheKey);
@@ -8674,9 +8684,11 @@ function buildGutscheinEmailDefaults_(g){
     : `€${Number(g.amount||0).toFixed(2)}`;
   const customerName=String(g.purchaserName||g.recipientName||'').trim();
   const ticketUrl=buildGutscheinTicketUrl_(code);
+  const recipientLine=String(g.recipientName||'').trim() ? `Empfänger: ${String(g.recipientName||'').trim()}\n` : '';
+  const senderLine=String(g.purchaserName||'').trim() ? `Absender: ${String(g.purchaserName||'').trim()}\n` : '';
   const greeting=customerName ? `Guten Tag ${customerName},` : 'Guten Tag,';
   const subject=`[Studio mean] Gutschein ${code}`;
-  const body=`${greeting}\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\nGültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`;
+  const body=`${greeting}\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\n${recipientLine}${senderLine}Gültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`;
   return {subject, body, ticketUrl};
 }
 
@@ -8710,10 +8722,10 @@ function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? (g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
-  const qrDataUri=_fetchQrDataUri_(ticketUrl,260);
+  const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const t={
     title:'Geschenk Gutschein',
-    eyebrow:'Studio mean postcard voucher',
+    eyebrow:'Studio mean gift card',
     detailLabel:isProduct?'Produktgutschein':'Wertgutschein',
     subLabel:isProduct?`Wert · €${Number(g.amount||0).toFixed(2)}`:'Gutschein',
     forLabel:'Für',
@@ -8739,130 +8751,139 @@ function buildGutscheinHtml_(g){
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#23201d}
-@page{size:A4 portrait;margin:12mm}
-body{width:186mm;min-height:273mm;margin:0 auto}
-.page{min-height:273mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
+@page{size:148.5mm 110mm;margin:0}
+body{width:148.5mm;margin:0 auto;background:#fff}
+.page{position:relative;width:148.5mm;height:110mm;padding:8mm 8.5mm 8.5mm;background:#fbf8f3;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
-.frame{position:relative;border:1px solid #d9d2c8;padding:16mm 15mm;background:#fbf8f3;min-height:249mm}
-.frame:before,.frame:after,.frame-bottom:before,.frame-bottom:after{content:'';position:absolute;width:24mm;height:18mm;pointer-events:none}
-.frame:before{top:9mm;left:9mm;border-top:1px solid #6f675f;border-left:1px solid #6f675f}
-.frame:after{top:9mm;right:9mm;border-top:1px solid #6f675f;border-right:1px solid #6f675f}
-.frame-bottom:before{bottom:9mm;left:9mm;border-bottom:1px solid #6f675f;border-left:1px solid #6f675f}
-.frame-bottom:after{bottom:9mm;right:9mm;border-bottom:1px solid #6f675f;border-right:1px solid #6f675f}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7a6f66}
-.brand-lockup{display:grid;justify-items:center;gap:4px}
-.brand-wordmark{font-family:Georgia,serif;font-style:italic;font-size:28px;letter-spacing:.02em;font-weight:600;color:#1d1b18}
-.brand-tagline{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8f8376}
-.hero-wrap{display:grid;place-items:center;flex:1;padding:14mm 8mm 10mm}
-.hero-card{width:100%;max-width:132mm;padding:18mm 16mm;border:1px solid #e3dbd0;background:linear-gradient(180deg,#f5f0e7 0%,#fbf8f3 100%);text-align:center}
-.eyebrow{font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:#7d7268}
-.hero-title{font-size:24px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-top:10px}
-.hero-value{font-size:${isProduct?'34px':'58px'};font-weight:700;line-height:1.08;margin-top:14px;word-break:break-word}
-.hero-sub{font-size:13px;color:#70665e;margin-top:10px}
-.people-row{display:grid;grid-template-columns:1fr 1fr;gap:14mm;margin-top:16mm}
-.person{border-bottom:1px solid #bdb3a7;padding-bottom:4mm}
-.person .label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:6px}
-.person .value{font-size:18px;font-weight:600;min-height:20px}
-.message-strip{margin-top:14mm;padding:5mm 6mm;border-top:1px solid #ddd4c7;border-bottom:1px solid #ddd4c7;font-size:13px;line-height:1.65;color:#4e463f;text-align:center;min-height:26mm}
-.front-footer{display:grid;justify-items:center;gap:2mm;padding-top:12mm}
-.front-footer .footer-copy{font-size:11px;color:#6b625b;text-align:center}
-.back-grid{display:grid;grid-template-columns:76mm 1fr;gap:12mm;flex:1;padding-top:12mm}
-.note-card{padding:8mm;border:1px solid #e2d8cc;background:#fff}
-.section-label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:6px}
-.note-card .copy,.terms,.contact-copy{font-size:13px;line-height:1.6;color:#4d453f;white-space:pre-line}
-.qr-card{display:grid;grid-template-columns:42mm 1fr;gap:8mm;padding:8mm;border:1px solid #e2d8cc;background:#fff}
-.qr-box{width:42mm;height:42mm;border:1px solid #e5ddd2;padding:4px;background:#fff;display:flex;align-items:center;justify-content:center}
+.page:before,.page:after,.page-footer:before,.page-footer:after{content:'';position:absolute;width:16mm;height:12mm;pointer-events:none}
+.page:before{top:5mm;left:5mm;border-top:1px solid #7b7168;border-left:1px solid #7b7168}
+.page:after{top:5mm;right:5mm;border-top:1px solid #7b7168;border-right:1px solid #7b7168}
+.page-footer:before{bottom:5mm;left:5mm;border-bottom:1px solid #7b7168;border-left:1px solid #7b7168}
+.page-footer:after{bottom:5mm;right:5mm;border-bottom:1px solid #7b7168;border-right:1px solid #7b7168}
+.page-inner{position:relative;height:100%;border:1px solid #d8cec2;padding:7mm;background:linear-gradient(180deg,#f7f2ea 0%,#fbf8f3 100%)}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.4pt;letter-spacing:.16em;text-transform:uppercase;color:#7a6f66}
+.brand-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:5mm}
+.brand-lockup{display:grid;gap:1.5mm}
+.brand-wordmark{font-family:Georgia,serif;font-style:italic;font-size:17pt;line-height:1;color:#1d1b18}
+.brand-tagline{font-size:6.5pt;letter-spacing:.22em;text-transform:uppercase;color:#8f8376}
+.value-box{margin-top:8mm;padding-top:6mm;border-top:1px solid #ded4c8}
+.eyebrow{font-size:7pt;letter-spacing:.24em;text-transform:uppercase;color:#7d7268}
+.hero-title{font-size:15pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-top:2.4mm}
+.hero-value{font-size:${isProduct?'21pt':'31pt'};font-weight:700;line-height:1.06;margin-top:4mm;max-width:90mm;word-break:break-word}
+.hero-sub{font-size:8.5pt;color:#70665e;margin-top:2.5mm}
+.people-row{display:grid;grid-template-columns:1fr 1fr;gap:5mm;margin-top:7mm}
+.person{padding-top:3mm;border-top:1px solid #ddd3c8}
+.person .label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:#7d7268;margin-bottom:1.4mm}
+.person .value{font-size:11pt;font-weight:600;line-height:1.25;min-height:11pt}
+.message-strip{margin-top:5mm;padding-top:3.2mm;border-top:1px solid #ddd3c8;font-size:8.2pt;line-height:1.55;color:#4e463f;min-height:23mm}
+.front-contact{position:absolute;left:7mm;right:7mm;bottom:7mm;display:flex;justify-content:space-between;align-items:flex-end}
+.front-contact .footer-copy{font-size:7pt;color:#6b625b;text-align:right;line-height:1.45}
+.back-grid{display:grid;grid-template-columns:39mm 1fr;gap:5.5mm;margin-top:6mm}
+.qr-wrap{display:grid;gap:4mm}
+.qr-box{width:39mm;height:39mm;border:1px solid #dfd6ca;padding:3.5mm;background:#fff;display:flex;align-items:center;justify-content:center}
 .qr-box img{width:100%;height:100%;object-fit:contain}
-.qr-fallback{font-size:11px;color:#999;text-align:center;line-height:1.4}
-.detail-stack{display:grid;gap:6mm}
-.detail-item{border-bottom:1px solid #ece3d7;padding-bottom:4mm}
-.detail-item:last-child{border-bottom:none;padding-bottom:0}
-.detail-item .label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:3px}
-.detail-item .value{font-size:15px;line-height:1.45;font-weight:600;word-break:break-word}
-.code-line{font-size:22px;letter-spacing:.12em;font-weight:700}
-.status-pill{display:inline-block;padding:5px 12px;border:1px solid #d2c4b0;background:#f3ebdd;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.back-side{display:flex;flex-direction:column;justify-content:space-between}
-.terms{margin-top:10mm}
-.contact-copy{margin-top:10mm}
+.qr-fallback{font-size:8pt;color:#999;text-align:center;line-height:1.4}
+.code-box{padding-top:3mm;border-top:1px solid #ddd3c8}
+.code-box .label,.detail-item .label,.section-label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:#7d7268;margin-bottom:1.2mm}
+.code-box .value{font-size:13pt;font-weight:700;letter-spacing:.12em;word-break:break-word}
+.detail-stack{display:grid;gap:3.2mm}
+.detail-item{padding-top:3mm;border-top:1px solid #eee5da}
+.detail-item:first-child{padding-top:0;border-top:none}
+.detail-item .value{font-size:9.4pt;line-height:1.45;font-weight:600;word-break:break-word}
+.status-pill{display:inline-block;padding:1.8mm 3.4mm;border:1px solid #d2c4b0;background:#f3ebdd;font-size:6.8pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.note-card{margin-top:5mm;padding-top:3mm;border-top:1px solid #ddd3c8}
+.note-card .copy,.terms,.contact-copy{font-size:8pt;line-height:1.58;color:#4d453f;white-space:pre-line}
+.terms{margin-top:5mm}
+.back-contact{position:absolute;left:52mm;right:7mm;bottom:7mm;display:grid;grid-template-columns:1fr 1fr;gap:6mm}
+.contact-copy{margin-top:0}
 </style></head><body>
 <div class="page front">
-  <div class="frame">
-    <div class="frame-bottom"></div>
+  <div class="page-footer"></div>
+  <div class="page-inner">
     <div class="meta-row">
       <div>${escapeHtml_(g.code||'')}</div>
       <div>${t.valid} · ${validLabel}</div>
     </div>
-    <div class="hero-wrap">
-      <div style="width:100%;">
-        <div class="brand-lockup">
-          <div class="brand-wordmark">Studio_mean</div>
-          <div class="brand-tagline">make meaningful moment</div>
-        </div>
-        <div class="hero-card">
-          <div class="eyebrow">${t.eyebrow}</div>
-          <div class="hero-title">${t.title}</div>
-          <div class="hero-value">${escapeHtml_(amountLabel)}</div>
-          <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
-        </div>
-        <div class="people-row">
-          <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
-          <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
-        </div>
-        <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+    <div class="brand-row">
+      <div class="brand-lockup">
+        <div class="brand-wordmark">Studio_mean</div>
+        <div class="brand-tagline">make meaningful moment</div>
       </div>
+      <div class="eyebrow">${t.eyebrow}</div>
     </div>
-    <div class="front-footer">
-      <div class="brand-wordmark">Studio_mean</div>
-      <div class="brand-tagline">make meaningful moment</div>
-      <div class="footer-copy">${escapeHtml_(t.footer)}</div>
+    <div class="value-box">
+      <div class="hero-title">${t.title}</div>
+      <div class="hero-value">${escapeHtml_(amountLabel)}</div>
+      <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
+    </div>
+    <div class="people-row">
+      <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
+      <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
+    </div>
+    <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+    <div class="front-contact">
+      <div class="section-label">${t.valid}</div>
+      <div class="footer-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
     </div>
   </div>
 </div>
 <div class="page back">
-  <div class="frame">
-    <div class="frame-bottom"></div>
+  <div class="page-footer"></div>
+  <div class="page-inner">
     <div class="meta-row">
       <div>${t.code} · ${escapeHtml_(g.code||'')}</div>
       <div>${t.status} · ${issueBadge}</div>
     </div>
     <div class="back-grid">
-      <div class="back-side">
-        <div>
+      <div class="qr-wrap">
+        <div class="brand-lockup">
           <div class="brand-wordmark">Studio_mean</div>
           <div class="brand-tagline">make meaningful moment</div>
+        </div>
+        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
+        <div class="code-box">
+          <div class="label">${t.code}</div>
+          <div class="value">${escapeHtml_(g.code||'')}</div>
+        </div>
+      </div>
+      <div>
+        <div class="detail-stack">
+          <div class="detail-item">
+            <div class="label">${t.amount}</div>
+            <div class="value">${escapeHtml_(amountLabel)}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.valid}</div>
+            <div class="value">${validLabel}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.status}</div>
+            <div class="value"><span class="status-pill">${issueBadge}</span></div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.forLabel}</div>
+            <div class="value">${escapeHtml_(recipientText)}</div>
+          </div>
+          <div class="detail-item">
+            <div class="label">${t.fromLabel}</div>
+            <div class="value">${escapeHtml_(purchaserText)}</div>
+          </div>
         </div>
         <div class="note-card">
           <div class="section-label">${t.noteTitle}</div>
           <div class="copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
         </div>
-        <div>
-          <div class="section-label">${t.contact}</div>
-          <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
-        </div>
-      </div>
-      <div class="back-side">
-        <div class="qr-card">
-          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
-          <div class="detail-stack">
-            <div class="detail-item">
-              <div class="label">${t.code}</div>
-              <div class="value code-line">${escapeHtml_(g.code||'')}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">${t.amount}</div>
-              <div class="value">${escapeHtml_(amountLabel)}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">${t.valid}</div>
-              <div class="value">${validLabel}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">${t.status}</div>
-              <div class="value"><span class="status-pill">${issueBadge}</span></div>
-            </div>
+        <div class="terms">${escapeHtml_(t.terms)}</div>
+        <div class="back-contact">
+          <div>
+            <div class="section-label">${t.contact}</div>
+            <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
+          </div>
+          <div>
+            <div class="section-label">Ticket</div>
+            <div class="contact-copy">${escapeHtml_(ticketUrl)}</div>
           </div>
         </div>
-        <div class="terms">${escapeHtml_(t.terms)}</div>
       </div>
     </div>
   </div>
