@@ -164,7 +164,6 @@ const COUNTRY_OPTIONS = [
 
 const GROUP_META = {
   pass: {
-    icon: '🛂',
     label: { ko: '여권/비자', en: 'Passport / Visa', de: 'Pass / Visum' },
     sub: {
       ko: '한국 여권, 독일 E-passbild, 해외 비자 사진',
@@ -173,7 +172,6 @@ const GROUP_META = {
     }
   },
   prof: {
-    icon: '👤',
     label: { ko: '프로필', en: 'Profile', de: 'Profil' },
     sub: {
       ko: '개인 프로필, 키즈, 시니어, 백일/돌 촬영',
@@ -182,7 +180,6 @@ const GROUP_META = {
     }
   },
   stud: {
-    icon: '📸',
     label: { ko: '스튜디오', en: 'Studio', de: 'Studio' },
     sub: {
       ko: '가족, 커플, 그룹, 돌상 포함 스튜디오 촬영',
@@ -191,7 +188,6 @@ const GROUP_META = {
     }
   },
   snap: {
-    icon: '🌿',
     label: { ko: '야외스냅', en: 'Outdoor', de: 'Outdoor' },
     sub: {
       ko: '야외 인물, 커플, 가족, 백일/돌 스냅',
@@ -200,7 +196,6 @@ const GROUP_META = {
     }
   },
   wed: {
-    icon: '💍',
     label: { ko: '프리웨딩', en: 'Pre-Wedding', de: 'Pre-Wedding' },
     sub: {
       ko: '야외 프리웨딩, 커플 컨셉 촬영',
@@ -209,7 +204,6 @@ const GROUP_META = {
     }
   },
   biz: {
-    icon: '🎬',
     label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' },
     sub: {
       ko: '돌잔치촬영, 결혼식, 암트결혼식, 기업행사',
@@ -387,11 +381,11 @@ const BG_REC_META = {
 };
 
 const SURVEY_META = [
-  { key: 'clean', icon: '🪴', label: { ko: '깔끔/모던', en: 'Clean / Modern', de: 'Sauber / Modern' } },
-  { key: 'warm', icon: '🌿', label: { ko: '따뜻/자연', en: 'Warm / Natural', de: 'Warm / Natürlich' } },
-  { key: 'pro', icon: '💼', label: { ko: '전문/포멀', en: 'Professional / Formal', de: 'Professionell / Formal' } },
-  { key: 'unique', icon: '✨', label: { ko: '트렌디/유니크', en: 'Trendy / Unique', de: 'Trendy / Einzigartig' } },
-  { key: 'baby', icon: '👶', label: { ko: '백일/돌', en: 'Baby / Birthday', de: 'Baby / Geburtstag' } }
+  { key: 'clean', label: { ko: '깔끔/모던', en: 'Clean / Modern', de: 'Sauber / Modern' } },
+  { key: 'warm', label: { ko: '따뜻/자연', en: 'Warm / Natural', de: 'Warm / Natürlich' } },
+  { key: 'pro', label: { ko: '전문/포멀', en: 'Professional / Formal', de: 'Professionell / Formal' } },
+  { key: 'unique', label: { ko: '트렌디/유니크', en: 'Trendy / Unique', de: 'Trendy / Einzigartig' } },
+  { key: 'baby', label: { ko: '백일/돌', en: 'Baby / Birthday', de: 'Baby / Geburtstag' } }
 ];
 
 const COPY = {
@@ -1725,7 +1719,6 @@ function renderGroups() {
     const selected = state.selectedGroup === groupKey ? ' selected' : '';
     return `
       <button type="button" class="group-card${selected}" data-group="${escapeHtml(groupKey)}">
-        <div class="group-card-icon">${meta.icon}</div>
         <div class="group-card-title">${escapeHtml(label)}</div>
         <div class="group-card-sub">${escapeHtml(sub)}</div>
       </button>
@@ -1906,7 +1899,7 @@ function renderSurveyChips() {
   els.surveyGrid.innerHTML = surveyItems.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.surveyKeys.includes(item.key) ? ' selected' : '';
-    return `<button type="button" class="survey-chip${selected}" data-survey="${item.key}">${item.icon} ${escapeHtml(label)}</button>`;
+    return `<button type="button" class="survey-chip${selected}" data-survey="${item.key}">${escapeHtml(label)}</button>`;
   }).join('');
   els.surveyGrid.querySelectorAll('[data-survey]').forEach((button) => {
     button.addEventListener('click', () => {
