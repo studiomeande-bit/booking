@@ -8796,125 +8796,144 @@ body{width:148.5mm;margin:0 auto;background:#fff}
 .page:after{top:5mm;right:5mm;border-top:1.4px solid var(--line);border-right:1.4px solid var(--line)}
 .page-footer:before{bottom:5mm;left:5mm;border-bottom:1.4px solid var(--line);border-left:1.4px solid var(--line)}
 .page-footer:after{bottom:5mm;right:5mm;border-bottom:1.4px solid var(--line);border-right:1.4px solid var(--line)}
-.page-inner{position:relative;height:100%;border:1.3px solid rgba(45,36,30,.8);padding:7mm;background:transparent}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.4pt;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-.brand-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:3mm}
-.brand-lockup{display:grid;gap:1.5mm}
-.brand-logo{width:42mm;height:auto;display:block}
-.brand-logo.back{width:32mm}
-.brand-tagline{font-size:6.5pt;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
-.value-box{margin-top:7mm;padding-top:6mm;border-top:1.3px solid rgba(45,36,30,.58)}
-.eyebrow{font-size:7pt;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.hero-title{font-size:15pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-top:2.4mm;color:var(--ink)}
-.hero-value{font-size:${isProduct?'21pt':'31pt'};font-weight:700;line-height:1.06;margin-top:4mm;max-width:90mm;word-break:break-word}
-.hero-sub{font-size:8.5pt;color:var(--muted);margin-top:2.5mm}
-.people-row{display:grid;grid-template-columns:1fr 1fr;gap:5mm;margin-top:7mm}
-.person{padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.person .label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:1.4mm;font-weight:700}
-.person .value{font-size:11pt;font-weight:600;line-height:1.25;min-height:11pt}
-.message-strip{margin-top:5mm;padding-top:3.2mm;border-top:1.3px solid rgba(45,36,30,.6);font-size:8.2pt;line-height:1.55;color:var(--ink);min-height:21mm}
-.front-contact{position:absolute;left:7mm;right:7mm;bottom:7mm;display:flex;justify-content:space-between;align-items:flex-end}
-.front-contact .footer-copy{font-size:7.2pt;color:var(--muted);text-align:right;line-height:1.45}
-.back-grid{display:grid;grid-template-columns:39mm 1fr;gap:5.5mm;margin-top:6mm}
-.qr-wrap{display:grid;gap:4mm}
-.qr-box{width:39mm;height:39mm;border:1.4px solid var(--line);padding:3.5mm;background:transparent;display:flex;align-items:center;justify-content:center}
+.page-inner{position:relative;height:100%;border:1.3px solid rgba(45,36,30,.85);padding:7mm 7.2mm;background:transparent}
+.top-table,.people-table,.back-main-table{width:100%;border-collapse:collapse}
+.top-table td,.people-table td,.back-main-table td{vertical-align:top}
+.brand-logo{width:43mm;height:auto;display:block}
+.brand-logo.back{width:34mm}
+.brand-tagline{margin-top:1.2mm;font-size:6.5pt;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+.top-meta{text-align:right}
+.top-meta .label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.top-meta .value{margin-top:1.2mm;font-size:8.3pt;font-weight:700;letter-spacing:.08em;color:var(--ink)}
+.divider{margin:5mm 0 5.5mm;border-top:1.3px solid rgba(45,36,30,.6)}
+.eyebrow{font-size:7.1pt;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.hero-title{margin-top:2.8mm;font-size:16pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.hero-value{margin-top:4mm;font-size:${isProduct?'20pt':'30pt'};font-weight:700;line-height:1.06;word-break:break-word}
+.hero-sub{margin-top:2.6mm;font-size:8.5pt;line-height:1.45;color:var(--muted)}
+.people-table{margin-top:7mm}
+.people-table td{width:50%;padding-right:5mm}
+.people-table td:last-child{padding-right:0;padding-left:5mm}
+.section-label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.line-block{padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
+.line-block .value{margin-top:1.5mm;font-size:11pt;font-weight:600;line-height:1.28;word-break:break-word}
+.message-card{margin-top:5mm;padding-top:3.2mm;border-top:1.3px solid rgba(45,36,30,.6)}
+.message-copy{margin-top:1.6mm;font-size:8.2pt;line-height:1.55;color:var(--ink);min-height:18mm}
+.foot-note{margin-top:5mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6);font-size:7.2pt;line-height:1.55;color:var(--muted)}
+.back-head{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.back-head-value{margin-top:1.2mm;font-size:8.4pt;font-weight:700;letter-spacing:.08em}
+.back-main-table{margin-top:5.5mm}
+.qr-col{width:42mm;padding-right:6mm}
+.detail-col{padding-left:2mm}
+.qr-box{width:39mm;height:39mm;border:1.4px solid var(--line);padding:3.5mm;background:transparent;text-align:center}
 .qr-box img{width:100%;height:100%;object-fit:contain}
-.qr-fallback{font-size:8pt;color:#999;text-align:center;line-height:1.4}
-.code-box{padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.code-box .label,.detail-item .label,.section-label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:1.2mm;font-weight:700}
-.code-box .value{font-size:13pt;font-weight:700;letter-spacing:.12em;word-break:break-word}
-.detail-stack{display:grid;gap:3.2mm}
-.detail-item{padding-top:3mm;border-top:1.2px solid rgba(45,36,30,.38)}
-.detail-item:first-child{padding-top:0;border-top:none}
-.detail-item .value{font-size:9.4pt;line-height:1.45;font-weight:600;word-break:break-word}
-.note-card{margin-top:5mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.note-card .copy,.terms,.contact-copy{font-size:8pt;line-height:1.58;color:var(--ink);white-space:pre-line}
-.terms{margin-top:5mm}
-.back-contact{position:absolute;left:52mm;right:7mm;bottom:7mm}
-.contact-copy{margin-top:0}
+.qr-fallback{font-size:8pt;color:#999;line-height:1.4}
+.code-box{margin-top:4mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
+.code-box .value{margin-top:1.2mm;font-size:12.4pt;font-weight:700;letter-spacing:.12em;word-break:break-word}
+.detail-row{padding-top:3mm;border-top:1.2px solid rgba(45,36,30,.42)}
+.detail-row.first{padding-top:0;border-top:none}
+.detail-row .value{margin-top:1.5mm;font-size:9.4pt;line-height:1.45;font-weight:600;word-break:break-word}
+.detail-row .copy{margin-top:1.5mm;font-size:8pt;line-height:1.56;color:var(--ink);white-space:pre-line}
+.contact-block{margin-top:5mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
+.contact-copy{margin-top:1.6mm;font-size:8pt;line-height:1.56;color:var(--ink)}
 </style></head><body>
 <div class="page front">
   <div class="page-footer"></div>
   <div class="page-inner">
-    <div class="meta-row">
-      <div>${t.eyebrow}</div>
-      <div>${t.valid} · ${validLabel}</div>
+    <table class="top-table">
+      <tr>
+        <td>
+          ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">Studio mean</div>`}
+          <div class="brand-tagline">make meaningful moment</div>
+        </td>
+        <td class="top-meta">
+          <div class="label">${t.valid}</div>
+          <div class="value">${validLabel}</div>
+        </td>
+      </tr>
+    </table>
+    <div class="divider"></div>
+    <div class="eyebrow">${t.title}</div>
+    <div class="hero-value">${escapeHtml_(amountLabel)}</div>
+    <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
+    <table class="people-table">
+      <tr>
+        <td>
+          <div class="line-block">
+            <div class="section-label">${t.forLabel}</div>
+            <div class="value">${escapeHtml_(recipientText)}</div>
+          </div>
+        </td>
+        <td>
+          <div class="line-block">
+            <div class="section-label">${t.fromLabel}</div>
+            <div class="value">${escapeHtml_(purchaserText)}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+    <div class="message-card">
+      <div class="section-label">${t.message}</div>
+      <div class="message-copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
     </div>
-    <div class="brand-row">
-      <div class="brand-lockup">
-        ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">Studio mean</div>`}
-        <div class="brand-tagline">make meaningful moment</div>
-      </div>
-    </div>
-    <div class="value-box">
-      <div class="hero-title">${t.title}</div>
-      <div class="hero-value">${escapeHtml_(amountLabel)}</div>
-      <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
-    </div>
-    <div class="people-row">
-      <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
-      <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
-    </div>
-    <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
-    <div class="front-contact">
-      <div class="footer-copy">${escapeHtml_(t.validityNote)}</div>
-      <div class="footer-copy">${escapeHtml_(t.valid)} · ${validLabel}</div>
-    </div>
+    <div class="foot-note">${escapeHtml_(t.validityNote)} Keine Barauszahlung.</div>
   </div>
 </div>
 <div class="page back">
   <div class="page-footer"></div>
   <div class="page-inner">
-    <div class="meta-row">
-      <div>${t.code} · ${escapeHtml_(g.code||'')}</div>
-      <div>${t.valid} · ${validLabel}</div>
-    </div>
-    <div class="back-grid">
-      <div class="qr-wrap">
-        <div class="brand-lockup">
+    <table class="top-table">
+      <tr>
+        <td>
+          <div class="back-head">${t.code}</div>
+          <div class="back-head-value">${escapeHtml_(g.code||'')}</div>
+        </td>
+        <td class="top-meta">
+          <div class="label">${t.valid}</div>
+          <div class="value">${validLabel}</div>
+        </td>
+      </tr>
+    </table>
+    <div class="divider"></div>
+    <table class="back-main-table">
+      <tr>
+        <td class="qr-col">
           ${logoDataUri?`<img class="brand-logo back" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:13pt;font-weight:700;">Studio mean</div>`}
           <div class="brand-tagline">make meaningful moment</div>
-        </div>
-        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
-        <div class="code-box">
-          <div class="label">${t.code}</div>
-          <div class="value">${escapeHtml_(g.code||'')}</div>
-        </div>
-      </div>
-      <div>
-        <div class="detail-stack">
-          <div class="detail-item">
-            <div class="label">${t.amount}</div>
+          <div style="height:5mm;"></div>
+          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
+          <div class="code-box">
+            <div class="section-label">${t.code}</div>
+            <div class="value">${escapeHtml_(g.code||'')}</div>
+          </div>
+        </td>
+        <td class="detail-col">
+          <div class="detail-row first">
+            <div class="section-label">${t.amount}</div>
             <div class="value">${escapeHtml_(amountLabel)}</div>
           </div>
-          <div class="detail-item">
-            <div class="label">${t.valid}</div>
-            <div class="value">${validLabel}</div>
-          </div>
-          <div class="detail-item">
-            <div class="label">${t.forLabel}</div>
+          <div class="detail-row">
+            <div class="section-label">${t.forLabel}</div>
             <div class="value">${escapeHtml_(recipientText)}</div>
           </div>
-          <div class="detail-item">
-            <div class="label">${t.fromLabel}</div>
+          <div class="detail-row">
+            <div class="section-label">${t.fromLabel}</div>
             <div class="value">${escapeHtml_(purchaserText)}</div>
           </div>
-        </div>
-        <div class="note-card">
-          <div class="section-label">${t.noteTitle}</div>
-          <div class="copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
-        </div>
-        <div class="note-card">
-          <div class="section-label">${t.usageTitle}</div>
-          <div class="copy">${escapeHtml_(t.validityNote)}</div>
-        </div>
-        <div class="terms">${escapeHtml_(t.terms)}</div>
-        <div class="back-contact">
-          <div class="section-label">${t.contact}</div>
-          <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
-        </div>
-      </div>
-    </div>
+          <div class="detail-row">
+            <div class="section-label">${t.usageTitle}</div>
+            <div class="copy">${escapeHtml_(t.validityNote)}</div>
+          </div>
+          <div class="detail-row">
+            <div class="section-label">Hinweise</div>
+            <div class="copy">${escapeHtml_(t.terms)}</div>
+          </div>
+          <div class="contact-block">
+            <div class="section-label">${t.contact}</div>
+            <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
+          </div>
+        </td>
+      </tr>
+    </table>
   </div>
 </div>
 </body></html>`;
