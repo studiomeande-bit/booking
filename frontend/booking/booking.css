@@ -184,7 +184,7 @@ h1 {
   background: #f7f4ee;
   font-size: 13px;
   position: relative;
-  width: min(720px, 100%);
+  width: 100%;
 }
 .banner::before {
   content: "";
@@ -204,7 +204,7 @@ h1 {
   border: 0;
   background: #f7f4ee;
   box-shadow: none;
-  width: min(720px, 100%);
+  width: 100%;
 }
 .notice-title {
   font-size: 11px;
