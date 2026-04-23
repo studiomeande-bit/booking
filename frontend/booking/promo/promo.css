@@ -404,7 +404,7 @@ textarea,
   padding:0 0 calc(40px + var(--safe-bottom));
 }
 .site-footer-inner{
-  width:min(1180px, calc(100% - 32px));
+  width:min(1120px, calc(100% - 32px));
   margin:0 auto;
   padding:28px 0 0;
   display:grid;
