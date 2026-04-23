@@ -262,6 +262,7 @@ const AGE_META = [
 ];
 
 const BABY_TYPE_META = [
+  { key: 'infant', label: { ko: '일반 영유아', en: 'General Infant', de: 'Allgemeines Baby' } },
   { key: 'baekil', label: { ko: '백일', en: '100 Days', de: '100 Tage' } },
   { key: 'dol', label: { ko: '돌', en: '1st Birthday', de: '1. Geburtstag' } }
 ];
@@ -895,7 +896,7 @@ const state = {
   optionKeys: [],
   surveyKeys: [],
   ageGroup: 'adult',
-  babyType: 'baekil',
+  babyType: 'infant',
   bgColors: [],
   businessMode: 'photo',
   businessHours: '2',
@@ -1888,7 +1889,7 @@ function renderStepWarnings() {
   const emailOk = /\S+@\S+\.\S+/.test(email);
   const gdprOk = formData.get('gdprConsent') === 'on';
   const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
-  const babyNameOk = !((product?.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
+  const babyNameOk = !((product?.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
@@ -1911,9 +1912,9 @@ function renderStepWarnings() {
         : '필수 동의 항목을 체크해야 예약 제출이 가능합니다.';
   } else if (!babyNameOk) {
     step5Message = state.lang === 'en'
-      ? 'Enter the baby name for baby/first birthday sessions.'
+      ? 'Enter the baby name for 100-day / 1st birthday sessions.'
       : state.lang === 'de'
-        ? 'Geben Sie den Babynamen für Baby- oder 1. Geburtstag-Shootings ein.'
+        ? 'Geben Sie den Babynamen für 100-Tage- oder 1. Geburtstags-Shootings ein.'
         : '백일/돌 촬영은 아기 이름 입력이 필요합니다.';
   } else if (!reshootingOk) {
     step5Message = state.lang === 'en'
@@ -1990,7 +1991,7 @@ function renderAgeChips() {
   els.ageGrid.querySelectorAll('[data-age]').forEach((button) => {
     button.addEventListener('click', () => {
       state.ageGroup = button.dataset.age;
-      if (state.ageGroup !== 'baby') state.babyType = 'baekil';
+      if (state.ageGroup !== 'baby') state.babyType = 'infant';
       renderAgeChips();
       renderBabyTypeChips();
       renderSeniorWarning();
@@ -2926,7 +2927,7 @@ function selectGroup(groupKey) {
   state.optionKeys = [];
   state.surveyKeys = [];
   state.ageGroup = 'adult';
-  state.babyType = 'baekil';
+  state.babyType = 'infant';
   state.bgColors = [];
   state.businessMode = 'photo';
   state.businessHours = '2';
@@ -2972,7 +2973,7 @@ async function selectProduct(productId) {
   }
   state.surveyKeys = [];
   state.ageGroup = 'adult';
-  state.babyType = 'baekil';
+  state.babyType = 'infant';
   state.bgColors = [];
   state.businessMode = 'photo';
   state.businessHours = '2';
@@ -3062,7 +3063,7 @@ function renderGeneralPanel() {
 
 function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
-  const needsBabyName = (group === 'prof' && state.ageGroup === 'baby')
+  const needsBabyName = (group === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant')
     || state.surveyKeys.includes('baby');
   const needsPayerName = Number(state.quote?.depositAmount || getPreviewQuote()?.depositAmount || 0) > 0;
   const needsBusinessInvoice = !!els.form?.elements?.businessInvoiceNeeded?.checked;
@@ -3940,7 +3941,7 @@ function updateSubmitState() {
   const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
   const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
   const babyName = String(formData.get('babyName') || '').trim();
-  const babyNameOk = !((product.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby')) || !!babyName;
+  const babyNameOk = !((product.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant') || state.surveyKeys.includes('baby')) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
@@ -4039,11 +4040,11 @@ async function onSubmit(event) {
   const userMemo = String(formData.get('memo') || '').trim();
   const passMemoPrefix = buildPassportMemoPrefix();
   payload.memo = [passMemoPrefix, userMemo].filter(Boolean).join('\n');
-  if (state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' && !payload.babyName) {
+  if (state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant' && !payload.babyName) {
     setBanner(
       state.lang === 'en'
         ? 'Please enter the baby name for the 100-day / 1st birthday session.'
-        : state.lang === 'de'
+      : state.lang === 'de'
           ? 'Bitte geben Sie den Babynamen für das 100-Tage-/1. Geburtstags-Shooting ein.'
           : '백일/돌 촬영은 아기 이름을 입력해 주세요.',
       'error'
@@ -4151,7 +4152,7 @@ function resetBookingFlow() {
   state.optionKeys = [];
   state.surveyKeys = [];
   state.ageGroup = 'adult';
-  state.babyType = 'baekil';
+  state.babyType = 'infant';
   state.bgColors = [];
   state.businessMode = 'photo';
   state.businessHours = '2';
