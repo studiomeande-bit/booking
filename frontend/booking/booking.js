@@ -1930,9 +1930,13 @@ function renderStepWarnings() {
 }
 
 function renderSurveyChips() {
+  const allowBabySurvey = state.selectedProduct?.g === 'stud' || state.selectedProduct?.g === 'snap';
+  if (!allowBabySurvey) {
+    state.surveyKeys = state.surveyKeys.filter((key) => key !== 'baby');
+  }
   const surveyItems = SURVEY_META.filter((item) => {
     if (item.key !== 'baby') return true;
-    return state.selectedProduct?.g === 'prof' || state.selectedProduct?.g === 'stud' || state.selectedProduct?.g === 'snap';
+    return allowBabySurvey;
   });
   els.surveyGrid.innerHTML = surveyItems.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
