@@ -8771,94 +8771,102 @@ function buildGutscheinHtml_(g){
     footerLine1:'Holzwegpassage 3, 61440 Oberursel',
     footerLine2:'Tel : +49 176 6093 9400'
   };
-  const panelTitle=isProduct ? amountLabel : amountLabel;
-  const panelSub=isProduct ? `Produktgutschein · Wert €${Number(g.amount||0).toFixed(2)}` : 'Wertgutschein';
-  const recipientText=String(g.recipientName||'').trim() || '__________';
-  const purchaserText=String(g.purchaserName||'').trim() || '__________';
+  const recipientText=String(g.recipientName||'').trim() || ' ';
+  const purchaserText=String(g.purchaserName||'').trim() || ' ';
   const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
 <style>
 *{box-sizing:border-box}
 :root{
-  --ink:#15110e;
-  --accent:#1e1915;
-  --muted:#4a3d33;
-  --line:#2c241f;
-  --panel:#d9d3cb;
+  --ink:#171513;
+  --accent:#2b2520;
+  --muted:#5c5248;
+  --line:#302821;
+  --panel:#e7e4df;
 }
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
-@page{size:148.5mm 110mm;margin:0}
-body{width:148.5mm;margin:0 auto;background:#fff}
-.page{position:relative;width:148.5mm;height:110mm;padding:6mm 6.2mm;background:#fff;page-break-after:always;overflow:hidden}
+@page{size:110mm 148.5mm;margin:0}
+body{width:110mm;margin:0 auto;background:#fff}
+.page{position:relative;width:110mm;height:148.5mm;padding:6mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
-.inner{position:relative;height:100%;padding:1mm 0}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.2pt;line-height:1.25;color:var(--muted)}
-.meta-row .code{letter-spacing:.08em}
-.meta-row .valid{letter-spacing:.04em}
-.script-title{margin-top:4mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:31pt;line-height:.96;color:var(--ink);white-space:pre-line}
-.hero-panel{margin-top:3mm;width:100%;height:62mm;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8mm}
-.hero-panel .amount{font-size:${isProduct?'18pt':'30pt'};font-weight:700;line-height:1.08;color:var(--ink);word-break:break-word}
-.hero-panel .sub{margin-top:3mm;font-size:8.6pt;line-height:1.45;color:var(--muted)}
-.notes{margin-top:4.2mm;padding-left:4.5mm;font-size:7.8pt;line-height:1.45;color:var(--ink)}
-.logo-footer{position:absolute;left:0;right:0;bottom:2mm;text-align:center}
-.brand-logo{width:47mm;height:auto;display:block;margin:0 auto}
-.brand-logo.small{width:46mm}
-.brand-tagline{margin-top:1.2mm;font-size:6.3pt;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-.footer-line{margin-top:2mm;font-size:8.3pt;line-height:1.45;color:var(--ink)}
-.back-field{font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:21pt;line-height:1;color:var(--ink)}
-.line{display:inline-block;min-width:53mm;border-bottom:1.4px solid var(--line);transform:translateY(-1.5mm);margin-left:3mm}
-.back-panel{margin-top:3mm;width:100%;height:70mm;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:9mm}
-.back-panel .amount{font-size:${isProduct?'16pt':'27pt'};font-weight:700;line-height:1.08;color:var(--ink);word-break:break-word}
-.back-panel .sub{margin-top:3mm;font-size:8.4pt;line-height:1.4;color:var(--muted)}
-.back-panel .qr-wrap{margin-top:5mm;display:flex;justify-content:center}
-.back-panel .qr-box{width:24mm;height:24mm;border:1.2px solid rgba(44,36,31,.35);background:#fff;display:flex;align-items:center;justify-content:center;padding:2mm}
-.back-panel .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
-.back-panel .qr-fallback{font-size:7pt;color:var(--muted);line-height:1.3}
-.back-panel .code-hint{margin-top:2mm;font-size:6.7pt;letter-spacing:.08em;color:var(--muted)}
-.from-wrap{margin-top:4mm;text-align:right}
+.inner{position:relative;height:100%}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.4pt;line-height:1.25;color:var(--muted);letter-spacing:.04em}
+.script-title{margin:4mm 0 2mm 0;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:29pt;line-height:.98;color:var(--ink);white-space:pre-line}
+.frame-corner{position:absolute;width:14mm;height:10mm}
+.frame-corner::before,.frame-corner::after{content:'';position:absolute;background:rgba(48,40,33,.65)}
+.frame-corner::before{width:100%;height:.55mm;left:0;top:0}
+.frame-corner::after{width:.55mm;height:100%;left:0;top:0}
+.frame-corner.tr{right:0;top:0;transform:scaleX(-1)}
+.frame-corner.tl{left:0;top:0}
+.panel{position:relative;width:100%;background:var(--panel)}
+.panel.front{height:76mm;margin-top:1.5mm;padding:6mm 5.5mm}
+.panel.back{height:86mm;margin-top:5mm;padding:6mm 5.5mm}
+.value-lockup{position:absolute;left:5.5mm;bottom:6mm}
+.value-lockup .value{font-size:${isProduct?'15pt':'26pt'};font-weight:700;line-height:1;letter-spacing:.01em;color:var(--ink)}
+.value-lockup .kind{margin-top:1.4mm;font-size:8pt;line-height:1.3;color:var(--muted)}
+.notes{margin:5mm 0 0 0;padding-left:4.7mm;font-size:7.7pt;line-height:1.42;color:var(--ink)}
+.notes li{margin:.8mm 0}
+.logo-footer{position:absolute;left:0;right:0;bottom:3mm;text-align:center}
+.brand-logo{width:45mm;height:auto;display:block;margin:0 auto}
+.footer-line{margin-top:2mm;font-size:8.1pt;line-height:1.45;color:var(--ink)}
+.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:20pt;line-height:1;color:var(--ink)}
+.field-row.right{justify-content:flex-end}
+.field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .8mm 0;font-size:13.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+.field-row.right .field-line{text-align:right}
+.qr-wrap{position:absolute;right:5.5mm;bottom:6mm}
+.qr-box{width:23mm;height:23mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.8mm}
+.qr-box img{width:100%;height:100%;object-fit:contain;display:block}
+.qr-fallback{font-size:7pt;color:var(--muted);line-height:1.3;text-align:center}
+.qr-caption{margin-top:1.2mm;font-size:6.7pt;letter-spacing:.08em;color:var(--muted);text-align:center}
+.logo-footer.back{bottom:6mm}
 </style></head><body>
 <div class="page front">
   <div class="inner">
+    <div class="frame-corner tl"></div>
+    <div class="frame-corner tr"></div>
     <div class="meta-row">
       <div class="code">${escapeHtml_(g.code||'')}</div>
       <div class="valid">${t.valid} : ${validLabel}</div>
     </div>
     <div class="script-title">${t.title}</div>
-    <div class="hero-panel">
-      <div class="amount">${escapeHtml_(panelTitle)}</div>
-      <div class="sub">${escapeHtml_(panelSub)}</div>
+    <div class="panel front">
+      <div class="value-lockup">
+        <div class="value">${escapeHtml_(amountLabel)}</div>
+        <div class="kind">${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}</div>
+      </div>
     </div>
     <ul class="notes">
       <li>${escapeHtml_(t.useIntro)}</li>
       <li>${escapeHtml_(t.combineNote)}</li>
+      <li>${escapeHtml_(t.redeemNote)}</li>
       <li>${escapeHtml_(t.validityNote)}</li>
       <li>${escapeHtml_(t.refundNote)}</li>
     </ul>
     <div class="logo-footer">
       ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
-      <div class="brand-tagline">${t.tagline}</div>
       <div class="footer-line">${t.footerLine1}<br>${t.footerLine2}</div>
     </div>
   </div>
 </div>
 <div class="page back">
   <div class="inner">
-    <div class="back-field">${t.forLabel}<span class="line"></span></div>
-    <div class="back-panel">
-      <div class="amount">${escapeHtml_(panelTitle)}</div>
-      <div class="sub">${escapeHtml_(panelSub)}</div>
+    <div class="field-row"><span>${t.forLabel}</span><span class="field-line">${escapeHtml_(recipientText)}</span></div>
+    <div class="panel back">
+      <div class="value-lockup">
+        <div class="value">${escapeHtml_(amountLabel)}</div>
+        <div class="kind">${escapeHtml_(g.code||'')}</div>
+      </div>
       <div class="qr-wrap">
         <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
+        <div class="qr-caption">QR</div>
       </div>
-      <div class="code-hint">${escapeHtml_(g.code||'')}</div>
     </div>
-    <div class="from-wrap">
-      <div class="back-field">${t.fromLabel}<span class="line"></span></div>
+    <div style="margin-top:7mm">
+      <div class="field-row right"><span>${t.fromLabel}</span><span class="field-line">${escapeHtml_(purchaserText)}</span></div>
     </div>
-    <div class="logo-footer">
-      ${logoDataUri?`<img class="brand-logo small" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
-      <div class="brand-tagline">${t.tagline}</div>
+    <div class="logo-footer back">
+      ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
     </div>
   </div>
 </div>
