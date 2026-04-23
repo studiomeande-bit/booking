@@ -447,6 +447,7 @@ const COPY = {
     ageFieldLabel: '촬영 대상 연령',
     ageFieldHint: '영유아(만 0~2세) · 키즈(만 3~13세) · 성인(만 14~69세) · 시니어(만 70세 이상)',
     babyTypeFieldLabel: '촬영 종류',
+    optionFieldLabel: '추가 옵션',
     reshootingTitle: '재촬영 약관 동의',
     passAddonTitle: '여권사진 추가 촬영',
     passAddonCopy: '프로필/스튜디오와 함께 여권사진을 추가합니다.',
@@ -609,6 +610,7 @@ const COPY = {
     ageFieldLabel: 'Age Group',
     ageFieldHint: 'Infant (0-2) · Kids (3-13) · Adult (14-69) · Senior (70+)',
     babyTypeFieldLabel: 'Session Type',
+    optionFieldLabel: 'Additional Options',
     reshootingTitle: 'Reshooting Consent',
     passAddonTitle: 'Passport Add-on',
     passAddonCopy: 'Add passport photos together with profile/studio.',
@@ -771,6 +773,7 @@ const COPY = {
     ageFieldLabel: 'Altersgruppe',
     ageFieldHint: 'Säugling (0-2) · Kinder (3-13) · Erwachsene (14-69) · Senioren (ab 70)',
     babyTypeFieldLabel: 'Aufnahmetyp',
+    optionFieldLabel: 'Zusätzliche Optionen',
     reshootingTitle: 'Einwilligung zum Nachshooting',
     passAddonTitle: 'Passfoto Zusatz',
     passAddonCopy: 'Passfotos zusammen mit Profil/Studio hinzufügen.',
@@ -948,6 +951,7 @@ const els = {
   seniorWarning: document.getElementById('seniorWarning'),
   babyTypeField: document.getElementById('babyTypeField'),
   babyTypeGrid: document.getElementById('babyTypeGrid'),
+  optionField: document.getElementById('optionField'),
   reshootingField: document.getElementById('reshootingField'),
   reshootingConsent: document.getElementById('reshootingConsent'),
   reshootingText: document.getElementById('reshootingText'),
@@ -1368,6 +1372,7 @@ function applyCopy() {
   setText('ageFieldLabel', copy.ageFieldLabel);
   setText('ageFieldHint', copy.ageFieldHint);
   setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
+  setText('optionFieldLabel', copy.optionFieldLabel);
   setText('reshootingTitle', copy.reshootingTitle);
   setText('passAddonTitle', copy.passAddonTitle);
   setText('passAddonCopy', copy.passAddonCopy);
@@ -3008,6 +3013,7 @@ function renderGeneralPanel() {
   els.generalPanel.classList.toggle('hidden', !showGeneral);
   if (!showGeneral) {
     els.optionGrid.innerHTML = '';
+    els.optionField?.classList.add('hidden-field');
     syncConditionalFields();
     return;
   }
@@ -3025,14 +3031,16 @@ function renderGeneralPanel() {
   renderBabyTypeChips();
   renderBgChips();
   renderBusinessOptions();
-  const options = Object.entries(OPTION_META)
+  const optionMarkup = Object.entries(OPTION_META)
     .filter(([, meta]) => meta.groups.includes(product.g))
     .map(([key, meta]) => {
       const label = meta.label[state.lang] || meta.label.ko;
       const selected = state.optionKeys.includes(key) ? ' selected' : '';
       return `<button type="button" class="chip-btn toggle-chip${selected}" data-option="${key}">${escapeHtml(label)}</button>`;
     }).join('');
-  els.optionGrid.innerHTML = options || `<div class="muted-copy">${escapeHtml(getCopy().noOptions)}</div>`;
+  const hasOptions = !!optionMarkup;
+  els.optionField?.classList.toggle('hidden-field', !hasOptions);
+  els.optionGrid.innerHTML = optionMarkup;
   renderPeopleOptions();
   els.optionGrid.querySelectorAll('[data-option]').forEach((button) => {
     button.addEventListener('click', () => {

@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260423-mobilefix2" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260423-profileui1" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260423-mobilefix2">
+  <link rel="stylesheet" href="./booking.min.css?v=20260423-profileui1">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
@@ -135,7 +135,10 @@
           </select>
           <input id="generalPeopleCustom" class="hidden-field" type="number" min="6" step="1" placeholder="6명 이상 직접입력">
         </label>
-        <div id="optionGrid" class="chip-grid"></div>
+        <div id="optionField" class="hidden-field form-block">
+          <span id="optionFieldLabel" class="block-label">추가 옵션</span>
+          <div id="optionGrid" class="chip-grid"></div>
+        </div>
         <div id="passAddonField" class="hidden-field detail-box">
           <div id="passAddonTitle" class="detail-title">여권사진 추가 촬영</div>
           <label class="checkbox-row consent-row" style="margin-top:10px;">
@@ -406,6 +409,6 @@
       </div>
     </div>
   </footer>
-  <script src="./booking.min.js?v=20260423-mobilefix2"></script>
+  <script src="./booking.min.js?v=20260423-profileui1"></script>
 </body>
 </html>
