@@ -9137,18 +9137,20 @@ function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
   const defaults=buildGutscheinEmailDefaults_(Object.assign({},g,{lang:effectiveLang}));
   const finalSubject=String(subject||g.mailSubject||defaults.subject||'').replace(/\{\{code\}\}/g,g.code||'').trim();
   const finalBody=String(body||g.mailBody||defaults.body||'').replace(/\{\{code\}\}/g,g.code||'').trim();
-  let pdf=null;
   const expectedQrValue=buildGutscheinTicketUrl_(g.code);
-  if(g.pdfFileId){
-    try{pdf=DriveApp.getFileById(g.pdfFileId);}catch(e){pdf=null;}
+  let pdf=null;
+  const created=createGutscheinPdf_(Object.assign({},g,{lang:effectiveLang,qrValue:expectedQrValue}));
+  pdf=DriveApp.getFileById(created.fileId);
+  try{
+    if(g.pdfFileId && String(g.pdfFileId).trim() && g.pdfFileId!==created.fileId){
+      DriveApp.getFileById(g.pdfFileId).setTrashed(true);
+    }
+  }catch(e){
+    Logger.log('gutschein old pdf trash fail: '+e.message);
   }
-  if(!pdf || String(g.qrValue||'').trim()!==expectedQrValue){
-    const created=createGutscheinPdf_(Object.assign({},g,{lang:effectiveLang,qrValue:expectedQrValue}));
-    pdf=DriveApp.getFileById(created.fileId);
-    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF파일ID']+1).setValue(created.fileId);
-    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF링크']+1).setValue(created.url);
-    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['QR값']+1).setValue(expectedQrValue);
-  }
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF파일ID']+1).setValue(created.fileId);
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['PDF링크']+1).setValue(created.url);
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['QR값']+1).setValue(expectedQrValue);
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
   const buttonLabel=effectiveLang==='ko' ? '모바일 티켓 열기' : (effectiveLang==='en' ? 'Open mobile ticket' : 'Mobiles Ticket öffnen');
   const buttonNote=effectiveLang==='ko'
