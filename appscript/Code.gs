@@ -2388,17 +2388,19 @@ function _getBusinessGuideHtml(lang,quote){
 }
 
 function _getSignatureHtml(){
-  return`<hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0;"><div style="font-size:12px;color:#64748b;line-height:1.9;">
-감사합니다!<br>
-Mit freundlichen Grüßen<br><br>
+  return`<hr style="margin:18px 0 14px;border:none;border-top:1px solid #e2e8f0;"><div style="font-size:12px;color:#64748b;line-height:1.55;">
+<div style="margin:0 0 10px;">감사합니다!</div>
+<div style="margin:0 0 12px;">Mit freundlichen Grüßen</div>
+<div style="margin:0 0 10px;">
 <b style="color:#2D2A26;font-size:13px;">Studio_mean</b><br>
 Photographer &amp; Videographer<br>
-<b>TAEWOONG MIN</b><br><br>
-Holzwegpassage 3, 61440 Oberursel<br>
-Tel: <a href="tel:+4917660939400" style="color:#2563eb;">+49 176 6093 9400</a><br>
-E-mail: <a href="mailto:studio.mean.de@gmail.com" style="color:#2563eb;">studio.mean.de@gmail.com</a><br>
-Instagram: <a href="https://www.instagram.com/studio_mean" style="color:#2563eb;">@studio_mean</a><br><br>
-USt-IdNr: DE440009941
+<b>TAEWOONG MIN</b>
+</div>
+<div style="margin:0 0 8px;">Holzwegpassage 3, 61440 Oberursel</div>
+<div style="margin:0 0 4px;">Tel: <a href="tel:+4917660939400" style="color:#2563eb;">+49 176 6093 9400</a></div>
+<div style="margin:0 0 4px;">E-mail: <a href="mailto:studio.mean.de@gmail.com" style="color:#2563eb;">studio.mean.de@gmail.com</a></div>
+<div style="margin:0 0 8px;">Instagram: <a href="https://www.instagram.com/studio_mean" style="color:#2563eb;">@studio_mean</a></div>
+<div>USt-IdNr: DE440009941</div>
 </div>`;
 }
 
@@ -4878,41 +4880,52 @@ function submitPhotoSelection(sessionId,sub){
         bSh.getRange(bookingRow,19).setValue(existing?existing+' | '+summary:summary);
       }catch(e){}
     }
+    let shouldIssueExtraInvoice=false;
+    if(bookingRow>1){
+      try{
+        const bookingInvoiceFlag=String(sheets.bookingSheet.getRange(bookingRow,BOOKING_COL['사업자송장필요']+1).getValue()||'').trim();
+        shouldIssueExtraInvoice=bookingInvoiceFlag==='Y';
+      }catch(e){
+        shouldIssueExtraInvoice=false;
+      }
+    }
     if(totalExtra>0){
       try{
         syncSelectPrintOrder_(sheets.printSheet,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now);
       }catch(e){}
-      try{
-        const items=[];
-        if(extraRetouch>0){
-          items.push({description:`추가 보정 ${extraRetouch}장`,qty:1,unitGross:extraRetouchAmt});
-        }
-        prints.forEach(p=>{
-          items.push({description:`${p.photoNum}번 ${p.label}`,qty:Number(p.qty)||1,unitGross:Number(p.price)||0});
-        });
-        const res=createInvoiceRecord_({
-          bookingRowIndex:bookingRow||'',
-          type:'셀렉추가금',
-          customerName:String(row[SELECT_COL['고객명']]||''),
-          customerEmail:String(row[SELECT_COL['이메일']]||''),
-          customerPhone:String(row[SELECT_COL['연락처']]||''),
-          customerAddress:(()=>{
-            try{
-              if(bookingRow>1){
-                const bookRow=sheets.bookingSheet.getRange(bookingRow,1,1,sheets.bookingSheet.getLastColumn()).getValues()[0];
-                return String(bookRow[26]||'')||String(delivery.mailAddress||'');
-              }
-            }catch(e){}
-            return String(delivery.mailAddress||'');
-          })(),
-          dateStr:String(row[SELECT_COL['촬영일']]||''),
-          customProduct:'셀렉 추가금',
-          memo:`사진셀렉 제출 자동 생성 (${sessionId.slice(0,8)})`,
-          items
-        });
-        extraInvoiceNumber=res.invoiceNumber||'';
-        if(extraInvoiceNumber) selSh.getRange(rowNum,SELECT_COL['추가금인보이스번호']+1).setValue(extraInvoiceNumber);
-      }catch(e){Logger.log('submitPhotoSelection invoice error: '+e.message);}
+      if(shouldIssueExtraInvoice){
+        try{
+          const items=[];
+          if(extraRetouch>0){
+            items.push({description:`추가 보정 ${extraRetouch}장`,qty:1,unitGross:extraRetouchAmt});
+          }
+          prints.forEach(p=>{
+            items.push({description:`${p.photoNum}번 ${p.label}`,qty:Number(p.qty)||1,unitGross:Number(p.price)||0});
+          });
+          const res=createInvoiceRecord_({
+            bookingRowIndex:bookingRow||'',
+            type:'셀렉추가금',
+            customerName:String(row[SELECT_COL['고객명']]||''),
+            customerEmail:String(row[SELECT_COL['이메일']]||''),
+            customerPhone:String(row[SELECT_COL['연락처']]||''),
+            customerAddress:(()=>{
+              try{
+                if(bookingRow>1){
+                  const bookRow=sheets.bookingSheet.getRange(bookingRow,1,1,sheets.bookingSheet.getLastColumn()).getValues()[0];
+                  return String(bookRow[26]||'')||String(delivery.mailAddress||'');
+                }
+              }catch(e){}
+              return String(delivery.mailAddress||'');
+            })(),
+            dateStr:String(row[SELECT_COL['촬영일']]||''),
+            customProduct:'셀렉 추가금',
+            memo:`사진셀렉 제출 자동 생성 (${sessionId.slice(0,8)})`,
+            items
+          });
+          extraInvoiceNumber=res.invoiceNumber||'';
+          if(extraInvoiceNumber) selSh.getRange(rowNum,SELECT_COL['추가금인보이스번호']+1).setValue(extraInvoiceNumber);
+        }catch(e){Logger.log('submitPhotoSelection invoice error: '+e.message);}
+      }
     }else{
       try{
         syncSelectPrintOrder_(sheets.printSheet,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now);
@@ -6538,12 +6551,14 @@ function invoiceRowToObject_(row,rowIndex){
   const issued=parseDateSafe_(row[INVOICE_COL['발행일']]||'').str||String(row[INVOICE_COL['발행일']]||'');
   let items=[];
   try{items=JSON.parse(String(row[INVOICE_COL['품목JSON']]||'[]'));}catch(e){items=[];}
+  const type=String(row[INVOICE_COL['타입']]||'');
+  const depositValue=type==='셀렉추가금' ? 0 : (parseFloat(row[INVOICE_COL['계약금(€)']])||0);
   return {
     rowIndex:rowIndex||0,
     number:String(row[INVOICE_COL['인보이스번호']]||''),
     issuedAt:issued.slice(0,10),
     issuedAtRaw:String(row[INVOICE_COL['발행일']]||''),
-    type:String(row[INVOICE_COL['타입']]||''),
+    type,
     bookingRowIndex:parseInt(row[INVOICE_COL['예약행번호']])||0,
     name:String(row[INVOICE_COL['고객명']]||''),
     email:String(row[INVOICE_COL['이메일']]||''),
@@ -6552,7 +6567,7 @@ function invoiceRowToObject_(row,rowIndex){
     itemGroup:String(row[INVOICE_COL['촬영종류']]||''),
     product:String(row[INVOICE_COL['상품']]||''),
     total:parseFloat(row[INVOICE_COL['총금액(€)']])||0,
-    deposit:parseFloat(row[INVOICE_COL['계약금(€)']])||0,
+    deposit:depositValue,
     refund:parseFloat(row[INVOICE_COL['환불금액(€)']])||0,
     memo:String(row[INVOICE_COL['메모']]||''),
     status:String(row[INVOICE_COL['상태']]||''),
@@ -6578,6 +6593,21 @@ function invoiceRowToObject_(row,rowIndex){
     businessInvoiceRef:String(row[INVOICE_COL['사업자송장참조']]||''),
     lang:resolveInvoiceLang_(row[INVOICE_COL['언어']], parseInt(row[INVOICE_COL['예약행번호']],10)||0)
   };
+}
+
+function normalizeSelectExtraInvoiceDeposits_(invoiceSheet){
+  if(!invoiceSheet || invoiceSheet.getLastRow()<=1) return 0;
+  const rows=invoiceSheet.getDataRange().getValues();
+  let repaired=0;
+  rows.slice(1).forEach(function(row,idx){
+    const type=String(row[INVOICE_COL['타입']]||'').trim();
+    const deposit=Number(row[INVOICE_COL['계약금(€)']]||0)||0;
+    if(type==='셀렉추가금' && deposit!==0){
+      invoiceSheet.getRange(idx+2,INVOICE_COL['계약금(€)']+1).setValue(0);
+      repaired++;
+    }
+  });
+  return repaired;
 }
 
 function getBookingBusinessInvoiceMeta_(row){
@@ -6701,7 +6731,9 @@ function _createInvoiceRecordCore_(payload){
   const price=items.length
     ?Math.round(items.reduce((sum,item)=>sum+(item.qty*item.unitGross),0)*100)/100
     :(payload.customAmount!=null&&payload.customAmount!==''?parseFloat(payload.customAmount)||0:(row?parseMoneyValue_(row[10]):0));
-  const deposit=row?parseMoneyValue_(row[11]):(parseFloat(payload.depositAmount)||0);
+  const deposit=requestedType==='셀렉추가금'
+    ? 0
+    : (row?parseMoneyValue_(row[11]):(parseFloat(payload.depositAmount)||0));
   const refund=parseFloat(payload.refundAmount)||0;
   const product=payload.customProduct||(row?String(row[7]||'').trim():'')||(items[0]&&items[0].description)||'';
   const bookingBusinessMeta=getBookingBusinessInvoiceMeta_(row);
@@ -6991,6 +7023,7 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
 function getInvoiceList(token){
   assertAdmin_(token);
   const {invoiceSheet}=ensureSheets_();
+  normalizeSelectExtraInvoiceDeposits_(invoiceSheet);
   const rows=invoiceSheet.getDataRange().getValues();
   if(rows.length<=1) return {ok:true, invoices:[]};
   const invoices=rows.slice(1).map((r,i)=>invoiceRowToObject_(r,i+2)).reverse();
@@ -8647,6 +8680,17 @@ function buildGutscheinEmailDefaults_(g){
   return {subject, body, ticketUrl};
 }
 
+function _plainTextToCompactMailHtml_(text){
+  return String(text||'')
+    .trim()
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map(function(paragraph){
+      return `<p style="margin:0 0 10px;">${escapeHtml_(paragraph).replace(/\n/g,'<br>')}</p>`;
+    })
+    .join('');
+}
+
 function _fetchQrDataUri_(text,size){
   const payload=String(text||'').trim();
   if(!payload) return '';
@@ -8666,7 +8710,7 @@ function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? (g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
-  const qrDataUri=_fetchQrDataUri_(ticketUrl,190);
+  const qrDataUri=_fetchQrDataUri_(ticketUrl,260);
   const t={
     title:'Geschenk Gutschein',
     eyebrow:'Studio mean postcard voucher',
@@ -8693,118 +8737,133 @@ function buildGutscheinHtml_(g){
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#23201d}
-@page{size:A6 landscape;margin:0}
-body{width:148mm}
-.page{width:148mm;height:105mm;padding:9mm 10mm 8.5mm;position:relative;page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;background:#fff}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#23201d}
+@page{size:A4 portrait;margin:12mm}
+body{width:186mm;min-height:273mm;margin:0 auto}
+.page{min-height:273mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}
 .page:last-child{page-break-after:auto}
-.page:before,.page:after,.corner-b:before,.corner-b:after{content:'';position:absolute;width:18mm;height:13mm;pointer-events:none}
-.page:before{top:5mm;left:5mm;border-top:0.7px solid #6f675f;border-left:0.7px solid #6f675f}
-.page:after{top:5mm;right:5mm;border-top:0.7px solid #6f675f;border-right:0.7px solid #6f675f}
-.corner-b:before{bottom:5mm;left:5mm;border-bottom:0.7px solid #6f675f;border-left:0.7px solid #6f675f}
-.corner-b:after{bottom:5mm;right:5mm;border-bottom:0.7px solid #6f675f;border-right:0.7px solid #6f675f}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#6e655d}
-.brand-wordmark{font-family:Georgia,serif;font-style:italic;font-size:17px;letter-spacing:.03em;font-weight:600;color:#1d1b18}
-.brand-tagline{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:#8f8376;margin-top:2px}
-.hero-card{margin-top:7mm;padding:10mm 12mm 9mm;border:0.8px solid #e7ddd0;background:linear-gradient(180deg,#f6f1e8 0%,#fbf8f3 100%);min-height:49mm;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
-.eyebrow{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#7d7268}
-.hero-title{font-size:17px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin-top:7px}
-.hero-value{font-size:${isProduct?'22px':'34px'};font-weight:700;line-height:1.14;margin-top:9px;max-width:100%;word-break:break-word}
-.hero-sub{font-size:10.5px;color:#70665e;margin-top:6px}
-.people-row{display:grid;grid-template-columns:1fr 1fr;gap:12mm;margin-top:7mm}
-.person{border-bottom:0.8px solid #b7aea4;padding-bottom:2.5mm}
-.person .label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:4px}
-.person .value{font-size:14px;font-weight:600;min-height:16px}
-.message-strip{margin-top:6mm;padding:3.5mm 4.5mm;border-top:0.8px solid #ded4c6;border-bottom:0.8px solid #ded4c6;font-size:10.6px;line-height:1.65;color:#4e463f;text-align:center;min-height:16mm}
-.front-footer{display:grid;justify-items:center;gap:1.2mm;margin-top:6mm}
-.front-footer .footer-copy{font-size:9.5px;color:#6b625b;text-align:center}
-.back-layout{display:grid;grid-template-columns:54mm 1fr;gap:7mm;align-items:stretch;height:100%}
-.back-left,.back-right{display:flex;flex-direction:column}
-.back-left{justify-content:space-between;padding-top:10mm}
-.back-right{padding-top:10mm}
-.note-card{padding:5mm;border:0.8px solid #e2d8cc;background:#fbf8f3}
-.section-label{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:4px}
-.note-card .copy,.terms{font-size:10.4px;line-height:1.7;color:#4d453f;white-space:pre-line}
-.qr-card{display:grid;grid-template-columns:30mm 1fr;gap:5mm;padding:5mm;border:0.8px solid #e2d8cc;background:#fff}
-.qr-box{width:30mm;height:30mm;border:0.8px solid #e5ddd2;padding:3px;background:#fff;display:flex;align-items:center;justify-content:center}
+.frame{position:relative;border:1px solid #d9d2c8;padding:16mm 15mm;background:#fbf8f3;min-height:249mm}
+.frame:before,.frame:after,.frame-bottom:before,.frame-bottom:after{content:'';position:absolute;width:24mm;height:18mm;pointer-events:none}
+.frame:before{top:9mm;left:9mm;border-top:1px solid #6f675f;border-left:1px solid #6f675f}
+.frame:after{top:9mm;right:9mm;border-top:1px solid #6f675f;border-right:1px solid #6f675f}
+.frame-bottom:before{bottom:9mm;left:9mm;border-bottom:1px solid #6f675f;border-left:1px solid #6f675f}
+.frame-bottom:after{bottom:9mm;right:9mm;border-bottom:1px solid #6f675f;border-right:1px solid #6f675f}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7a6f66}
+.brand-lockup{display:grid;justify-items:center;gap:4px}
+.brand-wordmark{font-family:Georgia,serif;font-style:italic;font-size:28px;letter-spacing:.02em;font-weight:600;color:#1d1b18}
+.brand-tagline{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8f8376}
+.hero-wrap{display:grid;place-items:center;flex:1;padding:14mm 8mm 10mm}
+.hero-card{width:100%;max-width:132mm;padding:18mm 16mm;border:1px solid #e3dbd0;background:linear-gradient(180deg,#f5f0e7 0%,#fbf8f3 100%);text-align:center}
+.eyebrow{font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:#7d7268}
+.hero-title{font-size:24px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-top:10px}
+.hero-value{font-size:${isProduct?'34px':'58px'};font-weight:700;line-height:1.08;margin-top:14px;word-break:break-word}
+.hero-sub{font-size:13px;color:#70665e;margin-top:10px}
+.people-row{display:grid;grid-template-columns:1fr 1fr;gap:14mm;margin-top:16mm}
+.person{border-bottom:1px solid #bdb3a7;padding-bottom:4mm}
+.person .label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:6px}
+.person .value{font-size:18px;font-weight:600;min-height:20px}
+.message-strip{margin-top:14mm;padding:5mm 6mm;border-top:1px solid #ddd4c7;border-bottom:1px solid #ddd4c7;font-size:13px;line-height:1.65;color:#4e463f;text-align:center;min-height:26mm}
+.front-footer{display:grid;justify-items:center;gap:2mm;padding-top:12mm}
+.front-footer .footer-copy{font-size:11px;color:#6b625b;text-align:center}
+.back-grid{display:grid;grid-template-columns:76mm 1fr;gap:12mm;flex:1;padding-top:12mm}
+.note-card{padding:8mm;border:1px solid #e2d8cc;background:#fff}
+.section-label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:6px}
+.note-card .copy,.terms,.contact-copy{font-size:13px;line-height:1.6;color:#4d453f;white-space:pre-line}
+.qr-card{display:grid;grid-template-columns:42mm 1fr;gap:8mm;padding:8mm;border:1px solid #e2d8cc;background:#fff}
+.qr-box{width:42mm;height:42mm;border:1px solid #e5ddd2;padding:4px;background:#fff;display:flex;align-items:center;justify-content:center}
 .qr-box img{width:100%;height:100%;object-fit:contain}
-.qr-fallback{font-size:9px;color:#999;text-align:center;line-height:1.4}
-.detail-stack{display:grid;gap:3.2mm}
-.detail-item{border-bottom:0.8px solid #ece3d7;padding-bottom:2.3mm}
+.qr-fallback{font-size:11px;color:#999;text-align:center;line-height:1.4}
+.detail-stack{display:grid;gap:6mm}
+.detail-item{border-bottom:1px solid #ece3d7;padding-bottom:4mm}
 .detail-item:last-child{border-bottom:none;padding-bottom:0}
-.detail-item .label{font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:2px}
-.detail-item .value{font-size:11.5px;line-height:1.45;font-weight:600;word-break:break-word}
-.code-line{font-size:15px;letter-spacing:.12em;font-weight:700}
-.status-pill{display:inline-block;padding:4px 10px;border:0.8px solid #d2c4b0;border-radius:999px;background:#f7f0e3;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.back-bottom{margin-top:auto;padding-top:5mm}
-.contact-copy{font-size:9.8px;color:#5d554e;line-height:1.7}
-.terms{margin-top:5mm}
+.detail-item .label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7268;margin-bottom:3px}
+.detail-item .value{font-size:15px;line-height:1.45;font-weight:600;word-break:break-word}
+.code-line{font-size:22px;letter-spacing:.12em;font-weight:700}
+.status-pill{display:inline-block;padding:5px 12px;border:1px solid #d2c4b0;background:#f3ebdd;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.back-side{display:flex;flex-direction:column;justify-content:space-between}
+.terms{margin-top:10mm}
+.contact-copy{margin-top:10mm}
 </style></head><body>
 <div class="page front">
-  <div class="corner-b"></div>
-  <div>
+  <div class="frame">
+    <div class="frame-bottom"></div>
     <div class="meta-row">
       <div>${escapeHtml_(g.code||'')}</div>
       <div>${t.valid} · ${validLabel}</div>
     </div>
-    <div class="hero-card">
-      <div class="eyebrow">${t.eyebrow}</div>
-      <div class="hero-title">${t.title}</div>
-      <div class="hero-value">${escapeHtml_(amountLabel)}</div>
-      <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
+    <div class="hero-wrap">
+      <div style="width:100%;">
+        <div class="brand-lockup">
+          <div class="brand-wordmark">Studio_mean</div>
+          <div class="brand-tagline">make meaningful moment</div>
+        </div>
+        <div class="hero-card">
+          <div class="eyebrow">${t.eyebrow}</div>
+          <div class="hero-title">${t.title}</div>
+          <div class="hero-value">${escapeHtml_(amountLabel)}</div>
+          <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
+        </div>
+        <div class="people-row">
+          <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
+          <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
+        </div>
+        <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+      </div>
     </div>
-    <div class="people-row">
-      <div class="person"><div class="label">${t.forLabel}</div><div class="value">${escapeHtml_(recipientText)}</div></div>
-      <div class="person"><div class="label">${t.fromLabel}</div><div class="value">${escapeHtml_(purchaserText)}</div></div>
+    <div class="front-footer">
+      <div class="brand-wordmark">Studio_mean</div>
+      <div class="brand-tagline">make meaningful moment</div>
+      <div class="footer-copy">${escapeHtml_(t.footer)}</div>
     </div>
-    <div class="message-strip">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
-  </div>
-  <div class="front-footer">
-    <div class="brand-wordmark">Studio_mean</div>
-    <div class="brand-tagline">make meaningful moment</div>
-    <div class="footer-copy">${escapeHtml_(t.footer)}</div>
   </div>
 </div>
 <div class="page back">
-  <div class="corner-b"></div>
-  <div class="back-layout">
-    <div class="back-left">
-      <div>
-        <div class="brand-wordmark">Studio_mean</div>
-        <div class="brand-tagline">make meaningful moment</div>
-      </div>
-      <div class="note-card">
-        <div class="section-label">${t.noteTitle}</div>
-        <div class="copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
-      </div>
-      <div class="back-bottom">
-        <div class="section-label">${t.contact}</div>
-        <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
-      </div>
+  <div class="frame">
+    <div class="frame-bottom"></div>
+    <div class="meta-row">
+      <div>${t.code} · ${escapeHtml_(g.code||'')}</div>
+      <div>${t.status} · ${issueBadge}</div>
     </div>
-    <div class="back-right">
-      <div class="qr-card">
-        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
-        <div class="detail-stack">
-          <div class="detail-item">
-            <div class="label">${t.code}</div>
-            <div class="value code-line">${escapeHtml_(g.code||'')}</div>
-          </div>
-          <div class="detail-item">
-            <div class="label">${t.amount}</div>
-            <div class="value">${escapeHtml_(amountLabel)}</div>
-          </div>
-          <div class="detail-item">
-            <div class="label">${t.valid}</div>
-            <div class="value">${validLabel}</div>
-          </div>
-          <div class="detail-item">
-            <div class="label">${t.status}</div>
-            <div class="value"><span class="status-pill">${issueBadge}</span></div>
-          </div>
+    <div class="back-grid">
+      <div class="back-side">
+        <div>
+          <div class="brand-wordmark">Studio_mean</div>
+          <div class="brand-tagline">make meaningful moment</div>
+        </div>
+        <div class="note-card">
+          <div class="section-label">${t.noteTitle}</div>
+          <div class="copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+        </div>
+        <div>
+          <div class="section-label">${t.contact}</div>
+          <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
         </div>
       </div>
-      <div class="terms">${escapeHtml_(t.terms)}</div>
+      <div class="back-side">
+        <div class="qr-card">
+          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
+          <div class="detail-stack">
+            <div class="detail-item">
+              <div class="label">${t.code}</div>
+              <div class="value code-line">${escapeHtml_(g.code||'')}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">${t.amount}</div>
+              <div class="value">${escapeHtml_(amountLabel)}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">${t.valid}</div>
+              <div class="value">${validLabel}</div>
+            </div>
+            <div class="detail-item">
+              <div class="label">${t.status}</div>
+              <div class="value"><span class="status-pill">${issueBadge}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="terms">${escapeHtml_(t.terms)}</div>
+      </div>
     </div>
   </div>
 </div>
@@ -9047,7 +9106,8 @@ function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
     : (effectiveLang==='en'
       ? 'You can show the mobile ticket below or the attached PDF at the studio.'
       : 'Im Studio können Sie das mobile Ticket unten oder das angehängte PDF vorzeigen.');
-  const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.8;color:#334155;white-space:pre-line;">${escapeHtml_(finalBody).replace(/\n/g,'<br>')}<div style="margin:22px 0 18px;"><a href="${escapeHtml_(ticketUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#2f2a25;color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml_(buttonLabel)}</a></div><div style="font-size:13px;color:#64748b;">${escapeHtml_(buttonNote)}<br><a href="${escapeHtml_(ticketUrl)}" style="color:#334155;word-break:break-all;">${escapeHtml_(ticketUrl)}</a></div><br>${_getSignatureHtml()}</div>`;
+  const bodyHtml=_plainTextToCompactMailHtml_(finalBody);
+  const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#334155;font-size:14px;line-height:1.6;">${bodyHtml}<div style="margin:18px 0 14px;"><a href="${escapeHtml_(ticketUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#2f2a25;color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml_(buttonLabel)}</a></div><div style="font-size:13px;color:#64748b;line-height:1.55;">${escapeHtml_(buttonNote)}<br><a href="${escapeHtml_(ticketUrl)}" style="color:#334155;word-break:break-all;">${escapeHtml_(ticketUrl)}</a></div>${_getSignatureHtml()}</div>`;
   MailApp.sendEmail({to:recipient,subject:finalSubject,htmlBody,attachments:[pdf.getBlob()]});
   const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const nextStatus=(g.status===GUTSCHEIN_STATUS.USED || g.used)
