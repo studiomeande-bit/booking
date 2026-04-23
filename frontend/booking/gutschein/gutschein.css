@@ -453,3 +453,116 @@ h1 {
     font-size: 18px;
   }
 }
+
+/* ===== Ticket polish ===== */
+body {
+  background: linear-gradient(180deg, #faf8f4 0%, #f3eee6 100%);
+}
+
+.loading-card,
+.panel,
+.ticket-card,
+.ticket-meta-card,
+.detail-item,
+.contact-box,
+.ticket-qr-frame {
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.panel,
+.ticket-card {
+  background: #f6f3ed;
+}
+
+.ticket-card {
+  padding: 24px 22px 22px;
+}
+
+.ticket-card::before,
+.ticket-card::after {
+  display: none;
+}
+
+.ticket-card-top {
+  align-items: start;
+}
+
+.state-badge,
+.copy-btn {
+  border-radius: 0;
+}
+
+.state-badge {
+  padding: 8px 12px;
+  background: #171513;
+  color: #fff;
+  border: 0;
+}
+
+.state-badge[data-state="active"] {
+  background: #171513;
+  color: #fff;
+}
+
+.ticket-qr-wrap {
+  gap: 14px;
+}
+
+.ticket-code-block,
+.ticket-meta-card,
+.detail-item,
+.contact-box {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.ticket-code-block {
+  padding: 16px;
+}
+
+.ticket-meta-card,
+.detail-item,
+.contact-box {
+  padding: 16px 16px 15px;
+}
+
+.ticket-grid,
+.detail-list {
+  gap: 10px;
+}
+
+.copy-btn {
+  min-height: 42px;
+  padding: 0 14px;
+  background: #171513;
+  color: #fff;
+}
+
+.panel-title,
+.ticket-value {
+  color: #171513;
+}
+
+.meta-label,
+.ticket-eyebrow {
+  color: #b54c2d;
+}
+
+.panel-copy,
+.detail-copy,
+.ticket-subvalue {
+  color: #5f564c;
+}
+
+@media (max-width: 640px) {
+  .ticket-card,
+  .guide-panel,
+  .state-panel {
+    border-radius: 0;
+  }
+
+  .ticket-card {
+    padding: 20px 16px 18px;
+  }
+}

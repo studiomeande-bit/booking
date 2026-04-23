@@ -3220,3 +3220,95 @@ h1 {
     padding: 18px 16px !important;
   }
 }
+
+/* ===== Final form + review polish ===== */
+#reviewBox.detail-box {
+  padding: 0 !important;
+  overflow: hidden;
+  background: #f6f3ed !important;
+}
+
+.summary-item {
+  display: grid;
+  gap: 6px;
+  margin-top: 0 !important;
+  padding: 16px 18px;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+}
+
+.summary-item:first-child {
+  border-top: 0;
+}
+
+.summary-label {
+  color: var(--brand-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.summary-value {
+  color: #1d1a17;
+  font-size: 15px;
+  line-height: 1.62;
+  font-weight: 600;
+}
+
+#businessInvoiceFields,
+#returnNotice,
+.consent-box {
+  padding: 24px !important;
+}
+
+.consent-box {
+  gap: 20px;
+}
+
+.consent-group {
+  padding: 18px 18px 10px !important;
+}
+
+.checkbox-row {
+  padding: 6px 2px 6px 4px;
+}
+
+.wizard-nav,
+.form-nav {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+}
+
+.wizard-progress {
+  color: #5c5043 !important;
+}
+
+.wizard-actions {
+  align-items: center;
+}
+
+.wizard-actions .ghost-btn,
+.wizard-actions .submit-btn,
+.wizard-actions .primary-btn {
+  min-width: 136px;
+}
+
+@media (max-width: 560px) {
+  #reviewBox.detail-box,
+  #businessInvoiceFields,
+  #returnNotice,
+  .consent-box {
+    padding: 18px 16px !important;
+  }
+
+  .summary-item {
+    padding: 14px 16px;
+  }
+
+  .wizard-nav,
+  .form-nav {
+    margin-top: 22px;
+    padding-top: 16px;
+  }
+}
