@@ -2709,3 +2709,148 @@ h1 {
     padding-top: 14px;
   }
 }
+
+/* ===== Accent + density refinement ===== */
+#generalPanel > .detail-box,
+.detail-box,
+.consent-box,
+.result-box,
+.result-guide-box,
+.wedding-benefit-box,
+.result-item,
+.result-note,
+.bg-rec-card,
+.bg-rec-guide,
+.consent-row-highlight,
+.discount-note-item,
+.success-guide {
+  background: #f6f3ed !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.booking-form,
+.invoice-fields-grid {
+  gap: 18px 16px;
+}
+
+.booking-form input,
+.booking-form textarea,
+.inline-field select,
+.invoice-fields-grid input,
+.invoice-fields-grid textarea,
+.chip-btn,
+.survey-chip,
+.calendar-cell,
+.slot-btn {
+  background: #f1ede7 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.booking-form label > span,
+.invoice-fields-grid label > span,
+.inline-field > span,
+.block-label,
+.slot-panel-title,
+.calendar-weekday,
+.wizard-progress,
+.product-group-title,
+.notice-title {
+  color: var(--brand-accent) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .14em !important;
+  text-transform: uppercase !important;
+}
+
+.detail-title,
+.bg-rec-outfits,
+.result-guide-title,
+.consent-title {
+  color: #171513;
+}
+
+.bg-rec-title,
+.wedding-benefit-eyebrow,
+.price-label,
+.result-item strong {
+  color: var(--brand-accent) !important;
+}
+
+.bg-rec-guide,
+.discount-note-item,
+.consent-row-highlight,
+.result-note,
+.success-guide {
+  color: #5f4c3f !important;
+}
+
+.bg-rec-guide,
+.discount-note-item,
+.consent-row-highlight {
+  padding: 14px 16px;
+}
+
+.chip-btn,
+.survey-chip {
+  min-height: 52px;
+  padding: 14px 16px;
+  color: #3c3129;
+}
+
+.chip-btn.selected,
+.chip-btn.toggle-chip.selected,
+.survey-chip.selected,
+.survey-chip.subtle-selected {
+  background: #171513 !important;
+  color: #fff !important;
+}
+
+.ghost-btn {
+  background: #f1ede7;
+  color: #3b3129;
+}
+
+.ghost-btn:hover {
+  background: #e8e1d8;
+}
+
+.primary-btn,
+.submit-btn {
+  background: #171513;
+}
+
+.price-hero {
+  background: #171513;
+}
+
+.price-hero-label,
+.price-hero-copy {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.result-note,
+.result-guide-box,
+.success-guide {
+  line-height: 1.72;
+}
+
+.result-guide-body a {
+  color: var(--brand-accent);
+}
+
+@media (max-width: 560px) {
+  .booking-form,
+  .invoice-fields-grid {
+    gap: 16px;
+  }
+
+  .booking-form label > span,
+  .invoice-fields-grid label > span,
+  .inline-field > span,
+  .block-label,
+  .slot-panel-title {
+    font-size: 10px !important;
+  }
+}

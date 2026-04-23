@@ -398,6 +398,87 @@ textarea { resize:vertical; min-height:120px; }
   .wizard-actions .primary-btn { width:100%; flex-basis:auto; }
 }
 
+/* ===== Accent refinement ===== */
+.eyebrow,
+.meta-label,
+.slot-panel-title,
+.price-label,
+.card-badge,
+.wizard-progress {
+  color: #b54c2d !important;
+  letter-spacing: .14em !important;
+  text-transform: uppercase;
+}
+
+.intro-card,
+.detail-card,
+.note-box,
+.consent-box,
+.review-box,
+.success-item,
+.slot-panel {
+  background: #f6f3ed !important;
+}
+
+.product-card,
+.day-btn,
+.slot-btn,
+input,
+select,
+textarea,
+.radio-card,
+.ghost-btn,
+.primary-btn.secondary,
+.compact-btn {
+  background: #f1ede7 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.product-card strong,
+.detail-card h3,
+.consent-title,
+.success-title {
+  color: #171513;
+}
+
+.card-badge {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.ghost-btn,
+.primary-btn.secondary,
+.compact-btn {
+  color: #3b3129;
+}
+
+.ghost-btn:hover,
+.primary-btn.secondary:hover,
+.compact-btn:hover {
+  background: #e8e1d8 !important;
+}
+
+.price-card {
+  background: #171513 !important;
+}
+
+.price-label {
+  color: #b54c2d !important;
+}
+
+.price-sub {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.day-btn.full::after {
+  color: #b54c2d;
+}
+
+.day-btn.closed::after {
+  color: #988d80;
+}
+
 /* ===== Sharp brand mode ===== */
 .loading-card,
 .loading-dots span,

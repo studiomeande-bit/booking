@@ -1418,3 +1418,76 @@ h1 {
     gap: 8px;
   }
 }
+
+/* ===== Accent refinement ===== */
+.summary-label,
+.detail-title,
+.gallery-badge,
+.manual-badge,
+.gallery-tips .guide-ex-head,
+.pickup-status strong {
+  color: #b54c2d !important;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.detail-box,
+.empty-state,
+.price-guide,
+.counter-box,
+.gallery-stage-summary,
+.pickup-status,
+.summary-item,
+.entry-card,
+.radio-card,
+.drive-btn {
+  background: #f6f3ed !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.gallery-search,
+#mailAddressInput,
+.pickup-day,
+.pickup-slot-btn,
+.entry-card input,
+.entry-card textarea,
+.entry-card select,
+.star-filter,
+.compact-btn {
+  background: #f1ede7 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.radio-card.active,
+.pickup-day.selected,
+.star-filter.active {
+  background: #171513 !important;
+  color: #fff !important;
+}
+
+.gallery-tips .star-chip,
+.entry-star-chip {
+  background: #efe5db !important;
+  color: #b54c2d !important;
+}
+
+.gallery-status,
+.gallery-count {
+  background: #f6f3ed !important;
+}
+
+.gallery-count {
+  color: #171513;
+}
+
+.compact-btn,
+.drive-btn {
+  color: #3b3129;
+}
+
+.compact-btn:hover,
+.drive-btn:hover {
+  background: #e8e1d8 !important;
+}
