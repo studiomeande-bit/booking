@@ -274,7 +274,7 @@ h1 {
 
 .ticket-qr-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 176px) minmax(0, 1fr);
   gap: 16px;
   margin-top: 22px;
 }
@@ -453,14 +453,14 @@ h1 {
 
   .ticket-qr-wrap {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 14px;
   }
 
   .ticket-qr-frame {
-    width: min(100%, 300px);
-    max-width: 300px;
-    justify-self: center;
-    padding: 14px;
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+    padding: 18px;
   }
 
   .ticket-grid {
@@ -473,11 +473,19 @@ h1 {
 
   .ticket-code-block {
     gap: 8px;
+    justify-items: center;
+    text-align: center;
+    padding: 0 8px;
   }
 
   .ticket-code {
     font-size: 16px;
     letter-spacing: 0.06em;
+  }
+
+  .copy-btn {
+    width: 100%;
+    justify-self: stretch;
   }
 }
 
