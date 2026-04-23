@@ -1,5 +1,5 @@
 :root {
-  --font-sans: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
+  --font-sans: "Noto Sans KR", "Avenir Next", sans-serif;
   --font-display: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
   --space-1: 8px;
   --space-2: 12px;
@@ -28,9 +28,9 @@ body {
   font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
-  line-height: 1.6;
-  font-weight: 430;
-  letter-spacing: -0.01em;
+  line-height: 1.68;
+  font-weight: 450;
+  letter-spacing: -0.012em;
   overflow-x: hidden;
   -webkit-tap-highlight-color: rgba(181, 76, 45, 0.08);
 }
@@ -46,9 +46,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(238, 227, 209, 0.95), transparent 26%),
-    rgba(252, 250, 246, 0.96);
+  background: #fff;
   z-index: 90;
   transition: opacity .28s ease, visibility .28s ease;
 }
@@ -61,9 +59,9 @@ body {
   width: min(420px, 100%);
   padding: 28px 24px;
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.98);
+  background: transparent;
   border: 0;
-  box-shadow: 0 20px 40px rgba(23, 21, 19, 0.06);
+  box-shadow: none;
   text-align: center;
 }
 .brand-lockup {
@@ -164,9 +162,9 @@ body {
 }
 h1 {
   margin: 0;
-  font-size: clamp(44px, 9vw, 104px);
-  line-height: 0.88;
-  letter-spacing: -.055em;
+  font-size: clamp(42px, 8vw, 92px);
+  line-height: 0.9;
+  letter-spacing: -.045em;
   font-weight: 700;
   font-family: var(--font-display);
 }
@@ -174,8 +172,9 @@ h1 {
   width: min(720px, 100%);
   margin: 18px 0 0;
   color: var(--muted);
-  line-height: 1.72;
-  font-size: 16px;
+  color: #4f4740;
+  line-height: 1.84;
+  font-size: 17px;
 }
 .banner {
   margin-top: 18px;
@@ -194,7 +193,7 @@ h1 {
   margin-bottom: 14px;
   background: var(--brand-accent);
 }
-.banner.loading { color: var(--muted); }
+.banner.loading { color: #5d544c; }
 .banner.success { color: #116149; }
 .banner.error { color: #8b2334; }
 .notice-panel {
@@ -215,7 +214,7 @@ h1 {
 .notice-body {
   margin-top: 14px;
   font-size: 15px;
-  line-height: 1.9;
+  line-height: 1.95;
   color: var(--text);
   white-space: pre-wrap;
   max-width: 760px;
@@ -264,9 +263,9 @@ h1 {
 }
 .promo-highlight-title {
   margin-top: 8px;
-  font-size: clamp(34px, 6vw, 58px);
-  line-height: 0.94;
-  letter-spacing: -0.05em;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
   font-weight: 700;
   font-family: var(--font-display);
   color: var(--text);
@@ -463,13 +462,13 @@ h1 {
 .panel-head h2 {
   margin: 0;
   font-size: clamp(28px, 4vw, 42px);
-  letter-spacing: -.05em;
+  letter-spacing: -.035em;
   font-weight: 700;
   font-family: var(--font-display);
 }
 .panel-head p {
   margin: 12px 0 0;
-  color: var(--muted);
+  color: #5c544d;
   font-size: 15px;
   line-height: 1.8;
 }
@@ -525,9 +524,9 @@ h1 {
 .group-card-title {
   grid-area: title;
   margin-top: 0;
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 600;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   letter-spacing: -.02em;
 }
 .group-card-sub {
@@ -535,7 +534,7 @@ h1 {
   margin-top: 0;
   color: rgba(38, 34, 29, 0.7);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.78;
 }
 .group-card.selected .group-card-icon {
   background: rgba(255, 255, 255, 0.14);
@@ -573,10 +572,10 @@ h1 {
 }
 .product-card h3 {
   margin: 0;
-  font-size: 28px;
-  line-height: 1.05;
+  font-size: 24px;
+  line-height: 1.15;
   font-weight: 700;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
 }
 .product-badge {
   display: inline-flex;
@@ -623,12 +622,12 @@ h1 {
 .detail-title {
   font-size: 16px;
   font-weight: 600;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
 }
 .detail-copy {
   margin: var(--space-1) 0 0;
   color: var(--muted);
-  line-height: 1.65;
+  line-height: 1.8;
   white-space: pre-wrap;
   font-size: 14px;
 }
@@ -1532,19 +1531,19 @@ h1 {
   opacity: 0;
 }
 @media (max-width: 768px) {
-  .shell { width: calc(100% - 12px); max-width: 100%; padding-top: calc(12px + var(--safe-top)); padding-bottom: calc(112px + var(--safe-bottom)); }
+  .shell { width: calc(100% - 24px); max-width: 100%; padding-top: calc(16px + var(--safe-top)); padding-bottom: calc(112px + var(--safe-bottom)); }
   .hero { padding: 4px 0 12px; }
   .panel { padding: 0; border-radius: 0; }
-  .notice-panel { padding: 16px 14px; border-radius: 18px; }
+  .notice-panel { padding: 16px 0; border-radius: 0; }
   .lang-panel {
     width: 100%;
     margin-top: 16px;
-    padding: 6px;
-    border-radius: 20px;
+    padding: 0;
+    border-radius: 0;
   }
   .promo-highlight {
-    padding: 18px 14px 16px;
-    border-radius: 20px;
+    padding: 18px 0 16px;
+    border-radius: 0;
   }
   .promo-highlight-cta {
     align-items: stretch;
@@ -1559,11 +1558,11 @@ h1 {
   .invoice-fields-grid { grid-template-columns: 1fr; }
   .hero-top { gap: 0; }
   .lang-row { width: 100%; gap: 8px; }
-  .lang-btn { min-height: 46px; padding: 10px 8px; font-size: 13px; }
+  .lang-btn { min-height: 0; padding: 8px 0; font-size: 12px; }
   .header-logo { width: min(220px, 62vw); }
   h1 { font-size: 26px; }
   .lede { font-size: 14px; line-height: 1.55; }
-  .banner { margin-top: 14px; padding: 15px 14px; border-radius: 18px; }
+  .banner { margin-top: 14px; padding: 12px 0 0; border-radius: 0; }
   .product-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-card { grid-template-columns: 40px minmax(0, 1fr); min-height: 104px; padding: 20px 16px; border-radius: 0; column-gap: 14px; }
@@ -1653,24 +1652,24 @@ h1 {
   .loading-card {
     width: min(320px, calc(100vw - 32px));
     padding: 22px 18px;
-    border-radius: 24px;
+    border-radius: 0;
   }
   .brand-logo-image {
     width: min(260px, 100%);
   }
   .shell {
-    width: calc(100% - 8px);
-    padding-top: calc(8px + var(--safe-top));
+    width: calc(100% - 24px);
+    padding-top: calc(12px + var(--safe-top));
     padding-bottom: calc(108px + var(--safe-bottom));
   }
   .hero-top { gap: 0; }
   .lang-panel {
     margin-top: 14px;
-    padding: 5px;
-    border-radius: 18px;
+    padding: 0;
+    border-radius: 0;
   }
   .lang-row { gap: 6px; }
-  .lang-btn { min-height: 44px; font-size: 12px; }
+  .lang-btn { min-height: 0; padding: 8px 0; font-size: 11px; }
   .header-logo { width: min(188px, 58vw); }
   h1 { font-size: 24px; }
   .notice-title { font-size: 12px; }
@@ -1682,7 +1681,7 @@ h1 {
   .promo-highlight-button {
     padding: 15px 16px;
     gap: 12px;
-    border-radius: 20px;
+    border-radius: 0;
   }
   .promo-highlight-button-label { font-size: 16px; }
   .promo-highlight-button-sub { font-size: 11px; }
@@ -1694,7 +1693,7 @@ h1 {
   .panel { padding: 0; border-radius: 0; }
   .panel-head h2 { font-size: 19px; }
   .panel-head p { font-size: 13px; }
-  .banner { padding: 12px 14px; border-radius: 14px; font-size: 13px; }
+  .banner { padding: 12px 0 0; border-radius: 0; font-size: 13px; }
   .calendar-weekday { font-size: 11px; }
   .calendar-toolbar {
     grid-template-columns: 74px minmax(0, 1fr) 74px;
