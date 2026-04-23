@@ -413,13 +413,27 @@ function setStepWarning(step, message = '') {
   els[`step${step}Warning`].textContent = message;
 }
 
+function scrollToStepTop(step = activeStep) {
+  const target = step === 1
+    ? els.step1
+    : step === 2
+      ? els.step2
+      : step === 3
+        ? els.step3
+        : els.step4;
+  if (!target) return;
+  const offset = window.innerWidth <= 768 ? 12 : 24;
+  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - offset);
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+
 function showStep(step) {
   activeStep = step;
   els.step1.classList.toggle('hidden', step !== 1);
   els.step2.classList.toggle('hidden', step !== 2);
   els.step3.classList.toggle('hidden', step !== 3);
   els.step4.classList.toggle('hidden', step !== 4);
-  window.scrollTo({ top: 0 });
+  scrollToStepTop(step);
 }
 
 function setProductDefaults() {

@@ -1805,12 +1805,21 @@ function getMaxUnlockedStep() {
   return 5;
 }
 
+function scrollToStepTop(step = state.activeStep) {
+  const panel = els.stepPanels[`step${step}`];
+  const target = panel || document.querySelector('.hero') || document.querySelector('.shell');
+  if (!target) return;
+  const offset = window.innerWidth <= 768 ? 12 : 24;
+  const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - offset);
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+
 function goToStep(step) {
   const next = Math.max(1, Math.min(5, step));
   const maxStep = getMaxUnlockedStep();
   state.activeStep = Math.min(next, maxStep);
   syncStepPanels();
-  els.stepPanels[`step${state.activeStep}`]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scrollToStepTop(state.activeStep);
 }
 
 function updateWizardButtons(maxStep) {
