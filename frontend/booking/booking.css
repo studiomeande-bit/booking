@@ -35,7 +35,7 @@ body {
   -webkit-tap-highlight-color: rgba(181, 76, 45, 0.08);
 }
 .shell {
-  width: min(1200px, calc(100% - 40px));
+  width: min(1040px, calc(100% - 48px));
   margin: 0 auto;
   padding: 28px 0 calc(96px + var(--safe-bottom));
 }
@@ -118,7 +118,7 @@ body {
   40% { opacity: 1; transform: scale(1); }
 }
 .hero {
-  padding: 10px 0 34px;
+  padding: 24px 0 44px;
 }
 .hero-top {
   display: flex;
@@ -162,47 +162,49 @@ body {
 }
 h1 {
   margin: 0;
-  font-size: clamp(42px, 8vw, 92px);
-  line-height: 0.9;
-  letter-spacing: -.045em;
+  font-size: clamp(48px, 7vw, 86px);
+  line-height: 0.92;
+  letter-spacing: -.05em;
   font-weight: 700;
   font-family: var(--font-display);
 }
 .lede {
-  width: min(720px, 100%);
-  margin: 18px 0 0;
+  width: min(560px, 100%);
+  margin: 14px 0 0;
   color: var(--muted);
   color: #4f4740;
-  line-height: 1.84;
-  font-size: 17px;
+  line-height: 1.76;
+  font-size: 15px;
 }
 .banner {
-  margin-top: 18px;
-  padding: 14px 0 0;
+  margin-top: 28px;
+  padding: 12px 0 0;
   border-radius: 0;
   border: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: 13px;
   position: relative;
+  width: min(420px, 100%);
 }
 .banner::before {
   content: "";
   display: block;
-  width: 44px;
+  width: 36px;
   height: 2px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   background: var(--brand-accent);
 }
 .banner.loading { color: #5d544c; }
 .banner.success { color: #116149; }
 .banner.error { color: #8b2334; }
 .notice-panel {
-  margin-top: 22px;
-  padding: 28px 0 0;
+  margin-top: 18px;
+  padding: 18px 0 0;
   border-radius: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+  width: min(620px, 100%);
 }
 .notice-title {
   font-size: 11px;
@@ -212,12 +214,12 @@ h1 {
   color: var(--brand-accent);
 }
 .notice-body {
-  margin-top: 14px;
-  font-size: 15px;
-  line-height: 1.95;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.9;
   color: var(--text);
   white-space: pre-wrap;
-  max-width: 760px;
+  max-width: 580px;
 }
 .notice-meta {
   margin-top: 12px;
@@ -228,31 +230,30 @@ h1 {
   color: var(--muted);
 }
 .promo-highlight {
-  margin-top: 28px;
+  margin-top: 38px;
   position: relative;
   overflow: hidden;
-  padding: 36px;
+  padding: 32px 0 0;
   border-radius: 0;
   border: 0;
-  background: var(--surface-soft);
+  background: transparent;
   box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 320px);
+  align-items: end;
+  gap: 28px;
 }
 .promo-highlight::before {
   content: "";
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 56px;
+  inset: 0 auto auto 0;
+  width: 44px;
   height: 3px;
-  top: 0;
   background: var(--brand-accent);
 }
 .promo-highlight-copy {
   min-width: 0;
-  padding-left: 2px;
+  padding-left: 0;
 }
 .promo-highlight-eyebrow {
   font-size: 11px;
@@ -263,25 +264,26 @@ h1 {
 }
 .promo-highlight-title {
   margin-top: 8px;
-  font-size: clamp(32px, 5vw, 52px);
-  line-height: 0.98;
+  font-size: clamp(34px, 4.8vw, 56px);
+  line-height: 0.96;
   letter-spacing: -0.04em;
   font-weight: 700;
   font-family: var(--font-display);
   color: var(--text);
+  max-width: 8ch;
 }
 .promo-highlight-body {
-  margin-top: 18px;
-  max-width: 620px;
-  font-size: 15px;
-  line-height: 1.8;
+  margin-top: 16px;
+  max-width: 520px;
+  font-size: 14px;
+  line-height: 1.78;
   color: #534a40;
 }
 .promo-highlight-tags {
-  margin-top: 14px;
+  margin-top: 18px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 14px;
 }
 .promo-highlight-tag {
   display: inline-flex;
@@ -292,23 +294,26 @@ h1 {
   border: 0;
   background: transparent;
   color: #4d443a;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.45;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 .promo-highlight-cta {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 10px;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 16px;
+  padding-bottom: 4px;
 }
 .promo-highlight-state {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 0;
   padding: 0;
   border-radius: 0;
@@ -320,12 +325,12 @@ h1 {
   text-transform: uppercase;
 }
 .promo-highlight-button {
-  width: min(420px, 100%);
+  width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  padding: 18px 20px;
+  padding: 20px 22px;
   border-radius: 0;
   border: 0;
   background: #171513;
@@ -341,7 +346,7 @@ h1 {
 }
 .promo-highlight-button-label {
   display: block;
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1.2;
   letter-spacing: -0.02em;
   font-weight: 700;
@@ -349,9 +354,10 @@ h1 {
 }
 .promo-highlight-button-sub {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
   color: rgba(239, 245, 250, 0.72);
+  letter-spacing: .04em;
 }
 .promo-highlight-button-arrow {
   display: inline-flex;
@@ -374,7 +380,7 @@ h1 {
 @media (min-width: 769px) {
   .hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
     grid-template-areas:
       "top lang"
       "title lang"
@@ -382,7 +388,7 @@ h1 {
       "banner banner"
       "notice notice"
       "promo promo";
-    column-gap: 28px;
+    column-gap: 20px;
     align-items: start;
   }
   .hero-top { grid-area: top; }
@@ -394,37 +400,16 @@ h1 {
   .lang-panel {
     grid-area: lang;
     width: 100%;
-    margin-top: 8px;
+    margin-top: 20px;
     justify-self: end;
-    align-self: center;
+    align-self: start;
   }
-  .banner { grid-area: banner; }
+  .banner { grid-area: banner; justify-self: start; }
   .notice-panel { grid-area: notice; }
-  .promo-highlight {
-    grid-area: promo;
-    flex-direction: row;
-    align-items: stretch;
-    justify-content: space-between;
-    gap: 22px;
-  }
-  .promo-highlight-copy {
-    flex: 1 1 auto;
-    padding-right: 8px;
-  }
-  .promo-highlight-cta {
-    flex: 0 0 min(320px, 34%);
-    align-items: stretch;
-    justify-content: space-between;
-  }
-  .promo-highlight-state {
-    align-self: flex-start;
-  }
-  .promo-highlight-button {
-    width: 100%;
-  }
+  .promo-highlight { grid-area: promo; }
 }
 .panel {
-  margin-top: 18px;
+  margin-top: 36px;
   padding: 0;
   background: transparent;
   border: 0;
@@ -467,9 +452,9 @@ h1 {
   font-family: var(--font-display);
 }
 .panel-head p {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   color: #5c544d;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.8;
 }
 .product-grid {
@@ -480,31 +465,32 @@ h1 {
 }
 .group-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
   margin-top: var(--space-4);
 }
 .group-card {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
   grid-template-areas:
     "icon title"
     "icon sub";
   align-items: start;
-  column-gap: 18px;
-  row-gap: 6px;
+  column-gap: 16px;
+  row-gap: 4px;
   border: 0;
   border-radius: 0;
-  background: rgba(245, 237, 225, 0.88);
-  padding: 28px 24px;
-  min-height: 144px;
+  background: #f7f4ee;
+  padding: 24px 22px;
+  min-height: 132px;
   text-align: left;
   cursor: pointer;
-  transition: transform .16s ease, background .16s ease, color .16s ease;
+  transition: transform .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
 }
 .group-card:hover {
   transform: translateY(-1px);
-  background: rgba(237, 226, 210, 0.96);
+  background: #f1ebe1;
+  box-shadow: 0 18px 28px rgba(23, 21, 19, 0.04);
 }
 .group-card.selected {
   background: #2f2924;
@@ -513,28 +499,29 @@ h1 {
 }
 .group-card-icon {
   grid-area: icon;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  background: rgba(47, 41, 36, 0.08);
+  font-size: 22px;
+  background: rgba(23, 21, 19, 0.06);
 }
 .group-card-title {
   grid-area: title;
   margin-top: 0;
-  font-size: 21px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   font-family: var(--font-sans);
-  letter-spacing: -.02em;
+  letter-spacing: -.03em;
 }
 .group-card-sub {
   grid-area: sub;
   margin-top: 0;
   color: rgba(38, 34, 29, 0.7);
-  font-size: 13px;
-  line-height: 1.78;
+  font-size: 12px;
+  line-height: 1.65;
+  max-width: 26ch;
 }
 .group-card.selected .group-card-icon {
   background: rgba(255, 255, 255, 0.14);
