@@ -1317,3 +1317,104 @@ h1 {
 .site-footer-eyebrow {
   color: rgba(23, 21, 19, 0.4);
 }
+
+/* ===== Global design pass ===== */
+.shell,
+.site-footer-inner {
+  width: min(1100px, calc(100% - 80px));
+}
+
+.hero {
+  padding: 16px 0 30px;
+}
+
+.detail-box,
+.empty-state,
+.price-guide,
+.counter-box,
+.summary-item,
+.entry-card,
+.gallery-stage-summary,
+.gallery-status,
+.gallery-count,
+.pickup-status,
+.radio-card,
+.drive-btn {
+  background: #f6f3ed !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.gallery-stage-toolbar,
+.star-filter-bar {
+  margin-bottom: 14px;
+  padding: 14px 0 12px;
+}
+
+.gallery-grid {
+  gap: 8px;
+}
+
+.ghost-btn,
+.primary-btn,
+.gallery-search,
+#mailAddressInput,
+.pickup-day,
+.pickup-slot-btn,
+.entry-card input,
+.entry-card textarea,
+.entry-card select,
+.star-filter,
+.gallery-more,
+.entry-thumb,
+.lightbox-btn,
+.lightbox-nav {
+  border-radius: 0 !important;
+}
+
+.ghost-btn,
+.primary-btn {
+  min-height: 48px;
+}
+
+.nav-row {
+  margin-top: 24px;
+}
+
+.site-footer-block {
+  background: transparent !important;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+  padding-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .shell,
+  .site-footer-inner {
+    width: min(760px, calc(100% - 40px));
+  }
+}
+
+@media (max-width: 640px) {
+  .shell,
+  .site-footer-inner {
+    width: calc(100% - 40px);
+  }
+
+  .hero {
+    padding: 12px 0 24px;
+  }
+
+  .detail-box,
+  .empty-state,
+  .price-guide,
+  .counter-box,
+  .entry-card,
+  .gallery-stage-summary {
+    padding: 18px 16px;
+  }
+
+  .gallery-stage-toolbar {
+    gap: 8px;
+  }
+}

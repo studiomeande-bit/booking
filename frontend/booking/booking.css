@@ -2260,3 +2260,154 @@ body {
     padding: 0;
   }
 }
+
+/* ===== Global design pass ===== */
+.shell,
+.site-footer-inner {
+  width: min(1100px, calc(100% - 80px));
+}
+
+.hero {
+  padding: 18px 0 44px;
+}
+
+.banner,
+.notice-panel,
+.promo-highlight,
+.detail-box,
+#generalPanel > .form-block,
+#generalPanel > .inline-field,
+#generalPanel > .detail-box,
+.slot-panel,
+.loading-box,
+.slot-empty,
+.empty-state,
+.consent-group,
+.consent-row-highlight {
+  background: #f6f3ed !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.banner,
+.notice-panel {
+  padding: 20px 24px;
+}
+
+.notice-body {
+  max-width: 62ch;
+}
+
+.promo-highlight {
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 340px);
+  gap: 28px;
+}
+
+.group-grid {
+  gap: 18px;
+}
+
+.group-card,
+.product-card {
+  background: #f6f3ed;
+  box-shadow: none !important;
+}
+
+.group-card {
+  min-height: 148px;
+  padding: 28px 24px;
+}
+
+.group-card-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  text-wrap: balance;
+  line-height: 1.1;
+}
+
+.group-card-sub {
+  max-width: 34ch;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.product-card {
+  min-height: 128px;
+  padding: 26px 24px;
+}
+
+.chip-btn,
+.inline-field select,
+.booking-form input,
+.booking-form textarea,
+.calendar-cell,
+.slot-btn {
+  border-radius: 0 !important;
+}
+
+.ghost-btn,
+.primary-btn,
+.submit-btn {
+  min-height: 48px;
+  border-radius: 0 !important;
+}
+
+.site-footer-block {
+  background: transparent !important;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+  padding-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .shell,
+  .site-footer-inner {
+    width: min(760px, calc(100% - 40px));
+  }
+
+  .hero {
+    padding: calc(8px + var(--safe-top)) 0 24px;
+  }
+
+  .promo-highlight {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 24px 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell,
+  .site-footer-inner {
+    width: calc(100% - 40px);
+  }
+
+  .banner,
+  .notice-panel,
+  .promo-highlight,
+  .detail-box,
+  .slot-panel {
+    padding: 18px 16px !important;
+  }
+
+  .group-card,
+  .product-card {
+    padding: 18px 16px;
+  }
+
+  .group-card-title,
+  .product-card h3 {
+    font-size: 18px;
+    line-height: 1.14;
+  }
+
+  .group-card-sub,
+  .product-meta,
+  .detail-copy,
+  .notice-body {
+    font-size: 13px;
+    line-height: 1.7;
+  }
+}

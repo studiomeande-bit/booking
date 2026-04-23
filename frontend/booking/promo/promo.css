@@ -655,3 +655,124 @@ textarea,
     padding: 20px 16px;
   }
 }
+
+/* ===== Global design pass ===== */
+.shell,
+.site-footer-inner {
+  width: min(1100px, calc(100% - 80px));
+}
+
+.hero {
+  padding: 18px 0 40px;
+}
+
+.status-banner,
+.intro-card,
+.detail-card,
+.note-box,
+.consent-box,
+.review-box,
+.success-item,
+.price-card,
+.slot-panel,
+.loading-box {
+  background: #f6f3ed !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.intro-grid,
+.product-grid,
+.detail-grid,
+.calendar-stage,
+.form-grid,
+.booking-form,
+.success-grid {
+  gap: 20px;
+}
+
+.product-card {
+  background: #f6f3ed;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.detail-card,
+.intro-card,
+.price-card,
+.slot-panel,
+.consent-box,
+.review-box,
+.success-item {
+  padding: 24px;
+}
+
+.ghost-btn,
+.primary-btn,
+input,
+select,
+textarea,
+.day-btn,
+.slot-btn {
+  border-radius: 0 !important;
+}
+
+.ghost-btn,
+.primary-btn {
+  min-height: 48px;
+}
+
+.site-footer-block {
+  background: transparent !important;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+  padding-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .shell,
+  .site-footer-inner {
+    width: min(760px, calc(100% - 40px));
+  }
+
+  .hero {
+    padding: calc(8px + var(--safe-top)) 0 24px;
+  }
+
+  .lang-panel {
+    width: 100%;
+    margin-top: 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell,
+  .site-footer-inner {
+    width: calc(100% - 40px);
+  }
+
+  .status-banner,
+  .intro-card,
+  .detail-card,
+  .price-card,
+  .slot-panel,
+  .consent-box,
+  .review-box,
+  .success-item {
+    padding: 18px 16px !important;
+  }
+
+  .panel-head h2,
+  .success-title {
+    font-size: 24px;
+  }
+
+  .panel-head p,
+  .slot-panel-copy,
+  .consent-copy,
+  #closedBody {
+    font-size: 14px;
+    line-height: 1.72;
+  }
+}
