@@ -8790,13 +8790,13 @@ function buildGutscheinHtml_(g){
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:110mm 148.5mm;margin:0}
 body{width:110mm;margin:0 auto;background:#fff}
-.page{position:relative;width:110mm;height:148.5mm;padding:6mm;background:#fff;page-break-after:always;overflow:hidden}
+.page{position:relative;width:110mm;height:148.5mm;padding:5mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
 .inner{position:relative;height:100%;display:grid}
-.front .inner{grid-template-rows:auto 26mm 1fr auto auto;gap:4.5mm}
-.back .inner{grid-template-rows:auto 1fr auto auto;gap:5.5mm}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.4pt;line-height:1.25;color:var(--muted);letter-spacing:.04em}
-.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:30pt;line-height:.94;color:var(--ink);white-space:pre-line}
+.front .inner{grid-template-rows:auto 24mm 92mm auto auto;gap:4mm}
+.back .inner{grid-template-rows:auto 94mm auto auto;gap:5mm}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.2pt;line-height:1.25;color:var(--muted);letter-spacing:.04em;padding:1mm 1mm 0}
+.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:31pt;line-height:.92;color:var(--ink);white-space:pre-line}
 .frame-corner{position:absolute;width:14mm;height:10mm}
 .frame-corner::before,.frame-corner::after{content:'';position:absolute;background:rgba(48,40,33,.65)}
 .frame-corner::before{width:100%;height:.55mm;left:0;top:0}
@@ -8804,31 +8804,31 @@ body{width:110mm;margin:0 auto;background:#fff}
 .frame-corner.tr{right:0;top:0;transform:scaleX(-1)}
 .frame-corner.tl{left:0;top:0}
 .panel{position:relative;width:100%;background:var(--panel);border:1px solid var(--panel-line)}
-.panel.front{min-height:83mm;padding:6mm 5.5mm}
-.panel.back{min-height:96mm;padding:6mm 5.5mm}
-.voucher-note{position:absolute;left:5.5mm;right:5.5mm;bottom:6mm;font-size:8pt;line-height:1.35;color:var(--muted);text-align:left}
-.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'18pt'};font-weight:700;line-height:1.08;color:var(--ink);margin-bottom:1.2mm}
-.notes{margin:0;padding-left:4.7mm;font-size:7.6pt;line-height:1.42;color:var(--ink)}
+.panel.front{min-height:92mm;padding:0}
+.panel.back{min-height:94mm;padding:0}
+.voucher-note{position:absolute;left:7mm;right:7mm;bottom:6.5mm;font-size:7.8pt;line-height:1.35;color:var(--muted);text-align:left}
+.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'20pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:1.4mm}
+.notes{margin:0;padding-left:4.4mm;font-size:7.4pt;line-height:1.4;color:var(--ink)}
 .notes li{margin:.8mm 0}
 .logo-footer{text-align:center}
 .brand-logo{width:45mm;height:auto;display:block;margin:0 auto}
-.footer-line{margin-top:2mm;font-size:8.1pt;line-height:1.45;color:var(--ink)}
-.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:20pt;line-height:1;color:var(--ink)}
+.footer-line{margin-top:2mm;font-size:8pt;line-height:1.4;color:var(--ink)}
+.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:20pt;line-height:1;color:var(--ink);padding:1mm 1mm 0}
 .field-row.right{justify-content:flex-end}
-.field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .8mm 0;font-size:13.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+.field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .8mm 0;font-size:13.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:6mm}
 .field-row.right .field-line{text-align:right}
 .back-layout{position:relative;height:100%}
-.qr-wrap{position:absolute;right:5.5mm;bottom:5.5mm}
-.qr-box{width:25mm;height:25mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.8mm;border:1px solid rgba(45,36,29,.2)}
+.qr-wrap{position:absolute;right:6mm;bottom:6mm}
+.qr-box{width:23mm;height:23mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.6mm;border:1px solid rgba(45,36,29,.18)}
 .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
 .qr-fallback{font-size:7pt;color:var(--muted);line-height:1.3;text-align:center}
-.qr-caption{margin-top:1.2mm;font-size:6.7pt;letter-spacing:.08em;color:var(--muted);text-align:center}
-.back-meta{position:absolute;left:0;right:33mm;bottom:4mm;display:grid;gap:2.5mm}
-.back-meta .value{font-size:${isProduct?'10pt':'17pt'};font-weight:700;line-height:1.08;color:var(--ink)}
-.back-meta .kind{font-size:7.6pt;line-height:1.35;color:var(--muted)}
-.message-box{max-width:66mm;padding-top:2mm;color:var(--ink);font-size:10pt;line-height:1.55;white-space:pre-wrap}
-.muted-small{font-size:7.2pt;line-height:1.35;color:var(--muted)}
-.code-inline{font-size:7.2pt;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.qr-caption{margin-top:1mm;font-size:6.6pt;letter-spacing:.08em;color:var(--muted);text-align:center}
+.back-meta{position:absolute;left:6mm;right:34mm;bottom:7mm;display:grid;gap:2mm}
+.back-meta .value{font-size:${isProduct?'10pt':'18pt'};font-weight:700;line-height:1.06;color:var(--ink)}
+.back-meta .kind{font-size:7.5pt;line-height:1.3;color:var(--muted)}
+.message-box{position:absolute;left:6mm;top:6mm;right:8mm;color:var(--ink);font-size:9.4pt;line-height:1.58;white-space:pre-wrap}
+.muted-small{font-size:7pt;line-height:1.35;color:var(--muted)}
+.code-inline{font-size:7pt;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
 </style></head><body>
 <div class="page front">
   <div class="inner">
