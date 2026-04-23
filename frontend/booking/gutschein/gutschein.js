@@ -17,6 +17,12 @@ const COPY = {
   messageLabel: 'Nachricht',
   guideTitle: 'Einlösung',
   guideCopy: 'Bitte zeigen Sie im Studio den QR-Code oder den Code vor. Unser Team prüft den Gutschein und verrechnet ihn bei der Buchung.',
+  guideNotes: [
+    'Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.',
+    'Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.',
+    'Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.',
+    'Der Gutschein ist nicht rückerstattbar.'
+  ],
   copyButton: 'Code kopieren',
   copied: 'Code kopiert.',
   fallbackCopy: 'Kopieren ist auf diesem Gerät nicht verfügbar.',
@@ -108,6 +114,9 @@ function renderStaticCopy() {
   els.messageLabel.textContent = COPY.messageLabel;
   els.guideTitle.textContent = COPY.guideTitle;
   els.guideCopy.textContent = COPY.guideCopy;
+  els.guideNotes.innerHTML = COPY.guideNotes
+    .map((note) => `<li>${escapeHtml(note)}</li>`)
+    .join('');
   els.copyCodeBtn.textContent = COPY.copyButton;
   els.contactLabel.textContent = 'Studio mean';
 }
@@ -198,6 +207,7 @@ function bindUi() {
   els.ticketMessage = document.querySelector('#ticketMessage');
   els.guideTitle = document.querySelector('#guideTitle');
   els.guideCopy = document.querySelector('#guideCopy');
+  els.guideNotes = document.querySelector('#guideNotes');
   els.contactLabel = document.querySelector('#contactLabel');
   els.contactBody = document.querySelector('#contactBody');
   els.toast = document.querySelector('#toast');
