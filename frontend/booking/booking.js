@@ -4172,7 +4172,7 @@ function getSuccessGuideHtml(payload) {
   if (product.g === 'pass') {
     sections.push(`
       <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? (hasBabyBirthday ? '👶 영유아 여권 / 비자사진 촬영 조건 안내' : '[예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영') : 'Passport / Visa Shoot Guide'}</h4>
+        <h4 class="result-guide-title">${isKo ? (hasBabyBirthday ? '영유아 여권 / 비자사진 촬영 조건 안내' : '[예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영') : 'Passport / Visa Shoot Guide'}</h4>
         <div class="result-guide-body">
           ${isKo ? (hasBabyBirthday ? `
             <p>아기는 눕힌 상태에서 밝은 단색 배경으로 촬영하며, 한국 여권과 독일 비자 규정을 함께 맞춰 진행합니다.</p>
@@ -4184,7 +4184,7 @@ function getSuccessGuideHtml(payload) {
             </ul>
           ` : `
             <p>고객님, 예약을 환영합니다. 독일의 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.</p>
-            <h5>⚠️ [필독] 눈썹 노출 및 반려 주의</h5>
+            <h5>[필독] 눈썹 노출 및 반려 주의</h5>
             <ul>
               <li>눈썹 전체가 보여야 합니다. 앞머리가 눈썹을 조금이라도 가리면 반려될 확률이 매우 높습니다.</li>
               <li>귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.</li>

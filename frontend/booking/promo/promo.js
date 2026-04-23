@@ -97,6 +97,8 @@ const COPY = {
     price: '예상 금액',
     customerName: '이름',
     customerEmail: '이메일',
+    calendarFullShort: '마감',
+    calendarClosedShort: '휴무',
     calendarHintProduct(name) { return `${name} · 예약 가능한 날짜와 시간을 선택해 주세요.`; },
     peopleCustomPlaceholder: '6명 이상 직접입력',
     childAgePlaceholder: '예: 만 4세',
@@ -186,6 +188,8 @@ const COPY = {
     price: 'Estimated price',
     customerName: 'Name',
     customerEmail: 'Email',
+    calendarFullShort: 'Full',
+    calendarClosedShort: 'Closed',
     calendarHintProduct(name) { return `${name} · Choose an available date and time.`; },
     peopleCustomPlaceholder: '6+ custom input',
     childAgePlaceholder: 'e.g. 4 years old',
@@ -275,6 +279,8 @@ const COPY = {
     price: 'Voraussichtlicher Preis',
     customerName: 'Name',
     customerEmail: 'E-Mail',
+    calendarFullShort: 'Voll',
+    calendarClosedShort: 'Ruhe',
     calendarHintProduct(name) { return `${name} · Wählen Sie ein verfügbares Datum und eine Uhrzeit.`; },
     peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
     childAgePlaceholder: 'z. B. 4 Jahre',
@@ -721,19 +727,22 @@ function weekdayLabels() {
   return ['일', '월', '화', '수', '목', '금', '토'];
 }
 
-function isDateAllowed(dateStr, unavailSet) {
+function isDateAllowed(dateStr, unavailSet, closedSet = new Set()) {
   const today = todayDateStr();
   return dateStr >= today &&
     dateStr >= state.promoStart &&
     dateStr <= state.promoEnd &&
     dateStr <= PROMO_END_LIMIT &&
-    !unavailSet.has(dateStr);
+    !unavailSet.has(dateStr) &&
+    !closedSet.has(dateStr);
 }
 
 function renderCalendar(batchData) {
   const { year, monthIndex } = state.currentMonth;
   const key = monthKey(year, monthIndex);
   const unavail = new Set((batchData?.unavail || state.monthCache[key]?.unavail || []).map(String));
+  const closed = new Set((batchData?.closed || state.monthCache[key]?.closed || []).map(String));
+  const c = copy();
   els.monthLabel.textContent = formatMonthLabel(year, monthIndex, state.lang);
   els.calendarWeekdays.innerHTML = weekdayLabels().map((label) => `<span>${escapeHtml(label)}</span>`).join('');
   const first = new Date(year, monthIndex, 1);
@@ -743,10 +752,16 @@ function renderCalendar(batchData) {
   for (let i = 0; i < startWeekday; i += 1) cells.push('<span class="day-spacer"></span>');
   for (let day = 1; day <= days; day += 1) {
     const dateStr = `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
-    const allowed = isDateAllowed(dateStr, unavail);
-    const active = state.selectedDate === dateStr ? ' active' : '';
-    const disabled = allowed ? '' : ' disabled';
-    cells.push(`<button type="button" class="day-btn${active}${disabled}" data-date="${dateStr}" ${allowed ? '' : 'disabled'}>${day}</button>`);
+    const isClosed = closed.has(dateStr);
+    const isFull = !isClosed && unavail.has(dateStr);
+    const allowed = isDateAllowed(dateStr, unavail, closed);
+    const classes = ['day-btn'];
+    if (state.selectedDate === dateStr) classes.push('active');
+    if (!allowed) classes.push('disabled');
+    if (isFull) classes.push('full');
+    if (isClosed) classes.push('closed');
+    const statusLabel = isClosed ? c.calendarClosedShort : isFull ? c.calendarFullShort : '';
+    cells.push(`<button type="button" class="${classes.join(' ')}" data-date="${dateStr}" ${allowed ? '' : 'disabled'}${statusLabel ? ` data-status-label="${escapeHtml(statusLabel)}"` : ''}>${day}</button>`);
   }
   els.calendarGrid.classList.remove('loading-box');
   els.calendarGrid.innerHTML = cells.join('');
