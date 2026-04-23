@@ -2509,6 +2509,15 @@ function getPeoplePricingNote(product, people) {
   return '';
 }
 
+function scrollSlotPanelIntoView() {
+  if (window.innerWidth > 960) return;
+  const panel = document.querySelector('.slot-panel');
+  if (!panel) return;
+  const offset = 12;
+  const top = Math.max(0, panel.getBoundingClientRect().top + window.scrollY - offset);
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+
 function getProductPolicyNote(product) {
   if (!product) return '';
   if (product.id === 'pb') {
@@ -3536,6 +3545,7 @@ async function selectDate(dateKey) {
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
   await loadSlotsForDate(dateKey);
+  scrollSlotPanelIntoView();
   refreshQuote().catch((error) => console.error(error));
   renderReview();
   syncStepPanels();

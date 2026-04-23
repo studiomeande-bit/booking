@@ -3145,3 +3145,78 @@ h1 {
 .calendar-weekday:nth-child(7) {
   color: #3b6fbe !important;
 }
+
+/* ===== Calendar flow refinement ===== */
+.calendar-stage {
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.95fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.calendar-main {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  background: #f6f3ed;
+}
+
+.calendar-toolbar {
+  margin-top: 0;
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  margin-top: 0;
+  gap: 8px;
+}
+
+.calendar-legend {
+  margin-top: 14px;
+}
+
+.slot-panel {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 24px !important;
+  background: #f6f3ed !important;
+}
+
+.slot-panel-head {
+  gap: 6px;
+}
+
+#slotHint {
+  margin: 0;
+  color: #6d6155;
+  line-height: 1.68;
+}
+
+.slot-grid {
+  margin-top: 0;
+}
+
+@media (max-width: 960px) {
+  .calendar-stage {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .calendar-main,
+  .slot-panel {
+    padding: 20px 18px !important;
+  }
+
+  .slot-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .calendar-main,
+  .slot-panel {
+    padding: 18px 16px !important;
+  }
+}

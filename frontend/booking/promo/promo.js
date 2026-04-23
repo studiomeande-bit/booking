@@ -724,11 +724,32 @@ function renderPriceCard() {
     return;
   }
   const meta = c.groups[state.selectedProduct.id];
+  const peopleText = `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`;
   els.priceCard.innerHTML = `
     <div class="price-label">${escapeHtml(c.price)}</div>
     <div class="price-main">€${escapeHtml(quote.totalPrice)}</div>
-    <div class="price-sub">${escapeHtml(meta.title)} · ${escapeHtml(`${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`)}</div>
+    <div class="price-sub">${escapeHtml(meta.title)}</div>
+    <div class="price-meta">
+      <div class="price-meta-item">
+        <span class="price-meta-label">${escapeHtml(c.packageName)}</span>
+        <strong class="price-meta-value">${escapeHtml(meta.title)}</strong>
+      </div>
+      <div class="price-meta-item">
+        <span class="price-meta-label">${escapeHtml(c.peopleLabel)}</span>
+        <strong class="price-meta-value">${escapeHtml(peopleText)}</strong>
+      </div>
+    </div>
+    <div class="price-note">${escapeHtml(meta.note)}</div>
   `;
+}
+
+function scrollSlotPanelIntoView() {
+  if (window.innerWidth > 960) return;
+  const panel = document.querySelector('.slot-panel');
+  if (!panel) return;
+  const offset = 12;
+  const top = Math.max(0, panel.getBoundingClientRect().top + window.scrollY - offset);
+  window.scrollTo({ top, behavior: 'smooth' });
 }
 
 function monthKey(year, monthIndex) {
@@ -1115,6 +1136,7 @@ function bindEvents() {
     state.selectedDate = btn.dataset.date;
     renderCalendar(state.monthCache[monthKey(state.currentMonth.year, state.currentMonth.monthIndex)]);
     await loadSlots(state.selectedDate);
+    scrollSlotPanelIntoView();
     updateReview();
   });
   els.slotGrid.addEventListener('click', (event) => {

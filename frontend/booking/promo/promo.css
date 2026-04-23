@@ -870,3 +870,130 @@ textarea,
 .calendar-weekdays span:nth-child(7) {
   color: #3b6fbe;
 }
+
+/* ===== Calendar + price flow refinement ===== */
+.calendar-stage {
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.9fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.calendar-main {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  background: #f6f3ed;
+}
+
+.calendar-toolbar {
+  margin-bottom: 0;
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  gap: 8px;
+}
+
+.slot-panel {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 24px !important;
+  background: #f6f3ed !important;
+}
+
+.slot-panel-copy {
+  margin: 0;
+  color: #6d6155;
+  line-height: 1.68;
+}
+
+.slot-grid {
+  margin-top: 0;
+}
+
+.price-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.price-sub {
+  margin-top: 0;
+  font-size: 18px;
+  line-height: 1.35;
+  color: #fff;
+}
+
+.price-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.price-meta-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.price-meta-label {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.price-meta-value {
+  font-size: 16px;
+  line-height: 1.4;
+  color: #fff;
+  font-weight: 600;
+}
+
+.price-note {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 13px;
+  line-height: 1.68;
+  max-width: 54ch;
+}
+
+@media (max-width: 960px) {
+  .calendar-stage {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .calendar-main,
+  .slot-panel {
+    padding: 20px 18px !important;
+  }
+
+  .slot-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .calendar-main,
+  .slot-panel,
+  .price-card {
+    padding: 18px 16px !important;
+  }
+
+  .price-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .price-sub {
+    font-size: 17px;
+  }
+
+  .price-note {
+    font-size: 12px;
+  }
+}
