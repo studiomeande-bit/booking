@@ -8773,6 +8773,7 @@ function buildGutscheinHtml_(g){
   };
   const recipientText=String(g.recipientName||'').trim() || ' ';
   const purchaserText=String(g.purchaserName||'').trim() || ' ';
+  const messageText=String(g.message||'').trim();
   const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
@@ -8780,46 +8781,54 @@ function buildGutscheinHtml_(g){
 *{box-sizing:border-box}
 :root{
   --ink:#171513;
-  --accent:#2b2520;
+  --accent:#8c3d2a;
   --muted:#5c5248;
-  --line:#302821;
-  --panel:#e7e4df;
+  --line:#2d241d;
+  --panel:#e8e3da;
+  --panel-line:rgba(45,36,29,.18);
 }
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:110mm 148.5mm;margin:0}
 body{width:110mm;margin:0 auto;background:#fff}
 .page{position:relative;width:110mm;height:148.5mm;padding:6mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
-.inner{position:relative;height:100%}
+.inner{position:relative;height:100%;display:grid}
+.front .inner{grid-template-rows:auto 26mm 1fr auto auto;gap:4.5mm}
+.back .inner{grid-template-rows:auto 1fr auto auto;gap:5.5mm}
 .meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.4pt;line-height:1.25;color:var(--muted);letter-spacing:.04em}
-.script-title{margin:4mm 0 2mm 0;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:29pt;line-height:.98;color:var(--ink);white-space:pre-line}
+.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:30pt;line-height:.94;color:var(--ink);white-space:pre-line}
 .frame-corner{position:absolute;width:14mm;height:10mm}
 .frame-corner::before,.frame-corner::after{content:'';position:absolute;background:rgba(48,40,33,.65)}
 .frame-corner::before{width:100%;height:.55mm;left:0;top:0}
 .frame-corner::after{width:.55mm;height:100%;left:0;top:0}
 .frame-corner.tr{right:0;top:0;transform:scaleX(-1)}
 .frame-corner.tl{left:0;top:0}
-.panel{position:relative;width:100%;background:var(--panel)}
-.panel.front{height:76mm;margin-top:1.5mm;padding:6mm 5.5mm}
-.panel.back{height:86mm;margin-top:5mm;padding:6mm 5.5mm}
-.value-lockup{position:absolute;left:5.5mm;bottom:6mm}
-.value-lockup .value{font-size:${isProduct?'15pt':'26pt'};font-weight:700;line-height:1;letter-spacing:.01em;color:var(--ink)}
-.value-lockup .kind{margin-top:1.4mm;font-size:8pt;line-height:1.3;color:var(--muted)}
-.notes{margin:5mm 0 0 0;padding-left:4.7mm;font-size:7.7pt;line-height:1.42;color:var(--ink)}
+.panel{position:relative;width:100%;background:var(--panel);border:1px solid var(--panel-line)}
+.panel.front{min-height:83mm;padding:6mm 5.5mm}
+.panel.back{min-height:96mm;padding:6mm 5.5mm}
+.voucher-note{position:absolute;left:5.5mm;right:5.5mm;bottom:6mm;font-size:8pt;line-height:1.35;color:var(--muted);text-align:left}
+.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'18pt'};font-weight:700;line-height:1.08;color:var(--ink);margin-bottom:1.2mm}
+.notes{margin:0;padding-left:4.7mm;font-size:7.6pt;line-height:1.42;color:var(--ink)}
 .notes li{margin:.8mm 0}
-.logo-footer{position:absolute;left:0;right:0;bottom:3mm;text-align:center}
+.logo-footer{text-align:center}
 .brand-logo{width:45mm;height:auto;display:block;margin:0 auto}
 .footer-line{margin-top:2mm;font-size:8.1pt;line-height:1.45;color:var(--ink)}
 .field-row{display:flex;align-items:flex-end;gap:3mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:20pt;line-height:1;color:var(--ink)}
 .field-row.right{justify-content:flex-end}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .8mm 0;font-size:13.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 .field-row.right .field-line{text-align:right}
-.qr-wrap{position:absolute;right:5.5mm;bottom:6mm}
-.qr-box{width:23mm;height:23mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.8mm}
+.back-layout{position:relative;height:100%}
+.qr-wrap{position:absolute;right:5.5mm;bottom:5.5mm}
+.qr-box{width:25mm;height:25mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.8mm;border:1px solid rgba(45,36,29,.2)}
 .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
 .qr-fallback{font-size:7pt;color:var(--muted);line-height:1.3;text-align:center}
 .qr-caption{margin-top:1.2mm;font-size:6.7pt;letter-spacing:.08em;color:var(--muted);text-align:center}
-.logo-footer.back{bottom:6mm}
+.back-meta{position:absolute;left:0;right:33mm;bottom:4mm;display:grid;gap:2.5mm}
+.back-meta .value{font-size:${isProduct?'10pt':'17pt'};font-weight:700;line-height:1.08;color:var(--ink)}
+.back-meta .kind{font-size:7.6pt;line-height:1.35;color:var(--muted)}
+.message-box{max-width:66mm;padding-top:2mm;color:var(--ink);font-size:10pt;line-height:1.55;white-space:pre-wrap}
+.muted-small{font-size:7.2pt;line-height:1.35;color:var(--muted)}
+.code-inline{font-size:7.2pt;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
 </style></head><body>
 <div class="page front">
   <div class="inner">
@@ -8831,9 +8840,9 @@ body{width:110mm;margin:0 auto;background:#fff}
     </div>
     <div class="script-title">${t.title}</div>
     <div class="panel front">
-      <div class="value-lockup">
-        <div class="value">${escapeHtml_(amountLabel)}</div>
-        <div class="kind">${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}</div>
+      <div class="voucher-note">
+        <span class="value">${escapeHtml_(amountLabel)}</span>
+        ${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}
       </div>
     </div>
     <ul class="notes">
@@ -8853,19 +8862,22 @@ body{width:110mm;margin:0 auto;background:#fff}
   <div class="inner">
     <div class="field-row"><span>${t.forLabel}</span><span class="field-line">${escapeHtml_(recipientText)}</span></div>
     <div class="panel back">
-      <div class="value-lockup">
-        <div class="value">${escapeHtml_(amountLabel)}</div>
-        <div class="kind">${escapeHtml_(g.code||'')}</div>
-      </div>
-      <div class="qr-wrap">
-        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
-        <div class="qr-caption">QR</div>
+      <div class="back-layout">
+        ${messageText ? `<div class="message-box">${escapeHtml_(messageText)}</div>` : ``}
+        <div class="back-meta">
+          <div class="value">${escapeHtml_(amountLabel)}</div>
+          <div class="kind">${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}</div>
+          <div class="code-inline">${escapeHtml_(g.code||'')}</div>
+          <div class="muted-small">${escapeHtml_(t.valid)} · ${validLabel}</div>
+        </div>
+        <div class="qr-wrap">
+          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
+          <div class="qr-caption">QR</div>
+        </div>
       </div>
     </div>
-    <div style="margin-top:7mm">
-      <div class="field-row right"><span>${t.fromLabel}</span><span class="field-line">${escapeHtml_(purchaserText)}</span></div>
-    </div>
-    <div class="logo-footer back">
+    <div class="field-row right"><span>${t.fromLabel}</span><span class="field-line">${escapeHtml_(purchaserText)}</span></div>
+    <div class="logo-footer">
       ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
     </div>
   </div>

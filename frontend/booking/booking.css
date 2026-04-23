@@ -3312,3 +3312,85 @@ h1 {
     padding-top: 16px;
   }
 }
+
+/* ===== Step 1 proportion polish ===== */
+#stepPanel1 .panel-head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+#stepPanel1 .panel-head p {
+  max-width: 54ch;
+  color: #5e554c;
+}
+
+.group-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.group-card {
+  position: relative;
+  min-height: 152px;
+  padding: 26px 28px;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.group-card::after {
+  content: '→';
+  position: absolute;
+  right: 24px;
+  bottom: 22px;
+  font-size: 16px;
+  line-height: 1;
+  color: rgba(23, 21, 19, 0.28);
+  transition: transform .16s ease, color .16s ease;
+}
+
+.group-card:hover::after {
+  transform: translateX(2px);
+  color: rgba(23, 21, 19, 0.55);
+}
+
+.group-card.selected::after {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.group-card-title {
+  max-width: calc(100% - 36px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-card-sub {
+  max-width: calc(100% - 36px);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .group-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .group-card {
+    min-height: 132px;
+    padding: 22px 20px;
+  }
+
+  .group-card::after {
+    right: 18px;
+    bottom: 18px;
+  }
+
+  .group-card-title,
+  .group-card-sub {
+    max-width: calc(100% - 28px);
+  }
+}
