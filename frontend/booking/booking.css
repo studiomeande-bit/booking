@@ -514,7 +514,10 @@ h1 {
   color: rgba(38, 34, 29, 0.7);
   font-size: 12px;
   line-height: 1.68;
-  max-width: 30ch;
+  max-width: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .group-card.selected .group-card-sub { color: rgba(255,255,255,.72); }
 .product-group-title {
@@ -829,7 +832,7 @@ h1 {
   opacity: 1;
 }
 .calendar-cell.full::after {
-  content: '마감';
+  content: attr(data-status-label);
   position: absolute;
   bottom: 2px;
   left: 50%;
@@ -854,7 +857,7 @@ h1 {
   cursor: not-allowed;
 }
 .calendar-cell.closed::after {
-  content: '휴무';
+  content: attr(data-status-label);
   position: absolute;
   bottom: 2px;
   left: 50%;
@@ -946,17 +949,18 @@ h1 {
 .booking-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 20px 18px;
   margin-top: 18px;
 }
 .booking-form label {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 .booking-form label span {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #645c53;
+  line-height: 1.45;
 }
 .checkbox-row {
   grid-column: 1 / -1;
@@ -1277,10 +1281,10 @@ h1 {
   color: #9a7a44;
 }
 .consent-box {
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fcfaf6;
+  padding: 22px;
+  border: 0;
+  border-radius: 0;
+  background: #f7f4ee;
 }
 .consent-title {
   font-size: 15px;
@@ -1295,10 +1299,10 @@ h1 {
   margin-top: 18px;
 }
 .consent-group {
-  padding: 16px 16px 4px;
-  border: 1px solid rgba(220, 206, 189, 0.9);
-  border-radius: 8px;
-  background: #fffdf9;
+  padding: 18px 18px 8px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.72);
 }
 .consent-group-required {
   background: linear-gradient(180deg, #fffdf6 0%, #fbf5ea 100%);
@@ -1317,9 +1321,9 @@ h1 {
 .consent-row-highlight {
   margin-top: 10px;
   padding: 16px 18px;
-  border: 1px solid #dcc8a8;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #fff7e8 0%, #fcf2e0 100%);
+  border: 0;
+  border-radius: 0;
+  background: #fff4de;
   box-shadow: none;
 }
 .consent-row-highlight > span {
@@ -1542,9 +1546,9 @@ h1 {
   .banner { margin-top: 14px; padding: 12px 0 0; border-radius: 0; }
   .product-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-grid { grid-template-columns: 1fr; gap: 12px; }
-  .group-card { grid-template-columns: 40px minmax(0, 1fr); min-height: 104px; padding: 20px 16px; border-radius: 0; column-gap: 14px; }
+  .group-card { grid-template-columns: 1fr; min-height: 104px; padding: 20px 16px; border-radius: 0; column-gap: 0; row-gap: 8px; }
   .group-card-title { font-size: 17px; }
-  .group-card-sub { font-size: 12px; }
+  .group-card-sub { font-size: 12px; white-space: normal; overflow: visible; text-overflow: clip; }
   .product-card { min-height: auto; padding: 16px; border-radius: 18px; }
   .product-card h3 { font-size: 17px; }
   .product-meta { font-size: 12px; }

@@ -162,6 +162,7 @@ h1 {
   color: #3f342c;
   text-decoration: none;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .radio-grid {
   display: grid;
@@ -364,7 +365,7 @@ h1 {
 }
 .bonus-badge {
   background: transparent;
-  color: #8a7044;
+  color: #7c6748;
 }
 .extra-badge {
   background: transparent;
@@ -621,30 +622,37 @@ h1 {
   margin-top: 12px;
 }
 .guide-correction .guide-ex {
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 0;
+  padding: 14px 16px;
   font-size: 13.5px;
-  line-height: 1.6;
+  line-height: 1.72;
 }
-.guide-correction .guide-ex.bad { background: #fdf1f4; border: 1px solid #f1c7d0; color: #9a2b47; }
-.guide-correction .guide-ex.good { background: #edf8f3; border: 1px solid #b9decf; color: #0d5e48; }
-.guide-correction .guide-ex-head { font-weight: 700; margin-bottom: 6px; }
+.guide-correction .guide-ex.bad { background: #f5f1eb; border: 0; color: #6a5c4b; }
+.guide-correction .guide-ex.good { background: #efebe4; border: 0; color: #3e342c; }
+.guide-correction .guide-ex-head {
+  font-weight: 700;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #7a6d5f;
+}
 .guide-correction .guide-ex ul { margin: 0; padding-left: 20px; }
 .guide-correction .guide-ex li { margin: 4px 0; }
-.guide-correction .lettering-note { margin-top: 12px; padding: 10px 12px; background: #fffaec; border: 1px solid #f0d997; border-radius: 8px; color: #7a5b1d; font-size: 13px; }
+.guide-correction .lettering-note { margin-top: 12px; padding: 12px 14px; background: #f2eee7; border: 0; border-radius: 0; color: #615447; font-size: 13px; line-height: 1.72; }
 
 @media (max-width: 820px) {
   .guide-correction .guide-examples { grid-template-columns: 1fr; }
 }
 
 /* ===== Marketing consent box (Step 1) ===== */
-.marketing-box { background: #f3ede0; border: 1px solid #dfd0b4; }
+.marketing-box { background: #f3ede0; border: 0; }
 .marketing-box .tag-bonus {
   display: inline-block;
   padding: 3px 10px;
-  border-radius: 6px;
-  background: #fef3c7;
-  color: #92400e;
+  border-radius: 0;
+  background: #ebe2cf;
+  color: #6f5c3f;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: .02em;
@@ -658,14 +666,15 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 0;
+  border-radius: 0;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: .01em;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
-.gallery-badge { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-.manual-badge { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+.gallery-badge { background: transparent; color: #556a5f; border: 0; }
+.manual-badge { background: transparent; color: #5d6179; border: 0; }
 
 /* ===== Gallery tips / star legend ===== */
 .gallery-tips .star-legend {
@@ -898,11 +907,11 @@ h1 {
   right: 10px;
   background: rgba(16, 16, 16, .56);
   color: rgba(255,255,255,.92);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   padding: 4px 6px;
   border-radius: 0;
-  letter-spacing: .1em;
+  letter-spacing: .08em;
   pointer-events: none;
   z-index: 3;
   backdrop-filter: blur(8px);
@@ -961,13 +970,15 @@ h1 {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 34px;
-  height: 34px;
+  min-width: 42px;
+  height: 32px;
   border-radius: 0;
   background: rgba(18,18,18,.62);
   color: rgba(255,255,255,.94);
   border: 1px solid rgba(255,255,255,.16);
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -975,7 +986,7 @@ h1 {
   opacity: 0;
   transition: opacity .15s ease, transform .15s ease, background .15s ease;
   z-index: 3;
-  padding: 0;
+  padding: 0 10px;
   box-shadow: none;
 }
 .gallery-cell:hover .gallery-zoom, .gallery-cell.focused .gallery-zoom, .gallery-zoom:focus { opacity: 1; }
@@ -1053,18 +1064,20 @@ h1 {
   position: absolute;
   top: 10px;
   right: 10px;
-  width: 34px;
-  height: 34px;
+  min-width: 42px;
+  height: 32px;
   border-radius: 0;
   background: rgba(0,0,0,.42);
   color: #fff;
   border: 0;
-  font-size: 15px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  padding: 0 10px;
 }
 .entry-thumb-zoom:hover { background: rgba(0,0,0,.72); }
 .entry-star-chip {
@@ -1074,9 +1087,10 @@ h1 {
   border-radius: 0;
   background: transparent;
   color: #2f2924;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: .08em;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
 /* ===== Lightbox stars ===== */

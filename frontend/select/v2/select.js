@@ -761,8 +761,8 @@ function galleryCellHtml(p, idx) {
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
   return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
       <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
-      <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">🔍</button>
-      ${star > 0 ? `<div class="cell-star-badge">⭐${star}</div>` : ''}
+      <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">보기</button>
+      ${star > 0 ? `<div class="cell-star-badge">${star}점</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
       <div class="gallery-name">${escapeHtml(p.name)}</div>
     </div>`;
@@ -1105,7 +1105,7 @@ function thumbHtmlForNum(num) {
   if (!p) return `<div class="entry-thumb placeholder">갤러리에서 ${escapeHtml(key)}를 찾지 못했습니다 <br><small>(갤러리를 먼저 불러오면 미리보기가 표시됩니다)</small></div>`;
   return `<div class="entry-thumb" data-zoom-entry="${escapeHtml(key)}">
     <img src="${escapeHtml(p.full || p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" referrerpolicy="no-referrer" loading="lazy" decoding="async">
-    <button type="button" class="entry-thumb-zoom" data-zoom-entry="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기">🔍</button>
+    <button type="button" class="entry-thumb-zoom" data-zoom-entry="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기">보기</button>
   </div>`;
 }
 
@@ -1122,14 +1122,14 @@ function renderPhotos() {
     const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
     const extra = paid ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isBonus
-      ? '<span class="bonus-badge">🎁 마케팅 보너스</span>'
+      ? '<span class="bonus-badge">마케팅 보너스</span>'
       : source === 'gallery'
-        ? '<span class="gallery-badge">🖼 갤러리 · 무료</span>'
-        : '<span class="manual-badge">✍ 직접 추가</span>';
+        ? '<span class="gallery-badge">갤러리 · 무료</span>'
+        : '<span class="manual-badge">직접 추가</span>';
     const free = option.retouched === 0 || isPrintFreeByQuota(index, typeId);
     const key = stripExt(photo.num);
     const star = key ? getStarOf(key) : 0;
-    const starChip = star ? `<span class="entry-star-chip">⭐${star}</span>` : '';
+    const starChip = star ? `<span class="entry-star-chip">${star}점</span>` : '';
     return `
       <div class="entry-card${photo.isBonus ? ' bonus' : ''}">
         <div class="entry-head">
@@ -1230,9 +1230,9 @@ function updatePhotoCounter() {
   const bonusCount = state.photos.filter((p) => p.isBonus).length;
   els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장 포함`;
   const parts = [];
-  if (galleryCount) parts.push(`🖼 갤러리 ${galleryCount}장(무료)`);
-  if (manualCount) parts.push(`✍ 직접 추가 ${manualCount}장`);
-  if (bonusCount) parts.push(`🎁 마케팅 보너스 ${bonusCount}장(무료)`);
+  if (galleryCount) parts.push(`갤러리 ${galleryCount}장(무료)`);
+  if (manualCount) parts.push(`직접 추가 ${manualCount}장`);
+  if (bonusCount) parts.push(`마케팅 보너스 ${bonusCount}장(무료)`);
   els.photoCounterSub.textContent = parts.length
     ? parts.join(' · ') + (extra > 0 ? ` · ${base + 1}번째 이후 직접 추가분이 유료로 계산됩니다.` : ' · 추가 보정 비용 없음')
     : '별점을 주거나 직접 항목을 추가하면 여기에 구성이 표시됩니다.';
@@ -1660,7 +1660,7 @@ function buildMockSession() {
 function showPreviewBanner() {
   const el = document.createElement('div');
   el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f59e0b;color:#fff;padding:8px 14px;text-align:center;font-weight:700;font-size:13px;z-index:10000;box-shadow:0 2px 6px rgba(0,0,0,.15);';
-  el.innerHTML = '🧪 미리보기 모드 — 실제 예약 데이터가 아니며, 제출/다운로드는 동작하지 않습니다.';
+  el.innerHTML = '미리보기 모드 — 실제 예약 데이터가 아니며, 제출/다운로드는 동작하지 않습니다.';
   document.body.appendChild(el);
   document.body.style.paddingTop = '36px';
 }

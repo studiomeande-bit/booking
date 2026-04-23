@@ -465,6 +465,8 @@ const COPY = {
     nameLabel: '이름',
     phoneLabel: '연락처',
     emailLabel: '이메일',
+    emailGmailHint: '사진 전달은 Google Drive 링크로 이루어지므로 <b>Gmail 주소</b>를 권장드립니다.',
+    emailGmailWarn: 'Gmail이 아니면 Drive 링크 수신에 문제가 생길 수 있습니다. 가능하면 Gmail 주소를 사용해 주세요.',
     addressLabel: '주소 (인보이스용, 선택)',
     addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
     businessInvoiceLabel: '사업자용 인보이스 필요',
@@ -543,7 +545,11 @@ const COPY = {
     yes: '동의',
     no: '미동의',
     holidayNotice: '설정된 휴무일과 마감된 일정은 달력에서 자동으로 선택 불가 처리됩니다.',
-    holidayListLabel: '예정 휴무일'
+    holidayListLabel: '예정 휴무일',
+    legendFullLabel: '마감 (대기 등록)',
+    legendClosedLabel: '휴무일',
+    calendarFullShort: '마감',
+    calendarClosedShort: '휴무'
   },
   en: {
     heroTitle: 'Book Your Session',
@@ -621,6 +627,8 @@ const COPY = {
     nameLabel: 'Name',
     phoneLabel: 'Phone',
     emailLabel: 'Email',
+    emailGmailHint: 'Photos are delivered via a Google Drive link, so a <b>Gmail address</b> is recommended.',
+    emailGmailWarn: 'A non-Gmail address may have trouble receiving the Drive link. Please use Gmail if possible.',
     addressLabel: 'Address (optional, for invoice)',
     addressPlaceholder: 'Enter only if you need an invoice',
     businessInvoiceLabel: 'Business invoice needed',
@@ -699,7 +707,11 @@ const COPY = {
     yes: 'Agreed',
     no: 'Not agreed',
     holidayNotice: 'Configured holidays and blocked dates are automatically disabled in the calendar.',
-    holidayListLabel: 'Upcoming closed dates'
+    holidayListLabel: 'Upcoming closed dates',
+    legendFullLabel: 'Fully booked (waitlist)',
+    legendClosedLabel: 'Closed day',
+    calendarFullShort: 'Full',
+    calendarClosedShort: 'Closed'
   },
   de: {
     heroTitle: 'Termin buchen',
@@ -777,6 +789,8 @@ const COPY = {
     nameLabel: 'Name',
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
+    emailGmailHint: 'Die Bildübergabe erfolgt per Google-Drive-Link, daher empfehlen wir eine <b>Gmail-Adresse</b>.',
+    emailGmailWarn: 'Mit anderen E-Mail-Adressen kann es Probleme beim Empfang des Drive-Links geben. Wenn möglich, bitte Gmail verwenden.',
     addressLabel: 'Adresse (optional, für Rechnung)',
     addressPlaceholder: 'Nur eingeben, wenn eine Rechnung benötigt wird',
     businessInvoiceLabel: 'Geschäftsrechnung erforderlich',
@@ -855,7 +869,11 @@ const COPY = {
     yes: 'Zustimmung',
     no: 'Keine Zustimmung',
     holidayNotice: 'Eingestellte Ruhetage und gesperrte Termine werden im Kalender automatisch deaktiviert.',
-    holidayListLabel: 'Kommende Ruhetage'
+    holidayListLabel: 'Kommende Ruhetage',
+    legendFullLabel: 'Ausgebucht (Warteliste)',
+    legendClosedLabel: 'Ruhetag',
+    calendarFullShort: 'Voll',
+    calendarClosedShort: 'Ruhe'
   }
 };
 
@@ -1365,6 +1383,10 @@ function applyCopy() {
   setText('nameLabel', copy.nameLabel);
   setText('phoneLabel', copy.phoneLabel);
   setText('emailLabel', copy.emailLabel);
+  const emailGmailHint = document.getElementById('emailGmailHint');
+  const emailGmailWarn = document.getElementById('emailGmailWarn');
+  if (emailGmailHint) emailGmailHint.innerHTML = copy.emailGmailHint;
+  if (emailGmailWarn) emailGmailWarn.textContent = copy.emailGmailWarn;
   setText('addressLabel', copy.addressLabel);
   setText('businessInvoiceLabel', copy.businessInvoiceLabel);
   setText('businessInvoiceSub', copy.businessInvoiceSub);
@@ -1395,6 +1417,8 @@ function applyCopy() {
   els.nextMonthBtn.textContent = copy.monthNext;
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
   if (els.slotPanelTitle) els.slotPanelTitle.textContent = copy.slotPanelTitle;
+  setText('legendFullLabel', copy.legendFullLabel);
+  setText('legendClosedLabel', copy.legendClosedLabel);
   els.submitBtn.textContent = copy.submitLabel;
   if (els.generalPeopleCustom) els.generalPeopleCustom.placeholder = copy.peopleCustomPlaceholder;
   if (els.locationInput) els.locationInput.placeholder = copy.locationPlaceholder;
@@ -3419,6 +3443,7 @@ async function loadSlotsForDate(dateKey) {
 }
 
 function renderCalendar(data) {
+  const copy = getCopy();
   const safeData = data && typeof data === 'object' ? data : {};
   const unavailSource = Array.isArray(safeData.unavail) ? safeData.unavail : [];
   const closedSource = Array.isArray(safeData.closed) ? safeData.closed : [];
@@ -3443,8 +3468,9 @@ function renderCalendar(data) {
     if (isClosed) classes.push('closed');
     if (isFull) classes.push('full');
     if (selected) classes.push('selected');
+    const statusLabel = isClosed ? copy.calendarClosedShort : isFull ? copy.calendarFullShort : '';
     cells.push(`
-      <button type="button" class="${classes.join(' ')}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}${isFull ? ' data-full="1"' : ''}${isClosed ? ' data-closed="1"' : ''}>
+      <button type="button" class="${classes.join(' ')}" data-date="${dateKey}" ${disabled ? 'disabled' : ''}${isFull ? ' data-full="1"' : ''}${isClosed ? ' data-closed="1"' : ''}${statusLabel ? ` data-status-label="${escapeHtml(statusLabel)}"` : ''}>
         ${day}
       </button>
     `);
@@ -3456,16 +3482,8 @@ function renderCalendar(data) {
   const legendFull = document.getElementById('legendFullLabel');
   const legendClosed = document.getElementById('legendClosedLabel');
   if (legendFull && legendClosed) {
-    if (state.lang === 'en') {
-      legendFull.textContent = 'Fully booked (waitlist)';
-      legendClosed.textContent = 'Closed day';
-    } else if (state.lang === 'de') {
-      legendFull.textContent = 'Ausgebucht (Warteliste)';
-      legendClosed.textContent = 'Ruhetag';
-    } else {
-      legendFull.textContent = '마감 (대기 등록)';
-      legendClosed.textContent = '휴무일';
-    }
+    legendFull.textContent = copy.legendFullLabel;
+    legendClosed.textContent = copy.legendClosedLabel;
   }
 }
 
