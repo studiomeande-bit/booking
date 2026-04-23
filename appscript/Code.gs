@@ -8751,6 +8751,7 @@ function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? String(g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
+  const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const logoDataUri=_getGutscheinLogoDataUri_();
   const t={
     code:'Code',
@@ -8810,6 +8811,11 @@ body{width:148.5mm;margin:0 auto;background:#fff}
 .back-panel{margin-top:3mm;width:100%;height:70mm;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:9mm}
 .back-panel .amount{font-size:${isProduct?'16pt':'27pt'};font-weight:700;line-height:1.08;color:var(--ink);word-break:break-word}
 .back-panel .sub{margin-top:3mm;font-size:8.4pt;line-height:1.4;color:var(--muted)}
+.back-panel .qr-wrap{margin-top:5mm;display:flex;justify-content:center}
+.back-panel .qr-box{width:24mm;height:24mm;border:1.2px solid rgba(44,36,31,.35);background:#fff;display:flex;align-items:center;justify-content:center;padding:2mm}
+.back-panel .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
+.back-panel .qr-fallback{font-size:7pt;color:var(--muted);line-height:1.3}
+.back-panel .code-hint{margin-top:2mm;font-size:6.7pt;letter-spacing:.08em;color:var(--muted)}
 .from-wrap{margin-top:4mm;text-align:right}
 </style></head><body>
 <div class="page front">
@@ -8842,6 +8848,10 @@ body{width:148.5mm;margin:0 auto;background:#fff}
     <div class="back-panel">
       <div class="amount">${escapeHtml_(panelTitle)}</div>
       <div class="sub">${escapeHtml_(panelSub)}</div>
+      <div class="qr-wrap">
+        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
+      </div>
+      <div class="code-hint">${escapeHtml_(g.code||'')}</div>
     </div>
     <div class="from-wrap">
       <div class="back-field">${t.fromLabel}<span class="line"></span></div>
