@@ -2854,3 +2854,183 @@ h1 {
     font-size: 10px !important;
   }
 }
+
+/* ===== Final form refinement ===== */
+.booking-form,
+.invoice-fields-grid {
+  margin-top: 24px;
+  gap: 24px 20px;
+}
+
+.booking-form label,
+.invoice-fields-grid label,
+.inline-field {
+  gap: 12px;
+}
+
+.booking-form input,
+.inline-field select,
+.invoice-fields-grid input,
+.invoice-fields-grid textarea {
+  min-height: 56px;
+}
+
+.booking-form textarea {
+  min-height: 152px;
+}
+
+.booking-form label > span,
+.invoice-fields-grid label > span,
+.inline-field > span,
+.block-label {
+  line-height: 1.35;
+}
+
+.muted-copy,
+.detail-copy,
+.consent-copy {
+  max-width: 62ch;
+  line-height: 1.74;
+}
+
+.consent-box {
+  margin-top: 22px;
+  padding: 28px 28px 24px !important;
+}
+
+.consent-title {
+  font-size: 20px;
+  line-height: 1.08;
+  letter-spacing: -.03em;
+}
+
+.consent-copy {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.consent-group {
+  padding: 20px 20px 10px;
+}
+
+.consent-group + .consent-group {
+  margin-top: 20px;
+}
+
+.consent-group-label {
+  margin-bottom: 6px;
+}
+
+.checkbox-row {
+  gap: 12px;
+  padding: 0;
+}
+
+.checkbox-row input {
+  margin-top: 1px;
+}
+
+.consent-row > span {
+  gap: 5px;
+}
+
+.consent-row b {
+  font-size: 15px;
+  line-height: 1.42;
+  color: #171513;
+}
+
+.consent-sub {
+  font-size: 13px;
+  line-height: 1.66;
+}
+
+.consent-row-highlight {
+  margin-top: 12px;
+  padding: 18px 18px 16px;
+}
+
+.consent-row-highlight b {
+  font-size: 16px;
+}
+
+.result-box {
+  margin-top: 22px;
+  padding: 22px;
+}
+
+.result-box h3 {
+  font-size: 18px;
+  line-height: 1.12;
+}
+
+.result-grid {
+  gap: 12px;
+}
+
+.result-item {
+  padding: 14px 16px;
+  background: #f1ede7 !important;
+}
+
+.result-item span {
+  margin-top: 6px;
+}
+
+.result-note {
+  margin-top: 16px;
+  padding: 14px 16px;
+}
+
+.result-guide-stack {
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.result-guide-box {
+  padding: 18px 20px;
+}
+
+.result-guide-body {
+  line-height: 1.74;
+}
+
+.result-actions {
+  margin-top: 18px;
+}
+
+.result-action-btn {
+  border: 0;
+  background: #f1ede7;
+  color: #3b3129;
+  padding: 12px 16px;
+}
+
+.result-action-btn:hover {
+  background: #e8e1d8;
+  box-shadow: none;
+}
+
+@media (max-width: 560px) {
+  .booking-form,
+  .invoice-fields-grid {
+    gap: 18px;
+  }
+
+  .consent-box {
+    padding: 22px 18px 18px !important;
+  }
+
+  .consent-title {
+    font-size: 18px;
+  }
+
+  .consent-group {
+    padding: 16px 16px 8px;
+  }
+
+  .result-box,
+  .result-guide-box {
+    padding: 18px 16px;
+  }
+}
