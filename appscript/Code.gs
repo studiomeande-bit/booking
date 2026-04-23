@@ -8796,7 +8796,7 @@ body{width:110mm;margin:0 auto;background:#fff}
 .front .inner{grid-template-rows:auto 24mm 92mm auto auto;gap:4mm}
 .back .inner{grid-template-rows:auto 94mm auto auto;gap:5mm}
 .meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.2pt;line-height:1.25;color:var(--muted);letter-spacing:.04em;padding:1mm 1mm 0}
-.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:31pt;line-height:.92;color:var(--ink);white-space:pre-line}
+.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:28pt;line-height:.96;letter-spacing:-.035em;color:var(--ink);white-space:pre-line}
 .frame-corner{position:absolute;width:14mm;height:10mm}
 .frame-corner::before,.frame-corner::after{content:'';position:absolute;background:rgba(48,40,33,.65)}
 .frame-corner::before{width:100%;height:.55mm;left:0;top:0}
@@ -8813,7 +8813,7 @@ body{width:110mm;margin:0 auto;background:#fff}
 .logo-footer{text-align:center}
 .brand-logo{width:45mm;height:auto;display:block;margin:0 auto}
 .footer-line{margin-top:2mm;font-size:8pt;line-height:1.4;color:var(--ink)}
-.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:20pt;line-height:1;color:var(--ink);padding:1mm 1mm 0}
+.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:18pt;line-height:1;color:var(--ink);padding:1mm 1mm 0}
 .field-row.right{justify-content:flex-end}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .8mm 0;font-size:13.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:6mm}
 .field-row.right .field-line{text-align:right}
