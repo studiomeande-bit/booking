@@ -527,3 +527,101 @@ textarea,
 .site-footer-eyebrow {
   color: rgba(23, 21, 19, 0.4);
 }
+
+/* ===== Editorial finish ===== */
+.status-banner,
+.card-badge,
+.consent-row-highlight,
+.success-guide,
+.loading-card,
+.slot-panel,
+.price-card,
+.intro-card,
+.detail-card,
+.note-box,
+.consent-box,
+.review-box,
+.success-item,
+.ghost-btn,
+.primary-btn,
+.day-btn,
+.slot-btn {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.status-banner,
+.consent-row-highlight,
+.success-guide,
+.slot-panel,
+.intro-card,
+.detail-card,
+.note-box,
+.consent-box,
+.review-box,
+.success-item {
+  border: 0;
+  background: #f6f4ef;
+}
+
+.card-badge,
+.ghost-btn,
+.primary-btn.secondary {
+  background: #f1efeb;
+  color: #3f362e;
+}
+
+.primary-btn {
+  background: #171513;
+  color: #fff;
+}
+
+.ghost-btn:disabled,
+.primary-btn:disabled {
+  border: 0;
+  background: #ece8e1;
+  color: #aaa193;
+}
+
+.site-footer-block{
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+  padding-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .lang-panel {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .lang-btn {
+    min-height: 0;
+    padding: 8px 0;
+    border-radius: 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 560px) {
+  .loading-card,
+  .status-banner,
+  .panel,
+  .intro-card,
+  .price-card,
+  .slot-panel,
+  .detail-card,
+  .note-box,
+  .consent-box,
+  .review-box,
+  .success-item,
+  input,
+  select,
+  textarea,
+  .day-btn,
+  .slot-btn {
+    border-radius: 0 !important;
+  }
+  .panel {
+    padding: 0;
+  }
+}

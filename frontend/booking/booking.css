@@ -2027,3 +2027,165 @@ body {
     padding: 18px;
   }
 }
+
+/* ===== Editorial finish ===== */
+.calendar-cell,
+.slot-btn,
+.chip-btn,
+.survey-chip,
+.bg-rec-card,
+.bg-rec-guide,
+.discount-note-item,
+.wedding-benefit-box,
+.wedding-benefit-card,
+.wedding-benefit-status,
+.wedding-refund-box,
+.success-guide,
+.result-box,
+.price-hero,
+.invoice-fields-grid input,
+.invoice-fields-grid textarea,
+.bg-chip-preview,
+.panel-loading-dots span,
+.calendar-legend i,
+.calendar-cell.full,
+.calendar-cell.closed {
+  border-radius: 0 !important;
+}
+
+.calendar-cell,
+.slot-btn,
+.chip-btn,
+.survey-chip,
+.invoice-fields-grid input,
+.invoice-fields-grid textarea {
+  border: 0;
+  background: #f3f1ed;
+  box-shadow: none;
+}
+
+.calendar-cell.full,
+.calendar-cell.closed,
+.empty-state,
+.panel-loading,
+.consent-row-highlight,
+.discount-note-item,
+.wedding-benefit-box,
+.wedding-benefit-card,
+.wedding-refund-box,
+.bg-rec-card,
+.bg-rec-guide,
+.success-guide,
+.result-box {
+  border: 0;
+  background: #f6f4ef;
+  box-shadow: none;
+}
+
+.calendar-cell.full::after,
+.calendar-cell.closed::after,
+.discount-note-item,
+.success-guide,
+.bg-rec-guide,
+.wedding-benefit-status,
+.wedding-benefit-box,
+.wedding-refund-box {
+  color: #5f564c;
+}
+
+.calendar-cell.selected,
+.slot-btn.selected,
+.survey-chip.selected,
+.survey-chip.subtle-selected,
+.chip-btn.selected,
+.chip-btn.toggle-chip.selected {
+  background: #171513;
+  color: #fff;
+  border: 0;
+}
+
+.price-hero {
+  background: #171513;
+  color: #fff;
+}
+
+.price-hero-copy,
+.price-label,
+.price-sub {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.wizard-actions .ghost-btn,
+.wizard-actions .submit-btn,
+.ghost-btn,
+.submit-btn {
+  border-radius: 0;
+}
+
+.submit-btn,
+.primary-btn {
+  background: #171513;
+  color: #fff;
+}
+
+.ghost-btn,
+.primary-btn.secondary {
+  background: #f1efeb;
+  color: #3f362e;
+}
+
+.ghost-btn:disabled,
+.submit-btn:disabled,
+.primary-btn:disabled {
+  border: 0;
+  background: #ece8e1;
+  color: #aaa193;
+}
+
+.site-footer-block {
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+  padding-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .lang-panel {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .lang-btn {
+    min-height: 0;
+    padding: 8px 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .notice-panel {
+    padding: 18px 0 0;
+    border-radius: 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 560px) {
+  .loading-card,
+  .status-banner,
+  .panel,
+  .intro-card,
+  .price-card,
+  .slot-panel,
+  .detail-card,
+  .note-box,
+  .consent-box,
+  .review-box,
+  .success-item,
+  input,
+  select,
+  textarea,
+  .day-btn,
+  .slot-btn {
+    border-radius: 0 !important;
+  }
+  .panel {
+    padding: 0;
+  }
+}
