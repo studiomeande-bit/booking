@@ -2411,3 +2411,301 @@ body {
     line-height: 1.7;
   }
 }
+
+/* ===== Brand refinement pass ===== */
+.hero {
+  padding: 22px 0 48px;
+}
+
+.hero-top {
+  align-items: center;
+}
+
+.header-logo {
+  width: min(240px, 44vw);
+}
+
+.lang-panel {
+  margin-top: 6px;
+}
+
+.lang-row {
+  gap: 10px;
+}
+
+.lang-btn {
+  padding: 4px 0;
+  font-size: 11px;
+  letter-spacing: .14em;
+}
+
+h1 {
+  margin-top: 10px;
+  font-size: clamp(48px, 5.8vw, 72px);
+  line-height: .94;
+  letter-spacing: -.055em;
+}
+
+.lede {
+  max-width: 56ch;
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.78;
+}
+
+.banner,
+.notice-panel,
+.promo-highlight {
+  background: #f6f3ed !important;
+}
+
+.banner {
+  margin-top: 24px;
+  padding: 16px 20px;
+  font-size: 13px;
+}
+
+.banner::before {
+  width: 42px;
+  margin-bottom: 10px;
+}
+
+.notice-panel {
+  margin-top: 16px;
+  padding: 24px 28px;
+}
+
+.notice-title {
+  font-size: 10px;
+  letter-spacing: .22em;
+}
+
+.notice-body {
+  margin-top: 10px;
+  max-width: 60ch;
+  font-size: 14px;
+  line-height: 1.82;
+}
+
+.promo-highlight {
+  margin-top: 28px;
+  padding: 34px 36px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 40px;
+}
+
+.promo-highlight::before {
+  width: 48px;
+}
+
+.promo-highlight-title {
+  margin-top: 12px;
+  max-width: none;
+  font-size: clamp(42px, 4.8vw, 64px);
+  line-height: .96;
+}
+
+.promo-highlight-body {
+  margin-top: 18px;
+  max-width: 52ch;
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.promo-highlight-tags {
+  margin-top: 20px;
+  gap: 16px;
+}
+
+.promo-highlight-tag {
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.promo-highlight-cta {
+  align-self: end;
+  justify-self: end;
+  width: 100%;
+  max-width: 320px;
+  gap: 14px;
+}
+
+.promo-highlight-state {
+  font-size: 10px;
+  letter-spacing: .2em;
+}
+
+.promo-highlight-button {
+  padding: 20px 22px;
+}
+
+.promo-highlight-button-label {
+  font-size: 18px;
+}
+
+.promo-highlight-button-sub {
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+
+.panel {
+  margin-top: 44px;
+}
+
+.panel-head h2 {
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.02;
+}
+
+.panel-head p {
+  margin-top: 12px;
+  max-width: 56ch;
+}
+
+.group-grid {
+  gap: 20px;
+}
+
+.group-card {
+  min-height: 164px;
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.group-card-title {
+  font-size: 24px;
+  line-height: 1.02;
+  letter-spacing: -.04em;
+}
+
+.group-card-sub {
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.wizard-nav {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+}
+
+.wizard-progress,
+.step-warning {
+  font-size: 12px;
+}
+
+.ghost-btn,
+.submit-btn {
+  min-height: 50px;
+  padding: 14px 22px;
+}
+
+@media (min-width: 769px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) 180px;
+    column-gap: 20px;
+  }
+}
+
+@media (max-width: 960px) {
+  .promo-highlight {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding: 26px 22px;
+  }
+
+  .promo-highlight-cta {
+    max-width: none;
+    justify-self: stretch;
+    align-self: start;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell,
+  .site-footer-inner {
+    width: calc(100% - 36px);
+  }
+
+  .hero {
+    padding: calc(10px + var(--safe-top)) 0 28px;
+  }
+
+  .header-logo {
+    width: min(200px, 62vw);
+  }
+
+  h1 {
+    margin-top: 12px;
+    font-size: clamp(40px, 13vw, 56px);
+  }
+
+  .lede {
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.72;
+  }
+
+  .banner {
+    margin-top: 18px;
+    padding: 14px 16px;
+  }
+
+  .notice-panel {
+    padding: 20px 18px;
+  }
+
+  .promo-highlight {
+    padding: 24px 18px !important;
+    gap: 18px;
+  }
+
+  .promo-highlight-title {
+    font-size: clamp(34px, 10vw, 46px);
+    line-height: 1;
+  }
+
+  .promo-highlight-body {
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.68;
+  }
+
+  .promo-highlight-tags {
+    margin-top: 16px;
+    gap: 10px;
+  }
+
+  .promo-highlight-button {
+    padding: 18px 16px;
+  }
+
+  .group-grid {
+    gap: 12px;
+  }
+
+  .group-card {
+    min-height: 0;
+    padding: 20px 18px;
+    gap: 12px;
+  }
+
+  .group-card-title {
+    font-size: 20px;
+  }
+
+  .group-card-sub {
+    max-width: none;
+    font-size: 13px;
+    line-height: 1.58;
+  }
+
+  .wizard-nav {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+}
