@@ -8749,30 +8749,29 @@ function _getGutscheinLogoDataUri_(){
 
 function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
-  const amountLabel=isProduct ? (g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
+  const amountLabel=isProduct ? String(g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
   const ticketUrl=buildGutscheinTicketUrl_(g.code);
-  const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const logoDataUri=_getGutscheinLogoDataUri_();
   const t={
-    title:'Geschenk Gutschein',
-    eyebrow:'Studio mean gift card',
-    detailLabel:isProduct?'Produktgutschein':'Wertgutschein',
-    subLabel:isProduct?`Wert · €${Number(g.amount||0).toFixed(2)}`:'Gutschein',
-    forLabel:'Für',
-    fromLabel:'Von',
-    message:'Nachricht',
     code:'Code',
-    valid:'Gültig bis',
-    amount:'Wert',
-    contact:'Kontakt',
-    noteTitle:'Nachricht',
-    usageTitle:'Nutzung & Hinweise',
-    noteFallback:'Für einen besonderen Moment bei Studio mean.',
-    validityNote:'Gültigkeit ab Ausstellungsdatum: 3 Jahre, sofern kein früheres Datum angegeben ist.',
-    terms:'• Einlösung ausschließlich bei Studio mean.\n• Bitte QR-Code oder Gutscheincode beim Termin vorzeigen.\n• Vor der Einlösung ist eine Terminvereinbarung erforderlich.\n• Der Gutschein wird bei Einlösung vollständig verrechnet.\n• Restbeträge werden nicht ausgezahlt oder übertragen.\n• Keine Barauszahlung möglich.',
-    footer:'Holzwegpassage 3, 61440 Oberursel · +49 176 6093 9400'
+    valid:'Verfallsdatum',
+    title:'Geschenk\ngutschein',
+    forLabel:'Für :',
+    fromLabel:'Von :',
+    imprint:'Studio_mean',
+    tagline:'make meaningful moment',
+    validityNote:'Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.',
+    useIntro:isProduct
+      ? 'Dieser Gutschein gilt für die aufgedruckte Leistung von Studio_mean.'
+      : 'Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.',
+    combineNote:'Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.',
+    redeemNote:'Der Gutschein ist nur mit vorheriger Terminvereinbarung einlösbar.',
+    refundNote:'Der Gutschein ist nicht rückerstattbar.',
+    footerLine1:'Holzwegpassage 3, 61440 Oberursel',
+    footerLine2:'Tel : +49 176 6093 9400'
   };
-  const messageText=String(g.message||'').trim() || t.noteFallback;
+  const panelTitle=isProduct ? amountLabel : amountLabel;
+  const panelSub=isProduct ? `Produktgutschein · Wert €${Number(g.amount||0).toFixed(2)}` : 'Wertgutschein';
   const recipientText=String(g.recipientName||'').trim() || '__________';
   const purchaserText=String(g.purchaserName||'').trim() || '__________';
   const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
@@ -8782,158 +8781,75 @@ function buildGutscheinHtml_(g){
 *{box-sizing:border-box}
 :root{
   --ink:#15110e;
-  --accent:#b86134;
-  --muted:#46372e;
-  --line:#2d241e;
+  --accent:#1e1915;
+  --muted:#4a3d33;
+  --line:#2c241f;
+  --panel:#d9d3cb;
 }
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:148.5mm 110mm;margin:0}
 body{width:148.5mm;margin:0 auto;background:#fff}
-.page{position:relative;width:148.5mm;height:110mm;padding:8mm 8.5mm 8.5mm;background:transparent;page-break-after:always;overflow:hidden}
+.page{position:relative;width:148.5mm;height:110mm;padding:6mm 6.2mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
-.page:before,.page:after,.page-footer:before,.page-footer:after{content:'';position:absolute;width:16mm;height:12mm;pointer-events:none}
-.page:before{top:5mm;left:5mm;border-top:1.4px solid var(--line);border-left:1.4px solid var(--line)}
-.page:after{top:5mm;right:5mm;border-top:1.4px solid var(--line);border-right:1.4px solid var(--line)}
-.page-footer:before{bottom:5mm;left:5mm;border-bottom:1.4px solid var(--line);border-left:1.4px solid var(--line)}
-.page-footer:after{bottom:5mm;right:5mm;border-bottom:1.4px solid var(--line);border-right:1.4px solid var(--line)}
-.page-inner{position:relative;height:100%;border:1.3px solid rgba(45,36,30,.85);padding:7mm 7.2mm;background:transparent}
-.top-table,.people-table,.back-main-table{width:100%;border-collapse:collapse}
-.top-table td,.people-table td,.back-main-table td{vertical-align:top}
-.brand-logo{width:43mm;height:auto;display:block}
-.brand-logo.back{width:34mm}
-.brand-tagline{margin-top:1.2mm;font-size:6.5pt;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
-.top-meta{text-align:right}
-.top-meta .label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.top-meta .value{margin-top:1.2mm;font-size:8.3pt;font-weight:700;letter-spacing:.08em;color:var(--ink)}
-.divider{margin:5mm 0 5.5mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.eyebrow{font-size:7.1pt;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.hero-title{margin-top:2.8mm;font-size:16pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
-.hero-value{margin-top:4mm;font-size:${isProduct?'20pt':'30pt'};font-weight:700;line-height:1.06;word-break:break-word}
-.hero-sub{margin-top:2.6mm;font-size:8.5pt;line-height:1.45;color:var(--muted)}
-.people-table{margin-top:7mm}
-.people-table td{width:50%;padding-right:5mm}
-.people-table td:last-child{padding-right:0;padding-left:5mm}
-.section-label{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.line-block{padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.line-block .value{margin-top:1.5mm;font-size:11pt;font-weight:600;line-height:1.28;word-break:break-word}
-.message-card{margin-top:5mm;padding-top:3.2mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.message-copy{margin-top:1.6mm;font-size:8.2pt;line-height:1.55;color:var(--ink);min-height:18mm}
-.foot-note{margin-top:5mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6);font-size:7.2pt;line-height:1.55;color:var(--muted)}
-.back-head{font-size:6.8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.back-head-value{margin-top:1.2mm;font-size:8.4pt;font-weight:700;letter-spacing:.08em}
-.back-main-table{margin-top:5.5mm}
-.qr-col{width:42mm;padding-right:6mm}
-.detail-col{padding-left:2mm}
-.qr-box{width:39mm;height:39mm;border:1.4px solid var(--line);padding:3.5mm;background:transparent;text-align:center}
-.qr-box img{width:100%;height:100%;object-fit:contain}
-.qr-fallback{font-size:8pt;color:#999;line-height:1.4}
-.code-box{margin-top:4mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.code-box .value{margin-top:1.2mm;font-size:12.4pt;font-weight:700;letter-spacing:.12em;word-break:break-word}
-.detail-row{padding-top:3mm;border-top:1.2px solid rgba(45,36,30,.42)}
-.detail-row.first{padding-top:0;border-top:none}
-.detail-row .value{margin-top:1.5mm;font-size:9.4pt;line-height:1.45;font-weight:600;word-break:break-word}
-.detail-row .copy{margin-top:1.5mm;font-size:8pt;line-height:1.56;color:var(--ink);white-space:pre-line}
-.contact-block{margin-top:5mm;padding-top:3mm;border-top:1.3px solid rgba(45,36,30,.6)}
-.contact-copy{margin-top:1.6mm;font-size:8pt;line-height:1.56;color:var(--ink)}
+.inner{position:relative;height:100%;padding:1mm 0}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.2pt;line-height:1.25;color:var(--muted)}
+.meta-row .code{letter-spacing:.08em}
+.meta-row .valid{letter-spacing:.04em}
+.script-title{margin-top:4mm;font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:31pt;line-height:.96;color:var(--ink);white-space:pre-line}
+.hero-panel{margin-top:3mm;width:100%;height:62mm;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8mm}
+.hero-panel .amount{font-size:${isProduct?'18pt':'30pt'};font-weight:700;line-height:1.08;color:var(--ink);word-break:break-word}
+.hero-panel .sub{margin-top:3mm;font-size:8.6pt;line-height:1.45;color:var(--muted)}
+.notes{margin-top:4.2mm;padding-left:4.5mm;font-size:7.8pt;line-height:1.45;color:var(--ink)}
+.logo-footer{position:absolute;left:0;right:0;bottom:2mm;text-align:center}
+.brand-logo{width:47mm;height:auto;display:block;margin:0 auto}
+.brand-logo.small{width:46mm}
+.brand-tagline{margin-top:1.2mm;font-size:6.3pt;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.footer-line{margin-top:2mm;font-size:8.3pt;line-height:1.45;color:var(--ink)}
+.back-field{font-family:'Snell Roundhand','Brush Script MT','Apple Chancery',cursive;font-size:21pt;line-height:1;color:var(--ink)}
+.line{display:inline-block;min-width:53mm;border-bottom:1.4px solid var(--line);transform:translateY(-1.5mm);margin-left:3mm}
+.back-panel{margin-top:3mm;width:100%;height:70mm;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:9mm}
+.back-panel .amount{font-size:${isProduct?'16pt':'27pt'};font-weight:700;line-height:1.08;color:var(--ink);word-break:break-word}
+.back-panel .sub{margin-top:3mm;font-size:8.4pt;line-height:1.4;color:var(--muted)}
+.from-wrap{margin-top:4mm;text-align:right}
 </style></head><body>
 <div class="page front">
-  <div class="page-footer"></div>
-  <div class="page-inner">
-    <table class="top-table">
-      <tr>
-        <td>
-          ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">Studio mean</div>`}
-          <div class="brand-tagline">make meaningful moment</div>
-        </td>
-        <td class="top-meta">
-          <div class="label">${t.valid}</div>
-          <div class="value">${validLabel}</div>
-        </td>
-      </tr>
-    </table>
-    <div class="divider"></div>
-    <div class="eyebrow">${t.title}</div>
-    <div class="hero-value">${escapeHtml_(amountLabel)}</div>
-    <div class="hero-sub">${escapeHtml_(t.detailLabel)} · ${escapeHtml_(t.subLabel)}</div>
-    <table class="people-table">
-      <tr>
-        <td>
-          <div class="line-block">
-            <div class="section-label">${t.forLabel}</div>
-            <div class="value">${escapeHtml_(recipientText)}</div>
-          </div>
-        </td>
-        <td>
-          <div class="line-block">
-            <div class="section-label">${t.fromLabel}</div>
-            <div class="value">${escapeHtml_(purchaserText)}</div>
-          </div>
-        </td>
-      </tr>
-    </table>
-    <div class="message-card">
-      <div class="section-label">${t.message}</div>
-      <div class="message-copy">${escapeHtml_(messageText).replace(/\n/g,'<br>')}</div>
+  <div class="inner">
+    <div class="meta-row">
+      <div class="code">${escapeHtml_(g.code||'')}</div>
+      <div class="valid">${t.valid} : ${validLabel}</div>
     </div>
-    <div class="foot-note">${escapeHtml_(t.validityNote)} Keine Barauszahlung.</div>
+    <div class="script-title">${t.title}</div>
+    <div class="hero-panel">
+      <div class="amount">${escapeHtml_(panelTitle)}</div>
+      <div class="sub">${escapeHtml_(panelSub)}</div>
+    </div>
+    <ul class="notes">
+      <li>${escapeHtml_(t.useIntro)}</li>
+      <li>${escapeHtml_(t.combineNote)}</li>
+      <li>${escapeHtml_(t.validityNote)}</li>
+      <li>${escapeHtml_(t.refundNote)}</li>
+    </ul>
+    <div class="logo-footer">
+      ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
+      <div class="brand-tagline">${t.tagline}</div>
+      <div class="footer-line">${t.footerLine1}<br>${t.footerLine2}</div>
+    </div>
   </div>
 </div>
 <div class="page back">
-  <div class="page-footer"></div>
-  <div class="page-inner">
-    <table class="top-table">
-      <tr>
-        <td>
-          <div class="back-head">${t.code}</div>
-          <div class="back-head-value">${escapeHtml_(g.code||'')}</div>
-        </td>
-        <td class="top-meta">
-          <div class="label">${t.valid}</div>
-          <div class="value">${validLabel}</div>
-        </td>
-      </tr>
-    </table>
-    <div class="divider"></div>
-    <table class="back-main-table">
-      <tr>
-        <td class="qr-col">
-          ${logoDataUri?`<img class="brand-logo back" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:13pt;font-weight:700;">Studio mean</div>`}
-          <div class="brand-tagline">make meaningful moment</div>
-          <div style="height:5mm;"></div>
-          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR<br>unavailable</div>`}</div>
-          <div class="code-box">
-            <div class="section-label">${t.code}</div>
-            <div class="value">${escapeHtml_(g.code||'')}</div>
-          </div>
-        </td>
-        <td class="detail-col">
-          <div class="detail-row first">
-            <div class="section-label">${t.amount}</div>
-            <div class="value">${escapeHtml_(amountLabel)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="section-label">${t.forLabel}</div>
-            <div class="value">${escapeHtml_(recipientText)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="section-label">${t.fromLabel}</div>
-            <div class="value">${escapeHtml_(purchaserText)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="section-label">${t.usageTitle}</div>
-            <div class="copy">${escapeHtml_(t.validityNote)}</div>
-          </div>
-          <div class="detail-row">
-            <div class="section-label">Hinweise</div>
-            <div class="copy">${escapeHtml_(t.terms)}</div>
-          </div>
-          <div class="contact-block">
-            <div class="section-label">${t.contact}</div>
-            <div class="contact-copy">${escapeHtml_(t.footer)}<br>studio.mean.de@gmail.com</div>
-          </div>
-        </td>
-      </tr>
-    </table>
+  <div class="inner">
+    <div class="back-field">${t.forLabel}<span class="line"></span></div>
+    <div class="back-panel">
+      <div class="amount">${escapeHtml_(panelTitle)}</div>
+      <div class="sub">${escapeHtml_(panelSub)}</div>
+    </div>
+    <div class="from-wrap">
+      <div class="back-field">${t.fromLabel}<span class="line"></span></div>
+    </div>
+    <div class="logo-footer">
+      ${logoDataUri?`<img class="brand-logo small" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
+      <div class="brand-tagline">${t.tagline}</div>
+    </div>
   </div>
 </div>
 </body></html>`;
