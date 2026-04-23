@@ -3034,3 +3034,101 @@ h1 {
     padding: 18px 16px;
   }
 }
+
+/* ===== Final form polish ===== */
+#stepPanel4 .panel-head {
+  max-width: 760px;
+}
+
+#stepPanel4 .panel-head p {
+  max-width: 58ch;
+}
+
+.booking-form {
+  gap: 22px 20px;
+}
+
+.booking-form label,
+.invoice-fields-grid label {
+  gap: 10px;
+}
+
+.booking-form label span,
+.invoice-fields-grid label span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.booking-form input,
+.inline-field select,
+.invoice-fields-grid input,
+.invoice-fields-grid textarea,
+.booking-form textarea {
+  background: #f3efe8 !important;
+}
+
+.booking-form textarea {
+  min-height: 144px;
+}
+
+.checkbox-row {
+  margin-top: 16px;
+}
+
+.consent-box {
+  display: grid;
+  gap: 18px;
+}
+
+.consent-copy {
+  margin: 0;
+}
+
+.consent-group {
+  display: grid;
+  gap: 6px;
+}
+
+.review-block {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(23, 21, 19, 0.08);
+}
+
+.review-title {
+  color: var(--brand-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.review-item,
+.review-line {
+  gap: 16px;
+  line-height: 1.6;
+}
+
+.review-note {
+  margin-top: 6px;
+  color: #6c6055;
+}
+
+.form-nav {
+  margin-top: 28px;
+}
+
+.form-nav .wizard-actions {
+  align-items: center;
+}
+
+@media (max-width: 560px) {
+  .booking-form {
+    gap: 18px;
+  }
+
+  .form-nav {
+    margin-top: 22px;
+  }
+}

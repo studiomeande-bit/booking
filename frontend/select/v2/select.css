@@ -1599,3 +1599,112 @@ h1 {
     justify-content: center;
   }
 }
+
+/* ===== Entry card polish ===== */
+.gallery-stage-toolbar {
+  align-items: stretch;
+}
+
+.gallery-stage-toolbar .ghost-btn,
+.gallery-search,
+.gallery-status,
+.gallery-count {
+  min-height: 42px;
+}
+
+.gallery-status,
+.gallery-count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.gallery-stage-summary {
+  color: #64584c;
+}
+
+.list-wrap {
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.entry-card {
+  padding: 22px 22px 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.entry-card.bonus {
+  background: #f4efe7;
+}
+
+.entry-head {
+  margin-bottom: 0;
+  align-items: baseline;
+}
+
+.entry-label {
+  font-size: 18px;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+}
+
+.bonus-badge,
+.extra-badge,
+.entry-star-chip {
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+
+.entry-grid {
+  gap: 14px 18px;
+}
+
+.field label,
+.field-full label {
+  color: #b54c2d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.entry-card input,
+.entry-card textarea,
+.entry-card select {
+  background: #f3efe8 !important;
+}
+
+.entry-thumb {
+  margin-top: 8px;
+  min-height: 280px;
+}
+
+.price-line {
+  padding-top: 0;
+  color: #53483d;
+}
+
+.price-line strong {
+  font-size: 15px;
+}
+
+.nav-row {
+  margin-top: 20px;
+}
+
+@media (max-width: 820px) {
+  .entry-card {
+    padding: 18px 18px 16px;
+    gap: 14px;
+  }
+
+  .entry-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .entry-thumb {
+    min-height: 220px;
+  }
+}
