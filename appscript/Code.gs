@@ -268,6 +268,22 @@ function handlePublicApiRequest_(route,method,e){
       }
       return jsonError_('INVALID_ACTION','Unknown admin db action');
     }
+    if(route==='admin-test-issued'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/admin-test-issued');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const password=String(payload.password||p.password||'').trim();
+      const action=String(payload.action||p.action||'preview').trim().toLowerCase();
+      if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
+      if(action==='preview'){
+        return jsonOk_(_previewTestIssuedRecords_());
+      }
+      if(action==='cleanup'){
+        return jsonOk_(_cleanupTestIssuedRecords_());
+      }
+      return jsonError_('INVALID_ACTION','Unknown admin test-issued action');
+    }
     if(route==='init'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/init');
       return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
@@ -741,6 +757,126 @@ function mergeDuplicateDbFiles_(){
     primary:{id:primaryInfo.id,name:primaryInfo.name,url:primaryInfo.url},
     backups,
     mergedFrom
+  };
+}
+
+function _containsTestMarker_(values){
+  const hay=(values||[])
+    .map(function(v){ return String(v||'').toLowerCase(); })
+    .join(' ');
+  return (
+    hay.indexOf('zzsky88@gmail.com')!==-1 ||
+    hay.indexOf('codex')!==-1 ||
+    hay.indexOf(' test')!==-1 ||
+    hay.indexOf('test ')!==-1 ||
+    hay.indexOf('test@')!==-1 ||
+    hay.indexOf('[test]')!==-1 ||
+    hay.indexOf('(test)')!==-1
+  );
+}
+
+function _previewTestIssuedRecords_(){
+  const {invoiceSheet,bookingSheet}=ensureSheets_();
+  const gutscheinSheet=getGutscheinSheet_();
+  const invoiceRows=invoiceSheet.getLastRow()>1?invoiceSheet.getDataRange().getValues():[];
+  const gutscheinRows=gutscheinSheet.getLastRow()>1?gutscheinSheet.getDataRange().getValues():[];
+  const invoices=(invoiceRows.length?invoiceRows.slice(1):[])
+    .map(function(row,idx){
+      const inv=invoiceRowToObject_(row,idx+2);
+      return {
+        rowIndex:idx+2,
+        number:inv.number,
+        name:inv.name,
+        email:inv.email,
+        memo:inv.memo,
+        pdfFileId:inv.pdfFileId,
+        bookingRowIndex:inv.bookingRowIndex,
+        match:_containsTestMarker_([inv.number,inv.name,inv.email,inv.memo,inv.mailSubject,inv.mailBody,inv.customerAddress])
+      };
+    })
+    .filter(function(item){ return item.match; });
+  const gutscheins=(gutscheinRows.length?gutscheinRows.slice(1):[])
+    .map(function(row,idx){
+      const g=gutscheinRowToObject_(row,idx+2);
+      return {
+        rowIndex:idx+2,
+        code:g.code,
+        purchaserName:g.purchaserName,
+        purchaserEmail:g.purchaserEmail,
+        recipientName:g.recipientName,
+        status:g.status,
+        pdfFileId:g.pdfFileId,
+        linkedBookingRow:g.linkedBookingRow,
+        match:_containsTestMarker_([g.code,g.purchaserName,g.purchaserEmail,g.recipientName,g.message,g.mailSubject,g.mailBody,g.adminMemo])
+      };
+    })
+    .filter(function(item){ return item.match; });
+  return {
+    invoices,
+    gutscheins,
+    counts:{
+      invoices:invoices.length,
+      gutscheins:gutscheins.length,
+      total:invoices.length+gutscheins.length
+    },
+    bookingRows:bookingSheet.getLastRow()
+  };
+}
+
+function _trashFileQuiet_(fileId){
+  const id=String(fileId||'').trim();
+  if(!id) return false;
+  try{
+    DriveApp.getFileById(id).setTrashed(true);
+    return true;
+  }catch(e){
+    Logger.log('trash file failed: '+e.message);
+    return false;
+  }
+}
+
+function _clearBookingGutscheinLinkIfMatches_(bookingSheet, bookingRowIndex, code){
+  const rowIndex=parseInt(bookingRowIndex,10)||0;
+  if(!rowIndex || rowIndex<2 || rowIndex>bookingSheet.getLastRow()) return false;
+  const currentCode=String(bookingSheet.getRange(rowIndex,BOOKING_COL['굿샤인코드']+1).getValue()||'').trim();
+  if(currentCode!==String(code||'').trim()) return false;
+  bookingSheet.getRange(rowIndex,BOOKING_COL['굿샤인코드']+1,1,6).clearContent();
+  return true;
+}
+
+function _cleanupTestIssuedRecords_(){
+  const preview=_previewTestIssuedRecords_();
+  const {invoiceSheet,bookingSheet}=ensureSheets_();
+  const gutscheinSheet=getGutscheinSheet_();
+  const removed={invoices:[],gutscheins:[]};
+
+  preview.invoices
+    .slice()
+    .sort(function(a,b){ return b.rowIndex-a.rowIndex; })
+    .forEach(function(inv){
+      _trashFileQuiet_(inv.pdfFileId);
+      invoiceSheet.deleteRow(inv.rowIndex);
+      removed.invoices.push(inv.number);
+    });
+
+  preview.gutscheins
+    .slice()
+    .sort(function(a,b){ return b.rowIndex-a.rowIndex; })
+    .forEach(function(g){
+      _trashFileQuiet_(g.pdfFileId);
+      _clearBookingGutscheinLinkIfMatches_(bookingSheet,g.linkedBookingRow,g.code);
+      gutscheinSheet.deleteRow(g.rowIndex);
+      removed.gutscheins.push(g.code);
+    });
+
+  return {
+    ok:true,
+    removed,
+    counts:{
+      invoices:removed.invoices.length,
+      gutscheins:removed.gutscheins.length,
+      total:removed.invoices.length+removed.gutscheins.length
+    }
   };
 }
 
