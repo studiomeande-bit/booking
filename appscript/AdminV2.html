@@ -4981,6 +4981,9 @@ function renderGutscheinTable(){
     const cancelBtn=!isCancelled && !isUsed
       ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#dc2626;border-color:#fecaca;" onclick="cancelGutscheinQuick('${escapeAdminHtml(g.code)}')">🗑️ 취소</button>`
       : '';
+    const deleteBtn=!isUsed
+      ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#991b1b;border-color:#fca5a5;" onclick="deleteGutscheinQuick('${escapeAdminHtml(g.code)}')">삭제</button>`
+      : '';
     return `<tr>
       <td><div style="font-weight:700;">${escapeAdminHtml(g.code||'-')}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.issueMode||'-')}</div></td>
       <td>${typeBadge}</td>
@@ -4990,7 +4993,7 @@ function renderGutscheinTable(){
       <td><div style="font-size:12px;">발행 ${escapeAdminHtml(g.issuedAt||g.stockCreatedAt||'-')}</div><div style="font-size:12px;color:#64748b;margin-top:4px;">유효 ${escapeAdminHtml(g.validUntil||'-')}</div></td>
       <td><div style="font-size:12px;font-weight:700;">${escapeAdminHtml(g.taxType||'-')}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.taxRecognition||'-')}</div><div style="font-size:10px;color:#94a3b8;margin-top:4px;white-space:normal;line-height:1.45;">${escapeAdminHtml(g.taxMemo||'')}</div></td>
       <td>${g.used?`<div style="font-weight:700;color:#7c3aed;">${formatEuroDisplay(g.usedAmount||0)}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.usedAt||'')}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">row ${g.linkedBookingRow||'-'}</div>`:'<span style="font-size:11px;color:#94a3b8;">미사용</span>'}</td>
-      <td style="white-space:nowrap;"><div style="display:flex;gap:4px;flex-wrap:wrap;">${editBtn}${pdfBtn}${mailBtn}${bookingBtn}${cancelBtn}</div></td>
+      <td style="white-space:nowrap;"><div style="display:flex;gap:4px;flex-wrap:wrap;">${editBtn}${pdfBtn}${mailBtn}${bookingBtn}${cancelBtn}${deleteBtn}</div></td>
     </tr>`;
   }).join(''):'<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:24px;">등록된 굿샤인이 없습니다.</td></tr>';
 }
@@ -5031,6 +5034,22 @@ function cancelGutscheinQuick(code){
       })
       .withFailureHandler(e=>{release();handleApiError(e);})
       .adminRpc(adminToken,'cancelGutschein',{code,reason});
+  });
+}
+function deleteGutscheinQuick(code){
+  const item=(allGutscheins||[]).find(g=>g.code===code);
+  if(!item){showToast('굿샤인을 찾을 수 없습니다.','err');return;}
+  if(item.used || item.status==='사용완료' || item.linkedBookingRow){showToast('이미 사용되었거나 예약에 연결된 굿샤인은 삭제할 수 없습니다.','warn');return;}
+  if(!confirm(`${code} 굿샤인을 완전삭제할까요?\n장부와 PDF 파일이 함께 제거됩니다.`)) return;
+  runExclusive('gutschein:delete:'+code, release=>{
+    google.script.run
+      .withSuccessHandler(res=>{
+        release();
+        showToast(`굿샤인 삭제 완료 (${res.code||code})`,'ok');
+        loadGutscheinList();
+      })
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'deleteGutschein',{code});
   });
 }
 function openGutscheinApplyModal(rowIndex){

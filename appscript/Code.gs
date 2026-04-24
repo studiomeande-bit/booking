@@ -178,6 +178,8 @@ function adminRpc(token, action, payload){
       return mergeDuplicateDbFiles_();
     case 'cancelGutschein':
       return cancelGutscheinAdmin(token, String(payload&&payload.code||''), String(payload&&payload.reason||''));
+    case 'deleteGutschein':
+      return deleteGutscheinAdmin(token, String(payload&&payload.code||''));
     case 'listGutscheins':
       return listGutscheinsAdmin(token, payload||{});
     case 'getGutschein':
@@ -9193,6 +9195,24 @@ function cancelGutscheinAdmin(token, code, reason){
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.CANCELLED);
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(adminMemoParts.join('\n'));
   return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt};
+}
+
+function deleteGutscheinAdmin(token, code){
+  assertAdmin_(token);
+  const targetCode=extractGutscheinCode_(code);
+  if(!targetCode) throw new Error('굿샤인 코드를 확인해 주세요.');
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,targetCode);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const existing=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(existing.used || existing.status===GUTSCHEIN_STATUS.USED || existing.linkedBookingRow){
+    throw new Error('이미 사용되었거나 예약에 연결된 굿샤인은 삭제할 수 없습니다.');
+  }
+  if(existing.pdfFileId){
+    try{DriveApp.getFileById(existing.pdfFileId).setTrashed(true);}catch(e){Logger.log('gutschein pdf trash fail: '+e.message);}
+  }
+  gutscheinSheet.deleteRow(found.rowIndex);
+  return {ok:true,code:existing.code,deleted:true};
 }
 
 function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
