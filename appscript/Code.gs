@@ -8754,19 +8754,10 @@ function buildGutscheinHtml_(g){
   const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const logoDataUri=_getGutscheinLogoDataUri_();
   const t={
-    code:'Code',
     valid:'Verfallsdatum',
     title:'Geschenk\ngutschein',
     forLabel:'Für :',
     imprint:'Studio_mean',
-    tagline:'make meaningful moment',
-    validityNote:'Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.',
-    useIntro:isProduct
-      ? 'Dieser Gutschein gilt für die aufgedruckte Leistung von Studio_mean.'
-      : 'Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.',
-    combineNote:'Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.',
-    redeemNote:'Der Gutschein ist nur mit vorheriger Terminvereinbarung einlösbar.',
-    refundNote:'Der Gutschein ist nicht rückerstattbar.',
     footerLine1:'Holzwegpassage 3, 61440 Oberursel',
     footerLine2:'Tel : +49 176 6093 9400'
   };
@@ -8778,65 +8769,69 @@ function buildGutscheinHtml_(g){
 *{box-sizing:border-box}
 :root{
   --ink:#171513;
-  --accent:#8c3d2a;
   --muted:#5c5248;
   --line:#2d241d;
-  --panel:#e8e3da;
-  --panel-line:rgba(45,36,29,.18);
+  --panel:#e7e2d9;
+  --panel-line:rgba(45,36,29,.16);
 }
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:105mm 148mm;margin:0}
 body{width:105mm;margin:0 auto;background:#fff}
-.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 8mm;background:#fff;page-break-after:always;overflow:hidden}
+.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 7mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
-.inner{position:relative;height:100%;display:grid}
-.front .inner{grid-template-rows:auto auto 1fr auto;gap:3.8mm}
-.back .inner{grid-template-rows:auto 1fr;gap:4.5mm}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.8pt;line-height:1.25;color:var(--muted);letter-spacing:.04em}
-.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:26pt;line-height:.96;letter-spacing:-.035em;color:var(--ink);white-space:pre-line}
-.panel{position:relative;width:100%;background:var(--panel);border:1px solid var(--panel-line)}
-.panel.front{min-height:0;padding:0}
-.panel.back{min-height:0;padding:0}
-.voucher-note{position:absolute;left:6mm;right:30mm;bottom:6mm;font-size:7.2pt;line-height:1.32;color:var(--muted);text-align:left}
-.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'20pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:1.4mm}
-.front-qr{position:absolute;right:5mm;bottom:5mm}
-.front-qr .qr-box{width:22mm;height:22mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.5mm;border:1px solid rgba(45,36,29,.18)}
+.layout{height:100%;display:grid}
+.front .layout{grid-template-rows:auto 1fr auto;gap:3.2mm}
+.back .layout{grid-template-rows:auto 1fr;gap:4mm}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.2pt;line-height:1.2;color:var(--muted);letter-spacing:.05em}
+.polaroid{width:100%;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;gap:3mm}
+.film-window{width:100%;min-height:68mm;background:var(--panel);border:1px solid var(--panel-line)}
+.polaroid-caption{display:grid;grid-template-columns:1fr 24mm;align-items:end;gap:3mm}
+.caption-copy{display:grid;gap:1.4mm}
+.script-title{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:18.5pt;line-height:.98;letter-spacing:-.03em;color:var(--ink);white-space:pre-line;max-width:100%}
+.voucher-note{font-size:6.4pt;line-height:1.22;color:var(--muted);text-align:left}
+.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'17.5pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:.5mm}
+.front-qr{display:grid;justify-items:center}
+.front-qr .qr-box{width:24mm;height:24mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.4mm;border:1px solid rgba(45,36,29,.18)}
 .front-qr .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
-.front-qr .qr-caption{margin-top:1mm;font-size:6.6pt;letter-spacing:.08em;color:var(--muted);text-align:center}
-.notes{margin:0;padding-left:4.4mm;font-size:6.5pt;line-height:1.28;color:var(--ink)}
-.notes li{margin:.45mm 0}
-.front-footer{display:grid;gap:3.2mm}
+.front-footer{display:grid;gap:2mm}
+.notes{margin:0;padding-left:4.2mm;font-size:5.7pt;line-height:1.18;color:var(--ink)}
+.notes li{margin:.2mm 0}
 .logo-footer{text-align:center}
-.brand-logo{width:40mm;height:auto;display:block;margin:0 auto}
-.footer-line{margin-top:1.5mm;font-size:7.1pt;line-height:1.28;color:var(--ink)}
-.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:17pt;line-height:1;color:var(--ink);padding:.5mm 0 0}
+.brand-logo{width:34mm;height:auto;display:block;margin:0 auto}
+.footer-line{margin-top:.8mm;font-size:6.2pt;line-height:1.14;color:var(--ink)}
+.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:16pt;line-height:1;color:var(--ink)}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .7mm 0;font-size:12.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:5.5mm}
-.letter-space{height:100%}
+.note-card{position:relative;width:100%;height:100%;border:1px solid rgba(45,36,29,.16);background:#fff;padding:3.5mm 3.5mm 15mm;display:grid;grid-template-rows:1fr auto;gap:4mm}
+.note-stage{width:100%;min-height:0;background:var(--panel);border:1px solid var(--panel-line)}
+.note-footer{text-align:center;align-self:end}
+.footer-note{margin-top:1.4mm;font-size:5.8pt;line-height:1.15;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
 </style></head><body>
 <div class="page front">
-  <div class="inner">
+  <div class="layout">
     <div class="meta-row">
-      <div class="code">${escapeHtml_(g.code||'')}</div>
-      <div class="valid">${t.valid} : ${validLabel}</div>
+      <div>${escapeHtml_(g.code||'')}</div>
+      <div>${t.valid} : ${validLabel}</div>
     </div>
-    <div class="script-title">${t.title}</div>
-    <div class="panel front">
-      <div class="voucher-note">
-        <span class="value">${escapeHtml_(amountLabel)}</span>
-        ${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}
-      </div>
-      <div class="front-qr">
-        <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
-        <div class="qr-caption">QR</div>
+    <div class="polaroid">
+      <div class="film-window"></div>
+      <div class="polaroid-caption">
+        <div class="caption-copy">
+          <div class="script-title">${t.title}</div>
+          <div class="voucher-note">
+            <span class="value">${escapeHtml_(amountLabel)}</span>
+            ${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}
+          </div>
+        </div>
+        <div class="front-qr">
+          <div class="qr-box">${qrDataUri?`<img src="${qrDataUri}" alt="QR">`:`<div class="qr-fallback">QR</div>`}</div>
+        </div>
       </div>
     </div>
     <div class="front-footer">
       <ul class="notes">
-        <li>${escapeHtml_(t.useIntro)}</li>
-        <li>${escapeHtml_(t.combineNote)}</li>
-        <li>${escapeHtml_(t.redeemNote)}</li>
-        <li>${escapeHtml_(t.validityNote)}</li>
-        <li>${escapeHtml_(t.refundNote)}</li>
+        <li>${escapeHtml_('Gültig für Studio_mean Fotografie Dienstleistungen.')}</li>
+        <li>${escapeHtml_('3 Jahre gültig, nur nach Terminvereinbarung einlösbar.')}</li>
+        <li>${escapeHtml_('Nicht kombinierbar und nicht rückerstattbar.')}</li>
       </ul>
       <div class="logo-footer">
         ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
@@ -8846,10 +8841,14 @@ body{width:105mm;margin:0 auto;background:#fff}
   </div>
 </div>
 <div class="page back">
-  <div class="inner">
+  <div class="layout">
     <div class="field-row"><span>${t.forLabel}</span><span class="field-line">${escapeHtml_(recipientText)}</span></div>
-    <div class="panel back">
-      <div class="letter-space"></div>
+    <div class="note-card">
+      <div class="note-stage"></div>
+      <div class="note-footer">
+        ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
+        <div class="footer-note">Für persönliche Worte</div>
+      </div>
     </div>
   </div>
 </div>
