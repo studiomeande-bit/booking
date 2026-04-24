@@ -1122,6 +1122,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <button class="btn btn-sm btn-outline" onclick="executeSelBatch()">적용</button>
         <span id="selBatchCount" style="font-size:12px;color:#64748b;"></span>
       </div>
+      <div id="selSummaryRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px;"></div>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -3125,6 +3126,32 @@ function escHtml(v){
   });
 }
 
+function setSelectStatusFilter(value){
+  document.getElementById('sel_statusFilter').value=value||'';
+  renderSelectDashboard();
+}
+
+function renderSelectSummary(sourceData,filteredData){
+  const wrap=document.getElementById('selSummaryRow');
+  if(!wrap) return;
+  const total=sourceData.length;
+  const revisionReq=sourceData.filter(r=>r.selectStatus==='재수정요청').length;
+  const workWaiting=sourceData.filter(r=>r.selectStatus==='작업대기').length;
+  const retouchSent=sourceData.filter(r=>r.selectStatus==='보정본발송').length;
+  const activeFilter=document.getElementById('sel_statusFilter').value;
+  const filteredCount=filteredData.length;
+  const chip=function(label,count,style,filterValue){
+    const active=activeFilter===filterValue;
+    return `<button class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="${style||''}font-size:11px;padding:6px 10px;" onclick="setSelectStatusFilter('${filterValue||''}')">${label} ${count}</button>`;
+  };
+  wrap.innerHTML=
+    chip('전체',total,'','')+
+    chip('재수정요청',revisionReq,'border-color:#f59e0b;color:#b45309;','재수정요청')+
+    chip('작업대기',workWaiting,'border-color:#93c5fd;color:#1d4ed8;','작업대기')+
+    chip('보정본발송',retouchSent,'border-color:#c4b5fd;color:#6d28d9;','보정본발송')+
+    `<span style="margin-left:auto;font-size:12px;color:#64748b;">현재 표시 ${filteredCount}건</span>`;
+}
+
 function selStatusDropdown(rowIndex,cur){
   const st=SEL_STATUS_STYLE[cur]||'background:#f1f5f9;color:#475569;';
   const opts=SEL_STATUS_LIST.map(function(s){return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>';}).join('');
@@ -3210,9 +3237,18 @@ function renderSelectDashboard(){
   const tbody=document.getElementById('selectHistoryBody');
   const filterStatus=document.getElementById('sel_statusFilter').value;
   const filterBookingStatus=document.getElementById('sel_bookingStatusFilter').value;
-  let data=allSelectDashboard;
+  let data=allSelectDashboard.slice();
+  const statusOrder={'재수정요청':0,'작업대기':1,'보정본발송':2,'발송':3,'재발송':4,'미발송':5,'보정본확인완료':6,'출력':7,'우편발송':8,'최종작업완료':9};
+  data.sort(function(a,b){
+    const ao=statusOrder[a.selectStatus]??50;
+    const bo=statusOrder[b.selectStatus]??50;
+    if(ao!==bo) return ao-bo;
+    return String(b.dateStr||'').localeCompare(String(a.dateStr||''));
+  });
+  const sourceData=data.slice();
   if(filterBookingStatus) data=data.filter(r=>r.bookingStatus===filterBookingStatus);
   if(filterStatus) data=data.filter(r=>r.selectStatus===filterStatus);
+  renderSelectSummary(sourceData,data);
   if(!data.length){tbody.innerHTML=`<tr><td colspan="16" style="text-align:center;color:#94a3b8;padding:20px;">${filterStatus||filterBookingStatus?'필터 조건에 맞는 항목이 없습니다.':'촬영 완료 예약이 없습니다.'}</td></tr>`;return;}
 
   tbody.innerHTML=data.map(r=>{
