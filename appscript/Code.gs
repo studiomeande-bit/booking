@@ -1216,6 +1216,63 @@ function getDepositDeadlineBaseDate_(row){
   return {obj:new Date(NaN),source:'',raw:''};
 }
 
+function parseBookingLocationFromRow_(row){
+  const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+  if(itemGroup!=='snap' && itemGroup!=='wed') return STUDIO_ADDRESS;
+  const extraItem=String(row[BOOKING_COL['추가항목']]||'').trim();
+  const memo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  const extraMatch=extraItem.match(/장소:\s*([^|]+)/);
+  if(extraMatch && extraMatch[1]) return String(extraMatch[1]).trim();
+  const memoMatch=memo.match(/\[촬영장소:([^\]]+)\]/);
+  if(memoMatch && memoMatch[1]) return String(memoMatch[1]).trim();
+  return STUDIO_ADDRESS;
+}
+
+function buildCalendarDescriptionFromBookingRow_(row){
+  const lines=[
+    `이름=${String(row[BOOKING_COL['고객명']]||'').trim()}`,
+    `전화=${String(row[BOOKING_COL['연락처']]||'').trim()}`,
+    `이메일=${String(row[BOOKING_COL['이메일']]||'').trim()}`,
+    `분류=${String(row[BOOKING_COL['상품']]||'').trim()}`,
+    `패키지=${String(row[BOOKING_COL['상품']]||'').trim()}`,
+    `인원=${String(row[BOOKING_COL['인원']]||'').trim()}`,
+    `총비용=${String(row[BOOKING_COL['총결제액']]||'').trim()}€`,
+    `계약금=${getEffectiveBookingDeposit_(row)||0}|DB|${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')}`,
+    `잔금=${String(row[BOOKING_COL['잔금']]||'').trim()}|미정|${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')}`,
+    `마케팅=${String(row[BOOKING_COL['마케팅동의']]||'').trim()==='Y'?'Y':'N'}`,
+    `상태=${String(row[BOOKING_COL['상태']]||'').trim()||'확정'}`
+  ];
+  const memo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  const extraItem=String(row[BOOKING_COL['추가항목']]||'').trim();
+  if(memo) lines.push(`요청: ${memo}`);
+  if(extraItem) lines.push(`추가: ${extraItem}`);
+  return lines.join('\n');
+}
+
+function recreateBookingCalendarEventFromRow_(row){
+  const bookingDateTime=String(row[BOOKING_COL['예약일시']]||'').trim();
+  const start=parseDateSafe_(bookingDateTime).obj;
+  if(isNaN(start.getTime())) throw new Error('예약일시를 해석할 수 없습니다.');
+  const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+  const productName=String(row[BOOKING_COL['상품']]||'').trim();
+  const products=getCachedProducts_();
+  const product=products.find(function(p){
+    return String(p.g||'')===itemGroup && [p.nameKo,p.nameEn,p.nameDe].some(function(name){
+      return String(name||'').trim()===productName;
+    });
+  });
+  const durationMin=Math.max(15, Number((product&&product.d)||0) + Number((product&&product.prep)||0) || 60);
+  const end=new Date(start.getTime()+durationMin*60000);
+  const name=String(row[BOOKING_COL['고객명']]||'').trim();
+  const people=String(row[BOOKING_COL['인원']]||'').trim()||'1';
+  const priceLabel=`${parseMoneyValue_(row[BOOKING_COL['총결제액']])||0}€`;
+  const title=`${productName} | ${name} | ${people}인 | ${priceLabel}`;
+  const location=parseBookingLocationFromRow_(row);
+  const description=buildCalendarDescriptionFromBookingRow_(row);
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  return calendar.createEvent(title,start,end,{description,location}).getId();
+}
+
 function getPromoConfig_(){
   const s=getSettingsMap_();
   const start=String(s.promo_start||PROMO_CONFIG.START||'').trim()||PROMO_CONFIG.START;
@@ -3590,6 +3647,8 @@ function getDashboardData_(){
       confirmedAt:String(row[BOOKING_COL['확정일시']]||row[BOOKING_COL['동의시각']]||''),
       depositWarnedAt:String(row[BOOKING_COL['입금경고일시']]||''),
       autoCancelledAt:String(row[BOOKING_COL['자동취소일시']]||''),
+      depositDeadlineBaseAt:getDepositDeadlineBaseDate_(row).raw,
+      depositDeadlineBaseSource:getDepositDeadlineBaseDate_(row).source,
       gutscheinCode:String(row[BOOKING_COL['굿샤인코드']]||''),
       gutscheinDiscount:String(row[BOOKING_COL['굿샤인차감금액']]||''),
       gutscheinOriginalTotal:String(row[BOOKING_COL['적용전총액']]||''),
@@ -3762,6 +3821,33 @@ function adminCleanupAndConfirmAllDeposits(){
 function cleanupBookingDepositFlagsAdmin(token){
   assertAdmin_(token);
   return cleanupBookingDepositFlags_();
+}
+
+function restoreAutoCancelledBookingAdmin(token,rIdx,note){
+  assertAdmin_(token);
+  const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const status=String(row[BOOKING_COL['상태']]||'').trim();
+  const autoCancelledAt=String(row[BOOKING_COL['자동취소일시']]||'').trim();
+  if(!autoCancelledAt) throw new Error('자동취소 이력이 없는 예약입니다.');
+  if(status!=='취소됨') throw new Error('현재 취소 상태인 예약만 복구할 수 있습니다.');
+  setBookingStatus_(sh,rIdx,'확정됨');
+  if(BOOKING_COL['입금경고일시']!=null) sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
+  if(BOOKING_COL['자동취소일시']!=null) sh.getRange(rIdx,BOOKING_COL['자동취소일시']+1).setValue('');
+  const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  const restoreNote=`[자동취소복구] ${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')}${note?` · ${String(note).trim()}`:''}`;
+  if(BOOKING_COL['요청사항']!=null){
+    sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(prevMemo?`${prevMemo} ${restoreNote}`:restoreNote);
+  }
+  let eventId='';
+  try{
+    eventId=recreateBookingCalendarEventFromRow_(sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]);
+    if(BOOKING_COL['캘린더ID']!=null) sh.getRange(rIdx,BOOKING_COL['캘린더ID']+1).setValue(eventId);
+  }catch(e){
+    Logger.log('restoreAutoCancelledBookingAdmin recreate event failed row '+rIdx+': '+e.message);
+  }
+  bumpCalCacheVer_();
+  return {ok:true,rowIndex:rIdx,status:'확정됨',eventId:eventId||'',restoredAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')};
 }
 
 function bulkConfirmAllPendingDepositsAdmin(token){

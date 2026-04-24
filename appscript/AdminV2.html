@@ -1751,11 +1751,13 @@ function renderTable(){
     const amount=effectiveDeposit(c);
     const lines=[];
     if(amount<=0){
-      if(c.depositWarnedAt) lines.push(`<div style="color:#b45309;font-weight:700;">⚠️ 5일 경과 입금 미확인</div>`);
-      if(c.autoCancelledAt) lines.push(`<div style="color:#dc2626;font-weight:700;">⛔ 10일 경과 자동취소</div>`);
+      if(c.depositDeadlineBaseAt) lines.push(`<div style="font-size:10px;color:#64748b;">기준일 ${c.depositDeadlineBaseAt}</div>`);
+      if(c.depositWarnedAt) lines.push(`<div style="color:#b45309;font-size:10px;font-weight:700;">⚠️ 경고 ${c.depositWarnedAt}</div>`);
+      if(c.autoCancelledAt) lines.push(`<div style="color:#dc2626;font-size:10px;font-weight:700;">⛔ 취소 ${c.autoCancelledAt}</div>`);
       return lines.join('');
     }
     lines.push(`<div style="font-size:10px;color:#64748b;">계약금 ${amount}€</div>`);
+    if(c.depositDeadlineBaseAt) lines.push(`<div style="font-size:10px;color:#64748b;">기준일 ${c.depositDeadlineBaseAt}</div>`);
     if(c.depositPaid==='Y'){
       lines.push(`<div style="font-size:11px;color:#065f46;font-weight:700;">입금확인 완료</div>`);
       if(c.depositPaidAmount) lines.push(`<div style="font-size:10px;color:#64748b;">입금액 ${c.depositPaidAmount}€</div>`);
@@ -1770,8 +1772,8 @@ function renderTable(){
     if(c.lexwarePaymentStatus){
       lines.push(`<div style="font-size:10px;color:#475569;">Lexware ${c.lexwarePaymentStatus}</div>`);
     }
-    if(c.depositWarnedAt) lines.push(`<div style="color:#b45309;font-size:10px;font-weight:700;">⚠️ 5일 경과 입금 미확인</div>`);
-    if(c.autoCancelledAt) lines.push(`<div style="color:#dc2626;font-size:10px;font-weight:700;">⛔ 10일 경과 자동취소</div>`);
+    if(c.depositWarnedAt) lines.push(`<div style="color:#b45309;font-size:10px;font-weight:700;">⚠️ 경고 ${c.depositWarnedAt}</div>`);
+    if(c.autoCancelledAt) lines.push(`<div style="color:#dc2626;font-size:10px;font-weight:700;">⛔ 취소 ${c.autoCancelledAt}</div>`);
     return lines.join('');
   };
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
@@ -1780,10 +1782,13 @@ function renderTable(){
     const depositAction=(depositPending(c)&&c.status!=='취소됨')
       ? `<button class="btn btn-sm" style="margin-top:6px;font-size:11px;background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;" onclick="confirmBookingDeposit(${c.rowIndex})">💳입금확인</button>`
       : '';
+    const restoreAction=(c.autoCancelledAt && c.status==='취소됨')
+      ? `<button class="btn btn-sm" style="margin-top:6px;font-size:11px;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;" onclick="restoreAutoCancelledBooking(${c.rowIndex})">↺자동취소복구</button>`
+      : '';
     let actions=`<button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openGutscheinApplyModal(${c.rowIndex})">🎁굿샤인</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">💶결제</button>`;
     if(c.status!=='취소됨') actions+=` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`;
     const gutscheinLine=c.gutscheinCode?`<div style="margin-top:4px;font-size:10px;color:#7c3aed;white-space:normal;line-height:1.45;font-weight:700;">🎁 ${c.gutscheinCode}${c.gutscheinDiscount?` · -${c.gutscheinDiscount}€`:''}</div>`:'';
-    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}${gutscheinLine}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:120px;">${dc(c.deposit,c)}${depositMeta(c)}${depositAction}</div></td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
+    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}${gutscheinLine}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:140px;">${dc(c.deposit,c)}${depositMeta(c)}${depositAction}${restoreAction}</div></td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
   }).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
 }
@@ -3521,6 +3526,19 @@ function cleanupDepositFlags(){
     })
     .withFailureHandler(handleApiError)
     .cleanupBookingDepositFlagsAdmin(adminToken);
+}
+function restoreAutoCancelledBooking(rowIndex){
+  const c=allCustomers.find(x=>x.rowIndex===rowIndex);if(!c)return;
+  if(!c.autoCancelledAt || c.status!=='취소됨'){alert('자동취소된 예약만 복구할 수 있습니다.');return;}
+  if(!confirm(`이 예약을 자동취소에서 복구할까요?\\n고객: ${c.name||'-'}\\n일시: ${c.dateStr||'-'}`)) return;
+  const note=prompt('복구 메모를 남기시겠습니까?','')||'';
+  google.script.run
+    .withSuccessHandler(res=>{
+      alert(`예약 복구 완료\\n상태: ${res.status||'확정됨'}\\n캘린더 일정: ${res.eventId?'재생성됨':'미생성'}`);
+      loadAll();
+    })
+    .withFailureHandler(handleApiError)
+    .restoreAutoCancelledBookingAdmin(adminToken,rowIndex,note);
 }
 function gotoBookings(statusFilter){switchTab('booking');const el=document.getElementById('statusFilter');if(el){el.value=statusFilter||'';renderTable();}}
 function gotoBookingsByMonth(month){switchTab('booking');const el=document.getElementById('monthFilter');if(el){el.value=month;renderTable();}}
