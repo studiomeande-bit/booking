@@ -3374,7 +3374,7 @@ function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
 /* ====== 보정본 승인 / 재수정 요청 ====== */
 function approveRetouch_(sessionId,p){
   try{
-    const selSh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
     if(!selSh)return HtmlService.createHtmlOutput('<h2>❌ 시스템 오류</h2>');
     const rows=selSh.getDataRange().getValues();
     const idx=rows.slice(1).findIndex(r=>String(r[0])===String(sessionId));
@@ -3387,9 +3387,79 @@ function approveRetouch_(sessionId,p){
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
 }
 
+function renderRetouchRevisionForm_(sessionId,rowLang,name,currentCount,errorMsg,existingNote){
+  const t={
+    ko:{
+      title:'재수정 요청',
+      intro:`${name}님, 원하는 수정 내용을 남겨 주세요.`,
+      desc:'남겨주신 내용은 Studio mean 어드민에서 확인 후 다시 작업합니다.',
+      field:'재수정 요청사항',
+      placeholder:'예) 피부 톤을 조금 더 자연스럽게, 얼굴 옆 잔머리 정리, 배경의 작은 물건 제거 등',
+      hint:`재수정 가능 횟수: ${currentCount}/2 사용 · 이번 요청은 ${currentCount+1}/2로 기록됩니다.`,
+      submit:'재수정 요청 보내기',
+      required:'수정 요청 내용을 입력해 주세요.'
+    },
+    en:{
+      title:'Revision Request',
+      intro:`${name}, please describe what you would like to revise.`,
+      desc:'Your note will be reviewed in the Studio mean admin dashboard.',
+      field:'Revision details',
+      placeholder:'e.g. make skin tone a little more natural, clean baby hair near the face, remove a small object in the background',
+      hint:`Revision usage: ${currentCount}/2 · This request will be saved as ${currentCount+1}/2.`,
+      submit:'Send revision request',
+      required:'Please enter your revision details.'
+    },
+    de:{
+      title:'Überarbeitungsanfrage',
+      intro:`${name}, bitte beschreiben Sie hier Ihre gewünschten Änderungen.`,
+      desc:'Ihre Nachricht wird im Studio mean Adminbereich geprüft und danach bearbeitet.',
+      field:'Änderungswunsch',
+      placeholder:'z. B. Hauttöne etwas natürlicher, feine Haare am Gesicht korrigieren, kleines Objekt im Hintergrund entfernen',
+      hint:`Bisherige Überarbeitungen: ${currentCount}/2 · Diese Anfrage wird als ${currentCount+1}/2 gespeichert.`,
+      submit:'Überarbeitungsanfrage senden',
+      required:'Bitte geben Sie Ihre Änderungswünsche ein.'
+    }
+  }[rowLang]||{
+    title:'재수정 요청',
+    intro:`${name}님, 원하는 수정 내용을 남겨 주세요.`,
+    desc:'남겨주신 내용은 Studio mean 어드민에서 확인 후 다시 작업합니다.',
+    field:'재수정 요청사항',
+    placeholder:'예) 피부 톤을 조금 더 자연스럽게, 얼굴 옆 잔머리 정리, 배경의 작은 물건 제거 등',
+    hint:`재수정 가능 횟수: ${currentCount}/2 사용 · 이번 요청은 ${currentCount+1}/2로 기록됩니다.`,
+    submit:'재수정 요청 보내기',
+    required:'수정 요청 내용을 입력해 주세요.'
+  };
+  const safeNote=escapeHtml_(existingNote||'');
+  const safeErr=errorMsg?`<div style="margin:0 0 16px;padding:12px 14px;background:#fff7ed;color:#c2410c;font-size:13px;border-radius:10px;">${escapeHtml_(errorMsg)}</div>`:'';
+  const html=`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml_(t.title)}</title></head>
+<body style="margin:0;background:#f5f3ee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2937;">
+  <div style="max-width:640px;margin:0 auto;padding:32px 18px;">
+    <div style="background:#ffffff;padding:28px 24px;border-radius:18px;box-shadow:0 24px 60px rgba(15,23,42,.08);">
+      <div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#b45309;margin-bottom:10px;">Studio mean</div>
+      <h1 style="margin:0 0 10px;font-size:28px;line-height:1.15;">${escapeHtml_(t.title)}</h1>
+      <p style="margin:0 0 8px;font-size:15px;line-height:1.7;">${escapeHtml_(t.intro)}</p>
+      <p style="margin:0 0 18px;font-size:13px;line-height:1.7;color:#6b7280;">${escapeHtml_(t.desc)}</p>
+      ${safeErr}
+      <form method="get" style="display:flex;flex-direction:column;gap:12px;">
+        <input type="hidden" name="action" value="revise_retouch">
+        <input type="hidden" name="id" value="${escapeHtml_(String(sessionId||''))}">
+        <input type="hidden" name="submitted" value="1">
+        <label style="font-size:13px;font-weight:700;color:#374151;">${escapeHtml_(t.field)}</label>
+        <textarea name="note" required maxlength="1200" placeholder="${escapeHtml_(t.placeholder)}" style="min-height:180px;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;font:inherit;font-size:14px;line-height:1.7;resize:vertical;background:#faf9f7;color:#111827;">${safeNote}</textarea>
+        <div style="font-size:12px;line-height:1.6;color:#92400e;">${escapeHtml_(t.hint)}</div>
+        <button type="submit" style="margin-top:4px;border:none;border-radius:999px;background:#1f2937;color:#fff;padding:14px 18px;font-size:14px;font-weight:700;cursor:pointer;">${escapeHtml_(t.submit)}</button>
+      </form>
+    </div>
+  </div>
+</body></html>`;
+  return HtmlService.createHtmlOutput(html).setTitle(t.title);
+}
+
 function reviseRetouch_(sessionId,p){
   try{
-    const selSh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
     if(!selSh)return HtmlService.createHtmlOutput('<h2>❌ 시스템 오류</h2>');
     const rows=selSh.getDataRange().getValues();
     const idx=rows.slice(1).findIndex(r=>String(r[0])===String(sessionId));
@@ -3400,10 +3470,19 @@ function reviseRetouch_(sessionId,p){
       const msgs={ko:'<h2 style="color:#ef4444;">⚠️ 재수정 가능 횟수(2회)를 초과했습니다.</h2><p>추가 수정이 필요하시면 직접 연락 주세요: studio.mean.de@gmail.com</p>',en:'<h2 style="color:#ef4444;">⚠️ Maximum revisions (2) reached.</h2><p>Please contact us: studio.mean.de@gmail.com</p>',de:'<h2 style="color:#ef4444;">⚠️ Maximale Überarbeitungen (2) erreicht.</h2><p>Kontakt: studio.mean.de@gmail.com</p>'};
       return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
     }
+    const submitted=String(p.submitted||'').trim()==='1';
+    const note=String(p.note||'').trim();
+    if(!submitted){
+      return renderRetouchRevisionForm_(sessionId,rowLang,String(row[SELECT_COL['고객명']]||''),revCount,'',String(row[SELECT_COL['재수정요청메모']]||''));
+    }
+    if(!note){
+      const err={ko:'수정 요청 내용을 입력해 주세요.',en:'Please enter your revision details.',de:'Bitte geben Sie Ihre Änderungswünsche ein.'};
+      return renderRetouchRevisionForm_(sessionId,rowLang,String(row[SELECT_COL['고객명']]||''),revCount,err[rowLang]||err.ko,'');
+    }
     const newCount=revCount+1;
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('재수정요청');
     selSh.getRange(rowNum,SELECT_COL['재수정요청횟수']+1).setValue(newCount);
-    try{MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 재수정 요청 (${newCount}/2회)`,htmlBody:`<p><b>${row[2]}</b>님이 보정본 재수정을 요청했습니다 (${newCount}/2회).<br>상품: ${row[7]}<br>어드민에서 [📤 수정본 발송] 버튼을 사용해 주세요.</p>`});}catch(e){}
+    selSh.getRange(rowNum,SELECT_COL['재수정요청메모']+1).setValue(note);
     const msgs={ko:`<h2 style="color:#f59e0b;">✏️ 재수정 요청이 접수되었습니다 (${newCount}/2회)</h2><p>Studio mean에서 수정 후 다시 보내드리겠습니다. 감사합니다.</p>`,en:`<h2 style="color:#f59e0b;">✏️ Revision Request Received (${newCount}/2)</h2><p>Studio mean will revise and resend your photos. Thank you!</p>`,de:`<h2 style="color:#f59e0b;">✏️ Überarbeitungsanfrage erhalten (${newCount}/2)</h2><p>Studio mean wird die Fotos überarbeiten und erneut zusenden.</p>`};
     return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
@@ -4690,7 +4769,7 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','재수정요청메모','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -4769,6 +4848,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['3차알림일']]=schedule.reminder3;
   row[SELECT_COL['최종알림단계']]='';
   row[SELECT_COL['재수정요청횟수']]=0;
+  row[SELECT_COL['재수정요청메모']]='';
   row[SELECT_COL['추가금인보이스번호']]='';
   row[SELECT_COL['페이지버전']]=normalizeSelectPageVersion_(data.pageVersion||'v2');
   return {sessionId,row,now,schedule};
@@ -5350,6 +5430,7 @@ function getPhotoSelectionsAdmin(token){
       resendCount:parseInt(r[SELECT_COL['재발송횟수']])||0,resendAt:String(r[SELECT_COL['재발송일시']]||'').slice(0,16),
       retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
+      revisionNote:String(r[SELECT_COL['재수정요청메모']]||''),
       extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
@@ -5412,6 +5493,7 @@ function getSelectDashboard(token){
               reminder3:String(sr[SELECT_COL['3차알림일']]||''),
               reminderStage:parseInt(sr[SELECT_COL['최종알림단계']])||0,
               revisionCount:parseInt(sr[SELECT_COL['재수정요청횟수']])||0,
+              revisionNote:String(sr[SELECT_COL['재수정요청메모']]||''),
               extraInvoiceNumber:String(sr[SELECT_COL['추가금인보이스번호']]||''),
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')
