@@ -1099,6 +1099,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
             <option value="우편발송">우편발송</option>
             <option value="최종작업완료">최종작업완료</option>
           </select>
+          <select id="sel_invoiceRequestFilter" onchange="renderSelectDashboard()" style="width:auto;padding:6px 10px;font-size:12px;">
+            <option value="">송장요청 전체</option>
+            <option value="Y">송장 요청됨</option>
+            <option value="N">송장 요청 없음</option>
+          </select>
           <button class="btn btn-outline btn-sm" onclick="loadSelectHistory()" title="새로고침">↺</button>
           <button class="btn btn-outline btn-sm" onclick="runDebugSelect()" title="진단" style="font-size:11px;">🔍 진단</button>
           <button class="btn btn-outline btn-sm" onclick="sendTestSelectMail()" style="font-size:11px;">📧 테스트발송</button>
@@ -3142,6 +3147,7 @@ function renderSelectSummary(sourceData,filteredData){
   const workWaiting=sourceData.filter(r=>r.selectStatus==='작업대기').length;
   const retouchSent=sourceData.filter(r=>r.selectStatus==='보정본발송').length;
   const passportPending=sourceData.filter(r=>r.selectStatus==='최종본전달대기').length;
+  const invoiceRequestedCount=sourceData.filter(r=>!!r.invoiceRequested).length;
   const latestRevision=sourceData
     .filter(r=>r.selectStatus==='재수정요청')
     .map(r=>String((r.sel&&r.sel.lastRevisionRequestedAt)||'').trim())
@@ -3172,6 +3178,7 @@ function renderSelectSummary(sourceData,filteredData){
     chip('재수정요청',revisionReq,'border-color:#f59e0b;color:#b45309;','재수정요청')+
     chip('작업대기',workWaiting,'border-color:#93c5fd;color:#1d4ed8;','작업대기')+
     chip('최종본전달대기',passportPending,'border-color:#7dd3fc;color:#075985;','최종본전달대기')+
+    `<span style="font-size:11px;color:#0f766e;border:1px solid #a7f3d0;padding:6px 10px;border-radius:999px;background:#f0fdf4;">송장 요청 ${invoiceRequestedCount}건</span>`+
     chip('보정본발송',retouchSent,'border-color:#c4b5fd;color:#6d28d9;','보정본발송')+
     `<span style="margin-left:auto;font-size:12px;color:#64748b;">현재 표시 ${filteredCount}건</span>`;
 }
@@ -3261,6 +3268,7 @@ function renderSelectDashboard(){
   const tbody=document.getElementById('selectHistoryBody');
   const filterStatus=document.getElementById('sel_statusFilter').value;
   const filterBookingStatus=document.getElementById('sel_bookingStatusFilter').value;
+  const filterInvoiceRequest=document.getElementById('sel_invoiceRequestFilter').value;
   let data=allSelectDashboard.slice();
   const statusOrder={'재수정요청':0,'작업대기':1,'최종본전달대기':2,'보정본발송':3,'발송':4,'재발송':5,'미발송':6,'보정본확인완료':7,'출력':8,'우편발송':9,'최종작업완료':10};
   data.sort(function(a,b){
@@ -3272,6 +3280,8 @@ function renderSelectDashboard(){
   const sourceData=data.slice();
   if(filterBookingStatus) data=data.filter(r=>r.bookingStatus===filterBookingStatus);
   if(filterStatus) data=data.filter(r=>r.selectStatus===filterStatus);
+  if(filterInvoiceRequest==='Y') data=data.filter(r=>!!r.invoiceRequested);
+  if(filterInvoiceRequest==='N') data=data.filter(r=>!r.invoiceRequested);
   renderSelectSummary(sourceData,data);
   if(!data.length){tbody.innerHTML=`<tr><td colspan="16" style="text-align:center;color:#94a3b8;padding:20px;">${filterStatus||filterBookingStatus?'필터 조건에 맞는 항목이 없습니다.':'촬영 완료 예약이 없습니다.'}</td></tr>`;return;}
 
