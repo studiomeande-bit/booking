@@ -1088,3 +1088,199 @@ textarea,
     padding-top: 16px;
   }
 }
+
+/* ===== Mobile finish pass ===== */
+@media (max-width: 768px) {
+  .shell {
+    width: min(100%, calc(100% - 28px));
+    padding-top: calc(18px + var(--safe-top));
+    padding-bottom: calc(116px + var(--safe-bottom));
+  }
+
+  .hero {
+    gap: 14px;
+  }
+
+  .status-banner {
+    margin-top: 16px;
+    padding: 18px 16px;
+  }
+
+  .intro-grid,
+  .product-grid,
+  .detail-grid,
+  .calendar-stage,
+  .form-grid,
+  .booking-form,
+  .success-grid {
+    gap: 16px;
+  }
+
+  .intro-card,
+  .detail-card,
+  .note-box,
+  .price-card,
+  .slot-panel,
+  .review-box,
+  .consent-box,
+  .success-item {
+    padding: 18px 16px !important;
+  }
+
+  .meta-value {
+    font-size: clamp(20px, 6vw, 28px);
+    line-height: 1.08;
+  }
+
+  .product-card {
+    padding: 18px 16px;
+    gap: 12px;
+  }
+
+  .product-card h3 {
+    font-size: 24px;
+    line-height: 1.04;
+  }
+
+  .product-card p {
+    font-size: 13px;
+    line-height: 1.68;
+  }
+
+  .card-badge {
+    font-size: 10px;
+  }
+
+  .price-card {
+    gap: 12px;
+  }
+
+  .price-hero {
+    padding: 20px 16px;
+  }
+
+  .price-hero strong {
+    font-size: clamp(34px, 11vw, 48px);
+    line-height: 0.98;
+  }
+
+  .price-meta {
+    gap: 10px;
+  }
+
+  .calendar-stage {
+    gap: 14px;
+  }
+
+  .calendar-toolbar {
+    grid-template-columns: 88px minmax(0, 1fr) 88px;
+    gap: 10px;
+  }
+
+  #monthLabel {
+    font-size: 23px;
+    line-height: 1;
+  }
+
+  .calendar-weekdays {
+    gap: 6px;
+  }
+
+  .calendar-weekday {
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  .calendar-grid {
+    gap: 6px;
+  }
+
+  .day-btn {
+    min-height: 52px;
+    padding: 10px 6px;
+  }
+
+  .slot-panel {
+    gap: 12px;
+  }
+
+  .slot-panel-title {
+    font-size: 10px !important;
+    letter-spacing: 0.14em !important;
+  }
+
+  .slot-panel-copy {
+    font-size: 13px;
+    line-height: 1.64;
+  }
+
+  .slot-grid {
+    gap: 8px;
+  }
+
+  .slot-btn {
+    min-height: 54px;
+    font-size: 15px;
+  }
+
+  .booking-form,
+  .form-grid {
+    gap: 18px;
+  }
+
+  .booking-form label,
+  .inline-field {
+    gap: 10px;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 54px;
+  }
+
+  textarea {
+    min-height: 132px;
+  }
+
+  .wizard-nav {
+    margin-top: 20px;
+    padding-top: 14px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .shell {
+    width: min(100%, calc(100% - 24px));
+  }
+
+  .intro-card,
+  .detail-card,
+  .note-box,
+  .price-card,
+  .slot-panel,
+  .review-box,
+  .consent-box,
+  .success-item {
+    padding: 16px !important;
+  }
+
+  .product-card {
+    padding: 16px;
+  }
+
+  .product-card h3 {
+    font-size: 22px;
+  }
+
+  .calendar-toolbar {
+    grid-template-columns: 76px minmax(0, 1fr) 76px;
+    gap: 8px;
+  }
+
+  .ghost-btn,
+  .primary-btn {
+    min-height: 46px;
+  }
+}

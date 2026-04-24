@@ -3394,3 +3394,241 @@ h1 {
     max-width: calc(100% - 28px);
   }
 }
+
+/* ===== Mobile finish pass ===== */
+@media (max-width: 768px) {
+  .shell {
+    width: min(100%, calc(100% - 28px));
+    padding-top: calc(18px + var(--safe-top));
+    padding-bottom: calc(116px + var(--safe-bottom));
+  }
+
+  .hero {
+    gap: 14px;
+  }
+
+  .banner,
+  .notice-panel,
+  .promo-highlight {
+    margin-top: 14px;
+  }
+
+  .notice-panel,
+  .promo-highlight,
+  .detail-box,
+  .slot-panel,
+  .consent-box,
+  .result-box,
+  .result-guide-box,
+  #businessInvoiceFields,
+  #returnNotice,
+  #reviewBox.detail-box {
+    padding: 18px 16px !important;
+  }
+
+  .promo-highlight {
+    gap: 18px;
+  }
+
+  .promo-highlight-copy {
+    gap: 12px;
+  }
+
+  .promo-highlight-title {
+    font-size: clamp(34px, 11vw, 46px);
+    line-height: 0.96;
+    letter-spacing: -0.05em;
+    max-width: 10ch;
+  }
+
+  .promo-highlight-body {
+    max-width: none;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .promo-highlight-tags {
+    gap: 8px;
+  }
+
+  .promo-highlight-tag {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .promo-highlight-cta {
+    gap: 10px;
+  }
+
+  .promo-highlight-button {
+    width: 100%;
+    min-height: 82px;
+    padding: 18px;
+  }
+
+  .promo-highlight-button-label {
+    font-size: 19px;
+    line-height: 1.08;
+  }
+
+  .promo-highlight-button-sub {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .group-grid {
+    gap: 14px;
+  }
+
+  .group-card {
+    min-height: 118px;
+    padding: 22px 18px;
+    gap: 10px;
+  }
+
+  .group-card::after {
+    right: 18px;
+    bottom: 18px;
+    font-size: 15px;
+  }
+
+  .group-card-title {
+    font-size: 21px;
+    line-height: 1.06;
+  }
+
+  .group-card-sub {
+    font-size: 13px;
+    line-height: 1.62;
+    max-width: 28ch;
+  }
+
+  .calendar-stage {
+    gap: 14px;
+  }
+
+  .calendar-toolbar {
+    grid-template-columns: 88px minmax(0, 1fr) 88px;
+    gap: 10px;
+    margin-bottom: 2px;
+  }
+
+  #monthLabel {
+    font-size: 23px;
+    line-height: 1;
+  }
+
+  .calendar-weekdays {
+    gap: 6px;
+  }
+
+  .calendar-weekday {
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  .calendar-grid {
+    gap: 6px;
+  }
+
+  .calendar-cell {
+    min-height: 50px;
+    padding: 9px 6px;
+  }
+
+  .slot-panel {
+    gap: 12px;
+  }
+
+  .slot-panel-title {
+    font-size: 10px !important;
+    letter-spacing: 0.14em !important;
+  }
+
+  #slotHint {
+    font-size: 13px;
+    line-height: 1.62;
+  }
+
+  .slot-grid {
+    gap: 8px;
+  }
+
+  .slot-btn {
+    min-height: 54px;
+    font-size: 15px;
+  }
+
+  .booking-form,
+  .invoice-fields-grid {
+    gap: 18px;
+  }
+
+  .booking-form label,
+  .invoice-fields-grid label,
+  .inline-field {
+    gap: 10px;
+  }
+
+  .booking-form input,
+  .booking-form textarea,
+  .invoice-fields-grid input,
+  .invoice-fields-grid textarea,
+  .inline-field select {
+    min-height: 54px;
+  }
+
+  .booking-form textarea {
+    min-height: 132px;
+  }
+
+  .wizard-nav,
+  .form-nav {
+    margin-top: 20px;
+    padding-top: 14px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .shell {
+    width: min(100%, calc(100% - 24px));
+  }
+
+  .promo-highlight-title {
+    font-size: clamp(30px, 10vw, 40px);
+    max-width: 9ch;
+  }
+
+  .promo-highlight-button {
+    min-height: 76px;
+    padding: 16px;
+  }
+
+  .group-card {
+    padding: 20px 16px;
+  }
+
+  .group-card-title {
+    font-size: 19px;
+  }
+
+  .group-card-sub,
+  .lede,
+  .notice-body,
+  .promo-highlight-body {
+    font-size: 13px;
+  }
+
+  .calendar-toolbar {
+    grid-template-columns: 76px minmax(0, 1fr) 76px;
+    gap: 8px;
+  }
+
+  .ghost-btn,
+  .primary-btn,
+  .submit-btn {
+    min-height: 46px;
+  }
+}
