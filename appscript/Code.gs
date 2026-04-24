@@ -3480,9 +3480,20 @@ function reviseRetouch_(sessionId,p){
       return renderRetouchRevisionForm_(sessionId,rowLang,String(row[SELECT_COL['고객명']]||''),revCount,err[rowLang]||err.ko,'');
     }
     const newCount=revCount+1;
+    const history=parseRevisionHistory_(row[SELECT_COL['재수정요청이력JSON']]);
+    if(!history.length){
+      const existingNote=String(row[SELECT_COL['재수정요청메모']]||'').trim();
+      if(existingNote && revCount>0) history.push({count:revCount,requestedAt:'',note:existingNote});
+    }
+    history.push({
+      count:newCount,
+      requestedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+      note:note
+    });
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('재수정요청');
     selSh.getRange(rowNum,SELECT_COL['재수정요청횟수']+1).setValue(newCount);
     selSh.getRange(rowNum,SELECT_COL['재수정요청메모']+1).setValue(note);
+    selSh.getRange(rowNum,SELECT_COL['재수정요청이력JSON']+1).setValue(JSON.stringify(history));
     const msgs={ko:`<h2 style="color:#f59e0b;">✏️ 재수정 요청이 접수되었습니다 (${newCount}/2회)</h2><p>Studio mean에서 수정 후 다시 보내드리겠습니다. 감사합니다.</p>`,en:`<h2 style="color:#f59e0b;">✏️ Revision Request Received (${newCount}/2)</h2><p>Studio mean will revise and resend your photos. Thank you!</p>`,de:`<h2 style="color:#f59e0b;">✏️ Überarbeitungsanfrage erhalten (${newCount}/2)</h2><p>Studio mean wird die Fotos überarbeiten und erneut zusenden.</p>`};
     return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
@@ -4769,7 +4780,7 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -4798,8 +4809,25 @@ function ensureSelectSheet_(ss){
       if(!existing.includes(h)) sh.getRange(1,sh.getLastColumn()+1).setValue(h);
     });
     repairSelectRevisionNoteColumn_(sh);
+    repairSelectRevisionHistoryColumn_(sh);
   }
   return sh;
+}
+
+function parseRevisionHistory_(raw){
+  try{
+    const arr=JSON.parse(String(raw||'[]'));
+    if(!Array.isArray(arr)) return [];
+    return arr.map(function(item){
+      return {
+        count:parseInt(item&&item.count,10)||0,
+        requestedAt:String(item&&item.requestedAt||'').trim(),
+        note:String(item&&item.note||'').trim()
+      };
+    }).filter(function(item){ return item.note; });
+  }catch(e){
+    return [];
+  }
 }
 
 function isInvoiceNumberLike_(value){
@@ -4836,6 +4864,31 @@ function repairSelectRevisionNoteColumn_(sh){
     if(changed) sh.getRange(2,1,values.length,sh.getLastColumn()).setValues(values);
   }catch(e){
     Logger.log('repairSelectRevisionNoteColumn_ error: '+e.message);
+  }
+}
+
+function repairSelectRevisionHistoryColumn_(sh){
+  try{
+    if(!sh || sh.getLastRow()<=1) return;
+    const headers=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(function(v){return String(v||'').trim();});
+    const historyIdx=headers.indexOf('재수정요청이력JSON');
+    const noteIdx=headers.indexOf('재수정요청메모');
+    const revisionCountIdx=headers.indexOf('재수정요청횟수');
+    if(historyIdx<0 || noteIdx<0 || revisionCountIdx<0) return;
+    const lastRow=sh.getLastRow();
+    const values=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues();
+    let changed=false;
+    values.forEach(function(row){
+      const noteValue=String(row[noteIdx]||'').trim();
+      const revisionCount=parseInt(row[revisionCountIdx],10)||0;
+      const history=parseRevisionHistory_(row[historyIdx]);
+      if(history.length || !noteValue || revisionCount<=0) return;
+      row[historyIdx]=JSON.stringify([{count:revisionCount,requestedAt:'',note:noteValue}]);
+      changed=true;
+    });
+    if(changed) sh.getRange(2,1,values.length,sh.getLastColumn()).setValues(values);
+  }catch(e){
+    Logger.log('repairSelectRevisionHistoryColumn_ error: '+e.message);
   }
 }
 
@@ -4887,6 +4940,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['최종알림단계']]='';
   row[SELECT_COL['재수정요청횟수']]=0;
   row[SELECT_COL['재수정요청메모']]='';
+  row[SELECT_COL['재수정요청이력JSON']]='';
   row[SELECT_COL['추가금인보이스번호']]='';
   row[SELECT_COL['페이지버전']]=normalizeSelectPageVersion_(data.pageVersion||'v2');
   return {sessionId,row,now,schedule};
@@ -5469,6 +5523,7 @@ function getPhotoSelectionsAdmin(token){
       retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
       revisionNote:String(r[SELECT_COL['재수정요청메모']]||''),
+      revisionHistory:parseRevisionHistory_(r[SELECT_COL['재수정요청이력JSON']]),
       extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
@@ -5532,6 +5587,7 @@ function getSelectDashboard(token){
               reminderStage:parseInt(sr[SELECT_COL['최종알림단계']])||0,
               revisionCount:parseInt(sr[SELECT_COL['재수정요청횟수']])||0,
               revisionNote:String(sr[SELECT_COL['재수정요청메모']]||''),
+              revisionHistory:parseRevisionHistory_(sr[SELECT_COL['재수정요청이력JSON']]),
               extraInvoiceNumber:String(sr[SELECT_COL['추가금인보이스번호']]||''),
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')

@@ -3515,8 +3515,22 @@ function viewSubmission(rowIndex){
       }).join('')}</div>`
     :'<div style="color:#94a3b8;font-size:13px;">선택 사진 없음</div>';
   const revisionNote=String(sel.revisionNote||'').trim();
-  document.getElementById('submissionRevision').innerHTML=revisionNote
-    ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px;">✏️ 재수정 요청사항</div><div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;background:#fffaf0;font-size:13px;line-height:1.7;color:#7c2d12;white-space:pre-line;">${escHtml(revisionNote)}</div>`
+  const revisionHistory=Array.isArray(sel.revisionHistory)?sel.revisionHistory.filter(function(item){return item&&item.note;}):[];
+  const normalizedHistory=revisionHistory.length
+    ? revisionHistory.slice().sort(function(a,b){ return String(b.requestedAt||'').localeCompare(String(a.requestedAt||'')); })
+    : (revisionNote ? [{count:sel.revisionCount||1,requestedAt:'',note:revisionNote}] : []);
+  document.getElementById('submissionRevision').innerHTML=normalizedHistory.length
+    ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px;">재수정 요청 이력</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${normalizedHistory.map(function(item){
+          const countLabel=item.count?`${item.count}차 요청`:'재수정 요청';
+          const timeLabel=item.requestedAt?` · ${escHtml(String(item.requestedAt).slice(0,16))}`:'';
+          return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;background:#fffaf0;font-size:13px;line-height:1.7;color:#7c2d12;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a3412;margin-bottom:6px;">${escHtml(countLabel)}${timeLabel}</div>
+            <div style="white-space:pre-line;">${escHtml(item.note)}</div>
+          </div>`;
+        }).join('')}
+      </div>`
     :'';
   let extrasHtml='';
   if(sel.extraRetouchCount>0) extrasHtml+=`<div style="padding:8px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;"><span>추가 보정</span><span><b>${sel.extraRetouchCount}장</b> · ${sel.extraRetouchAmt}€</span></div>`;
