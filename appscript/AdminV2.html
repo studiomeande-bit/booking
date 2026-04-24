@@ -3142,13 +3142,32 @@ function renderSelectSummary(sourceData,filteredData){
   const workWaiting=sourceData.filter(r=>r.selectStatus==='작업대기').length;
   const retouchSent=sourceData.filter(r=>r.selectStatus==='보정본발송').length;
   const passportPending=sourceData.filter(r=>r.selectStatus==='최종본전달대기').length;
+  const latestRevision=sourceData
+    .filter(r=>r.selectStatus==='재수정요청')
+    .map(r=>String((r.sel&&r.sel.lastRevisionRequestedAt)||'').trim())
+    .filter(Boolean)
+    .sort()
+    .pop()||'';
   const activeFilter=document.getElementById('sel_statusFilter').value;
   const filteredCount=filteredData.length;
   const chip=function(label,count,style,filterValue){
     const active=activeFilter===filterValue;
     return `<button class="btn btn-sm ${active?'btn-primary':'btn-outline'}" style="${style||''}font-size:11px;padding:6px 10px;" onclick="setSelectStatusFilter('${filterValue||''}')">${label} ${count}</button>`;
   };
+  const alertCard=(revisionReq||passportPending)?`<div style="flex:1 1 100%;display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:${revisionReq?'#fff7ed':'#eff6ff'};border:1px solid ${revisionReq?'#fdba74':'#bfdbfe'};margin-bottom:2px;">
+      ${revisionReq?`<button class="btn btn-sm btn-outline" style="border-color:#f59e0b;color:#9a3412;background:#fff;" onclick="setSelectStatusFilter('재수정요청')">재수정요청 ${revisionReq}건</button>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:220px;">
+        <div style="font-size:12px;font-weight:700;color:#9a3412;">가장 먼저 확인해야 할 재수정 요청이 있습니다.</div>
+        <div style="font-size:11px;color:#9a3412;">최근 요청 ${latestRevision?escHtml(latestRevision.slice(0,16)):'시각 없음'}</div>
+      </div>`:''}
+      ${passportPending?`<button class="btn btn-sm btn-outline" style="border-color:#7dd3fc;color:#075985;background:#fff;" onclick="setSelectStatusFilter('최종본전달대기')">최종본전달대기 ${passportPending}건</button>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:220px;">
+        <div style="font-size:12px;font-weight:700;color:#075985;">여권 최종본 전달 대기 건이 남아 있습니다.</div>
+        <div style="font-size:11px;color:#075985;">셀렉 발송 없이 바로 메일 전달이 가능합니다.</div>
+      </div>`:''}
+    </div>`:'';
   wrap.innerHTML=
+    alertCard+
     chip('전체',total,'','')+
     chip('재수정요청',revisionReq,'border-color:#f59e0b;color:#b45309;','재수정요청')+
     chip('작업대기',workWaiting,'border-color:#93c5fd;color:#1d4ed8;','작업대기')+
@@ -3265,7 +3284,8 @@ function renderSelectDashboard(){
     const reminderLabel=sel.reminderStage?`<span style="font-size:11px;color:#92400e;">${sel.reminderStage}차 완료</span>`:`<span style="font-size:11px;color:#94a3b8;">-</span>`;
     const revisionNote=String(sel.revisionNote||'').trim();
     const revisionPreview=(s==='재수정요청'&&revisionNote)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#7c2d12;max-width:170px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(revisionNote)}</div>`:'';
-    const revisionLabel=`<span style="font-size:11px;color:${(sel.revisionCount||0)>=2?'#dc2626':'#64748b'};">${sel.revisionCount||0}/2</span>${revisionPreview}`;
+    const revisionAt=(s==='재수정요청'&&sel.lastRevisionRequestedAt)?`<div style="margin-top:4px;font-size:10px;line-height:1.4;color:#9a3412;">최근 요청 ${escHtml(String(sel.lastRevisionRequestedAt).slice(5,16))}</div>`:'';
+    const revisionLabel=`<span style="font-size:11px;color:${(sel.revisionCount||0)>=2?'#dc2626':'#64748b'};">${sel.revisionCount||0}/2</span>${revisionAt}${revisionPreview}`;
     const invoiceLabel=sel.totalExtra>0?`<div style="font-size:11px;font-weight:700;color:#dc2626;">${sel.totalExtra}€</div>${sel.extraInvoiceNumber?`<div style="font-size:10px;color:#2563eb;">${sel.extraInvoiceNumber}</div>`:'<div style="font-size:10px;color:#94a3b8;">자동발행대기</div>'}`:'<span style="font-size:11px;color:#94a3b8;">-</span>';
     const submittedLabel=sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'';
     const bsBadgeStyle=BOOKING_STATUS_BADGE[bs]||'background:#f1f5f9;color:#475569;';

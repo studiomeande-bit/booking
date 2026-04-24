@@ -4830,6 +4830,16 @@ function parseRevisionHistory_(raw){
   }
 }
 
+function getLatestRevisionRequestedAt_(history){
+  const items=Array.isArray(history)?history:[];
+  let latest='';
+  items.forEach(function(item){
+    const ts=String(item&&item.requestedAt||'').trim();
+    if(ts && ts>latest) latest=ts;
+  });
+  return latest;
+}
+
 function isInvoiceNumberLike_(value){
   const v=String(value||'').trim();
   if(!v) return false;
@@ -5512,6 +5522,7 @@ function getPhotoSelectionsAdmin(token){
   if(!sh)return[];
   return sh.getDataRange().getValues().slice(1).filter(r=>r[0]).map((r,i)=>{
     let photoCount=0;try{photoCount=(JSON.parse(r[SELECT_COL['선택사진']]||'[]')||[]).length;}catch(e){}
+    const revisionHistory=parseRevisionHistory_(r[SELECT_COL['재수정요청이력JSON']]);
     return{
       rowIdx:i+2,sessionId:r[SELECT_COL['세션ID']],sentAt:String(r[SELECT_COL['생성일시']]||'').slice(0,16),
       name:r[SELECT_COL['고객명']],email:r[SELECT_COL['이메일']],date:String(r[SELECT_COL['촬영일']]||'').slice(0,10),
@@ -5523,7 +5534,8 @@ function getPhotoSelectionsAdmin(token){
       retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
       revisionNote:String(r[SELECT_COL['재수정요청메모']]||''),
-      revisionHistory:parseRevisionHistory_(r[SELECT_COL['재수정요청이력JSON']]),
+      revisionHistory:revisionHistory,
+      lastRevisionRequestedAt:getLatestRevisionRequestedAt_(revisionHistory),
       extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
@@ -5559,6 +5571,7 @@ function getSelectDashboard(token){
             try{ photoCount=JSON.parse(String(sr[SELECT_COL['선택사진']]||'[]')).length; }catch(_){}
             let extraPrintsCount=0;
             try{ extraPrintsCount=JSON.parse(String(sr[SELECT_COL['추가인화']]||'[]')).length; }catch(_){}
+            const revisionHistory=parseRevisionHistory_(sr[SELECT_COL['재수정요청이력JSON']]);
             selByBooking[bri]={
               rowIdx:i+2,
               sessionId:String(sr[SELECT_COL['세션ID']]),
@@ -5587,7 +5600,8 @@ function getSelectDashboard(token){
               reminderStage:parseInt(sr[SELECT_COL['최종알림단계']])||0,
               revisionCount:parseInt(sr[SELECT_COL['재수정요청횟수']])||0,
               revisionNote:String(sr[SELECT_COL['재수정요청메모']]||''),
-              revisionHistory:parseRevisionHistory_(sr[SELECT_COL['재수정요청이력JSON']]),
+              revisionHistory:revisionHistory,
+              lastRevisionRequestedAt:getLatestRevisionRequestedAt_(revisionHistory),
               extraInvoiceNumber:String(sr[SELECT_COL['추가금인보이스번호']]||''),
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')
