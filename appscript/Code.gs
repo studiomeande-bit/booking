@@ -7404,13 +7404,18 @@ function flagAndCancelOverdueDepositBookings_(){
     const bookedDate=baseDateInfo.obj;
     if(isNaN(bookedDate.getTime())) return;
     const ageDays=Math.floor((now.getTime()-bookedDate.getTime())/86400000);
-    // 7일차: 입금 리마인더 메일 발송 (이전엔 타임스탬프만 기록)
-    if(ageDays>=7 && !String(row[BOOKING_COL['입금경고일시']]||'').trim()){
+    const warnedAtRaw=String(row[BOOKING_COL['입금경고일시']]||'').trim();
+    let warningJustSent=false;
+    // 7일차: 입금 리마인더 메일 발송
+    if(ageDays>=7 && !warnedAtRaw){
       sendDepositReminderEmail_(rowIndex, row, deposit, ageDays);
       bookingSheet.getRange(rowIndex,BOOKING_COL['입금경고일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+      warningJustSent=true;
     }
+    // 리마인더를 보낸 실행에서는 같은 날 바로 자동취소하지 않는다.
+    if(warningJustSent) return;
     // 10일차: 자동취소 + 안내 메일
-    if(ageDays>=10 && !String(row[BOOKING_COL['자동취소일시']]||'').trim()){
+    if(ageDays>=10 && warnedAtRaw && !String(row[BOOKING_COL['자동취소일시']]||'').trim()){
       autoCancelBookingForMissingDeposit_(rowIndex, row);
     }
   });
