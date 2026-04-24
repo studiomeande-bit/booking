@@ -4769,7 +4769,7 @@ function saveExpenseAdmin(token, expense){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','재수정요청메모','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -4797,8 +4797,46 @@ function ensureSelectSheet_(ss){
     SELECT_HEADERS.forEach((h,i)=>{
       if(!existing.includes(h)) sh.getRange(1,sh.getLastColumn()+1).setValue(h);
     });
+    repairSelectRevisionNoteColumn_(sh);
   }
   return sh;
+}
+
+function isInvoiceNumberLike_(value){
+  const v=String(value||'').trim();
+  if(!v) return false;
+  return /^STMIN-\d+$/i.test(v) || /^SM[A-Z0-9-]{6,}$/i.test(v);
+}
+
+function repairSelectRevisionNoteColumn_(sh){
+  try{
+    if(!sh || sh.getLastRow()<=1) return;
+    const headers=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(function(v){return String(v||'').trim();});
+    const invoiceIdx=headers.indexOf('추가금인보이스번호');
+    const noteIdx=headers.indexOf('재수정요청메모');
+    const statusIdx=headers.indexOf('상태');
+    const revisionCountIdx=headers.indexOf('재수정요청횟수');
+    if(invoiceIdx<0 || noteIdx<0 || statusIdx<0 || revisionCountIdx<0) return;
+    const lastRow=sh.getLastRow();
+    const values=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues();
+    let changed=false;
+    values.forEach(function(row){
+      const invoiceValue=String(row[invoiceIdx]||'').trim();
+      const noteValue=String(row[noteIdx]||'').trim();
+      const statusValue=String(row[statusIdx]||'').trim();
+      const revisionCount=parseInt(row[revisionCountIdx],10)||0;
+      if(noteValue) return;
+      if(!invoiceValue) return;
+      if(isInvoiceNumberLike_(invoiceValue)) return;
+      if(statusValue!=='재수정요청' && revisionCount<=0) return;
+      row[noteIdx]=invoiceValue;
+      row[invoiceIdx]='';
+      changed=true;
+    });
+    if(changed) sh.getRange(2,1,values.length,sh.getLastColumn()).setValues(values);
+  }catch(e){
+    Logger.log('repairSelectRevisionNoteColumn_ error: '+e.message);
+  }
 }
 
 function generateSessionId_(){
@@ -7303,11 +7341,25 @@ function updateInvoiceAdmin(token, payload){
 
 function deleteInvoiceAdmin(token, invNumber){
   assertAdmin_(token);
-  const {invoiceSheet}=ensureSheets_();
+  const sheets=ensureSheets_();
+  const {invoiceSheet}=sheets;
   if(invoiceSheet.getLastRow()<=1) return{ok:false,message:'인보이스가 없습니다.'};
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[0]||'').trim()===String(invNumber).trim());
   if(idx===-1) return{ok:false,message:'인보이스를 찾을 수 없습니다.'};
+  const invoiceRow=rows[idx+1]||[];
+  const invoiceType=String(invoiceRow[INVOICE_COL['타입']]||'').trim();
+  if(invoiceType==='셀렉추가금'){
+    const selSh=ensureSelectSheet_(sheets.ss);
+    if(selSh.getLastRow()>1){
+      const selRows=selSh.getDataRange().getValues();
+      for(let i=1;i<selRows.length;i++){
+        if(String(selRows[i][SELECT_COL['추가금인보이스번호']]||'').trim()===String(invNumber).trim()){
+          selSh.getRange(i+1,SELECT_COL['추가금인보이스번호']+1).setValue('');
+        }
+      }
+    }
+  }
   invoiceSheet.deleteRow(idx+2);
   return{ok:true};
 }
