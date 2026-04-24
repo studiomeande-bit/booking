@@ -5540,7 +5540,10 @@ function getPhotoSelectionsAdmin(token){
       pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
       pickupAt:String(r[SELECT_COL['픽업일시']]||''),
-      mailAddress:String(r[SELECT_COL['우편주소']]||'')
+      mailAddress:String(r[SELECT_COL['우편주소']]||''),
+      invoiceRequested:false,
+      businessInvoiceEmail:'',
+      businessCompanyName:''
     };
   }).reverse();
 }
@@ -5664,6 +5667,9 @@ function getSelectDashboard(token){
         itemGroup:String(row[6]||''),
         product:String(row[7]||''),
         isPassport:isPassport,
+        invoiceRequested:String(row[BOOKING_COL['사업자송장필요']]||'')==='Y',
+        businessInvoiceEmail:String(row[BOOKING_COL['사업자송장이메일']]||'').trim(),
+        businessCompanyName:String(row[BOOKING_COL['사업자명']]||'').trim(),
         bookingStatus:status,
         selectStatus:selectStatus,
         daysSinceShoot:daysSinceShoot,

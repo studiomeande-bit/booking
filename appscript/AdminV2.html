@@ -3286,7 +3286,14 @@ function renderSelectDashboard(){
     const revisionPreview=(s==='재수정요청'&&revisionNote)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#7c2d12;max-width:170px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(revisionNote)}</div>`:'';
     const revisionAt=(s==='재수정요청'&&sel.lastRevisionRequestedAt)?`<div style="margin-top:4px;font-size:10px;line-height:1.4;color:#9a3412;">최근 요청 ${escHtml(String(sel.lastRevisionRequestedAt).slice(5,16))}</div>`:'';
     const revisionLabel=`<span style="font-size:11px;color:${(sel.revisionCount||0)>=2?'#dc2626':'#64748b'};">${sel.revisionCount||0}/2</span>${revisionAt}${revisionPreview}`;
-    const invoiceLabel=sel.totalExtra>0?`<div style="font-size:11px;font-weight:700;color:#dc2626;">${sel.totalExtra}€</div>${sel.extraInvoiceNumber?`<div style="font-size:10px;color:#2563eb;">${sel.extraInvoiceNumber}</div>`:'<div style="font-size:10px;color:#94a3b8;">자동발행대기</div>'}`:'<span style="font-size:11px;color:#94a3b8;">-</span>';
+    const invoiceLabel=sel.totalExtra>0
+      ?`<div style="font-size:11px;font-weight:700;color:#dc2626;">${sel.totalExtra}€</div>
+        ${sel.extraInvoiceNumber
+          ?`<div style="font-size:10px;color:#2563eb;">${sel.extraInvoiceNumber}</div>`
+          :(r.invoiceRequested
+            ?`<div style="font-size:10px;color:#0f766e;">송장 요청됨 · 발행 대상</div>`
+            :`<div style="font-size:10px;color:#94a3b8;">송장 요청 없음</div>`)}`
+      :`<span style="font-size:11px;color:${r.invoiceRequested?'#0f766e':'#94a3b8'};">${r.invoiceRequested?'송장 요청됨':'-'}</span>`;
     const submittedLabel=sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'';
     const bsBadgeStyle=BOOKING_STATUS_BADGE[bs]||'background:#f1f5f9;color:#475569;';
     const bsBadge=`<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;${bsBadgeStyle}">${bs}</span>`;
@@ -3520,6 +3527,7 @@ function viewSubmission(rowIndex){
       <span><b>${r.name}</b> · ${r.dateStr}</span>
       <span style="color:#64748b;">${r.product||''}</span>
       <span>제출: <b>${sel.submittedAt.slice(0,16)}</b></span>
+      <span style="color:${r.invoiceRequested?'#0f766e':'#94a3b8'};">${r.invoiceRequested?`송장 요청됨${r.businessCompanyName?` · ${escHtml(r.businessCompanyName)}`:''}`:'송장 요청 없음'}</span>
       ${sel.marketing==='Y'?'<span style="background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;">마케팅동의</span>':''}
     </div>`;
   let photos=[];
@@ -3559,7 +3567,13 @@ function viewSubmission(rowIndex){
   prints.forEach(p=>{ extrasHtml+=`<div style="padding:8px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;"><span>${p.label||'인화'} ×${p.qty}</span><span><b>${p.price||0}€</b></span></div>`;});
   if(sel.totalExtra>0) extrasHtml+=`<div style="padding:10px 0;display:flex;justify-content:space-between;font-weight:700;"><span>총 추가금액</span><span style="color:#ef4444;">${sel.totalExtra}€</span></div>`;
   document.getElementById('submissionExtras').innerHTML=extrasHtml
-    ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px;">💰 추가 주문</div><div style="border:1px solid #e2e8f0;border-radius:8px;padding:0 12px;">${extrasHtml}</div>`:'';
+    ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px;">추가 주문</div>
+      <div style="border:1px solid #e2e8f0;border-radius:8px;padding:0 12px;">${extrasHtml}</div>
+      <div style="margin-top:8px;font-size:12px;color:${r.invoiceRequested?'#0f766e':'#64748b'};">
+        ${r.invoiceRequested
+          ?`이 예약은 사업자 송장 요청이 있어 추가금 인보이스 발행 대상입니다.${r.businessInvoiceEmail?` 송장 이메일: ${escHtml(r.businessInvoiceEmail)}`:''}`
+          :'이 예약은 사업자 송장 요청이 없어 추가금 인보이스가 자동 발행되지 않습니다.'}
+      </div>`:'';
   document.getElementById('submissionModal').classList.add('open');
 }
 function openManualSelectEdit(){
