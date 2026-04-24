@@ -5559,6 +5559,7 @@ function getSelectDashboard(token){
 
       const bri=String(r+2);
       const sel=selByBooking[bri]||null;
+      const isPassport=isPassportBookingItem_(row[6],row[7]);
 
       let selectStatus='미발송';
       let daysSinceSent=null;
@@ -5566,7 +5567,9 @@ function getSelectDashboard(token){
         const sentD=sel.sentAt?new Date(sel.sentAt.replace(' ','T')):null;
         const sentMs=sentD&&!isNaN(sentD.getTime())?now-sentD:null;
         daysSinceSent=sentMs!==null?Math.floor(sentMs/86400000):null;
-        if(['보정본발송','재수정요청','보정본확인완료','출력','우편발송','최종작업완료'].includes(sel.status)){
+        if(isPassport){
+          selectStatus=sel.status==='최종작업완료'?'최종작업완료':'최종본전달대기';
+        }else if(['보정본발송','재수정요청','보정본확인완료','출력','우편발송','최종작업완료'].includes(sel.status)){
           selectStatus=sel.status;
         }else if(sel.status==='제출완료'||sel.status==='작업대기'){
           selectStatus='작업대기';
@@ -5575,6 +5578,8 @@ function getSelectDashboard(token){
         }else{
           selectStatus='발송';
         }
+      }else if(isPassport){
+        selectStatus='최종본전달대기';
       }
 
       const shootDate=new Date((dStr||'1970-01-01')+'T00:00:00');
@@ -5588,6 +5593,7 @@ function getSelectDashboard(token){
         lang:String(row[5]||'ko'),
         itemGroup:String(row[6]||''),
         product:String(row[7]||''),
+        isPassport:isPassport,
         bookingStatus:status,
         selectStatus:selectStatus,
         daysSinceShoot:daysSinceShoot,
@@ -5894,6 +5900,7 @@ function autoSelectDailyCheck(){
   const alert7=[];
   bookRows.forEach((row,r)=>{
     if(String(row[1]||'')!=='확정됨') return;
+    if(isPassportBookingItem_(row[6],row[7])) return;
     const bri=String(r+2);
     if(sentBri.has(bri)) return;
     const dStr=String(row[0]||'').slice(0,10);
@@ -5907,6 +5914,13 @@ function autoSelectDailyCheck(){
     const html=`<h2>📷 사진셀렉 미발송 알림</h2><p>촬영 후 7일 이상 셀렉 링크를 보내지 않은 고객이 있습니다.</p><table border="1" cellpadding="8" style="border-collapse:collapse;"><tr><th>촬영일</th><th>고객명</th><th>상품</th><th>경과일</th></tr>${rows}</table>`;
     MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[Studio mean] 셀렉 미발송 알림 — ${alert7.length}건`,htmlBody:html});
   }
+}
+
+function isPassportBookingItem_(itemGroup,product){
+  const g=String(itemGroup||'').trim().toLowerCase();
+  const p=String(product||'').trim();
+  if(g==='pass'||g==='여권'||g.indexOf('여권')>=0||g.indexOf('passport')>=0) return true;
+  return /여권|비자|passfoto|passport|e-passbild/i.test(p);
 }
 
 /* === 트리거 설정 (어드민이 한 번만 실행) === */
@@ -9713,6 +9727,36 @@ ${note?`<p>📝 ${note.replace(/\n/g,'<br>')}</p>`:''}
     const existing=String(row[memoCol]||'');
     const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${note?' ('+note+')':''}`;
     sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
+    const sheets=ensureSheets_();
+    const selSh=ensureSelectSheet_(sheets.ss);
+    const selRows=selSh.getDataRange().getValues();
+    let selRowIdx=null;
+    for(let i=1;i<selRows.length;i++){
+      if(String(selRows[i][SELECT_COL['예약장부행']]||'')===String(rowIndex)){selRowIdx=i+2;break;}
+    }
+    if(selRowIdx){
+      selSh.getRange(selRowIdx,SELECT_COL['드라이브링크']+1).setValue(driveUrl);
+      selSh.getRange(selRowIdx,SELECT_COL['보정본발송일시']+1).setValue(stamp);
+      selSh.getRange(selRowIdx,SELECT_COL['상태']+1).setValue('최종작업완료');
+    }else{
+      const built=_makeSelectRow_({
+        name:name,
+        email:email,
+        phone:String(row[BOOKING_COL['연락처']]||''),
+        date:_formatBookingDate_(row[BOOKING_COL['예약일시']]),
+        itemGroup:String(row[BOOKING_COL['촬영종류']]||''),
+        product:product,
+        baseRetouchCount:0,
+        retouchPrice:0,
+        lang:lang,
+        driveLink:driveUrl,
+        bookingRowIndex:String(rowIndex),
+        pageVersion:'classic'
+      });
+      built.row[SELECT_COL['보정본발송일시']]=stamp;
+      built.row[SELECT_COL['상태']]='최종작업완료';
+      selSh.appendRow(built.row);
+    }
     // 상태를 '작업완료'로 (셀렉 생략)
     try{sh.getRange(rowIndex,BOOKING_COL['상태']+1).setValue('작업완료');}catch(e){}
     try{MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:`[여권 발송] ${name} — ${dateStr}`,htmlBody:`<p>${name}님(${email})에게 여권사진 발송 완료.<br>링크: <a href="${driveUrl}">${driveUrl}</a></p>`});}catch(e){}

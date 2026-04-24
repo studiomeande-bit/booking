@@ -1088,6 +1088,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <select id="sel_statusFilter" onchange="renderSelectDashboard()" style="width:auto;padding:6px 10px;font-size:12px;">
             <option value="">셀렉상태 전체</option>
             <option value="미발송">미발송</option>
+            <option value="최종본전달대기">최종본전달대기</option>
             <option value="발송">발송</option>
             <option value="재발송">재발송</option>
             <option value="작업대기">작업대기</option>
@@ -1109,6 +1110,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <select id="selBatchAction" style="width:auto;padding:6px 10px;font-size:12px;">
           <option value="">일괄 상태 변경...</option>
           <option value="미발송">미발송</option>
+          <option value="최종본전달대기">최종본전달대기</option>
           <option value="발송">발송</option>
           <option value="재발송">재발송</option>
           <option value="작업대기">작업대기</option>
@@ -3102,6 +3104,7 @@ let allSelectDashboard=[], currentSelectRowIndex=null, selectedFolderData=null;
 
 const SEL_STATUS_STYLE={
   '미발송': 'background:#fee2e2;color:#991b1b;',
+  '최종본전달대기':'background:#e0f2fe;color:#075985;border:1.5px solid #7dd3fc;',
   '발송':   'background:#fef3c7;color:#92400e;',
   '재발송': 'background:#ffedd5;color:#9a3412;',
   '재수정요청':'background:#fef3c7;color:#d97706;border:1.5px solid #f59e0b;',
@@ -3118,7 +3121,7 @@ function selStatusBadge(s){
   return `<span style="${st}padding:3px 9px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap;">${s||'-'}</span>`;
 }
 
-const SEL_STATUS_LIST=['미발송','발송','재발송','작업대기','보정본발송','재수정요청','보정본확인완료','출력','우편발송','최종작업완료'];
+const SEL_STATUS_LIST=['미발송','최종본전달대기','발송','재발송','작업대기','보정본발송','재수정요청','보정본확인완료','출력','우편발송','최종작업완료'];
 
 function escHtml(v){
   return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
@@ -3138,6 +3141,7 @@ function renderSelectSummary(sourceData,filteredData){
   const revisionReq=sourceData.filter(r=>r.selectStatus==='재수정요청').length;
   const workWaiting=sourceData.filter(r=>r.selectStatus==='작업대기').length;
   const retouchSent=sourceData.filter(r=>r.selectStatus==='보정본발송').length;
+  const passportPending=sourceData.filter(r=>r.selectStatus==='최종본전달대기').length;
   const activeFilter=document.getElementById('sel_statusFilter').value;
   const filteredCount=filteredData.length;
   const chip=function(label,count,style,filterValue){
@@ -3148,6 +3152,7 @@ function renderSelectSummary(sourceData,filteredData){
     chip('전체',total,'','')+
     chip('재수정요청',revisionReq,'border-color:#f59e0b;color:#b45309;','재수정요청')+
     chip('작업대기',workWaiting,'border-color:#93c5fd;color:#1d4ed8;','작업대기')+
+    chip('최종본전달대기',passportPending,'border-color:#7dd3fc;color:#075985;','최종본전달대기')+
     chip('보정본발송',retouchSent,'border-color:#c4b5fd;color:#6d28d9;','보정본발송')+
     `<span style="margin-left:auto;font-size:12px;color:#64748b;">현재 표시 ${filteredCount}건</span>`;
 }
@@ -3238,7 +3243,7 @@ function renderSelectDashboard(){
   const filterStatus=document.getElementById('sel_statusFilter').value;
   const filterBookingStatus=document.getElementById('sel_bookingStatusFilter').value;
   let data=allSelectDashboard.slice();
-  const statusOrder={'재수정요청':0,'작업대기':1,'보정본발송':2,'발송':3,'재발송':4,'미발송':5,'보정본확인완료':6,'출력':7,'우편발송':8,'최종작업완료':9};
+  const statusOrder={'재수정요청':0,'작업대기':1,'최종본전달대기':2,'보정본발송':3,'발송':4,'재발송':5,'미발송':6,'보정본확인완료':7,'출력':8,'우편발송':9,'최종작업완료':10};
   data.sort(function(a,b){
     const ao=statusOrder[a.selectStatus]??50;
     const bo=statusOrder[b.selectStatus]??50;
@@ -3268,7 +3273,9 @@ function renderSelectDashboard(){
 
     // 액션 버튼
     let actions='';
-    if(s==='미발송'){
+    if(s==='최종본전달대기' && r.isPassport){
+      actions=`<button class="btn btn-primary btn-sm" onclick="sendPassportPhotosUI(${r.rowIndex})">📧 최종본 전달</button>`;
+    } else if(s==='미발송'){
       actions=`<button class="btn btn-primary btn-sm" onclick="openSelectModal(${r.rowIndex})">📨 발송</button>`;
     } else if(s==='발송'||s==='재발송'){
       actions=`<button class="btn btn-outline btn-sm" onclick="doResend(${r.rowIndex})" title="재발송">🔁 재발송</button>`;
