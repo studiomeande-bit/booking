@@ -1182,9 +1182,38 @@ function upsertSetting_(key,value) {
   sh.appendRow([key,value]);
 }
 function parseDateSafe_(rawDate) {
-  if(Object.prototype.toString.call(rawDate)==='[object Date]') return{obj:rawDate,str:Utilities.formatDate(rawDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')};
-  const str=String(rawDate||'');const obj=new Date(str.replace(' ','T'));
-  return{obj:isNaN(obj.getTime())?new Date(0):obj,str};
+  if(Object.prototype.toString.call(rawDate)==='[object Date]'){
+    return{obj:rawDate,str:Utilities.formatDate(rawDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')};
+  }
+  const str=String(rawDate||'').trim();
+  if(!str) return {obj:new Date(NaN),str:''};
+  const candidates=[str];
+  if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(str)) candidates.push(str.replace(' ','T'));
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) candidates.push(str+'T00:00:00');
+  let obj=new Date(NaN);
+  for(let i=0;i<candidates.length;i++){
+    const candidate=candidates[i];
+    const parsed=new Date(candidate);
+    if(!isNaN(parsed.getTime())){
+      obj=parsed;
+      break;
+    }
+  }
+  return{obj,str:!isNaN(obj.getTime())?Utilities.formatDate(obj,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'):str};
+}
+
+function getDepositDeadlineBaseDate_(row){
+  const confirmedRaw=String(row[BOOKING_COL['확정일시']]||'').trim();
+  const confirmed=parseDateSafe_(confirmedRaw).obj;
+  if(confirmedRaw && !isNaN(confirmed.getTime())){
+    return {obj:confirmed,source:'확정일시',raw:confirmedRaw};
+  }
+  const consentRaw=String(row[BOOKING_COL['동의시각']]||'').trim();
+  const consent=parseDateSafe_(consentRaw).obj;
+  if(consentRaw && !isNaN(consent.getTime())){
+    return {obj:consent,source:'동의시각',raw:consentRaw};
+  }
+  return {obj:new Date(NaN),source:'',raw:''};
 }
 
 function getPromoConfig_(){
@@ -7370,10 +7399,9 @@ function flagAndCancelOverdueDepositBookings_(){
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
     if(deposit<=0 || depositPaid || status==='취소됨') return;
     if(['확정됨','촬영완료','셀렉완료','작업완료'].indexOf(status)===-1) return;
-    // 기준: 예약 생성일(동의시각) — "예약일로부터 10일" 규칙 적용
-    const bookedRaw=String(row[BOOKING_COL['동의시각']]||'').trim();
-    if(!bookedRaw) return;
-    const bookedDate=parseDateSafe_(bookedRaw).obj;
+    // 기준: 예약 확정일시 우선, 없으면 동의시각 fallback
+    const baseDateInfo=getDepositDeadlineBaseDate_(row);
+    const bookedDate=baseDateInfo.obj;
     if(isNaN(bookedDate.getTime())) return;
     const ageDays=Math.floor((now.getTime()-bookedDate.getTime())/86400000);
     // 7일차: 입금 리마인더 메일 발송 (이전엔 타임스탬프만 기록)
@@ -7410,7 +7438,7 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   <li>📷 상품: ${escapeHtml_(product)}</li>
   <li>📅 촬영일시: ${escapeHtml_(shootAt)}</li>
   <li>💶 예약금: <b>€${depositStr}</b></li>
-  <li>⏳ 예약일로부터 <b>${ageDays}일</b> 경과 — ${remainingDays}일 이내 미입금 시 <b>자동 취소</b>됩니다.</li>
+  <li>⏳ 예약 확정 후 <b>${ageDays}일</b> 경과 — ${remainingDays}일 이내 미입금 시 <b>자동 취소</b>됩니다.</li>
 </ul>
 <p>아래 계좌로 예약금 입금을 부탁드립니다:<br><b>Studio mean</b> · <i>studio.mean.de@gmail.com</i></p>
 <p>이미 입금하신 경우 이 메일은 무시해 주세요.</p>
@@ -7421,7 +7449,7 @@ ${_getSignatureHtml()}`,
   <li>📷 Product: ${escapeHtml_(product)}</li>
   <li>📅 Shoot date: ${escapeHtml_(shootAt)}</li>
   <li>💶 Deposit: <b>€${depositStr}</b></li>
-  <li>⏳ <b>${ageDays} days</b> since booking — booking will be auto-cancelled if unpaid within ${remainingDays} more day(s).</li>
+  <li>⏳ <b>${ageDays} days</b> since confirmation — the booking will be auto-cancelled if unpaid within ${remainingDays} more day(s).</li>
 </ul>
 <p>Please complete the deposit payment. If already sent, kindly ignore this message.</p>
 ${_getSignatureHtml()}`,
@@ -7431,7 +7459,7 @@ ${_getSignatureHtml()}`,
   <li>📷 Produkt: ${escapeHtml_(product)}</li>
   <li>📅 Aufnahmedatum: ${escapeHtml_(shootAt)}</li>
   <li>💶 Anzahlung: <b>€${depositStr}</b></li>
-  <li>⏳ <b>${ageDays} Tage</b> seit Buchung — Bei Nichtzahlung innerhalb weiterer ${remainingDays} Tage erfolgt automatische Stornierung.</li>
+  <li>⏳ <b>${ageDays} Tage</b> seit Bestätigung — Bei Nichtzahlung innerhalb weiterer ${remainingDays} Tage erfolgt automatische Stornierung.</li>
 </ul>
 <p>Bitte überweisen Sie die Anzahlung. Falls bereits erfolgt, ignorieren Sie diese Nachricht.</p>
 ${_getSignatureHtml()}`
@@ -7446,7 +7474,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['상태']+1).setValue('취소됨');
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['자동취소일시']+1).setValue(nowStr);
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
-  const cancelMemo='[자동취소] 예약일로부터 10일 내 예약금 미확인';
+  const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
   if(eventId){
@@ -7462,7 +7490,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
       MailApp.sendEmail({
         to:email,
         subject:'[Studio mean] 예약이 자동 취소되었습니다',
-        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약일로부터 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
+        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약 확정 후 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
       });
     }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
   }
