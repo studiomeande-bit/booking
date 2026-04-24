@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gutschein Print Preview</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --ink: #171513;
+  --muted: #5c5248;
+  --line: #2d241d;
+  --panel: #e7e2d9;
+  --panel-line: rgba(45, 36, 29, .16);
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+body {
+  width: 105mm;
+  margin: 0 auto;
+}
+.sheet {
+  page-break-after: always;
+  width: 105mm;
+  height: 148mm;
+  background: #fff;
+  padding: 7mm 7mm 8mm;
+  position: relative;
+  overflow: hidden;
+}
+.sheet:last-child {
+  page-break-after: auto;
+}
+.sheet-inner {
+  position: relative;
+  height: 100%;
+  display: grid;
+}
+.front .sheet-inner {
+  grid-template-rows: auto auto 1fr auto;
+  gap: 3.8mm;
+}
+.back .sheet-inner {
+  grid-template-rows: auto 1fr;
+  gap: 4.5mm;
+}
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 6.8pt;
+  line-height: 1.25;
+  color: var(--muted);
+  letter-spacing: .04em;
+}
+.script-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: pre-line;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 26pt;
+  line-height: .96;
+  letter-spacing: -.035em;
+}
+.panel {
+  position: relative;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+}
+.front-panel { min-height: 0; }
+.back-panel { min-height: 0; }
+.voucher-note {
+  position: absolute;
+  left: 6mm;
+  right: 30mm;
+  bottom: 6mm;
+  font-size: 7.2pt;
+  line-height: 1.32;
+  color: var(--muted);
+  text-align: left;
+}
+.voucher-note .value {
+  display: block;
+  margin-bottom: 1.4mm;
+  color: var(--ink);
+  font-size: 21pt;
+  font-weight: 700;
+  line-height: 1.05;
+}
+.front-qr {
+  position: absolute;
+  right: 5mm;
+  bottom: 5mm;
+  display: grid;
+  gap: 1mm;
+  justify-items: center;
+}
+.qr-box {
+  width: 22mm;
+  height: 22mm;
+  padding: 1.5mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid rgba(45, 36, 29, .18);
+}
+.qr-box img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.qr-caption {
+  font-size: 6.4pt;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+.notes {
+  margin: 0;
+  padding-left: 4.4mm;
+  font-size: 6.5pt;
+  line-height: 1.28;
+  color: var(--ink);
+}
+.notes li { margin: .45mm 0; }
+.front-footer {
+  display: grid;
+  gap: 3.2mm;
+}
+.logo-footer {
+  text-align: center;
+}
+.brand-logo {
+  width: 40mm;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.footer-line {
+  margin-top: 1.5mm;
+  font-size: 7.1pt;
+  line-height: 1.28;
+  color: var(--ink);
+}
+.field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 3mm;
+  padding: .5mm 0 0;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 17pt;
+  line-height: 1;
+}
+.field-line {
+  flex: 1;
+  min-width: 0;
+  min-height: 5.5mm;
+  padding: 0 0 .7mm 0;
+  border-bottom: 1.1px solid var(--line);
+  color: var(--ink);
+  font-size: 12.5pt;
+  line-height: 1.15;
+  font-family: Arial, Helvetica, sans-serif;
+}
+@page {
+  size: 105mm 148mm;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  body {
+    width: auto;
+  }
+  .sheet {
+    width: min(105mm, calc(100vw - 16px));
+    height: auto;
+    min-height: 148mm;
+  }
+}
+</style>
+</head>
+<body>
+<section class="sheet front">
+  <div class="sheet-inner">
+    <div class="meta-row">
+      <div>GA3J-JJB8-79V2</div>
+      <div>Verfallsdatum : 2029/04/23</div>
+    </div>
+    <div class="script-title">Geschenk
+gutschein</div>
+    <div class="panel front-panel">
+      <div class="voucher-note">
+        <span class="value">€100</span>
+        Wertgutschein · Gutschein
+      </div>
+      <div class="front-qr">
+        <div class="qr-box"><img src="./gutschein-preview-qr.png" alt="QR"></div>
+        <div class="qr-caption">QR</div>
+      </div>
+    </div>
+    <div class="front-footer">
+      <ul class="notes">
+        <li>Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.</li>
+        <li>Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.</li>
+        <li>Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.</li>
+        <li>Der Gutschein ist nur mit vorheriger Terminvereinbarung einlösbar.</li>
+        <li>Der Gutschein ist nicht rückerstattbar.</li>
+      </ul>
+      <div class="logo-footer">
+        <img class="brand-logo" src="./gutschein-preview-logo.png" alt="Studio mean logo">
+        <div class="footer-line">Holzwegpassage 3, 61440 Oberursel<br>Tel : +49 176 6093 9400</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sheet back">
+  <div class="sheet-inner">
+    <div class="field-row"><span>Für :</span><span class="field-line">Jenna Knight</span></div>
+    <div class="panel back-panel"></div>
+  </div>
+</section>
+</body>
+</html>

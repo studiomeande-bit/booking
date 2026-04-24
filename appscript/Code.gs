@@ -8758,7 +8758,6 @@ function buildGutscheinHtml_(g){
     valid:'Verfallsdatum',
     title:'Geschenk\ngutschein',
     forLabel:'Für :',
-    fromLabel:'Von :',
     imprint:'Studio_mean',
     tagline:'make meaningful moment',
     validityNote:'Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.',
@@ -8788,41 +8787,34 @@ function buildGutscheinHtml_(g){
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:105mm 148mm;margin:0}
 body{width:105mm;margin:0 auto;background:#fff}
-.page{position:relative;width:105mm;height:148mm;padding:6.5mm 6mm 6mm;background:#fff;page-break-after:always;overflow:hidden}
+.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 8mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
 .inner{position:relative;height:100%;display:grid}
-.front .inner{grid-template-rows:auto 20mm 78mm auto auto;gap:4.5mm}
-.back .inner{grid-template-rows:auto 1fr auto;gap:5.5mm}
-.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:7.2pt;line-height:1.25;color:var(--muted);letter-spacing:.04em;padding:1mm 1mm 0}
-.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:25.5pt;line-height:.96;letter-spacing:-.035em;color:var(--ink);white-space:pre-line}
-.frame-corner{position:absolute;width:12mm;height:8.5mm}
-.frame-corner::before,.frame-corner::after{content:'';position:absolute;background:rgba(48,40,33,.65)}
-.frame-corner::before{width:100%;height:.55mm;left:0;top:0}
-.frame-corner::after{width:.55mm;height:100%;left:0;top:0}
-.frame-corner.tr{right:0;top:0;transform:scaleX(-1)}
-.frame-corner.tl{left:0;top:0}
+.front .inner{grid-template-rows:auto auto 1fr auto;gap:3.8mm}
+.back .inner{grid-template-rows:auto 1fr;gap:4.5mm}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.8pt;line-height:1.25;color:var(--muted);letter-spacing:.04em}
+.script-title{display:flex;align-items:center;justify-content:center;text-align:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:26pt;line-height:.96;letter-spacing:-.035em;color:var(--ink);white-space:pre-line}
 .panel{position:relative;width:100%;background:var(--panel);border:1px solid var(--panel-line)}
-.panel.front{min-height:78mm;padding:0}
-.panel.back{min-height:97mm;padding:0}
-.voucher-note{position:absolute;left:7mm;right:31mm;bottom:6.5mm;font-size:7.8pt;line-height:1.35;color:var(--muted);text-align:left}
+.panel.front{min-height:0;padding:0}
+.panel.back{min-height:0;padding:0}
+.voucher-note{position:absolute;left:6mm;right:30mm;bottom:6mm;font-size:7.2pt;line-height:1.32;color:var(--muted);text-align:left}
 .voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'20pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:1.4mm}
-.front-qr{position:absolute;right:5.5mm;bottom:5.5mm}
+.front-qr{position:absolute;right:5mm;bottom:5mm}
 .front-qr .qr-box{width:22mm;height:22mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.5mm;border:1px solid rgba(45,36,29,.18)}
 .front-qr .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
 .front-qr .qr-caption{margin-top:1mm;font-size:6.6pt;letter-spacing:.08em;color:var(--muted);text-align:center}
-.notes{margin:0;padding-left:4.4mm;font-size:7.1pt;line-height:1.38;color:var(--ink)}
-.notes li{margin:.8mm 0}
+.notes{margin:0;padding-left:4.4mm;font-size:6.5pt;line-height:1.28;color:var(--ink)}
+.notes li{margin:.45mm 0}
+.front-footer{display:grid;gap:3.2mm}
 .logo-footer{text-align:center}
-.brand-logo{width:42mm;height:auto;display:block;margin:0 auto}
-.footer-line{margin-top:1.8mm;font-size:7.6pt;line-height:1.36;color:var(--ink)}
-.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:17pt;line-height:1;color:var(--ink);padding:1.5mm 1mm 0}
+.brand-logo{width:40mm;height:auto;display:block;margin:0 auto}
+.footer-line{margin-top:1.5mm;font-size:7.1pt;line-height:1.28;color:var(--ink)}
+.field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:17pt;line-height:1;color:var(--ink);padding:.5mm 0 0}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .7mm 0;font-size:12.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:5.5mm}
 .letter-space{height:100%}
 </style></head><body>
 <div class="page front">
   <div class="inner">
-    <div class="frame-corner tl"></div>
-    <div class="frame-corner tr"></div>
     <div class="meta-row">
       <div class="code">${escapeHtml_(g.code||'')}</div>
       <div class="valid">${t.valid} : ${validLabel}</div>
@@ -8838,16 +8830,18 @@ body{width:105mm;margin:0 auto;background:#fff}
         <div class="qr-caption">QR</div>
       </div>
     </div>
-    <ul class="notes">
-      <li>${escapeHtml_(t.useIntro)}</li>
-      <li>${escapeHtml_(t.combineNote)}</li>
-      <li>${escapeHtml_(t.redeemNote)}</li>
-      <li>${escapeHtml_(t.validityNote)}</li>
-      <li>${escapeHtml_(t.refundNote)}</li>
-    </ul>
-    <div class="logo-footer">
-      ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
-      <div class="footer-line">${t.footerLine1}<br>${t.footerLine2}</div>
+    <div class="front-footer">
+      <ul class="notes">
+        <li>${escapeHtml_(t.useIntro)}</li>
+        <li>${escapeHtml_(t.combineNote)}</li>
+        <li>${escapeHtml_(t.redeemNote)}</li>
+        <li>${escapeHtml_(t.validityNote)}</li>
+        <li>${escapeHtml_(t.refundNote)}</li>
+      </ul>
+      <div class="logo-footer">
+        ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
+        <div class="footer-line">${t.footerLine1}<br>${t.footerLine2}</div>
+      </div>
     </div>
   </div>
 </div>
@@ -8856,9 +8850,6 @@ body{width:105mm;margin:0 auto;background:#fff}
     <div class="field-row"><span>${t.forLabel}</span><span class="field-line">${escapeHtml_(recipientText)}</span></div>
     <div class="panel back">
       <div class="letter-space"></div>
-    </div>
-    <div class="logo-footer">
-      ${logoDataUri?`<img class="brand-logo" src="${logoDataUri}" alt="Studio mean logo">`:`<div style="font-size:16pt;font-weight:700;">${t.imprint}</div>`}
     </div>
   </div>
 </div>
