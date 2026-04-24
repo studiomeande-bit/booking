@@ -3672,6 +3672,8 @@ function getDashboardData_(){
       product:c.product||'',
       dateStr:c.dateStr||'',
       autoCancelledAt:c.autoCancelledAt||'',
+      depositWarnedAt:c.depositWarnedAt||'',
+      depositDeadlineBaseAt:c.depositDeadlineBaseAt||'',
       deposit:c.deposit||'',
       memo:c.memo||''
     }));

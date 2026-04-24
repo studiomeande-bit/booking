@@ -50,6 +50,12 @@ tr:hover td{background:#f8fafc;}
 .dep-pending{color:#ef4444;font-weight:700;font-size:12px;white-space:nowrap;}
 .dep-done{color:#10b981;font-weight:700;font-size:12px;}
 .dep-none{color:#94a3b8;font-size:12px;}
+.dep-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;}
+.dep-chip.pending{background:#fff7ed;color:#b45309;}
+.dep-chip.done{background:#ecfdf5;color:#047857;}
+.dep-chip.none{background:#f8fafc;color:#64748b;}
+.dep-chip.warning{background:#fef3c7;color:#92400e;}
+.dep-chip.cancelled{background:#fee2e2;color:#991b1b;}
 .btn{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
 .btn-primary{background:#2D2A26;color:#fff;}.btn-primary:hover{background:#1a1816;}
 .btn-success{background:#10b981;color:#fff;}.btn-success:hover{background:#059669;}
@@ -1660,16 +1666,30 @@ function renderDashboard(d){
   </div>`;
   const recentWrap=document.getElementById('recentAutoCancelledList');
   const recent=(d.recentAutoCancelled||[]);
-  recentWrap.innerHTML=recent.length?recent.map(item=>`
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid #fecaca;background:#fff7f7;border-radius:12px;">
-      <div style="min-width:0;">
-        <div style="font-weight:700;color:#7f1d1d;">${item.name||'-'} · ${item.product||'-'}</div>
-        <div style="font-size:12px;color:#991b1b;margin-top:4px;">예약: ${item.dateStr||'-'} · 자동취소: ${item.autoCancelledAt||'-'}</div>
-        <div style="font-size:11px;color:#7c2d12;margin-top:4px;">계약금 ${item.deposit||'-'} · ${item.memo||'예약 확정 후 10일 내 예약금 미확인'}</div>
+  recentWrap.innerHTML=recent.length?`${recent.map(item=>`
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px;border:1px solid #fecaca;background:#fff7f7;border-radius:12px;">
+      <div style="min-width:0;flex:1;">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <div style="font-weight:700;color:#7f1d1d;">${item.name||'-'} · ${item.product||'-'}</div>
+          <span class="dep-chip cancelled">자동취소</span>
+        </div>
+        <div style="font-size:12px;color:#991b1b;margin-top:6px;">예약 ${item.dateStr||'-'} · 취소 ${item.autoCancelledAt||'-'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px;color:#7c2d12;">
+          ${item.depositDeadlineBaseAt?`<span>기준일 ${item.depositDeadlineBaseAt}</span>`:''}
+          ${item.depositWarnedAt?`<span>경고 ${item.depositWarnedAt}</span>`:''}
+          <span>계약금 ${item.deposit||'-'}</span>
+        </div>
+        <div style="font-size:11px;color:#7c2d12;margin-top:4px;">${item.memo||'예약 확정 후 10일 내 예약금 미확인'}</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="gotoBookingDetail(${item.rowIndex})">열기</button>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0;">
+        <button class="btn btn-outline btn-sm" onclick="gotoBookingDetail(${item.rowIndex})">예약 보기</button>
+        <button class="btn btn-sm" style="background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;" onclick="restoreAutoCancelledBooking(${item.rowIndex})">자동취소복구</button>
+      </div>
     </div>
-  `).join(''):'<div style="padding:12px;border:1px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:12px;">최근 자동취소 예약이 없습니다.</div>';
+  `).join('')}
+  <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+    <button class="btn btn-outline btn-sm" onclick="gotoBookingsByDeposit('cancelled')">자동취소 예약장부 보기</button>
+  </div>`:'<div style="padding:12px;border:1px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:12px;">최근 자동취소 예약이 없습니다.</div>';
 }
 
 function renderWeekGrid(customers){
@@ -1740,11 +1760,13 @@ function renderTable(){
   const gt=g=>`<span class="group-tag ${GT_CLASS[g]||'gt-etc'}">${G_LABELS[g]||g}</span>`;
   const dc=(dep,c)=>{
     const amount=effectiveDeposit(c);
-    if(amount<=0) return '<span class="dep-none">계약금 없음</span>';
-    if(c.depositPaid==='Y') return `<span class="dep-done">✅ ${amount}€</span>`;
-    if(!dep||dep==='-') return `<span class="dep-pending">💳 ${amount}€</span>`;
-    if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 ${amount}€</span>`;
-    if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ ${amount}€</span>`;
+    if(c.autoCancelledAt) return '<span class="dep-chip cancelled">자동취소</span>';
+    if(c.depositWarnedAt && c.depositPaid!=='Y') return `<span class="dep-chip warning">경고 · ${amount>0?amount+'€':'확인 필요'}</span>`;
+    if(amount<=0) return '<span class="dep-chip none">계약금 없음</span>';
+    if(c.depositPaid==='Y') return `<span class="dep-chip done">입금완료 · ${amount}€</span>`;
+    if(!dep||dep==='-') return `<span class="dep-chip pending">입금대기 · ${amount}€</span>`;
+    if(/입금전|미입금/.test(dep))return `<span class="dep-chip pending">입금대기 · ${amount}€</span>`;
+    if(/완료|입금완료/.test(dep))return `<span class="dep-chip done">입금완료 · ${amount}€</span>`;
     return `<span style="font-size:11px;color:#475569;">${dep}</span>`;
   };
   const depositMeta=(c)=>{
@@ -3541,6 +3563,14 @@ function restoreAutoCancelledBooking(rowIndex){
     .restoreAutoCancelledBookingAdmin(adminToken,rowIndex,note);
 }
 function gotoBookings(statusFilter){switchTab('booking');const el=document.getElementById('statusFilter');if(el){el.value=statusFilter||'';renderTable();}}
+function gotoBookingsByDeposit(depositFilter){
+  switchTab('booking');
+  const statusEl=document.getElementById('statusFilter');
+  const depositEl=document.getElementById('depositFilter');
+  if(statusEl) statusEl.value='';
+  if(depositEl) depositEl.value=depositFilter||'';
+  renderTable();
+}
 function gotoBookingsByMonth(month){switchTab('booking');const el=document.getElementById('monthFilter');if(el){el.value=month;renderTable();}}
 function gotoBookingDetail(rowIndex){switchTab('booking');renderTable();setTimeout(()=>openEdit(rowIndex),100);}
 
