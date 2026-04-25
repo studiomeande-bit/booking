@@ -3047,12 +3047,12 @@ h1 {
 }
 
 .booking-form {
-  gap: 22px 20px;
+  gap: 24px 20px;
 }
 
 .booking-form label,
 .invoice-fields-grid label {
-  gap: 10px;
+  gap: 12px;
 }
 
 .booking-form label span,
@@ -3072,16 +3072,16 @@ h1 {
 }
 
 .booking-form textarea {
-  min-height: 144px;
+  min-height: 152px;
 }
 
 .checkbox-row {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .consent-box {
   display: grid;
-  gap: 18px;
+  gap: 22px;
 }
 
 .consent-copy {
@@ -3090,12 +3090,12 @@ h1 {
 
 .consent-group {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .review-block {
-  margin-top: 18px;
-  padding-top: 18px;
+  margin-top: 20px;
+  padding-top: 20px;
   border-top: 1px solid rgba(23, 21, 19, 0.08);
 }
 
@@ -3108,17 +3108,19 @@ h1 {
 
 .review-item,
 .review-line {
-  gap: 16px;
-  line-height: 1.6;
+  gap: 18px;
+  line-height: 1.64;
 }
 
 .review-note {
-  margin-top: 6px;
+  margin-top: 8px;
   color: #6c6055;
+  font-size: 13px;
+  line-height: 1.68;
 }
 
 .form-nav {
-  margin-top: 28px;
+  margin-top: 30px;
 }
 
 .form-nav .wizard-actions {
@@ -3232,9 +3234,9 @@ h1 {
 
 .summary-item {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin-top: 0 !important;
-  padding: 16px 18px;
+  padding: 18px 20px;
   border-top: 1px solid rgba(23, 21, 19, 0.08);
 }
 
@@ -3253,32 +3255,32 @@ h1 {
 .summary-value {
   color: #1d1a17;
   font-size: 15px;
-  line-height: 1.62;
+  line-height: 1.68;
   font-weight: 600;
 }
 
 #businessInvoiceFields,
 #returnNotice,
 .consent-box {
-  padding: 24px !important;
+  padding: 26px !important;
 }
 
 .consent-box {
-  gap: 20px;
+  gap: 22px;
 }
 
 .consent-group {
-  padding: 18px 18px 10px !important;
+  padding: 18px 18px 12px !important;
 }
 
 .checkbox-row {
-  padding: 6px 2px 6px 4px;
+  padding: 8px 2px 8px 4px;
 }
 
 .wizard-nav,
 .form-nav {
-  margin-top: 26px;
-  padding-top: 18px;
+  margin-top: 28px;
+  padding-top: 20px;
   border-top: 1px solid rgba(23, 21, 19, 0.08);
 }
 
@@ -3305,7 +3307,7 @@ h1 {
   }
 
   .summary-item {
-    padding: 14px 16px;
+    padding: 15px 16px;
   }
 
   .wizard-nav,

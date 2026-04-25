@@ -999,6 +999,14 @@ textarea,
 }
 
 /* ===== Final form + review polish ===== */
+#stepPanel4 .panel-head {
+  max-width: 760px;
+}
+
+#stepPanel4 .panel-head p {
+  max-width: 58ch;
+}
+
 .review-box {
   padding: 0 !important;
   overflow: hidden;
@@ -1027,27 +1035,60 @@ textarea,
 
 .review-row strong {
   font-size: 15px;
-  line-height: 1.62;
+  line-height: 1.68;
   font-weight: 600;
   color: #1d1a17;
 }
 
+.booking-form {
+  gap: 24px 20px;
+}
+
+.booking-form label,
+.inline-field {
+  gap: 12px;
+}
+
+.booking-form label > span,
+.inline-field > span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.booking-form input,
+.inline-field select,
+.booking-form textarea {
+  background: #f3efe8 !important;
+}
+
+.booking-form textarea {
+  min-height: 152px;
+}
+
 .consent-box {
-  padding: 24px !important;
-  gap: 20px;
+  padding: 26px !important;
+  gap: 22px;
+}
+
+.consent-copy {
+  margin: 0;
 }
 
 .consent-group {
-  padding: 18px 18px 10px !important;
+  display: grid;
+  gap: 8px;
+  padding: 18px 18px 12px !important;
 }
 
 .checkbox-row {
-  padding: 6px 2px 6px 4px;
+  padding: 8px 2px 8px 4px;
 }
 
 .wizard-nav {
-  margin-top: 26px;
-  padding-top: 18px;
+  margin-top: 28px;
+  padding-top: 20px;
   border-top: 1px solid rgba(23, 21, 19, 0.08);
 }
 
@@ -1061,7 +1102,7 @@ textarea,
 
 .wizard-actions .ghost-btn,
 .wizard-actions .primary-btn {
-  min-width: 136px;
+  min-width: 144px;
 }
 
 .success-card {
@@ -1080,7 +1121,7 @@ textarea,
   }
 
   .review-row {
-    padding: 14px 16px;
+    padding: 15px 16px;
   }
 
   .wizard-nav {
