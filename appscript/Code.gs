@@ -1982,6 +1982,27 @@ function getStudioPresenceState_(){
   const next=events.find(function(ev){
     return ev.start>nowMs;
   })||null;
+  const todayStr=Utilities.formatDate(new Date(nowMs),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const todayStart=new Date(`${todayStr}T00:00:00`);
+  const todayEnd=new Date(`${todayStr}T23:59:59`);
+  const busyToday=getBusyEventsDetailedForRange_(todayStart,todayEnd);
+  const todayOpenBlocks=getStudioAutoOpenBlocksForDate_(todayStr,busyToday);
+  const lastStudioBookingEndMs=getLastStudioBookingEndMsForDate_(busyToday);
+  const formatBlock=function(block){
+    if(!block) return '';
+    const start=`${('0'+block.startHour).slice(-2)}:${('0'+block.startMin).slice(-2)}`;
+    const end=`${('0'+block.endHour).slice(-2)}:${('0'+block.endMin).slice(-2)}`;
+    return `${start} ~ ${end}`;
+  };
+  const previewSlots=function(group,duration){
+    const slots=getAvailableSlots(todayStr,duration,group)||[];
+    return {
+      group:group,
+      duration:duration,
+      count:slots.length,
+      preview:slots.slice(0,6)
+    };
+  };
 
   return {
     ok:true,
@@ -1991,7 +2012,19 @@ function getStudioPresenceState_(){
     isOpen:!!active,
     activeEvent:normalize(active),
     nextEvent:normalize(next),
-    shortcut:shortcut
+    shortcut:shortcut,
+    diagnostics:{
+      today:todayStr,
+      todayOpenBlocks:todayOpenBlocks.map(formatBlock).filter(Boolean),
+      lastStudioBookingEndIso:lastStudioBookingEndMs
+        ? Utilities.formatDate(new Date(lastStudioBookingEndMs),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss")
+        : '',
+      slotPreview:[
+        previewSlots('pass',15),
+        previewSlots('prof',30),
+        previewSlots('stud',30)
+      ]
+    }
   };
 }
 

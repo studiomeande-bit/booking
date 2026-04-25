@@ -1639,6 +1639,32 @@ function formatStudioPresenceStamp(iso){
   return normalized.slice(5,16);
 }
 
+function renderStudioPresenceChips(items,emptyLabel){
+  const list=(items||[]).filter(Boolean);
+  if(!list.length){
+    return `<span style="font-size:12px;color:#94a3b8;">${escHtml(emptyLabel||'-')}</span>`;
+  }
+  return list.map(item=>`<span style="display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;background:#f1f5f9;color:#1e293b;font-size:11px;font-weight:700;">${escHtml(item)}</span>`).join('');
+}
+
+function renderStudioPresenceSlotPreview(groups){
+  const labels={pass:'여권 15분',prof:'프로필 30분',stud:'스튜디오 30분'};
+  const rows=(groups||[]).map(group=>{
+    const preview=(group&&group.preview&&group.preview.length)
+      ? group.preview.map(slot=>`<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#ffffff;border:1px solid #e2e8f0;color:#334155;font-size:11px;font-weight:700;">${escHtml(slot)}</span>`).join('')
+      : '<span style="font-size:12px;color:#94a3b8;">없음</span>';
+    return `
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="min-width:110px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">${escHtml(labels[group.group]||group.group||'')}</div>
+          <div style="margin-top:3px;font-size:12px;color:#0f172a;font-weight:700;">${Number(group.count||0)}개</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:1;">${preview}</div>
+      </div>`;
+  }).join('');
+  return rows||'<div style="font-size:12px;color:#94a3b8;">슬롯 미리보기를 불러오지 못했습니다.</div>';
+}
+
 function renderStudioPresencePanel(res){
   studioPresenceState=res&&res.ok?res:null;
   const wrap=document.getElementById('studioPresencePanel');
@@ -1650,6 +1676,7 @@ function renderStudioPresencePanel(res){
   const active=studioPresenceState.activeEvent;
   const next=studioPresenceState.nextEvent;
   const shortcut=studioPresenceState.shortcut||{};
+  const diagnostics=studioPresenceState.diagnostics||{};
   const statusHtml=studioPresenceState.isOpen
     ? '<span class="dep-chip done">현재 열림</span>'
     : '<span class="dep-chip none">현재 닫힘</span>';
@@ -1671,6 +1698,23 @@ function renderStudioPresencePanel(res){
       <button class="btn btn-outline btn-sm" onclick="copyStudioPresenceUrl('open')">Open URL 복사</button>
       <button class="btn btn-outline btn-sm" onclick="copyStudioPresenceUrl('close')">Close URL 복사</button>
       <span style="font-size:11px;color:#94a3b8;">단축어에서는 GET 방식으로 URL 호출만 하시면 됩니다.</span>
+    </div>
+    <div style="margin-top:12px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
+        <div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">오늘 오픈 창</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${renderStudioPresenceChips(diagnostics.todayOpenBlocks,'오늘 오픈 창 없음')}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">마지막 실내 예약 종료</div>
+          <div style="margin-top:8px;font-size:14px;font-weight:700;color:#0f172a;">${diagnostics.lastStudioBookingEndIso?formatStudioPresenceStamp(diagnostics.lastStudioBookingEndIso):'-'}</div>
+          <div style="margin-top:4px;font-size:11px;color:#94a3b8;">Studio Open은 이 시각 기준 30분 뒤까지 확장됩니다.</div>
+        </div>
+        <div style="grid-column:1 / -1;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">오늘 현재 계산된 슬롯</div>
+          <div style="display:grid;gap:10px;margin-top:10px;">${renderStudioPresenceSlotPreview(diagnostics.slotPreview||[])}</div>
+        </div>
+      </div>
     </div>`;
 }
 
