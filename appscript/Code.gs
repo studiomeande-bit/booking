@@ -2164,6 +2164,7 @@ function fetchPublicIcsEvents_(icsUrl,startDate,endDate){
   const startMs=startDate.getTime(), endMs=endDate.getTime();
   return parseIcsText_(res.getContentText())
     .filter(ev=>ev.end>startMs&&ev.start<endMs)
+    .filter(ev=>!isStudioAutoOpenEventByFields_(ev.summary,ev.location,false))
     .map(ev=>({
       start:ev.start,
       end:ev.end,
@@ -2269,6 +2270,7 @@ function fetchAppleCalendarEvents_(startDate,endDate){
             const calData=prop.getChild('calendar-data',calNs);
             if(!calData) return;
             parseIcsText_(calData.getText()).forEach(ev=>{
+              if(isStudioAutoOpenEventByFields_(ev.summary,ev.location,false)) return;
               const type=classifyEventType_(ev.summary,false);
               allEvents.push({start:ev.start,end:ev.end,type,location:ev.location||''});
             });
