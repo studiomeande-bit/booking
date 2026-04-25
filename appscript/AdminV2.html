@@ -264,6 +264,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     </div>
     <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px;">
       <div class="card" style="margin-bottom:0;">
+        <div class="card-title">🏠 Studio Open</div>
+        <div id="studioPresencePanel" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+      <div class="card" style="margin-bottom:0;">
         <div class="card-title">⛔ 최근 자동취소 예약</div>
         <div id="recentAutoCancelledList" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
@@ -1563,6 +1567,7 @@ const STUDIO_BUSINESS_INFO={
   bank:'Deutsche Bank'
 };
 let invoiceEditReturnToValidation=false;
+let studioPresenceState=null;
 
 /* ===== 로그인 ===== */
 function doLogin(){
@@ -1620,10 +1625,121 @@ function loadAll(){google.script.run.withSuccessHandler(onInitAdmin).withFailure
 function onInitAdmin(res){
   allCustomers=(res.dashboard&&res.dashboard.customers)||[];cmsProducts=res.products||[];
   renderDashboard(res.dashboard||{});renderProductCms();loadSettings(res.settings||{});buildMonthFilter();renderTable();buildPrintItems();loadPrintHistory();loadSelectHistory();
+  loadStudioPresencePanel();
   // ✅ 인화 주문 등록 날짜를 오늘로 기본 셋팅
   document.getElementById('pn_date').value = new Date().toISOString().slice(0,10);
   loadAccountingData();
   loadLexwareConfigUi();
+}
+
+function formatStudioPresenceStamp(iso){
+  const raw=String(iso||'').trim();
+  if(!raw) return '-';
+  const normalized=raw.replace('T',' ');
+  return normalized.slice(5,16);
+}
+
+function renderStudioPresencePanel(res){
+  studioPresenceState=res&&res.ok?res:null;
+  const wrap=document.getElementById('studioPresencePanel');
+  if(!wrap) return;
+  if(!studioPresenceState){
+    wrap.innerHTML='<div style="padding:12px;border:1px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:12px;">Studio Open 상태를 불러오지 못했습니다.</div>';
+    return;
+  }
+  const active=studioPresenceState.activeEvent;
+  const next=studioPresenceState.nextEvent;
+  const shortcut=studioPresenceState.shortcut||{};
+  const statusHtml=studioPresenceState.isOpen
+    ? '<span class="dep-chip done">현재 열림</span>'
+    : '<span class="dep-chip none">현재 닫힘</span>';
+  wrap.innerHTML=`
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="min-width:260px;flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${statusHtml}<span style="font-size:12px;color:#64748b;">${escHtml(studioPresenceState.calendarName||'')}</span></div>
+        <div style="margin-top:8px;font-size:13px;color:#2D2A26;"><b>주소</b> · ${escHtml(studioPresenceState.address||'')}</div>
+        <div style="margin-top:6px;font-size:13px;color:#475569;">${active?`현재 오픈 시간 · ${formatStudioPresenceStamp(active.startIso)} ~ ${formatStudioPresenceStamp(active.endIso)} (${active.minutes||0}분)`:'열려 있는 Studio Open 일정이 없습니다.'}</div>
+        <div style="margin-top:4px;font-size:12px;color:#94a3b8;">${next?`다음 예정 · ${formatStudioPresenceStamp(next.startIso)} ~ ${formatStudioPresenceStamp(next.endIso)}`:'다음 예정 없음'}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-sm" onclick="openStudioPresenceFromAdmin(120,this)">지금부터 2시간 열기</button>
+        <button class="btn btn-outline btn-sm" onclick="openStudioPresenceFromAdmin(240,this)">4시간 열기</button>
+        <button class="btn btn-outline btn-sm" onclick="closeStudioPresenceFromAdmin(this)">닫기</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
+      <button class="btn btn-outline btn-sm" onclick="copyStudioPresenceUrl('open')">Open URL 복사</button>
+      <button class="btn btn-outline btn-sm" onclick="copyStudioPresenceUrl('close')">Close URL 복사</button>
+      <span style="font-size:11px;color:#94a3b8;">단축어에서는 GET 방식으로 URL 호출만 하시면 됩니다.</span>
+    </div>`;
+}
+
+function loadStudioPresencePanel(){
+  const wrap=document.getElementById('studioPresencePanel');
+  if(wrap) wrap.innerHTML='<div style="padding:12px;border:1px dashed #e2e8f0;border-radius:12px;color:#94a3b8;font-size:12px;">Studio Open 상태를 불러오는 중...</div>';
+  google.script.run
+    .withSuccessHandler(renderStudioPresencePanel)
+    .withFailureHandler(function(e){
+      handleApiError(e);
+      const panel=document.getElementById('studioPresencePanel');
+      if(panel) panel.innerHTML='<div style="padding:12px;border:1px dashed #fecaca;border-radius:12px;color:#b91c1c;font-size:12px;">Studio Open 상태를 불러오지 못했습니다.</div>';
+    })
+    .adminRpc(adminToken,'getStudioPresenceState',{});
+}
+
+function openStudioPresenceFromAdmin(minutes,btn){
+  withBusyGuard(btn,function(release){
+    runExclusive('studioPresenceOpen:'+minutes,function(done){
+      google.script.run
+        .withSuccessHandler(function(res){
+          release();done();
+          if(res&&res.ok){
+            renderStudioPresencePanel((res&&res.state)||studioPresenceState||null);
+            showToast(`Studio Open이 ${minutes}분 열렸습니다.`,'ok');
+          }else{
+            showToast((res&&res.message)||'Studio Open 열기에 실패했습니다.','err');
+          }
+        })
+        .withFailureHandler(function(e){
+          release();done();handleApiError(e);
+          showToast((e&&e.message)||'Studio Open 열기에 실패했습니다.','err');
+        })
+        .adminRpc(adminToken,'openStudioPresence',{minutes:minutes});
+    });
+  });
+}
+
+function closeStudioPresenceFromAdmin(btn){
+  withBusyGuard(btn,function(release){
+    runExclusive('studioPresenceClose',function(done){
+      google.script.run
+        .withSuccessHandler(function(res){
+          release();done();
+          if(res&&res.ok){
+            renderStudioPresencePanel((res&&res.state)||studioPresenceState||null);
+            showToast('Studio Open을 닫았습니다.','ok');
+          }else{
+            showToast((res&&res.message)||'Studio Open 닫기에 실패했습니다.','err');
+          }
+        })
+        .withFailureHandler(function(e){
+          release();done();handleApiError(e);
+          showToast((e&&e.message)||'Studio Open 닫기에 실패했습니다.','err');
+        })
+        .adminRpc(adminToken,'closeStudioPresence',{});
+    });
+  });
+}
+
+function copyStudioPresenceUrl(kind){
+  const shortcut=studioPresenceState&&studioPresenceState.shortcut||{};
+  const url=kind==='close'?shortcut.closeUrl:shortcut.openUrl;
+  if(!url){showToast('복사할 URL이 없습니다.','warn');return;}
+  navigator.clipboard.writeText(url).then(function(){
+    showToast((kind==='close'?'Close':'Open')+' URL을 복사했습니다.','ok');
+  }).catch(function(){
+    showToast('클립보드 복사에 실패했습니다.','err');
+  });
 }
 
 /* ===== 대시보드 ===== */
@@ -3519,6 +3635,7 @@ function switchTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['dashboard','booking','accounting','print','manual','product','select','invoice','gutschein','quote','settings'][i]===id));
   document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab_'+id).classList.add('active');
+  if(id==='dashboard') loadStudioPresencePanel();
   if(id==='print') loadPrintHistory();
   if(id==='accounting') loadAccountingData();
   if(id==='gutschein') loadGutscheinList();

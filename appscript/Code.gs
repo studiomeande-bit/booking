@@ -181,6 +181,12 @@ function adminRpc(token, action, payload){
     case 'mergeDuplicateDbFiles':
       assertAdmin_(token);
       return mergeDuplicateDbFiles_();
+    case 'getStudioPresenceState':
+      return getStudioPresenceAdmin(token);
+    case 'openStudioPresence':
+      return openStudioPresenceAdmin(token, payload||{});
+    case 'closeStudioPresence':
+      return closeStudioPresenceAdmin(token);
     case 'cancelGutschein':
       return cancelGutscheinAdmin(token, String(payload&&payload.code||''), String(payload&&payload.reason||''));
     case 'deleteGutschein':
@@ -1930,6 +1936,70 @@ function closeStudioPresenceWindow_(){
     calendarName:calendar.getName(),
     message:deleted>0?'스튜디오 상주 시간이 닫혔습니다.':'닫을 스튜디오 상주 일정이 없었습니다.'
   };
+}
+
+function getStudioPresenceState_(){
+  const calendar=getStudioPresenceCalendar_();
+  const shortcut=getStudioPresenceShortcutConfig_();
+  const nowMs=Date.now();
+  const rangeStart=new Date(nowMs-24*60*60000);
+  const rangeEnd=new Date(nowMs+7*24*60*60000);
+  const events=[]
+    .concat(getManagedStudioPresenceDetailedEvents_(rangeStart,rangeEnd))
+    .concat(getStudioPresenceCalendarDetailedEvents_(rangeStart,rangeEnd))
+    .filter(function(ev){
+      return ev && ev.start && ev.end && isStudioAutoOpenEventByFields_(ev.title||'',ev.location||'',!!ev.isPersonal);
+    })
+    .sort(function(a,b){ return a.start-b.start; });
+
+  const normalize=function(ev){
+    if(!ev) return null;
+    return {
+      id:ev.id||'',
+      title:String(ev.title||'Studio Open'),
+      location:String(ev.location||STUDIO_ADDRESS),
+      startIso:Utilities.formatDate(new Date(ev.start),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss"),
+      endIso:Utilities.formatDate(new Date(ev.end),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss"),
+      minutes:Math.max(0,Math.round((ev.end-ev.start)/60000))
+    };
+  };
+
+  const active=events.find(function(ev){
+    return ev.start<=nowMs && ev.end>=nowMs-5*60000;
+  })||null;
+  const next=events.find(function(ev){
+    return ev.start>nowMs;
+  })||null;
+
+  return {
+    ok:true,
+    calendarName:calendar.getName(),
+    address:STUDIO_ADDRESS,
+    defaultMinutes:STUDIO_PRESENCE_DEFAULT_MIN,
+    isOpen:!!active,
+    activeEvent:normalize(active),
+    nextEvent:normalize(next),
+    shortcut:shortcut
+  };
+}
+
+function getStudioPresenceAdmin(token){
+  assertAdmin_(token);
+  return getStudioPresenceState_();
+}
+
+function openStudioPresenceAdmin(token,payload){
+  assertAdmin_(token);
+  const opened=openStudioPresenceWindow_(payload&&payload.minutes);
+  const state=getStudioPresenceState_();
+  return Object.assign({},opened,{state:state});
+}
+
+function closeStudioPresenceAdmin(token){
+  assertAdmin_(token);
+  const closed=closeStudioPresenceWindow_();
+  const state=getStudioPresenceState_();
+  return Object.assign({},closed,{state:state});
 }
 
 /**
