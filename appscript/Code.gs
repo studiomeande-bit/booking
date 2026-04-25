@@ -1505,9 +1505,15 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
 
 function getPublicSlots_(dateStr,totalDur,itemGroup){
   if(itemGroup==='promo'&&!isPromoDateAllowed_(dateStr)) return[];
-  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
+  let studioPresenceEvents=[];
+  let hasStudioAutoOpenBlocks=false;
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    studioPresenceEvents=getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+    hasStudioAutoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents).length>0;
+  }
+  if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
-  return computeSlots_(dateStr,events,totalDur,itemGroup);
+  return computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
@@ -2576,6 +2582,18 @@ function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
   return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
 }
 
+function getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents){
+  const now=Date.now();
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    const autoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+    const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    if(autoOpenBlocks.length&&dateStr===todayStr){
+      return roundUpToQuarterHour_(now);
+    }
+  }
+  return now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+}
+
 function getWeekdayBookingBlocks_(){
   const settings=getSettingsMap_();
   return normalizeWeekdayBookingBlocks_(parseTimeBlocksSetting_(settings.weekday_hours,DEFAULT_BOOKING_HOURS.weekday));
@@ -2608,8 +2626,8 @@ function getTimeBlocksForDate_(dateStr,itemGroup){
 /** 슬롯 계산 공통 헬퍼 — 이미 가져온 events 재사용.
  *  newLocation: 신규 예약의 촬영 장소 (Type C 동일장소 예외 적용용, 기본 '') */
 function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
-  const now=new Date().getTime(),slotSet={},loc=newLocation||'';
-  const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+  const slotSet={},loc=newLocation||'';
+  const leadTimeCutoff=getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents);
   getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).forEach(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
@@ -2668,8 +2686,8 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
 }
 
 function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
-  const now=new Date().getTime(),loc=newLocation||'';
-  const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+  const loc=newLocation||'';
+  const leadTimeCutoff=getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents);
   return getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).some(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
@@ -2709,7 +2727,8 @@ function slotAvailable_(dateStr,timeStr,totalDur,itemGroup,newLocation){
   }
   if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return false;
   const start=new Date(`${dateStr}T${timeStr}:00`).getTime(),end=start+totalDur*60000;
-  if(start<=new Date().getTime()) return false;
+  const leadTimeCutoff=getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents);
+  if(start<leadTimeCutoff) return false;
   const inBlock=getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).some(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
