@@ -1899,11 +1899,17 @@ function openStudioPresenceWindow_(minutes){
   })||null;
 
   if(event){
-    event.setTitle('Studio Open');
-    event.setLocation(STUDIO_ADDRESS);
-    event.setDescription(description);
-    event.setTime(now,end);
-  }else{
+    try{
+      event.setTitle('Studio Open');
+      event.setLocation(STUDIO_ADDRESS);
+      event.setDescription(description);
+      event.setTime(now,end);
+    }catch(updateErr){
+      try{ event.deleteEvent(); }catch(deleteErr){}
+      event=null;
+    }
+  }
+  if(!event){
     event=calendar.createEvent('Studio Open',now,end,{
       location:STUDIO_ADDRESS,
       description:description
