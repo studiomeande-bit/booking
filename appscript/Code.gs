@@ -234,6 +234,25 @@ function buildGutscheinTicketUrl_(code, extraParams){
   return query.length ? base+'?'+query.join('&') : base;
 }
 
+function buildPublicDriveDownloadUrl_(fileId){
+  const id=String(fileId||'').trim();
+  if(!id) return '';
+  return 'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id);
+}
+
+function ensurePublicDriveFileUrl_(fileId){
+  const id=String(fileId||'').trim();
+  if(!id) return '';
+  try{
+    const file=DriveApp.getFileById(id);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+    return buildPublicDriveDownloadUrl_(id);
+  }catch(e){
+    Logger.log('ensurePublicDriveFileUrl_ failed: '+e.message);
+    return '';
+  }
+}
+
 function renderFrontendMovedPage_(target, params){
   const targetUrl=buildFrontendTargetUrl_(target, params||{});
   const title=target==='select'?'Photo Selection moved':'Booking moved';
@@ -9002,6 +9021,8 @@ function _findGutscheinRow_(gutscheinSheet, code){
 }
 
 function gutscheinRowToObject_(row,rowIndex){
+  const pdfFileId=String(row[GUTSCHEIN_COL['PDF파일ID']]||'').trim();
+  const rawPdfUrl=String(row[GUTSCHEIN_COL['PDF링크']]||'').trim();
   return {
     rowIndex:rowIndex||0,
     code:extractGutscheinCode_(row[GUTSCHEIN_COL['코드']]),
@@ -9029,8 +9050,8 @@ function gutscheinRowToObject_(row,rowIndex){
     saleRegisteredAt:String(row[GUTSCHEIN_COL['판매등록일']]||'').trim(),
     issueMode:String(row[GUTSCHEIN_COL['발행방식']]||'').trim(),
     qrValue:String(row[GUTSCHEIN_COL['QR값']]||'').trim(),
-    pdfFileId:String(row[GUTSCHEIN_COL['PDF파일ID']]||'').trim(),
-    pdfUrl:String(row[GUTSCHEIN_COL['PDF링크']]||'').trim(),
+    pdfFileId:pdfFileId,
+    pdfUrl:ensurePublicDriveFileUrl_(pdfFileId)||rawPdfUrl,
     mailSubject:String(row[GUTSCHEIN_COL['메일제목']]||'').trim(),
     mailBody:String(row[GUTSCHEIN_COL['메일본문']]||'').trim(),
     mailSentAt:String(row[GUTSCHEIN_COL['메일발송일시']]||'').trim(),
@@ -9345,7 +9366,8 @@ function createGutscheinPdf_(g){
   const html=buildGutscheinHtml_(g);
   const pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
   const file=folder.createFile(pdfBlob);
-  return {fileId:file.getId(),url:file.getUrl(),name:file.getName()};
+  const publicUrl=ensurePublicDriveFileUrl_(file.getId())||file.getUrl();
+  return {fileId:file.getId(),url:publicUrl,name:file.getName()};
 }
 
 function _persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,g){
