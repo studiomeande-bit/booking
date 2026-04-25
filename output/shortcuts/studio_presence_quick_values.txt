@@ -1,0 +1,12 @@
+Shortcut Name (Open): Studio Open
+Shortcut Name (Close): Studio Close
+Calendar: 사진촬영 일정
+Title: Studio Open
+Location: Holzweg-passage 3, 61440 Oberursel
+Duration: 2 hours
+Note: Studio presence auto-open
+
+Eligible booking groups:
+- pass
+- prof
+- stud

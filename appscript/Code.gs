@@ -73,6 +73,11 @@ const SELECT_PICKUP_DURATION_MIN = 15;
 const SELECT_PICKUP_LOOKAHEAD_DAYS = 120;
 const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
+const STUDIO_PRESENCE_DEFAULT_MIN = 120;
+const STUDIO_PRESENCE_MIN_MINUTES = 15;
+const STUDIO_PRESENCE_MAX_MINUTES = 12 * 60;
+const STUDIO_PRESENCE_TOKEN_PROP = 'STUDIO_PRESENCE_TOKEN';
+const STUDIO_PRESENCE_EVENT_MARKER = '[studio_presence_auto]';
 const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
@@ -420,6 +425,34 @@ function handlePublicApiRequest_(route,method,e){
       const code=String(p.code||'').trim();
       if(!code) return jsonError_('INVALID_ARGUMENT','Missing voucher code');
       return jsonOk_(getPublicGutscheinTicket_(code));
+    }
+    if(route==='studio-presence-config'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-config');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const password=String(payload.password||p.password||'').trim();
+      if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
+      return jsonOk_(getStudioPresenceShortcutConfig_());
+    }
+    if(route==='studio-presence-open'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-open');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const token=String(payload.token||p.token||'').trim();
+      const minutes=payload.minutes||p.minutes;
+      if(!isValidStudioPresenceToken_(token)) return jsonError_('UNAUTHORIZED','Invalid studio presence token');
+      return jsonOk_(openStudioPresenceWindow_(minutes));
+    }
+    if(route==='studio-presence-close'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-close');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const token=String(payload.token||p.token||'').trim();
+      if(!isValidStudioPresenceToken_(token)) return jsonError_('UNAUTHORIZED','Invalid studio presence token');
+      return jsonOk_(closeStudioPresenceWindow_());
     }
     if(route==='waitlist-join'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/waitlist-join');
@@ -1118,6 +1151,60 @@ function ensureSecrets_() {
   if(!p.getProperty('ADMIN_PASSWORD_HASH')) p.setProperty('ADMIN_PASSWORD_HASH',hashText_('1234'));
   if(!p.getProperty('ACTION_SECRET')) p.setProperty('ACTION_SECRET',Utilities.getUuid()+'_'+Date.now());
 }
+
+function getOrCreateStudioPresenceToken_(){
+  const p=PropertiesService.getScriptProperties();
+  let token=String(p.getProperty(STUDIO_PRESENCE_TOKEN_PROP)||'').trim();
+  if(!token){
+    token=Utilities.getUuid().replace(/-/g,'')+'_'+Date.now().toString(36);
+    p.setProperty(STUDIO_PRESENCE_TOKEN_PROP,token);
+  }
+  return token;
+}
+
+function isValidStudioPresenceToken_(token){
+  return String(token||'').trim()===getOrCreateStudioPresenceToken_();
+}
+
+function getScriptExecUrl_(){
+  const url=String(ScriptApp.getService().getUrl()||'').trim();
+  if(url) return url;
+  return 'https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
+}
+
+function buildStudioPresenceUrl_(action, token, minutes){
+  const params=[
+    'api='+encodeURIComponent(action),
+    'token='+encodeURIComponent(token)
+  ];
+  if(action==='studio-presence-open'){
+    params.push('minutes='+encodeURIComponent(String(minutes||STUDIO_PRESENCE_DEFAULT_MIN)));
+  }
+  return getScriptExecUrl_()+'?'+params.join('&');
+}
+
+function getStudioPresenceShortcutConfig_(){
+  const token=getOrCreateStudioPresenceToken_();
+  const calendar=getStudioPresenceCalendar_();
+  return {
+    calendarName:calendar.getName(),
+    title:'Studio Open',
+    location:STUDIO_ADDRESS,
+    defaultMinutes:STUDIO_PRESENCE_DEFAULT_MIN,
+    tokenPreview:token.slice(0,8)+'…',
+    openUrl:buildStudioPresenceUrl_('studio-presence-open',token,STUDIO_PRESENCE_DEFAULT_MIN),
+    closeUrl:buildStudioPresenceUrl_('studio-presence-close',token),
+    notes:[
+      '아이폰 단축어에서 GET Contents of URL 액션으로 호출하면 됩니다.',
+      '도착 자동화는 openUrl, 출발 자동화는 closeUrl을 사용하세요.',
+      '여권/프로필/스튜디오 예약만 추가 오픈됩니다.'
+    ]
+  };
+}
+
+function debugGetStudioPresenceShortcutConfig(){
+  return getStudioPresenceShortcutConfig_();
+}
 function hashText_(t) {
   const raw=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(t),Utilities.Charset.UTF_8);
   return raw.map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');
@@ -1702,6 +1789,98 @@ function getBusyCalendarMeta_(){
   });
   try{cache.put('busy_cal_meta_v2',JSON.stringify(meta),600);}catch(e){}  // 10분 캐시
   return meta;
+}
+
+function getStudioPresenceCalendar_(){
+  const targetNames=new Set(CONFIG.TARGET_CALENDAR_NAMES);
+  const targetMeta=getBusyCalendarMeta_().find(function(meta){
+    return targetNames.has(meta.name);
+  });
+  if(targetMeta){
+    try{
+      const targetCal=CalendarApp.getCalendarById(targetMeta.id);
+      if(targetCal) return targetCal;
+    }catch(e){}
+  }
+  return CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+}
+
+function normalizeStudioPresenceMinutes_(value){
+  const n=parseInt(value,10);
+  if(!isFinite(n)) return STUDIO_PRESENCE_DEFAULT_MIN;
+  return Math.max(STUDIO_PRESENCE_MIN_MINUTES,Math.min(STUDIO_PRESENCE_MAX_MINUTES,n));
+}
+
+function getManagedStudioPresenceEvents_(calendar,start,end){
+  return calendar.getEvents(start,end).filter(function(ev){
+    const desc=String(ev.getDescription()||'');
+    return desc.indexOf(STUDIO_PRESENCE_EVENT_MARKER)>=0;
+  });
+}
+
+function openStudioPresenceWindow_(minutes){
+  const calendar=getStudioPresenceCalendar_();
+  const now=new Date();
+  const durationMin=normalizeStudioPresenceMinutes_(minutes);
+  const end=new Date(now.getTime()+durationMin*60000);
+  const rangeStart=new Date(now.getTime()-12*60*60000);
+  const rangeEnd=new Date(now.getTime()+7*24*60*60000);
+  const managedEvents=getManagedStudioPresenceEvents_(calendar,rangeStart,rangeEnd)
+    .sort(function(a,b){ return b.getStartTime().getTime()-a.getStartTime().getTime(); });
+  const description=[
+    STUDIO_PRESENCE_EVENT_MARKER,
+    'Created by Shortcut',
+    'Studio presence opens extra slots for pass/prof/stud.'
+  ].join('\n');
+
+  let event=managedEvents.find(function(ev){
+    return ev.getEndTime().getTime()>=now.getTime()-5*60000;
+  })||null;
+
+  if(event){
+    event.setTitle('Studio Open');
+    event.setLocation(STUDIO_ADDRESS);
+    event.setDescription(description);
+    event.setTime(now,end);
+  }else{
+    event=calendar.createEvent('Studio Open',now,end,{
+      location:STUDIO_ADDRESS,
+      description:description
+    });
+  }
+  try{ event.setColor(CalendarApp.EventColor.PALE_GREEN); }catch(e){}
+  bumpCalCacheVer_();
+  return {
+    ok:true,
+    eventId:event.getId(),
+    calendarName:calendar.getName(),
+    title:event.getTitle(),
+    startIso:Utilities.formatDate(event.getStartTime(),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss"),
+    endIso:Utilities.formatDate(event.getEndTime(),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss"),
+    message:'스튜디오 상주 시간이 열렸습니다.'
+  };
+}
+
+function closeStudioPresenceWindow_(){
+  const calendar=getStudioPresenceCalendar_();
+  const now=new Date();
+  const rangeStart=new Date(now.getTime()-24*60*60000);
+  const rangeEnd=new Date(now.getTime()+7*24*60*60000);
+  const managedEvents=getManagedStudioPresenceEvents_(calendar,rangeStart,rangeEnd);
+  let deleted=0;
+  managedEvents.forEach(function(ev){
+    try{
+      ev.deleteEvent();
+      deleted++;
+    }catch(e){}
+  });
+  bumpCalCacheVer_();
+  return {
+    ok:true,
+    deletedCount:deleted,
+    calendarName:calendar.getName(),
+    message:deleted>0?'스튜디오 상주 시간이 닫혔습니다.':'닫을 스튜디오 상주 일정이 없었습니다.'
+  };
 }
 
 /**
