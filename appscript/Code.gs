@@ -2717,6 +2717,10 @@ function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
   if(!isStudioAutoOpenEligibleGroup_(itemGroup)) return baseBlocks;
   const extraBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
   if(!extraBlocks.length) return baseBlocks;
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(dateStr===todayStr){
+    return extraBlocks;
+  }
   return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
 }
 
