@@ -2778,14 +2778,32 @@ function getStudioAutoOpenWindows_(events){
   return merged;
 }
 
+function getLastStudioBookingEndMsForDate_(events){
+  return (events||[])
+    .filter(function(ev){
+      if(!ev) return false;
+      if(isStudioAutoOpenEventByFields_(ev.title,ev.location,!!ev.isPersonal)) return false;
+      return isStudioPresenceEvent_(ev);
+    })
+    .reduce(function(maxEnd,ev){
+      const endMs=Number(ev.end)||0;
+      return endMs>maxEnd?endMs:maxEnd;
+    },0);
+}
+
 function getStudioAutoOpenBlocksForDate_(dateStr,events){
   const windows=getStudioAutoOpenWindows_(events);
   if(!windows.length) return [];
   const dayStart=new Date(`${dateStr}T00:00:00`).getTime();
   const dayEnd=new Date(`${dateStr}T23:59:59`).getTime()+1000;
+  const lastStudioBookingEndMs=getLastStudioBookingEndMsForDate_(events);
+  const extendedEndMs=lastStudioBookingEndMs>0
+    ? Math.min(dayEnd,lastStudioBookingEndMs+(30*60000))
+    : 0;
   return windows.map(window=>{
     const start=roundUpToQuarterHour_(Math.max(window.start,dayStart));
-    const end=roundDownToQuarterHour_(Math.min(window.end,dayEnd));
+    const effectiveWindowEnd=extendedEndMs>0?Math.max(window.end,extendedEndMs):window.end;
+    const end=roundDownToQuarterHour_(Math.min(effectiveWindowEnd,dayEnd));
     if(end<=start) return null;
     return minutesToTimeBlock_(
       Math.floor((start-dayStart)/60000),
