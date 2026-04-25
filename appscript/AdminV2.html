@@ -21,6 +21,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .card-title{font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:6px;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
 .dashboard-split{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:16px;}
+.dashboard-grid-charts{grid-template-columns:3fr 2fr;margin-bottom:16px;}
 .stat-grid-kpi{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
 .stat-grid-work{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
 .dashboard-grid{display:grid;gap:12px;align-items:start;}
@@ -38,6 +39,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .stat-kicker{font-size:11px;font-weight:700;color:#8a7e72;letter-spacing:.12em;text-transform:uppercase;}
 .stat-val{font-size:20px;font-weight:800;color:#2D2A26;letter-spacing:-.03em;line-height:1.02;word-break:break-word;}
 .stat-lbl{font-size:12px;color:#64748b;line-height:1.45;}
+.chart-card{display:grid;gap:16px;align-content:start;min-height:100%;}
+.chart-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.chart-heading{font-size:13px;font-weight:700;color:#2D2A26;letter-spacing:-.01em;}
+.chart-meta{font-size:11px;color:#8a7e72;letter-spacing:.08em;text-transform:uppercase;}
+.chart-note{font-size:12px;color:#64748b;line-height:1.45;}
+.monthly-chart-wrap{overflow-x:auto;padding-bottom:2px;}
+.monthly-bars{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px;align-items:end;min-width:640px;height:178px;}
+.monthly-col{display:grid;gap:5px;align-content:end;cursor:default;}
+.monthly-col.clickable{cursor:pointer;}
+.monthly-col-top{display:grid;gap:2px;justify-items:center;text-align:center;min-height:36px;}
+.monthly-count{font-size:10px;color:#8a7e72;font-weight:700;letter-spacing:.04em;}
+.monthly-amount{font-size:10px;color:#2D2A26;font-weight:700;line-height:1.15;}
+.monthly-bar{width:100%;border-radius:8px 8px 0 0;background:#2D2A26;transition:opacity .15s ease,transform .15s ease;}
+.monthly-col.clickable:hover .monthly-bar{opacity:.82;transform:translateY(-1px);}
+.monthly-col.current .monthly-bar{background:#B55339;}
+.monthly-month{font-size:10px;color:#8a7e72;font-weight:600;letter-spacing:.02em;text-align:center;}
+.monthly-col.current .monthly-month{color:#B55339;}
+.split-chart{display:grid;gap:14px;}
+.metric-block{display:grid;gap:10px;padding:14px 16px;border:1px solid #ece4d8;border-radius:12px;background:#fcfbf8;}
+.metric-block-title{font-size:12px;font-weight:700;color:#7a6f63;letter-spacing:.1em;text-transform:uppercase;}
+.metric-list{display:grid;gap:8px;}
+.metric-list-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding-bottom:8px;border-bottom:1px solid #eee7dd;}
+.metric-list-row:last-child{padding-bottom:0;border-bottom:none;}
+.metric-label{font-size:12px;color:#475569;line-height:1.35;}
+.metric-value{font-size:12px;font-weight:700;color:#2D2A26;white-space:nowrap;}
+.metric-empty{color:#94a3b8;font-size:12px;}
+.metric-progress{display:grid;gap:4px;}
+.metric-progress-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;}
+.metric-progress-bar{height:7px;border-radius:999px;background:#eee7dd;overflow:hidden;}
+.metric-progress-fill{height:100%;border-radius:999px;background:#2D2A26;}
+.metric-progress.current .metric-progress-fill{background:#B55339;}
 .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
 .week-day-cell{border-radius:10px;border:1.5px solid #e2e8f0;padding:10px;min-height:80px;background:#f8fafc;}
 .week-day-cell.today-cell{border-color:#2D2A26;background:#f5f3ef;}
@@ -168,6 +200,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .content{padding:16px 12px;}
   .card{padding:16px;}
   .dashboard-split{grid-template-columns:1fr;gap:12px;}
+  .dashboard-grid-charts{grid-template-columns:1fr;}
   .lexware-hub{grid-template-columns:1fr;}
   .lexware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
   .stat-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));}
@@ -207,6 +240,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .stat-card{padding:14px 16px;}
   .stat-item{min-height:0;padding:16px 16px 14px;}
   .stat-val{font-size:18px;}
+  .chart-card{gap:14px;}
+  .monthly-bars{min-width:540px;height:160px;}
+  .metric-block{padding:12px 14px;}
   .dashboard-grid{grid-template-columns:1fr !important;gap:10px;}
   .week-grid{gap:3px;}
   .week-day-cell{padding:6px;min-height:60px;}
@@ -266,7 +302,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   <div class="content active" id="tab_dashboard">
     <!-- Row 1: 주간 캘린더 -->
     <div class="card">
-      <div class="card-title">📅 이번 주 일정</div>
+      <div class="card-title">이번 주 일정</div>
       <div class="week-grid" id="weekGrid"></div>
     </div>
     <!-- Row 2: 매출 현황 + 작업 현황 -->
@@ -275,17 +311,17 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="card" style="margin-bottom:0;"><div class="card-title">작업 현황</div><div class="stat-grid stat-grid-work" id="workGrid"></div></div>
     </div>
     <!-- Row 3: 월별 매출 + 결제/촬영 통계 -->
-    <div style="display:grid;grid-template-columns:3fr 2fr;gap:12px;">
-      <div class="card" style="margin-bottom:0;"><div class="card-title">📈 월별 매출</div><div id="monthlyChart" style="overflow-x:auto;"></div></div>
-      <div class="card" style="margin-bottom:0;"><div class="card-title">🔀 결제수단 / 촬영종류</div><div id="payProdChart"></div></div>
+    <div class="dashboard-grid dashboard-grid-charts">
+      <div class="card" style="margin-bottom:0;"><div class="card-title">월별 매출</div><div id="monthlyChart"></div></div>
+      <div class="card" style="margin-bottom:0;"><div class="card-title">결제수단 / 촬영종류</div><div id="payProdChart"></div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px;">
       <div class="card" style="margin-bottom:0;">
-        <div class="card-title">🏠 Studio Open</div>
+        <div class="card-title">Studio Open</div>
         <div id="studioPresencePanel" style="display:flex;flex-direction:column;gap:10px;"></div>
       </div>
       <div class="card" style="margin-bottom:0;">
-        <div class="card-title">⛔ 최근 자동취소 예약</div>
+        <div class="card-title">최근 자동취소 예약</div>
         <div id="recentAutoCancelledList" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
     </div>
@@ -1830,26 +1866,57 @@ function renderDashboard(d){
   // 월별 매출 차트
   const mo=d.monthlyStats||{},mL=['1','2','3','4','5','6','7','8','9','10','11','12'],mLbl=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],mx=Math.max(1,...Object.values(mo).map(m=>m.revenue));
   const curYear=new Date().getFullYear();const curMonth=new Date().getMonth()+1;
-  document.getElementById('monthlyChart').innerHTML=`<div style="overflow-x:auto;"><div style="display:grid;grid-template-columns:repeat(12,1fr);gap:6px;align-items:end;min-width:600px;height:160px;">${mL.map((ml,i)=>{
+  document.getElementById('monthlyChart').innerHTML=`<div class="chart-card">
+    <div class="chart-intro">
+      <div>
+        <div class="chart-heading">${curYear} 월별 매출 흐름</div>
+        <div class="chart-note">월별 확정 매출과 예약 건수를 한 번에 봅니다. 막대는 매출, 숫자는 건수와 금액입니다.</div>
+      </div>
+      <div class="chart-meta">Current ${curMonth}월</div>
+    </div>
+    <div class="monthly-chart-wrap"><div class="monthly-bars">${mL.map((ml,i)=>{
     const m=mo[i+1]||{revenue:0,count:0};
     const h=Math.max(4,Math.round((m.revenue/mx)*110));
     const mStr=curYear+'-'+String(i+1).padStart(2,'0');
     const isCur=i+1===curMonth;
-    const amtLabel=m.revenue>=1000?(m.revenue/1000).toFixed(1)+'k':m.revenue?m.revenue+'':'';
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;cursor:${m.count?'pointer':'default'}" onclick="${m.count?`gotoBookingsByMonth('${mStr}')`:''}" title="${m.revenue}€ / ${m.count}건">
-      <div style="font-size:9px;color:#64748b;font-weight:600;">${m.count||''}</div>
-      <div style="font-size:9px;color:#2D2A26;font-weight:700;">${amtLabel}</div>
-      <div style="background:${isCur?'#6366f1':'#2D2A26'};border-radius:4px 4px 0 0;width:100%;height:${h}px;transition:opacity .15s;" onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'"></div>
-      <div style="font-size:10px;color:${isCur?'#6366f1':'#64748b'};font-weight:${isCur?'700':'400'};">${mLbl[i]}</div>
+    const amtLabel=m.revenue>=1000?(m.revenue/1000).toFixed(1)+'k':m.revenue?new Intl.NumberFormat('de-DE',{maximumFractionDigits:0}).format(m.revenue):'';
+    return `<div class="monthly-col ${m.count?'clickable':''} ${isCur?'current':''}" onclick="${m.count?`gotoBookingsByMonth('${mStr}')`:''}" title="${m.revenue}€ / ${m.count}건">
+      <div class="monthly-col-top">
+        <div class="monthly-count">${m.count?m.count+'건':''}</div>
+        <div class="monthly-amount">${amtLabel}</div>
+      </div>
+      <div class="monthly-bar" style="height:${h}px;"></div>
+      <div class="monthly-month">${mLbl[i]}</div>
     </div>`;}).join('')}</div></div>`;
 
   // 결제수단 / 촬영종류 차트
   const ps=d.payStats||{},pr=d.prodStats||{},pL={cash:'현금',card:'카드',transfer:'계좌이체',myreal:'마이리얼트립',none:'미결제'};
   const prTotal=Object.values(pr).reduce((a,v)=>a+v,0)||1;
-  const prodBar=(k,l,v)=>{const pct=Math.round((v/prTotal)*100);return `<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span><span class="group-tag ${GT_CLASS[k]||'gt-etc'}" style="font-size:10px;">${l}</span></span><span style="font-weight:700;">${v}€ <span style="color:#94a3b8;font-weight:400;">(${pct}%)</span></span></div><div style="background:#f1f5f9;border-radius:4px;height:6px;"><div style="background:#2D2A26;border-radius:4px;height:6px;width:${pct}%;"></div></div></div>`;};
-  document.getElementById('payProdChart').innerHTML=`<div style="display:flex;flex-direction:column;gap:16px;">
-    <div><div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#475569;">결제 수단</div>${Object.entries(pL).filter(([k])=>ps[k]>0).map(([k,l])=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f1f5f9;"><span>${l}</span><span style="font-weight:700;">${ps[k]}€</span></div>`).join('')||'<div style="color:#94a3b8;font-size:12px;">없음</div>'}</div>
-    <div><div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#475569;">촬영 종류별 매출</div>${Object.entries(G_LABELS).filter(([k])=>pr[k]>0).map(([k,l])=>prodBar(k,l,pr[k])).join('')||'<div style="color:#94a3b8;font-size:12px;">없음</div>'}</div>
+  const prodBar=(k,l,v,idx)=>{const pct=Math.round((v/prTotal)*100);return `<div class="metric-progress ${idx===0?'current':''}">
+      <div class="metric-progress-head">
+        <div class="metric-label"><span class="group-tag ${GT_CLASS[k]||'gt-etc'}" style="font-size:10px;">${l}</span></div>
+        <div class="metric-value">${formatAdminCurrency(v)} <span style="color:#94a3b8;font-weight:400;">(${pct}%)</span></div>
+      </div>
+      <div class="metric-progress-bar"><div class="metric-progress-fill" style="width:${pct}%;"></div></div>
+    </div>`;};
+  document.getElementById('payProdChart').innerHTML=`<div class="chart-card">
+    <div class="chart-intro">
+      <div>
+        <div class="chart-heading">매출 구성</div>
+        <div class="chart-note">결제수단 분포와 촬영 종류별 매출 비중을 함께 확인합니다.</div>
+      </div>
+      <div class="chart-meta">Live breakdown</div>
+    </div>
+    <div class="split-chart">
+      <div class="metric-block">
+        <div class="metric-block-title">결제 수단</div>
+        <div class="metric-list">${Object.entries(pL).filter(([k])=>ps[k]>0).map(([k,l])=>`<div class="metric-list-row"><span class="metric-label">${l}</span><span class="metric-value">${formatAdminCurrency(ps[k])}</span></div>`).join('')||'<div class="metric-empty">데이터 없음</div>'}</div>
+      </div>
+      <div class="metric-block">
+        <div class="metric-block-title">촬영 종류별 매출</div>
+        <div class="metric-list">${Object.entries(G_LABELS).filter(([k])=>pr[k]>0).map(([k,l],idx)=>prodBar(k,l,pr[k],idx)).join('')||'<div class="metric-empty">데이터 없음</div>'}</div>
+      </div>
+    </div>
   </div>`;
   const recentWrap=document.getElementById('recentAutoCancelledList');
   const recent=(d.recentAutoCancelled||[]);
