@@ -1791,6 +1791,22 @@ function classifyBookingType_(itemGroup){
   return 'B';
 }
 
+function isStudioAutoOpenEligibleGroup_(itemGroup){
+  return itemGroup==='pass'||itemGroup==='prof'||itemGroup==='stud';
+}
+
+function getAvailabilityCacheTtlSec_(itemGroup){
+  return isStudioAutoOpenEligibleGroup_(itemGroup)?120:CONFIG.SLOTS_CACHE_TTL_SEC;
+}
+
+function isStudioAutoOpenEventByFields_(title,location,isPersonal){
+  if(isPersonal) return false;
+  if(!isStudioLocation_(location)) return false;
+  const safeTitle=String(title||'');
+  if(!safeTitle) return false;
+  return /studio[\s_-]*(open|presence|available)|studio open|studio presence|스튜디오[\s_-]*(오픈|상주|가능)|상주/i.test(safeTitle);
+}
+
 /**
  * Required gap (minutes) between a new booking and an existing event.
  * Implements MAX principle + same-location exception.
@@ -1832,10 +1848,11 @@ function getEventsForRange_(start,end){
       cal.getEvents(start,end).forEach(ev=>{
         if(ev.isAllDayEvent())return;
         const title=ev.getTitle()||'';
+        const location=isPersonal?'':(ev.getLocation()||'');
+        if(isStudioAutoOpenEventByFields_(title,location,isPersonal)) return;
         const cacheKey=(isPersonal?'P|':'')+title;
         let type=titleTypeCache[cacheKey];
         if(type===undefined){type=classifyEventType_(title,isPersonal);titleTypeCache[cacheKey]=type;}
-        const location=isPersonal?'':(ev.getLocation()||'');
         events.push({start:ev.getStartTime().getTime(),end:ev.getEndTime().getTime(),type,location});
       });
     }catch(e){Logger.log('캘린더 오류: '+e.message);}
@@ -2298,6 +2315,88 @@ function blocksToSettingString_(blocks){
   return (blocks||[]).map(block=>`${formatHourMin_(block.startHour,block.startMin)}-${formatHourMin_(block.endHour,block.endMin)}`).join(',');
 }
 
+function roundDownToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.floor(ms/step)*step;
+}
+
+function minutesToTimeBlock_(startMinutes,endMinutes){
+  const safeStart=Math.max(0,startMinutes);
+  const safeEnd=Math.min(24*60,endMinutes);
+  if(safeEnd<=safeStart) return null;
+  return {
+    startHour:Math.floor(safeStart/60),
+    startMin:safeStart%60,
+    endHour:Math.floor(safeEnd/60),
+    endMin:safeEnd%60
+  };
+}
+
+function mergeTimeBlocks_(blocks){
+  const ranges=(blocks||[]).map(block=>{
+    if(!block) return null;
+    const start=block.startHour*60+block.startMin;
+    const end=block.endHour*60+block.endMin;
+    if(end<=start) return null;
+    return {start,end};
+  }).filter(Boolean).sort((a,b)=>a.start-b.start);
+  if(!ranges.length) return [];
+  const merged=[ranges[0]];
+  for(let i=1;i<ranges.length;i+=1){
+    const current=ranges[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged.map(range=>minutesToTimeBlock_(range.start,range.end)).filter(Boolean);
+}
+
+function getStudioAutoOpenWindows_(events){
+  const candidates=(events||[])
+    .filter(ev=>isStudioAutoOpenEventByFields_(ev&&ev.title,ev&&ev.location,!!(ev&&ev.isPersonal)))
+    .map(ev=>({start:ev.start,end:ev.end}))
+    .sort((a,b)=>a.start-b.start);
+  if(!candidates.length) return [];
+  const merged=[candidates[0]];
+  for(let i=1;i<candidates.length;i+=1){
+    const current=candidates[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged;
+}
+
+function getStudioAutoOpenBlocksForDate_(dateStr,events){
+  const windows=getStudioAutoOpenWindows_(events);
+  if(!windows.length) return [];
+  const dayStart=new Date(`${dateStr}T00:00:00`).getTime();
+  const dayEnd=new Date(`${dateStr}T23:59:59`).getTime()+1000;
+  return windows.map(window=>{
+    const start=roundUpToQuarterHour_(Math.max(window.start,dayStart));
+    const end=roundDownToQuarterHour_(Math.min(window.end,dayEnd));
+    if(end<=start) return null;
+    return minutesToTimeBlock_(
+      Math.floor((start-dayStart)/60000),
+      Math.floor((end-dayStart)/60000)
+    );
+  }).filter(Boolean);
+}
+
+function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
+  const baseBlocks=getTimeBlocksForDate_(dateStr,itemGroup);
+  if(!isStudioAutoOpenEligibleGroup_(itemGroup)) return baseBlocks;
+  const extraBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+  if(!extraBlocks.length) return baseBlocks;
+  return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
+}
+
 function getWeekdayBookingBlocks_(){
   const settings=getSettingsMap_();
   return normalizeWeekdayBookingBlocks_(parseTimeBlocksSetting_(settings.weekday_hours,DEFAULT_BOOKING_HOURS.weekday));
@@ -2329,53 +2428,70 @@ function getTimeBlocksForDate_(dateStr,itemGroup){
 
 /** 슬롯 계산 공통 헬퍼 — 이미 가져온 events 재사용.
  *  newLocation: 신규 예약의 촬영 장소 (Type C 동일장소 예외 적용용, 기본 '') */
-function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation){
-  const now=new Date().getTime(),slots=[],loc=newLocation||'';
+function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
+  const now=new Date().getTime(),slotSet={},loc=newLocation||'';
   const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
-  getTimeBlocksForDate_(dateStr,itemGroup).forEach(b=>{
+  getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).forEach(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
     for(let t=bs;t<be;t+=15*60000){
       if(t<leadTimeCutoff||t+totalDur*60000>be) continue;
-      if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)){const dt=new Date(t);slots.push(`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`);}
+      if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)){
+        const dt=new Date(t);
+        const key=`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`;
+        slotSet[key]=true;
+      }
     }
   });
-  return slots;
+  return Object.keys(slotSet).sort();
 }
 
 function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
-  const ver=getCalCacheVer_(),cacheKey=`unavail_v9_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
+  const ver=getCalCacheVer_(),cacheKey=`unavail_v10_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
   const unavail=[],closed=[],slotCounts={},slotsByDate={},daysInMonth=new Date(year,month+1,0).getDate();
   const events=getEventsForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59));
+  const useStudioAutoOpen=isStudioAutoOpenEligibleGroup_(itemGroup);
+  const detailedEvents=useStudioAutoOpen?getBusyEventsDetailedForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59)):[];
+  const detailedEventsByDate={};
+  if(useStudioAutoOpen){
+    detailedEvents.forEach(ev=>{
+      const dateKey=Utilities.formatDate(new Date(ev.start),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      if(!detailedEventsByDate[dateKey]) detailedEventsByDate[dateKey]=[];
+      detailedEventsByDate[dateKey].push(ev);
+    });
+  }
   const now=new Date().getTime();
-  const slotsTTL=Math.min(CONFIG.SLOTS_CACHE_TTL_SEC,CONFIG.UNAVAIL_CACHE_TTL_SEC);
+  const slotsTTL=Math.min(getAvailabilityCacheTtlSec_(itemGroup),CONFIG.UNAVAIL_CACHE_TTL_SEC);
   for(let d=1;d<=daysInMonth;d++){
     const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
     const isPast=new Date(`${dStr}T23:59:59`).getTime()<now;
     const isOutOfRange=isBeyondPublicBookingRange_(dStr);
-    const isClosed=isWeekendOrHolidayBlocked_(dStr,itemGroup);
+    const studioPresenceEvents=useStudioAutoOpen?(detailedEventsByDate[dStr]||[]):[];
+    const hasStudioAutoOpenBlocks=useStudioAutoOpen&&getStudioAutoOpenBlocksForDate_(dStr,studioPresenceEvents).length>0;
+    const isClosed=isWeekendOrHolidayBlocked_(dStr,itemGroup)&&!hasStudioAutoOpenBlocks;
     if(isPast||isOutOfRange){unavail.push(dStr);continue;}
     if(isClosed){unavail.push(dStr);closed.push(dStr);continue;}
-    const daySlots=lightMode?null:computeSlots_(dStr,events,totalDur,itemGroup);
-    const hasSlots=lightMode?hasAnySlot_(dStr,events,totalDur,itemGroup):!!daySlots.length;
+    const daySlots=lightMode?null:computeSlots_(dStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+    const hasSlots=lightMode?hasAnySlot_(dStr,events,totalDur,itemGroup,'',studioPresenceEvents):!!daySlots.length;
     if(!hasSlots){unavail.push(dStr);}else if(daySlots){
       slotCounts[dStr]=daySlots.length;
       slotsByDate[dStr]=daySlots;
-      const sKey=`slots_v7_${ver}_${dStr}_${itemGroup}_${totalDur}`;
+      const sKey=`slots_v8_${ver}_${dStr}_${itemGroup}_${totalDur}`;
       try{cache.put(sKey,JSON.stringify(daySlots),slotsTTL);}catch(e){}
     }
   }
   const result={unavail,closed,slotCounts,slotsByDate};
-  try{cache.put(cacheKey,JSON.stringify(result),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
+  const unavailTtl=isStudioAutoOpenEligibleGroup_(itemGroup)?120:CONFIG.UNAVAIL_CACHE_TTL_SEC;
+  try{cache.put(cacheKey,JSON.stringify(result),unavailTtl);}catch(e){}
   return result;
 }
 
-function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation){
+function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
   const now=new Date().getTime(),loc=newLocation||'';
   const leadTimeCutoff=now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
-  return getTimeBlocksForDate_(dateStr,itemGroup).some(b=>{
+  return getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).some(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
     for(let t=bs;t<be;t+=15*60000){
@@ -2387,23 +2503,35 @@ function hasAnySlot_(dateStr,events,totalDur,itemGroup,newLocation){
 }
 
 function getAvailableSlots(dateStr,totalDur,itemGroup){
-  const ver=getCalCacheVer_(),cacheKey=`slots_v7_${ver}_${dateStr}_${itemGroup}_${totalDur}`;
+  const ver=getCalCacheVer_(),cacheKey=`slots_v8_${ver}_${dateStr}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   // 월 캘린더 로드 시 이미 캐싱됐으면 즉시 반환 (Calendar API 재호출 없음)
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
   // 캐시 미스 시 fallback (직접 날짜 선택 등 예외 경우)
-  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return[];
+  let studioPresenceEvents=[];
+  let hasStudioAutoOpenBlocks=false;
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    studioPresenceEvents=getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+    hasStudioAutoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents).length>0;
+  }
+  if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
-  const slots=computeSlots_(dateStr,events,totalDur,itemGroup);
-  try{cache.put(cacheKey,JSON.stringify(slots),CONFIG.SLOTS_CACHE_TTL_SEC);}catch(e){}
+  const slots=computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+  try{cache.put(cacheKey,JSON.stringify(slots),getAvailabilityCacheTtlSec_(itemGroup));}catch(e){}
   return slots;
 }
 
 function slotAvailable_(dateStr,timeStr,totalDur,itemGroup,newLocation){
-  if(isBeyondPublicBookingRange_(dateStr)||isWeekendOrHolidayBlocked_(dateStr,itemGroup)) return false;
+  let studioPresenceEvents=[];
+  let hasStudioAutoOpenBlocks=false;
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    studioPresenceEvents=getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+    hasStudioAutoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents).length>0;
+  }
+  if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return false;
   const start=new Date(`${dateStr}T${timeStr}:00`).getTime(),end=start+totalDur*60000;
   if(start<=new Date().getTime()) return false;
-  const inBlock=getTimeBlocksForDate_(dateStr,itemGroup).some(b=>{
+  const inBlock=getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).some(b=>{
     const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
     const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
     return start>=bs&&end<=be;
