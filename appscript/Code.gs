@@ -2005,10 +2005,12 @@ function getAvailabilityCacheTtlSec_(itemGroup){
 
 function isStudioAutoOpenEventByFields_(title,location,isPersonal){
   if(isPersonal) return false;
-  if(!isStudioLocation_(location)) return false;
   const safeTitle=String(title||'');
   if(!safeTitle) return false;
-  return /studio[\s_-]*(open|presence|available)|studio open|studio presence|스튜디오[\s_-]*(오픈|상주|가능)|상주/i.test(safeTitle);
+  const explicitOpen=/studio[\s_-]*(open|presence|available)|studio open|studio presence|스튜디오[\s_-]*(오픈|상주|가능)|상주/i;
+  if(explicitOpen.test(safeTitle)) return true;
+  if(!isStudioLocation_(location)) return false;
+  return false;
 }
 
 /**
