@@ -1804,6 +1804,12 @@ function getBusyCalendarMeta_(){
 }
 
 function getStudioPresenceCalendar_(){
+  // ERP/shortcut에서 Studio Open을 만들 때는 반드시 쓰기 가능한 메인 캘린더를 우선 사용한다.
+  // 같은 이름의 구독/읽기 전용 캘린더를 잡으면 `허용되지 않는 작업` 예외가 날 수 있다.
+  try{
+    const mainCal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID);
+    if(mainCal) return mainCal;
+  }catch(e){}
   const targetNames=new Set(CONFIG.TARGET_CALENDAR_NAMES);
   const targetMeta=getBusyCalendarMeta_().find(function(meta){
     return targetNames.has(meta.name);
@@ -1814,7 +1820,7 @@ function getStudioPresenceCalendar_(){
       if(targetCal) return targetCal;
     }catch(e){}
   }
-  return CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  return CalendarApp.getDefaultCalendar();
 }
 
 function normalizeStudioPresenceMinutes_(value){
