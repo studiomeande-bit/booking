@@ -2414,7 +2414,7 @@ body {
 
 /* ===== Brand refinement pass ===== */
 .hero {
-  padding: 22px 0 48px;
+  padding: 18px 0 40px;
 }
 
 .hero-top {
@@ -2422,11 +2422,11 @@ body {
 }
 
 .header-logo {
-  width: min(240px, 44vw);
+  width: min(192px, 42vw);
 }
 
 .lang-panel {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 
 .lang-row {
@@ -2440,17 +2440,17 @@ body {
 }
 
 h1 {
-  margin-top: 10px;
-  font-size: clamp(48px, 5.8vw, 72px);
+  margin-top: 8px;
+  font-size: clamp(42px, 5.8vw, 68px);
   line-height: .94;
   letter-spacing: -.055em;
 }
 
 .lede {
-  max-width: 56ch;
+  max-width: 52ch;
   margin-top: 16px;
-  font-size: 15px;
-  line-height: 1.78;
+  font-size: 16px;
+  line-height: 1.76;
 }
 
 .banner,
@@ -2461,8 +2461,9 @@ h1 {
 
 .banner {
   margin-top: 24px;
-  padding: 16px 20px;
-  font-size: 13px;
+  padding: 15px 18px;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .banner::before {
@@ -2472,7 +2473,7 @@ h1 {
 
 .notice-panel {
   margin-top: 16px;
-  padding: 24px 28px;
+  padding: 24px;
 }
 
 .notice-title {
@@ -2484,14 +2485,14 @@ h1 {
   margin-top: 10px;
   max-width: 60ch;
   font-size: 14px;
-  line-height: 1.82;
+  line-height: 1.78;
 }
 
 .promo-highlight {
   margin-top: 28px;
-  padding: 34px 36px;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 40px;
+  padding: 30px 32px;
+  grid-template-columns: minmax(0, 1fr) 304px;
+  gap: 32px;
 }
 
 .promo-highlight::before {
@@ -2501,12 +2502,12 @@ h1 {
 .promo-highlight-title {
   margin-top: 12px;
   max-width: none;
-  font-size: clamp(42px, 4.8vw, 64px);
+  font-size: clamp(42px, 4.6vw, 62px);
   line-height: .96;
 }
 
 .promo-highlight-body {
-  margin-top: 18px;
+  margin-top: 16px;
   max-width: 52ch;
   font-size: 14px;
   line-height: 1.72;
@@ -2526,8 +2527,8 @@ h1 {
   align-self: end;
   justify-self: end;
   width: 100%;
-  max-width: 320px;
-  gap: 14px;
+  max-width: 304px;
+  gap: 12px;
 }
 
 .promo-highlight-state {
@@ -2536,11 +2537,11 @@ h1 {
 }
 
 .promo-highlight-button {
-  padding: 20px 22px;
+  padding: 18px 20px;
 }
 
 .promo-highlight-button-label {
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .promo-highlight-button-sub {
@@ -2549,30 +2550,31 @@ h1 {
 }
 
 .panel {
-  margin-top: 44px;
+  margin-top: 40px;
 }
 
 .panel-head h2 {
-  font-size: clamp(30px, 3vw, 44px);
+  font-size: clamp(30px, 2.9vw, 42px);
   line-height: 1.02;
 }
 
 .panel-head p {
   margin-top: 12px;
-  max-width: 56ch;
+  max-width: 54ch;
+  line-height: 1.72;
 }
 
 .group-grid {
-  gap: 20px;
+  gap: 18px;
 }
 
 .group-card {
   min-height: 164px;
-  padding: 26px 28px;
+  padding: 24px 26px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
 }
 
 .group-card-title {
@@ -2582,9 +2584,9 @@ h1 {
 }
 
 .group-card-sub {
-  max-width: 34ch;
+  max-width: 33ch;
   font-size: 13px;
-  line-height: 1.62;
+  line-height: 1.6;
 }
 
 .wizard-nav {
@@ -2636,31 +2638,31 @@ h1 {
   }
 
   .header-logo {
-    width: min(200px, 62vw);
+    width: min(172px, 52vw);
   }
 
   h1 {
     margin-top: 12px;
-    font-size: clamp(40px, 13vw, 56px);
+    font-size: clamp(38px, 12vw, 52px);
   }
 
   .lede {
     margin-top: 12px;
-    font-size: 14px;
-    line-height: 1.72;
+    font-size: 15px;
+    line-height: 1.62;
   }
 
   .banner {
     margin-top: 18px;
-    padding: 14px 16px;
+    padding: 15px 16px;
   }
 
   .notice-panel {
-    padding: 20px 18px;
+    padding: 18px 16px;
   }
 
   .promo-highlight {
-    padding: 24px 18px !important;
+    padding: 22px 18px !important;
     gap: 18px;
   }
 
@@ -2685,7 +2687,7 @@ h1 {
   }
 
   .group-grid {
-    gap: 12px;
+    gap: 14px;
   }
 
   .group-card {
