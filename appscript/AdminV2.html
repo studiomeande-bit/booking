@@ -132,6 +132,25 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .accounting-chart{display:grid;gap:10px;min-height:140px;align-content:start;}
 .accounting-summary-list{display:grid;gap:8px;min-height:140px;align-content:start;}
 .accounting-chart-empty{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed #d6cfc3;border-radius:12px;background:#fcfaf6;font-size:12px;color:#8b8378;}
+.metric-strip{display:grid;gap:12px;margin-bottom:15px;}
+.metric-strip.cols-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+.metric-strip.cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.metric-strip.cols-3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.metric-panel{padding:15px;}
+.metric-panel.alert{border-color:#fecaca;background:#fff7f7;}
+.metric-meta{font-size:12px;color:#64748b;margin-top:4px;line-height:1.45;}
+.accounting-grid-12-8{grid-template-columns:1.2fr .8fr;}
+.accounting-grid-half{grid-template-columns:1fr 1fr;}
+.section-panel{background:#fcfaf6;border:1px solid #ece4d8;border-radius:12px;padding:14px 16px;margin-bottom:14px;display:grid;gap:12px;}
+.section-panel-title{font-size:14px;font-weight:700;color:#2D2A26;letter-spacing:-.01em;}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.section-subtitle{font-size:12px;font-weight:700;color:#7a6f63;letter-spacing:.1em;text-transform:uppercase;}
+.inline-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.inline-field-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.inline-field-row label{margin:0;font-size:13px;}
+.print-total-box .metric-meta{color:rgba(255,255,255,.7);margin-top:4px;}
+.print-items-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.print-table-wrap{overflow-x:auto;}
 .lexware-hub{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:15px;}
 .lexware-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
 .lexware-status-card{border:1px solid #e7dfd4;border-radius:12px;padding:14px;background:#fff;}
@@ -201,6 +220,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .card{padding:16px;}
   .dashboard-split{grid-template-columns:1fr;gap:12px;}
   .dashboard-grid-charts{grid-template-columns:1fr;}
+  .metric-strip.cols-5,
+  .metric-strip.cols-4{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .metric-strip.cols-3,
+  .accounting-grid-12-8,
+  .accounting-grid-half{grid-template-columns:1fr;}
   .lexware-hub{grid-template-columns:1fr;}
   .lexware-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
   .stat-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));}
@@ -237,6 +261,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .stat-grid{grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;}
   .stat-grid-kpi,
   .stat-grid-work{grid-template-columns:1fr;}
+  .metric-strip.cols-5,
+  .metric-strip.cols-4,
+  .metric-strip.cols-3{grid-template-columns:1fr;}
   .stat-card{padding:14px 16px;}
   .stat-item{min-height:0;padding:16px 16px 14px;}
   .stat-val{font-size:18px;}
@@ -244,6 +271,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .monthly-bars{min-width:540px;height:160px;}
   .metric-block{padding:12px 14px;}
   .dashboard-grid{grid-template-columns:1fr !important;gap:10px;}
+  .section-panel{padding:14px;}
+  .inline-actions{justify-content:stretch;}
+  .inline-actions .btn{width:100%;}
+  .inline-field-row{display:grid;grid-template-columns:1fr;gap:10px;}
   .week-grid{gap:3px;}
   .week-day-cell{padding:6px;min-height:60px;}
   .wev{font-size:9px;}
@@ -441,58 +472,58 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         </div>
       </div>
       
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(5,1fr);">
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">총 매출 (Brutto)</div><div class="stat-val" id="acc_totGross" style="color:var(--blue)">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">순 매출 (Netto)</div><div class="stat-val" id="acc_totNet">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">부가세 (19%)</div><div class="stat-val" id="acc_totTax" style="color:var(--red)">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">총 지출 (Brutto)</div><div class="stat-val" id="acc_totExpense" style="color:#b91c1c;">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">예상 손익</div><div class="stat-val" id="acc_profit" style="color:#059669;">0€</div></div>
+      <div class="metric-strip cols-5">
+        <div class="stat-card metric-panel"><div class="stat-title">총 매출 (Brutto)</div><div class="stat-val" id="acc_totGross" style="color:var(--blue)">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">순 매출 (Netto)</div><div class="stat-val" id="acc_totNet">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">부가세 (19%)</div><div class="stat-val" id="acc_totTax" style="color:var(--red)">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">총 지출 (Brutto)</div><div class="stat-val" id="acc_totExpense" style="color:#b91c1c;">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">예상 손익</div><div class="stat-val" id="acc_profit" style="color:#059669;">0€</div></div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(4,1fr);">
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">납부 부가세</div><div class="stat-val" id="acc_vatPayable" style="color:#dc2626;">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware 미전송</div><div class="stat-val" id="acc_lexPending" style="color:#b45309;">0건</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware 동기화</div><div class="stat-val" id="acc_lexSynced" style="color:#2563eb;">0건</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">결제 완료</div><div class="stat-val" id="acc_lexPaid" style="color:#059669;">0건</div></div>
+      <div class="metric-strip cols-4">
+        <div class="stat-card metric-panel"><div class="stat-title">납부 부가세</div><div class="stat-val" id="acc_vatPayable" style="color:#dc2626;">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">Lexware 미전송</div><div class="stat-val" id="acc_lexPending" style="color:#b45309;">0건</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">Lexware 동기화</div><div class="stat-val" id="acc_lexSynced" style="color:#2563eb;">0건</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">결제 완료</div><div class="stat-val" id="acc_lexPaid" style="color:#059669;">0건</div></div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(4,1fr);">
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">계약금 입금</div><div class="stat-val" id="acc_depositPaid" style="color:#0f766e;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_depositAmount">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">잔금 결제</div><div class="stat-val" id="acc_balancePaid" style="color:#15803d;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_balanceAmount">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">미수금</div><div class="stat-val" id="acc_openAmount" style="color:#b45309;">0€</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_openCount">0건</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">부분 결제</div><div class="stat-val" id="acc_partialPaid" style="color:#7c3aed;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">계약금 입금 후 잔금 미결제</div></div>
+      <div class="metric-strip cols-4">
+        <div class="stat-card metric-panel"><div class="stat-title">계약금 입금</div><div class="stat-val" id="acc_depositPaid" style="color:#0f766e;">0건</div><div class="metric-meta" id="acc_depositAmount">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">잔금 결제</div><div class="stat-val" id="acc_balancePaid" style="color:#15803d;">0건</div><div class="metric-meta" id="acc_balanceAmount">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">미수금</div><div class="stat-val" id="acc_openAmount" style="color:#b45309;">0€</div><div class="metric-meta" id="acc_openCount">0건</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">부분 결제</div><div class="stat-val" id="acc_partialPaid" style="color:#7c3aed;">0건</div><div class="metric-meta">계약금 입금 후 잔금 미결제</div></div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(3,1fr);">
-        <div class="stat-card" style="padding:15px;border-color:#fecaca;background:#fff7f7;"><div class="stat-title">불일치 경고</div><div class="stat-val" id="acc_mismatchCount" style="color:#dc2626;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_mismatchAmount">0€</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">DATEV 준비</div><div class="stat-val" id="acc_datevReady" style="color:#0f766e;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">필터 기준 내보내기 가능 건수</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">수입/지출 흐름</div><div class="stat-val" id="acc_incomeExpenseMix" style="color:#334155;">0 / 0</div><div style="font-size:12px;color:#64748b;margin-top:4px;">수입건 / 지출건</div></div>
+      <div class="metric-strip cols-3">
+        <div class="stat-card metric-panel alert"><div class="stat-title">불일치 경고</div><div class="stat-val" id="acc_mismatchCount" style="color:#dc2626;">0건</div><div class="metric-meta" id="acc_mismatchAmount">0€</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">DATEV 준비</div><div class="stat-val" id="acc_datevReady" style="color:#0f766e;">0건</div><div class="metric-meta">필터 기준 내보내기 가능 건수</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">수입/지출 흐름</div><div class="stat-val" id="acc_incomeExpenseMix" style="color:#334155;">0 / 0</div><div class="metric-meta">수입건 / 지출건</div></div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:repeat(3,1fr);">
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">매칭 완료</div><div class="stat-val" id="acc_matchOk" style="color:#15803d;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">로컬과 Lexware 일치</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">로컬만 존재</div><div class="stat-val" id="acc_localOnly" style="color:#b45309;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;">예약/지출만 있고 Lexware 없음</div></div>
-        <div class="stat-card" style="padding:15px;"><div class="stat-title">Lexware만 존재</div><div class="stat-val" id="acc_lexwareOnly" style="color:#7c3aed;">0건</div><div style="font-size:12px;color:#64748b;margin-top:4px;" id="acc_lexwareOnlyAmount">0€</div></div>
+      <div class="metric-strip cols-3">
+        <div class="stat-card metric-panel"><div class="stat-title">매칭 완료</div><div class="stat-val" id="acc_matchOk" style="color:#15803d;">0건</div><div class="metric-meta">로컬과 Lexware 일치</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">로컬만 존재</div><div class="stat-val" id="acc_localOnly" style="color:#b45309;">0건</div><div class="metric-meta">예약/지출만 있고 Lexware 없음</div></div>
+        <div class="stat-card metric-panel"><div class="stat-title">Lexware만 존재</div><div class="stat-val" id="acc_lexwareOnly" style="color:#7c3aed;">0건</div><div class="metric-meta" id="acc_lexwareOnlyAmount">0€</div></div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1.2fr .8fr;">
+      <div class="dashboard-grid accounting-grid-12-8" style="margin-bottom:15px;">
         <div class="accounting-box" style="margin-bottom:0;">
-          <div class="card-title" style="margin-bottom:10px;">📚 회계분류 요약</div>
+          <div class="card-title" style="margin-bottom:10px;">회계분류 요약</div>
           <div id="acc_classSummary" class="accounting-summary-list"></div>
         </div>
         <div class="accounting-box" style="margin-bottom:0;">
-          <div class="card-title" style="margin-bottom:10px;">💳 유형별 합계</div>
+          <div class="card-title" style="margin-bottom:10px;">유형별 합계</div>
           <div id="acc_typeSummary" class="accounting-summary-list"></div>
         </div>
       </div>
-      <div class="dashboard-grid" style="margin-bottom:15px; grid-template-columns:1fr 1fr;">
+      <div class="dashboard-grid accounting-grid-half" style="margin-bottom:15px;">
         <div class="accounting-box" style="margin-bottom:0;">
-          <div class="card-title" style="margin-bottom:10px;">📈 유형별 그래프</div>
+          <div class="card-title" style="margin-bottom:10px;">유형별 그래프</div>
           <div id="acc_typeChart" class="accounting-chart"></div>
         </div>
         <div class="accounting-box" style="margin-bottom:0;">
-          <div class="card-title" style="margin-bottom:10px;">📊 상위 회계분류 그래프</div>
+          <div class="card-title" style="margin-bottom:10px;">상위 회계분류 그래프</div>
           <div id="acc_classChart" class="accounting-chart"></div>
         </div>
       </div>
 
-      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
-        <div style="font-weight:700;margin-bottom:10px;">🧾 지출 등록</div>
+      <div class="section-panel">
+        <div class="section-panel-title">지출 등록</div>
         <div class="form-row">
           <div class="form-group"><label>지출일</label><input type="date" id="exp_date"></div>
           <div class="form-group"><label>거래처</label><input type="text" id="exp_vendor" placeholder="Amazon, Adobe, Deutsche Bahn"></div>
@@ -525,8 +556,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <div class="form-group"><label>증빙링크</label><input type="text" id="exp_evidenceLink" placeholder="Drive / Gmail / Amazon 링크"></div>
           <div class="form-group"><label>메모</label><input type="text" id="exp_note" placeholder="비고"></div>
         </div>
-        <div style="display:flex;justify-content:flex-end;">
-          <button class="btn btn-primary btn-sm" onclick="saveExpense()">💾 지출 저장</button>
+        <div class="inline-actions">
+          <button class="btn btn-primary btn-sm" onclick="saveExpense()">지출 저장</button>
         </div>
       </div>
 
@@ -545,16 +576,18 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 
   <div class="content" id="tab_print">
     <div class="card">
-      <div class="card-title">🖨️ 추가 인화 / 보정 주문 등록</div>
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-outline btn-sm" onclick="togglePriceEdit()">✏️ 단가 직접 수정</button></div>
-      <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:#475569;">🖨️ 인화</div>
-      <div style="overflow-x:auto;">
+      <div class="card-title">추가 인화 / 보정 주문 등록</div>
+      <div class="print-items-head">
+        <div class="section-subtitle">인화 항목</div>
+        <button class="btn btn-outline btn-sm" onclick="togglePriceEdit()">단가 직접 수정</button>
+      </div>
+      <div class="print-table-wrap">
       <table class="print-price-table" style="min-width:560px;">
         <thead>
           <tr>
             <th rowspan="2" style="vertical-align:middle;">종류</th>
-            <th colspan="2" style="text-align:center;background:#eff6ff;color:#2563eb;border-bottom:1px solid #bfdbfe;">📄 보정본 포함 인화</th>
-            <th colspan="2" style="text-align:center;background:#f0fdf4;color:#059669;border-bottom:1px solid #86efac;">➕ 추가 인화만</th>
+            <th colspan="2" style="text-align:center;background:#eff6ff;color:#2563eb;border-bottom:1px solid #bfdbfe;">보정본 포함 인화</th>
+            <th colspan="2" style="text-align:center;background:#f0fdf4;color:#059669;border-bottom:1px solid #86efac;">추가 인화만</th>
           </tr>
           <tr>
             <th style="background:#eff6ff;color:#2563eb;">단가</th><th style="background:#eff6ff;color:#2563eb;">수량</th>
@@ -564,25 +597,25 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <tbody id="printItemsBody"></tbody>
       </table>
       </div>
-      <div style="font-size:13px;font-weight:700;margin:16px 0 6px;color:#475569;">✏️ 추가 보정</div>
-      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div class="section-subtitle" style="margin:16px 0 6px;">추가 보정</div>
+      <div class="section-panel" style="background:#f0fdf4;border-color:#86efac;">
+        <div class="section-head" style="margin-bottom:0;">
           <div><div style="font-weight:700;font-size:14px;">추가 보정</div><div style="font-size:12px;color:#6b7280;margin-top:2px;">장당 <span id="retouchPriceLabel">10€</span> · 보정본 파일 + 출력물 포함</div></div>
           <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;color:#6b7280;">단가(€)</span><input type="number" id="retouchUnitPrice" value="10" min="1" max="100" style="width:60px;padding:6px 8px;text-align:center;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;display:none;" oninput="document.getElementById('retouchPriceLabel').textContent=this.value+'€';calcPrint()"><span id="retouchPriceStatic" style="font-weight:700;">10€</span></div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;"><label style="font-size:13px;margin:0;">수량 (장)</label><input type="number" id="retouchQty" value="0" min="0" max="100" style="width:80px;padding:8px;text-align:center;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;" oninput="calcPrint()"></div>
+        <div class="inline-field-row"><label>수량 (장)</label><input type="number" id="retouchQty" value="0" min="0" max="100" style="width:80px;padding:8px;text-align:center;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;" oninput="calcPrint()"></div>
       </div>
 
       <div class="form-row" style="margin-top:12px;">
         <div class="form-group" style="grid-column:1/-1;">
-          <label>🔍 기존 예약 고객 불러오기</label>
+          <label>기존 예약 고객 불러오기</label>
           <div style="display:flex;gap:8px;">
             <input type="text" id="pn_search" placeholder="이름 또는 전화번호..." style="flex:1;" onkeydown="if(event.key==='Enter')searchPrintCustomer()">
-            <button class="btn btn-outline btn-sm" onclick="searchPrintCustomer()" style="white-space:nowrap;">🔍 검색</button>
+            <button class="btn btn-outline btn-sm" onclick="searchPrintCustomer()" style="white-space:nowrap;">검색</button>
           </div>
           <div id="pn_search_result" style="margin-top:6px;"></div>
         </div>
-        <div class="form-group"><label>📅 등록 날짜</label><input type="date" id="pn_date"></div>
+        <div class="form-group"><label>등록 날짜</label><input type="date" id="pn_date"></div>
         <div class="form-group"><label>결제 수단</label><select id="pn_pay"><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option><option>미결제</option></select></div>
       </div>
       <div class="form-row">
@@ -596,14 +629,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="print-total-box">
         <div style="font-size:12px;opacity:.7;margin-bottom:4px;">총 주문 금액</div>
         <div style="font-size:28px;font-weight:800;" id="printTotal">0€</div>
-        <div style="font-size:12px;opacity:.7;margin-top:4px;" id="printDetail">항목을 선택하세요</div>
+        <div class="metric-meta" id="printDetail">항목을 선택하세요</div>
       </div>
-      <button class="btn btn-success" style="width:100%;padding:12px;" onclick="savePrint()">💾 인화/보정 주문 등록</button>
+      <button class="btn btn-success" style="width:100%;padding:12px;" onclick="savePrint()">인화/보정 주문 등록</button>
       <div id="printResult" style="margin-top:10px;font-size:13px;"></div>
     </div>
     
     <div class="card">
-      <div class="card-title">📋 인화/보정 주문 내역</div>
+      <div class="card-title">인화/보정 주문 내역</div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>일시</th><th>고객명</th><th>연락처</th><th>인화 항목</th><th>보정 항목</th><th>금액</th><th>결제</th><th>상태</th><th>메모</th><th>관리</th></tr></thead>
@@ -615,7 +648,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 
 <div class="content" id="tab_manual">
     <div class="card">
-      <div class="card-title">✏️ 수기 예약 등록</div>
+      <div class="card-title">수기 예약 등록</div>
       <div class="form-row">
         <div class="form-group"><label>고객명 *</label><input type="text" id="m_name"></div>
         <div class="form-group"><label>연락처 *</label><input type="tel" id="m_phone"></div>
