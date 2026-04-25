@@ -2173,6 +2173,26 @@ function fetchPublicIcsEvents_(icsUrl,startDate,endDate){
     }));
 }
 
+function fetchPublicIcsDetailedEvents_(icsUrl,startDate,endDate){
+  const res=UrlFetchApp.fetch(icsUrl,{muteHttpExceptions:true});
+  const code=res.getResponseCode();
+  if(code!==200){
+    Logger.log('Public ICS detailed fetch failed ('+code+'): '+icsUrl);
+    return[];
+  }
+  const startMs=startDate.getTime(), endMs=endDate.getTime();
+  return parseIcsText_(res.getContentText())
+    .filter(ev=>ev.end>startMs&&ev.start<endMs)
+    .map(ev=>({
+      id:'',
+      start:ev.start,
+      end:ev.end,
+      title:ev.summary||'',
+      location:ev.location||'',
+      isPersonal:false
+    }));
+}
+
 /**
  * Parse an ICS date line value → ms timestamp (UTC).
  * Handles: DTSTART:20240101T090000Z  and  DTSTART;TZID=Europe/Berlin:20240101T090000
@@ -2288,6 +2308,77 @@ function fetchAppleCalendarEvents_(startDate,endDate){
     return allEvents;
   }catch(e){
     Logger.log('fetchAppleCalendarEvents_ error: '+e.message);
+    return[];
+  }
+}
+
+function fetchAppleCalendarDetailedEvents_(startDate,endDate){
+  try{
+    const auth=getIcloudBasicAuth_();
+    const calUrls=getIcloudCalUrls_();
+    if(!calUrls||calUrls.length===0) return[];
+    const fmt=d=>Utilities.formatDate(d,'UTC',"yyyyMMdd'T'HHmmss'Z'");
+    const reportBody=
+      '<?xml version="1.0" encoding="UTF-8"?>'+
+      '<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'+
+        '<D:prop><D:getetag/><C:calendar-data/></D:prop>'+
+        '<C:filter>'+
+          '<C:comp-filter name="VCALENDAR">'+
+            '<C:comp-filter name="VEVENT">'+
+              '<C:time-range start="'+fmt(startDate)+'" end="'+fmt(endDate)+'"/>'+
+            '</C:comp-filter>'+
+          '</C:comp-filter>'+
+        '</C:filter>'+
+      '</C:calendar-query>';
+    const davNs=XmlService.getNamespace('DAV:');
+    const calNs=XmlService.getNamespace('urn:ietf:params:xml:ns:caldav');
+    const allEvents=[];
+    calUrls.forEach(calUrl=>{
+      try{
+        const res=UrlFetchApp.fetch(calUrl,{
+          method:'post',
+          contentType:'application/xml; charset=UTF-8',
+          headers:{'Authorization':auth,'Depth':'1'},
+          payload:reportBody,
+          muteHttpExceptions:true
+        });
+        const code=res.getResponseCode();
+        if(code!==207){
+          Logger.log('iCloud detailed REPORT failed ('+code+') for '+calUrl+': '+res.getContentText().slice(0,200));
+          return;
+        }
+        const root=XmlService.parse(res.getContentText()).getRootElement();
+        root.getChildren('response',davNs).forEach(resp=>{
+          try{
+            const propstat=resp.getChild('propstat',davNs);
+            if(!propstat) return;
+            if(!(propstat.getChildText('status',davNs)||'').includes('200')) return;
+            const prop=propstat.getChild('prop',davNs);
+            if(!prop) return;
+            const calData=prop.getChild('calendar-data',calNs);
+            if(!calData) return;
+            parseIcsText_(calData.getText()).forEach(ev=>{
+              allEvents.push({
+                id:'',
+                start:ev.start,
+                end:ev.end,
+                title:ev.summary||'',
+                location:ev.location||'',
+                isPersonal:false
+              });
+            });
+          }catch(e){Logger.log('iCloud detailed event parse error: '+e.message);}
+        });
+      }catch(e){Logger.log('iCloud detailed fetch error for '+calUrl+': '+e.message);}
+    });
+    getIcloudIcsUrls_().forEach(icsUrl=>{
+      try{
+        fetchPublicIcsDetailedEvents_(icsUrl,startDate,endDate).forEach(ev=>allEvents.push(ev));
+      }catch(e){Logger.log('Public ICS detailed error for '+icsUrl+': '+e.message);}
+    });
+    return allEvents;
+  }catch(e){
+    Logger.log('fetchAppleCalendarDetailedEvents_ error: '+e.message);
     return[];
   }
 }
@@ -2787,6 +2878,15 @@ function getBusyEventsDetailedForRange_(start,end){
       Logger.log('pickup calendar detail error: '+e.message);
     }
   });
+  const props=PropertiesService.getScriptProperties().getProperties();
+  const hasIcloud=Object.keys(props).some(k=>k==='ICLOUD_CAL_URL'||k==='ICLOUD_ICS_URL'||/^ICLOUD_(CAL|ICS)_URL_\d+$/.test(k));
+  if(hasIcloud){
+    try{
+      fetchAppleCalendarDetailedEvents_(start,end).forEach(ev=>events.push(ev));
+    }catch(e){
+      Logger.log('pickup icloud detail error: '+e.message);
+    }
+  }
   return events;
 }
 
