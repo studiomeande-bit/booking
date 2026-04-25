@@ -1824,6 +1824,25 @@ function getManagedStudioPresenceEvents_(calendar,start,end){
   });
 }
 
+function getManagedStudioPresenceDetailedEvents_(start,end){
+  try{
+    const calendar=getStudioPresenceCalendar_();
+    return getManagedStudioPresenceEvents_(calendar,start,end).map(function(ev){
+      return {
+        id:ev.getId(),
+        start:ev.getStartTime().getTime(),
+        end:ev.getEndTime().getTime(),
+        title:ev.getTitle()||'',
+        location:ev.getLocation()||'',
+        isPersonal:false
+      };
+    });
+  }catch(e){
+    Logger.log('managed studio presence detail error: '+e.message);
+    return [];
+  }
+}
+
 function openStudioPresenceWindow_(minutes){
   const calendar=getStudioPresenceCalendar_();
   const now=new Date();
@@ -2878,6 +2897,13 @@ function getBusyEventsDetailedForRange_(start,end){
       Logger.log('pickup calendar detail error: '+e.message);
     }
   });
+  try{
+    getManagedStudioPresenceDetailedEvents_(start,end).forEach(function(ev){
+      events.push(ev);
+    });
+  }catch(e){
+    Logger.log('pickup managed studio presence error: '+e.message);
+  }
   const props=PropertiesService.getScriptProperties().getProperties();
   const hasIcloud=Object.keys(props).some(k=>k==='ICLOUD_CAL_URL'||k==='ICLOUD_ICS_URL'||/^ICLOUD_(CAL|ICS)_URL_\d+$/.test(k));
   if(hasIcloud){
