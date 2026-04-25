@@ -1684,7 +1684,7 @@ function loadStudioPresencePanel(){
       const panel=document.getElementById('studioPresencePanel');
       if(panel) panel.innerHTML='<div style="padding:12px;border:1px dashed #fecaca;border-radius:12px;color:#b91c1c;font-size:12px;">Studio Open 상태를 불러오지 못했습니다.</div>';
     })
-    .adminRpc(adminToken,'getStudioPresenceState',{});
+    .getStudioPresenceAdmin(adminToken);
 }
 
 function openStudioPresenceFromAdmin(minutes,btn){
@@ -1704,7 +1704,7 @@ function openStudioPresenceFromAdmin(minutes,btn){
           release();done();handleApiError(e);
           showToast((e&&e.message)||'Studio Open 열기에 실패했습니다.','err');
         })
-        .adminRpc(adminToken,'openStudioPresence',{minutes:minutes});
+        .openStudioPresenceAdmin(adminToken,{minutes:minutes});
     });
   });
 }
@@ -1726,7 +1726,7 @@ function closeStudioPresenceFromAdmin(btn){
           release();done();handleApiError(e);
           showToast((e&&e.message)||'Studio Open 닫기에 실패했습니다.','err');
         })
-        .adminRpc(adminToken,'closeStudioPresence',{});
+        .closeStudioPresenceAdmin(adminToken);
     });
   });
 }
