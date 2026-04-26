@@ -2942,6 +2942,13 @@ function isPublicRecommendationAnchorEvent_(ev){
   return true;
 }
 
+function isExternalRecommendationAnchorTitle_(title){
+  const safeTitle = String(title || '').trim();
+  if(!safeTitle) return false;
+  if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(function(kw){ return safeTitle.indexOf(kw) >= 0; })) return true;
+  return /기업\s*\/\s*행사|기업행사|Corporate\s*\/\s*Event|Corporate Event|Firmenevent|Eventshooting/i.test(safeTitle);
+}
+
 function formatTimeKeyFromMs_(ms){
   const date = new Date(ms);
   return `${('0'+date.getHours()).slice(-2)}:${('0'+date.getMinutes()).slice(-2)}`;
@@ -2961,6 +2968,9 @@ function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEven
   const recommendationEnabled = isRecommendationEligibleGroup_(itemGroup);
   const anchors = (detailedEvents || [])
     .filter(isPublicRecommendationAnchorEvent_)
+    .filter(function(ev){
+      return !isExternalRecommendationAnchorTitle_(ev && ev.title);
+    })
     .sort(function(a,b){ return a.start - b.start; });
   const manualInclude = config.manualIncludeByDate[dateStr] || new Set();
   const manualExclude = config.manualExcludeByDate[dateStr] || new Set();
