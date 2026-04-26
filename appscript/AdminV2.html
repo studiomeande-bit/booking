@@ -2169,6 +2169,24 @@ function renderTable(){
     return lines.join('');
   };
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
+  const recommendationMeta=(c)=>{
+    const lines=[];
+    if(c.confirmationMode==='fast_confirmation_pending'){
+      lines.push('<div style="font-size:10px;color:#166534;font-weight:700;">빠른확정 가능</div>');
+    }else if(c.confirmationMode==='manual_review_required'){
+      lines.push('<div style="font-size:10px;color:#92400e;font-weight:700;">수동 확인 필요</div>');
+    }
+    if(c.slotRecommendationStatus==='recommended'){
+      lines.push('<div style="font-size:10px;color:#9a3412;">추천 시간 예약</div>');
+    }
+    if(c.recommendedDistanceMin){
+      lines.push(`<div style="font-size:10px;color:#64748b;">인접 ${c.recommendedDistanceMin}분</div>`);
+    }
+    if(c.recommendedAnchorWindow){
+      lines.push(`<div style="font-size:10px;color:#64748b;">기준 예약 ${c.recommendedAnchorWindow}</div>`);
+    }
+    return lines.join('');
+  };
 
   document.getElementById('tableBody').innerHTML=data.map(c=>{
     const depositAction=(depositPending(c)&&c.status!=='취소됨')
@@ -2180,7 +2198,7 @@ function renderTable(){
     let actions=`<button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openGutscheinApplyModal(${c.rowIndex})">굿샤인</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">결제</button>`;
     if(c.status!=='취소됨') actions+=` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">취소</button>`;
     const gutscheinLine=c.gutscheinCode?`<div style="margin-top:4px;font-size:10px;color:#7c3aed;white-space:normal;line-height:1.45;font-weight:700;">${c.gutscheinCode}${c.gutscheinDiscount?` · -${c.gutscheinDiscount}€`:''}</div>`:'';
-    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}${gutscheinLine}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:140px;">${dc(c.deposit,c)}${depositMeta(c)}${depositAction}${restoreAction}</div></td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
+    return `<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}${recommendationMeta(c)?`<div style="margin-top:4px;white-space:normal;line-height:1.45;">${recommendationMeta(c)}</div>`:''}${gutscheinLine}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:140px;">${dc(c.deposit,c)}${depositMeta(c)}${depositAction}${restoreAction}</div></td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;">${actions}</td></tr>`;
   }).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
 }

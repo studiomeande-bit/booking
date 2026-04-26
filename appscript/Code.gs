@@ -38,7 +38,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','snap','Snap','wedding','Wedding','outdoor','Outdoor'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -67,6 +67,11 @@ const PROMO_CONFIG = {
 const DEFAULT_BOOKING_HOURS = {
   weekday: '09:30-11:40,15:00-17:30',
   saturday: '09:00-16:00'
+};
+const SLOT_RECOMMENDATION_DEFAULTS = {
+  beforeHours: 2,
+  afterHours: 2,
+  maxRecommended: 4
 };
 const WEEKDAY_MORNING_END_MIN = 11 * 60 + 40;
 const SELECT_PICKUP_DURATION_MIN = 15;
@@ -1519,7 +1524,11 @@ function getPublicSlots_(dateStr,totalDur,itemGroup){
   }
   if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
-  return computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+  const slotStrings = computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+  const detailedEvents = (studioPresenceEvents && studioPresenceEvents.length)
+    ? studioPresenceEvents
+    : getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  return buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents);
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
@@ -2887,6 +2896,161 @@ function getSaturdayBookingHours_(){
   return blocksToSettingString_(getSaturdayBookingBlocks_())||DEFAULT_BOOKING_HOURS.saturday;
 }
 
+function parsePositiveNumberSetting_(value, fallback){
+  const num = Number(value);
+  return isFinite(num) && num > 0 ? num : fallback;
+}
+
+function parseRecommendationSlotMap_(rawValue){
+  const result = {};
+  const raw = String(rawValue || '').trim();
+  if(!raw) return result;
+  raw.split(';').map(function(entry){ return String(entry || '').trim(); }).filter(Boolean).forEach(function(entry){
+    const parts = entry.split('=');
+    if(parts.length < 2) return;
+    const dateKey = String(parts[0] || '').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+    const times = String(parts.slice(1).join('=') || '')
+      .split(',')
+      .map(function(time){ return String(time || '').trim(); })
+      .filter(function(time){ return /^\d{2}:\d{2}$/.test(time); });
+    if(!times.length) return;
+    result[dateKey] = new Set(times);
+  });
+  return result;
+}
+
+function getSlotRecommendationConfig_(){
+  const settings = getSettingsMap_();
+  return {
+    beforeWindowMin: Math.round(parsePositiveNumberSetting_(settings.recommend_before_hours, SLOT_RECOMMENDATION_DEFAULTS.beforeHours) * 60),
+    afterWindowMin: Math.round(parsePositiveNumberSetting_(settings.recommend_after_hours, SLOT_RECOMMENDATION_DEFAULTS.afterHours) * 60),
+    maxRecommended: Math.max(0, Math.round(parsePositiveNumberSetting_(settings.recommend_max_slots, SLOT_RECOMMENDATION_DEFAULTS.maxRecommended))),
+    manualIncludeByDate: parseRecommendationSlotMap_(settings.recommend_force_slots),
+    manualExcludeByDate: parseRecommendationSlotMap_(settings.recommend_exclude_slots)
+  };
+}
+
+function isPublicRecommendationAnchorEvent_(ev){
+  if(!ev) return false;
+  if(ev.isPersonal) return false;
+  const title = String(ev.title || '').trim();
+  if(!title) return false;
+  if(isSelectPickupEventTitle_(title)) return false;
+  if(title.indexOf(STUDIO_PRESENCE_EVENT_MARKER) >= 0) return false;
+  if(/Studio Open|Studio Presence|Studio Available|스튜디오 오픈|스튜디오 상주/i.test(title)) return false;
+  return true;
+}
+
+function formatTimeKeyFromMs_(ms){
+  const date = new Date(ms);
+  return `${('0'+date.getHours()).slice(-2)}:${('0'+date.getMinutes()).slice(-2)}`;
+}
+
+function buildRecommendationAnchorLabel_(ev){
+  if(!ev) return '';
+  return `${formatTimeKeyFromMs_(ev.start)}–${formatTimeKeyFromMs_(ev.end)}`;
+}
+
+function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEvents){
+  const config = getSlotRecommendationConfig_();
+  const anchors = (detailedEvents || [])
+    .filter(isPublicRecommendationAnchorEvent_)
+    .sort(function(a,b){ return a.start - b.start; });
+  const manualInclude = config.manualIncludeByDate[dateStr] || new Set();
+  const manualExclude = config.manualExcludeByDate[dateStr] || new Set();
+  const totalDurMs = Number(totalDur || 0) * 60000;
+  const entries = (availableSlots || []).map(function(time){
+    const startMs = new Date(`${dateStr}T${time}:00`).getTime();
+    const endMs = startMs + totalDurMs;
+    let nearest = null;
+    anchors.forEach(function(ev){
+      let distanceMin = null;
+      let edge = '';
+      if(endMs <= ev.start){
+        distanceMin = Math.round((ev.start - endMs) / 60000);
+        edge = 'before';
+        if(distanceMin > config.beforeWindowMin) return;
+      }else if(startMs >= ev.end){
+        distanceMin = Math.round((startMs - ev.end) / 60000);
+        edge = 'after';
+        if(distanceMin > config.afterWindowMin) return;
+      }else{
+        return;
+      }
+      if(!nearest || distanceMin < nearest.distanceMin || (distanceMin === nearest.distanceMin && ev.start < nearest.start)){
+        nearest = {
+          distanceMin: distanceMin,
+          edge: edge,
+          start: ev.start,
+          end: ev.end,
+          title: String(ev.title || '')
+        };
+      }
+    });
+    return {
+      time: time,
+      endTime: formatTimeKeyFromMs_(endMs),
+      status: 'request_only',
+      confirmationMode: 'manual_review_required',
+      fastConfirm: false,
+      manualReviewRequired: true,
+      distanceMin: nearest ? nearest.distanceMin : '',
+      anchorWindow: nearest ? buildRecommendationAnchorLabel_(nearest) : '',
+      anchorTitle: nearest ? nearest.title : '',
+      recommendationSource: '',
+      _candidate: !!nearest,
+      _manualInclude: manualInclude.has(time),
+      _manualExclude: manualExclude.has(time)
+    };
+  });
+
+  const manualRecommendedTimes = new Set(entries.filter(function(entry){
+    return entry._manualInclude;
+  }).map(function(entry){
+    return entry.time;
+  }));
+
+  const autoCandidates = entries
+    .filter(function(entry){
+      return entry._candidate && !entry._manualInclude && !entry._manualExclude;
+    })
+    .sort(function(a,b){
+      const diff = (Number(a.distanceMin) || 9999) - (Number(b.distanceMin) || 9999);
+      if(diff) return diff;
+      return String(a.time).localeCompare(String(b.time));
+    });
+
+  const autoLimit = config.maxRecommended <= 0 ? autoCandidates.length : Math.max(0, config.maxRecommended - manualRecommendedTimes.size);
+  const autoRecommendedTimes = new Set(autoCandidates.slice(0, autoLimit).map(function(entry){
+    return entry.time;
+  }));
+
+  entries.forEach(function(entry){
+    const recommended = entry._manualInclude || autoRecommendedTimes.has(entry.time);
+    if(recommended){
+      entry.status = 'recommended';
+      entry.confirmationMode = 'fast_confirmation_pending';
+      entry.fastConfirm = true;
+      entry.manualReviewRequired = false;
+      entry.recommendationSource = entry._manualInclude ? 'manual_override' : 'nearby_booking';
+    }else{
+      entry.status = 'request_only';
+      entry.confirmationMode = 'manual_review_required';
+      entry.fastConfirm = false;
+      entry.manualReviewRequired = true;
+      entry.recommendationSource = entry._manualExclude ? 'manual_exclude' : '';
+    }
+    delete entry._candidate;
+    delete entry._manualInclude;
+    delete entry._manualExclude;
+  });
+
+  return entries.sort(function(a,b){
+    return String(a.time).localeCompare(String(b.time));
+  });
+}
+
 /**
  * 예약 슬롯 계산용 영업시간. 설정 시트 값이 있으면 우선 사용합니다.
  */
@@ -3397,6 +3561,16 @@ function processForm(data){
     const startTime=new Date(`${data.date}T${data.time}:00`);
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,data.location||'')) throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
+    const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup);
+    const matchedSlot = (publicSlotEntries || []).find(function(entry){
+      return String(entry && entry.time || '') === String(data.time || '');
+    });
+    const slotRecommendationStatus = matchedSlot ? String(matchedSlot.status || 'request_only') : 'request_only';
+    const confirmationMode = matchedSlot ? String(matchedSlot.confirmationMode || 'manual_review_required') : 'manual_review_required';
+    const fastConfirmFlag = matchedSlot && matchedSlot.fastConfirm ? 'Y' : 'N';
+    const distanceMinValue = matchedSlot && matchedSlot.distanceMin !== '' ? String(matchedSlot.distanceMin) : '';
+    const anchorWindow = matchedSlot ? String(matchedSlot.anchorWindow || '') : '';
+    const manualReviewFlag = matchedSlot && matchedSlot.manualReviewRequired ? 'Y' : 'N';
     const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
     const cleanPhone=String(data.phone).replace(/[\s\-]/g,'');
     const koName=quote.productLabelKo||quote.product.nameKo;
@@ -3421,7 +3595,46 @@ function processForm(data){
     const marketingStr=data.marketing?'Y':'N';
     const aiConsentStr=data.aiConsent?'Y':'N';
     const consentTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-    getDbSheet().appendRow([`${data.date} ${data.time}`,'대기중',data.name,cleanPhone,data.email,data.lang,quote.itemGroup,koName,(data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:''),quote.people,quote.totalPrice,quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0',quote.balanceAmount,'미결제',surveyStr||'해당없음',memo,event.getId(),quote.isDeposit?'계좌이체':'-',extraItem,isReturn?'재방문':'신규','',gdprStr,marketingStr,consentTs,'',aiConsentStr,String(data.address||'').trim(),'','','','','','','','','',String(data.payerName||'').trim(),data.businessInvoiceNeeded?'Y':'',String(data.businessCompanyName||'').trim(),String(data.businessCompanyAddress||'').trim(),String(data.businessVatId||'').trim(),String(data.businessInvoiceEmail||'').trim(),String(data.businessInvoiceRef||'').trim()]);
+    const bookingRow = new Array(CONFIG.BOOKING_HEADERS.length).fill('');
+    bookingRow[BOOKING_COL['예약일시']] = `${data.date} ${data.time}`;
+    bookingRow[BOOKING_COL['상태']] = '대기중';
+    bookingRow[BOOKING_COL['고객명']] = data.name;
+    bookingRow[BOOKING_COL['연락처']] = cleanPhone;
+    bookingRow[BOOKING_COL['이메일']] = data.email;
+    bookingRow[BOOKING_COL['언어']] = data.lang;
+    bookingRow[BOOKING_COL['촬영종류']] = quote.itemGroup;
+    bookingRow[BOOKING_COL['상품']] = koName;
+    bookingRow[BOOKING_COL['옵션']] = (data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:'' );
+    bookingRow[BOOKING_COL['인원']] = quote.people;
+    bookingRow[BOOKING_COL['총결제액']] = quote.totalPrice;
+    bookingRow[BOOKING_COL['계약금']] = quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0';
+    bookingRow[BOOKING_COL['잔금']] = quote.balanceAmount;
+    bookingRow[BOOKING_COL['결제수단']] = '미결제';
+    bookingRow[BOOKING_COL['분위기']] = surveyStr||'해당없음';
+    bookingRow[BOOKING_COL['요청사항']] = memo;
+    bookingRow[BOOKING_COL['캘린더ID']] = event.getId();
+    bookingRow[BOOKING_COL['계약금수단']] = quote.isDeposit?'계좌이체':'-';
+    bookingRow[BOOKING_COL['추가항목']] = extraItem;
+    bookingRow[BOOKING_COL['재방문']] = isReturn?'재방문':'신규';
+    bookingRow[BOOKING_COL['GDPR동의']] = gdprStr;
+    bookingRow[BOOKING_COL['마케팅동의']] = marketingStr;
+    bookingRow[BOOKING_COL['동의시각']] = consentTs;
+    bookingRow[BOOKING_COL['AI동의']] = aiConsentStr;
+    bookingRow[BOOKING_COL['고객주소']] = String(data.address||'').trim();
+    bookingRow[BOOKING_COL['입금자명']] = String(data.payerName||'').trim();
+    bookingRow[BOOKING_COL['사업자송장필요']] = data.businessInvoiceNeeded?'Y':'';
+    bookingRow[BOOKING_COL['사업자명']] = String(data.businessCompanyName||'').trim();
+    bookingRow[BOOKING_COL['사업자주소']] = String(data.businessCompanyAddress||'').trim();
+    bookingRow[BOOKING_COL['사업자VAT번호']] = String(data.businessVatId||'').trim();
+    bookingRow[BOOKING_COL['사업자송장이메일']] = String(data.businessInvoiceEmail||'').trim();
+    bookingRow[BOOKING_COL['사업자송장참조']] = String(data.businessInvoiceRef||'').trim();
+    bookingRow[BOOKING_COL['추천시간상태']] = slotRecommendationStatus;
+    bookingRow[BOOKING_COL['확정처리모드']] = confirmationMode;
+    bookingRow[BOOKING_COL['빠른확정가능']] = fastConfirmFlag;
+    bookingRow[BOOKING_COL['인접예약거리분']] = distanceMinValue;
+    bookingRow[BOOKING_COL['추천기준예약']] = anchorWindow;
+    bookingRow[BOOKING_COL['수동확인필요']] = manualReviewFlag;
+    getDbSheet().appendRow(bookingRow);
     bumpCalCacheVer_();
     sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId());
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn);
@@ -4387,7 +4600,13 @@ function getDashboardData_(){
       gutscheinOriginalTotal:String(row[BOOKING_COL['적용전총액']]||''),
       gutscheinAdjustedTotal:String(row[BOOKING_COL['적용후총액']]||''),
       gutscheinAppliedAt:String(row[BOOKING_COL['굿샤인적용일시']]||''),
-      gutscheinApplyMethod:String(row[BOOKING_COL['굿샤인적용방식']]||'')
+      gutscheinApplyMethod:String(row[BOOKING_COL['굿샤인적용방식']]||''),
+      slotRecommendationStatus:String(row[BOOKING_COL['추천시간상태']]||''),
+      confirmationMode:String(row[BOOKING_COL['확정처리모드']]||''),
+      fastConfirmAvailable:String(row[BOOKING_COL['빠른확정가능']]||''),
+      recommendedDistanceMin:String(row[BOOKING_COL['인접예약거리분']]||''),
+      recommendedAnchorWindow:String(row[BOOKING_COL['추천기준예약']]||''),
+      manualReviewRequired:String(row[BOOKING_COL['수동확인필요']]||'')
     });
     
     const CONFIRMED_STATUSES=['확정됨','촬영완료','셀렉완료','작업완료'];

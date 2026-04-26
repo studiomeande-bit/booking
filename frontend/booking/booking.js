@@ -582,6 +582,17 @@ const COPY = {
     slotLoadingForDate: '{date} 기준 예약 가능 시간을 불러오는 중입니다.',
     slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
     slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
+    slotSectionRecommended: '추천 시간',
+    slotSectionFastConfirm: '빠른 확정 가능 시간',
+    slotSectionMore: '추가 가능 시간',
+    slotFastConfirmLabel: '빠른 확정',
+    slotFastConfirmCopy: '스튜디오가 이 시간대에 가장 자연스럽게 준비되어 있습니다.',
+    slotRequestOnlyLabel: '확인 후 확정',
+    slotRequestOnlyCopy: '운영 확인 후 예약 확정이 진행됩니다.',
+    slotMoreToggle: '다른 시간 더 보기',
+    slotMoreHide: '추천 시간만 보기',
+    slotUntilLabel: '예상 종료',
+    slotNearLabel: '기준 예약과 {distance}분 간격',
     initFail: '초기화 실패',
     yes: '동의',
     no: '미동의',
@@ -757,6 +768,17 @@ const COPY = {
     slotLoadingForDate: 'Loading available times for {date}.',
     slotLoadedForDate: 'Available times for {date}.',
     slotFailForDate: 'Failed to load available times for {date}.',
+    slotSectionRecommended: 'Recommended times',
+    slotSectionFastConfirm: 'Fast confirmation available',
+    slotSectionMore: 'More available times',
+    slotFastConfirmLabel: 'Fast confirmation',
+    slotFastConfirmCopy: 'The studio is best prepared around this time.',
+    slotRequestOnlyLabel: 'Confirmation after review',
+    slotRequestOnlyCopy: 'We will confirm this time after a quick review.',
+    slotMoreToggle: 'Show more times',
+    slotMoreHide: 'Show recommended times only',
+    slotUntilLabel: 'Estimated end',
+    slotNearLabel: '{distance} min from the nearest booking',
     initFail: 'Initialization failed',
     yes: 'Agreed',
     no: 'Not agreed',
@@ -932,6 +954,17 @@ const COPY = {
     slotLoadingForDate: 'Verfügbare Zeiten für {date} werden geladen.',
     slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
     slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
+    slotSectionRecommended: 'Empfohlene Zeiten',
+    slotSectionFastConfirm: 'Schnelle Bestätigung möglich',
+    slotSectionMore: 'Weitere Zeiten',
+    slotFastConfirmLabel: 'Schnelle Bestätigung',
+    slotFastConfirmCopy: 'Das Studio ist rund um diese Zeit optimal vorbereitet.',
+    slotRequestOnlyLabel: 'Bestätigung nach Prüfung',
+    slotRequestOnlyCopy: 'Diese Zeit wird nach einer kurzen Prüfung bestätigt.',
+    slotMoreToggle: 'Weitere Zeiten anzeigen',
+    slotMoreHide: 'Nur empfohlene Zeiten anzeigen',
+    slotUntilLabel: 'Voraussichtliches Ende',
+    slotNearLabel: '{distance} Min. Abstand zur nächsten Buchung',
     initFail: 'Initialisierung fehlgeschlagen',
     yes: 'Zustimmung',
     no: 'Keine Zustimmung',
@@ -953,6 +986,8 @@ const state = {
   calendarMonth: new Date().getMonth(),
   selectedDate: '',
   selectedSlot: '',
+  selectedSlotMeta: null,
+  showAllSlots: false,
   selectedCountries: [],
   passportConfigs: [],
   passportPersonCountries: [],
@@ -3065,6 +3100,8 @@ function selectGroup(groupKey) {
   state.selectedProduct = null;
   state.selectedDate = '';
   state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
   state.quote = null;
   state.earliestSlotInfo = null;
   state.selectedCountries = [];
@@ -3108,6 +3145,8 @@ async function selectProduct(productId) {
   state.selectedGroup = state.selectedProduct?.g || state.selectedGroup;
   state.selectedDate = '';
   state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
   state.quote = null;
   state.earliestSlotInfo = null;
   state.optionKeys = [];
@@ -3777,6 +3816,8 @@ async function selectDate(dateKey) {
   state.selectedDate = dateKey;
   state.activeStep = 3;
   state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: formatDateLabel(dateKey) });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
@@ -3791,23 +3832,62 @@ async function selectDate(dateKey) {
   goToStep(3);
 }
 
-function renderSlots(slots) {
-  if (!Array.isArray(slots) || slots.length === 0) {
-    els.slotGrid.classList.add('empty-state');
-    els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().noSlots}</div>${renderWaitlistBlock()}`;
-    bindWaitlistHandlers();
-    els.submitBtn.disabled = true;
-    return;
+function normalizeSlotEntry(slot) {
+  if (typeof slot === 'string') {
+    return {
+      time: slot,
+      endTime: '',
+      status: 'request_only',
+      confirmationMode: 'manual_review_required',
+      fastConfirm: false,
+      manualReviewRequired: true,
+      distanceMin: '',
+      anchorWindow: '',
+      recommendationSource: ''
+    };
   }
-  els.slotGrid.classList.remove('empty-state');
-  els.slotGrid.innerHTML = slots.map((slot) => {
-    const value = typeof slot === 'string' ? slot : slot.time;
-    return `<button type="button" class="slot-btn${state.selectedSlot === value ? ' selected' : ''}" data-time="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
-  }).join('');
-  els.slotGrid.querySelectorAll('.slot-btn').forEach((button) => {
+  const entry = slot && typeof slot === 'object' ? slot : {};
+  return {
+    time: String(entry.time || ''),
+    endTime: String(entry.endTime || ''),
+    status: String(entry.status || 'request_only'),
+    confirmationMode: String(entry.confirmationMode || 'manual_review_required'),
+    fastConfirm: !!entry.fastConfirm,
+    manualReviewRequired: entry.manualReviewRequired !== false,
+    distanceMin: entry.distanceMin === 0 || entry.distanceMin ? String(entry.distanceMin) : '',
+    anchorWindow: String(entry.anchorWindow || ''),
+    recommendationSource: String(entry.recommendationSource || '')
+  };
+}
+
+function renderSlotButton(entry) {
+  const copy = getCopy();
+  const selected = state.selectedSlot === entry.time;
+  const isRecommended = entry.status === 'recommended';
+  const badge = isRecommended ? copy.slotFastConfirmLabel : copy.slotRequestOnlyLabel;
+  const copyText = isRecommended ? copy.slotFastConfirmCopy : copy.slotRequestOnlyCopy;
+  const endLabel = entry.endTime ? `<div class="slot-meta">${escapeHtml(copy.slotUntilLabel)} · ${escapeHtml(entry.endTime)}</div>` : '';
+  const nearLabel = entry.distanceMin ? `<div class="slot-meta">${escapeHtml(fillCopy(copy.slotNearLabel, { distance: entry.distanceMin }))}</div>` : '';
+  return `
+    <button type="button" class="slot-btn slot-btn-card${selected ? ' selected' : ''}${isRecommended ? ' recommended' : ' request-only'}" data-time="${escapeHtml(entry.time)}">
+      <span class="slot-time-row">
+        <span class="slot-time">${escapeHtml(entry.time)}</span>
+        <span class="slot-badge">${escapeHtml(badge)}</span>
+      </span>
+      ${endLabel}
+      ${nearLabel}
+      <span class="slot-copy">${escapeHtml(copyText)}</span>
+    </button>
+  `;
+}
+
+function bindSlotButtons(entries) {
+  const entryMap = new Map(entries.map((entry) => [entry.time, entry]));
+  els.slotGrid.querySelectorAll('.slot-btn[data-time]').forEach((button) => {
     button.addEventListener('click', () => {
       state.selectedSlot = button.dataset.time;
-      els.slotGrid.querySelectorAll('.slot-btn').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
+      state.selectedSlotMeta = entryMap.get(state.selectedSlot) || null;
+      els.slotGrid.querySelectorAll('.slot-btn[data-time]').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
       els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: formatDateLabel(state.selectedDate) });
       updateSubmitState();
       renderReview();
@@ -3822,6 +3902,54 @@ function renderSlots(slots) {
       );
     });
   });
+  const toggle = els.slotGrid.querySelector('[data-role="slot-toggle"]');
+  toggle?.addEventListener('click', () => {
+    state.showAllSlots = !state.showAllSlots;
+    renderSlots(entries);
+  });
+}
+
+function renderSlots(slots) {
+  if (!Array.isArray(slots) || slots.length === 0) {
+    els.slotGrid.classList.add('empty-state');
+    els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().noSlots}</div>${renderWaitlistBlock()}`;
+    bindWaitlistHandlers();
+    els.submitBtn.disabled = true;
+    return;
+  }
+  const copy = getCopy();
+  const entries = slots
+    .map(normalizeSlotEntry)
+    .filter((entry) => entry.time);
+  const recommended = entries.filter((entry) => entry.status === 'recommended');
+  const requestOnly = entries.filter((entry) => entry.status !== 'recommended');
+  const showMore = requestOnly.length > 0;
+  els.slotGrid.classList.remove('empty-state');
+  els.slotGrid.innerHTML = `
+    ${recommended.length ? `
+      <section class="slot-section slot-section-recommended">
+        <div class="slot-section-head">
+          <div class="slot-section-title">${escapeHtml(copy.slotSectionRecommended)}</div>
+          <div class="slot-section-copy">${escapeHtml(copy.slotSectionFastConfirm)}</div>
+        </div>
+        <div class="slot-list">${recommended.map(renderSlotButton).join('')}</div>
+      </section>
+    ` : ''}
+    ${showMore ? `
+      <section class="slot-section slot-section-more">
+        <div class="slot-section-head">
+          <div class="slot-section-title">${escapeHtml(copy.slotSectionMore)}</div>
+          <div class="slot-section-copy">${escapeHtml(copy.slotRequestOnlyLabel)}</div>
+        </div>
+        ${!state.showAllSlots ? `<div class="slot-more-wrap"><button type="button" class="ghost-btn slot-more-btn" data-role="slot-toggle">${escapeHtml(copy.slotMoreToggle)}</button></div>` : ''}
+        ${state.showAllSlots ? `
+          <div class="slot-list">${requestOnly.map(renderSlotButton).join('')}</div>
+          <div class="slot-more-wrap"><button type="button" class="ghost-btn slot-more-btn" data-role="slot-toggle">${escapeHtml(copy.slotMoreHide)}</button></div>
+        ` : ''}
+      </section>
+    ` : ''}
+  `;
+  bindSlotButtons(entries);
   updateSubmitState();
 }
 
@@ -4205,6 +4333,8 @@ function clearCalendarSelection() {
   state.slotRequestToken += 1;
   state.selectedDate = '';
   state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
   els.slotGrid.innerHTML = `<div class="empty-state">${getCopy().slotGridEmpty}</div>`;
   els.slotHint.textContent = getCopy().slotHintEmpty;
   updateSubmitState();
@@ -4276,7 +4406,12 @@ async function onSubmit(event) {
     babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
     bgColors: [...state.bgColors],
     passAddon: (state.selectedProduct.g === 'prof' || state.selectedProduct.g === 'stud') && !!els.passAddonToggle?.checked,
-    passAddonPeople: Number(els.passAddonPeople?.value || 1)
+    passAddonPeople: Number(els.passAddonPeople?.value || 1),
+    slotRecommendationStatus: state.selectedSlotMeta?.status || '',
+    slotConfirmationMode: state.selectedSlotMeta?.confirmationMode || '',
+    slotFastConfirm: state.selectedSlotMeta?.fastConfirm ? 'Y' : 'N',
+    slotDistanceMin: state.selectedSlotMeta?.distanceMin || '',
+    slotAnchorWindow: state.selectedSlotMeta?.anchorWindow || ''
   };
   if (!payload.name || !payload.phone || !payload.email) {
     setBanner(getCopy().invalidForm, 'error');
@@ -4360,6 +4495,7 @@ async function onSubmit(event) {
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();
     state.selectedSlot = '';
+    state.selectedSlotMeta = null;
     syncConditionalFields();
     renderReview();
     updateSubmitState();
@@ -4396,6 +4532,8 @@ function resetBookingFlow() {
   state.selectedProduct = null;
   state.selectedDate = '';
   state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
   state.selectedCountries = [];
   state.passportPersonCountries = [];
   state.optionKeys = [];

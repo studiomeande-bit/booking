@@ -815,8 +815,9 @@ function renderSlots(slots) {
     return;
   }
   els.slotGrid.innerHTML = slots.map((slot) => {
-    const active = state.selectedSlot === slot ? ' active' : '';
-    return `<button type="button" class="slot-btn${active}" data-slot="${slot}">${escapeHtml(slot)}</button>`;
+    const value = typeof slot === 'string' ? slot : String(slot?.time || '');
+    const active = state.selectedSlot === value ? ' active' : '';
+    return `<button type="button" class="slot-btn${active}" data-slot="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
   }).join('');
 }
 

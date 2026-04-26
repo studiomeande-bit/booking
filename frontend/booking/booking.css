@@ -955,6 +955,87 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
 }
+.slot-section {
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+}
+.slot-section + .slot-section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(180, 166, 149, .26);
+}
+.slot-section-head {
+  display: grid;
+  gap: 4px;
+}
+.slot-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #8f4a31;
+}
+.slot-section-copy {
+  font-size: 13px;
+  color: #766b5e;
+  line-height: 1.5;
+}
+.slot-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.slot-btn.slot-btn-card {
+  min-height: 92px;
+  padding: 14px 14px 13px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  text-align: left;
+}
+.slot-btn.slot-btn-card.recommended {
+  background: #fffaf4;
+  border-color: rgba(201, 111, 57, .28);
+}
+.slot-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.slot-time {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+.slot-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #8f4a31;
+}
+.slot-btn.slot-btn-card.request-only .slot-badge {
+  color: #6b6256;
+}
+.slot-meta {
+  font-size: 12px;
+  color: #6e6559;
+  line-height: 1.4;
+}
+.slot-copy {
+  font-size: 12px;
+  color: #504941;
+  line-height: 1.5;
+}
+.slot-more-wrap {
+  display: flex;
+  justify-content: center;
+}
+.slot-more-btn {
+  min-width: 0;
+}
 .panel-loading {
   display: grid;
   place-items: center;
@@ -1655,7 +1736,9 @@ h1 {
   .ghost-btn { padding: 10px 12px; font-size: 13px; }
   .calendar-cell { min-height: 48px; border-radius: 12px; font-size: 14px; }
   .slot-grid { grid-template-columns: 1fr; gap: 8px; }
+  .slot-list { grid-template-columns: 1fr; }
   .slot-btn { min-height: 58px; font-size: 15px; }
+  .slot-btn.slot-btn-card { min-height: 88px; }
   .price-hero { padding: 16px; }
   .price-hero-value { font-size: 30px; }
   .wedding-benefit-box { padding: 16px; }
@@ -1795,6 +1878,7 @@ h1 {
     line-height: 1.5;
   }
   .slot-grid { grid-template-columns: 1fr; }
+  .slot-list { grid-template-columns: 1fr; }
   .panel-loading {
     min-height: 136px;
     padding: 14px 10px;
@@ -3650,10 +3734,17 @@ h1 {
   .slot-grid {
     gap: 8px;
   }
+  .slot-list {
+    gap: 8px;
+  }
 
   .slot-btn {
     min-height: 54px;
     font-size: 15px;
+  }
+  .slot-btn.slot-btn-card {
+    min-height: 84px;
+    padding: 13px 13px 12px;
   }
 
   .booking-form,
