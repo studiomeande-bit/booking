@@ -116,6 +116,22 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .modal{background:#fff;border-radius:16px;padding:24px;width:min(580px,95vw);max-height:90vh;overflow-y:auto;}
 .modal-title{font-size:17px;font-weight:700;margin-bottom:20px;}
 .modal-footer{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
+.modal-body{display:grid;gap:14px;}
+.modal-wide{width:min(760px,95vw);}
+.modal-panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;}
+.modal-panel.soft{background:#fcfaf6;border-color:#ece4d8;}
+.modal-panel.warn{background:#fffbeb;border-color:#fde68a;}
+.modal-panel.danger{background:#fef2f2;border-color:#fecaca;}
+.modal-section{display:grid;gap:8px;}
+.modal-section-title{font-size:11px;font-weight:700;color:#7a6f63;letter-spacing:.1em;text-transform:uppercase;}
+.modal-copy{font-size:12px;color:#475569;line-height:1.6;}
+.modal-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.modal-summary-item{display:grid;gap:3px;align-content:start;}
+.modal-summary-label{font-size:10px;font-weight:700;color:#8a7e72;letter-spacing:.08em;text-transform:uppercase;}
+.modal-summary-value{font-size:13px;color:#1e293b;line-height:1.5;word-break:break-word;}
+.modal-note{font-size:11px;color:#64748b;line-height:1.6;}
+.modal-actions-inline{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
+.modal-inline-meta{font-size:11px;color:#94a3b8;}
 .filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
 .filter-bar input[type=text]{flex:1;min-width:150px;padding:8px 12px;}
 .filter-bar select{width:auto;padding:8px 12px;}
@@ -256,6 +272,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .modal-title{font-size:16px;margin-bottom:14px;}
   .modal-footer{flex-wrap:wrap;gap:8px;}
   .modal-footer .btn{flex:1 1 auto;min-width:120px;}
+  .modal-summary-grid{grid-template-columns:1fr;}
   .table-wrap{margin-left:-10px;margin-right:-10px;padding:0 10px;}
   .table-wrap table{font-size:12px;}
   .accounting-toolbar{padding:10px;}
@@ -1245,10 +1262,12 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 <div class="modal-overlay" id="submissionModal">
   <div class="modal" style="max-width:520px;">
     <div class="modal-title">고객 셀렉 회신 내용</div>
-    <div id="submissionInfo" style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px;font-size:13px;"></div>
-    <div id="submissionPhotos" style="margin-bottom:12px;"></div>
-    <div id="submissionRevision" style="margin-bottom:12px;"></div>
-    <div id="submissionExtras" style="margin-bottom:12px;"></div>
+    <div class="modal-body">
+      <div id="submissionInfo" class="modal-panel modal-copy"></div>
+      <div id="submissionPhotos" class="modal-section"></div>
+      <div id="submissionRevision" class="modal-section"></div>
+      <div id="submissionExtras" class="modal-section"></div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline btn-sm" onclick="openManualSelectEdit()">수기 수정</button>
       <button class="btn btn-outline" onclick="document.getElementById('submissionModal').classList.remove('open')">닫기</button>
@@ -1290,25 +1309,27 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   <div class="modal">
     <div class="modal-title">사진셀렉 링크 발송</div>
     <input type="hidden" id="sel_rowIndex">
-    <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:16px;">
-      <div id="sel_custInfo" style="font-size:14px;"></div>
+    <div class="modal-body">
+      <div class="modal-panel modal-copy">
+        <div id="sel_custInfo" style="font-size:14px;"></div>
+      </div>
+      <div class="modal-section">
+        <label>드라이브 폴더</label>
+        <div id="sel_folderResults" style="margin-top:8px;"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="searchDriveFolders()">폴더 자동 검색</button>
+      </div>
+      <div class="form-group" id="sel_folderManualWrap" style="display:none;">
+        <label>폴더 URL 직접 입력</label>
+        <input type="text" id="sel_folderUrl" placeholder="https://drive.google.com/drive/folders/...">
+      </div>
+      <div id="sel_selectedFolder" class="modal-panel modal-copy" style="display:none;background:#d1fae5;border-color:#a7f3d0;"></div>
+      <div class="modal-section">
+        <label>기본 보정 수량 <span class="modal-inline-meta">(발송 전 확인/수정)</span></label>
+        <input type="number" id="sel_baseRetouchCount" min="0" style="width:100px;" oninput="refreshSelectPreview()">
+      </div>
+      <div id="sel_preview" class="modal-panel modal-copy" style="display:none;background:#f0fdf4;border-color:#bbf7d0;"></div>
+      <div id="sel_sendStatus" class="modal-copy" style="font-size:13px;"></div>
     </div>
-    <div class="form-group">
-      <label>드라이브 폴더</label>
-      <div id="sel_folderResults" style="margin-top:8px;"></div>
-      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="searchDriveFolders()">폴더 자동 검색</button>
-    </div>
-    <div class="form-group" id="sel_folderManualWrap" style="display:none;">
-      <label>폴더 URL 직접 입력</label>
-      <input type="text" id="sel_folderUrl" placeholder="https://drive.google.com/drive/folders/...">
-    </div>
-    <div id="sel_selectedFolder" style="display:none;background:#d1fae5;border-radius:8px;padding:10px;font-size:13px;margin-bottom:8px;"></div>
-    <div class="form-group" style="margin-top:12px;">
-      <label>기본 보정 수량 <span style="font-size:11px;color:#64748b;">(발송 전 확인/수정)</span></label>
-      <input type="number" id="sel_baseRetouchCount" min="0" style="width:100px;" oninput="refreshSelectPreview()">
-    </div>
-    <div id="sel_preview" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:12px;margin-top:8px;"></div>
-    <div id="sel_sendStatus" style="font-size:13px;margin-top:8px;"></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeSelectModal()">취소</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('sel_folderManualWrap').style.display='block'">직접 입력</button>
@@ -1323,15 +1344,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <input type="hidden" id="edit_rowIndex">
     <input type="hidden" id="edit_origDate">
     <!-- 읽기 전용 상세 정보 -->
-    <div id="edit_info" style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;"></div>
+    <div id="edit_info" class="modal-panel modal-summary-grid" style="margin-bottom:16px;font-size:12px;"></div>
     <!-- 변경요청 알림 -->
-    <div id="edit_rescheduleAlert" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e;"></div>
+    <div id="edit_rescheduleAlert" class="modal-panel warn modal-copy" style="display:none;margin-bottom:12px;color:#92400e;"></div>
     <!-- 일정 수정 -->
     <div class="form-row">
       <div class="form-group"><label>예약 날짜</label><input type="date" id="edit_date"></div>
       <div class="form-group"><label>예약 시간</label><input type="time" id="edit_time" step="1800"></div>
     </div>
-    <div style="background:#eff6ff;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#1d4ed8;">
+    <div class="modal-panel modal-copy" style="background:#eff6ff;border-color:#bfdbfe;margin-bottom:12px;color:#1d4ed8;">
       날짜/시간 변경 시 캘린더 이벤트도 자동으로 업데이트되며 고객에게 변경 알림이 발송됩니다.
     </div>
     <div class="form-row"><div class="form-group"><label>상태</label><select id="edit_status"><option>대기중</option><option>확정됨</option><option>촬영완료</option><option>셀렉완료</option><option>작업완료</option><option>취소됨</option></select></div><div class="form-group"><label>고객명</label><input type="text" id="edit_name"></div></div>
@@ -1347,8 +1368,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="form-group"><label>추가 항목</label><input type="text" id="edit_extraItem" placeholder="추가 구매 항목"></div>
     </div>
     <div class="form-group"><label>메모</label><textarea id="edit_memo" rows="3"></textarea></div>
-    <div id="edit_passportActions" style="display:none;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-      <div style="font-size:12px;color:#0e7490;font-weight:700;margin-bottom:6px;">여권사진 — 현장 보정 후 즉시 발송</div>
+    <div id="edit_passportActions" class="modal-panel modal-copy" style="display:none;background:#ecfeff;border-color:#a5f3fc;margin-bottom:12px;">
+      <div class="modal-section-title" style="color:#0e7490;letter-spacing:.06em;">여권사진 — 현장 보정 후 즉시 발송</div>
       <button class="btn btn-primary btn-sm" id="edit_passportSendBtn" onclick="sendPassportPhotosUI(parseInt(document.getElementById('edit_rowIndex').value,10),this)">사진 메일 발송</button>
       <span style="margin-left:8px;font-size:11px;color:#0e7490;">Drive 폴더 링크를 고객 이메일로 전송 (셀렉 과정 생략)</span>
     </div>
@@ -1362,9 +1383,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   <div class="modal">
     <div class="modal-title">예약 취소 처리</div>
     <input type="hidden" id="cancel_rowIndex">
-    <div id="cancel_info" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;"></div>
+    <div id="cancel_info" class="modal-panel danger modal-copy" style="margin-bottom:14px;"></div>
     <div class="form-group">
-      <label>환불 금액 (€) <span style="color:#94a3b8;font-size:11px;">— 0이면 환불 없음</span></label>
+      <label>환불 금액 (€) <span class="modal-inline-meta">— 0이면 환불 없음</span></label>
       <input type="number" id="cancel_refund" value="0" min="0" step="0.01" placeholder="0">
     </div>
     <div class="form-group">
@@ -1375,7 +1396,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <input type="checkbox" id="cancel_invoice" style="width:auto;margin:0;">
       <label for="cancel_invoice" style="margin:0;font-weight:600;cursor:pointer;">인보이스 자동 발행 (취소/환불)</label>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <div class="modal-actions-inline">
       <button class="btn btn-outline btn-sm" onclick="closeCancelModal()">닫기</button>
       <button class="btn btn-sm" style="background:#ef4444;color:#fff;" onclick="confirmCancelBooking()">취소 처리</button>
     </div>
@@ -1384,18 +1405,18 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 
 <!-- 인보이스 발행 모달 -->
 <div class="modal-overlay" id="invIssueModal">
-  <div class="modal" style="max-width:760px;">
+  <div class="modal modal-wide">
     <div class="modal-title">인보이스 발행</div>
     <input type="hidden" id="inv_rowIndex">
-    <div id="inv_info" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;display:none;"></div>
+    <div id="inv_info" class="modal-panel modal-copy" style="display:none;background:#f5f3ff;border-color:#ddd6fe;margin-bottom:14px;"></div>
     <div class="form-row">
       <div class="form-group">
-        <label>예약 연결 검색 <span style="color:#94a3b8;font-size:11px;">— 수기 발행 시 선택사항</span></label>
+        <label>예약 연결 검색 <span class="modal-inline-meta">— 수기 발행 시 선택사항</span></label>
         <input type="text" id="inv_bookingSearch" placeholder="고객명 / 연락처 / 이메일" oninput="searchInvoiceBooking()">
         <div id="inv_bookingResults" style="margin-top:8px;font-size:12px;"></div>
       </div>
       <div class="form-group">
-        <label>인보이스 번호 <span style="color:#94a3b8;font-size:11px;">— 비우면 자동 생성</span></label>
+        <label>인보이스 번호 <span class="modal-inline-meta">— 비우면 자동 생성</span></label>
         <input type="text" id="inv_number" placeholder="예: STMIN-260006">
       </div>
     </div>
@@ -1418,7 +1439,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </label>
       <div style="font-size:11px;color:#94a3b8;">체크하면 기업명, VAT 번호, 참조번호를 별도로 저장하고 B2B export 버튼이 활성화됩니다.</div>
     </div>
-    <div id="inv_businessFields" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+    <div id="inv_businessFields" class="modal-panel" style="display:none;margin-bottom:12px;">
       <div class="form-row">
         <div class="form-group"><label>사업자명</label><input type="text" id="inv_businessCompanyName" placeholder="예: Example GmbH"></div>
         <div class="form-group"><label>VAT 번호</label><input type="text" id="inv_businessVatId" placeholder="예: DE123456789"></div>
@@ -1435,7 +1456,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
       <div id="inv_itemsWrap"></div>
     </div>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-top:12px;">
+    <div class="modal-panel" style="margin-top:12px;">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>Brutto 합계</span><b id="inv_totalGross">0.00€</b></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:4px;"><span>Netto</span><span id="inv_totalNet">0.00€</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;"><span>MwSt. 19%</span><span id="inv_totalVat">0.00€</span></div>
@@ -1445,7 +1466,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <input type="checkbox" id="inv_sendMail" style="width:auto;">
         <span>발행 후 고객에게 메일 발송</span>
       </label>
-      <div style="font-size:11px;color:#94a3b8;">`{{invoiceNumber}}`는 실제 인보이스 번호로 자동 치환됩니다.</div>
+      <div class="modal-inline-meta">`{{invoiceNumber}}`는 실제 인보이스 번호로 자동 치환됩니다.</div>
     </div>
     <div class="form-group">
       <label>메일 / PDF 언어</label>
@@ -1463,7 +1484,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <label>메일 본문</label>
       <textarea id="inv_mailBody" rows="7" placeholder="Hallo ..."></textarea>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+    <div class="modal-actions-inline" style="margin-top:16px;">
       <button class="btn btn-outline btn-sm" onclick="closeInvIssueModal()">닫기</button>
       <button class="btn btn-primary btn-sm" onclick="confirmIssueInvoice()">발행</button>
     </div>
@@ -1471,10 +1492,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 </div>
 
 <div class="modal-overlay" id="invoiceMailModal">
-  <div class="modal" style="max-width:700px;">
+  <div class="modal modal-wide" style="max-width:700px;">
     <div class="modal-title">인보이스 메일 발송</div>
     <input type="hidden" id="mail_invoiceNumber">
-    <div id="mail_invoiceInfo" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;"></div>
+    <div id="mail_invoiceInfo" class="modal-panel modal-copy" style="margin-bottom:14px;"></div>
     <div class="form-group">
       <label>메일 / PDF 언어</label>
       <select id="mail_lang" onchange="refreshInvoiceMailDefaults(true)">
@@ -1491,8 +1512,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <label>메일 본문</label>
       <textarea id="mail_body" rows="8" placeholder="Hallo ..."></textarea>
     </div>
-    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">`{{invoiceNumber}}`는 실제 인보이스 번호로 자동 치환됩니다.</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <div class="modal-inline-meta" style="margin-bottom:10px;">`{{invoiceNumber}}`는 실제 인보이스 번호로 자동 치환됩니다.</div>
+    <div class="modal-actions-inline">
       <button class="btn btn-outline btn-sm" onclick="closeInvoiceMailModal()">닫기</button>
       <button class="btn btn-primary btn-sm" onclick="sendInvoiceMailNow()">메일 발송</button>
     </div>
@@ -1500,17 +1521,17 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 </div>
 
 <div class="modal-overlay" id="invoiceValidationModal">
-  <div class="modal" style="max-width:760px;">
+  <div class="modal modal-wide">
     <div class="modal-title">XRechnung 준비 상태</div>
     <input type="hidden" id="invoiceValidationNumber">
-    <div id="invoiceValidationInfo" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;"></div>
+    <div id="invoiceValidationInfo" class="modal-panel modal-copy" style="margin-bottom:14px;"></div>
     <div id="invoiceValidationSummary" style="margin-bottom:12px;font-size:13px;"></div>
     <div id="invoiceValidationList" style="display:flex;flex-direction:column;gap:8px;"></div>
-    <div style="font-size:11px;color:#64748b;margin-top:12px;line-height:1.6;">
+    <div class="modal-note" style="margin-top:12px;">
       이 패널은 다운로드 전에 필수값 누락 여부를 빠르게 확인하기 위한 진단용입니다.
       저장은 하지 않고 현재 인보이스 데이터만 검사합니다.
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+    <div class="modal-actions-inline" style="margin-top:16px;">
       <button class="btn btn-primary btn-sm" onclick="openInvoiceEditFromValidation()">바로 수정</button>
       <button class="btn btn-outline btn-sm" onclick="closeInvoiceValidationModal()">닫기</button>
     </div>
@@ -1518,10 +1539,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 </div>
 
 <div class="modal-overlay" id="invoiceEditModal">
-  <div class="modal" style="max-width:760px;">
+  <div class="modal modal-wide">
     <div class="modal-title">인보이스 정보 수정</div>
     <input type="hidden" id="editInv_number">
-    <div style="font-size:12px;color:#64748b;margin-bottom:12px;">검증과 XRechnung export에 필요한 메타 정보만 수정합니다. 금액과 품목은 바꾸지 않습니다.</div>
+    <div class="modal-note" style="margin-bottom:12px;">검증과 XRechnung export에 필요한 메타 정보만 수정합니다. 금액과 품목은 바꾸지 않습니다.</div>
     <div class="form-row">
       <div class="form-group"><label>고객명</label><input type="text" id="editInv_customerName"></div>
       <div class="form-group"><label>이메일</label><input type="email" id="editInv_customerEmail"></div>
@@ -1540,7 +1561,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <span>사업자 송장으로 유지</span>
       </label>
     </div>
-    <div id="editInv_businessFields" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+    <div id="editInv_businessFields" class="modal-panel" style="display:none;margin-bottom:12px;">
       <div class="form-row">
         <div class="form-group"><label>사업자명</label><input type="text" id="editInv_businessCompanyName"></div>
         <div class="form-group"><label>VAT 번호</label><input type="text" id="editInv_businessVatId"></div>
