@@ -3896,11 +3896,6 @@ function bindSlotButtons(entries) {
       );
     });
   });
-  const toggle = els.slotGrid.querySelector('[data-role="slot-toggle"]');
-  toggle?.addEventListener('click', () => {
-    state.showAllSlots = !state.showAllSlots;
-    renderSlots(entries);
-  });
 }
 
 function renderSlots(slots) {
@@ -3911,36 +3906,16 @@ function renderSlots(slots) {
     els.submitBtn.disabled = true;
     return;
   }
-  const copy = getCopy();
   const entries = slots
     .map(normalizeSlotEntry)
-    .filter((entry) => entry.time);
-  const recommended = entries.filter((entry) => entry.status === 'recommended');
-  const requestOnly = entries.filter((entry) => entry.status !== 'recommended');
-  const showMore = requestOnly.length > 0;
+    .filter((entry) => entry.time)
+    .sort((a, b) => {
+      if (a.status === 'recommended' && b.status !== 'recommended') return -1;
+      if (a.status !== 'recommended' && b.status === 'recommended') return 1;
+      return String(a.time).localeCompare(String(b.time));
+    });
   els.slotGrid.classList.remove('empty-state');
-  els.slotGrid.innerHTML = `
-    ${recommended.length ? `
-      <section class="slot-section slot-section-recommended">
-        <div class="slot-section-head">
-          <div class="slot-section-title">${escapeHtml(copy.slotSectionRecommended)}</div>
-        </div>
-        <div class="slot-list">${recommended.map(renderSlotButton).join('')}</div>
-      </section>
-    ` : ''}
-    ${showMore ? `
-      <section class="slot-section slot-section-more">
-        <div class="slot-section-head">
-          <div class="slot-section-title">${escapeHtml(copy.slotSectionMore)}</div>
-        </div>
-        ${!state.showAllSlots ? `<div class="slot-more-wrap"><button type="button" class="ghost-btn slot-more-btn" data-role="slot-toggle">${escapeHtml(copy.slotMoreToggle)}</button></div>` : ''}
-        ${state.showAllSlots ? `
-          <div class="slot-list">${requestOnly.map(renderSlotButton).join('')}</div>
-          <div class="slot-more-wrap"><button type="button" class="ghost-btn slot-more-btn" data-role="slot-toggle">${escapeHtml(copy.slotMoreHide)}</button></div>
-        ` : ''}
-      </section>
-    ` : ''}
-  `;
+  els.slotGrid.innerHTML = `<div class="slot-list slot-list-unified">${entries.map(renderSlotButton).join('')}</div>`;
   bindSlotButtons(entries);
   updateSubmitState();
 }
