@@ -1528,7 +1528,7 @@ function getPublicSlots_(dateStr,totalDur,itemGroup){
   const detailedEvents = (studioPresenceEvents && studioPresenceEvents.length)
     ? studioPresenceEvents
     : getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
-  return buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents);
+  return buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents, itemGroup);
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
@@ -2952,8 +2952,13 @@ function buildRecommendationAnchorLabel_(ev){
   return `${formatTimeKeyFromMs_(ev.start)}–${formatTimeKeyFromMs_(ev.end)}`;
 }
 
-function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEvents){
+function isRecommendationEligibleGroup_(itemGroup){
+  return itemGroup === 'pass' || itemGroup === 'prof' || itemGroup === 'stud';
+}
+
+function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEvents, itemGroup){
   const config = getSlotRecommendationConfig_();
+  const recommendationEnabled = isRecommendationEligibleGroup_(itemGroup);
   const anchors = (detailedEvents || [])
     .filter(isPublicRecommendationAnchorEvent_)
     .sort(function(a,b){ return a.start - b.start; });
@@ -3027,7 +3032,7 @@ function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEven
   }));
 
   entries.forEach(function(entry){
-    const recommended = entry._manualInclude || autoRecommendedTimes.has(entry.time);
+    const recommended = recommendationEnabled && (entry._manualInclude || autoRecommendedTimes.has(entry.time));
     if(recommended){
       entry.status = 'recommended';
       entry.confirmationMode = 'fast_confirmation_pending';
@@ -3039,7 +3044,12 @@ function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEven
       entry.confirmationMode = 'manual_review_required';
       entry.fastConfirm = false;
       entry.manualReviewRequired = true;
-      entry.recommendationSource = entry._manualExclude ? 'manual_exclude' : '';
+      entry.recommendationSource = recommendationEnabled && entry._manualExclude ? 'manual_exclude' : '';
+      if(!recommendationEnabled){
+        entry.distanceMin = '';
+        entry.anchorWindow = '';
+        entry.anchorTitle = '';
+      }
     }
     delete entry._candidate;
     delete entry._manualInclude;

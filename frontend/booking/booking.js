@@ -583,11 +583,11 @@ const COPY = {
     slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
     slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
     slotSectionRecommended: '추천 시간',
-    slotSectionFastConfirm: '빠른 확정 가능 시간',
+    slotSectionFastConfirm: '추천 시간',
     slotSectionMore: '추가 가능 시간',
-    slotFastConfirmLabel: '빠른 확정',
+    slotFastConfirmLabel: '추천',
     slotFastConfirmCopy: '스튜디오가 이 시간대에 가장 자연스럽게 준비되어 있습니다.',
-    slotRequestOnlyLabel: '확인 후 확정',
+    slotRequestOnlyLabel: '일반 시간',
     slotRequestOnlyCopy: '운영 확인 후 예약 확정이 진행됩니다.',
     slotMoreToggle: '다른 시간 더 보기',
     slotMoreHide: '추천 시간만 보기',
@@ -769,11 +769,11 @@ const COPY = {
     slotLoadedForDate: 'Available times for {date}.',
     slotFailForDate: 'Failed to load available times for {date}.',
     slotSectionRecommended: 'Recommended times',
-    slotSectionFastConfirm: 'Fast confirmation available',
+    slotSectionFastConfirm: 'Recommended times',
     slotSectionMore: 'More available times',
-    slotFastConfirmLabel: 'Fast confirmation',
+    slotFastConfirmLabel: 'Recommended',
     slotFastConfirmCopy: 'The studio is best prepared around this time.',
-    slotRequestOnlyLabel: 'Confirmation after review',
+    slotRequestOnlyLabel: 'Standard',
     slotRequestOnlyCopy: 'We will confirm this time after a quick review.',
     slotMoreToggle: 'Show more times',
     slotMoreHide: 'Show recommended times only',
@@ -955,11 +955,11 @@ const COPY = {
     slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
     slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
     slotSectionRecommended: 'Empfohlene Zeiten',
-    slotSectionFastConfirm: 'Schnelle Bestätigung möglich',
+    slotSectionFastConfirm: 'Empfohlene Zeiten',
     slotSectionMore: 'Weitere Zeiten',
-    slotFastConfirmLabel: 'Schnelle Bestätigung',
+    slotFastConfirmLabel: 'Empfohlen',
     slotFastConfirmCopy: 'Das Studio ist rund um diese Zeit optimal vorbereitet.',
-    slotRequestOnlyLabel: 'Bestätigung nach Prüfung',
+    slotRequestOnlyLabel: 'Weitere Zeiten',
     slotRequestOnlyCopy: 'Diese Zeit wird nach einer kurzen Prüfung bestätigt.',
     slotMoreToggle: 'Weitere Zeiten anzeigen',
     slotMoreHide: 'Nur empfohlene Zeiten anzeigen',
@@ -3864,19 +3864,13 @@ function renderSlotButton(entry) {
   const copy = getCopy();
   const selected = state.selectedSlot === entry.time;
   const isRecommended = entry.status === 'recommended';
-  const badge = isRecommended ? copy.slotFastConfirmLabel : copy.slotRequestOnlyLabel;
-  const copyText = isRecommended ? copy.slotFastConfirmCopy : copy.slotRequestOnlyCopy;
-  const endLabel = entry.endTime ? `<div class="slot-meta">${escapeHtml(copy.slotUntilLabel)} · ${escapeHtml(entry.endTime)}</div>` : '';
-  const nearLabel = entry.distanceMin ? `<div class="slot-meta">${escapeHtml(fillCopy(copy.slotNearLabel, { distance: entry.distanceMin }))}</div>` : '';
+  const badge = isRecommended ? `<span class="slot-badge">${escapeHtml(copy.slotFastConfirmLabel)}</span>` : '';
   return `
     <button type="button" class="slot-btn slot-btn-card${selected ? ' selected' : ''}${isRecommended ? ' recommended' : ' request-only'}" data-time="${escapeHtml(entry.time)}">
       <span class="slot-time-row">
         <span class="slot-time">${escapeHtml(entry.time)}</span>
-        <span class="slot-badge">${escapeHtml(badge)}</span>
+        ${badge}
       </span>
-      ${endLabel}
-      ${nearLabel}
-      <span class="slot-copy">${escapeHtml(copyText)}</span>
     </button>
   `;
 }
@@ -3930,7 +3924,6 @@ function renderSlots(slots) {
       <section class="slot-section slot-section-recommended">
         <div class="slot-section-head">
           <div class="slot-section-title">${escapeHtml(copy.slotSectionRecommended)}</div>
-          <div class="slot-section-copy">${escapeHtml(copy.slotSectionFastConfirm)}</div>
         </div>
         <div class="slot-list">${recommended.map(renderSlotButton).join('')}</div>
       </section>
@@ -3939,7 +3932,6 @@ function renderSlots(slots) {
       <section class="slot-section slot-section-more">
         <div class="slot-section-head">
           <div class="slot-section-title">${escapeHtml(copy.slotSectionMore)}</div>
-          <div class="slot-section-copy">${escapeHtml(copy.slotRequestOnlyLabel)}</div>
         </div>
         ${!state.showAllSlots ? `<div class="slot-more-wrap"><button type="button" class="ghost-btn slot-more-btn" data-role="slot-toggle">${escapeHtml(copy.slotMoreToggle)}</button></div>` : ''}
         ${state.showAllSlots ? `
