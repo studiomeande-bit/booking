@@ -213,6 +213,33 @@ const GROUP_META = {
   }
 };
 
+const GROUP_QUICK_FACTS = {
+  pass: {
+    delivery: { ko: '당일 전달', en: 'Same day', de: 'Am selben Tag' },
+    place: { ko: '오버우어젤 스튜디오', en: 'Studio in Oberursel', de: 'Studio in Oberursel' }
+  },
+  prof: {
+    delivery: { ko: '3~7일', en: '3–7 days', de: '3–7 Tage' },
+    place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
+  },
+  stud: {
+    delivery: { ko: '5~10일', en: '5–10 days', de: '5–10 Tage' },
+    place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
+  },
+  snap: {
+    delivery: { ko: '5~10일', en: '5–10 days', de: '5–10 Tage' },
+    place: { ko: 'Frankfurt / Rhein-Main', en: 'Frankfurt / Rhine-Main', de: 'Frankfurt / Rhein-Main' }
+  },
+  wed: {
+    delivery: { ko: '7~14일', en: '7–14 days', de: '7–14 Tage' },
+    place: { ko: '야외 / 요청 장소', en: 'Outdoor / requested location', de: 'Outdoor / Wunschort' }
+  },
+  biz: {
+    delivery: { ko: '7~14일', en: '7–14 days', de: '7–14 Tage' },
+    place: { ko: '출장 / 현장 진행', en: 'On location', de: 'Vor Ort' }
+  }
+};
+
 const OPTION_META = {
   dog: {
     groups: ['stud', 'snap'],
@@ -407,6 +434,10 @@ const COPY = {
     promoHighlightPeriodLabel: '기간',
     promoHighlightButton: '이벤트 예약 바로가기',
     promoHighlightButtonSub: '기간 한정 이벤트 전용 페이지로 이동',
+    groupMetaPriceLabel: '시작가',
+    groupMetaDurationLabel: '소요',
+    groupMetaDeliveryLabel: '전달',
+    groupMetaPlaceLabel: '장소',
     step1Title: '1. 촬영 종류 선택',
     step2Title: '2. 세부 상품 선택',
     step3Title: '3. 날짜 및 시간 선택',
@@ -434,6 +465,10 @@ const COPY = {
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
+    earliestSlotTitle: '가장 빠른 예약 가능',
+    earliestSlotLoading: '상품에 맞는 가장 빠른 예약 가능 시간을 찾고 있습니다.',
+    earliestSlotEmpty: '현재 바로 안내할 수 있는 빠른 슬롯이 없습니다. 달력에서 다른 날짜를 확인해 주세요.',
+    earliestSlotAction: '선택 후 바로 날짜와 시간을 이어서 고르실 수 있습니다.',
     generalTitle: '추가 설정',
     generalCopy: '인원이나 옵션을 선택하면 예상 금액이 다시 계산됩니다.',
     passportTitle: '여권/비자 옵션',
@@ -469,6 +504,10 @@ const COPY = {
     emailLabel: '이메일',
     emailGmailHint: '사진 전달은 Google Drive 링크로 이루어지므로 <b>Gmail 주소</b>를 권장드립니다.',
     emailGmailWarn: 'Gmail이 아니면 Drive 링크 수신에 문제가 생길 수 있습니다. 가능하면 Gmail 주소를 사용해 주세요.',
+    requiredInfoLabel: '필수 예약 정보',
+    requiredInfoCopy: '이름, 연락처, 이메일만 먼저 입력하시면 예약을 계속 진행할 수 있습니다.',
+    optionalInfoLabel: '선택 입력',
+    optionalInfoCopy: '송장, 추가 요청, 세부 정보는 필요한 경우에만 적어 주세요.',
     addressLabel: '주소 (인보이스용, 선택)',
     addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
     businessInvoiceLabel: '사업자용 인보이스 필요',
@@ -570,6 +609,10 @@ const COPY = {
     promoHighlightPeriodLabel: 'Period',
     promoHighlightButton: 'Book the event now',
     promoHighlightButtonSub: 'Open the limited promotion page',
+    groupMetaPriceLabel: 'Starting at',
+    groupMetaDurationLabel: 'Duration',
+    groupMetaDeliveryLabel: 'Delivery',
+    groupMetaPlaceLabel: 'Place',
     step1Title: '1. Choose Category',
     step2Title: '2. Choose Package',
     step3Title: '3. Select Date & Time',
@@ -597,6 +640,10 @@ const COPY = {
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
+    earliestSlotTitle: 'Earliest available booking',
+    earliestSlotLoading: 'Checking the earliest available time for this package.',
+    earliestSlotEmpty: 'No quick slot is available right now. Please review the calendar for other dates.',
+    earliestSlotAction: 'After choosing the package, you can continue straight to the date and time.',
     generalTitle: 'Additional Settings',
     generalCopy: 'Changing people or options recalculates the estimated price.',
     passportTitle: 'Passport / Visa options',
@@ -632,6 +679,10 @@ const COPY = {
     emailLabel: 'Email',
     emailGmailHint: 'Photos are delivered via a Google Drive link, so a <b>Gmail address</b> is recommended.',
     emailGmailWarn: 'A non-Gmail address may have trouble receiving the Drive link. Please use Gmail if possible.',
+    requiredInfoLabel: 'Required details',
+    requiredInfoCopy: 'Only name, phone, and email are needed to keep going with the booking.',
+    optionalInfoLabel: 'Optional details',
+    optionalInfoCopy: 'Invoice details and extra notes are only needed if they matter for this booking.',
     addressLabel: 'Address (optional, for invoice)',
     addressPlaceholder: 'Enter only if you need an invoice',
     businessInvoiceLabel: 'Business invoice needed',
@@ -733,6 +784,10 @@ const COPY = {
     promoHighlightPeriodLabel: 'Zeitraum',
     promoHighlightButton: 'Event jetzt buchen',
     promoHighlightButtonSub: 'Zur zeitlich begrenzten Aktionsseite wechseln',
+    groupMetaPriceLabel: 'Ab',
+    groupMetaDurationLabel: 'Dauer',
+    groupMetaDeliveryLabel: 'Lieferung',
+    groupMetaPlaceLabel: 'Ort',
     step1Title: '1. Hauptkategorie wählen',
     step2Title: '2. Paket wählen',
     step3Title: '3. Datum & Uhrzeit wählen',
@@ -760,6 +815,10 @@ const COPY = {
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
+    earliestSlotTitle: 'Frühester verfügbarer Termin',
+    earliestSlotLoading: 'Der früheste verfügbare Termin für dieses Paket wird geprüft.',
+    earliestSlotEmpty: 'Im Moment ist kein schneller Termin verfügbar. Bitte prüfen Sie weitere Daten im Kalender.',
+    earliestSlotAction: 'Nach der Auswahl können Sie direkt mit Datum und Uhrzeit weitergehen.',
     generalTitle: 'Zusätzliche Einstellungen',
     generalCopy: 'Bei Änderung von Personen oder Optionen wird der geschätzte Preis neu berechnet.',
     passportTitle: 'Pass / Visum Optionen',
@@ -795,6 +854,10 @@ const COPY = {
     emailLabel: 'E-Mail',
     emailGmailHint: 'Die Bildübergabe erfolgt per Google-Drive-Link, daher empfehlen wir eine <b>Gmail-Adresse</b>.',
     emailGmailWarn: 'Mit anderen E-Mail-Adressen kann es Probleme beim Empfang des Drive-Links geben. Wenn möglich, bitte Gmail verwenden.',
+    requiredInfoLabel: 'Pflichtangaben',
+    requiredInfoCopy: 'Name, Telefon und E-Mail reichen zunächst aus, um mit der Buchung weiterzugehen.',
+    optionalInfoLabel: 'Optionale Angaben',
+    optionalInfoCopy: 'Rechnungsdaten und zusätzliche Hinweise nur ergänzen, wenn sie für diese Buchung nötig sind.',
     addressLabel: 'Adresse (optional, für Rechnung)',
     addressPlaceholder: 'Nur eingeben, wenn eine Rechnung benötigt wird',
     businessInvoiceLabel: 'Geschäftsrechnung erforderlich',
@@ -907,11 +970,13 @@ const state = {
   returnNoticeTimer: null,
   returnNoticeToken: 0,
   quoteToken: 0,
+  earliestSlotToken: 0,
   calendarRequestToken: 0,
   slotRequestToken: 0,
   calendarWarmupStarted: false,
   calendarWarmupInFlight: new Set(),
   quote: null,
+  earliestSlotInfo: null,
   calendarCache: new Map(),
   slotCache: new Map()
 };
@@ -942,6 +1007,7 @@ const els = {
   productHelp: document.getElementById('productHelp'),
   productGrid: document.getElementById('productGrid'),
   productDetail: document.getElementById('productDetail'),
+  quickSlotBox: document.getElementById('quickSlotBox'),
   passportPanel: document.getElementById('passportPanel'),
   passportCountries: document.getElementById('passportCountries'),
   passportAddConfigBtn: document.getElementById('passportAddConfigBtn'),
@@ -1335,6 +1401,12 @@ function formatDateLabel(dateKey) {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
+function formatDateTimeLabel(dateKey, timeLabel) {
+  const datePart = formatDateLabel(dateKey);
+  const timePart = String(timeLabel || '').trim();
+  return timePart ? `${datePart} · ${timePart}` : datePart;
+}
+
 function getBusinessInvoiceFormData(source = null) {
   const formData = source instanceof FormData ? source : new FormData(els.form);
   return {
@@ -1354,6 +1426,10 @@ function applyCopy() {
   if (els.noticeTitle) els.noticeTitle.textContent = copy.noticeTitle;
   els.heroLead.textContent = copy.hero;
   if (els.loadingCopy) els.loadingCopy.textContent = copy.loadingCopy;
+  setText('requiredInfoLabel', copy.requiredInfoLabel);
+  setText('requiredInfoCopy', copy.requiredInfoCopy);
+  setText('optionalInfoLabel', copy.optionalInfoLabel);
+  setText('optionalInfoCopy', copy.optionalInfoCopy);
   setText('step1Title', copy.step1Title);
   setText('step2Title', copy.step2Title);
   setText('step3Title', copy.step3Title);
@@ -1459,6 +1535,7 @@ function applyCopy() {
   } else if (!state.selectedDate && els.slotGrid.classList.contains('empty-state')) {
     els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(copy.slotGridEmpty)}</div>`;
   }
+  renderEarliestSlotBox();
   if (els.locationInfo) {
     els.locationInfo.textContent = state.lang === 'en'
       ? 'Shoots within 50 km of Frankfurt are included in the base price. Additional travel costs may apply outside this area.'
@@ -1746,17 +1823,76 @@ function renderGroups() {
     const meta = GROUP_META[groupKey];
     const label = meta.label[state.lang] || meta.label.ko;
     const sub = meta.sub?.[state.lang] || meta.sub?.ko || '';
+    const facts = GROUP_QUICK_FACTS[groupKey] || {};
     const selected = state.selectedGroup === groupKey ? ' selected' : '';
+    const quickItems = [
+      [getCopy().groupMetaPriceLabel, getGroupPriceMeta(groupKey)],
+      [getCopy().groupMetaDurationLabel, getGroupDurationMeta(groupKey)],
+      [getCopy().groupMetaDeliveryLabel, facts.delivery?.[state.lang] || facts.delivery?.ko || ''],
+      [getCopy().groupMetaPlaceLabel, facts.place?.[state.lang] || facts.place?.ko || '']
+    ].filter(([, value]) => value);
     return `
       <button type="button" class="group-card${selected}" data-group="${escapeHtml(groupKey)}">
         <div class="group-card-title">${escapeHtml(label)}</div>
         <div class="group-card-sub">${escapeHtml(sub)}</div>
+        <div class="group-card-meta">
+          ${quickItems.map(([metaLabel, value]) => `<span class="group-card-meta-item"><span class="group-card-meta-label">${escapeHtml(metaLabel)}</span><strong>${escapeHtml(value)}</strong></span>`).join('')}
+        </div>
       </button>
     `;
   }).join('');
   els.groupGrid.querySelectorAll('[data-group]').forEach((button) => {
     button.addEventListener('click', () => selectGroup(button.dataset.group));
   });
+}
+
+function getGroupProducts(groupKey) {
+  return (state.init?.products || []).filter((product) => product?.g === groupKey);
+}
+
+function getGroupPriceMeta(groupKey) {
+  const prices = getGroupProducts(groupKey)
+    .map((product) => Number(product?.p || 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  if (!prices.length) {
+    if (state.lang === 'en') return 'Quote on request';
+    if (state.lang === 'de') return 'Angebot auf Anfrage';
+    return '상담 견적';
+  }
+
+  const minPrice = formatEuroAmount(prices[0]);
+  const hasRange = prices.length > 1 && prices[0] !== prices[prices.length - 1];
+  if (!hasRange) return `€${minPrice}`;
+  if (state.lang === 'en') return `From €${minPrice}`;
+  if (state.lang === 'de') return `Ab €${minPrice}`;
+  return `€${minPrice}부터`;
+}
+
+function getGroupDurationMeta(groupKey) {
+  const durations = getGroupProducts(groupKey)
+    .map((product) => Number(product?.d || 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  if (!durations.length) {
+    if (state.lang === 'en') return 'Flexible';
+    if (state.lang === 'de') return 'Flexibel';
+    return '유동적';
+  }
+
+  const minDuration = durations[0];
+  const maxDuration = durations[durations.length - 1];
+  if (minDuration === maxDuration) {
+    if (state.lang === 'en') return `${minDuration} min`;
+    if (state.lang === 'de') return `${minDuration} Min.`;
+    return `촬영 ${minDuration}분`;
+  }
+
+  if (state.lang === 'en') return `${minDuration}–${maxDuration} min`;
+  if (state.lang === 'de') return `${minDuration}–${maxDuration} Min.`;
+  return `촬영 ${minDuration}~${maxDuration}분`;
 }
 
 function renderWeekdayHeader() {
@@ -2930,6 +3066,7 @@ function selectGroup(groupKey) {
   state.selectedDate = '';
   state.selectedSlot = '';
   state.quote = null;
+  state.earliestSlotInfo = null;
   state.selectedCountries = [];
   state.passportConfigs = [];
   state.passportPersonCountries = [];
@@ -2957,6 +3094,7 @@ function selectGroup(groupKey) {
   renderBgChips();
   renderGeneralPanel();
   renderProductDetail();
+  renderEarliestSlotBox();
   renderReview();
   clearCalendarSelection();
   syncStepPanels();
@@ -2971,6 +3109,7 @@ async function selectProduct(productId) {
   state.selectedDate = '';
   state.selectedSlot = '';
   state.quote = null;
+  state.earliestSlotInfo = null;
   state.optionKeys = [];
   if (state.selectedProduct?.g !== 'pass') {
     state.selectedCountries = [];
@@ -3005,6 +3144,7 @@ async function selectProduct(productId) {
   syncStepPanels();
   syncConsentVisibility();
   await refreshQuote();
+  updateEarliestSlotBox().catch((error) => console.error(error));
   warmSelectedProductCalendar(state.selectedProduct, getCalendarDuration());
   refreshStepLocks();
   if (!state.selectedProduct) return;
@@ -3068,6 +3208,105 @@ function renderGeneralPanel() {
   });
   syncConditionalFields();
   syncConsentVisibility();
+}
+
+function listAvailableDatesForMonthData(data, year, month) {
+  const safeData = data && typeof data === 'object' ? data : {};
+  const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
+  const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const result = [];
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+    if (dateKey < todayKey) continue;
+    if (closed.has(dateKey) || unavail.has(dateKey)) continue;
+    result.push(dateKey);
+  }
+  return result;
+}
+
+function renderEarliestSlotBox() {
+  if (!els.quickSlotBox) return;
+  if (!state.selectedProduct) {
+    els.quickSlotBox.classList.add('hidden-field');
+    els.quickSlotBox.innerHTML = '';
+    return;
+  }
+  const copy = getCopy();
+  const info = state.earliestSlotInfo;
+  const value = info?.dateKey && info?.time ? formatDateTimeLabel(info.dateKey, info.time) : '—';
+  const body = info?.loading
+    ? copy.earliestSlotLoading
+    : info?.dateKey && info?.time
+      ? copy.earliestSlotAction
+      : copy.earliestSlotEmpty;
+  els.quickSlotBox.className = `detail-box quick-slot-box${info?.loading ? ' is-loading' : ''}`;
+  els.quickSlotBox.classList.remove('hidden-field');
+  els.quickSlotBox.innerHTML = `
+    <div class="quick-slot-label">${escapeHtml(copy.earliestSlotTitle)}</div>
+    <div class="quick-slot-value">${escapeHtml(info?.loading ? copy.earliestSlotLoading : value)}</div>
+    <div class="quick-slot-copy">${escapeHtml(body)}</div>
+  `;
+}
+
+async function getCalendarMonthData(year, month, duration, itemGroup) {
+  const cacheKey = `${year}_${month}_${itemGroup}_${duration}`;
+  let batch = state.calendarCache.get(cacheKey);
+  if (!batch) {
+    batch = readMonthStorage(year, month, itemGroup, duration);
+    if (batch) state.calendarCache.set(cacheKey, batch);
+  }
+  if (batch) return batch;
+  const fetched = await fetchAndStoreCalendarBatch(year, month, duration, itemGroup);
+  return state.calendarCache.get(cacheKey) || fetched || null;
+}
+
+async function findEarliestAvailableSlot(product, duration) {
+  if (!product) return null;
+  const months = [{ year: state.calendarYear, month: state.calendarMonth }];
+  const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
+  if (next.getFullYear() < MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() <= MAX_BOOKING_MONTH.month)) {
+    months.push({ year: next.getFullYear(), month: next.getMonth() });
+  }
+  for (const ref of months) {
+    const batch = await getCalendarMonthData(ref.year, ref.month, duration, product.g);
+    const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
+    for (const dateKey of candidateDates) {
+      const slotKey = `${dateKey}_${product.g}_${duration}`;
+      let slots = state.slotCache.get(slotKey);
+      if (!Array.isArray(slots)) {
+        try {
+          slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g });
+          state.slotCache.set(slotKey, slots);
+        } catch (error) {
+          console.error(error);
+          slots = [];
+        }
+      }
+      if (Array.isArray(slots) && slots.length) {
+        const first = typeof slots[0] === 'string' ? slots[0] : slots[0]?.time;
+        if (first) return { dateKey, time: first };
+      }
+    }
+  }
+  return null;
+}
+
+async function updateEarliestSlotBox() {
+  if (!state.selectedProduct || !els.quickSlotBox) {
+    state.earliestSlotInfo = null;
+    renderEarliestSlotBox();
+    return;
+  }
+  const token = ++state.earliestSlotToken;
+  state.earliestSlotInfo = { loading: true };
+  renderEarliestSlotBox();
+  const nextInfo = await findEarliestAvailableSlot(state.selectedProduct, getCalendarDuration());
+  if (token !== state.earliestSlotToken) return;
+  state.earliestSlotInfo = nextInfo || null;
+  renderEarliestSlotBox();
 }
 
 function syncConditionalFields() {

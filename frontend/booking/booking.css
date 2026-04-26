@@ -2589,6 +2589,40 @@ h1 {
   line-height: 1.6;
 }
 
+.group-card-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.group-card-meta-item {
+  display: grid;
+  gap: 5px;
+}
+
+.group-card-meta-label {
+  color: rgba(23, 21, 19, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.group-card-meta-item strong {
+  color: #171513;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.group-card.selected .group-card-meta-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.group-card.selected .group-card-meta-item strong {
+  color: #fff;
+}
+
 .wizard-nav {
   margin-top: 26px;
   padding-top: 18px;
@@ -3050,6 +3084,59 @@ h1 {
   gap: 24px 20px;
 }
 
+.form-section-intro {
+  display: grid;
+  gap: 8px;
+}
+
+.form-section-label {
+  color: var(--brand-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.form-section-copy {
+  margin: 0;
+  max-width: 62ch;
+  color: #6a6056;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.optional-section-intro {
+  padding-top: 8px;
+}
+
+.quick-slot-box {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.quick-slot-label {
+  color: var(--brand-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.quick-slot-value {
+  color: #171513;
+  font-size: clamp(18px, 2vw, 24px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.quick-slot-copy {
+  color: #6a6056;
+  font-size: 14px;
+  line-height: 1.68;
+}
+
 .booking-form label,
 .invoice-fields-grid label {
   gap: 12px;
@@ -3397,6 +3484,11 @@ h1 {
   .group-card-sub {
     max-width: calc(100% - 28px);
   }
+
+  .group-card-meta {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 12px;
+  }
 }
 
 /* ===== Mobile finish pass ===== */
@@ -3592,6 +3684,16 @@ h1 {
     margin-top: 20px;
     padding-top: 14px;
     gap: 10px;
+  }
+
+  .form-section-copy,
+  .quick-slot-copy {
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .quick-slot-value {
+    font-size: 20px;
   }
 }
 

@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260425-formrhythm1" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260426-conversion1" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260425-formrhythm1">
+  <link rel="stylesheet" href="./booking.min.css?v=20260426-conversion1">
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
@@ -203,6 +203,7 @@
         </div>
       </div>
       <div id="productDetail" class="detail-box empty-state">상품을 선택하면 설명과 예상 금액이 여기에 표시됩니다.</div>
+      <div id="quickSlotBox" class="detail-box quick-slot-box hidden-field" aria-live="polite"></div>
       <div class="wizard-nav">
         <div id="wizardProgress2" class="wizard-progress">2 / 4</div>
         <div class="wizard-actions">
@@ -257,6 +258,10 @@
       </div>
       <div id="reviewBox" class="detail-box empty-state">상품, 날짜, 시간이 선택되면 예약 요약이 표시됩니다.</div>
       <form id="bookingForm" class="booking-form">
+        <div class="form-section-intro">
+          <div id="requiredInfoLabel" class="form-section-label">필수 예약 정보</div>
+          <p id="requiredInfoCopy" class="form-section-copy">이름, 연락처, 이메일만 먼저 입력하시면 예약을 계속 진행할 수 있습니다.</p>
+        </div>
         <label>
           <span id="nameLabel">이름</span>
           <input name="name" autocomplete="name" required>
@@ -272,6 +277,10 @@
           <small id="emailGmailWarn" class="muted-copy" style="display:none;margin-top:4px;color:#b45309;font-size:12px;font-weight:600;">Gmail이 아니면 Drive 링크 수신에 문제가 생길 수 있습니다. 가능하면 Gmail 주소를 사용해 주세요.</small>
         </label>
         <div id="returnNotice" class="detail-box hidden-field"></div>
+        <div class="form-section-intro optional-section-intro">
+          <div id="optionalInfoLabel" class="form-section-label">선택 입력</div>
+          <p id="optionalInfoCopy" class="form-section-copy">송장, 추가 요청, 세부 정보는 필요한 경우에만 적어 주세요.</p>
+        </div>
         <label id="addressField">
           <span id="addressLabel">주소 (인보이스용, 선택)</span>
           <input name="address" autocomplete="street-address" placeholder="인보이스가 필요한 경우만 입력해 주세요">
@@ -409,6 +418,6 @@
       </div>
     </div>
   </footer>
-  <script src="./booking.min.js?v=20260423-calendarflow1"></script>
+  <script src="./booking.min.js?v=20260426-conversion1"></script>
 </body>
 </html>
