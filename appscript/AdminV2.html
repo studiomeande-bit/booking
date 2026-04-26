@@ -18,7 +18,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .content{display:none;padding:20px 16px;max-width:1600px;margin:0 auto;}
 .content.active{display:block;}
 .card{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
-.card-title{font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:6px;}
+.card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;color:#2D2A26;letter-spacing:-.01em;}
+.card-head{display:grid;gap:5px;margin-bottom:16px;}
+.card-head.tight{margin-bottom:12px;}
+.card-sub{font-size:12px;color:#64748b;line-height:1.5;}
+.card-meta{font-size:11px;color:#8a7e72;letter-spacing:.08em;text-transform:uppercase;font-weight:700;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
 .dashboard-split{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:16px;}
 .dashboard-grid-charts{grid-template-columns:3fr 2fr;margin-bottom:16px;}
@@ -263,7 +267,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .tab{padding:12px 14px;font-size:13px;min-height:44px;display:flex;align-items:center;}
   .content{padding:12px 10px;}
   .card{padding:14px;border-radius:12px;margin-bottom:12px;}
-  .card-title{font-size:14px;margin-bottom:12px;}
+  .card-title{font-size:14px;}
+  .card-head{margin-bottom:12px;}
   .btn{padding:10px 16px;font-size:13px;min-height:42px;}
   .btn-sm{padding:7px 12px;font-size:12px;min-height:34px;}
   .form-row{grid-template-columns:1fr;gap:10px;}
@@ -312,6 +317,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .content{padding:10px 8px;}
   .card{padding:12px;}
   .card-title{font-size:13px;}
+  .card-sub{font-size:11px;}
   .btn{padding:9px 14px;font-size:12px;}
   .modal{padding:14px;}
   .modal-title{font-size:15px;}
@@ -332,7 +338,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 
 <div id="loginWrap" style="display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 56px);padding:20px;">
   <div style="background:#fff;border-radius:16px;padding:32px;width:min(360px,100%);box-shadow:0 4px 20px rgba(0,0,0,.1);">
-    <div style="text-align:center;margin-bottom:24px;"><div style="font-size:32px;">📸</div><div style="font-size:20px;font-weight:700;margin-top:8px;">Studio mean ERP</div></div>
+    <div style="text-align:center;margin-bottom:24px;">
+      <img src="data:image/png;base64,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С... trimmed ..." style="height:50px;opacity:.92;display:block;margin:0 auto 10px;" alt="Studio mean">
+      <div style="font-size:20px;font-weight:700;letter-spacing:-.02em;">Studio mean ERP</div>
+      <div style="font-size:12px;color:#64748b;margin-top:6px;">예약, 인보이스, 셀렉, 굿샤인 운영 관리</div>
+    </div>
     <div class="form-group"><label>관리자 비밀번호</label><input type="password" id="loginPw" placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <button class="btn btn-primary" style="width:100%;padding:12px;" onclick="doLogin()">로그인</button>
     <div id="loginErr" style="color:#ef4444;font-size:13px;margin-top:10px;text-align:center;"></div>
@@ -357,26 +367,59 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   <div class="content active" id="tab_dashboard">
     <!-- Row 1: 주간 캘린더 -->
     <div class="card">
-      <div class="card-title">이번 주 일정</div>
+      <div class="card-head tight">
+        <div class="card-title">이번 주 일정</div>
+        <div class="card-sub">확정 예약과 작업 상태를 주간 흐름으로 확인합니다.</div>
+      </div>
       <div class="week-grid" id="weekGrid"></div>
     </div>
     <!-- Row 2: 매출 현황 + 작업 현황 -->
     <div class="dashboard-split">
-      <div class="card" style="margin-bottom:0;"><div class="card-title">매출 현황</div><div class="stat-grid stat-grid-kpi" id="statGrid"></div></div>
-      <div class="card" style="margin-bottom:0;"><div class="card-title">작업 현황</div><div class="stat-grid stat-grid-work" id="workGrid"></div></div>
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-head">
+          <div class="card-title">매출 현황</div>
+          <div class="card-sub">확정, 예정, 세전, 세금 기준으로 현재 매출을 나눠 봅니다.</div>
+        </div>
+        <div class="stat-grid stat-grid-kpi" id="statGrid"></div>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-head">
+          <div class="card-title">작업 현황</div>
+          <div class="card-sub">대기, 촬영, 셀렉, 취소 건수를 같은 기준으로 확인합니다.</div>
+        </div>
+        <div class="stat-grid stat-grid-work" id="workGrid"></div>
+      </div>
     </div>
     <!-- Row 3: 월별 매출 + 결제/촬영 통계 -->
     <div class="dashboard-grid dashboard-grid-charts">
-      <div class="card" style="margin-bottom:0;"><div class="card-title">월별 매출</div><div id="monthlyChart"></div></div>
-      <div class="card" style="margin-bottom:0;"><div class="card-title">결제수단 / 촬영종류</div><div id="payProdChart"></div></div>
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-head">
+          <div class="card-title">월별 매출</div>
+          <div class="card-sub">현재 연도 기준 월별 확정 매출과 예약 건수를 함께 봅니다.</div>
+        </div>
+        <div id="monthlyChart"></div>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <div class="card-head">
+          <div class="card-title">결제수단 / 촬영종류</div>
+          <div class="card-sub">어떤 방식으로 결제되고 어떤 촬영이 매출을 만드는지 확인합니다.</div>
+        </div>
+        <div id="payProdChart"></div>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:16px;">
       <div class="card" style="margin-bottom:0;">
-        <div class="card-title">Studio Open</div>
+        <div class="card-head">
+          <div class="card-title">Studio Open</div>
+          <div class="card-sub">스튜디오 상주 시간에 여권, 프로필, 스튜디오 예약을 추가로 엽니다.</div>
+        </div>
         <div id="studioPresencePanel" style="display:flex;flex-direction:column;gap:10px;"></div>
       </div>
       <div class="card" style="margin-bottom:0;">
-        <div class="card-title">최근 자동취소 예약</div>
+        <div class="card-head">
+          <div class="card-title">최근 자동취소 예약</div>
+          <div class="card-sub">예약금 미확인으로 취소된 최근 예약을 바로 복구하거나 확인할 수 있습니다.</div>
+        </div>
         <div id="recentAutoCancelledList" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
     </div>
