@@ -219,23 +219,23 @@ const GROUP_QUICK_FACTS = {
     place: { ko: '오버우어젤 스튜디오', en: 'Studio in Oberursel', de: 'Studio in Oberursel' }
   },
   prof: {
-    delivery: { ko: '3~7일', en: '3–7 days', de: '3–7 Tage' },
+    delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
     place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
   },
   stud: {
-    delivery: { ko: '5~10일', en: '5–10 days', de: '5–10 Tage' },
+    delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
     place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
   },
   snap: {
-    delivery: { ko: '5~10일', en: '5–10 days', de: '5–10 Tage' },
-    place: { ko: 'Frankfurt / Rhein-Main', en: 'Frankfurt / Rhine-Main', de: 'Frankfurt / Rhein-Main' }
+    delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
+    place: { ko: '프랑크푸르트 반경 50km', en: 'Within 50 km of Frankfurt', de: 'Im Umkreis von 50 km um Frankfurt' }
   },
   wed: {
-    delivery: { ko: '7~14일', en: '7–14 days', de: '7–14 Tage' },
-    place: { ko: '야외 / 요청 장소', en: 'Outdoor / requested location', de: 'Outdoor / Wunschort' }
+    delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
+    place: { ko: '프랑크푸르트 반경 50km', en: 'Within 50 km of Frankfurt', de: 'Im Umkreis von 50 km um Frankfurt' }
   },
   biz: {
-    delivery: { ko: '7~14일', en: '7–14 days', de: '7–14 Tage' },
+    delivery: { ko: '납품 일정 별도 협의', en: 'Delivery by agreement', de: 'Lieferung nach Absprache' },
     place: { ko: '출장 / 현장 진행', en: 'On location', de: 'Vor Ort' }
   }
 };
