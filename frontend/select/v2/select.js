@@ -633,6 +633,7 @@ function normalizeGalleryPhotos(photos) {
       thumb: photo?.thumb || buildDriveThumbUrl(id, 360),
       thumbSet: photo?.thumbSet || buildDriveThumbSrcSet(id),
       full: photo?.full || buildDriveThumbUrl(id, 1800),
+      fallback: photo?.fallback || buildDriveFallbackUrl(id),
       view: photo?.view || (id ? `https://drive.google.com/file/d/${id}/view` : '#')
     };
   });
@@ -641,6 +642,11 @@ function normalizeGalleryPhotos(photos) {
 function buildDriveThumbUrl(id, width) {
   if (!id) return '';
   return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
+}
+
+function buildDriveFallbackUrl(id) {
+  if (!id) return '';
+  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`;
 }
 
 function buildDriveThumbSrcSet(id) {
@@ -760,13 +766,35 @@ function galleryCellHtml(p, idx) {
   const sizes = galleryImageSizes(layoutClass);
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
   return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
-      <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3;">
+      <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" data-fallback="${escapeHtml(p.fallback || '')}" alt="" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" onload="window.__studioSelectImageLoad?.(this)" onerror="window.__studioSelectImageError?.(this)">
       <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">보기</button>
       ${star > 0 ? `<div class="cell-star-badge">${star}점</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
       <div class="gallery-name">${escapeHtml(p.name)}</div>
     </div>`;
 }
+
+function handleGalleryImageLoad(img) {
+  if (!img) return;
+  img.closest('.gallery-cell')?.classList.remove('is-broken');
+  img.style.opacity = '1';
+}
+
+function handleGalleryImageError(img) {
+  if (!img) return;
+  const fallback = String(img.dataset.fallback || '').trim();
+  if (!img.dataset.fallbackTried && fallback) {
+    img.dataset.fallbackTried = '1';
+    img.removeAttribute('srcset');
+    img.src = fallback;
+    return;
+  }
+  img.style.opacity = '0';
+  img.closest('.gallery-cell')?.classList.add('is-broken');
+}
+
+globalThis.__studioSelectImageLoad = handleGalleryImageLoad;
+globalThis.__studioSelectImageError = handleGalleryImageError;
 
 function galleryLayoutClass(photo, idx) {
   const seed = `${stripExt(photo?.name || '')}:${idx}`;
@@ -1005,7 +1033,16 @@ function renderLightbox() {
   const p = lb.list[lb.index];
   if (!p) return;
   const img = document.getElementById('lb-img');
-  if (img) img.src = p.full || p.thumb;
+  if (img) {
+    img.onerror = null;
+    img.src = p.full || p.thumb;
+    img.onerror = () => {
+      const fallback = p.fallback || p.thumb;
+      if (img.dataset.fallbackTried === fallback) return;
+      img.dataset.fallbackTried = fallback;
+      img.src = fallback;
+    };
+  }
   const nameEl = document.getElementById('lb-name');
   if (nameEl) nameEl.textContent = `${stripExt(p.name)} · ${lb.index + 1} / ${lb.list.length}`;
   const key = stripExt(p.name);
