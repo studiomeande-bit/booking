@@ -196,6 +196,74 @@ textarea { resize:vertical; min-height:120px; }
   color:#fff;
   padding:22px;
 }
+
+.photocard-box {
+  margin-top: 18px;
+  padding: 22px;
+}
+
+.photocard-lead,
+.photocard-note {
+  color: #5f564b;
+  line-height: 1.72;
+}
+
+.photocard-lead {
+  margin-top: 6px;
+}
+
+.photocard-note {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.photocard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.photocard-card {
+  display: block;
+  cursor: pointer;
+  background: #f1ede7;
+  padding: 16px 18px;
+  min-height: 132px;
+}
+
+.photocard-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.photocard-card.active {
+  background: #2f2a25 !important;
+  color: #fff;
+}
+
+.photocard-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.photocard-copy strong {
+  font-size: 18px;
+  line-height: 1.35;
+  color: #171513;
+}
+
+.photocard-copy small {
+  color: #5f564b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.photocard-card.active .photocard-copy strong,
+.photocard-card.active .photocard-copy small {
+  color: #fff;
+}
 .price-card:empty { display:none; }
 .price-label { color:#d5cbc0; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
 .price-main { font-size:48px; line-height:1; font-weight:700; margin-top:10px; letter-spacing:-.03em; }
@@ -341,7 +409,7 @@ textarea { resize:vertical; min-height:120px; }
   .lang-panel { width:100%; margin-top:16px; padding:6px; border-radius:20px; }
   .lang-row { gap:8px; }
   .lang-btn { min-height:46px; padding:10px 8px; }
-  .intro-grid, .product-grid, .detail-grid, .calendar-stage, .form-grid, .booking-form, .success-grid { grid-template-columns:1fr; }
+  .intro-grid, .product-grid, .detail-grid, .calendar-stage, .form-grid, .booking-form, .success-grid, .photocard-grid { grid-template-columns:1fr; }
   .slot-grid { grid-template-columns:1fr; }
   .hero-lead { font-size:16px; }
   .wizard-nav { grid-template-columns:1fr; align-items:stretch; }

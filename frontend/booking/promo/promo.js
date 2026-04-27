@@ -52,6 +52,19 @@ const COPY = {
     peopleLabel: '인원수',
     childAgeLabel: '아이 나이 (만 3세-13세)',
     familyInfoLabel: '가족 구성',
+    photocardTitle: '포토카드 사진 선택',
+    photocardLead: '기본 포토카드는 양면입니다. 앞면과 뒷면에 들어갈 사진 방향을 선택해 주세요.',
+    photocardNote: '포토카드에는 총 2장의 사진이 들어갑니다.',
+    photocardRetouchedLabel: '보정본 2장 사용',
+    photocardRetouchedSub: '기존 보정본 중에서 앞면/뒷면 사진을 선택합니다.',
+    photocardMixedLabel: '보정본 1장 + 무보정 1장',
+    photocardMixedSub: '앞면 또는 뒷면 한 장은 보정본, 한 장은 원본으로 구성합니다.',
+    photocardOriginalLabel: '보정 없이 2장 사용',
+    photocardOriginalSub: '원본에서 2장을 선택해 양면 포토카드로 제작합니다.',
+    photocardReviewLabel: '포토카드',
+    photocardSummaryRetouched: '양면 · 보정본 2장',
+    photocardSummaryMixed: '양면 · 보정본 1장 + 무보정 1장',
+    photocardSummaryOriginal: '양면 · 무보정 2장',
     nameLabel: '이름',
     phoneLabel: '연락처',
     emailLabel: '이메일',
@@ -143,6 +156,19 @@ const COPY = {
     peopleLabel: 'Number of people',
     childAgeLabel: 'Child age (3-13 years)',
     familyInfoLabel: 'Family members',
+    photocardTitle: 'Photocard image option',
+    photocardLead: 'The included photocard is double-sided. Choose how the front and back images should be prepared.',
+    photocardNote: 'A total of 2 images are used for the photocard.',
+    photocardRetouchedLabel: 'Use 2 retouched photos',
+    photocardRetouchedSub: 'Select the front and back images from the final retouched set.',
+    photocardMixedLabel: 'Use 1 retouched + 1 original photo',
+    photocardMixedSub: 'One side uses a retouched image and the other uses an original image.',
+    photocardOriginalLabel: 'Use 2 photos without retouching',
+    photocardOriginalSub: 'Choose 2 original photos for the double-sided photocard.',
+    photocardReviewLabel: 'Photocard',
+    photocardSummaryRetouched: 'Double-sided · 2 retouched photos',
+    photocardSummaryMixed: 'Double-sided · 1 retouched + 1 original photo',
+    photocardSummaryOriginal: 'Double-sided · 2 unretouched photos',
     nameLabel: 'Name',
     phoneLabel: 'Phone',
     emailLabel: 'Email',
@@ -234,6 +260,19 @@ const COPY = {
     peopleLabel: 'Personenzahl',
     childAgeLabel: 'Alter des Kindes (3-13 Jahre)',
     familyInfoLabel: 'Familienkonstellation',
+    photocardTitle: 'Fotokarten-Bildauswahl',
+    photocardLead: 'Die enthaltene Fotokarte ist doppelseitig. Bitte wählen Sie, wie Vorder- und Rückseite vorbereitet werden sollen.',
+    photocardNote: 'Für die Fotokarte werden insgesamt 2 Bilder verwendet.',
+    photocardRetouchedLabel: '2 bearbeitete Bilder verwenden',
+    photocardRetouchedSub: 'Vorder- und Rückseite werden aus den bearbeiteten Bildern gewählt.',
+    photocardMixedLabel: '1 bearbeitetes + 1 Originalbild',
+    photocardMixedSub: 'Eine Seite nutzt ein bearbeitetes Bild, die andere ein Originalbild.',
+    photocardOriginalLabel: '2 Bilder ohne Retusche verwenden',
+    photocardOriginalSub: 'Zwei Originalbilder werden für die doppelseitige Fotokarte verwendet.',
+    photocardReviewLabel: 'Fotokarte',
+    photocardSummaryRetouched: 'Doppelseitig · 2 bearbeitete Bilder',
+    photocardSummaryMixed: 'Doppelseitig · 1 bearbeitetes + 1 Originalbild',
+    photocardSummaryOriginal: 'Doppelseitig · 2 unretuschierte Bilder',
     nameLabel: 'Name',
     phoneLabel: 'Telefon',
     emailLabel: 'E-Mail',
@@ -313,6 +352,7 @@ const state = {
   products: [],
   selectedProduct: null,
   people: 1,
+  photocardMode: 'retouched',
   customPeople: '',
   childAge: '',
   familyInfo: '',
@@ -347,6 +387,7 @@ const els = {
   familyInfoField: document.getElementById('familyInfoField'),
   familyInfoInput: document.getElementById('familyInfoInput'),
   priceCard: document.getElementById('priceCard'),
+  photocardBox: document.getElementById('photocardBox'),
   calendarHint: document.getElementById('calendarHint'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
@@ -443,6 +484,7 @@ function setProductDefaults() {
   } else {
     state.people = 2;
   }
+  state.photocardMode = 'retouched';
   state.customPeople = '';
   state.childAge = '';
   state.familyInfo = '';
@@ -476,6 +518,7 @@ function setLang(lang) {
   renderDetailCard();
   renderPeopleOptions();
   renderPriceCard();
+  renderPhotocardBox();
   updateReview();
   if (state.selectedProduct) {
     els.calendarHint.textContent = copy().calendarHintProduct(copy().groups[state.selectedProduct.id].title);
@@ -716,6 +759,48 @@ function renderConditionalFields() {
   els.familyInfoField.classList.add('hidden');
 }
 
+function renderPhotocardBox() {
+  if (!els.photocardBox) return;
+  if (!state.selectedProduct) {
+    els.photocardBox.classList.add('hidden');
+    els.photocardBox.innerHTML = '';
+    return;
+  }
+  const c = copy();
+  const retouchedActive = state.photocardMode === 'retouched' ? ' active' : '';
+  const mixedActive = state.photocardMode === 'mixed' ? ' active' : '';
+  const originalActive = state.photocardMode === 'original' ? ' active' : '';
+  els.photocardBox.classList.remove('hidden');
+  els.photocardBox.innerHTML = `
+    <div class="meta-label">${escapeHtml(c.photocardTitle)}</div>
+    <div class="photocard-lead">${escapeHtml(c.photocardLead)}</div>
+    <div class="photocard-note">${escapeHtml(c.photocardNote)}</div>
+    <div class="photocard-grid">
+      <label class="photocard-card${retouchedActive}">
+        <input type="radio" name="photocardMode" value="retouched" ${state.photocardMode === 'retouched' ? 'checked' : ''}>
+        <span class="photocard-copy">
+          <strong>${escapeHtml(c.photocardRetouchedLabel)}</strong>
+          <small>${escapeHtml(c.photocardRetouchedSub)}</small>
+        </span>
+      </label>
+      <label class="photocard-card${mixedActive}">
+        <input type="radio" name="photocardMode" value="mixed" ${state.photocardMode === 'mixed' ? 'checked' : ''}>
+        <span class="photocard-copy">
+          <strong>${escapeHtml(c.photocardMixedLabel)}</strong>
+          <small>${escapeHtml(c.photocardMixedSub)}</small>
+        </span>
+      </label>
+      <label class="photocard-card${originalActive}">
+        <input type="radio" name="photocardMode" value="original" ${state.photocardMode === 'original' ? 'checked' : ''}>
+        <span class="photocard-copy">
+          <strong>${escapeHtml(c.photocardOriginalLabel)}</strong>
+          <small>${escapeHtml(c.photocardOriginalSub)}</small>
+        </span>
+      </label>
+    </div>
+  `;
+}
+
 function renderPriceCard() {
   const c = copy();
   const quote = state.quote || getPromoPreviewQuote();
@@ -907,7 +992,12 @@ function updateReview() {
   const rows = [
     [c.packageName, meta.title],
     [c.price, `€${quote.totalPrice}`],
-    [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`]
+    [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`],
+    [c.photocardReviewLabel, state.photocardMode === 'original'
+      ? c.photocardSummaryOriginal
+      : state.photocardMode === 'mixed'
+        ? c.photocardSummaryMixed
+        : c.photocardSummaryRetouched]
   ];
   if (state.selectedDate && state.selectedSlot) rows.push([c.bookingTime, `${state.selectedDate} ${state.selectedSlot}`]);
   els.reviewBox.innerHTML = rows.map(([label, value]) => `
@@ -978,6 +1068,7 @@ function selectProduct(productId) {
   renderConditionalFields();
   renderPeopleOptions();
   renderDetailCard();
+  renderPhotocardBox();
   syncQuoteFromCache();
   updateStepButtons();
   queueQuoteRefresh();
@@ -1023,6 +1114,12 @@ function renderSuccess(result) {
 
 function buildSubmitPayload() {
   const meta = copy().groups[state.selectedProduct.id];
+  const userMemo = String(els.form.elements.memo.value || '').trim();
+  const photocardMemo = state.photocardMode === 'original'
+    ? '[포토카드] 양면 / 무보정 2장 사용'
+    : state.photocardMode === 'mixed'
+      ? '[포토카드] 양면 / 보정본 1장 + 무보정 1장 사용'
+      : '[포토카드] 양면 / 보정본 2장 사용';
   return {
     itemId: state.selectedProduct.id,
     people: getPeopleValue(),
@@ -1032,14 +1129,18 @@ function buildSubmitPayload() {
     phone: String(els.form.elements.phone.value || '').trim(),
     email: String(els.form.elements.email.value || '').trim(),
     address: String(els.form.elements.address.value || '').trim(),
-    memo: String(els.form.elements.memo.value || '').trim(),
+    memo: [userMemo, photocardMemo].filter(Boolean).join('\n'),
     gdprConsent: !!els.form.elements.gdprConsent.checked,
     aiConsent: !!els.form.elements.aiConsent?.checked,
     marketing: !!els.form.elements.marketing.checked,
     lang: state.lang,
     optionKeys: [],
     surveyKeys: [],
-    meta: { promoType: meta.title }
+    meta: {
+      promoType: meta.title,
+      photocardType: 'double_sided',
+      photocardMode: state.photocardMode
+    }
   };
 }
 
@@ -1088,6 +1189,17 @@ function bindEvents() {
     syncQuoteFromCache();
     updateStepButtons();
     queueQuoteRefresh(QUOTE_REFRESH_DEBOUNCE_MS);
+  });
+  els.photocardBox?.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.name !== 'photocardMode') return;
+    state.photocardMode = target.value === 'original'
+      ? 'original'
+      : target.value === 'mixed'
+        ? 'mixed'
+        : 'retouched';
+    renderPhotocardBox();
+    updateReview();
   });
   els.childAgeInput.addEventListener('input', () => {
     state.childAge = els.childAgeInput.value;
