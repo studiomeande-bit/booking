@@ -1468,7 +1468,7 @@ function isPromoDateAllowed_(dateStr){
 function getInitDataCustomer() {
   const s=getSettingsMap_();
   const promo=getPromoConfig_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:s.event_rate||'0',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_()},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:s.event_rate||'0',eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:s.return_discount||'10',promoEnabled:/^(Y|TRUE|1)$/i.test(String(s.promo_enabled||'')),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCachedProducts_(),promoProducts:getPromoProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -1584,6 +1584,11 @@ function saveSiteSettings(token,s){
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
   upsertSetting_('promo_end',s.promoEnd||PROMO_CONFIG.END);
   upsertSetting_('promo_content_json',JSON.stringify(s.promoContent||{}));
+  upsertSetting_('recommend_before_hours',String(s.recommendBeforeHours||SLOT_RECOMMENDATION_DEFAULTS.beforeHours));
+  upsertSetting_('recommend_after_hours',String(s.recommendAfterHours||SLOT_RECOMMENDATION_DEFAULTS.afterHours));
+  upsertSetting_('recommend_max_slots',String(s.recommendMaxSlots||SLOT_RECOMMENDATION_DEFAULTS.maxRecommended));
+  upsertSetting_('recommend_force_slots',String(s.recommendForceSlots||'').trim());
+  upsertSetting_('recommend_exclude_slots',String(s.recommendExcludeSlots||'').trim());
   if(s.newPassword) PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(s.newPassword));
   bumpCalCacheVer_();
   return{ok:true};
