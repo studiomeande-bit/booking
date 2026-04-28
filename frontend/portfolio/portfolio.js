@@ -107,7 +107,6 @@ function renderFeaturedStage() {
       >
       <span class="stage-copy">
         <span class="stage-kicker">${escapeHtml(lead.label)}</span>
-        <strong>${escapeHtml(getDisplayName(lead.name))}</strong>
       </span>
     </button>
     <div class="stage-stack">
@@ -125,7 +124,6 @@ function renderFeaturedStage() {
           >
           <span class="stage-copy">
             <span class="stage-kicker">${escapeHtml(photo.label)}</span>
-            <strong>${escapeHtml(getDisplayName(photo.name))}</strong>
           </span>
         </button>
       `).join('')}
@@ -225,7 +223,7 @@ function renderLightbox() {
   els.lightboxImage.onerror = () => {
     els.lightboxImage.src = photo.fallback;
   };
-  els.lightboxCaption.textContent = `${photo.label} · ${getDisplayName(photo.name)}`;
+  els.lightboxCaption.textContent = photo.label;
 }
 
 function prewarmNeighbors(index) {
@@ -284,14 +282,6 @@ function escapeAttr(value) {
 
 function escapeHtml(value) {
   return escapeAttr(value);
-}
-
-function getDisplayName(name) {
-  return String(name || '')
-    .replace(/\.[^.]+$/, '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 wireFilters();
