@@ -4,6 +4,9 @@
 
 ## 구조
 - `index.html` — 포트폴리오 랜딩/갤러리/라이트박스
+- `contact/` — Netlify Form 기반 문의 페이지
+- `impressum/` — 독일식 Impressum
+- `datenschutz/` — DSGVO 기준 요약 Datenschutz
 - `portfolio.css` — 블랙/그레이/화이트 기반 에디토리얼 UI
 - `portfolio.js` — 정적 JSON 기반 갤러리 렌더링
 - `portfolio-data.json` — Google Drive 공개 폴더에서 생성한 이미지 데이터
@@ -30,6 +33,15 @@ npm run build:portfolio-site
 ```
 
 이 스크립트는 공개 Drive 폴더 HTML을 다시 내려받아 `portfolio-data.json`을 갱신합니다.
+중복처럼 보이는 `copy`, `(1)`, `(2)`, `final` 류 파일명은 보수적으로 1장만 남기도록 정리합니다.
+
+## Kontakt 폼 메일 연결
+문의 폼은 Netlify Forms를 사용합니다.
+
+배포 후 Netlify 대시보드에서 아래 설정이 필요합니다.
+- `Forms` 활성화 확인
+- `portfolio-contact` 폼 인식 확인
+- `Form notifications`에서 `studio.mean.de@gmail.com` 알림 메일 추가
 
 ## 로컬 미리보기
 

@@ -11,6 +11,7 @@ const state = {
 const els = {
   status: document.getElementById('portfolioStatus'),
   grid: document.getElementById('portfolioGrid'),
+  featuredStage: document.getElementById('featuredStage'),
   filterButtons: Array.from(document.querySelectorAll('[data-filter]')),
   lightbox: document.getElementById('lightbox'),
   lightboxImage: document.getElementById('lightboxImage'),
@@ -58,6 +59,7 @@ function matchesFilter(photo, filter) {
 
 function renderGrid() {
   state.filtered = state.photos.filter((photo) => matchesFilter(photo, state.activeFilter));
+  renderFeaturedStage();
   if (!state.filtered.length) {
     els.grid.innerHTML = '';
     els.status.textContent = 'Keine Bilder gefunden.';
@@ -79,6 +81,84 @@ function renderGrid() {
     </button>
   `).join('');
   wireGridEvents();
+}
+
+function renderFeaturedStage() {
+  if (!els.featuredStage) return;
+  const featured = pickFeaturedPhotos(state.filtered);
+  if (!featured.length) {
+    els.featuredStage.innerHTML = '';
+    els.featuredStage.hidden = true;
+    return;
+  }
+  els.featuredStage.hidden = false;
+  const [lead, ...supporting] = featured;
+  els.featuredStage.innerHTML = `
+    <button type="button" class="stage-card stage-card-lead" data-index="${lead.filteredIndex}">
+      <img
+        src="${escapeAttr(lead.thumb)}"
+        srcset="${escapeAttr(lead.thumbSet)}"
+        sizes="(max-width: 900px) 100vw, 64vw"
+        data-full="${escapeAttr(lead.full)}"
+        data-fallback="${escapeAttr(lead.fallback)}"
+        alt="${escapeAttr(lead.name)}"
+        loading="eager"
+        decoding="async"
+      >
+      <span class="stage-copy">
+        <span class="stage-kicker">${escapeHtml(lead.label)}</span>
+        <strong>${escapeHtml(getDisplayName(lead.name))}</strong>
+      </span>
+    </button>
+    <div class="stage-stack">
+      ${supporting.map((photo) => `
+        <button type="button" class="stage-card stage-card-support" data-index="${photo.filteredIndex}">
+          <img
+            src="${escapeAttr(photo.thumb)}"
+            srcset="${escapeAttr(photo.thumbSet)}"
+            sizes="(max-width: 900px) 100vw, 28vw"
+            data-full="${escapeAttr(photo.full)}"
+            data-fallback="${escapeAttr(photo.fallback)}"
+            alt="${escapeAttr(photo.name)}"
+            loading="eager"
+            decoding="async"
+          >
+          <span class="stage-copy">
+            <span class="stage-kicker">${escapeHtml(photo.label)}</span>
+            <strong>${escapeHtml(getDisplayName(photo.name))}</strong>
+          </span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+  els.featuredStage.querySelectorAll('.stage-card').forEach((button) => {
+    button.addEventListener('click', () => openLightbox(Number(button.dataset.index || 0)));
+    const img = button.querySelector('img');
+    img?.addEventListener('error', () => handleCardImageError(img));
+    button.addEventListener('mouseenter', () => prewarmPhoto(Number(button.dataset.index || 0)));
+    button.addEventListener('focus', () => prewarmPhoto(Number(button.dataset.index || 0)));
+  });
+}
+
+function pickFeaturedPhotos(photos = []) {
+  const featured = [];
+  const usedCategories = new Set();
+  photos.forEach((photo, filteredIndex) => {
+    photo.filteredIndex = filteredIndex;
+  });
+  for (const photo of photos) {
+    if (!usedCategories.has(photo.category)) {
+      featured.push(photo);
+      usedCategories.add(photo.category);
+    }
+    if (featured.length >= 4) return featured;
+  }
+  for (const photo of photos) {
+    if (featured.includes(photo)) continue;
+    featured.push(photo);
+    if (featured.length >= 4) break;
+  }
+  return featured;
 }
 
 function wireGridEvents() {
@@ -145,7 +225,7 @@ function renderLightbox() {
   els.lightboxImage.onerror = () => {
     els.lightboxImage.src = photo.fallback;
   };
-  els.lightboxCaption.textContent = `${photo.label} · ${photo.name}`;
+  els.lightboxCaption.textContent = `${photo.label} · ${getDisplayName(photo.name)}`;
 }
 
 function prewarmNeighbors(index) {
@@ -200,6 +280,18 @@ function escapeAttr(value) {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function escapeHtml(value) {
+  return escapeAttr(value);
+}
+
+function getDisplayName(name) {
+  return String(name || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 wireFilters();

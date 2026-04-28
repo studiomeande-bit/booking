@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+  <title>Kontakt — Studio mean</title>
+  <meta name="description" content="Kontaktseite von Studio mean für Portrait-, Familien-, Studio- und Wedding-Anfragen in Oberursel und im Rhein-Main-Gebiet.">
+  <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../portfolio.min.css?v=20260428-portfolio2">
+</head>
+<body>
+  <div class="site-shell">
+    <header class="site-header">
+      <a class="brand" href="../" aria-label="Studio mean portfolio home">
+        <img src="../studio-mean-logo.svg" alt="Studio mean" class="brand-logo" width="160" height="48">
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="../#gallery">Portfolio</a>
+        <a href="../#about">Studio</a>
+        <a href="./">Kontakt</a>
+        <a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Booking</a>
+      </nav>
+    </header>
+
+    <main class="page-main">
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Studio mean · Kontakt</p>
+          <h1>Erzählen Sie kurz, was Sie planen.</h1>
+          <p>
+            Für Portraits, Familienbilder, Studio-Sessions, Filmprojekte und Hochzeiten. Die Anfrage geht direkt an das Studio-Team und wird per E-Mail beantwortet.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">Antwort</span>
+            <strong>In der Regel innerhalb von 1 Werktag</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Region</span>
+            <strong>Oberursel · Frankfurt · Rhein-Main</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Instagram</span>
+            <strong><a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">@studio_mean</a></strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid">
+        <section class="page-panel">
+          <p class="eyebrow">Kontaktformular</p>
+          <h2>Anfrage senden</h2>
+          <p>Nutzen Sie das Formular für Projektanfragen, Terminwünsche oder Preisfragen. Für direkte Reservierungen bleibt das separate Buchungssystem bestehen.</p>
+
+          <form
+            class="contact-form"
+            name="portfolio-contact"
+            method="POST"
+            action="./success/"
+            data-netlify="true"
+            netlify-honeypot="bot-field"
+          >
+            <input type="hidden" name="form-name" value="portfolio-contact">
+            <p class="bot-field">
+              <label>Nicht ausfüllen: <input name="bot-field"></label>
+            </p>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-name">Name</label>
+                <input id="contact-name" name="name" type="text" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="contact-email">E-Mail</label>
+                <input id="contact-email" name="email" type="email" autocomplete="email" required>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-phone">Telefon</label>
+                <input id="contact-phone" name="phone" type="tel" autocomplete="tel">
+              </div>
+              <div class="field">
+                <label for="contact-type">Projektart</label>
+                <select id="contact-type" name="project_type" required>
+                  <option value="">Bitte wählen</option>
+                  <option>Portrait</option>
+                  <option>Familie</option>
+                  <option>Studio</option>
+                  <option>Kids</option>
+                  <option>Maternity</option>
+                  <option>Wedding</option>
+                  <option>Snap</option>
+                  <option>Video / Film</option>
+                  <option>Business / Event</option>
+                  <option>Sonstiges</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-date">Wunschtermin</label>
+                <input id="contact-date" name="preferred_date" type="text" placeholder="z. B. Mai oder 14. Juni">
+              </div>
+              <div class="field">
+                <label for="contact-location">Ort / Bereich</label>
+                <input id="contact-location" name="location" type="text" placeholder="Oberursel, Frankfurt oder gewünschter Ort">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="contact-message">Nachricht</label>
+              <textarea id="contact-message" name="message" placeholder="Kurz zum Anlass, Personenanzahl, Bildstil oder zur gewünschten Nutzung." required></textarea>
+            </div>
+
+            <label class="checkbox-line" for="contact-consent">
+              <input id="contact-consent" name="privacy_consent" type="checkbox" required>
+              <span>Ich habe die <a href="../datenschutz/">Datenschutzhinweise</a> gelesen und bin mit der Verarbeitung meiner Angaben zur Beantwortung meiner Anfrage einverstanden.</span>
+            </label>
+
+            <div class="button-row">
+              <button type="submit" class="button-dark">Anfrage absenden</button>
+              <a class="button-ghost" href="mailto:studio.mean.de@gmail.com">Direkt per E-Mail</a>
+            </div>
+          </form>
+        </section>
+
+        <aside class="contact-rail">
+          <section class="page-panel">
+            <p class="eyebrow">Direkter Kontakt</p>
+            <div class="info-list">
+              <div class="info-item">
+                <strong>E-Mail</strong>
+                <a href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a>
+              </div>
+              <div class="info-item">
+                <strong>Telefon</strong>
+                <a href="tel:+4917660939400">+49 176 6093 9400</a>
+              </div>
+              <div class="info-item">
+                <strong>Instagram</strong>
+                <a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">@studio_mean</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="page-panel">
+            <p class="eyebrow">Studio</p>
+            <div class="info-list">
+              <div class="info-item">
+                <strong>Adresse</strong>
+                <span>Holzweg-passage 3<br>61440 Oberursel<br>Deutschland</span>
+              </div>
+              <div class="info-item">
+                <strong>Leistungen</strong>
+                <span>Portrait · Family · Kids · Maternity · Wedding · Snap · Film</span>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <nav class="page-actions" aria-label="Weiterführende Links">
+        <a href="../">Portfolio</a>
+        <a href="../impressum/">Impressum</a>
+        <a href="../datenschutz/">Datenschutz</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Reservierung</a>
+      </nav>
+    </main>
+  </div>
+</body>
+</html>

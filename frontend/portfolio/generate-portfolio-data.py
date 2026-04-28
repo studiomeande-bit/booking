@@ -5,6 +5,7 @@ import json
 import pathlib
 import re
 import sys
+import unicodedata
 
 ROOT_FOLDER_ID = "1OPRMHbnh6ctci8jmLjlOb7dlHMReG1jT"
 FOLDERS = {
@@ -36,7 +37,7 @@ def decode_ivd(text: str):
 
 
 def build_payload(source_dir: pathlib.Path):
-    photos = []
+    raw_photos = []
     for folder_id, (folder_name, slug, label) in FOLDERS.items():
         html_path = source_dir / f"{folder_id}.html"
         if not html_path.exists():
@@ -53,7 +54,7 @@ def build_payload(source_dir: pathlib.Path):
                 continue
             if not file_name or file_name.startswith(".") or file_name.startswith("\\"):
                 continue
-            photos.append(
+            raw_photos.append(
                 {
                     "id": file_id,
                     "name": file_name,
@@ -65,11 +66,13 @@ def build_payload(source_dir: pathlib.Path):
                 }
             )
 
+    photos = dedupe_photos(raw_photos)
     photos.sort(key=lambda item: (item["timestamp"], item["name"]), reverse=True)
     return {
         "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
         "sourceFolder": ROOT_FOLDER_ID,
         "total": len(photos),
+        "dedupedRemoved": max(0, len(raw_photos) - len(photos)),
         "categories": [
             {"slug": "all", "label": "All"},
             {"slug": "portrait", "label": "Portrait"},
@@ -81,6 +84,28 @@ def build_payload(source_dir: pathlib.Path):
         ],
         "photos": photos,
     }
+
+
+def normalize_name_for_dedupe(file_name: str) -> str:
+    stem = pathlib.Path(file_name).stem
+    stem = unicodedata.normalize("NFKC", stem).lower()
+    stem = stem.replace("_", " ").replace("-", " ")
+    stem = re.sub(r"\s+", " ", stem).strip()
+    stem = re.sub(r"\s*\(\d+\)$", "", stem)
+    stem = re.sub(r"\s*copy(?: \d+)?$", "", stem)
+    stem = re.sub(r"\s*final(?: \d+)?$", "", stem)
+    stem = re.sub(r"\s*edited?$", "", stem)
+    stem = re.sub(r"\s+", " ", stem).strip()
+    return stem
+
+
+def dedupe_photos(photos):
+    deduped = {}
+    sorted_photos = sorted(photos, key=lambda item: (item["timestamp"], item["name"]), reverse=True)
+    for photo in sorted_photos:
+        key = (photo["category"], normalize_name_for_dedupe(photo["name"]))
+        deduped.setdefault(key, photo)
+    return list(deduped.values())
 
 
 def main():
