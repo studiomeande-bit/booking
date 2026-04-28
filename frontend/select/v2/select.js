@@ -66,7 +66,9 @@ const state = {
     renderCount: GALLERY_INITIAL_RENDER,
     warmupStarted: false
   },
-  lightbox: null
+  lightbox: null,
+  lightboxImageCache: new Map(),
+  lightboxRenderToken: 0
 };
 
 const els = {
@@ -1027,6 +1029,65 @@ function openLightboxByKey(key) {
   els.hoverPreview?.classList.remove('visible');
 }
 
+function getLightboxImageRecord(url) {
+  return state.lightboxImageCache.get(url) || null;
+}
+
+function markLightboxImageRecord(url, patch) {
+  if (!url) return null;
+  const current = state.lightboxImageCache.get(url) || { status: 'idle', promise: null, img: null };
+  const next = { ...current, ...patch };
+  state.lightboxImageCache.set(url, next);
+  return next;
+}
+
+function preloadLightboxUrl(url) {
+  if (!url) return Promise.reject(new Error('missing-url'));
+  const existing = getLightboxImageRecord(url);
+  if (existing?.status === 'loaded') return Promise.resolve(url);
+  if (existing?.status === 'loading' && existing.promise) return existing.promise;
+
+  const loader = new Image();
+  loader.decoding = 'async';
+  loader.referrerPolicy = 'no-referrer';
+
+  const promise = new Promise((resolve, reject) => {
+    loader.onload = async () => {
+      try {
+        if (typeof loader.decode === 'function') await loader.decode().catch(() => {});
+      } catch {}
+      markLightboxImageRecord(url, { status: 'loaded', promise: Promise.resolve(url), img: loader });
+      resolve(url);
+    };
+    loader.onerror = () => {
+      markLightboxImageRecord(url, { status: 'error', promise: null, img: null });
+      reject(new Error(`image-load-failed:${url}`));
+    };
+  });
+
+  markLightboxImageRecord(url, { status: 'loading', promise, img: loader });
+  loader.src = url;
+  return promise;
+}
+
+function primeLightboxPhoto(photo) {
+  if (!photo) return Promise.reject(new Error('missing-photo'));
+  const candidates = [photo.full, photo.fallback, photo.thumb].filter(Boolean);
+  let chain = Promise.reject();
+  candidates.forEach((url) => {
+    chain = chain.catch(() => preloadLightboxUrl(url));
+  });
+  return chain;
+}
+
+function warmLightboxNeighbors(list, index) {
+  if (!Array.isArray(list) || !list.length) return;
+  [-2, -1, 1, 2].forEach((offset) => {
+    const photo = list[index + offset];
+    if (photo) primeLightboxPhoto(photo).catch(() => {});
+  });
+}
+
 function renderLightbox() {
   const lb = state.lightbox;
   if (!lb) return;
@@ -1034,14 +1095,34 @@ function renderLightbox() {
   if (!p) return;
   const img = document.getElementById('lb-img');
   if (img) {
+    const primary = p.full || p.thumb || '';
+    const fallback = p.fallback || p.thumb || primary;
+    const thumb = p.thumb || fallback || primary;
+    const primaryReady = primary ? getLightboxImageRecord(primary)?.status === 'loaded' : false;
+    const fallbackReady = fallback ? getLightboxImageRecord(fallback)?.status === 'loaded' : false;
+    const initialSrc = primaryReady ? primary : (fallbackReady ? fallback : (thumb || primary || fallback));
+    const token = String(++state.lightboxRenderToken);
+    img.dataset.renderToken = token;
+    img.dataset.fullTarget = primary;
+    img.dataset.fallbackTarget = fallback;
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer';
     img.onerror = null;
-    img.src = p.full || p.thumb;
-    img.onerror = () => {
-      const fallback = p.fallback || p.thumb;
-      if (img.dataset.fallbackTried === fallback) return;
-      img.dataset.fallbackTried = fallback;
-      img.src = fallback;
-    };
+    img.src = initialSrc;
+
+    primeLightboxPhoto(p)
+      .then((resolvedUrl) => {
+        if (!state.lightbox || state.lightbox.list !== lb.list || state.lightbox.index !== lb.index) return;
+        if (img.dataset.renderToken !== token) return;
+        if (img.src !== resolvedUrl) img.src = resolvedUrl;
+      })
+      .catch(() => {
+        if (!state.lightbox || state.lightbox.list !== lb.list || state.lightbox.index !== lb.index) return;
+        if (img.dataset.renderToken !== token) return;
+        if (fallback && img.src !== fallback) img.src = fallback;
+      });
+
+    warmLightboxNeighbors(lb.list, lb.index);
   }
   const nameEl = document.getElementById('lb-name');
   if (nameEl) nameEl.textContent = `${stripExt(p.name)} · ${lb.index + 1} / ${lb.list.length}`;
