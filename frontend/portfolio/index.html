@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://drive.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://drive.google.com">
+  <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
+  <title>Studio mean Portfolio</title>
+  <meta name="description" content="Studio mean Portfolio — monochrome editorial gallery for portrait, family and studio photography in Oberursel and the Frankfurt area.">
+  <meta property="og:title" content="Studio mean Portfolio">
+  <meta property="og:description" content="Editorial portfolio of Studio mean — portrait, family, studio and wedding photography.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://www.studio-mean.com/studio-mean-logo.png">
+  <link rel="icon" href="./studio-mean-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./portfolio.min.css?v=20260428-portfolio1">
+</head>
+<body>
+  <div class="site-shell">
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Studio mean portfolio home">
+        <img src="./studio-mean-logo.svg" alt="Studio mean" class="brand-logo" width="160" height="48">
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#gallery">Portfolio</a>
+        <a href="#about">Studio</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Booking</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Studio mean · Oberursel / Frankfurt</p>
+          <h1>Ein ruhiges Portfolio für echte Momente.</h1>
+          <p class="hero-text">
+            Portraits, family sessions, studio work and intimate wedding stories — presented in a full-screen monochrome gallery with the same calm visual language as the studio itself.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">Standort</span>
+            <strong>Holzwegpassage 3, 61440 Oberursel</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Portfolio Quelle</span>
+            <strong>Google Drive Editorial Archive</strong>
+          </div>
+        </div>
+      </section>
+
+      <section id="gallery" class="gallery-section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Selected Work</p>
+            <h2>Portfolio</h2>
+          </div>
+          <div class="gallery-controls">
+            <button type="button" class="control-btn active" data-filter="all">All</button>
+            <button type="button" class="control-btn" data-filter="portrait">Portrait</button>
+            <button type="button" class="control-btn" data-filter="family">Family</button>
+            <button type="button" class="control-btn" data-filter="kids">Kids</button>
+            <button type="button" class="control-btn" data-filter="maternity">Maternity</button>
+            <button type="button" class="control-btn" data-filter="wedding">Wedding</button>
+            <button type="button" class="control-btn" data-filter="snap">Snap</button>
+          </div>
+        </div>
+
+        <div id="portfolioStatus" class="portfolio-status">Bilder werden geladen…</div>
+        <div id="portfolioGrid" class="portfolio-grid" aria-live="polite"></div>
+      </section>
+
+      <section id="about" class="about-section">
+        <div class="about-copy">
+          <p class="eyebrow">About the Studio</p>
+          <h2>Schwarz, Grau, Weiß — und der Blick auf Ausdruck.</h2>
+          <p>
+            Studio mean arbeitet mit einer ruhigen, reduzierten Bildsprache. Das Portfolio ist bewusst vollflächig und ohne visuelle Unruhe gestaltet, damit der Fokus auf Licht, Haltung, Nähe und Bildrhythmus liegt.
+          </p>
+        </div>
+        <div class="about-notes">
+          <div class="note-card">
+            <span class="meta-label">Leistung</span>
+            <strong>Portrait · Family · Studio · Wedding · Film</strong>
+          </div>
+          <div class="note-card">
+            <span class="meta-label">Buchung</span>
+            <strong>Direkt über das separate Reservierungssystem</strong>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <img src="./studio-mean-logo.svg" alt="Studio mean" class="footer-logo" width="160" height="48">
+        <p>Photographer & Videographer · Oberursel / Frankfurt am Main</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://booking.studio-mean.com/impressum/" target="_blank" rel="noopener">Impressum</a>
+        <a href="https://booking.studio-mean.com/datenschutz/" target="_blank" rel="noopener">Datenschutz</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Reservierung</a>
+      </div>
+    </footer>
+  </div>
+
+  <div id="lightbox" class="lightbox" aria-hidden="true">
+    <button id="lightboxClose" class="lightbox-close" type="button" aria-label="Close">Close</button>
+    <button id="lightboxPrev" class="lightbox-nav lightbox-prev" type="button" aria-label="Previous">‹</button>
+    <figure class="lightbox-figure">
+      <img id="lightboxImage" src="" alt="" class="lightbox-image">
+      <figcaption id="lightboxCaption" class="lightbox-caption"></figcaption>
+    </figure>
+    <button id="lightboxNext" class="lightbox-nav lightbox-next" type="button" aria-label="Next">›</button>
+  </div>
+
+  <script src="./portfolio.min.js?v=20260428-portfolio1" defer></script>
+</body>
+</html>
