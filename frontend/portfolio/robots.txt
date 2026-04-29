@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Host: www.studio-mean.com
+Sitemap: https://www.studio-mean.com/sitemap.xml

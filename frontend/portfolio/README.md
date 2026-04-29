@@ -4,9 +4,12 @@
 
 ## 구조
 - `index.html` — 포트폴리오 랜딩/갤러리/라이트박스
+- `about/` — 스튜디오 소개 페이지
 - `contact/` — Netlify Form 기반 문의 페이지
+- `en/`, `ko/` — 영어/한국어 홈, 소개, 문의 페이지
 - `impressum/` — 독일식 Impressum
 - `datenschutz/` — DSGVO 기준 요약 Datenschutz
+- `robots.txt`, `sitemap.xml` — 검색엔진 크롤링/인덱싱용 파일
 - `portfolio.css` — 블랙/그레이/화이트 기반 에디토리얼 UI
 - `portfolio.js` — 정적 JSON 기반 갤러리 렌더링
 - `portfolio-data.json` — Google Drive 공개 폴더에서 생성한 이미지 데이터
@@ -42,6 +45,20 @@ npm run build:portfolio-site
 - `Forms` 활성화 확인
 - `portfolio-contact` 폼 인식 확인
 - `Form notifications`에서 `studio.mean.de@gmail.com` 알림 메일 추가
+
+## SEO / 검색 노출
+기본 SEO 설정은 코드에 반영되어 있습니다.
+- 독일어 / 영어 / 한국어별 URL 분리
+- `hreflang`, `canonical`, `Open Graph`, `twitter:card`
+- `ProfessionalService` 구조화 데이터
+- `robots.txt`
+- `sitemap.xml`
+
+배포 후 추가로 필요한 수동 작업:
+- Google Search Console에 `https://www.studio-mean.com` 등록
+- Naver Search Advisor에 `https://www.studio-mean.com` 등록
+- 각 서비스에서 제공하는 사이트 소유 확인 메타 태그 또는 HTML 파일을 실제 토큰 값으로 추가
+- Search Console / Search Advisor에 `https://www.studio-mean.com/sitemap.xml` 제출
 
 ## 로컬 미리보기
 

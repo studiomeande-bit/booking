@@ -1,4 +1,67 @@
-const DATA_URL = './portfolio-data.json';
+const rootEl = document.documentElement;
+const DATA_URL = rootEl.dataset.dataUrl || './portfolio-data.json';
+const locale = String(rootEl.lang || 'de').toLowerCase().startsWith('ko')
+  ? 'ko'
+  : String(rootEl.lang || 'de').toLowerCase().startsWith('en')
+    ? 'en'
+    : 'de';
+
+const copy = {
+  de: {
+    loading: 'Bilder werden geladen…',
+    empty: 'Keine Bilder gefunden.',
+    unavailable: 'Das Portfolio konnte gerade nicht geladen werden.',
+    sourceLoaded: (count) => `${count} Arbeiten · kuratiert aus dem Live-Portfolio`,
+    noFolder: 'Im verknüpften Ordner wurden keine Bilder gefunden.',
+    broken: 'Bild nicht verfügbar',
+    lightboxClose: 'Schließen',
+    labels: {
+      portrait: 'Portrait',
+      family: 'Familie',
+      kids: 'Kids',
+      maternity: 'Maternity',
+      wedding: 'Wedding',
+      snap: 'Snap',
+      all: 'Alle'
+    }
+  },
+  en: {
+    loading: 'Loading images…',
+    empty: 'No images found.',
+    unavailable: 'The portfolio could not be loaded right now.',
+    sourceLoaded: (count) => `${count} works · curated from the live portfolio`,
+    noFolder: 'No images were found in the connected folder.',
+    broken: 'Image unavailable',
+    lightboxClose: 'Close',
+    labels: {
+      portrait: 'Portrait',
+      family: 'Family',
+      kids: 'Kids',
+      maternity: 'Maternity',
+      wedding: 'Wedding',
+      snap: 'Snap',
+      all: 'All'
+    }
+  },
+  ko: {
+    loading: '이미지를 불러오는 중입니다…',
+    empty: '표시할 이미지가 없습니다.',
+    unavailable: '포트폴리오를 지금 불러올 수 없습니다.',
+    sourceLoaded: (count) => `${count}장의 포트폴리오가 큐레이션되어 있습니다`,
+    noFolder: '연결된 폴더에서 이미지를 찾지 못했습니다.',
+    broken: '이미지를 불러올 수 없습니다',
+    lightboxClose: '닫기',
+    labels: {
+      portrait: '프로필',
+      family: '가족',
+      kids: '키즈',
+      maternity: '만삭',
+      wedding: '웨딩',
+      snap: '스냅',
+      all: '전체'
+    }
+  }
+}[locale];
 
 const state = {
   photos: [],
@@ -36,7 +99,7 @@ function normalizePhotos(items = []) {
       const id = String(item.id).trim();
       const name = String(item.name || '').trim();
       const category = String(item.category || 'portrait').trim();
-      const categoryLabel = String(item.categoryLabel || item.folderName || 'Portfolio').trim();
+      const categoryLabel = resolveCategoryLabel(String(item.category || 'portrait').trim(), item);
       return {
         id,
         name,
@@ -62,10 +125,10 @@ function renderGrid() {
   renderFeaturedStage();
   if (!state.filtered.length) {
     els.grid.innerHTML = '';
-    els.status.textContent = 'Keine Bilder gefunden.';
+    els.status.textContent = copy.empty;
     return;
   }
-  els.status.textContent = `${state.filtered.length} Arbeiten · kuratiert aus dem Live-Portfolio`;
+  els.status.textContent = copy.sourceLoaded(state.filtered.length);
   els.grid.innerHTML = state.filtered.map((photo, index) => `
     <button type="button" class="portfolio-card" data-index="${index}" data-label="${escapeAttr(photo.label)}">
       <img
@@ -179,6 +242,7 @@ function handleCardImageError(img) {
     return;
   }
   img.closest('.portfolio-card')?.classList.add('is-broken');
+  img.closest('.portfolio-card')?.setAttribute('data-broken-label', copy.broken);
 }
 
 function wireFilters() {
@@ -254,19 +318,23 @@ function wireLightbox() {
 }
 
 async function loadPortfolio() {
-  els.status.textContent = 'Bilder werden geladen…';
+  els.status.textContent = copy.loading;
   try {
     const response = await fetch(DATA_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     state.photos = normalizePhotos(payload?.photos || []);
     if (!state.photos.length) {
-      els.status.textContent = 'Im verknüpften Ordner wurden keine Bilder gefunden.';
+      els.status.textContent = copy.noFolder;
       return;
+    }
+    if (els.lightboxClose) {
+      els.lightboxClose.textContent = copy.lightboxClose;
+      els.lightboxClose.setAttribute('aria-label', copy.lightboxClose);
     }
     renderGrid();
   } catch (error) {
-    els.status.textContent = 'Das Portfolio konnte gerade nicht geladen werden.';
+    els.status.textContent = copy.unavailable;
     els.grid.innerHTML = '';
     console.error(error);
   }
@@ -282,6 +350,10 @@ function escapeAttr(value) {
 
 function escapeHtml(value) {
   return escapeAttr(value);
+}
+
+function resolveCategoryLabel(category, item = {}) {
+  return copy.labels[category] || String(item.categoryLabel || item.folderName || 'Portfolio').trim();
 }
 
 wireFilters();

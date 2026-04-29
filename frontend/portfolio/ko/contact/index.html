@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+  <title>문의 — Studio mean</title>
+  <meta name="description" content="Studio mean 문의 페이지. 독일 오버우어젤, 프랑크푸르트 인근에서 프로필, 가족사진, 웨딩, 기업행사, 영상 촬영 문의를 받습니다.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://www.studio-mean.com/ko/contact/">
+  <link rel="alternate" hreflang="de" href="https://www.studio-mean.com/contact/">
+  <link rel="alternate" hreflang="en" href="https://www.studio-mean.com/en/contact/">
+  <link rel="alternate" hreflang="ko" href="https://www.studio-mean.com/ko/contact/">
+  <link rel="alternate" hreflang="x-default" href="https://www.studio-mean.com/contact/">
+  <link rel="icon" href="../../studio-mean-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../../portfolio.min.css?v=20260429-portfolio-seo1">
+</head>
+<body>
+  <div class="site-shell">
+    <header class="site-header">
+      <a class="brand" href="../" aria-label="Studio mean home">
+        <img src="../../studio-mean-logo.svg" alt="Studio mean" class="brand-logo" width="160" height="48">
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="../#gallery">포트폴리오</a>
+        <a href="../about/">소개</a>
+        <a href="./">문의</a>
+        <a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">예약</a>
+        <a href="../../contact/">DE</a>
+        <a href="../../en/contact/">EN</a>
+        <a href="./" aria-current="page">KO</a>
+      </nav>
+    </header>
+
+    <main class="page-main">
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Studio mean · Contact</p>
+          <h1>촬영 계획을 간단히 알려주세요.</h1>
+          <p>프로필, 가족사진, 스튜디오 촬영, 웨딩, 기업행사, 영상 프로젝트까지 문의 가능합니다. 독일 및 유럽 현지에서 한국어 소통이 필요한 기업 문의도 받을 수 있습니다.</p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">답변</span>
+            <strong>보통 1영업일 이내 이메일 회신</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">지역</span>
+            <strong>오버우어젤 · 프랑크푸르트 · 라인마인 · 독일</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Instagram</span>
+            <strong><a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">@studio_mean</a></strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-grid">
+        <section class="page-panel">
+          <p class="eyebrow">문의 폼</p>
+          <h2>문의 보내기</h2>
+          <p>프로필, 가족사진, 스튜디오 촬영, 웨딩, 기업행사, 영상 제작 문의를 받을 수 있습니다. 바로 예약하려면 별도의 예약 시스템을 이용하시면 됩니다.</p>
+
+          <form class="contact-form" name="portfolio-contact" method="POST" action="./success/" data-netlify="true" netlify-honeypot="bot-field">
+            <input type="hidden" name="form-name" value="portfolio-contact">
+            <input type="hidden" name="site_language" value="ko">
+            <p class="bot-field">
+              <label>작성하지 마세요: <input name="bot-field"></label>
+            </p>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-name">이름</label>
+                <input id="contact-name" name="name" type="text" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="contact-email">이메일</label>
+                <input id="contact-email" name="email" type="email" autocomplete="email" required>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-phone">전화번호</label>
+                <input id="contact-phone" name="phone" type="tel" autocomplete="tel">
+              </div>
+              <div class="field">
+                <label for="contact-type">프로젝트 종류</label>
+                <select id="contact-type" name="project_type" required>
+                  <option value="">선택해 주세요</option>
+                  <option>프로필</option>
+                  <option>가족사진</option>
+                  <option>스튜디오</option>
+                  <option>키즈</option>
+                  <option>만삭</option>
+                  <option>웨딩</option>
+                  <option>스냅</option>
+                  <option>영상 / 필름</option>
+                  <option>기업 / 행사</option>
+                  <option>기타</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="contact-date">희망 일정</label>
+                <input id="contact-date" name="preferred_date" type="text" placeholder="예: 6월 중, 6월 14일">
+              </div>
+              <div class="field">
+                <label for="contact-location">지역 / 장소</label>
+                <input id="contact-location" name="location" type="text" placeholder="오버우어젤, 프랑크푸르트 또는 원하는 장소">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="contact-message">메시지</label>
+              <textarea id="contact-message" name="message" placeholder="촬영 목적, 인원, 사용처, 원하는 분위기나 필요한 결과물을 간단히 적어 주세요." required></textarea>
+            </div>
+
+            <label class="checkbox-line" for="contact-consent">
+              <input id="contact-consent" name="privacy_consent" type="checkbox" required>
+              <span><a href="../../datenschutz/">개인정보 처리 안내</a>를 읽었고, 문의 답변을 위해 제 정보가 처리되는 것에 동의합니다.</span>
+            </label>
+
+            <div class="button-row">
+              <button type="submit" class="button-dark">문의 보내기</button>
+              <a class="button-ghost" href="mailto:studio.mean.de@gmail.com">이메일 바로 보내기</a>
+            </div>
+          </form>
+        </section>
+
+        <aside class="contact-rail">
+          <section class="page-panel">
+            <p class="eyebrow">직접 연락</p>
+            <div class="info-list">
+              <div class="info-item">
+                <strong>이메일</strong>
+                <a href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a>
+              </div>
+              <div class="info-item">
+                <strong>전화</strong>
+                <a href="tel:+4917660939400">+49 176 6093 9400</a>
+              </div>
+              <div class="info-item">
+                <strong>Instagram</strong>
+                <a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">@studio_mean</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="page-panel">
+            <p class="eyebrow">Studio</p>
+            <div class="info-list">
+              <div class="info-item">
+                <strong>주소</strong>
+                <span>Holzweg-passage 3<br>61440 Oberursel<br>Germany</span>
+              </div>
+              <div class="info-item">
+                <strong>촬영 분야</strong>
+                <span>프로필 · 가족사진 · 스튜디오 · 웨딩 · 스냅 · 영상 · 기업행사</span>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <nav class="page-actions" aria-label="추가 링크">
+        <a href="../">포트폴리오</a>
+        <a href="../about/">소개</a>
+        <a href="../../impressum/">Impressum</a>
+        <a href="../../datenschutz/">Datenschutz</a>
+        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">예약</a>
+      </nav>
+    </main>
+  </div>
+</body>
+</html>
