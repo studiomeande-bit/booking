@@ -1,6 +1,6 @@
 # Studio mean Portfolio
 
-`www.studio-mean.com`용 별도 정적 포트폴리오 사이트입니다.
+`studio-mean.com`용 별도 정적 포트폴리오 사이트입니다.
 
 ## 구조
 - `index.html` — 포트폴리오 랜딩/갤러리/라이트박스
@@ -55,15 +55,16 @@ IONOS 웹호스팅에서 확인할 항목:
 기본 SEO 설정은 코드에 반영되어 있습니다.
 - 독일어 / 영어 / 한국어별 URL 분리
 - `hreflang`, `canonical`, `Open Graph`, `twitter:card`
-- `ProfessionalService` 구조화 데이터
+- `LocalBusiness` / `ProfessionalService` 구조화 데이터
 - `robots.txt`
 - `sitemap.xml`
+- `www.studio-mean.com` 요청은 `https://studio-mean.com`으로 301 리다이렉트
 
 배포 후 추가로 필요한 수동 작업:
-- Google Search Console에 `https://www.studio-mean.com` 등록
-- Naver Search Advisor에 `https://www.studio-mean.com` 등록
+- Google Search Console에 `https://studio-mean.com` 등록
+- Naver Search Advisor에 `https://studio-mean.com` 등록
 - 각 서비스에서 제공하는 사이트 소유 확인 메타 태그 또는 HTML 파일을 실제 토큰 값으로 추가
-- Search Console / Search Advisor에 `https://www.studio-mean.com/sitemap.xml` 제출
+- Search Console / Search Advisor에 `https://studio-mean.com/sitemap.xml` 제출
 
 ## 로컬 미리보기
 

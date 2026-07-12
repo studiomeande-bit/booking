@@ -5,6 +5,12 @@
 [build.environment]
   SITE_MODE = "production"
 
+[[redirects]]
+  from = "https://www.studio-mean.com/*"
+  to = "https://studio-mean.com/:splat"
+  status = 301
+  force = true
+
 [[headers]]
   for = "/"
   [headers.values]
@@ -46,4 +52,4 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self'; img-src 'self' data: https://drive.google.com https://drive.usercontent.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; img-src 'self' data: https://drive.google.com https://drive.usercontent.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self' https://fonts.gstatic.com; frame-src https://www.google.com https://www.googletagmanager.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"

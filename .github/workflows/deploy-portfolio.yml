@@ -1,0 +1,51 @@
+# 포트폴리오(studio-mean.com) → IONOS 자동 배포
+# - main 브랜치에서 frontend/portfolio/** 가 바뀌면 FTPS로 증분 업로드
+# - GitHub Actions 탭에서 수동 실행(workflow_dispatch)도 가능 (dry_run 지원)
+# - 필요 시크릿: IONOS_FTP_HOST, IONOS_FTP_USERNAME, IONOS_FTP_PASSWORD
+#   (선택) IONOS_SERVER_DIR — 웹 루트 경로, 반드시 '/'로 끝나야 함. 미설정 시 './'
+name: Deploy portfolio to IONOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/portfolio/**'
+      - '.github/workflows/deploy-portfolio.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '테스트 실행 (업로드 없이 변경 목록만 로그로 확인)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-portfolio
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via FTPS (incremental)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.IONOS_FTP_HOST }}
+          username: ${{ secrets.IONOS_FTP_USERNAME }}
+          password: ${{ secrets.IONOS_FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: frontend/portfolio/
+          server-dir: ${{ secrets.IONOS_SERVER_DIR != '' && secrets.IONOS_SERVER_DIR || './' }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.netlify/**
+            **/node_modules/**
+            README.md
+            netlify.toml
+            generate-portfolio-data.py
+            refresh-drive-data.sh

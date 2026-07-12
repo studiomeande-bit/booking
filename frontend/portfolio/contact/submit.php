@@ -60,16 +60,16 @@ function fail_page(string $language): never
     $mailto = 'mailto:' . STUDIO_CONTACT_EMAIL;
     $messages = [
         'de' => [
-            'title' => 'Nachricht konnte nicht gesendet werden.',
-            'body' => 'Bitte kontaktieren Sie Studio mean direkt per E-Mail.',
+            'title' => 'Die Anfrage konnte nicht gesendet werden.',
+            'body' => 'Bitte senden Sie Ihre Anfrage direkt per E-Mail an Studio mean.',
         ],
         'en' => [
-            'title' => 'Message could not be sent.',
-            'body' => 'Please contact Studio mean directly by e-mail.',
+            'title' => 'Your inquiry could not be sent.',
+            'body' => 'Please send your inquiry directly to Studio mean by e-mail.',
         ],
         'ko' => [
             'title' => '문의 전송에 실패했습니다.',
-            'body' => '아래 이메일로 직접 연락해 주세요.',
+            'body' => '아래 이메일로 문의 내용을 직접 보내 주세요.',
         ],
     ];
     $copy = $messages[$language] ?? $messages['en'];

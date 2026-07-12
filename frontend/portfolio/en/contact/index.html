@@ -6,16 +6,35 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
-  <title>Contact — Studio mean</title>
-  <meta name="description" content="Contact Studio mean for portrait, family, studio, wedding, business event and video inquiries in Oberursel, Frankfurt and Germany.">
-  <meta name="robots" content="index,follow">
-  <link rel="canonical" href="https://www.studio-mean.com/en/contact/">
-  <link rel="alternate" hreflang="de" href="https://www.studio-mean.com/contact/">
-  <link rel="alternate" hreflang="en" href="https://www.studio-mean.com/en/contact/">
-  <link rel="alternate" hreflang="ko" href="https://www.studio-mean.com/ko/contact/">
-  <link rel="alternate" hreflang="x-default" href="https://www.studio-mean.com/contact/">
+  <title>Contact Photography Studio Oberursel / Frankfurt | Studio mean</title>
+  <meta name="description" content="Contact Studio mean for portraits, application photos, family sessions, weddings, corporate events, brand content and film production in Oberursel and Frankfurt.">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="author" content="Studio mean">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Contact Photography Studio Oberursel / Frankfurt | Studio mean">
+  <meta name="twitter:description" content="Inquiries for portraits, application photos, families, weddings, corporate events, brand content and film production in Oberursel and Frankfurt.">
+  <meta name="twitter:image" content="https://studio-mean.com/studio-mean-logo.svg">
+  <link rel="canonical" href="https://studio-mean.com/en/contact/">
+  <link rel="alternate" hreflang="de" href="https://studio-mean.com/contact/">
+  <link rel="alternate" hreflang="en" href="https://studio-mean.com/en/contact/">
+  <link rel="alternate" hreflang="ko" href="https://studio-mean.com/ko/contact/">
+  <link rel="alternate" hreflang="x-default" href="https://studio-mean.com/contact/">
+  <meta property="og:site_name" content="Studio mean">
+  <meta property="og:title" content="Contact Photography Studio Oberursel / Frankfurt | Studio mean">
+  <meta property="og:description" content="Inquiries for portraits, application photos, families, weddings, corporate events, brand content and film production in Oberursel and Frankfurt.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://studio-mean.com/en/contact/">
+  <meta property="og:image" content="https://studio-mean.com/studio-mean-logo.svg">
+  <meta property="og:image:alt" content="Contact Studio mean near Frankfurt">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:locale:alternate" content="de_DE">
+  <meta property="og:locale:alternate" content="ko_KR">
   <link rel="icon" href="../../studio-mean-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="../../portfolio.min.css?v=20260429-portfolio-seo1">
+  <link rel="stylesheet" href="../../portfolio.min.css?v=20260618-copy-layout1">
+  <script src="/site-analytics.js?v=20260430-analytics5"></script>
+  <script defer src="/contact-lead.js?v=20260712-lead1"></script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
 <body>
   <div class="site-shell">
@@ -28,7 +47,7 @@
         <a href="../about/">Studio</a>
         <a href="./">Contact</a>
         <a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">Instagram</a>
-        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Booking</a>
+        <a href="https://booking.studio-mean.com/?lang=en" target="_blank" rel="noopener">Booking</a>
         <a href="../../contact/">DE</a>
         <a href="./" aria-current="page">EN</a>
         <a href="../../ko/contact/">KO</a>
@@ -39,8 +58,8 @@
       <section class="page-header">
         <div>
           <p class="eyebrow">Studio mean · Contact</p>
-          <h1>Tell us what you are planning.</h1>
-          <p>For portraits, family sessions, studio shoots, weddings, business events and video projects. Your message goes directly to the studio and is answered by e-mail.</p>
+          <h1>Tell us what you’d like to create.</h1>
+          <p>For portraits, family sessions, weddings, corporate events and film projects. Your message goes directly to the studio and is answered personally.</p>
         </div>
         <div class="hero-meta">
           <div class="meta-card">
@@ -55,6 +74,10 @@
             <span class="meta-label">Instagram</span>
             <strong><a href="https://www.instagram.com/studio_mean/" target="_blank" rel="noopener">@studio_mean</a></strong>
           </div>
+          <div class="meta-card">
+            <span class="meta-label">Languages</span>
+            <strong>English · German · Korean</strong>
+          </div>
         </div>
       </section>
 
@@ -62,9 +85,18 @@
         <section class="page-panel">
           <p class="eyebrow">Contact Form</p>
           <h2>Send an inquiry</h2>
-          <p>Use the form for portrait, family, studio, wedding, business event or video production inquiries. The booking system remains available for direct reservations.</p>
+          <p>Use the form for open inquiries, larger productions or appointments that need a little coordination first. Fixed studio sessions can still be booked directly.</p>
 
-          <form class="contact-form" name="portfolio-contact" method="POST" action="./success/" data-netlify="true" netlify-honeypot="bot-field">
+          <div class="booking-cta">
+            <div>
+              <p class="eyebrow">Direct booking</p>
+              <h3>Would you like to reserve an appointment now?</h3>
+              <p>For fixed studio sessions, you can check available times directly on the booking page.</p>
+            </div>
+            <a class="button-dark" href="https://booking.studio-mean.com/?lang=en" target="_blank" rel="noopener">Open booking</a>
+          </div>
+
+          <form class="contact-form" name="portfolio-contact" method="POST" action="/contact/submit.php">
             <input type="hidden" name="form-name" value="portfolio-contact">
             <input type="hidden" name="site_language" value="en">
             <p class="bot-field">
@@ -92,13 +124,14 @@
                 <select id="contact-type" name="project_type" required>
                   <option value="">Please choose</option>
                   <option>Portrait</option>
+                  <option>Application / Passport photo</option>
                   <option>Family</option>
                   <option>Studio</option>
                   <option>Kids</option>
                   <option>Maternity</option>
                   <option>Wedding</option>
                   <option>Snap</option>
-                  <option>Video / Film</option>
+                  <option>Film / Video</option>
                   <option>Business / Event</option>
                   <option>Other</option>
                 </select>
@@ -108,17 +141,17 @@
             <div class="form-grid">
               <div class="field">
                 <label for="contact-date">Preferred timing</label>
-                <input id="contact-date" name="preferred_date" type="text" placeholder="e.g. May or 14 June">
+                <input id="contact-date" name="preferred_date" type="text" placeholder="e.g. sometime in May or 14 June">
               </div>
               <div class="field">
                 <label for="contact-location">Location / area</label>
-                <input id="contact-location" name="location" type="text" placeholder="Oberursel, Frankfurt or requested location">
+                <input id="contact-location" name="location" type="text" placeholder="Oberursel, Frankfurt or your preferred location">
               </div>
             </div>
 
             <div class="field">
               <label for="contact-message">Message</label>
-              <textarea id="contact-message" name="message" placeholder="Tell us about the occasion, team size, usage, style or production needs." required></textarea>
+              <textarea id="contact-message" name="message" placeholder="Tell us about the occasion, number of people, intended use, visual direction or production needs." required></textarea>
             </div>
 
             <label class="checkbox-line" for="contact-consent">
@@ -157,11 +190,23 @@
             <div class="info-list">
               <div class="info-item">
                 <strong>Address</strong>
-                <span>Holzweg-passage 3<br>61440 Oberursel<br>Germany</span>
+                <span>Holzweg-Passage 3<br>61440 Oberursel (Taunus)<br>Germany</span>
               </div>
               <div class="info-item">
                 <strong>Services</strong>
-                <span>Portrait · Family · Studio · Wedding · Snap · Film · Business Event</span>
+                <span>Portrait · Family · Studio · Wedding · Snap · Film · Corporate Event</span>
+              </div>
+            </div>
+            <div
+              class="studio-map"
+              data-google-map-src="https://www.google.com/maps?q=Studio%20mean%2C%20Holzweg-Passage%203%2C%2061440%20Oberursel%20%28Taunus%29&amp;output=embed"
+              data-google-map-title="Studio mean on Google Maps"
+            >
+              <div class="studio-map-placeholder">
+                <span>Google Maps</span>
+                <strong>Studio mean · Holzweg-Passage 3</strong>
+                <button type="button" class="button-ghost" data-google-map-load>Show map</button>
+                <a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noopener">Open in Google Maps</a>
               </div>
             </div>
           </section>
@@ -173,7 +218,7 @@
         <a href="../about/">Studio</a>
         <a href="../../impressum/">Impressum</a>
         <a href="../../datenschutz/">Datenschutz</a>
-        <a href="https://booking.studio-mean.com/" target="_blank" rel="noopener">Booking</a>
+        <a href="https://booking.studio-mean.com/?lang=en" target="_blank" rel="noopener">Booking</a>
       </nav>
     </main>
   </div>
