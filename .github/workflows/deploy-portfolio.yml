@@ -56,6 +56,17 @@ jobs:
             DRYFLAG="--dry-run"
             echo "▶ DRY-RUN: 실제 업로드 없이 변경 목록만 출력합니다."
           fi
+          # ── 인증 격리 진단: lftp 없이 순수 sftp+sshpass로 로그인만 시험 ──
+          echo "── 인증 격리 테스트 (sftp 직접) ──"
+          set +e
+          sshpass -e sftp -oBatchMode=no -oStrictHostKeyChecking=accept-new \
+            -oPreferredAuthentications=password -oPubkeyAuthentication=no \
+            -oConnectTimeout=15 -b - "${IONOS_USER}@${IONOS_HOST}" <<'SFTPDIAG' 2>&1 | grep -iE 'permission denied|denied \(|authenticated|pwd|remote working|/kunden|/home|Could not|refused|closed|password' | head -10
+          pwd
+          bye
+          SFTPDIAG
+          echo "AUTH_TEST_EXIT=$?"
+          set -e
           # lftp의 SFTP는 외부 openssh로 연결되는데 openssh는 비밀번호를 tty로만 받으므로,
           # sshpass -e 로 SSHPASS 환경변수의 비밀번호를 ssh에 주입한다.
           lftp <<LFTPEOF
