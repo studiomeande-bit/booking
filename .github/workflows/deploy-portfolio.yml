@@ -61,9 +61,11 @@ jobs:
           set net:timeout 20
           set net:max-retries 2
           set net:reconnect-interval-base 5
+          set mirror:parallel-directories no
+          set mirror:use-pget-n 1
           open sftp://${IONOS_HOST}
           user "${IONOS_USER}" "${IONOS_PASS}"
-          mirror --reverse ${DRYFLAG} --verbose --only-newer --parallel=2 \
+          mirror --reverse ${DRYFLAG} --verbose --only-newer \
             --exclude-glob .git* \
             --exclude-glob .netlify/ \
             --exclude-glob node_modules/ \
