@@ -69,15 +69,17 @@ jobs:
           set -e
           # lftp의 SFTP는 외부 openssh로 연결되는데 openssh는 비밀번호를 tty로만 받으므로,
           # sshpass -e 로 SSHPASS 환경변수의 비밀번호를 ssh에 주입한다.
+          # lftp에는 더미 비밀번호(-u user,x)를 줘서 자체 GetPass 프롬프트를 막고,
+          # 실제 인증은 sshpass -e(SSHPASS 환경변수)가 ssh에 주입한다. 격리 테스트로 검증된 방식.
           lftp <<LFTPEOF
           set sftp:auto-confirm yes
-          set sftp:connect-program "sshpass -e ssh -a -x -oBatchMode=no -oStrictHostKeyChecking=accept-new"
+          set sftp:connect-program "sshpass -e ssh -a -x -oBatchMode=no -oStrictHostKeyChecking=accept-new -oPreferredAuthentications=password -oPubkeyAuthentication=no"
           set net:timeout 20
           set net:max-retries 2
           set net:reconnect-interval-base 5
           set mirror:parallel-directories no
           set mirror:use-pget-n 1
-          open sftp://${IONOS_USER}@${IONOS_HOST}
+          open -u "${IONOS_USER},x" sftp://${IONOS_HOST}
           pwd
           mirror --reverse ${DRYFLAG} --verbose --only-newer \
             --exclude-glob .git* \
