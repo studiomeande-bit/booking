@@ -41,8 +41,18 @@ IONOS 로그인 → 호스팅 → **SFTP & SSH** (또는 FTP 계정) 메뉴에�
 - 이후 push부터는 바뀐 파일만 올라갑니다
 - 처음엔 Actions 탭에서 수동 **dry_run**으로 목록을 먼저 확인하는 것을 권장
 
+## 인증 방식 (구현 메모)
+
+IONOS 웹스페이스 SFTP는 비밀번호 인증만 지원(포트 22). lftp는 외부 openssh로 연결되는데 openssh는
+비밀번호를 tty로만 받으므로 lftp가 직접 전달하지 못한다. 그래서:
+
+- `SSHPASS` 환경변수(=`IONOS_FTP_PASSWORD` 시크릿) → `sshpass -e ssh`가 openssh에 비밀번호 주입
+- lftp에는 더미 비밀번호(`open -u "user,x"`)를 줘서 자체 GetPass 프롬프트를 막음 (실인증은 sshpass가 수행)
+- `connect-program`에 `-oPreferredAuthentications=password -oPubkeyAuthentication=no`로 password 인증 강제
+- 비밀번호는 스크립트 텍스트에 interpolation되지 않고 환경변수로만 전달 → 특수문자/로그 노출 안전
+
 ## 주의
 
-- FTPS가 안 되는 계정이면(드묾) 워크플로의 `protocol: ftps`를 조정 필요 — 그 경우 알려주세요
+- 비밀번호가 IONOS 실제 값과 다르면 `Authentication failed`. FileZilla로 먼저 접속 확인 후 그 값을 시크릿에 넣을 것
 - push 시 Netlify(booking/select)도 빌드가 돌지만, 해당 폴더 내용이 안 바뀌었으면 결과물 동일(무해)
-- FTP 비밀번호는 GitHub 시크릿에만 저장되고 로그에 노출되지 않습니다
+- 비밀번호는 GitHub 시크릿에만 저장되고 로그에 노출되지 않음
