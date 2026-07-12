@@ -55,6 +55,24 @@ jobs:
             DRYFLAG="--dry-run"
             echo "▶ DRY-RUN: 실제 업로드 없이 변경 목록만 출력합니다."
           fi
+          # ── 진단(값 미노출): 시크릿 길이/공백 여부, 실제 SFTP 접속 테스트 ──
+          printf '진단 | host_len=%s user_len=%s pass_len=%s pass_has_trailing_ws=%s\n' \
+            "${#IONOS_HOST}" "${#IONOS_USER}" "${#IONOS_PASS}" \
+            "$([ "$IONOS_PASS" != "$(printf '%s' "$IONOS_PASS" | sed -e 's/[[:space:]]*$//')" ] && echo yes || echo no)"
+          echo "── 접속 진단(pwd/ls) ──"
+          set +e
+          lftp -d <<DIAGEOF 2>&1 | grep -iE 'connect|password|login|auth|welcome|home|denied|incorrect|<--- |---> (USER|PASS)|pwd|550|530|Fatal|failed' | grep -viE 'PASS \*|USER' | head -25
+          set sftp:auto-confirm yes
+          set net:timeout 20
+          set net:max-retries 1
+          open sftp://${IONOS_HOST}
+          user "${IONOS_USER}" "${IONOS_PASS}"
+          pwd
+          cls -l
+          bye
+          DIAGEOF
+          echo "── 진단 끝 (exit=$?) ──"
+          set -e
           # 비밀번호는 lftp의 user 명령으로 전달(콤마 포함 대응). --delete 미사용(원격 파일 보존).
           lftp <<LFTPEOF
           set sftp:auto-confirm yes
