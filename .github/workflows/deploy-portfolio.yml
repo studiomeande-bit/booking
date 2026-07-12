@@ -33,19 +33,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install lftp
-        run: sudo apt-get update && sudo apt-get install -y lftp
+      - name: Install lftp and sshpass
+        run: sudo apt-get update && sudo apt-get install -y lftp sshpass
 
       - name: Deploy via SFTP (mirror, incremental)
         env:
           IONOS_HOST: ${{ secrets.IONOS_FTP_HOST }}
           IONOS_USER: ${{ secrets.IONOS_FTP_USERNAME }}
-          IONOS_PASS: ${{ secrets.IONOS_FTP_PASSWORD }}
+          # sshpass가 SSHPASS 환경변수에서 비밀번호를 읽어 ssh에 주입 (스크립트 텍스트에 비밀번호 미노출)
+          SSHPASS: ${{ secrets.IONOS_FTP_PASSWORD }}
           IONOS_DIR: ${{ secrets.IONOS_SERVER_DIR }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
           set -euo pipefail
-          if [ -z "${IONOS_HOST:-}" ] || [ -z "${IONOS_USER:-}" ] || [ -z "${IONOS_PASS:-}" ]; then
+          if [ -z "${IONOS_HOST:-}" ] || [ -z "${IONOS_USER:-}" ] || [ -z "${SSHPASS:-}" ]; then
             echo "::error::IONOS_FTP_HOST / IONOS_FTP_USERNAME / IONOS_FTP_PASSWORD 시크릿이 설정되지 않았습니다."
             exit 1
           fi
@@ -55,34 +56,18 @@ jobs:
             DRYFLAG="--dry-run"
             echo "▶ DRY-RUN: 실제 업로드 없이 변경 목록만 출력합니다."
           fi
-          # ── 진단(값 미노출): 시크릿 길이/공백 여부, 실제 SFTP 접속 테스트 ──
-          printf '진단 | host_len=%s user_len=%s pass_len=%s pass_has_trailing_ws=%s\n' \
-            "${#IONOS_HOST}" "${#IONOS_USER}" "${#IONOS_PASS}" \
-            "$([ "$IONOS_PASS" != "$(printf '%s' "$IONOS_PASS" | sed -e 's/[[:space:]]*$//')" ] && echo yes || echo no)"
-          echo "── 접속 진단(pwd/ls) ──"
-          set +e
-          lftp -d <<DIAGEOF 2>&1 | grep -iE 'connect|password|login|auth|welcome|home|denied|incorrect|<--- |---> (USER|PASS)|pwd|550|530|Fatal|failed' | grep -viE 'PASS \*|USER' | head -25
-          set sftp:auto-confirm yes
-          set net:timeout 20
-          set net:max-retries 1
-          open sftp://${IONOS_HOST}
-          user "${IONOS_USER}" "${IONOS_PASS}"
-          pwd
-          cls -l
-          bye
-          DIAGEOF
-          echo "── 진단 끝 (exit=$?) ──"
-          set -e
-          # 비밀번호는 lftp의 user 명령으로 전달(콤마 포함 대응). --delete 미사용(원격 파일 보존).
+          # lftp의 SFTP는 외부 openssh로 연결되는데 openssh는 비밀번호를 tty로만 받으므로,
+          # sshpass -e 로 SSHPASS 환경변수의 비밀번호를 ssh에 주입한다.
           lftp <<LFTPEOF
           set sftp:auto-confirm yes
+          set sftp:connect-program "sshpass -e ssh -a -x -oBatchMode=no -oStrictHostKeyChecking=accept-new"
           set net:timeout 20
           set net:max-retries 2
           set net:reconnect-interval-base 5
           set mirror:parallel-directories no
           set mirror:use-pget-n 1
-          open sftp://${IONOS_HOST}
-          user "${IONOS_USER}" "${IONOS_PASS}"
+          open sftp://${IONOS_USER}@${IONOS_HOST}
+          pwd
           mirror --reverse ${DRYFLAG} --verbose --only-newer \
             --exclude-glob .git* \
             --exclude-glob .netlify/ \
