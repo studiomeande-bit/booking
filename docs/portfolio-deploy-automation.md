@@ -5,7 +5,8 @@
 
 ## 동작
 
-- `main` 브랜치에 `frontend/portfolio/**` 변경이 push되면 → IONOS로 **FTPS 증분 업로드** (바뀐 파일만)
+- `main` 브랜치에 `frontend/portfolio/**` 변경이 push되면 → IONOS로 **SFTP(포트 22) 증분 업로드** (lftp `mirror --only-newer`, 바뀐 파일만)
+- IONOS 웹호스팅 계정은 SFTP만 제공하므로 FTPS가 아닌 SFTP 사용. `--delete` 미사용(원격 파일 보존)
 - GitHub → Actions 탭 → "Deploy portfolio to IONOS" → **Run workflow**로 수동 실행 가능
   - `dry_run` 체크 시: 실제 업로드 없이 "무엇이 올라갈지" 목록만 로그로 확인
 - 업로드 제외: README, netlify.toml, 스크립트(.sh/.py), .netlify 등 서버에 불필요한 파일
@@ -24,10 +25,12 @@ IONOS 로그인 → 호스팅 → **SFTP & SSH** (또는 FTP 계정) 메뉴에�
 
 | 시크릿 이름 | 값 |
 |---|---|
-| `IONOS_FTP_HOST` | FTP 서버 주소 |
-| `IONOS_FTP_USERNAME` | FTP 사용자명 |
-| `IONOS_FTP_PASSWORD` | FTP 비밀번호 |
+| `IONOS_FTP_HOST` | SFTP 서버 주소 (예: `access-5018383375.webspace-host.com`) |
+| `IONOS_FTP_USERNAME` | SFTP 사용자명 (예: `a2515000`) |
+| `IONOS_FTP_PASSWORD` | 해당 SFTP 계정 비밀번호 |
 | `IONOS_SERVER_DIR` | (선택) 웹 루트 경로, 반드시 `/`로 끝나야 함. 계정 루트가 곧 웹 루트면 생략 |
+
+> IONOS 연결정보 화면: SFTP · Port 22. 비밀번호를 모르면 그 화면의 **Passwort vergessen/ändern**으로 재설정 후 그 값을 시크릿에 넣으세요.
 
 ### 3. 워크플로 커밋 & 푸시
 `.github/workflows/deploy-portfolio.yml` + 포트폴리오 변경 파일을 커밋 후 main에 push.

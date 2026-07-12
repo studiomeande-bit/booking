@@ -1,8 +1,11 @@
-# 포트폴리오(studio-mean.com) → IONOS 자동 배포
-# - main 브랜치에서 frontend/portfolio/** 가 바뀌면 FTPS로 증분 업로드
-# - GitHub Actions 탭에서 수동 실행(workflow_dispatch)도 가능 (dry_run 지원)
-# - 필요 시크릿: IONOS_FTP_HOST, IONOS_FTP_USERNAME, IONOS_FTP_PASSWORD
-#   (선택) IONOS_SERVER_DIR — 웹 루트 경로, 반드시 '/'로 끝나야 함. 미설정 시 './'
+# 포트폴리오(studio-mean.com) → IONOS 자동 배포 (SFTP / lftp)
+# - main 브랜치에서 frontend/portfolio/** 가 바뀌면 SFTP로 증분 업로드(--only-newer)
+# - Actions 탭에서 수동 실행 가능 (dry_run: 업로드 없이 변경 목록만)
+# - 필요 시크릿:
+#     IONOS_FTP_HOST      예) access-5018383375.webspace-host.com
+#     IONOS_FTP_USERNAME  예) a2515000
+#     IONOS_FTP_PASSWORD  해당 SFTP 계정 비밀번호
+#     IONOS_SERVER_DIR    (선택) 웹 루트 경로, '/'로 끝나게. 미설정 시 '/'
 name: Deploy portfolio to IONOS
 
 on:
@@ -25,27 +28,50 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy via FTPS (incremental)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.IONOS_FTP_HOST }}
-          username: ${{ secrets.IONOS_FTP_USERNAME }}
-          password: ${{ secrets.IONOS_FTP_PASSWORD }}
-          protocol: ftps
-          local-dir: frontend/portfolio/
-          server-dir: ${{ secrets.IONOS_SERVER_DIR != '' && secrets.IONOS_SERVER_DIR || './' }}
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/.netlify/**
-            **/node_modules/**
-            README.md
-            netlify.toml
-            generate-portfolio-data.py
-            refresh-drive-data.sh
+      - name: Install lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp
+
+      - name: Deploy via SFTP (mirror, incremental)
+        env:
+          IONOS_HOST: ${{ secrets.IONOS_FTP_HOST }}
+          IONOS_USER: ${{ secrets.IONOS_FTP_USERNAME }}
+          IONOS_PASS: ${{ secrets.IONOS_FTP_PASSWORD }}
+          IONOS_DIR: ${{ secrets.IONOS_SERVER_DIR }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "${IONOS_HOST:-}" ] || [ -z "${IONOS_USER:-}" ] || [ -z "${IONOS_PASS:-}" ]; then
+            echo "::error::IONOS_FTP_HOST / IONOS_FTP_USERNAME / IONOS_FTP_PASSWORD 시크릿이 설정되지 않았습니다."
+            exit 1
+          fi
+          DEST="${IONOS_DIR:-/}"
+          DRYFLAG=""
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            DRYFLAG="--dry-run"
+            echo "▶ DRY-RUN: 실제 업로드 없이 변경 목록만 출력합니다."
+          fi
+          # 비밀번호는 lftp의 user 명령으로 전달(콤마 포함 대응). --delete 미사용(원격 파일 보존).
+          lftp <<LFTPEOF
+          set sftp:auto-confirm yes
+          set net:timeout 20
+          set net:max-retries 2
+          set net:reconnect-interval-base 5
+          open sftp://${IONOS_HOST}
+          user "${IONOS_USER}" "${IONOS_PASS}"
+          mirror --reverse ${DRYFLAG} --verbose --only-newer --parallel=2 \
+            --exclude-glob .git* \
+            --exclude-glob .netlify/ \
+            --exclude-glob node_modules/ \
+            --exclude README.md \
+            --exclude netlify.toml \
+            --exclude generate-portfolio-data.py \
+            --exclude refresh-drive-data.sh \
+            frontend/portfolio/ ${DEST}
+          bye
+          LFTPEOF
+          echo "✅ SFTP 배포 완료 (DEST=${DEST})"
