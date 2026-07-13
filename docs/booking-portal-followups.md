@@ -35,7 +35,9 @@
   - ko/en/de 라벨·체크리스트 모두 현지화, biz 체크리스트 확인
 - 프로덕션 라우트 프로브(`booking-status-resend`)는 배포 후 확인
 
-## 배포
+## 배포 (2026-07-13 완료)
 
-- 프론트: git push → Netlify(booking). status 페이지 자산 캐시버전 `20260713-status2`로 상향.
-- 백엔드: `clasp push` 후 **버전 200한도 정리 → `clasp deploy`** 필요. 배포 전까지 신규 라우트/필드가 프로덕션에 없으므로 포털은 기존 필드만 사용(안전).
+- 프론트: `90ef60c` push → Netlify 반영 확인 (`/status/` 200 + `X-Robots-Tag: noindex`, 자산 `20260713-status2`)
+  - netlify.toml의 `/status` 리다이렉트·noindex 헤더가 HEAD에 빠져 있던 것을 이 커밋에서 수습 (`/status` 부분만 부분 커밋, consultation·CSP 등 다른 미배포 변경은 워킹트리에 유지)
+- 백엔드: `clasp push` → 프로덕션 배포 ID `AKfycbxnHuB2u4…` **@555**로 `clasp deploy` 완료
+  - 라우트 프로브: `?api=booking-status-resend` → `Missing requestId`(도달 확인), 미지정 라우트는 `NOT_FOUND`
