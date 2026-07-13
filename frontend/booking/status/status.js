@@ -23,6 +23,10 @@
       payNote: '계약금 입금 후 예약이 확정됩니다. 입금 확인은 영업일 기준 1~2일 소요될 수 있습니다.',
       manage: '예약 변경·취소', manageIntro: '일정 변경 또는 취소가 필요하시면 아래에서 신청해 주세요. 요청 후 스튜디오 확인을 거쳐 처리됩니다.',
       reschedule: '📅 일정 변경 신청', cancel: '📩 예약 취소 요청',
+      thread: '1:1 문의', threadIntro: '예약 관련 문의를 남겨주세요. 스튜디오 답장은 이곳과 이메일로 함께 전달됩니다.',
+      threadEmpty: '아직 주고받은 메시지가 없습니다.', threadPlaceholder: '문의 내용을 입력해 주세요…',
+      threadSend: '보내기', threadSending: '전송 중…', threadSent: '전송되었습니다. 답장은 보통 영업일 기준 하루 안에 드립니다.',
+      threadError: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.', threadMe: '나', threadStudio: 'Studio mean',
       info: '오시는 길·문의', map: '지도에서 보기', mail: '이메일 문의',
       memoLabel: '요청사항',
       noManage: '이 예약은 현재 온라인 변경이 어렵습니다. 도움이 필요하시면 이메일로 연락 주세요.'
@@ -39,6 +43,10 @@
       payNote: 'Your booking is confirmed once the deposit is received. Payment confirmation may take 1–2 business days.',
       manage: 'Change or cancel', manageIntro: 'Need to reschedule or cancel? Request below and the studio will process it after review.',
       reschedule: '📅 Request reschedule', cancel: '📩 Request cancellation',
+      thread: 'Messages', threadIntro: 'Leave a message about your booking. Our replies appear here and are also emailed to you.',
+      threadEmpty: 'No messages yet.', threadPlaceholder: 'Type your message…',
+      threadSend: 'Send', threadSending: 'Sending…', threadSent: 'Sent! We usually reply within one business day.',
+      threadError: 'Could not send. Please try again shortly.', threadMe: 'Me', threadStudio: 'Studio mean',
       info: 'Directions & contact', map: 'Open in Maps', mail: 'Email us',
       memoLabel: 'Your note',
       noManage: 'Online changes aren’t available for this booking. Please email us if you need help.'
@@ -55,6 +63,10 @@
       payNote: 'Ihre Buchung ist bestätigt, sobald die Anzahlung eingegangen ist. Die Bestätigung kann 1–2 Werktage dauern.',
       manage: 'Ändern oder stornieren', manageIntro: 'Termin ändern oder stornieren? Bitte unten anfragen – das Studio bearbeitet Ihre Anfrage nach Prüfung.',
       reschedule: '📅 Termin ändern', cancel: '📩 Stornierung anfragen',
+      thread: 'Nachrichten', threadIntro: 'Hinterlassen Sie eine Nachricht zu Ihrer Buchung. Unsere Antworten erscheinen hier und per E-Mail.',
+      threadEmpty: 'Noch keine Nachrichten.', threadPlaceholder: 'Ihre Nachricht…',
+      threadSend: 'Senden', threadSending: 'Wird gesendet…', threadSent: 'Gesendet! Wir antworten in der Regel innerhalb eines Werktags.',
+      threadError: 'Senden fehlgeschlagen. Bitte später erneut versuchen.', threadMe: 'Ich', threadStudio: 'Studio mean',
       info: 'Anfahrt & Kontakt', map: 'In Maps öffnen', mail: 'E-Mail schreiben',
       memoLabel: 'Ihre Notiz',
       noManage: 'Online-Änderungen sind für diese Buchung nicht möglich. Bitte kontaktieren Sie uns per E-Mail.'
@@ -200,6 +212,14 @@
       $('manageBtns').innerHTML = '';
     }
 
+    // 1:1 문의 스레드
+    $('threadTitle').textContent = '💬 ' + t.thread;
+    $('threadIntro').textContent = t.threadIntro;
+    $('threadInput').placeholder = t.threadPlaceholder;
+    $('threadSendBtn').textContent = t.threadSend;
+    renderThread(threadMessages);
+    if (!threadLoaded) loadThread();
+
     // 오시는 길 · 문의
     $('infoTitle').textContent = t.info;
     // directions는 우리 서버(booking-status API)가 메일과 동일한 템플릿으로 만든 신뢰 HTML
@@ -221,6 +241,94 @@
     else if (paidState === 'unpaid') chip = '<span class="pay-chip unpaid">' + esc(t.unpaid) + '</span>';
     return '<div class="pay-row"><span class="pay-label">' + esc(label) + '</span><span class="pay-right"><b>' + esc(value) + '</b>' + chip + '</span></div>';
   }
+
+  /* ── 1:1 문의 스레드 ── */
+  var threadMessages = [];
+  var threadLoaded = false;
+  var threadTimer = null;
+
+  function requestId() {
+    return 'thr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function renderThread(messages) {
+    var t = T[lang];
+    var list = $('threadList');
+    if (!messages || !messages.length) {
+      list.innerHTML = '<div class="thread-empty">' + esc(t.threadEmpty) + '</div>';
+      return;
+    }
+    list.innerHTML = messages.map(function (m) {
+      var mine = m.direction !== 'studio';
+      return '<div class="thread-msg ' + (mine ? 'mine' : 'studio') + '">'
+        + esc(m.message)
+        + '<div class="thread-meta">' + esc(mine ? t.threadMe : t.threadStudio) + ' · ' + esc(m.at || '') + '</div></div>';
+    }).join('');
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function loadThread() {
+    var url = API_BASE + '?api=booking-messages&ref=' + encodeURIComponent(ref) + '&_ts=' + Date.now();
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var d = res && (res.data || res);
+        if (!res || res.ok === false || !d || d.ok === false) return;
+        threadLoaded = true;
+        threadMessages = d.messages || [];
+        renderThread(threadMessages);
+      })
+      .catch(function () {});
+    if (!threadTimer) threadTimer = setInterval(function () {
+      if (document.visibilityState === 'visible') loadThread();
+    }, 45000);
+  }
+
+  function sendThreadMessage() {
+    var t = T[lang];
+    var input = $('threadInput');
+    var btn = $('threadSendBtn');
+    var text = String(input.value || '').trim();
+    var hint = $('threadHint');
+    if (!text) return;
+    btn.disabled = true;
+    btn.textContent = t.threadSending;
+    hint.textContent = '';
+    fetch(API_BASE + '?api=booking-message-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ requestId: requestId(), data: { ref: ref, message: text } })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false;
+        btn.textContent = t.threadSend;
+        var d = res && (res.data || res);
+        if (!res || res.ok === false || !d || d.ok === false) {
+          hint.textContent = (d && d.message) || (res && res.error && res.error.message) || t.threadError;
+          return;
+        }
+        input.value = '';
+        threadMessages = d.messages || threadMessages;
+        renderThread(threadMessages);
+        hint.textContent = t.threadSent;
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = t.threadSend;
+        hint.textContent = t.threadError;
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {});
+  (function wireThread() {
+    var btn = $('threadSendBtn');
+    if (btn) btn.addEventListener('click', sendThreadMessage);
+    var input = $('threadInput');
+    if (input) input.addEventListener('keydown', function (ev) {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') sendThreadMessage();
+    });
+  })();
 
   boot();
 })();
