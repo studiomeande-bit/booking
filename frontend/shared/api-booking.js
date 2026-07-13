@@ -33,12 +33,24 @@ export function submitWalkinIntake(data, requestId) {
   return requestJson(buildPayloadUrl('walkin-intake', data, { requestId }));
 }
 
+export function fetchWalkinToken() {
+  return requestJson(buildUrl('walkin-token'));
+}
+
+export function submitConsultation(data, requestId) {
+  return requestJson(buildPayloadUrl('consultation', data, { requestId }));
+}
+
 export function joinWaitlist(data, requestId) {
   return requestJson(buildPayloadUrl('waitlist-join', data, { requestId }));
 }
 
 export function lookupContact(data) {
   return requestJson(buildPayloadUrl('contact-lookup', data));
+}
+
+export function lookupAddress(data) {
+  return requestJson(buildPayloadUrl('address-lookup', data));
 }
 
 export function fetchGutscheinTicket(code) {

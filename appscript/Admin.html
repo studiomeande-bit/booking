@@ -39,7 +39,7 @@ th.sortable{cursor:pointer;user-select:none;}th.sortable:hover{background:#f1f5f
 td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;}
 tr:hover td{background:#f8fafc;}
 .badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.badge-wait{background:#fef3c7;color:#92400e;}.badge-ok{background:#d1fae5;color:#065f46;}.badge-cancel{background:#fee2e2;color:#991b1b;}.badge-shoot{background:#dbeafe;color:#1e40af;}.badge-select{background:#ede9fe;color:#5b21b6;}.badge-work{background:#d1fae5;color:#064e3b;font-weight:800;}
+.badge-wait{background:#fef3c7;color:#92400e;}.badge-ok{background:#dcfce7;color:#166534;}.badge-cancel{background:#fee2e2;color:#991b1b;}.badge-shoot{background:#dbeafe;color:#1e40af;}.badge-select{background:#ede9fe;color:#5b21b6;}.badge-work{background:#e0e7ff;color:#3730a3;font-weight:800;}
 .group-tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;}
 .gt-pass{background:#6366f1;}.gt-prof{background:#0ea5e9;}.gt-stud{background:#10b981;}
 .gt-snap{background:#f59e0b;}.gt-wed{background:#ec4899;}.gt-biz{background:#8b5cf6;}.gt-etc{background:#94a3b8;}
@@ -95,10 +95,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
 .status-sel{width:auto;padding:3px 4px;font-size:11px;font-weight:700;border-radius:6px;border:1.5px solid #e2e8f0;cursor:pointer;background:#fff;color:#1e293b;transition:border-color .15s;}
 .status-sel:hover{border-color:#94a3b8;}.status-sel:focus{outline:none;border-color:#2D2A26;}
 .status-sel.s-wait{background:#fef3c7;color:#92400e;border-color:#fde68a;}
-.status-sel.s-ok{background:#d1fae5;color:#065f46;border-color:#6ee7b7;}
+.status-sel.s-ok{background:#dcfce7;color:#166534;border-color:#86efac;}
 .status-sel.s-shoot{background:#dbeafe;color:#1e40af;border-color:#93c5fd;}
 .status-sel.s-select{background:#ede9fe;color:#5b21b6;border-color:#c4b5fd;}
-.status-sel.s-work{background:#d1fae5;color:#064e3b;border-color:#34d399;font-weight:800;}
+.status-sel.s-work{background:#e0e7ff;color:#3730a3;border-color:#a5b4fc;font-weight:800;}
 .status-sel.s-cancel{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @media(max-width:640px){.form-row{grid-template-columns:1fr;}.week-grid{gap:3px;}.week-day-cell{padding:6px;min-height:60px;}.wev{font-size:9px;}}
@@ -159,7 +159,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <input type="text" id="searchInput" placeholder="🔍 이름·상품·메모 검색..." oninput="debouncedRenderTable()">
         <select id="statusFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 상태</option><option>대기중</option><option>확정됨</option><option>촬영완료</option><option>셀렉완료</option><option>작업완료</option><option>취소됨</option></select>
         <select id="monthFilter" onchange="renderTable()" style="width:auto;"></select>
-        <select id="groupFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 종류</option><option value="pass">여권/비자</option><option value="prof">프로필</option><option value="stud">스튜디오</option><option value="snap">야외스냅</option><option value="wed">프리웨딩</option><option value="biz">기업/행사</option></select>
+        <select id="groupFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 종류</option><option value="pass">여권/비자</option><option value="prof">프로필</option><option value="stud">스튜디오</option><option value="snap">야외/홈스냅</option><option value="wed">프리웨딩</option><option value="biz">행사/이벤트</option></select>
         <select id="payFilter" onchange="renderTable()" style="width:auto;"><option value="">전체 결제</option><option>미결제</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select>
       </div>
       <div class="action-bar">
@@ -345,7 +345,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>시간 *</label><select id="m_time"></select></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>촬영 종류 *</label><select id="m_group" onchange="onManualGroupChange()"><option value="">-- 선택 --</option><option value="pass">여권/비자</option><option value="prof">프로필</option><option value="stud">스튜디오</option><option value="snap">야외스냅</option><option value="wed">프리웨딩</option><option value="biz">기업/행사</option><option value="기타">기타</option></select></div>
+        <div class="form-group"><label>촬영 종류 *</label><select id="m_group" onchange="onManualGroupChange()"><option value="">-- 선택 --</option><option value="pass">여권/비자</option><option value="prof">프로필</option><option value="stud">스튜디오</option><option value="snap">야외/홈스냅</option><option value="wed">프리웨딩</option><option value="biz">행사/이벤트</option><option value="마이리얼트립">마이리얼트립</option><option value="기타">기타</option></select></div>
         <div class="form-group"><label>상품명 *</label><select id="m_product" onchange="onManualProductChange()"><option value="">-- 촬영종류 먼저 선택 --</option></select></div>
       </div>
       <div class="form-row">
@@ -443,7 +443,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="card"><div class="card-title">🎉 이벤트 할인</div><div class="form-row"><div class="form-group"><label>할인율 (%)</label><input type="number" id="s_rate" min="0" max="100" placeholder="0"></div><div class="form-group"><label>시작일</label><input type="date" id="s_start"></div></div><div class="form-group"><label>종료일</label><input type="date" id="s_end"></div></div>
     <div class="card"><div class="card-title">🌷 프로모션 페이지</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">`booking.studio-mean.com/promo/` 페이지 노출 여부를 제어합니다.</div><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="s_promo_enabled"><span>프로모션 페이지 활성화</span></label></div>
     <div class="card"><div class="card-title">⭐ 당일 재방문 할인</div><div class="form-row"><div class="form-group"><label>재방문 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div></div></div>
-    <div class="card"><div class="card-title">🕒 예약 영업시간</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">형식 예: <code>09:30-11:40,15:00-17:30</code>. 비워두면 기본값으로 저장됩니다.</div><div class="form-row"><div class="form-group"><label>화-금 공개 예약</label><input type="text" id="s_weekday_hours" placeholder="09:30-11:40,15:00-17:30"></div><div class="form-group"><label>토요일 공개 예약</label><input type="text" id="s_saturday_hours" placeholder="09:00-16:00"></div></div><div style="font-size:12px;color:#64748b;">월요일/일요일 공개 예약 차단과 웨딩·기업 예약의 별도 운영시간은 기존 규칙을 유지합니다.</div></div>
+    <div class="card"><div class="card-title">🕒 예약 영업시간</div><div style="font-size:12px;color:#64748b;margin-bottom:12px;">형식 예: <code>09:30-11:30,15:00-17:30</code>. 비워두면 기본값으로 저장됩니다.</div><div class="form-row"><div class="form-group"><label>화-금 공개 예약</label><input type="text" id="s_weekday_hours" placeholder="09:30-11:30,15:00-17:30"></div><div class="form-group"><label>토요일 공개 예약</label><input type="text" id="s_saturday_hours" placeholder="09:00-16:00"></div></div><div style="font-size:12px;color:#64748b;">월요일/일요일 공개 예약 차단과 웨딩·기업 예약의 별도 운영시간은 기존 규칙을 유지합니다.</div></div>
     <div class="card"><div class="card-title">📅 휴무일 설정</div><div class="hcal-wrap"><div class="hcal-header"><button class="hcal-nav" onclick="changeHolidayCal(-1)">◀</button><div style="font-size:14px;font-weight:700;" id="hcalMonthLabel"></div><button class="hcal-nav" onclick="changeHolidayCal(1)">▶</button></div><div class="hcal-grid" id="hcalGrid"></div><div style="font-size:12px;color:#64748b;margin-top:8px;" id="hcalSummary"></div><div id="hcalSelectedList" style="margin-top:6px;"></div></div></div>
     <div class="card"><div class="card-title">🔒 비밀번호 변경</div><div class="form-group"><label>새 비밀번호</label><input type="password" id="s_pw" placeholder="새 비밀번호"></div></div>
     <button class="btn btn-primary" style="padding:12px 28px;" onclick="saveSettings()">💾 설정 저장</button>
@@ -558,7 +558,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <thead><tr>
             <th style="width:30px;"></th>
             <th>촬영일</th><th>고객명</th><th>종류</th><th>상품</th>
-            <th>예약</th><th>셀렉</th><th>발송일</th><th>마감일</th><th>리마인드</th><th>재수정</th><th>추가금/인보이스</th><th>기본보정</th><th>제출일</th><th>관리</th>
+            <th>예약</th><th>셀렉</th><th>발송일</th><th>마감일</th><th>리마인드</th><th>재수정</th><th>추가금/인보이스</th><th>기본보정</th><th>제출일</th><th>수령</th><th>관리</th>
           </tr></thead>
           <tbody id="selectHistoryBody"><tr><td colspan="16" style="text-align:center;color:#94a3b8;padding:20px;">불러오는 중...</td></tr></tbody>
         </table>
@@ -660,18 +660,34 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       ℹ️ 날짜/시간 변경 시 캘린더 이벤트도 자동으로 업데이트되며 고객에게 변경 알림이 발송됩니다.
     </div>
     <div class="form-row"><div class="form-group"><label>상태</label><select id="edit_status"><option>대기중</option><option>확정됨</option><option>촬영완료</option><option>셀렉완료</option><option>작업완료</option><option>취소됨</option></select></div><div class="form-group"><label>고객명</label><input type="text" id="edit_name"></div></div>
-    <div class="form-row"><div class="form-group"><label>연락처</label><input type="text" id="edit_phone"></div><div class="form-group"><label>총금액 (€)</label><input type="text" id="edit_price"></div></div>
+    <div class="form-row"><div class="form-group"><label>연락처</label><input type="text" id="edit_phone"></div><div class="form-group"><label>이메일</label><input type="email" id="edit_email" placeholder="customer@example.com"></div></div>
+    <div class="form-group"><label>총금액 (€)</label><input type="text" id="edit_price"></div>
     <div class="form-group"><label>고객 주소</label><textarea id="edit_address" rows="2" placeholder="Straße, Hausnummer, PLZ, Stadt"></textarea></div>
     <div class="form-row"><div class="form-group"><label>계약금</label><input type="text" id="edit_deposit"></div><div class="form-group"><label>잔금</label><input type="text" id="edit_balance"></div></div>
     <div class="form-row">
       <div class="form-group"><label>결제 수단</label><select id="edit_payMethod"><option>미결제</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select></div>
       <div class="form-group"><label>계약금 결제수단</label><select id="edit_depPayMethod"><option>-</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select></div>
     </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:8px;">결제 연결 기록</div>
+      <div class="form-row">
+        <div class="form-group"><label>기록 유형</label><select id="edit_paymentLinkType"><option value="">해당 없음</option><option value="묶음결제">묶음결제 (여러 예약 1회 결제)</option><option value="분할결제">분할결제 (1개 예약 여러 번 결제)</option></select></div>
+        <div class="form-group"><label>결제그룹 ID</label><input type="text" id="edit_paymentLinkGroup" placeholder="예: PAY-20260704-001"></div>
+      </div>
+      <div class="form-group"><label>연결 예약 행</label><input type="text" id="edit_paymentLinkedRows" placeholder="묶음결제 예: 125, 126"></div>
+      <div class="form-group"><label>분할 결제 내역</label><textarea id="edit_paymentSplitDetails" rows="2" placeholder="예: 2026-07-04 카드 100€ / 2026-07-10 계좌이체 150€"></textarea></div>
+      <div class="form-group"><label>결제 메모</label><textarea id="edit_paymentMemo" rows="2" placeholder="정산 확인, 입금자명, 인보이스 연결 등 내부 메모"></textarea></div>
+      <div style="font-size:11px;color:#64748b;">묶음결제는 연결된 예약들에 같은 결제그룹 ID와 행 번호를 남겨두면 됩니다.</div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>✅ 잔금 입금일</label><input type="date" id="edit_balanceDate"></div>
       <div class="form-group"><label>추가 항목</label><input type="text" id="edit_extraItem" placeholder="추가 구매 항목"></div>
     </div>
     <div class="form-group"><label>메모</label><textarea id="edit_memo" rows="3"></textarea></div>
+    <div id="edit_passportActions" style="display:none;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#0e7490;">
+      <b>여권사진</b>
+      <button class="btn btn-outline btn-sm" style="margin-left:8px;color:#0369a1;border-color:#a5f3fc;" onclick="applyPassportAffiliateDiscount(parseInt(document.getElementById('edit_rowIndex').value,10),this)">제휴사 할인 적용</button>
+    </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">취소</button><button class="btn btn-primary" onclick="saveEdit()">저장</button></div>
   </div>
 </div>
@@ -836,7 +852,7 @@ let printOrdersData=[];
 let invoiceItems=[];
 
 const PRINT_PRICES={'basic_10x15':{label:'기본 10×15cm',price:5,priceRetouched:0},'premium_10x15':{label:'프리미엄 10×15cm',price:8,priceRetouched:3},'basic_a4':{label:'기본 A4',price:15,priceRetouched:10},'premium_a4':{label:'프리미엄 A4',price:20,priceRetouched:15},'premium_a3':{label:'프리미엄 A3',price:50,priceRetouched:35}};
-const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외스냅',wed:'프리웨딩',biz:'기업/행사'};
+const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외/홈스냅',wed:'프리웨딩',biz:'행사/이벤트'};
 const G_COLORS={pass:'wev-pass',prof:'wev-prof',stud:'wev-stud',snap:'wev-snap',wed:'wev-wed',biz:'wev-biz'};
 const GT_CLASS={pass:'gt-pass',prof:'gt-prof',stud:'gt-stud',snap:'gt-snap',wed:'gt-wed',biz:'gt-biz'};
 
@@ -963,7 +979,7 @@ function renderWeekGrid(customers){
     const cancelEvs=customers.filter(c=>c.dateStr.startsWith(dStr)&&c.status==='취소됨');
     html+=`<div class="week-day-cell${isToday?' today-cell':''}">
       <div class="week-day-hdr">${dows[i]} ${d.getDate()}</div>
-      ${dayEvs.map(e=>`<div class="wev ${G_COLORS[e.itemGroup]||'wev-stud'}${e.status==='대기중'?' wev-wait':''}${e.status==='촬영완료'?' wev-shoot':''}${e.status==='셀렉완료'?' wev-shoot':''}" onclick="gotoBookingDetail(${e.rowIndex})" title="${e.name} — ${e.product} [${e.status}]">${e.dateStr.slice(11,16)||'?'} ${e.name}${e.status==='촬영완료'?' 📷':e.status==='셀렉완료'?' 🖼':''}</div>`).join('')}
+      ${dayEvs.map(e=>{const babyLabel=getAdminBabyTypeLabel(e);return `<div class="wev ${G_COLORS[e.itemGroup]||'wev-stud'}${e.status==='대기중'?' wev-wait':''}${e.status==='촬영완료'?' wev-shoot':''}${e.status==='셀렉완료'?' wev-shoot':''}" onclick="gotoBookingDetail(${e.rowIndex})" title="${e.name} — ${e.product}${babyLabel?' — '+babyLabel:''} [${e.status}]">${e.dateStr.slice(11,16)||'?'} ${e.name}${babyLabel?' · '+babyLabel.replace('촬영',''):''}${e.status==='촬영완료'?' 📷':e.status==='셀렉완료'?' 🖼':''}</div>`;}).join('')}
       ${cancelEvs.map(e=>`<div class="wev wev-cancel">${e.dateStr.slice(11,16)||'?'} ${e.name}</div>`).join('')}
     </div>`;
   }
@@ -974,10 +990,90 @@ function renderWeekGrid(customers){
 function buildMonthFilter(){const sel=document.getElementById('monthFilter');sel.innerHTML='<option value="">전체 월</option>';[...new Set(allCustomers.map(c=>c.dateStr?c.dateStr.slice(0,7):null).filter(Boolean))].sort().reverse().forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});}
 const debouncedRenderTable=(()=>function(){clearTimeout(debounceTimer);debounceTimer=setTimeout(renderTable,300);})();
 function sortTable(f){if(sortField===f)sortDir*=-1;else{sortField=f;sortDir=-1;}document.querySelectorAll('.sort-icon').forEach(el=>el.textContent='↕');const ic=document.getElementById('sort_'+f);if(ic)ic.textContent=sortDir>0?'↑':'↓';renderTable();}
+function escAdminBabyHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function getAdminBabyTypeLabel(c){
+  const direct=String(c&&c.babyTypeLabel||'').trim();
+  if(direct) return direct;
+  const text=[c&&c.memo,c&&c.extraItem,c&&c.product].join(' ');
+  if(/돌\s*촬영|돌상|돌잔치|1st\s*Birthday|1\.\s*Geburtstag/i.test(text)) return '돌촬영';
+  if(/백일\s*촬영|100\s*Days|100\s*Tage|백일/i.test(text)) return '백일촬영';
+  return '';
+}
+function renderAdminBabyTypeBadge(c){
+  const label=getAdminBabyTypeLabel(c);
+  if(!label) return '';
+  const isDol=label.indexOf('돌')>-1;
+  const bg=isDol?'#fef3c7':'#eff6ff';
+  const color=isDol?'#92400e':'#1d4ed8';
+  const border=isDol?'#fde68a':'#bfdbfe';
+  return `<div style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:${bg};color:${color};border:1px solid ${border};font-size:11px;font-weight:900;line-height:1.35;">${escAdminBabyHtml(label)}</div>`;
+}
+
+function renderPaymentLinkBadge(c){
+  const type=String(c&&c.paymentLinkType||'').trim();
+  const group=String(c&&c.paymentLinkGroup||'').trim();
+  const rows=String(c&&c.paymentLinkedRows||'').trim();
+  const split=String(c&&c.paymentSplitDetails||'').trim();
+  const memo=String(c&&c.paymentMemo||'').trim();
+  if(!type&&!group&&!rows&&!split&&!memo) return '';
+  const isSplit=type==='분할결제';
+  const label=type||(split?'분할결제':'묶음결제');
+  const bg=isSplit?'#f5f3ff':'#ecfdf5';
+  const color=isSplit?'#6d28d9':'#047857';
+  const border=isSplit?'#c4b5fd':'#86efac';
+  const detail=[group?`그룹 ${group}`:'',rows?`행 ${rows}`:'',split?split:'',memo?memo:''].filter(Boolean).join(' · ');
+  return `<div style="margin-top:5px;padding:5px 7px;border-radius:8px;background:${bg};color:${color};border:1px solid ${border};font-size:10px;font-weight:800;line-height:1.4;white-space:normal;max-width:150px;" title="${escAdminBabyHtml(detail)}">${escAdminBabyHtml(label)}${detail?`<br><span style="font-weight:600;color:#475569;">${escAdminBabyHtml(detail)}</span>`:''}</div>`;
+}
+
+function parseAdminEuroInput(value){
+  const normalized=String(value||'').trim().replace(',', '.').replace(/[^0-9.-]/g,'');
+  return Math.round((Number(normalized)||0)*100)/100;
+}
+
+function isPassportAdminBooking(c){
+  if(!c) return false;
+  if(c.isPassport) return true;
+  if(String(c.itemGroup||'').trim()==='pass') return true;
+  return /여권|비자|passfoto|passport|e-passbild/i.test(String(c.product||''));
+}
+
+function applyPassportAffiliateDiscount(rowIndex,btn){
+  rowIndex=parseInt(rowIndex,10)||0;
+  const c=(allCustomers||[]).find(x=>Number(x.rowIndex)===rowIndex);
+  if(c&&!isPassportAdminBooking(c)){alert('여권/비자 예약에만 제휴사 할인을 적용할 수 있습니다.');return;}
+  const amountRaw=prompt(`${c&&c.name?c.name:'해당 예약'} 제휴사 할인 금액(€)을 입력해 주세요.`, '10');
+  if(amountRaw===null) return;
+  const amount=parseAdminEuroInput(amountRaw);
+  if(!amount||amount<=0){alert('할인 금액을 확인해 주세요.');return;}
+  const partnerName=(prompt('제휴사명 또는 메모를 입력해 주세요.', '제휴사')||'제휴사').trim()||'제휴사';
+  const currentTotal=parseAdminEuroInput(c&&c.price);
+  const afterTotal=currentTotal?Math.max(0,Math.round((currentTotal-amount)*100)/100):0;
+  const summary=currentTotal?`현재 총액 ${currentTotal}€에서 ${amount}€ 할인하여 ${afterTotal}€로 변경합니다.`:`${amount}€ 제휴사 할인을 적용합니다.`;
+  if(!confirm(`${summary}\n\n계속하시겠습니까?`)) return;
+  const originalLabel=btn?btn.textContent:'';
+  if(btn){btn.dataset.busy='1';btn.textContent='적용중';}
+  google.script.run
+    .withSuccessHandler(res=>{
+      if(btn){btn.dataset.busy='';btn.textContent=originalLabel;}
+      if(res&&res.ok){
+        alert(`제휴사 할인 적용 완료: ${res.previousTotal}€ → ${res.newTotal}€`);
+        const modalRow=parseInt(document.getElementById('edit_rowIndex')?.value||'0',10)||0;
+        if(modalRow===rowIndex){
+          if(document.getElementById('edit_price')) document.getElementById('edit_price').value=res.newTotal;
+          if(document.getElementById('edit_balance')) document.getElementById('edit_balance').value=res.newBalance;
+        }
+        loadAll();
+      }else{
+        alert('제휴사 할인 적용 실패: '+((res&&res.message)||''));
+      }
+    })
+    .withFailureHandler(e=>{if(btn){btn.dataset.busy='';btn.textContent=originalLabel;}handleApiError(e);alert('제휴사 할인 적용 실패: '+((e&&e.message)||e||''));})
+    .applyPassportAffiliateDiscountAdmin(adminToken,rowIndex,{amount:amount,partnerName:partnerName});
+}
 
 function renderTable(){
   const q=(document.getElementById('searchInput').value||'').toLowerCase(),sf=document.getElementById('statusFilter').value,mf=document.getElementById('monthFilter').value,gf=document.getElementById('groupFilter').value,pf=document.getElementById('payFilter').value;
-  let data=allCustomers.filter(c=>{if(sf&&c.status!==sf)return false;if(mf&&!(c.dateStr||'').startsWith(mf))return false;if(gf&&c.itemGroup!==gf)return false;if(pf&&!String(c.payMethod||'').includes(pf))return false;if(q&&!(c.name+c.product+(c.memo||'')+(c.email||'')).toLowerCase().includes(q))return false;return true;});
+  let data=allCustomers.filter(c=>{if(sf&&c.status!==sf)return false;if(mf&&!(c.dateStr||'').startsWith(mf))return false;if(gf&&c.itemGroup!==gf)return false;if(pf&&!String(c.payMethod||'').includes(pf))return false;if(q&&!(c.name+c.product+(c.memo||'')+(c.email||'')+(c.babyTypeLabel||'')+getAdminBabyTypeLabel(c)+(c.profileAge||'')+(c.studioFamilyMembers||'')+(c.paymentLinkType||'')+(c.paymentLinkGroup||'')+(c.paymentLinkedRows||'')+(c.paymentSplitDetails||'')+(c.paymentMemo||'')).toLowerCase().includes(q))return false;return true;});
   data.sort((a,b)=>{let va=a[sortField],vb=b[sortField];if(typeof va==='string'){va=va.toLowerCase();vb=(vb||'').toLowerCase();}return va<vb?-sortDir:va>vb?sortDir:0;});
   const STATUS_CLASS={대기중:'s-wait',확정됨:'s-ok',촬영완료:'s-shoot',셀렉완료:'s-select',작업완료:'s-work',취소됨:'s-cancel'};
   const STATUS_LIST=['대기중','확정됨','촬영완료','셀렉완료','작업완료','취소됨'];
@@ -986,7 +1082,7 @@ function renderTable(){
   const dc=dep=>{if(!dep||dep==='-')return '<span class="dep-none">-</span>';if(/입금전|미입금/.test(dep))return `<span class="dep-pending">💳 미입금</span>`;if(/완료|입금완료/.test(dep))return `<span class="dep-done">✅ 완료</span>`;return `<span style="font-size:11px;color:#475569;">${dep}</span>`;};
   const bd=dateStr=>dateStr?`<span style="background:#10b981;color:#fff;padding:3px 6px;border-radius:4px;font-size:11px;font-weight:bold;">${dateStr}</span>`:`<span style="color:#94a3b8;font-size:11px;">미확인</span>`;
 
-  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}${(c.depositPaid==='Y'||c.balancePaid==='Y'||c.lexwarePaymentStatus)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#475569;">${c.depositPaid==='Y'?`💳 계약금 ${c.depositPaidAmount||''}€`:'💳 계약금 미입금'}${c.balancePaid==='Y'?`<br>✅ 잔금 ${c.balancePaidAmount||''}€`:(c.balanceDate?`<br>📅 잔금일 ${c.balanceDate}`:'')}${c.lexwarePaymentStatus?`<br>📚 ${c.lexwarePaymentStatus}`:''}</div>`:''}</td><td style="font-size:12px;">${c.payMethod||''}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">💶결제</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
+  document.getElementById('tableBody').innerHTML=data.map(c=>`<tr${c.rescheduleReq?' style="background:#fffbeb;"':''}><td><input type="checkbox" class="row-chk" data-idx="${c.rowIndex}" onchange="updateSelectedCount()"></td><td style="font-size:12px;white-space:nowrap;">${c.dateStr||''}</td><td>${sd(c.rowIndex,c.status)}</td><td><div style="font-weight:700;">${c.name}${c.rescheduleReq?` <span style="background:#fde68a;color:#92400e;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:700;" title="${c.rescheduleReq}">📅변경요청</span>`:''}</div><div style="font-size:11px;color:#64748b;">${c.phone||''}</div><div style="font-size:11px;color:#94a3b8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${String(c.email||'').replace(/"/g,'&quot;')}">${c.email||''}</div></td><td>${gt(c.itemGroup)}</td><td style="font-size:12px;max-width:110px;">${c.product||''}${renderAdminBabyTypeBadge(c)}${c.extraItem?`<div style="margin-top:4px;font-size:10px;color:#64748b;white-space:normal;line-height:1.45;">${c.extraItem}</div>`:''}</td><td style="font-weight:700;white-space:nowrap;">${c.price}€</td><td>${dc(c.deposit)}${(c.depositPaid==='Y'||c.balancePaid==='Y'||c.lexwarePaymentStatus)?`<div style="margin-top:4px;font-size:10px;line-height:1.45;color:#475569;">${c.depositPaid==='Y'?`💳 계약금 ${c.depositPaidAmount||''}€`:'💳 계약금 미입금'}${c.balancePaid==='Y'?`<br>✅ 잔금 ${c.balancePaidAmount||''}€`:(c.balanceDate?`<br>📅 잔금일 ${c.balanceDate}`:'')}${c.lexwarePaymentStatus?`<br>📚 ${c.lexwarePaymentStatus}`:''}</div>`:''}</td><td style="font-size:12px;">${c.payMethod||''}${renderPaymentLinkBadge(c)}</td><td>${bd(c.balanceDate)}</td><td style="font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${((c.extraItem?c.extraItem+' | ':'')+(c.memo||'')).replace(/"/g,'&quot;')}">${c.memo||c.extraItem||''}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick="openEdit(${c.rowIndex})">수정</button> <button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="openSelectModal(${c.rowIndex})">📷셀렉</button>${isPassportAdminBooking(c)?` <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0369a1;border-color:#a5f3fc;" onclick="applyPassportAffiliateDiscount(${c.rowIndex},this)">제휴할인</button>`:''} <button class="btn btn-outline btn-sm" style="font-size:11px;color:#7c3aed;border-color:#c4b5fd;" onclick="openInvIssueModal(${c.rowIndex})">📄인보이스</button> <button class="btn btn-outline btn-sm" style="font-size:11px;color:#0f766e;border-color:#99f6e4;" onclick="syncBookingLexware(${c.rowIndex})">💶결제</button>${c.status!=='취소됨'?` <button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="openCancelModal(${c.rowIndex})">🚫취소</button>`:''}</td></tr>`).join('');
   document.getElementById('tableInfo').textContent=`${data.length}건 / 전체 ${allCustomers.length}건`;
 }
 
@@ -1007,15 +1103,23 @@ function openEdit(rowIndex){
   if(document.getElementById('edit_status')) document.getElementById('edit_status').value=c.status||'대기중';
   if(document.getElementById('edit_name')) document.getElementById('edit_name').value=c.name||'';
   if(document.getElementById('edit_phone')) document.getElementById('edit_phone').value=c.phone||'';
+  if(document.getElementById('edit_email')) document.getElementById('edit_email').value=c.email||'';
   if(document.getElementById('edit_address')) document.getElementById('edit_address').value=c.address||'';
   if(document.getElementById('edit_price')) document.getElementById('edit_price').value=c.price||'';
   if(document.getElementById('edit_deposit')) document.getElementById('edit_deposit').value=c.depositRaw||'';
   if(document.getElementById('edit_balance')) document.getElementById('edit_balance').value=c.balance||'';
   if(document.getElementById('edit_payMethod')) document.getElementById('edit_payMethod').value=c.payMethod||'미결제';
   if(document.getElementById('edit_depPayMethod')) document.getElementById('edit_depPayMethod').value=c.depPayMethod||'-';
+  if(document.getElementById('edit_paymentLinkType')) document.getElementById('edit_paymentLinkType').value=c.paymentLinkType||'';
+  if(document.getElementById('edit_paymentLinkGroup')) document.getElementById('edit_paymentLinkGroup').value=c.paymentLinkGroup||'';
+  if(document.getElementById('edit_paymentLinkedRows')) document.getElementById('edit_paymentLinkedRows').value=c.paymentLinkedRows||'';
+  if(document.getElementById('edit_paymentSplitDetails')) document.getElementById('edit_paymentSplitDetails').value=c.paymentSplitDetails||'';
+  if(document.getElementById('edit_paymentMemo')) document.getElementById('edit_paymentMemo').value=c.paymentMemo||'';
   if(document.getElementById('edit_extraItem')) document.getElementById('edit_extraItem').value=c.extraItem||'';
   if(document.getElementById('edit_memo')) document.getElementById('edit_memo').value=c.memo||'';
   if(document.getElementById('edit_balanceDate')) document.getElementById('edit_balanceDate').value=c.balanceDate||'';
+  const passportActions=document.getElementById('edit_passportActions');
+  if(passportActions) passportActions.style.display=isPassportAdminBooking(c)?'block':'none';
   // 변경요청 알림
   const alertEl=document.getElementById('edit_rescheduleAlert');
   if(c.rescheduleReq){
@@ -1028,15 +1132,18 @@ function openEdit(rowIndex){
   }
   // 읽기전용 상세 정보
   const infoItems=[
-    ['📧 이메일', c.email||'-'],
     ['🏠 주소', c.address||'-'],
     ['📷 종류', G_LABELS[c.itemGroup]||c.itemGroup||'-'],
     ['🛍 상품', c.product||'-'],
     ['👥 인원', c.people||'-'],
+    ['🎂 프로필 나이', c.profileAge||'-'],
+    ['👨‍👩‍👧 가족 구성', c.studioFamilyMembers||'-'],
+    ['👶 아기촬영', getAdminBabyTypeLabel(c)||'-'],
     ['🌐 언어', {ko:'한국어',en:'English',de:'Deutsch'}[c.lang]||c.lang||'-'],
     ['💬 옵션', c.optionStr||'-'],
     ['🧩 추가항목', c.extraItem||'-'],
-    ['🔁 재방문', c.isReturn?'✅ 재방문':'신규']
+    ['🔁 재방문', c.isReturn?'✅ 재방문':'신규'],
+    ['💶 결제 연결', [c.paymentLinkType,c.paymentLinkGroup,c.paymentLinkedRows].filter(Boolean).join(' · ')||'-']
   ];
   document.getElementById('edit_info').innerHTML=infoItems.map(([l,v])=>`<div><span style="color:#94a3b8;font-weight:600;">${l}</span><br><span style="color:#1e293b;font-weight:500;">${v}</span></div>`).join('');
   document.getElementById('editModal').classList.add('open');
@@ -1067,11 +1174,15 @@ function appendMemo(t){const el=document.getElementById('m_memo');el.value=(el.v
 
 function saveEdit(){
   const d={};
-  ['rowIndex','status','name','phone','address','price','deposit','balance','payMethod','depPayMethod','extraItem','memo','balanceDate'].forEach(f=>{
+  ['rowIndex','status','name','phone','email','address','price','deposit','balance','payMethod','depPayMethod','paymentLinkType','paymentLinkGroup','paymentLinkedRows','paymentSplitDetails','paymentMemo','extraItem','memo','balanceDate'].forEach(f=>{
     const el=document.getElementById('edit_'+f);
     if(el)d[f]=el.value;
   });
   d.rowIndex=parseInt(d.rowIndex);
+  if(d.email && !d.email.includes('@') && !d.email.includes('수기등록')){
+    alert('이메일 주소 형식을 확인해 주세요.');
+    return;
+  }
   // 날짜/시간 변경 감지
   const newDate=document.getElementById('edit_date').value;
   const newTime=document.getElementById('edit_time').value||'00:00';
@@ -1283,6 +1394,9 @@ function onManualPayMethodChange(){
 function onManualGroupChange(){
   const group = document.getElementById('m_group').value;
   const sel = document.getElementById('m_product');
+  const sourceEl=document.getElementById('m_source');
+  if(group==='마이리얼트립' && sourceEl) sourceEl.value='myrealtrip';
+  else if(sourceEl && sourceEl.value==='myrealtrip') sourceEl.value='direct';
   sel.innerHTML = '<option value="">-- 상품 선택 --</option>';
   document.getElementById('m_price').value = '';
   document.getElementById('m_deposit').value = '0';
@@ -1293,9 +1407,10 @@ function onManualGroupChange(){
 
   // 스튜디오는 기본 2인
   if(group === 'stud') document.getElementById('m_people').value = '2';
+  else if(group === '마이리얼트립') document.getElementById('m_people').value = '2';
   else document.getElementById('m_people').value = '1';
 
-  if(!group) return;
+  if(!group){refreshManualCurrencyState();return;}
   const filtered = (cmsProducts||[]).filter(p => p.g === group);
   filtered.forEach(p => {
     const opt = document.createElement('option');
@@ -1314,6 +1429,7 @@ function onManualGroupChange(){
     opt.textContent = '(등록된 상품 없음 — 직접 입력)';
     sel.appendChild(opt);
   }
+  refreshManualCurrencyState();
   if(isManualMyRealTripMode()) onManualKrwInput();
 }
 
@@ -1650,7 +1766,7 @@ function savePrintEdit() {
 }
 
 /* ===== 상품 CMS ===== */
-const G_LABELS_FULL={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외스냅',wed:'프리웨딩',biz:'기업/행사'};
+const G_LABELS_FULL={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외/홈스냅',wed:'프리웨딩',biz:'행사/이벤트'};
 function renderProductCms(){document.getElementById('productCmsWrap').innerHTML=cmsProducts.map((p,i)=>`<div class="product-item"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:700;font-size:15px;">${p.nameKo||'상품 '+(i+1)}</div><span style="font-size:11px;background:#e2e8f0;border-radius:6px;padding:3px 8px;color:#475569;">${G_LABELS_FULL[p.g]||p.g}</span></div><div class="product-fields"><div class="product-field"><label>이름(KO)</label><input type="text" data-i="${i}" data-f="nameKo" value="${p.nameKo||''}"></div><div class="product-field"><label>이름(EN)</label><input type="text" data-i="${i}" data-f="nameEn" value="${p.nameEn||''}"></div><div class="product-field"><label>이름(DE)</label><input type="text" data-i="${i}" data-f="nameDe" value="${p.nameDe||''}"></div><div class="product-field"><label>가격(€)</label><input type="number" data-i="${i}" data-f="p" value="${p.p||0}"></div><div class="product-field"><label>촬영시간(분)</label><input type="number" data-i="${i}" data-f="d" value="${p.d||0}"></div><div class="product-field"><label>준비시간(분)</label><input type="number" data-i="${i}" data-f="prep" value="${p.prep||0}"></div><div class="discount-field"><label>🏷️ 할인율(%)</label><input type="number" data-i="${i}" data-f="discountRate" value="${p.discountRate||0}" min="0" max="100"></div></div><div style="margin-top:8px;"><label style="font-size:11px;color:#94a3b8;">설명(KO)</label><textarea rows="2" data-i="${i}" data-f="descKo" style="font-size:12px;">${p.descKo||''}</textarea></div></div>`).join('');}
 function saveProductCms(){const u=[...cmsProducts];document.querySelectorAll('[data-f]').forEach(el=>{const i=parseInt(el.dataset.i),f=el.dataset.f;if(isNaN(i)||!u[i])return;u[i]={...u[i],[f]:['p','d','prep','discountRate'].includes(f)?Math.round(parseFloat(el.value)||0):el.value};});const r=document.getElementById('cmsResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';cmsProducts=u;}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveProductsData(adminToken,u);}
 function resetProductCms(){if(!confirm('기본값으로 초기화?'))return;google.script.run.withSuccessHandler(()=>loadAll()).withFailureHandler(handleApiError).saveProductsData(adminToken,[]);}
@@ -1662,7 +1778,7 @@ function toggleHoliday(d){if(selectedHolidays.has(d))selectedHolidays.delete(d);
 function removeHoliday(d){selectedHolidays.delete(d);renderHolidayCal();}
 
 /* ===== 설정 ===== */
-function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-11:40,15:00-17:30';document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
+function loadSettings(s){document.getElementById('s_ko').value=s.ko||'';document.getElementById('s_en').value=s.en||'';document.getElementById('s_de').value=s.de||'';document.getElementById('s_rate').value=s.eventRate||'0';document.getElementById('s_start').value=s.eventStart||'';document.getElementById('s_end').value=s.eventEnd||'';document.getElementById('s_return_discount').value=s.returnDiscount||'10';document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-11:30,15:00-17:30';document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';document.getElementById('s_promo_enabled').checked=!!s.promoEnabled;selectedHolidays=new Set(String(s.customHolidays||'').split(',').map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)));renderHolidayCal();}
 function saveSettings(){const d={ko:document.getElementById('s_ko').value,en:document.getElementById('s_en').value,de:document.getElementById('s_de').value,eventRate:document.getElementById('s_rate').value||'0',eventStart:document.getElementById('s_start').value||'',eventEnd:document.getElementById('s_end').value||'',returnDiscount:document.getElementById('s_return_discount').value||'10',weekdayHours:document.getElementById('s_weekday_hours').value||'',saturdayHours:document.getElementById('s_saturday_hours').value||'',promoEnabled:document.getElementById('s_promo_enabled').checked,customHolidays:Array.from(selectedHolidays).sort().join(','),newPassword:document.getElementById('s_pw').value||''};const r=document.getElementById('settingResult');r.innerHTML='<span class="spinner"></span>';google.script.run.withSuccessHandler(res=>{if(res.ok){r.style.color='#10b981';r.textContent='✅ 저장 완료';document.getElementById('s_pw').value='';}else{r.style.color='#ef4444';r.textContent='❌ '+res.message;}}).withFailureHandler(e=>{r.style.color='#ef4444';r.textContent='❌ '+e.message;}).saveSiteSettings(adminToken,d);}
 
 /* ===== Twilio SMS 설정 ===== */
@@ -1750,7 +1866,7 @@ function testLexwareConnectionUi(){
 }
 
 /* ===== 사진셀렉 ===== */
-let allSelectDashboard=[], currentSelectRowIndex=null, selectedFolderData=null;
+let allSelectDashboard=[], currentSelectRowIndex=null, selectedFolderData=null, currentSelectCaptureOneText='';
 
 const SEL_STATUS_STYLE={
   '미발송': 'background:#fee2e2;color:#991b1b;',
@@ -1772,10 +1888,87 @@ function selStatusBadge(s){
 
 const SEL_STATUS_LIST=['미발송','발송','재발송','작업대기','보정본발송','재수정요청','보정본확인완료','출력','우편발송','최종작업완료'];
 
+function escHtml(v){
+  return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+
+function selectDeliveryInfo(sel){
+  const method=String((sel&&sel.deliveryMethod)||'').trim();
+  if(method==='pickup'){
+    return {
+      label:'픽업',
+      detail:String(sel.pickupAt||'').trim(),
+      tone:'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;'
+    };
+  }
+  if(method==='mail'){
+    return {
+      label:'우편',
+      detail:String(sel.mailAddress||'').trim(),
+      tone:'background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;'
+    };
+  }
+  return {label:'미정',detail:'',tone:'background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0;'};
+}
+
+function formatSelectDeliveryDetailHtml(detail){
+  return escHtml(String(detail||'-').trim()).replace(/\r?\n/g,'<br>');
+}
+
+function plainSelectDeliveryDetail(detail){
+  return String(detail||'-').trim().replace(/\s*\r?\n\s*/g,' / ');
+}
+
+function renderSelectDeliveryCell(sel){
+  const info=selectDeliveryInfo(sel);
+  const detail=info.detail||'-';
+  const detailPlain=plainSelectDeliveryDetail(detail);
+  return `<div title="${escHtml(detailPlain)}" style="max-width:220px;">
+    <span style="display:inline-block;${info.tone}padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;">${info.label}</span>
+    <div style="margin-top:4px;font-size:10px;line-height:1.4;color:#64748b;max-width:220px;white-space:normal;overflow:visible;">${formatSelectDeliveryDetailHtml(detail)}</div>
+  </div>`;
+}
+
 function selStatusDropdown(rowIndex,cur){
   const st=SEL_STATUS_STYLE[cur]||'background:#f1f5f9;color:#475569;';
   const opts=SEL_STATUS_LIST.map(function(s){return '<option value="'+s+'"'+(s===cur?' selected':'')+'>'+s+'</option>';}).join('');
   return '<select data-sel-row="'+rowIndex+'" style="'+st+'padding:3px 5px;border-radius:8px;font-size:11px;font-weight:700;border:1.5px solid rgba(0,0,0,.1);cursor:pointer;" onchange="quickSelStatusUpdate('+rowIndex+',this.value)">'+opts+'</select>';
+}
+
+function normalizeCaptureOnePhotoNumber(value){
+  const raw=String(value==null?'':value).trim();
+  if(!raw) return '';
+  const matches=raw.match(/\d+/g);
+  if(!matches||!matches.length) return '';
+  let num=matches[matches.length-1];
+  if(num.length>4) num=num.slice(-4);
+  return num.padStart(4,'0');
+}
+
+function buildCaptureOneSearchText(photos){
+  const seen=new Set();
+  const parts=[];
+  (photos||[]).forEach(function(photo){
+    const raw=(photo&&typeof photo==='object')?photo.num:photo;
+    const num=normalizeCaptureOnePhotoNumber(raw);
+    if(num&&!seen.has(num)){
+      seen.add(num);
+      parts.push(num+'.');
+    }
+  });
+  return parts.join(' ');
+}
+
+function copyCaptureOneSearchText(){
+  const text=String(currentSelectCaptureOneText||'').trim();
+  if(!text){alert('복사할 사진 번호가 없습니다.');return;}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>alert('Capture One 검색용 번호를 복사했습니다.'),()=>window.prompt('Capture One 검색용',text));
+  }else{
+    window.prompt('Capture One 검색용',text);
+  }
 }
 
 function quickSelStatusUpdate(rowIndex,newStatus){
@@ -1850,7 +2043,8 @@ function loadSelectHistory(){
 const BOOKING_STATUS_BADGE={
   '촬영완료':'background:#dbeafe;color:#1e40af;',
   '셀렉완료':'background:#ede9fe;color:#5b21b6;',
-  '확정됨':'background:#d1fae5;color:#065f46;',
+  '작업완료':'background:#e0e7ff;color:#3730a3;font-weight:800;',
+  '확정됨':'background:#dcfce7;color:#166534;',
   '대기중':'background:#fef3c7;color:#92400e;'
 };
 function renderSelectDashboard(){
@@ -1872,6 +2066,7 @@ function renderSelectDashboard(){
     const revisionLabel=`<span style="font-size:11px;color:${(sel.revisionCount||0)>=2?'#dc2626':'#64748b'};">${sel.revisionCount||0}/2</span>`;
     const invoiceLabel=sel.totalExtra>0?`<div style="font-size:11px;font-weight:700;color:#dc2626;">${sel.totalExtra}€</div>${sel.extraInvoiceNumber?`<div style="font-size:10px;color:#2563eb;">${sel.extraInvoiceNumber}</div>`:'<div style="font-size:10px;color:#94a3b8;">자동발행대기</div>'}`:'<span style="font-size:11px;color:#94a3b8;">-</span>';
     const submittedLabel=sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'';
+    const deliveryCell=renderSelectDeliveryCell(sel);
     const bsBadgeStyle=BOOKING_STATUS_BADGE[bs]||'background:#f1f5f9;color:#475569;';
     const bsBadge=`<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;${bsBadgeStyle}">${bs}</span>`;
 
@@ -1910,6 +2105,7 @@ function renderSelectDashboard(){
       <td>${invoiceLabel}</td>
       <td style="white-space:nowrap;">${baseCountCell}</td>
       <td>${submittedLabel}</td>
+      <td>${deliveryCell}</td>
       <td style="white-space:nowrap;">${actions}</td>
     </tr>`;
   }).join('');
@@ -2085,18 +2281,33 @@ function viewSubmission(rowIndex){
   const r=allSelectDashboard.find(x=>x.rowIndex===rowIndex);
   if(!r||!r.sel||!r.sel.submittedAt){alert('아직 제출된 회신이 없습니다.');return;}
   const sel=r.sel;
+  const deliveryInfo=selectDeliveryInfo(sel);
+  const deliveryDetail=deliveryInfo.detail;
+  const deliveryDetailHtml=formatSelectDeliveryDetailHtml(deliveryDetail);
   document.getElementById('submissionInfo').innerHTML=
     `<div style="display:flex;gap:16px;flex-wrap:wrap;">
       <span><b>${r.name}</b> · ${r.dateStr}</span>
       <span style="color:#64748b;">${r.product||''}</span>
       <span>제출: <b>${sel.submittedAt.slice(0,16)}</b></span>
+      <span>수령: <b>${deliveryInfo.label}</b>${deliveryDetail?` · ${deliveryDetailHtml}`:''}</span>
       ${sel.marketing==='Y'?'<span style="background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;">마케팅동의</span>':''}
     </div>`;
   let photos=[];
   try{photos=JSON.parse(sel.selectedPhotos||'[]');}catch(e){}
+  currentSelectCaptureOneText=buildCaptureOneSearchText(photos);
+  const captureOneHtml=currentSelectCaptureOneText
+    ?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:grid;gap:8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div style="font-size:12px;font-weight:800;color:#1e40af;">Capture One 검색용</div>
+          <button type="button" class="btn btn-outline btn-sm" onclick="copyCaptureOneSearchText()">복사</button>
+        </div>
+        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;color:#0f172a;word-break:break-word;">${escHtml(currentSelectCaptureOneText)}</div>
+      </div>`
+    :'';
   document.getElementById('mse_rowIndex').value=rowIndex;
   document.getElementById('submissionPhotos').innerHTML=photos.length
     ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px;">📸 선택 사진 (${photos.length}장)</div>
+      ${captureOneHtml}
       <div style="display:flex;flex-direction:column;gap:6px;">${photos.map(p=>{
         const num=p.num||p;
         const note=p.note||'';

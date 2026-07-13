@@ -7,10 +7,19 @@ import {
   submitSelectSession,
   updateSelectSession
 } from '../../shared/api-select.js';
+import {
+  PRINT_NONE_ID,
+  getProductDeliveryLines,
+  getProductIncludedPrintQuota,
+  getProductIncludedPrintSummary,
+  productHasFixedDeliverySpec,
+  productHasIncludedPrints
+} from '../../shared/product-delivery.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../shared/utils.js';
 
 const PRINT_OPTIONS = [
-  { id: 'basic_10x15', label: '기본 10×15cm', retouched: 0, additional: 5 },
+  { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
+  { id: 'basic_10x15', label: '기본 10×15cm / 6×4 inch', retouched: 5, additional: 5 },
   { id: 'premium_10x15', label: '프리미엄 10×15cm', retouched: 3, additional: 8 },
   { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
   { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
@@ -19,18 +28,73 @@ const PRINT_OPTIONS = [
   { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 }
 ];
 
-const INCLUDED_PRINT_QUOTA = {
-  stud: [{ id: 'basic_a4', qty: 1 }],
-  wed: [{ id: 'premium_a3', qty: 1 }, { id: 'basic_a4', qty: 2 }, { id: 'basic_10x15', qty: 3 }],
-  snap: [{ id: 'basic_10x15', qty: 5 }],
-  pass: [],
-  prof: [],
-  biz: []
+const PHOTOCARD_MODE_LABELS = {
+  retouched: '양면 · 보정본 2장',
+  mixed: '양면 · 보정본 1장 + 원본 1장',
+  original: '양면 · 원본 2장'
 };
 
+// 보정 선택과 출력 선택을 분리한 모델. 서버에 이 플래그를 함께 보낸다.
+const SELECT_PRINT_MODEL = 'decoupled';
+
+function getPrintOption(id) {
+  const norm = normalizePrintTypeId(id);
+  return PRINT_OPTIONS.find((item) => item.id === norm) || PRINT_OPTIONS[0];
+}
+function printNumKey(num) {
+  return stripExt(String(num || '')).trim().toLowerCase();
+}
+// 출력 대상 사진이 보정 리스트에도 있으면 보정본 단가(retouched), 없으면 추가 인화가(additional).
+function isRetouchedPhotoNum(num) {
+  const key = printNumKey(num);
+  if (!key) return false;
+  return state.photos.some((p) => printNumKey(p.num) === key);
+}
+// 출력 리스트를 순회하며 포함 쿼터를 사이즈별로 무료 소진하고, 각 행의 무료/과금 수량과 단가를 계산.
+// 백엔드 computeSelectDecoupledPrints_ 와 동일한 규칙 (서버가 최종 판정).
+function computePrintAnnotations() {
+  const quota = getSessionIncludedPrintQuota().map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
+  return state.prints.map((print) => {
+    const typeId = normalizePrintTypeId(print.printId);
+    const option = getPrintOption(typeId);
+    const qty = Math.max(1, Number(print.qty) || 1);
+    const isRetouched = isRetouchedPhotoNum(print.photoNum);
+    const unit = isRetouched ? Number(option.retouched) || 0 : Number(option.additional) || 0;
+    let includedQty = 0;
+    for (let k = 0; k < qty; k += 1) {
+      const match = quota.find((q) => q.id === typeId && q.qty > 0);
+      if (!match) break;
+      match.qty -= 1;
+      includedQty += 1;
+    }
+    const chargedQty = qty - includedQty;
+    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount: chargedQty * unit };
+  });
+}
+// 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
+function getPrintQuotaSummary() {
+  const quota = getSessionIncludedPrintQuota();
+  const used = {};
+  computePrintAnnotations().forEach((ann, i) => {
+    const typeId = normalizePrintTypeId(state.prints[i].printId);
+    used[typeId] = (used[typeId] || 0) + ann.includedQty;
+  });
+  return quota.map((q) => ({
+    id: q.id,
+    label: getPrintOption(q.id).label,
+    total: Number(q.qty) || 0,
+    used: used[q.id] || 0,
+    remaining: Math.max(0, (Number(q.qty) || 0) - (used[q.id] || 0))
+  }));
+}
+
 const TOTAL_STEPS = 5; // 0:welcome 1:gallery 2:retouch 3:print 4:review
-const GALLERY_INITIAL_RENDER = 48;
-const GALLERY_RENDER_INCREMENT = 72;
+const GALLERY_INITIAL_RENDER = 36;
+const GALLERY_RENDER_INCREMENT = 60;
+const GALLERY_BATCH_SIZE = 300;
+const GALLERY_BATCH_DELAY_MS = 120;
+const GALLERY_CACHE_VERSION = 'batch-300-v1';
+const MAIL_POSTAL_CITY_PATTERN = /(?:^|[\s,])(?:[A-Z]{1,3}-)?\d{4,5}\s+[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F0-9 .'\-()/]{1,}/i;
 
 const state = {
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
@@ -40,6 +104,7 @@ const state = {
   session: null,
   photos: [],
   prints: [],
+  photocard: defaultPhotocardSelection(),
   marketing: '',
   deliveryMethod: '',
   pickupDate: '',
@@ -49,8 +114,10 @@ const state = {
   pickupCalendarYear: 0,
   pickupCalendarMonth: 0,
   pickupEventId: '',
+  mailName: '',
   mailAddress: '',
   editMode: false,
+  studioA4Dismissed: false,
   step: 0,
   submitted: false,
   gallery: {
@@ -64,7 +131,12 @@ const state = {
     filteredList: [],
     focusIndex: -1,
     renderCount: GALLERY_INITIAL_RENDER,
-    warmupStarted: false
+    warmupStarted: false,
+    loadedLimit: 0,
+    loadedBatches: 0,
+    nextCursor: '',
+    fullLoaded: false,
+    hasMore: false
   },
   lightbox: null,
   lightboxImageCache: new Map(),
@@ -87,12 +159,16 @@ const els = {
   welcomeSub: document.getElementById('welcomeSub'),
   startBtn: document.getElementById('startBtn'),
   marketingBox: document.getElementById('marketingBox'),
+  marketingBonusTag: document.getElementById('marketingBonusTag'),
+  marketingCopy: document.getElementById('marketingCopy'),
+  marketingYesBonusLabel: document.getElementById('marketingYesBonusLabel'),
   marketingYesCard: document.getElementById('marketingYesCard'),
   marketingNoCard: document.getElementById('marketingNoCard'),
   photoCounter: document.getElementById('photoCounter'),
   photoCounterSub: document.getElementById('photoCounterSub'),
   extraCost: document.getElementById('extraCost'),
   photoList: document.getElementById('photoList'),
+  photocardBox: document.getElementById('photocardBox'),
   addPhotoBtn: document.getElementById('addPhotoBtn'),
   galleryGrid: document.getElementById('galleryGrid'),
   galleryLoadingHint: document.getElementById('galleryLoadingHint'),
@@ -106,8 +182,11 @@ const els = {
   printList: document.getElementById('printList'),
   addPrintBtn: document.getElementById('addPrintBtn'),
   reviewPhotos: document.getElementById('reviewPhotos'),
+  reviewPhotocardBlock: document.getElementById('reviewPhotocardBlock'),
+  reviewPhotocard: document.getElementById('reviewPhotocard'),
   reviewPrints: document.getElementById('reviewPrints'),
   reviewMarketing: document.getElementById('reviewMarketing'),
+  deliveryReviewBlock: document.getElementById('deliveryReviewBlock'),
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
   pickupScheduler: document.getElementById('pickupScheduler'),
@@ -119,6 +198,7 @@ const els = {
   pickupSlotHint: document.getElementById('pickupSlotHint'),
   pickupSlotGrid: document.getElementById('pickupSlotGrid'),
   mailAddressBox: document.getElementById('mailAddressBox'),
+  mailNameInput: document.getElementById('mailNameInput'),
   mailAddressInput: document.getElementById('mailAddressInput'),
   reviewDelivery: document.getElementById('reviewDelivery'),
   reviewTotal: document.getElementById('reviewTotal'),
@@ -161,6 +241,7 @@ async function boot() {
       renderPackageSummary();
       renderPriceGuide();
       renderPhotos();
+      renderPhotocardBox();
       renderPrints();
       updatePhotoCounter();
       updateReview();
@@ -186,6 +267,7 @@ async function boot() {
     renderPackageSummary();
     renderPriceGuide();
     renderPhotos();
+    renderPhotocardBox();
     renderPrints();
     updatePhotoCounter();
     updateReview();
@@ -241,6 +323,10 @@ function wireEvents() {
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
     input.addEventListener('change', () => setDeliveryMethod(input.value));
   });
+  els.mailNameInput?.addEventListener('input', () => {
+    state.mailName = els.mailNameInput.value;
+    updateReview();
+  });
   els.mailAddressInput?.addEventListener('input', () => {
     state.mailAddress = els.mailAddressInput.value;
     updateReview();
@@ -283,39 +369,61 @@ function hydrateSession(session) {
     state.pickupTime = pickupTime;
   }
   state.pickupEventId = session.existingPickupEventId || '';
-  state.mailAddress = session.existingMailAddress || session.bookingAddress || '';
-  state.photos = state.editMode && Array.isArray(session.existingPhotos)
-    ? session.existingPhotos.map(normalizePhoto)
+  state.mailName = String(session.existingMailName || session.name || '').trim();
+  state.mailAddress = normalizeMailAddressText(session.existingMailAddress || session.bookingAddress || '');
+  const existingPhotos = Array.isArray(session.existingPhotos) ? session.existingPhotos : [];
+  state.photos = state.editMode ? existingPhotos.map(normalizePhoto) : [];
+  state.studioA4Dismissed = false;
+  const existingPrints = Array.isArray(session.existingPrints) ? session.existingPrints : [];
+  state.prints = state.editMode
+    ? buildDecoupledPrintsFromExisting(existingPhotos, existingPrints)
     : [];
-  state.prints = state.editMode && Array.isArray(session.existingPrints)
-    ? session.existingPrints.map(normalizePrint).filter(hasMeaningfulPrint)
-    : [];
+  state.photocard = normalizePhotocardSelection(session.existingPhotocard || extractPhotocardFromPrints(existingPrints));
   // 기존 수정 모드에서 이미 선택된 사진들은 갤러리 별점 5점으로 복원 (갤러리 로드 후 반영)
   if (session.bookingMarketing === 'Y') state.marketing = 'Y';
+  syncMarketingBonusRows();
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
 }
 
-function getIncludedPrintPresetTypes(itemGroup, count) {
+function getSessionProductInput(session = state.session) {
+  return {
+    itemGroup: session?.itemGroup || '',
+    product: session?.product || '',
+    id: session?.productId || session?.itemId || ''
+  };
+}
+
+function getSelectablePrintOptions() {
+  return PRINT_OPTIONS.filter((option) => option.id !== PRINT_NONE_ID);
+}
+
+function getSessionIncludedPrintQuota(session = state.session) {
+  const validIds = new Set(PRINT_OPTIONS.map((option) => option.id));
+  return getProductIncludedPrintQuota(getSessionProductInput(session))
+    .filter((item) => validIds.has(item.id) && Number(item.qty) > 0)
+    .map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
+}
+
+function getDefaultPrintTypeForRegularIndex(index, session = state.session) {
+  const preset = getIncludedPrintPresetTypes(session, Number(index) + 1);
+  return preset[index] || PRINT_NONE_ID;
+}
+
+function getIncludedPrintPresetTypes(session, count) {
   const total = Number(count) || 0;
   const preset = [];
-  const quota = INCLUDED_PRINT_QUOTA[itemGroup] || [];
+  const quota = getSessionIncludedPrintQuota(session);
   quota.forEach((item) => {
     for (let i = 0; i < item.qty; i += 1) preset.push(item.id);
   });
-  while (preset.length < total) preset.push('basic_10x15');
+  while (preset.length < total) preset.push(PRINT_NONE_ID);
   return preset.slice(0, total);
 }
 
-function getIncludedPrintSummary(itemGroup) {
-  const quota = INCLUDED_PRINT_QUOTA[itemGroup] || [];
-  if (!quota.length) return '';
-  return quota.map((item) => {
-    const option = PRINT_OPTIONS.find((print) => print.id === item.id);
-    const label = option?.label || item.id;
-    return `${label} ${item.qty}장`;
-  }).join(' · ');
+function getIncludedPrintSummary(session = state.session) {
+  return getProductIncludedPrintSummary(getSessionProductInput(session), 'ko');
 }
 
 function normalizePhoto(photo) {
@@ -326,10 +434,37 @@ function normalizePhoto(photo) {
   return {
     num: String(photo?.num || ''),
     note: String(photo?.note || ''),
-    printType: String(photo?.printType || 'basic_10x15').replace(/_(r|e)$/, ''),
+    printType: normalizePrintTypeId(photo?.printType),
     isBonus,
     source
   };
+}
+
+function normalizePrintTypeId(typeId) {
+  return String(typeId || PRINT_NONE_ID).replace(/_(r|e)$/, '') || PRINT_NONE_ID;
+}
+
+function isStudioSession() {
+  return String(state.session?.itemGroup || '').toLowerCase().trim() === 'stud';
+}
+
+function hasStudioIncludedA4Applied() {
+  return state.photos.some((photo) => !photo.isBonus && normalizePrintTypeId(photo.printType) === 'basic_a4');
+}
+
+function syncStudioIncludedA4Default() {
+  return false;
+}
+
+function renderStudioIncludedA4Notice() {
+  const includedSummary = getIncludedPrintSummary();
+  if (!includedSummary) return '';
+  return `
+    <div class="included-print-callout">
+      <strong>기본 제공 출력물: ${escapeHtml(includedSummary)}</strong>
+      <span>상품에 포함된 출력 사이즈가 보정 사진 목록에 미리 설정되어 있습니다. 다른 사진으로 바꾸려면 해당 사진의 인화 사이즈를 조정해 주세요.</span>
+    </div>
+  `;
 }
 
 function normalizePrint(print) {
@@ -341,6 +476,20 @@ function normalizePrint(print) {
     printId: resolvedId,
     qty: Math.max(1, Number(print?.qty || 1) || 1)
   };
+}
+
+// 수정 모드 진입 시 기존 제출 데이터를 분리형 출력 리스트로 복원.
+// - 신규(분리형) 데이터: existingPrints 가 이미 통합 리스트 → 그대로 사용
+// - 레거시 데이터: 보정 사진에 붙어있던 printType 을 출력 행으로 승격 + 기존 추가 인화 병합
+function buildDecoupledPrintsFromExisting(existingPhotos, existingPrints) {
+  const fromPhotos = (existingPhotos || [])
+    .filter((p) => !p?.isBonus && normalizePrintTypeId(p?.printType) !== PRINT_NONE_ID)
+    .map((p) => ({ photoNum: String(p?.num || ''), printId: normalizePrintTypeId(p?.printType), qty: 1 }));
+  const fromPrints = (existingPrints || [])
+    .filter((print) => !isPhotocardFallbackPrint(print))
+    .map(normalizePrint)
+    .filter(hasMeaningfulPrint);
+  return fromPhotos.concat(fromPrints);
 }
 
 function resolvePrintId(print) {
@@ -361,6 +510,161 @@ function resolvePrintId(print) {
 
 function hasMeaningfulPrint(print) {
   return !!String(print?.photoNum || '').trim() || Math.max(1, Number(print?.qty || 1) || 1) > 0;
+}
+
+function defaultPhotocardSelection() {
+  return { mode: 'retouched', frontNum: '', backNum: '', note: '' };
+}
+
+function normalizePhotocardSelection(value) {
+  const fallback = defaultPhotocardSelection();
+  if (!value || typeof value !== 'object') return fallback;
+  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(String(value.mode || ''))
+    ? String(value.mode)
+    : fallback.mode;
+  return {
+    mode,
+    frontNum: String(value.frontNum ?? value.front ?? '').trim(),
+    backNum: String(value.backNum ?? value.back ?? '').trim(),
+    note: String(value.note || '').trim()
+  };
+}
+
+function hasIncludedPhotocard() {
+  if (state.session && state.session.hasPhotocard !== undefined) return state.session.hasPhotocard === true;
+  if (state.session?.hasPhotocard === true) return true;
+  const itemGroup = String(state.session?.itemGroup || '').toLowerCase().trim();
+  const text = `${state.session?.product || ''} ${state.session?.itemGroup || ''}`.toLowerCase();
+  return /포토카드|photocard|photo card|fotokarte/.test(text);
+}
+
+function textSuggestsNoPhysicalDelivery(text) {
+  return /myrealtrip|my real trip|마이리얼트립|출력물\s*없음|인화\s*없음|프린트\s*없음|디지털\s*(전용|만|only)|파일\s*(전용|만)|digital\s*only|files?\s*only|no\s*prints?|prints?\s*not\s*included|without\s*prints?|ohne\s*(druck|ausdruck|abzug)|kein(?:e|en)?\s*(druck|ausdruck|abzug)|nur\s*(digital|datei|dateien)/i.test(String(text || ''));
+}
+
+function textSuggestsPhysicalDelivery(text) {
+  return /출력|인화|프린트|우편발송|배송|print|prints|printed|druck|ausdruck|abzug|fotokarte|포토카드|photocard|photo card|10\s*[×x]\s*15|6\s*[×x]\s*4|a[34]\b/i.test(String(text || ''));
+}
+
+function sessionHasIncludedDeliveryOutput() {
+  if (!state.session) return true;
+  if (state.session.requiresDelivery === false) return false;
+  if (state.session.requiresDelivery === true) return true;
+  const input = getSessionProductInput();
+  if (productHasFixedDeliverySpec(input)) return productHasIncludedPrints(input);
+  const text = [
+    state.session.itemGroup,
+    state.session.product,
+    state.session.productDescription,
+    state.session.description
+  ].join(' ');
+  if (textSuggestsNoPhysicalDelivery(text)) return false;
+  return textSuggestsPhysicalDelivery(text);
+}
+
+function hasRequestedDeliveryOutput() {
+  return state.prints.some((print) => String(print?.photoNum || '').trim() || Number(print?.qty || 0) > 0)
+    || hasIncludedPhotocard();
+}
+
+function requiresDeliverySelection() {
+  return sessionHasIncludedDeliveryOutput() || hasRequestedDeliveryOutput();
+}
+
+function getIncludedPhotocardCount() {
+  const product = String(state.session?.product || '').toLowerCase();
+  return /가족사진|family photo|familienfoto|2장|2\s*(double|photo|포토카드|fotokarten)/.test(product) ? 2 : 1;
+}
+
+function getPhotocardModeLabel(mode = state.photocard.mode) {
+  return PHOTOCARD_MODE_LABELS[mode] || PHOTOCARD_MODE_LABELS.retouched;
+}
+
+function getPhotocardPayload() {
+  if (!hasIncludedPhotocard()) return null;
+  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(state.photocard.mode)
+    ? state.photocard.mode
+    : 'retouched';
+  return {
+    type: 'double_sided',
+    included: true,
+    qty: getIncludedPhotocardCount(),
+    mode,
+    modeLabel: getPhotocardModeLabel(mode),
+    frontNum: String(state.photocard.frontNum || '').trim(),
+    backNum: String(state.photocard.backNum || '').trim(),
+    note: String(state.photocard.note || '').trim()
+  };
+}
+
+function isPhotocardFallbackPrint(print) {
+  return !!print?.includedPhotocard || String(print?.printId || '') === 'included_photocard';
+}
+
+function extractPhotocardFromPrints(prints) {
+  const found = (prints || []).find(isPhotocardFallbackPrint);
+  return found?.photocard || null;
+}
+
+function getPhotocardPrintFallbackPayload() {
+  const payload = getPhotocardPayload();
+  if (!payload || state.session?.photocardSupported === true) return null;
+  return {
+    photoNum: `앞면 ${payload.frontNum || '-'} / 뒷면 ${payload.backNum || '-'}`,
+    printId: 'included_photocard',
+    qty: payload.qty,
+    label: `포함 양면 포토카드 (${payload.modeLabel})`,
+    price: 0,
+    isRetouched: false,
+    includedPhotocard: true,
+    photocard: payload
+  };
+}
+
+function getPhotocardWarning() {
+  if (!hasIncludedPhotocard()) return '';
+  const payload = getPhotocardPayload();
+  if (!payload.frontNum || !payload.backNum) {
+    return '포토카드 앞면과 뒷면 사진 번호를 모두 입력해 주세요.';
+  }
+  return '';
+}
+
+function getPhotocardReviewText() {
+  const payload = getPhotocardPayload();
+  if (!payload) return '';
+  const countText = payload.qty > 1 ? ` · ${payload.qty}장 제작` : '';
+  const noteText = payload.note ? ` · ${payload.note}` : '';
+  return `${payload.modeLabel}${countText} / 앞면 ${payload.frontNum || '-'} · 뒷면 ${payload.backNum || '-'}${noteText}`;
+}
+
+function normalizeMailAddressText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeMailNameText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function getMailNameForSubmission() {
+  return normalizeMailNameText(state.mailName);
+}
+
+function getMailAddressForSubmission() {
+  return normalizeMailAddressText(state.mailAddress);
+}
+
+function hasMailAddressPostalCity(value) {
+  return MAIL_POSTAL_CITY_PATTERN.test(normalizeMailAddressText(value).replace(/\n/g, ' '));
+}
+
+function formatMailAddressForReview(value) {
+  return normalizeMailAddressText(value).replace(/\n/g, ' / ');
 }
 
 function renderHeader() {
@@ -394,15 +698,25 @@ function renderSessionSummary() {
 
 function renderPackageSummary() {
   const s = state.session;
-  const includedSummary = getIncludedPrintSummary(s.itemGroup);
-  const studioNotice = s.itemGroup === 'stud'
-    ? '<div class="guide-copy"><b>스튜디오 상품은 기본 A4 1장이 무료로 포함됩니다.</b></div>'
+  const input = getSessionProductInput(s);
+  const includedSummary = getIncludedPrintSummary(s);
+  const hasFixedSpec = productHasFixedDeliverySpec(input);
+  const includedLine = includedSummary
+    ? `<div class="guide-copy">기본 제공 출력물: <b>${escapeHtml(includedSummary)}</b></div>`
+    : hasFixedSpec
+      ? '<div class="guide-copy">기본 제공 출력물: <b>포함 없음</b></div>'
+      : '';
+  const deliveryLines = getProductDeliveryLines(input, 'ko', { includeNoPrintLine: false })
+    .filter((line) => !/보정본|retouched|retusch/i.test(line));
+  const autoPrintNotice = includedSummary
+    ? '<div class="guide-copy">상품에 포함된 출력 사이즈는 보정 사진 목록에 미리 적용되어 있습니다. 포함 수량 외 출력은 아래 <b>추가 인화</b>에서 입력해 주세요.</div>'
     : '';
   els.packageSummary.innerHTML = `
     <div class="detail-title">보정 패키지 안내</div>
     <div class="guide-copy">기본 보정 <b>${escapeHtml(s.baseRetouchCount || 0)}장</b> 포함 · 추가 보정 <b>€${escapeHtml(s.retouchPrice || 0)}/장</b></div>
-    ${includedSummary ? `<div class="guide-copy">기본 인화 구성: <b>${escapeHtml(includedSummary)}</b></div>` : ''}
-    ${studioNotice}
+    ${includedLine}
+    ${autoPrintNotice}
+    ${deliveryLines.length ? `<div class="guide-copy">${deliveryLines.map(escapeHtml).join(' · ')}</div>` : ''}
     ${s.deadline ? `<div class="guide-copy">셀렉 마감일: ${escapeHtml(String(s.deadline).slice(0, 10))}</div>` : ''}
     ${s.revisionCount ? `<div class="guide-copy">재수정 요청 횟수: ${escapeHtml(s.revisionCount)}회</div>` : ''}
   `;
@@ -413,7 +727,7 @@ function renderPackageSummary() {
 }
 
 function renderPriceGuide() {
-  els.printPriceGuide.innerHTML = PRINT_OPTIONS.map((opt) => `
+  els.printPriceGuide.innerHTML = getSelectablePrintOptions().map((opt) => `
     <div class="review-item">
       <span>${escapeHtml(opt.label)}</span>
       <strong>€${opt.additional}</strong>
@@ -421,19 +735,63 @@ function renderPriceGuide() {
   `).join('');
 }
 
-function setMarketing(value) {
-  state.marketing = value;
-  syncMarketingUi();
-  const hasBonus = state.photos.some((photo) => photo.isBonus);
-  if (value === 'Y' && !hasBonus && !state.session?.bookingMarketing) {
-    state.photos.push(
-      { num: '', note: '', printType: 'basic_10x15', isBonus: true, source: 'bonus' },
-      { num: '', note: '', printType: 'basic_10x15', isBonus: true, source: 'bonus' }
-    );
-  }
-  if (value === 'N' && hasBonus && !state.session?.bookingMarketing) {
+function getMarketingBonusCount() {
+  const raw = state.session?.marketingBonusCount;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2;
+}
+
+function makeBonusPhoto() {
+  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, source: 'bonus' };
+}
+
+function syncMarketingBonusRows() {
+  const bonusCount = getMarketingBonusCount();
+  const bonusIndexes = state.photos
+    .map((photo, index) => (photo.isBonus ? index : -1))
+    .filter((index) => index >= 0);
+  if (state.marketing === 'Y') {
+    for (let i = bonusIndexes.length; i < bonusCount; i += 1) state.photos.push(makeBonusPhoto());
+    if (bonusIndexes.length > bonusCount) {
+      let removeCount = bonusIndexes.length - bonusCount;
+      for (let i = state.photos.length - 1; i >= 0 && removeCount > 0; i -= 1) {
+        const photo = state.photos[i];
+        if (photo?.isBonus && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
+          state.photos.splice(i, 1);
+          removeCount -= 1;
+        }
+      }
+    }
+  } else if (state.marketing === 'N') {
     state.photos = state.photos.filter((photo) => !photo.isBonus);
   }
+}
+
+function updateMarketingCopy() {
+  const count = getMarketingBonusCount();
+  const countLabel = count > 0 ? `${count}장` : '없음';
+  if (els.marketingBonusTag) {
+    els.marketingBonusTag.textContent = count > 0 ? `+ 보정 ${countLabel} 무료 추가` : '보너스 없음';
+  }
+  if (els.marketingYesBonusLabel) {
+    els.marketingYesBonusLabel.textContent = count > 0 ? `(＋ 보너스 보정 ${countLabel} 무료)` : '(추가 보너스 없음)';
+  }
+  if (!els.marketingCopy) return;
+  if (state.session?.bookingMarketing === 'Y') {
+    els.marketingCopy.textContent = count > 0
+      ? `예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 보너스 보정 ${countLabel}이 무료로 추가됩니다.`
+      : '예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 아래에서 다시 한 번 확인만 해주시면 됩니다.';
+    return;
+  }
+  els.marketingCopy.innerHTML = count > 0
+    ? `선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. <b>동의해 주시면 보너스 보정 ${countLabel}이 무료로 추가</b>됩니다. 원치 않으시면 미동의를 선택하시면 됩니다.`
+    : '선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. 원치 않으시면 미동의를 선택하시면 됩니다.';
+}
+
+function setMarketing(value) {
+  state.marketing = value;
+  syncMarketingBonusRows();
+  syncMarketingUi();
   renderPhotos();
   updatePhotoCounter();
   updateReview();
@@ -446,10 +804,7 @@ function syncMarketingUi() {
   });
   els.marketingYesCard.classList.toggle('active', value === 'Y');
   els.marketingNoCard.classList.toggle('active', value === 'N');
-  if (state.session?.bookingMarketing === 'Y') {
-    els.marketingBox.querySelector('.detail-copy').textContent =
-      '예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 아래에서 다시 한 번 확인만 해주시면 됩니다.';
-  }
+  updateMarketingCopy();
   updateSubmitState();
 }
 
@@ -468,6 +823,12 @@ function seedPickupCalendarCursor() {
 }
 
 function setDeliveryMethod(value) {
+  if (!requiresDeliverySelection()) {
+    state.deliveryMethod = '';
+    syncDeliveryUi();
+    updateReview();
+    return;
+  }
   state.deliveryMethod = value;
   syncDeliveryUi();
   if (value === 'pickup') {
@@ -486,36 +847,44 @@ function setDeliveryMethod(value) {
 }
 
 function syncDeliveryUi() {
-  const method = state.deliveryMethod;
+  const deliveryRequired = requiresDeliverySelection();
+  if (!deliveryRequired) state.deliveryMethod = '';
+  const method = deliveryRequired ? state.deliveryMethod : '';
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
+    input.disabled = !deliveryRequired;
     input.checked = input.value === method;
   });
+  els.deliveryReviewBlock?.classList.toggle('hidden', !deliveryRequired);
   els.deliveryPickupCard?.classList.toggle('active', method === 'pickup');
   els.deliveryMailCard?.classList.toggle('active', method === 'mail');
-  els.pickupScheduler?.classList.toggle('hidden', method !== 'pickup');
-  els.mailAddressBox?.classList.toggle('hidden', method !== 'mail');
+  els.pickupScheduler?.classList.toggle('hidden', !deliveryRequired || method !== 'pickup');
+  els.mailAddressBox?.classList.toggle('hidden', !deliveryRequired || method !== 'mail');
+  if (els.mailNameInput) els.mailNameInput.value = state.mailName || '';
   if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
+  if (els.submitHint) {
+    els.submitHint.textContent = deliveryRequired
+      ? '선택 내용을 확인하고 수령 방식을 선택한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.'
+      : '출력물 수령이 없는 상품입니다. 선택 내용을 확인한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.';
+  }
 }
 
 function getQuotaMap() {
-  return (INCLUDED_PRINT_QUOTA[state.session?.itemGroup] || []).map((item) => ({ ...item }));
+  return getSessionIncludedPrintQuota().map((item) => ({ ...item }));
 }
 
 function getRegularPhotos() {
   return state.photos.filter((photo) => !photo.isBonus);
 }
 
-// 수동 추가(source='manual')된 사진 중, 기본 포함 장수를 초과한 것만 유료.
-// 갤러리(source='gallery')에서 선택한 사진은 장수를 초과해도 자동 무료.
+// 마케팅 보너스를 제외한 보정 선택 수가 기본 포함 장수를 초과하면 유료.
+// 갤러리 별점 선택과 직접 추가 모두 같은 기준으로 계산한다.
 function getRetouchExtraCount() {
   const included = Number(state.session?.baseRetouchCount || 0);
-  let nonBonusIndex = 0; // 1-based position among non-bonus photos
+  let nonBonusIndex = 0;
   let paid = 0;
   state.photos.forEach((p) => {
     if (p.isBonus) return;
     nonBonusIndex += 1;
-    const source = p.source || 'manual';
-    if (source === 'gallery') return; // 갤러리 선택 — 무조건 무료
     if (nonBonusIndex > included) paid += 1;
   });
   return paid;
@@ -524,10 +893,7 @@ function getRetouchExtraCount() {
 // 해당 사진 항목이 유료(+€)인지 판정
 function isPhotoPaid(photo, photoIndex) {
   if (photo.isBonus) return false;
-  const source = photo.source || 'manual';
-  if (source === 'gallery') return false; // 갤러리 선택 = 무료
   const included = Number(state.session?.baseRetouchCount || 0);
-  // 해당 사진 앞에 있는 non-bonus 사진 수 세기
   let nonBonusPosition = 0;
   for (let i = 0; i <= photoIndex; i += 1) {
     if (!state.photos[i].isBonus) nonBonusPosition += 1;
@@ -536,15 +902,18 @@ function isPhotoPaid(photo, photoIndex) {
 }
 
 function isPrintFreeByQuota(index, printTypeId) {
+  const targetTypeId = normalizePrintTypeId(printTypeId);
+  if (targetTypeId === PRINT_NONE_ID) return false;
   const quota = getQuotaMap();
   for (let i = 0; i <= index; i += 1) {
     const photo = state.photos[i];
-    const typeId = (photo.printType || 'basic_10x15').replace(/_(r|e)$/, '');
+    if (photo?.isBonus) continue;
+    const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId);
     if (!option || option.retouched === 0) continue;
     const match = quota.find((item) => item.id === typeId && item.qty > 0);
     if (match) {
-      if (i === index && typeId === printTypeId) return true;
+      if (i === index && typeId === targetTypeId) return true;
       match.qty -= 1;
     }
   }
@@ -553,64 +922,126 @@ function isPrintFreeByQuota(index, printTypeId) {
 
 function calcTotal() {
   const extraRetouch = getRetouchExtraCount() * Number(state.session?.retouchPrice || 0);
-  const printUpgrade = state.photos.reduce((sum, photo, index) => {
-    const typeId = (photo.printType || 'basic_10x15').replace(/_(r|e)$/, '');
-    const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
-    if (option.retouched === 0) return sum;
-    return sum + (isPrintFreeByQuota(index, typeId) ? 0 : option.retouched);
-  }, 0);
-  const extraPrints = state.prints.reduce((sum, print) => {
-    const option = PRINT_OPTIONS.find((item) => item.id === print.printId) || PRINT_OPTIONS[0];
-    return sum + option.additional * (Number(print.qty) || 1);
-  }, 0);
-  return extraRetouch + printUpgrade + extraPrints;
+  const printCharge = computePrintAnnotations().reduce((sum, ann) => sum + ann.amount, 0);
+  return extraRetouch + printCharge;
 }
 
 /* ========================================================================
  * 갤러리 (1차 셀렉 — 별점 분류)
  * ====================================================================== */
 
-async function loadGallery() {
-  if (state.gallery.loading || state.gallery.loaded) return;
+async function loadGallery(options = {}) {
+  const force = !!options.force;
+  if (state.gallery.loading) return;
+  if (!force && state.gallery.loaded && state.gallery.fullLoaded) return;
   state.gallery.loading = true;
-  if (els.galleryStatus) els.galleryStatus.textContent = '불러오는 중...';
+  if (force || !state.gallery.loaded) resetGalleryForLoad();
+  updateGalleryLoadingNotice();
   try {
     const cacheKey = getGalleryCacheKey();
     const cached = cacheKey ? readGalleryCache(cacheKey) : null;
     if (cached?.photos?.length) {
-      applyGalleryPayload(cached);
-      if (els.galleryLoadingHint) els.galleryLoadingHint.style.display = 'none';
-      if (els.galleryStatus) els.galleryStatus.textContent = '빠르게 불러왔습니다.';
+      applyGalleryPayload(cached, { append: false });
+      state.gallery.loadedBatches = Number(cached.loadedBatches || Math.ceil(state.gallery.photos.length / GALLERY_BATCH_SIZE) || 1);
+      state.gallery.fullLoaded = true;
+      state.gallery.hasMore = false;
+      state.gallery.nextCursor = '';
+      updateGalleryLoadingNotice({ done: true });
       return;
     }
-    let res;
-    if (state.previewMode) {
-      if (state.previewFolder || state.session?.driveLink) {
-        res = await fetchSelectPreviewPhotos(state.previewFolder || state.session.driveLink);
-      } else {
-        res = { photos: buildMockGalleryPhotos(80) };
-      }
-    } else {
-      res = await fetchSelectPhotos(state.sessionId);
+
+    if (state.previewMode && !(state.previewFolder || state.session?.driveLink)) {
+      applyGalleryPayload({ photos: buildMockGalleryPhotos(80), hasMore: false }, { append: false });
+      state.gallery.loadedBatches = 1;
+      state.gallery.fullLoaded = true;
+      state.gallery.hasMore = false;
+      state.gallery.nextCursor = '';
+      updateGalleryLoadingNotice({ done: true });
+      return;
     }
-    applyGalleryPayload(res);
-    if (cacheKey && res?.photos?.length) writeGalleryCache(cacheKey, res);
-    if (els.galleryStatus) els.galleryStatus.textContent = '';
-    if (els.galleryLoadingHint) els.galleryLoadingHint.style.display = 'none';
+
+    let cursor = '';
+    const seenCursors = new Set();
+    while (true) {
+      const res = state.previewMode
+        ? await fetchSelectPreviewPhotos(state.previewFolder || state.session.driveLink, {
+            limit: GALLERY_BATCH_SIZE,
+            recursive: true,
+            cursor
+          })
+        : await fetchSelectPhotos(state.sessionId, {
+            limit: GALLERY_BATCH_SIZE,
+            recursive: true,
+            cursor
+          });
+      applyGalleryPayload(res, { append: state.gallery.loaded && state.gallery.photos.length > 0 });
+      state.gallery.loadedBatches += 1;
+      const nextCursor = String(res?.nextCursor || res?.cursor || '').trim();
+      const hasMore = !!(res?.hasMore || nextCursor);
+      state.gallery.hasMore = hasMore;
+      state.gallery.nextCursor = hasMore ? nextCursor : '';
+      state.gallery.fullLoaded = !hasMore;
+      updateGalleryLoadingNotice({ done: !hasMore });
+      if (!hasMore) break;
+      if (!nextCursor) throw new Error('다음 사진 묶음 위치를 확인할 수 없습니다. 다시 불러와 주세요.');
+      if (seenCursors.has(nextCursor)) throw new Error('같은 사진 묶음이 반복되어 갤러리 로딩을 중단했습니다. 다시 불러와 주세요.');
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+      await waitForGalleryBatchDelay();
+    }
+    if (cacheKey && state.gallery.photos.length) writeGalleryCache(cacheKey, buildGalleryCachePayload());
   } catch (err) {
     if (els.galleryLoadingHint) {
-      els.galleryLoadingHint.textContent = '갤러리 불러오기 실패: ' + (err.message || err);
+      els.galleryLoadingHint.style.display = '';
+      els.galleryLoadingHint.innerHTML = `
+        <div>갤러리 불러오기 실패: ${escapeHtml(err.message || err)}</div>
+        <button type="button" class="gallery-more" data-gallery-retry style="margin-top:12px;">다시 불러오기</button>
+      `;
+      els.galleryLoadingHint.querySelector('[data-gallery-retry]')?.addEventListener('click', () => {
+        state.gallery.loaded = false;
+        state.gallery.loading = false;
+        loadGallery({ force: true });
+      });
     }
+    if (els.galleryStatus) els.galleryStatus.textContent = '불러오기 실패';
   } finally {
     state.gallery.loading = false;
   }
 }
 
-function applyGalleryPayload(res) {
-  const photos = normalizeGalleryPhotos(Array.isArray(res?.photos) ? res.photos : []);
+function showGalleryPartialNotice(res) {
+  if (!res?.partial && !res?.truncated && !res?.hasMore) return;
+  updateGalleryLoadingNotice();
+}
+
+function resetGalleryForLoad() {
+  state.gallery.photos = [];
+  state.gallery.byKey = new Map();
+  state.gallery.filteredList = [];
+  state.gallery.focusIndex = -1;
+  state.gallery.renderCount = GALLERY_INITIAL_RENDER;
+  state.gallery.loaded = false;
+  state.gallery.loadedLimit = 0;
+  state.gallery.loadedBatches = 0;
+  state.gallery.nextCursor = '';
+  state.gallery.fullLoaded = false;
+  state.gallery.hasMore = false;
+}
+
+function applyGalleryPayload(res, options = {}) {
+  const incoming = normalizeGalleryPhotos(Array.isArray(res?.photos) ? res.photos : []);
+  const append = !!options.append;
+  const photos = append ? state.gallery.photos.slice() : [];
+  const seen = new Set(photos.map((photo) => galleryPhotoUniqueKey(photo)));
+  incoming.forEach((photo) => {
+    const key = galleryPhotoUniqueKey(photo);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    photos.push(photo);
+  });
+  photos.sort(compareGalleryPhotos);
   state.gallery.photos = photos;
   state.gallery.byKey = new Map();
-  state.gallery.renderCount = Math.min(GALLERY_INITIAL_RENDER, photos.length || GALLERY_INITIAL_RENDER);
   photos.forEach((p) => state.gallery.byKey.set(stripExt(p.name), p));
   state.photos.forEach((ph) => {
     if (ph.isBonus) return;
@@ -620,8 +1051,58 @@ function applyGalleryPayload(res) {
     }
   });
   state.gallery.loaded = true;
+  state.gallery.loadedLimit = photos.length;
+  state.gallery.hasMore = galleryPayloadHasMore(res);
+  state.gallery.fullLoaded = !state.gallery.hasMore;
+  state.gallery.renderCount = append
+    ? Math.min(Math.max(state.gallery.renderCount || GALLERY_INITIAL_RENDER, GALLERY_INITIAL_RENDER), photos.length || GALLERY_INITIAL_RENDER)
+    : Math.min(GALLERY_INITIAL_RENDER, photos.length || GALLERY_INITIAL_RENDER);
   renderGallery();
   renderPhotos();
+  renderPhotocardBox();
+}
+
+function galleryPayloadHasMore(res) {
+  return !!(res?.hasMore || res?.nextCursor || res?.cursor || res?.partial || res?.truncated);
+}
+
+function galleryPhotoUniqueKey(photo) {
+  const id = String(photo?.id || '').trim();
+  if (id) return `id:${id}`;
+  const name = stripExt(photo?.name || '');
+  return name ? `name:${name}` : '';
+}
+
+function compareGalleryPhotos(a, b) {
+  const ap = String(a?.folderPath || '');
+  const bp = String(b?.folderPath || '');
+  if (ap !== bp) return ap.localeCompare(bp, undefined, { numeric: true, sensitivity: 'base' });
+  return String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function updateGalleryLoadingNotice(options = {}) {
+  const done = !!options.done;
+  const count = state.gallery.photos.length;
+  if (els.galleryStatus) {
+    els.galleryStatus.textContent = done
+      ? `전체 사진 ${count}장을 모두 불러왔습니다.`
+      : count
+        ? `사진 ${count}장 불러오는 중...`
+        : '전체 사진 불러오는 중...';
+  }
+  if (!els.galleryLoadingHint) return;
+  if (done) {
+    els.galleryLoadingHint.style.display = 'none';
+    return;
+  }
+  els.galleryLoadingHint.style.display = '';
+  els.galleryLoadingHint.innerHTML = count
+    ? `고객 폴더 전체 사진을 300장씩 자동으로 계속 불러오는 중입니다. 현재 ${escapeHtml(String(count))}장을 먼저 표시하고 있습니다.`
+    : '고객 폴더 전체 사진을 300장씩 자동으로 불러오는 중입니다. 하위 폴더와 사진 수에 따라 잠시 걸릴 수 있습니다.';
+}
+
+function waitForGalleryBatchDelay() {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, GALLERY_BATCH_DELAY_MS));
 }
 
 function normalizeGalleryPhotos(photos) {
@@ -659,8 +1140,8 @@ function buildDriveThumbSrcSet(id) {
 }
 
 function getGalleryCacheKey() {
-  if (state.previewMode) return `preview:${state.previewFolder || state.session?.driveLink || 'mock'}`;
-  return state.sessionId ? `session:${state.sessionId}` : '';
+  if (state.previewMode) return `${GALLERY_CACHE_VERSION}:preview:${state.previewFolder || state.session?.driveLink || 'mock'}`;
+  return state.sessionId ? `${GALLERY_CACHE_VERSION}:session:${state.sessionId}` : '';
 }
 
 function readGalleryCache(cacheKey) {
@@ -669,6 +1150,7 @@ function readGalleryCache(cacheKey) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.photos?.length) return null;
+    if (parsed.hasMore || parsed.partial || parsed.truncated || parsed.fullLoaded === false) return null;
     return parsed;
   } catch {
     return null;
@@ -678,9 +1160,26 @@ function readGalleryCache(cacheKey) {
 function writeGalleryCache(cacheKey, payload) {
   try {
     globalThis.sessionStorage?.setItem(`selectGallery:${cacheKey}`, JSON.stringify({
-      photos: Array.isArray(payload?.photos) ? payload.photos : []
+      photos: Array.isArray(payload?.photos) ? payload.photos : [],
+      count: Number(payload?.count || payload?.photos?.length || 0),
+      batchSize: GALLERY_BATCH_SIZE,
+      loadedBatches: Number(payload?.loadedBatches || state.gallery.loadedBatches || 0),
+      fullLoaded: true,
+      hasMore: false,
+      partial: false,
+      truncated: false
     }));
   } catch {}
+}
+
+function buildGalleryCachePayload() {
+  return {
+    photos: state.gallery.photos,
+    count: state.gallery.photos.length,
+    loadedBatches: state.gallery.loadedBatches,
+    fullLoaded: state.gallery.fullLoaded,
+    hasMore: state.gallery.hasMore
+  };
 }
 
 function scheduleGalleryWarmup() {
@@ -710,6 +1209,7 @@ function setStarFor(photoKey, star) {
   renderGalleryCell(photoKey);
   renderGalleryCounts();
   renderPhotos();
+  renderPhotocardBox();
   updatePhotoCounter();
   updateReview();
 }
@@ -721,8 +1221,9 @@ function syncPhotosFromRatings(photoKey, prev, next) {
   const existingIdx = state.photos.findIndex((p) => !p.isBonus && stripExt(p.num) === photoKey);
   if (next > 0 && existingIdx < 0) {
     const bonusIndex = state.photos.findIndex((p) => p.isBonus);
-    // 갤러리에서 선택한 사진 → source='gallery' (초과해도 무료)
-    const entry = { num: photoKey, note: '', printType: 'basic_10x15', isBonus: false, source: 'gallery' };
+    const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
+    // 갤러리에서 선택한 사진. 기본 수량 초과 여부는 전체 보정 선택 순서로 계산된다.
+    const entry = { num: photoKey, note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'gallery' };
     if (bonusIndex >= 0) state.photos.splice(bonusIndex, 0, entry);
     else state.photos.push(entry);
   } else if (next === 0 && existingIdx >= 0) {
@@ -768,7 +1269,7 @@ function galleryCellHtml(p, idx) {
   const sizes = galleryImageSizes(layoutClass);
   const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
   return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
-      <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" data-fallback="${escapeHtml(p.fallback || '')}" alt="" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" onload="window.__studioSelectImageLoad?.(this)" onerror="window.__studioSelectImageError?.(this)">
+      <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" data-fallback="${escapeHtml(p.fallback || '')}" alt="" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer">
       <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">보기</button>
       ${star > 0 ? `<div class="cell-star-badge">${star}점</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
@@ -794,9 +1295,6 @@ function handleGalleryImageError(img) {
   img.style.opacity = '0';
   img.closest('.gallery-cell')?.classList.add('is-broken');
 }
-
-globalThis.__studioSelectImageLoad = handleGalleryImageLoad;
-globalThis.__studioSelectImageError = handleGalleryImageError;
 
 function galleryLayoutClass(photo, idx) {
   const seed = `${stripExt(photo?.name || '')}:${idx}`;
@@ -833,6 +1331,14 @@ function cssEscape(s) {
 }
 
 function bindGalleryCellEvents() {
+  els.galleryGrid.querySelectorAll('.gallery-cell img').forEach((img) => {
+    img.addEventListener('load', () => handleGalleryImageLoad(img));
+    img.addEventListener('error', () => handleGalleryImageError(img));
+    if (img.complete) {
+      if (img.naturalWidth > 0) handleGalleryImageLoad(img);
+      else handleGalleryImageError(img);
+    }
+  });
   els.galleryGrid.querySelectorAll('.gallery-cell').forEach((cell) => {
     cell.addEventListener('click', (ev) => {
       if (ev.target.closest('.gallery-zoom') || ev.target.closest('.cell-star')) return;
@@ -1207,8 +1713,9 @@ function downloadAllPhotos() {
  * ====================================================================== */
 function addPhotoRow() {
   const bonusIndex = state.photos.findIndex((photo) => photo.isBonus);
+  const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
   // 수동 추가 = source='manual' (기본 장수 초과 시 유료)
-  const newPhoto = { num: '', note: '', printType: 'basic_10x15', isBonus: false, source: 'manual' };
+  const newPhoto = { num: '', note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'manual' };
   if (bonusIndex >= 0) state.photos.splice(bonusIndex, 0, newPhoto);
   else state.photos.push(newPhoto);
   renderPhotos();
@@ -1227,24 +1734,113 @@ function thumbHtmlForNum(num) {
   </div>`;
 }
 
+function renderPhotocardBox() {
+  if (!els.photocardBox) return;
+  if (!hasIncludedPhotocard()) {
+    els.photocardBox.classList.add('hidden');
+    els.photocardBox.innerHTML = '';
+    return;
+  }
+  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(state.photocard.mode)
+    ? state.photocard.mode
+    : 'retouched';
+  const countText = getIncludedPhotocardCount() > 1 ? `${getIncludedPhotocardCount()}장 제작` : '1장 제작';
+  const modeCards = Object.entries(PHOTOCARD_MODE_LABELS).map(([value, label]) => {
+    const help = value === 'retouched'
+      ? '최종 보정본 중 2장을 앞면과 뒷면에 사용합니다.'
+      : value === 'mixed'
+        ? '한 면은 보정본, 한 면은 원본 사진으로 구성합니다.'
+        : '원본 사진 2장을 보정 없이 사용합니다.';
+    return `
+      <label class="radio-card photocard-mode-card${mode === value ? ' active' : ''}">
+        <input type="radio" name="photocardMode" value="${value}"${mode === value ? ' checked' : ''}>
+        <span><b>${escapeHtml(label)}</b><small>${escapeHtml(help)}</small></span>
+      </label>
+    `;
+  }).join('');
+
+  els.photocardBox.classList.remove('hidden');
+  els.photocardBox.innerHTML = `
+    <div class="detail-title">포함 포토카드 사진 선택</div>
+    <div class="guide-copy">프로모션에 포함된 양면 포토카드입니다. 앞면과 뒷면에 사용할 사진 번호를 입력해 주세요. (${countText})</div>
+    <div class="photocard-mode-grid">${modeCards}</div>
+    <div class="entry-grid photocard-fields">
+      <div class="field field-photo">
+        <label>앞면 사진 번호</label>
+        <input data-photocard-side="frontNum" value="${escapeHtml(state.photocard.frontNum || '')}" placeholder="예: IMG_0023 또는 0023">
+        ${thumbHtmlForNum(state.photocard.frontNum || '')}
+      </div>
+      <div class="field field-photo">
+        <label>뒷면 사진 번호</label>
+        <input data-photocard-side="backNum" value="${escapeHtml(state.photocard.backNum || '')}" placeholder="예: IMG_0045 또는 0045">
+        ${thumbHtmlForNum(state.photocard.backNum || '')}
+      </div>
+      <div class="field-full">
+        <label>포토카드 메모</label>
+        <textarea data-photocard-note placeholder="방향, 레터링, 보정/원본 면 지정 등 메모가 있으면 적어 주세요.">${escapeHtml(state.photocard.note || '')}</textarea>
+      </div>
+    </div>
+  `;
+
+  els.photocardBox.querySelectorAll('input[name="photocardMode"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      state.photocard.mode = input.value;
+      renderPhotocardBox();
+      updateReview();
+    });
+  });
+  els.photocardBox.querySelectorAll('[data-photocard-side]').forEach((input) => {
+    input.addEventListener('input', () => {
+      state.photocard[input.dataset.photocardSide] = input.value;
+      const row = input.closest('.field');
+      if (row) {
+        const thumb = row.querySelector('.entry-thumb, .entry-thumb.placeholder');
+        if (thumb) {
+          const wrap = document.createElement('div');
+          wrap.innerHTML = thumbHtmlForNum(input.value);
+          thumb.replaceWith(wrap.firstElementChild);
+        }
+      }
+      wirePhotocardZoom();
+      updateReview();
+    });
+  });
+  els.photocardBox.querySelector('[data-photocard-note]')?.addEventListener('input', (event) => {
+    state.photocard.note = event.target.value;
+    updateReview();
+  });
+  wirePhotocardZoom();
+}
+
+function wirePhotocardZoom() {
+  if (!els.photocardBox) return;
+  els.photocardBox.querySelectorAll('[data-zoom-entry]').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openLightboxByKey(btn.dataset.zoomEntry);
+    });
+  });
+  els.photocardBox.querySelectorAll('.entry-thumb[data-zoom-entry]').forEach((thumb) => {
+    thumb.addEventListener('click', () => openLightboxByKey(thumb.dataset.zoomEntry));
+  });
+}
+
 function renderPhotos() {
+  const retouchIntro = `<div class="included-print-callout"><strong>보정 선택</strong><span>보정할 사진과 요청사항만 선택하세요. 출력물은 다음 단계에서 따로 고르며, 보정과 다른 사진도 출력할 수 있습니다.</span></div>`;
   if (!state.photos.length) {
-    els.photoList.innerHTML = '<div class="empty-state">아직 선택된 보정 사진이 없습니다. 1차 셀렉에서 별점을 준 사진이 이곳에 자동으로 채워지거나, 아래 버튼으로 직접 추가할 수 있습니다.</div>';
+    els.photoList.innerHTML = `${retouchIntro}<div class="empty-state">아직 선택된 보정 사진이 없습니다. 1차 셀렉에서 별점을 준 사진이 이곳에 자동으로 채워지거나, 아래 버튼으로 직접 추가할 수 있습니다.</div>`;
     return;
   }
   const retouchPrice = Number(state.session?.retouchPrice || 0);
-  els.photoList.innerHTML = state.photos.map((photo, index) => {
-    const typeId = (photo.printType || 'basic_10x15').replace(/_(r|e)$/, '');
-    const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
+  els.photoList.innerHTML = retouchIntro + state.photos.map((photo, index) => {
     const paid = isPhotoPaid(photo, index);
     const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
     const extra = paid ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isBonus
       ? '<span class="bonus-badge">마케팅 보너스</span>'
       : source === 'gallery'
-        ? '<span class="gallery-badge">갤러리 · 무료</span>'
+        ? '<span class="gallery-badge">갤러리 선택</span>'
         : '<span class="manual-badge">직접 추가</span>';
-    const free = option.retouched === 0 || isPrintFreeByQuota(index, typeId);
     const key = stripExt(photo.num);
     const star = key ? getStarOf(key) : 0;
     const starChip = star ? `<span class="entry-star-chip">${star}점</span>` : '';
@@ -1264,16 +1860,6 @@ function renderPhotos() {
             <label>보정 요청사항 <small style="color:#9a6a3a;">(구체적으로 작성해 주세요)</small></label>
             <textarea data-photo-note="${index}" placeholder="예: 얼굴 라인을 자연스럽게 정리해 주세요. / 이마 번들거림을 줄이고 피부 톤을 균일하게 해주세요. / 옷 주름(어깨/가슴)을 자연스럽게 정리해 주세요.">${escapeHtml(photo.note || '')}</textarea>
           </div>
-          <div class="field-full">
-            <label>인화 사이즈</label>
-            <select data-photo-print="${index}">
-              ${PRINT_OPTIONS.map((item) => `<option value="${item.id}"${item.id === typeId ? ' selected' : ''}>${escapeHtml(item.label)} — ${item.retouched === 0 ? '무료' : `+€${item.retouched}`}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="price-line">
-          <span>인화 업그레이드 비용</span>
-          <strong class="${free ? 'free' : 'paid'}">${free ? '무료' : `+€${option.retouched}`}</strong>
         </div>
       </div>
     `;
@@ -1293,20 +1879,13 @@ function renderPhotos() {
         }
       }
       updatePhotoCounter();
+      if (state.prints.length) renderPrints(); // 보정본/원본 단가 판정이 바뀔 수 있음
       updateReview();
     });
   });
   els.photoList.querySelectorAll('[data-photo-note]').forEach((input) => {
     input.addEventListener('input', () => {
       state.photos[Number(input.dataset.photoNote)].note = input.value;
-      updatePhotoCounter();
-      updateReview();
-    });
-  });
-  els.photoList.querySelectorAll('[data-photo-print]').forEach((select) => {
-    select.addEventListener('change', () => {
-      state.photos[Number(select.dataset.photoPrint)].printType = select.value;
-      renderPhotos();
       updatePhotoCounter();
       updateReview();
     });
@@ -1326,6 +1905,7 @@ function renderPhotos() {
       state.photos.splice(i, 1);
       renderPhotos();
       updatePhotoCounter();
+      if (state.prints.length) renderPrints();
       updateReview();
     });
   });
@@ -1348,11 +1928,11 @@ function updatePhotoCounter() {
   const bonusCount = state.photos.filter((p) => p.isBonus).length;
   els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장 포함`;
   const parts = [];
-  if (galleryCount) parts.push(`갤러리 ${galleryCount}장(무료)`);
+  if (galleryCount) parts.push(`갤러리 ${galleryCount}장`);
   if (manualCount) parts.push(`직접 추가 ${manualCount}장`);
   if (bonusCount) parts.push(`마케팅 보너스 ${bonusCount}장(무료)`);
   els.photoCounterSub.textContent = parts.length
-    ? parts.join(' · ') + (extra > 0 ? ` · ${base + 1}번째 이후 직접 추가분이 유료로 계산됩니다.` : ' · 추가 보정 비용 없음')
+    ? parts.join(' · ') + (extra > 0 ? ` · 기본 ${base}장 초과분이 유료로 계산됩니다.` : ' · 추가 보정 비용 없음')
     : '별점을 주거나 직접 항목을 추가하면 여기에 구성이 표시됩니다.';
   els.extraCost.textContent = extra > 0 ? `추가 ${extra}장 × €${retouchPrice} = €${extra * retouchPrice}` : '추가 보정 비용 없음';
 }
@@ -1361,23 +1941,50 @@ function updatePhotoCounter() {
  * 추가 인화 (Step 3)
  * ====================================================================== */
 function addPrintRow() {
-  state.prints.push({ photoNum: '', printId: 'basic_10x15', qty: 1 });
+  // 기본값: 아직 남은 포함 쿼터 사이즈를 우선 제안, 없으면 기본 10×15
+  const remaining = getPrintQuotaSummary().find((q) => q.remaining > 0);
+  state.prints.push({ photoNum: '', printId: remaining ? remaining.id : 'basic_10x15', qty: 1 });
   renderPrints();
   updateReview();
 }
 
+function renderPrintQuotaBanner() {
+  const summary = getPrintQuotaSummary();
+  if (!summary.length) {
+    return '<div class="included-print-callout"><strong>출력 선택</strong><span>이 상품은 기본 제공 출력물이 없습니다. 필요한 사진을 아래에서 인화 주문할 수 있어요. 보정과 다른 사진도 선택할 수 있습니다.</span></div>';
+  }
+  const chips = summary.map((q) => {
+    const done = q.remaining === 0;
+    return `<span class="quota-chip${done ? ' used' : ''}">${escapeHtml(q.label)} <b>${q.used}/${q.total}</b></span>`;
+  }).join('');
+  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><div class="quota-chips">${chips}</div></div>`;
+}
+
 function renderPrints() {
+  const banner = renderPrintQuotaBanner();
   if (!state.prints.length) {
-    els.printList.innerHTML = '<div class="empty-state">추가 인화 주문이 없습니다. 필요한 경우 아래 버튼으로 추가해 주세요.</div>';
+    els.printList.innerHTML = `${banner}<div class="empty-state">아직 출력 주문이 없습니다. 아래 버튼으로 출력할 사진을 추가하세요.</div>`;
     return;
   }
-  els.printList.innerHTML = state.prints.map((print, index) => {
-    const option = PRINT_OPTIONS.find((item) => item.id === print.printId) || PRINT_OPTIONS[0];
-    const total = option.additional * (Number(print.qty) || 1);
+  const annotations = computePrintAnnotations();
+  els.printList.innerHTML = banner + state.prints.map((print, index) => {
+    const ann = annotations[index];
+    const option = ann.option;
+    const priceRight = ann.amount === 0
+      ? '<strong class="free">무료</strong>'
+      : `<strong class="paid">€${ann.amount}</strong>`;
+    const tierBadge = ann.isRetouched
+      ? '<span class="included-print-badge">보정본 출력</span>'
+      : '<span class="manual-badge">원본 출력</span>';
+    const breakdown = ann.includedQty > 0 && ann.chargedQty > 0
+      ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
+      : ann.includedQty > 0
+        ? '<div class="review-note">기본 제공 (무료)</div>'
+        : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`;
     return `
       <div class="entry-card">
         <div class="entry-head">
-          <div class="entry-label">추가 인화 #${index + 1}</div>
+          <div class="entry-label">출력 #${index + 1} ${tierBadge}</div>
           <button type="button" class="remove-btn" data-remove-print="${index}">삭제</button>
         </div>
         <div class="entry-grid">
@@ -1393,13 +2000,13 @@ function renderPrints() {
           <div class="field-full">
             <label>용지 종류</label>
             <select data-print-type="${index}">
-              ${PRINT_OPTIONS.map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)} — €${item.additional}</option>`).join('')}
+              ${getSelectablePrintOptions().map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}
             </select>
           </div>
         </div>
         <div class="price-line">
-          <span>추가 인화 비용</span>
-          <strong class="paid">€${total}</strong>
+          <span>${breakdown}</span>
+          ${priceRight}
         </div>
       </div>
     `;
@@ -1419,6 +2026,8 @@ function renderPrints() {
       }
       updateReview();
     });
+    // 입력을 마치면 보정본/원본 단가 판정을 반영해 행을 다시 그린다 (타이핑 중 포커스 유지)
+    input.addEventListener('change', () => { renderPrints(); updateReview(); });
   });
   els.printList.querySelectorAll('[data-print-qty]').forEach((input) => {
     input.addEventListener('input', () => {
@@ -1566,23 +2175,38 @@ function renderPickupSlots(slots) {
 }
 
 function getDeliveryReviewText() {
+  if (!requiresDeliverySelection()) return '출력물 수령 없음';
   if (state.deliveryMethod === 'pickup') {
     if (state.pickupDate && state.pickupTime) return `스튜디오 픽업 · ${state.pickupDate} ${state.pickupTime}`;
     return '스튜디오 픽업 · 날짜와 시간을 선택해 주세요.';
   }
   if (state.deliveryMethod === 'mail') {
-    return state.mailAddress ? `우편 수령 · ${state.mailAddress}` : '우편 수령 · 주소를 입력해 주세요.';
+    const mailName = getMailNameForSubmission();
+    const mailAddress = getMailAddressForSubmission();
+    if (!mailName && !mailAddress) return '우편 수령 · 성함과 주소를 입력해 주세요.';
+    if (!mailName) return '우편 수령 · 받으실 분 성함을 입력해 주세요.';
+    if (!mailAddress) return '우편 수령 · 주소를 입력해 주세요.';
+    return `우편 수령 · ${mailName} · ${formatMailAddressForReview(mailAddress)}`;
   }
   return '아직 수령 방식을 선택하지 않았습니다.';
 }
 
 function validateDeliverySelection() {
+  if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) { setBanner('수령 방식을 먼저 선택해 주세요.', 'error'); return false; }
   if (state.deliveryMethod === 'pickup') {
     if (!state.pickupDate || !state.pickupTime) { setBanner('픽업 날짜와 시간을 모두 선택해 주세요.', 'error'); return false; }
     return true;
   }
-  if (!String(state.mailAddress || '').trim()) { setBanner('우편 수령 주소를 입력해 주세요.', 'error'); return false; }
+  const mailName = getMailNameForSubmission();
+  const mailAddress = getMailAddressForSubmission();
+  if (!mailName) { setBanner('우편 수령 받으실 분 성함을 입력해 주세요.', 'error'); return false; }
+  if (!mailAddress) { setBanner('우편 수령 주소를 입력해 주세요.', 'error'); return false; }
+  if (!hasMailAddressPostalCity(mailAddress)) { setBanner('우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel', 'error'); return false; }
+  state.mailName = mailName;
+  state.mailAddress = mailAddress;
+  if (els.mailNameInput) els.mailNameInput.value = mailName;
+  if (els.mailAddressInput) els.mailAddressInput.value = mailAddress;
   return true;
 }
 
@@ -1595,7 +2219,6 @@ function updateReview() {
 
   els.reviewPhotos.innerHTML = state.photos.length
     ? state.photos.map((photo, index) => {
-        const option = PRINT_OPTIONS.find((item) => item.id === photo.printType) || PRINT_OPTIONS[0];
         const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
         const paid = isPhotoPaid(photo, index);
         const extra = paid
@@ -1603,9 +2226,8 @@ function updateReview() {
           : photo.isBonus
             ? '마케팅 보너스'
             : source === 'gallery'
-              ? '갤러리 · 무료'
+              ? '갤러리 선택'
               : '포함';
-        const free = option.retouched === 0 || isPrintFreeByQuota(index, photo.printType);
         return `
           <div class="review-item">
             <div>
@@ -1613,29 +2235,43 @@ function updateReview() {
               <div class="review-note">${escapeHtml(photo.note || '')}</div>
             </div>
             <div style="text-align:right;">
-              <div>${escapeHtml(option.label)}</div>
-              <div class="review-note">${free ? '무료' : `+€${option.retouched}`} / ${extra}</div>
+              <div class="review-note">${extra}</div>
             </div>
           </div>
         `;
       }).join('')
     : '<div class="empty-state">선택된 보정 사진이 없습니다.</div>';
 
+  const printAnnotations = computePrintAnnotations();
   els.reviewPrints.innerHTML = state.prints.length
-    ? state.prints.map((print) => {
-        const option = PRINT_OPTIONS.find((item) => item.id === print.printId) || PRINT_OPTIONS[0];
+    ? state.prints.map((print, index) => {
+        const ann = printAnnotations[index];
+        const tier = ann.isRetouched ? '보정본' : '원본';
+        const priceText = ann.amount === 0 ? '무료' : `€${ann.amount}`;
+        const detail = ann.includedQty > 0 && ann.chargedQty > 0
+          ? ` (포함 ${ann.includedQty} · 추가 ${ann.chargedQty})`
+          : ann.includedQty > 0
+            ? ' (기본 제공)'
+            : '';
         return `
           <div class="review-item">
-            <span>${escapeHtml(print.photoNum || '-')} · ${escapeHtml(option.label)} × ${escapeHtml(print.qty || 1)}</span>
-            <strong>€${option.additional * (Number(print.qty) || 1)}</strong>
+            <span>${escapeHtml(print.photoNum || '-')} · ${escapeHtml(ann.option.label)} × ${escapeHtml(print.qty || 1)} · ${tier}${detail}</span>
+            <strong>${priceText}</strong>
           </div>
         `;
       }).join('')
-    : '<div class="empty-state">추가 인화 없음</div>';
+    : '<div class="empty-state">출력 선택 없음</div>';
 
+  if (els.reviewPhotocardBlock && els.reviewPhotocard) {
+    const visible = hasIncludedPhotocard();
+    els.reviewPhotocardBlock.classList.toggle('hidden', !visible);
+    els.reviewPhotocard.textContent = visible ? getPhotocardReviewText() : '';
+  }
   els.reviewMarketing.textContent = state.marketing === 'Y' ? '동의' : '미동의';
-  els.reviewDelivery.textContent = getDeliveryReviewText();
-  els.reviewTotal.textContent = calcTotal() === 0 ? '무료' : `€${calcTotal()}`;
+  syncDeliveryUi();
+  if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
+  const total = calcTotal();
+  els.reviewTotal.textContent = total === 0 ? '무료' : `€${total}`;
   updateSubmitState();
   renderStepWarnings();
 }
@@ -1661,6 +2297,11 @@ function validateStep2() {
     setBanner(`${invalid + 1}번째 보정 사진의 번호와 요청사항을 입력해 주세요.`, 'error');
     return false;
   }
+  const photocardWarning = getPhotocardWarning();
+  if (photocardWarning) {
+    setBanner(photocardWarning, 'error');
+    return false;
+  }
   return true;
 }
 
@@ -1683,6 +2324,7 @@ function goStep(step) {
     dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
+  if (step === 3) renderPrints(); // 보정 리스트 기준 포함 쿼터/단가 최신화
   if (step === 4) updateReview();
   globalThis.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1691,10 +2333,16 @@ function canSubmit() {
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
   if (!state.photos.length) return false;
   if (state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())) return false;
+  if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+  if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) return false;
   if (state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)) return false;
-  if (state.deliveryMethod === 'mail' && !String(state.mailAddress || '').trim()) return false;
+  if (state.deliveryMethod === 'mail') {
+    const mailName = getMailNameForSubmission();
+    const mailAddress = getMailAddressForSubmission();
+    if (!mailName || !mailAddress || !hasMailAddressPostalCity(mailAddress)) return false;
+  }
   return true;
 }
 
@@ -1714,7 +2362,8 @@ function canProceedStep1() {
 
 function canProceedStep2() {
   if (!state.photos.length) return false;
-  return !state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim());
+  return !state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())
+    && !getPhotocardWarning();
 }
 
 function canProceedStep3() {
@@ -1722,25 +2371,34 @@ function canProceedStep3() {
 }
 
 function renderStepWarnings() {
+  const bonusCount = getMarketingBonusCount();
   const step1Message = canProceedStep1()
     ? ''
     : !state.marketing
-      ? '마케팅 동의 여부(동의 / 미동의)를 먼저 선택해 주세요. 동의 시 보너스 보정 2장이 무료로 추가됩니다.'
+      ? `마케팅 동의 여부(동의 / 미동의)를 먼저 선택해 주세요.${bonusCount > 0 ? ` 동의 시 보너스 보정 ${bonusCount}장이 무료로 추가됩니다.` : ''}`
       : '1차 셀렉에서 별점을 준 사진이 아직 없어요. 마음에 드는 사진에 별을 부여해 주세요.';
   const step2Message = canProceedStep2()
     ? ''
     : !state.photos.length
       ? '보정 사진을 최소 1장 추가해야 다음 단계로 이동할 수 있습니다.'
-      : '모든 사진의 번호와 보정 요청사항(구체적으로)을 입력해야 다음 버튼이 활성화됩니다.';
+      : getPhotocardWarning()
+        ? getPhotocardWarning()
+        : '모든 사진의 번호와 보정 요청사항(구체적으로)을 입력해야 다음 버튼이 활성화됩니다.';
   const step3Message = canProceedStep3() ? '' : '추가 인화의 사진 번호를 모두 입력해야 다음 단계로 이동할 수 있습니다.';
   const step4Message = canSubmit()
     ? ''
-    : !state.deliveryMethod
+    : !requiresDeliverySelection()
+      ? '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.'
+      : !state.deliveryMethod
       ? '수령 방식을 선택해야 제출할 수 있습니다.'
       : state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)
         ? '픽업 날짜와 시간을 선택해야 제출할 수 있습니다.'
-        : state.deliveryMethod === 'mail' && !String(state.mailAddress || '').trim()
-          ? '우편 수령 주소를 입력해야 제출할 수 있습니다.'
+      : state.deliveryMethod === 'mail' && !getMailNameForSubmission()
+        ? '우편 수령 받으실 분 성함을 입력해야 제출할 수 있습니다.'
+      : state.deliveryMethod === 'mail' && !getMailAddressForSubmission()
+        ? '우편 수령 주소를 입력해야 제출할 수 있습니다.'
+        : state.deliveryMethod === 'mail' && !hasMailAddressPostalCity(getMailAddressForSubmission())
+          ? '우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel'
           : '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.';
 
   if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
@@ -1759,8 +2417,9 @@ function buildMockSession() {
     date: '2026-04-15',
     itemGroup: 'stud',
     product: '스튜디오 Basic',
-    baseRetouchCount: 10,
+    baseRetouchCount: 3,
     retouchPrice: 10,
+    marketingBonusCount: 2,
     lang: 'ko',
     driveLink: state.previewFolder || 'https://drive.google.com/drive/folders/1J3p6L1xmYnGSi4TzxzOz5Ket2uvkGMLP?usp=drive_link',
     bookingMarketing: '',
@@ -1770,6 +2429,7 @@ function buildMockSession() {
     extraInvoiceNumber: '',
     existingDeliveryMethod: '',
     existingPickupAt: '',
+    existingMailName: '',
     existingMailAddress: '',
     existingPickupEventId: ''
   };
@@ -1808,17 +2468,42 @@ async function onSubmit() {
   }
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = state.editMode ? '수정 제출 중...' : '제출 중...';
+  const deliveryRequired = requiresDeliverySelection();
+  const printAnnotations = computePrintAnnotations();
   const payload = {
-    photos: state.photos,
-    prints: state.prints.map((print) => {
-      const option = PRINT_OPTIONS.find((item) => item.id === print.printId) || PRINT_OPTIONS[0];
-      return { ...print, label: option.label, price: option.additional, isRetouched: false };
-    }),
+    selectPrintModel: SELECT_PRINT_MODEL,
+    // 보정 리스트는 출력 정보를 담지 않는다 (분리형)
+    photos: state.photos.map((photo) => ({
+      num: String(photo.num || ''),
+      note: String(photo.note || ''),
+      isBonus: !!photo.isBonus,
+      source: photo.source || (photo.isBonus ? 'bonus' : 'manual')
+    })),
+    // 출력 리스트: 통합. 서버가 포함 쿼터/과금을 최종 판정하므로 price 는 참고용.
+    prints: [
+      ...state.prints.map((print, index) => {
+        const ann = printAnnotations[index];
+        return {
+          photoNum: String(print.photoNum || ''),
+          printId: normalizePrintTypeId(print.printId),
+          qty: Math.max(1, Number(print.qty) || 1),
+          isRetouched: ann.isRetouched,
+          label: ann.option.label,
+          price: ann.unit
+        };
+      }),
+      ...(() => {
+        const fallback = getPhotocardPrintFallbackPayload();
+        return fallback ? [fallback] : [];
+      })()
+    ],
     marketing: state.marketing,
-    deliveryMethod: state.deliveryMethod,
-    pickupDate: state.deliveryMethod === 'pickup' ? state.pickupDate : '',
-    pickupTime: state.deliveryMethod === 'pickup' ? state.pickupTime : '',
-    mailAddress: state.deliveryMethod === 'mail' ? String(state.mailAddress || '').trim() : '',
+    deliveryMethod: deliveryRequired ? state.deliveryMethod : 'none',
+    pickupDate: deliveryRequired && state.deliveryMethod === 'pickup' ? state.pickupDate : '',
+    pickupTime: deliveryRequired && state.deliveryMethod === 'pickup' ? state.pickupTime : '',
+    mailName: deliveryRequired && state.deliveryMethod === 'mail' ? getMailNameForSubmission() : '',
+    mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
+    photocard: getPhotocardPayload(),
     suppressCustomerEmail: state.testMode
   };
   try {
@@ -1858,10 +2543,13 @@ function renderSuccess(result) {
   els.successPhotoCount.textContent = `${state.photos.length}장`;
   const finalTotal = Number(result?.totalExtra ?? calcTotal());
   els.successTotal.textContent = finalTotal === 0 ? '무료' : `€${finalTotal}`;
+  const deliverySummaryLine = requiresDeliverySelection()
+    ? `<div class="guide-copy">수령 방식: ${escapeHtml(getDeliveryReviewText())}</div>`
+    : '';
   els.successGuide.innerHTML = `
     <div class="detail-title">선택 요약</div>
     <div class="guide-copy">보정 선택 ${state.photos.length}장 · 추가 인화 ${state.prints.length}건 · 마케팅 동의 ${state.marketing === 'Y' ? '동의' : '미동의'}</div>
-    <div class="guide-copy">수령 방식: ${escapeHtml(getDeliveryReviewText())}</div>
+    ${deliverySummaryLine}
     ${result?.invoiceNumber ? `<div class="guide-copy">추가 비용 인보이스: <b>${escapeHtml(result.invoiceNumber)}</b></div>` : ''}
   `;
   if (state.session?.driveLink) {

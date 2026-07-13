@@ -1,4 +1,5 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, joinWaitlist, lookupContact, submitBooking } from '../shared/api-booking.js';
+import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
+import { getProductDeliveryLines, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const LANG_STORAGE_KEY = 'studio-mean-lang';
@@ -7,6 +8,21 @@ const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
+const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v1';
+const DEFAULT_SHOOTING_LOCATION = 'Holzweg-Passage 3, 61440 Oberursel';
+const INIT_CACHE_KEY = 'studioMeanBookingInit:v2';
+const INIT_CACHE_TTL_MS = 5 * 60 * 1000;
+const CONTACT_COUNTRY_PRESETS = [
+  { value: '+49', label: 'DE +49' },
+  { value: '+82', label: 'KR +82' },
+  { value: '+1', label: 'US +1' },
+  { value: '+44', label: 'UK +44' },
+  { value: '+33', label: 'FR +33' },
+  { value: '+31', label: 'NL +31' },
+  { value: '+43', label: 'AT +43' },
+  { value: '+41', label: 'CH +41' }
+];
+const EMAIL_DOMAIN_PRESETS = ['@gmail.com', '@googlemail.com', '@yahoo.com', '@naver.com', '@icloud.com', '@outlook.com', '@hotmail.com', '@kakao.com'];
 
 function roundCurrency(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
@@ -22,12 +38,31 @@ function trimPromoDate(dateStr) {
 }
 
 function readStoredLang() {
+  const urlLang = readUrlLang();
+  if (urlLang) {
+    persistLang(urlLang);
+    return urlLang;
+  }
   try {
     const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
     return SUPPORTED_LANGS.has(saved) ? saved : 'ko';
   } catch {
     return 'ko';
   }
+}
+
+function readUrlLang() {
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || '');
+    return normalizeLang(params.get('lang') || params.get('language') || params.get('locale'));
+  } catch {
+    return '';
+  }
+}
+
+function normalizeLang(value) {
+  const lang = String(value || '').trim().toLowerCase().slice(0, 2);
+  return SUPPORTED_LANGS.has(lang) ? lang : '';
 }
 
 function persistLang(lang) {
@@ -188,11 +223,11 @@ const GROUP_META = {
     }
   },
   snap: {
-    label: { ko: '야외스냅', en: 'Outdoor', de: 'Outdoor' },
+    label: { ko: '야외/홈스냅', en: 'Outdoor/Home', de: 'Outdoor/Home' },
     sub: {
-      ko: '야외 인물, 커플, 가족, 백일/돌 스냅',
-      en: 'Outdoor portraits, couples, families, baby sessions',
-      de: 'Outdoor-Porträts, Paare, Familien, Baby-Sessions'
+      ko: '야외 또는 홈스냅, 커플, 가족, 백일/돌 스냅',
+      en: 'Outdoor or home snap, couples, families, baby sessions',
+      de: 'Outdoor oder Home-Shooting, Paare, Familien, Baby-Sessions'
     }
   },
   wed: {
@@ -204,11 +239,11 @@ const GROUP_META = {
     }
   },
   biz: {
-    label: { ko: '기업/행사', en: 'Corporate / Event', de: 'Firma / Event' },
+    label: { ko: '행사/이벤트', en: 'Event', de: 'Event' },
     sub: {
-      ko: '돌잔치촬영, 결혼식, 암트결혼식, 기업행사',
-      en: 'Birthday party, wedding, registry wedding, corporate event',
-      de: 'Geburtstagsfeier, Hochzeit, Standesamt, Firmenevent'
+      ko: '암트결혼식, 돌잔치/가족파티, 일반/기업행사',
+      en: 'Civil wedding, family party, general and corporate events',
+      de: 'Standesamt, Familienfeier, allgemeine und Firmenevents'
     }
   }
 };
@@ -220,11 +255,11 @@ const GROUP_QUICK_FACTS = {
   },
   prof: {
     delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
-    place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
+    place: { ko: '오버우어젤 스튜디오', en: 'Studio in Oberursel', de: 'Studio in Oberursel' }
   },
   stud: {
     delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
-    place: { ko: 'Holzweg-passage 3', en: 'Holzweg-passage 3', de: 'Holzweg-passage 3' }
+    place: { ko: '오버우어젤 스튜디오', en: 'Studio in Oberursel', de: 'Studio in Oberursel' }
   },
   snap: {
     delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
@@ -237,6 +272,177 @@ const GROUP_QUICK_FACTS = {
   biz: {
     delivery: { ko: '납품 일정 별도 협의', en: 'Delivery by agreement', de: 'Lieferung nach Absprache' },
     place: { ko: '출장 / 현장 진행', en: 'On location', de: 'Vor Ort' }
+  }
+};
+
+const EVENT_PRODUCT_CATEGORIES = [
+  {
+    key: 'civil',
+    title: { ko: '암트 결혼식', en: 'Civil wedding', de: 'Standesamt' },
+    sub: { ko: '암트 결혼식만, 피로연, 파티 포함 옵션을 선택합니다.', en: 'Civil ceremony only, reception or party options.', de: 'Trauung, Empfang oder Party auswählen.' }
+  },
+  {
+    key: 'family',
+    title: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+    sub: { ko: '돌잔치, 생일, 가족 모임처럼 가족 중심의 파티입니다.', en: 'First birthday, birthday parties and family gatherings.', de: 'Erster Geburtstag, Geburtstage und Familienfeiern.' }
+  },
+  {
+    key: 'private',
+    title: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+    sub: { ko: '공연, 전시, 커뮤니티 행사, 개인 이벤트입니다.', en: 'Performances, exhibitions, community events and private events.', de: 'Auftritte, Ausstellungen, Community-Events und private Veranstaltungen.' }
+  },
+  {
+    key: 'corporate',
+    title: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+    sub: { ko: '세미나, 컨퍼런스, 브랜드 행사, 사내 행사입니다.', en: 'Seminars, conferences, brand events and company gatherings.', de: 'Seminare, Konferenzen, Brand Events und Firmenfeiern.' }
+  }
+];
+
+const EVENT_PRODUCT_SECTIONS = [
+  {
+    key: 'civil-core',
+    category: 'civil',
+    title: { ko: '암트 결혼식만', en: 'Ceremony only', de: 'Nur Trauung' },
+    sub: { ko: '암트 결혼식만 진행하는 기본 구성입니다.', en: 'Coverage for the civil ceremony only.', de: 'Begleitung nur für die standesamtliche Trauung.' },
+    ids: ['amtp', 'amtv']
+  },
+  {
+    key: 'civil-after',
+    category: 'civil',
+    title: { ko: '피로연 / 파티 포함', en: 'Reception / party', de: 'Empfang / Party' },
+    sub: { ko: '암트 이후 일정이 이어질 때 선택해 주세요.', en: 'Choose this when coverage continues after the ceremony.', de: 'Für Begleitung nach der Trauung.' },
+    ids: ['amtpr', 'amtvr', 'amtpp', 'amtvp']
+  },
+  {
+    key: 'family',
+    category: 'family',
+    title: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+    sub: { ko: '돌상, 케이크, 가족 원판, 행사 스케치를 함께 고려합니다.', en: 'For dol setup, cake, family group shots and party coverage.', de: 'Für Dekoration, Kuchen, Familienbilder und Party-Dokumentation.' },
+    ids: ['evp', 'evv', 'biz']
+  },
+  {
+    key: 'private',
+    category: 'private',
+    title: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+    sub: { ko: '공연, 전시, 커뮤니티 행사, 개인 이벤트를 위한 맞춤 견적입니다.', en: 'Custom quotes for performances, exhibitions, community events and private events.', de: 'Individuelle Angebote für Auftritte, Ausstellungen, Community-Events und private Veranstaltungen.' },
+    ids: ['evp', 'evv', 'biz']
+  },
+  {
+    key: 'corporate',
+    category: 'corporate',
+    title: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+    sub: { ko: '세미나, 컨퍼런스, 브랜드 행사, 사내 행사를 위한 맞춤 견적입니다.', en: 'Custom quotes for seminars, conferences, brand events and company gatherings.', de: 'Individuelle Angebote für Seminare, Konferenzen, Brand Events und Firmenfeiern.' },
+    ids: ['evp', 'evv', 'biz']
+  }
+];
+
+const EVENT_PRODUCT_CATEGORY_OVERRIDES = {
+  family: {
+    evp: {
+      title: { ko: '돌잔치/가족 파티 사진', en: 'Family party photo', de: 'Familienfeier Foto' },
+      kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+      summary: { ko: '돌상, 케이크, 가족 원판, 행사 스케치', en: 'Dol setup, cake, family group shots, party coverage', de: 'Dekoration, Kuchen, Familienbilder, Party-Reportage' }
+    },
+    evv: {
+      title: { ko: '돌잔치/가족 파티 영상', en: 'Family party video', de: 'Familienfeier Video' },
+      kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+      summary: { ko: '행사 흐름과 편집 범위 확인 후 견적', en: 'Quote after schedule and edit scope check', de: 'Angebot nach Ablauf und Schnittumfang' }
+    },
+    biz: {
+      title: { ko: '돌잔치/가족 파티 상담', en: 'Family party consultation', de: 'Familienfeier Beratung' },
+      kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+      summary: { ko: '돌상/장소/진행 순서부터 정리', en: 'Start with setup, venue and schedule', de: 'Dekoration, Ort und Ablauf zuerst klären' }
+    }
+  },
+  private: {
+    evp: {
+      title: { ko: '일반 행사 사진', en: 'General event photo', de: 'Event Foto' },
+      kicker: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+      summary: { ko: '공연, 전시, 커뮤니티 행사, 개인 이벤트', en: 'Performance, exhibition, community event, private event', de: 'Auftritt, Ausstellung, Community-Event, private Veranstaltung' }
+    },
+    evv: {
+      title: { ko: '일반 행사 영상', en: 'General event video', de: 'Event Video' },
+      kicker: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+      summary: { ko: '촬영 시간과 편집 범위 확인 후 견적', en: 'Quote after hours and edit scope check', de: 'Angebot nach Dauer und Schnittumfang' }
+    },
+    biz: {
+      title: { ko: '일반 행사 상담', en: 'General event consultation', de: 'Event Beratung' },
+      kicker: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' }
+    }
+  },
+  corporate: {
+    evp: {
+      title: { ko: '기업 행사 사진', en: 'Corporate event photo', de: 'Firmenevent Foto' },
+      kicker: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+      summary: { ko: '세미나, 컨퍼런스, 브랜드 행사, 사내 행사', en: 'Seminar, conference, brand event, company gathering', de: 'Seminar, Konferenz, Brand Event, Firmenfeier' }
+    },
+    evv: {
+      title: { ko: '기업 행사 영상', en: 'Corporate event video', de: 'Firmenevent Video' },
+      kicker: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+      summary: { ko: '촬영 시간과 편집 범위 확인 후 견적', en: 'Quote after hours and edit scope check', de: 'Angebot nach Dauer und Schnittumfang' }
+    },
+    biz: {
+      title: { ko: '기업 행사 상담', en: 'Corporate event consultation', de: 'Firmenevent Beratung' },
+      kicker: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+      summary: { ko: '행사 규모와 납품 목적부터 정리', en: 'Start with event scale and delivery goals', de: 'Umfang und Lieferziel zuerst klären' }
+    }
+  }
+};
+
+const EVENT_PRODUCT_CARD_META = {
+  biz: {
+    title: { ko: '상담 먼저', en: 'Consultation first', de: 'Beratung zuerst' },
+    kicker: { ko: '맞춤 상담', en: 'Custom', de: 'Individuell' },
+    type: { ko: '사진/영상 택1', en: 'Photo or video', de: 'Foto oder Video' },
+    summary: { ko: '어떤 상품이 맞을지 애매할 때', en: 'For requests that need sorting first', de: 'Wenn der Umfang zuerst geklärt werden soll' }
+  },
+  amtp: {
+    title: { ko: '암트 결혼식 사진', en: 'Civil wedding photo', de: 'Standesamt Foto' },
+    kicker: { ko: '암트 결혼식만', en: 'Ceremony only', de: 'Nur Trauung' },
+    type: { ko: '사진', en: 'Photo', de: 'Foto' },
+    summary: { ko: '90분 · 원본 전체 · 보정본 15장', en: '90 min · all originals · 15 retouched', de: '90 Min. · alle Originale · 15 retuschiert' }
+  },
+  amtv: {
+    title: { ko: '암트 결혼식 영상', en: 'Civil wedding video', de: 'Standesamt Video' },
+    kicker: { ko: '암트 결혼식만', en: 'Ceremony only', de: 'Nur Trauung' },
+    type: { ko: '영상', en: 'Video', de: 'Video' },
+    summary: { ko: '동선 확인 후 견적', en: 'Quote after schedule check', de: 'Angebot nach Ablaufprüfung' }
+  },
+  amtpr: {
+    title: { ko: '피로연 포함 사진', en: 'Reception photo', de: 'Empfang Foto' },
+    kicker: { ko: '암트 + 피로연', en: 'Ceremony + reception', de: 'Trauung + Empfang' },
+    type: { ko: '사진', en: 'Photo', de: 'Foto' },
+    summary: { ko: '간단한 식사/축하 자리까지', en: 'For a simple reception after the ceremony', de: 'Für kleinen Empfang nach der Trauung' }
+  },
+  amtvr: {
+    title: { ko: '피로연 포함 영상', en: 'Reception video', de: 'Empfang Video' },
+    kicker: { ko: '암트 + 피로연', en: 'Ceremony + reception', de: 'Trauung + Empfang' },
+    type: { ko: '영상', en: 'Video', de: 'Video' },
+    summary: { ko: '동선과 편집 범위 확인 후 견적', en: 'Quote after route and edit scope check', de: 'Angebot nach Ablauf und Schnittumfang' }
+  },
+  amtpp: {
+    title: { ko: '파티 포함 사진', en: 'Party photo', de: 'Party Foto' },
+    kicker: { ko: '암트 + 파티', en: 'Ceremony + party', de: 'Trauung + Party' },
+    type: { ko: '사진', en: 'Photo', de: 'Foto' },
+    summary: { ko: '리셉션/파티까지 길게 기록', en: 'Longer coverage through reception or party', de: 'Längere Begleitung bis Empfang oder Party' }
+  },
+  amtvp: {
+    title: { ko: '파티 포함 영상', en: 'Party video', de: 'Party Video' },
+    kicker: { ko: '암트 + 파티', en: 'Ceremony + party', de: 'Trauung + Party' },
+    type: { ko: '영상', en: 'Video', de: 'Video' },
+    summary: { ko: '행사 규모와 편집 범위 확인 후 견적', en: 'Quote after event scale and edit scope check', de: 'Angebot nach Umfang und Schnittumfang' }
+  },
+  evp: {
+    title: { ko: '행사 사진', en: 'Event photo', de: 'Event Foto' },
+    kicker: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+    type: { ko: '사진', en: 'Photo', de: 'Foto' },
+    summary: { ko: '돌잔치, 기업행사, 공연, 파티', en: 'Birthday, corporate, performance, party', de: 'Geburtstag, Firma, Auftritt, Party' }
+  },
+  evv: {
+    title: { ko: '행사 영상', en: 'Event video', de: 'Event Video' },
+    kicker: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
+    type: { ko: '영상', en: 'Video', de: 'Video' },
+    summary: { ko: '촬영 시간과 편집 범위 확인 후 견적', en: 'Quote after hours and edit scope check', de: 'Angebot nach Dauer und Schnittumfang' }
   }
 };
 
@@ -422,18 +628,24 @@ const COPY = {
     hero: '원하시는 촬영 종류와 일정을 선택한 뒤 예약 정보를 입력해 주세요.',
     loadingCopy: '예약 페이지를 준비하고 있습니다.',
     noticeTitle: '공지사항',
-    promoHighlightEyebrow: 'Sonderaktion',
-    promoHighlightTitle: '가정의 달 이벤트',
+    promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
       return names
         ? `${names} 예약을 전용 이벤트 페이지에서 바로 진행하실 수 있습니다.`
-        : '현재 진행 중인 이벤트를 전용 이벤트 페이지에서 확인하고 예약하실 수 있습니다.';
+        : '입학 예정 아이를 위한 시즌 한정 촬영을 전용 이벤트 페이지에서 예약하실 수 있습니다.';
     },
-    promoHighlightState: '예약 진행 중',
-    promoHighlightNamesLabel: '이벤트',
+    promoHighlightState: '예약 가능',
+    promoHighlightNamesLabel: '패키지',
     promoHighlightPeriodLabel: '기간',
-    promoHighlightButton: '이벤트 예약 바로가기',
-    promoHighlightButtonSub: '기간 한정 이벤트 전용 페이지로 이동',
+    promoHighlightButton: 'Schultüte 이벤트 예약',
+    promoHighlightButtonSub: 'Mini / Classic / Family 패키지 보기',
+    consultationCtaTitle: '상담이 필요한 촬영은 먼저 알려주세요',
+    consultationCtaBody: '웨딩, 기업행사, 영상 촬영, 방문/전화 상담은 상담 설문으로 일정과 촬영 범위를 보내 주세요.',
+    consultationCtaMeta: '내용 확인 후 견적과 실제 예약 전환을 안내드립니다.',
+    consultationCtaButton: '상담 설문 작성하기',
+    quoteConsultationCopy: '일정, 장소, 촬영 범위를 먼저 정리하면 더 정확한 견적과 상담 예약을 바로 받을 수 있습니다.',
+    quoteConsultationButton: '상담 설문으로 이동',
     groupMetaPriceLabel: '시작가',
     groupMetaDurationLabel: '소요',
     groupMetaDeliveryLabel: '전달',
@@ -460,7 +672,7 @@ const COPY = {
     submitCardProduct: '상품',
     submitCardPrice: '예상 금액',
     submitCardNote: '메일이 보이지 않으면 스팸함도 함께 확인해 주세요.',
-    submitCardReturn: '재방문 할인 대상 예약으로 접수되었습니다.',
+    submitCardReturn: '재촬영 할인 대상 예약으로 접수되었습니다.',
     submitCardAction: '새 예약 시작',
     submitFail: '예약 제출 실패',
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
@@ -482,7 +694,11 @@ const COPY = {
     generalPeopleLabel: '인원',
     ageFieldLabel: '촬영 대상 연령',
     ageFieldHint: '영유아(만 0~2세) · 키즈(만 3~13세) · 성인(만 14~69세) · 시니어(만 70세 이상)',
-    babyTypeFieldLabel: '촬영 종류',
+    profileAgeLabel: '나이',
+    profileAgePlaceholder: '예: 만 7세 / 72세',
+    babyTypeFieldLabel: '백일/돌 구분',
+    studioFamilyLabel: '가족 구성',
+    studioFamilyPlaceholder: '예: 부모님 2명 + 아이 2명',
     optionFieldLabel: '추가 옵션',
     reshootingTitle: '재촬영 약관 동의',
     passAddonTitle: '여권사진 추가 촬영',
@@ -526,14 +742,16 @@ const COPY = {
     otherCountryLabel: '기타 국가명',
     otherCountryPlaceholder: '예: France, Canada',
     memoLabel: '요청사항',
-    consentTitle: '이용 동의',
-    consentCopy: '가장 위의 전체 선택으로 필수 항목을 한 번에 체크할 수 있습니다.',
+    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
+    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
     requiredConsentLabel: '필수 동의',
     optionalConsentLabel: '선택 동의',
     selectAllLabel: '필수 항목 전체 선택',
-    selectAllSub: '개인정보 및 AI 필수 항목을 한 번에 체크합니다.',
-    gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
-    gdprSub: '서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.',
+    selectAllSub: '표준 계약 및 개인정보 필수 항목을 한 번에 체크합니다.',
+    contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
+    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
+    gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
+    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
     aiSub: '촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.',
     marketingLabel: '[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.',
@@ -560,6 +778,8 @@ const COPY = {
     reviewTime: '시간',
     reviewPeople: '인원',
     reviewCountries: '촬영 국가',
+    reviewProfileAge: '나이',
+    reviewStudioFamily: '가족 구성',
     reviewBusinessInvoice: '사업자용 인보이스',
     reviewBusinessCompanyName: '사업자명',
     reviewBusinessInvoiceEmail: '송장 이메일',
@@ -608,18 +828,24 @@ const COPY = {
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
     loadingCopy: 'Preparing the booking page.',
     noticeTitle: 'Notice',
-    promoHighlightEyebrow: 'Special Event',
-    promoHighlightTitle: 'Family Month Promotion',
+    promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
       return names
         ? `You can view and book ${names} directly on the event page.`
-        : 'You can view the current special event and book it directly on the event page.';
+        : 'Book the limited Schultüte portrait event for children starting school.';
     },
     promoHighlightState: 'Now Booking',
-    promoHighlightNamesLabel: 'Events',
+    promoHighlightNamesLabel: 'Packages',
     promoHighlightPeriodLabel: 'Period',
-    promoHighlightButton: 'Book the event now',
-    promoHighlightButtonSub: 'Open the limited promotion page',
+    promoHighlightButton: 'Book Schultüte event',
+    promoHighlightButtonSub: 'View Mini / Classic / Family packages',
+    consultationCtaTitle: 'Need a consultation first?',
+    consultationCtaBody: 'For weddings, corporate events, video work, phone calls, or studio visits, please start with the consultation form.',
+    consultationCtaMeta: 'After consultation, the request can be converted into an actual booking.',
+    consultationCtaButton: 'Open consultation form',
+    quoteConsultationCopy: 'Share the schedule, location and scope first so we can prepare a clearer quote and consultation appointment.',
+    quoteConsultationButton: 'Go to consultation form',
     groupMetaPriceLabel: 'Starting at',
     groupMetaDurationLabel: 'Duration',
     groupMetaDeliveryLabel: 'Delivery',
@@ -646,7 +872,7 @@ const COPY = {
     submitCardProduct: 'Package',
     submitCardPrice: 'Estimated price',
     submitCardNote: 'If you do not see the email, please check your spam folder as well.',
-    submitCardReturn: 'This booking was received as an eligible return-customer reservation.',
+    submitCardReturn: 'This booking was received with the same-day reshoot discount.',
     submitCardAction: 'Start another booking',
     submitFail: 'Booking submission failed',
     productHelp: 'Choose a package to see the description and available schedule.',
@@ -668,7 +894,11 @@ const COPY = {
     generalPeopleLabel: 'People',
     ageFieldLabel: 'Age Group',
     ageFieldHint: 'Infant (0-2) · Kids (3-13) · Adult (14-69) · Senior (70+)',
-    babyTypeFieldLabel: 'Session Type',
+    profileAgeLabel: 'Age',
+    profileAgePlaceholder: 'e.g. 7 years old / 72 years old',
+    babyTypeFieldLabel: 'Baby Session Type',
+    studioFamilyLabel: 'Family members',
+    studioFamilyPlaceholder: 'e.g. 2 parents + 2 children',
     optionFieldLabel: 'Additional Options',
     reshootingTitle: 'Reshooting Consent',
     passAddonTitle: 'Passport Add-on',
@@ -712,14 +942,16 @@ const COPY = {
     otherCountryLabel: 'Other Country',
     otherCountryPlaceholder: 'e.g. France, Canada',
     memoLabel: 'Notes',
-    consentTitle: 'Consent',
-    consentCopy: 'Use the first option to check all required items at once before submitting.',
+    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
+    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
     requiredConsentLabel: 'Required',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Select all required items',
-    selectAllSub: 'Checks the personal data and AI consent items together.',
-    gdprLabel: '[Required] I agree to the collection and use of personal data.',
-    gdprSub: 'I agree to the minimum data processing needed to confirm the booking and deliver the final images.',
+    selectAllSub: 'Checks the standard contract and privacy consent items together.',
+    contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
+    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
+    gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
+    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
     aiSub: 'AI-based tools may be used as supporting tools during the retouching and delivery workflow.',
     marketingLabel: '[Optional] I agree to marketing/SNS/portfolio usage.',
@@ -746,6 +978,8 @@ const COPY = {
     reviewTime: 'Time',
     reviewPeople: 'People',
     reviewCountries: 'Country',
+    reviewProfileAge: 'Age',
+    reviewStudioFamily: 'Family members',
     reviewBusinessInvoice: 'Business invoice',
     reviewBusinessCompanyName: 'Company name',
     reviewBusinessInvoiceEmail: 'Invoice email',
@@ -794,18 +1028,24 @@ const COPY = {
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     loadingCopy: 'Buchungsseite wird vorbereitet.',
     noticeTitle: 'Hinweis',
-    promoHighlightEyebrow: 'Special Event',
-    promoHighlightTitle: 'Familienmonat Aktion',
+    promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    promoHighlightTitle: 'Schultüten-Portraits zur Einschulung 2026',
     promoHighlightBody(names) {
       return names
         ? `${names} können direkt über die Event-Seite angesehen und gebucht werden.`
-        : 'Die aktuelle Spezialaktion kann direkt über die Event-Seite angesehen und gebucht werden.';
+        : 'Buchen Sie die saisonale Schultüten-Portraitaktion zur Einschulung.';
     },
     promoHighlightState: 'Jetzt buchbar',
-    promoHighlightNamesLabel: 'Events',
+    promoHighlightNamesLabel: 'Pakete',
     promoHighlightPeriodLabel: 'Zeitraum',
-    promoHighlightButton: 'Event jetzt buchen',
-    promoHighlightButtonSub: 'Zur zeitlich begrenzten Aktionsseite wechseln',
+    promoHighlightButton: 'Schultüten-Event buchen',
+    promoHighlightButtonSub: 'Mini / Classic / Family Pakete ansehen',
+    consultationCtaTitle: 'Erst Beratung gewünscht?',
+    consultationCtaBody: 'Für Hochzeiten, Firmenevents, Video, Telefontermine oder Studiobesuche nutzen Sie bitte zuerst das Beratungsformular.',
+    consultationCtaMeta: 'Nach der Beratung kann die Anfrage direkt in eine Buchung umgewandelt werden.',
+    consultationCtaButton: 'Beratungsformular öffnen',
+    quoteConsultationCopy: 'Mit Ablauf, Ort und Umfang vorab können wir ein klareres Angebot und einen Beratungstermin vorbereiten.',
+    quoteConsultationButton: 'Zum Beratungsformular',
     groupMetaPriceLabel: 'Ab',
     groupMetaDurationLabel: 'Dauer',
     groupMetaDeliveryLabel: 'Lieferung',
@@ -832,7 +1072,7 @@ const COPY = {
     submitCardProduct: 'Paket',
     submitCardPrice: 'Geschätzter Preis',
     submitCardNote: 'Falls keine E-Mail sichtbar ist, prüfen Sie bitte auch den Spam-Ordner.',
-    submitCardReturn: 'Diese Buchung wurde als berechtigte Stammkunden-Reservierung erfasst.',
+    submitCardReturn: 'Diese Buchung wurde mit Rabatt für erneute Aufnahme erfasst.',
     submitCardAction: 'Neue Buchung starten',
     submitFail: 'Buchung fehlgeschlagen',
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
@@ -854,7 +1094,11 @@ const COPY = {
     generalPeopleLabel: 'Personen',
     ageFieldLabel: 'Altersgruppe',
     ageFieldHint: 'Säugling (0-2) · Kinder (3-13) · Erwachsene (14-69) · Senioren (ab 70)',
-    babyTypeFieldLabel: 'Aufnahmetyp',
+    profileAgeLabel: 'Alter',
+    profileAgePlaceholder: 'z. B. 7 Jahre / 72 Jahre',
+    babyTypeFieldLabel: 'Baby-Aufnahmetyp',
+    studioFamilyLabel: 'Familienmitglieder',
+    studioFamilyPlaceholder: 'z. B. 2 Eltern + 2 Kinder',
     optionFieldLabel: 'Zusätzliche Optionen',
     reshootingTitle: 'Einwilligung zum Nachshooting',
     passAddonTitle: 'Passfoto Zusatz',
@@ -898,14 +1142,16 @@ const COPY = {
     otherCountryLabel: 'Anderes Land',
     otherCountryPlaceholder: 'z. B. Frankreich, Kanada',
     memoLabel: 'Hinweise',
-    consentTitle: 'Einwilligung',
-    consentCopy: 'Mit der ersten Option können alle Pflichtangaben auf einmal bestätigt werden.',
+    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
+    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
     requiredConsentLabel: 'Pflicht',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Alle Pflichtangaben auswählen',
-    selectAllSub: 'Bestätigt Datenschutz und KI-Hinweis zusammen.',
-    gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
-    gdprSub: 'Ich stimme der minimalen Datenverarbeitung zu, die für Buchungsbestätigung und Bildübergabe erforderlich ist.',
+    selectAllSub: 'Bestätigt Standardvertrag und Datenschutz zusammen.',
+    contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
+    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
+    gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
+    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
     aiSub: 'KI-basierte Werkzeuge können unterstützend bei Retusche und Auslieferung eingesetzt werden.',
     marketingLabel: '[Optional] Ich stimme Marketing/SNS/Portfolio-Nutzung zu.',
@@ -932,6 +1178,8 @@ const COPY = {
     reviewTime: 'Uhrzeit',
     reviewPeople: 'Personen',
     reviewCountries: 'Land',
+    reviewProfileAge: 'Alter',
+    reviewStudioFamily: 'Familienmitglieder',
     reviewBusinessInvoice: 'Geschäftsrechnung',
     reviewBusinessCompanyName: 'Firmenname',
     reviewBusinessInvoiceEmail: 'Rechnungs-E-Mail',
@@ -1000,6 +1248,7 @@ const state = {
   businessHours: '2',
   businessVideoEdit: 'raw',
   businessAddonKeys: [],
+  eventCategory: '',
   activeStep: 1,
   returnEligible: false,
   returnNoticeTimer: null,
@@ -1048,9 +1297,12 @@ const els = {
   passportAddConfigBtn: document.getElementById('passportAddConfigBtn'),
   passportHint: document.getElementById('passportHint'),
   generalPanel: document.getElementById('generalPanel'),
+  generalCopy: document.getElementById('generalCopy'),
   ageField: document.getElementById('ageField'),
   ageGrid: document.getElementById('ageGrid'),
   seniorWarning: document.getElementById('seniorWarning'),
+  profileAgeField: document.getElementById('profileAgeField'),
+  profileAgeInput: document.getElementById('profileAgeInput'),
   babyTypeField: document.getElementById('babyTypeField'),
   babyTypeGrid: document.getElementById('babyTypeGrid'),
   optionField: document.getElementById('optionField'),
@@ -1060,6 +1312,8 @@ const els = {
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
   generalPeopleCustom: document.getElementById('generalPeopleCustom'),
+  studioFamilyField: document.getElementById('studioFamilyField'),
+  studioFamilyInput: document.getElementById('studioFamilyInput'),
   optionGrid: document.getElementById('optionGrid'),
   passAddonField: document.getElementById('passAddonField'),
   passAddonToggle: document.getElementById('passAddonToggle'),
@@ -1087,6 +1341,7 @@ const els = {
   locationInfo: document.getElementById('locationInfo'),
   locationInput: document.getElementById('locationInput'),
   businessField: document.getElementById('businessField'),
+  bizConfigField: document.getElementById('bizConfigField'),
   bizMode: document.getElementById('bizMode'),
   bizHours: document.getElementById('bizHours'),
   bizEdit: document.getElementById('bizEdit'),
@@ -1132,25 +1387,130 @@ boot();
 async function boot() {
   wireEvents();
   applyCopy();
+  const cachedInit = readInitDataCache();
+  if (cachedInit) {
+    renderInitData(cachedInit);
+    setBanner(getCopy().initSuccess, 'success');
+    hideLoadingScreen();
+  }
   try {
     const initData = await fetchInitData();
-    state.init = initData;
-    renderGroups();
-    renderProducts([]);
-    renderPassportCountries();
-    renderSurveyChips();
-    renderProductDetail();
-    renderReview();
-    refreshStepLocks();
-    renderNoticePanel();
-    renderPromoHighlightPanel();
+    const normalizedInitData = normalizeInitData(initData);
+    if (hasUsableProductData(normalizedInitData)) writeInitDataCache(normalizedInitData);
+    renderInitData(normalizedInitData);
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
-    setBanner(`${getCopy().initFail}: ${error.message}`, 'error');
+    if (!cachedInit) setBanner(`${getCopy().initFail}: ${error.message}`, 'error');
   } finally {
-    hideLoadingScreen();
+    if (!cachedInit) hideLoadingScreen();
   }
+}
+
+function renderInitData(initData) {
+  state.init = normalizeInitData(initData);
+  syncSelectedProductWithInitData();
+  const visibleProducts = getVisibleProductsForSelectedGroup();
+  renderGroups();
+  renderProducts(visibleProducts);
+  renderPassportCountries();
+  renderSurveyChips();
+  renderGeneralPanel();
+  renderProductDetail();
+  renderReview();
+  refreshStepLocks();
+  renderNoticePanel();
+  renderPromoHighlightPanel();
+}
+
+function getInitProducts(initData = state.init) {
+  return Array.isArray(initData?.products) ? initData.products : [];
+}
+
+function hasUsableProductData(initData) {
+  return getInitProducts(initData).length > 0;
+}
+
+function mergeProductsById(primaryProducts, fallbackProducts) {
+  const merged = [];
+  const seen = new Set();
+  [...(primaryProducts || []), ...(fallbackProducts || [])].forEach((product) => {
+    const key = String(product?.id || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(product);
+  });
+  return merged;
+}
+
+function normalizeInitData(initData) {
+  const normalized = initData && typeof initData === 'object' ? { ...initData } : {};
+  const incomingProducts = getInitProducts(normalized);
+  const fallbackProducts = getInitProducts(state.init);
+  let products = incomingProducts;
+  if (!products.length && fallbackProducts.length) {
+    products = fallbackProducts;
+  } else if (fallbackProducts.length) {
+    const selectedGroupProducts = state.selectedGroup
+      ? fallbackProducts.filter((product) => product.g === state.selectedGroup)
+      : [];
+    const selectedProductGroup = state.selectedProduct?.g || state.selectedGroup;
+    const selectedProductProducts = selectedProductGroup
+      ? fallbackProducts.filter((product) => product.g === selectedProductGroup)
+      : [];
+    if (selectedGroupProducts.length && !products.some((product) => product.g === state.selectedGroup)) {
+      products = mergeProductsById(products, selectedGroupProducts);
+    }
+    if (state.selectedProduct?.id && !products.some((product) => product.id === state.selectedProduct.id)) {
+      products = mergeProductsById(products, selectedProductProducts);
+    }
+  }
+  normalized.products = products;
+  return normalized;
+}
+
+function getVisibleProductsForSelectedGroup(initData = state.init) {
+  const products = getInitProducts(initData);
+  if (!state.selectedGroup) return [];
+  return products.filter((item) => item.g === state.selectedGroup);
+}
+
+function syncSelectedProductWithInitData() {
+  if (!state.selectedProduct?.id) return;
+  const products = getInitProducts();
+  const latestProduct = products.find((item) => item.id === state.selectedProduct.id);
+  if (latestProduct) {
+    state.selectedProduct = latestProduct;
+    state.selectedGroup = latestProduct.g || state.selectedGroup;
+    return;
+  }
+  state.selectedProduct = null;
+  state.selectedDate = '';
+  state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.quote = null;
+  state.earliestSlotInfo = null;
+}
+
+function readInitDataCache() {
+  try {
+    const raw = globalThis.sessionStorage?.getItem(INIT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.savedAt || Date.now() - Number(parsed.savedAt) > INIT_CACHE_TTL_MS) return null;
+    return hasUsableProductData(parsed.data) ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeInitDataCache(data) {
+  try {
+    globalThis.sessionStorage?.setItem(INIT_CACHE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      data
+    }));
+  } catch {}
 }
 
 function hideLoadingScreen() {
@@ -1164,6 +1524,7 @@ function wireEvents() {
   els.prevMonthBtn.addEventListener('click', () => changeMonth(-1));
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
+  setupBookingContactHelpers();
   els.wizardButtons.step1Next?.addEventListener('click', () => {
     if (!state.selectedGroup) {
       setBanner(
@@ -1253,8 +1614,8 @@ function wireEvents() {
     refreshStepLocks();
   });
   els.form.elements.marketing?.addEventListener('change', handleMarketingChange);
+  els.form.elements.contractTermsConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   els.form.elements.gdprConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
-  els.form.elements.aiConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   els.form.elements.name?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); });
   els.form.elements.phone?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); scheduleContactLookup(); });
   els.form.elements.email?.addEventListener('input', () => { renderReturnNotice(); refreshStepLocks(); scheduleContactLookup(); });
@@ -1269,6 +1630,8 @@ function wireEvents() {
   ['businessCompanyName', 'businessCompanyAddress', 'businessVatId', 'businessInvoiceEmail', 'businessInvoiceRef'].forEach((fieldName) => {
     els.form.elements[fieldName]?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   });
+  els.profileAgeInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
+  els.studioFamilyInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.reshootingConsent?.addEventListener('change', refreshStepLocks);
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
@@ -1315,15 +1678,280 @@ function wireEvents() {
   });
 }
 
+function getContactHelperCopy() {
+  if (state.lang === 'en') {
+    return {
+      emailDomain: 'Email domain',
+      addressPlaceholder: 'Postcode or address',
+      addressButton: 'Check address',
+      addressEmpty: 'Enter a postcode or address.',
+      addressChecking: 'Checking address...',
+      addressDone: 'Address checked',
+      addressFail: 'Could not find the address.'
+    };
+  }
+  if (state.lang === 'de') {
+    return {
+      emailDomain: 'E-Mail-Domain',
+      addressPlaceholder: 'PLZ oder Adresse',
+      addressButton: 'Adresse prüfen',
+      addressEmpty: 'Bitte PLZ oder Adresse eingeben.',
+      addressChecking: 'Adresse wird geprüft...',
+      addressDone: 'Adresse geprüft',
+      addressFail: 'Adresse wurde nicht gefunden.'
+    };
+  }
+  return {
+    emailDomain: '이메일 도메인',
+    addressPlaceholder: '우편번호 또는 주소',
+    addressButton: '주소 확인',
+    addressEmpty: '우편번호나 주소를 입력해 주세요.',
+    addressChecking: '주소 확인 중...',
+    addressDone: '주소 확인 완료',
+    addressFail: '주소를 찾지 못했습니다.'
+  };
+}
+
+function splitPhoneValue(value, fallbackCountryCode = '+49') {
+  let clean = String(value || '').trim().replace(/[^\d+]/g, '');
+  if (!clean) return { code: '', rest: '', value: '' };
+  if (clean.startsWith('00')) clean = `+${clean.slice(2)}`;
+  const fallback = String(fallbackCountryCode || '+49').trim().replace(/[^\d+]/g, '') || '+49';
+  if (!clean.startsWith('+')) {
+    clean = clean.startsWith('0') ? `${fallback}${clean.slice(1)}` : `${fallback}${clean}`;
+  }
+  const knownCodes = CONTACT_COUNTRY_PRESETS.map((item) => item.value).sort((a, b) => b.length - a.length);
+  let code = knownCodes.find((candidate) => clean.startsWith(candidate)) || '';
+  let rest = '';
+  if (code) {
+    rest = clean.slice(code.length);
+  } else {
+    const match = clean.match(/^(\+\d{1,3})(\d+)$/);
+    if (!match) return { code: '', rest: '', value: clean };
+    code = match[1];
+    rest = match[2];
+  }
+  return { code, rest, value: clean };
+}
+
+function formatPhoneDisplay(value, fallbackCountryCode = '+49') {
+  const parsed = splitPhoneValue(value, fallbackCountryCode);
+  if (!parsed.code) return parsed.value || String(value || '').trim();
+  let rest = parsed.rest || '';
+  const chunks = [];
+  if (rest.length > 6) {
+    chunks.push(rest.slice(0, 3));
+    rest = rest.slice(3);
+  }
+  while (rest.length > 4) {
+    chunks.push(rest.slice(0, 3));
+    rest = rest.slice(3);
+  }
+  if (rest) chunks.push(rest);
+  return `${parsed.code}${chunks.length ? ` ${chunks.join(' ')}` : ''}`;
+}
+
+function dispatchContactFieldInput(field) {
+  try {
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  } catch {}
+}
+
+function getPhoneCountrySelect(input) {
+  return input?.closest('.contact-helper-control')?.querySelector('[data-role="phone-country"]') || null;
+}
+
+function applyPhoneCountryPreset(input, countryCode) {
+  if (!input) return;
+  const formatted = formatPhoneDisplay(input.value, countryCode || '+49');
+  input.value = formatted;
+  const parsed = splitPhoneValue(formatted, countryCode || '+49');
+  const select = getPhoneCountrySelect(input);
+  if (select && parsed.code && CONTACT_COUNTRY_PRESETS.some((item) => item.value === parsed.code)) {
+    select.value = parsed.code;
+  }
+  dispatchContactFieldInput(input);
+}
+
+function normalizeEmailInput(input) {
+  if (!input) return;
+  input.value = String(input.value || '').trim().replace(/\s+/g, '').toLowerCase();
+  dispatchContactFieldInput(input);
+}
+
+function enhanceBookingPhoneInput(input) {
+  if (!input || input.dataset.contactEnhanced === 'phone') return;
+  input.dataset.contactEnhanced = 'phone';
+  input.setAttribute('inputmode', 'tel');
+  input.placeholder = input.placeholder || '+49 176 60939400';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'contact-helper-control contact-helper-phone';
+  const select = document.createElement('select');
+  select.dataset.role = 'phone-country';
+  select.setAttribute('aria-label', 'Phone country code');
+  CONTACT_COUNTRY_PRESETS.forEach((item) => {
+    const option = document.createElement('option');
+    option.value = item.value;
+    option.textContent = item.label;
+    select.appendChild(option);
+  });
+  input.parentNode.insertBefore(wrapper, input);
+  wrapper.appendChild(select);
+  wrapper.appendChild(input);
+
+  input.addEventListener('blur', () => applyPhoneCountryPreset(input, select.value));
+  select.addEventListener('change', () => applyPhoneCountryPreset(input, select.value));
+}
+
+function enhanceBookingEmailInput(input) {
+  if (!input || input.dataset.contactEnhancedEmail === '1') return;
+  input.dataset.contactEnhancedEmail = '1';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'contact-helper-control contact-helper-email';
+  const select = document.createElement('select');
+  select.dataset.role = 'email-domain';
+  select.setAttribute('aria-label', getContactHelperCopy().emailDomain);
+  const emptyOption = document.createElement('option');
+  emptyOption.value = '';
+  emptyOption.textContent = getContactHelperCopy().emailDomain;
+  select.appendChild(emptyOption);
+  EMAIL_DOMAIN_PRESETS.forEach((domain) => {
+    const option = document.createElement('option');
+    option.value = domain;
+    option.textContent = domain;
+    select.appendChild(option);
+  });
+  input.parentNode.insertBefore(wrapper, input);
+  wrapper.appendChild(input);
+  wrapper.appendChild(select);
+
+  input.addEventListener('blur', () => normalizeEmailInput(input));
+  select.addEventListener('change', () => {
+    const domain = select.value;
+    if (!domain) return;
+    const local = String(input.value || '').trim().split('@')[0];
+    if (local) {
+      input.value = `${local}${domain}`;
+      normalizeEmailInput(input);
+    } else {
+      input.focus();
+    }
+    select.value = '';
+  });
+}
+
+function enhanceBookingAddressInput(field) {
+  if (!field || field.dataset.addressEnhanced === '1') return;
+  field.dataset.addressEnhanced = '1';
+  const copy = getContactHelperCopy();
+  const row = document.createElement('div');
+  row.className = 'contact-helper-address';
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.autocomplete = 'postal-code';
+  searchInput.placeholder = copy.addressPlaceholder;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = copy.addressButton;
+  const message = document.createElement('div');
+  message.className = 'contact-helper-message';
+  row.appendChild(searchInput);
+  row.appendChild(button);
+  row.appendChild(message);
+  field.parentNode.insertBefore(row, field.nextSibling);
+
+  const runLookup = async () => {
+    const query = String(searchInput.value || field.value || '').trim();
+    if (!query) {
+      message.textContent = getContactHelperCopy().addressEmpty;
+      message.classList.remove('is-success');
+      return;
+    }
+    button.disabled = true;
+    message.textContent = getContactHelperCopy().addressChecking;
+    message.classList.remove('is-success');
+    try {
+      const res = await lookupAddress({ query });
+      if (res?.found) {
+        field.value = res.formattedAddress || res.displayAddress || query;
+        message.textContent = [res.postalCode, res.city, res.countryCode].filter(Boolean).join(' · ') || getContactHelperCopy().addressDone;
+        message.classList.add('is-success');
+        dispatchContactFieldInput(field);
+        renderReview();
+        refreshStepLocks();
+      } else {
+        message.textContent = res?.message || getContactHelperCopy().addressFail;
+      }
+    } catch (error) {
+      message.textContent = error?.message || getContactHelperCopy().addressFail;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  button.addEventListener('click', runLookup);
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runLookup();
+    }
+  });
+}
+
+function normalizeBookingContactFields() {
+  const fields = els.form?.elements;
+  if (!fields) return;
+  const phone = fields.phone;
+  if (phone) {
+    const select = getPhoneCountrySelect(phone);
+    applyPhoneCountryPreset(phone, select?.value || '+49');
+  }
+  normalizeEmailInput(fields.email);
+  normalizeEmailInput(fields.businessInvoiceEmail);
+}
+
+function setupBookingContactHelpers() {
+  const fields = els.form?.elements;
+  if (!fields) return;
+  enhanceBookingPhoneInput(fields.phone);
+  enhanceBookingEmailInput(fields.email);
+  enhanceBookingAddressInput(fields.address);
+  enhanceBookingEmailInput(fields.businessInvoiceEmail);
+  enhanceBookingAddressInput(fields.businessCompanyAddress);
+}
+
 function getCopy() {
   return COPY[state.lang] || COPY.ko;
+}
+
+function getConsultationUrl() {
+  const url = new URL('/consultation/', globalThis.location.origin);
+  url.searchParams.set('lang', state.lang);
+  if (state.selectedGroup) url.searchParams.set('from', state.selectedGroup);
+  if (state.eventCategory) url.searchParams.set('event', state.eventCategory);
+  if (state.selectedProduct?.id) url.searchParams.set('product', state.selectedProduct.id);
+  return `${url.pathname}${url.search}`;
+}
+
+function syncConsultationLinks() {
+  const href = getConsultationUrl();
+  document.querySelectorAll('[data-consultation-link], #consultationCtaLink').forEach((link) => {
+    link.setAttribute('href', href);
+  });
+}
+
+function syncLanguageControls() {
+  els.langButtons.forEach((item) => item.classList.toggle('active', item.dataset.lang === state.lang));
 }
 
 function setLang(lang) {
   if (!SUPPORTED_LANGS.has(lang)) return;
   state.lang = lang;
   persistLang(lang);
-  els.langButtons.forEach((item) => item.classList.toggle('active', item.dataset.lang === lang));
+  updateLangQueryParam(lang);
+  syncLanguageControls();
   applyCopy();
   renderGroups();
   renderProducts((state.init?.products || []).filter((item) => !state.selectedGroup || item.g === state.selectedGroup));
@@ -1335,6 +1963,16 @@ function setLang(lang) {
   refreshStepLocks();
   if (state.selectedProduct) {
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
+  }
+}
+
+function updateLangQueryParam(lang) {
+  try {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set('lang', lang);
+    globalThis.history?.replaceState(null, '', url.toString());
+  } catch {
+    // Keep language switching functional even if history state is unavailable.
   }
 }
 
@@ -1457,10 +2095,16 @@ function getBusinessInvoiceFormData(source = null) {
 function applyCopy() {
   const copy = getCopy();
   document.documentElement.lang = state.lang;
+  syncLanguageControls();
   if (els.heroTitle) els.heroTitle.textContent = copy.heroTitle;
   if (els.noticeTitle) els.noticeTitle.textContent = copy.noticeTitle;
   els.heroLead.textContent = copy.hero;
   if (els.loadingCopy) els.loadingCopy.textContent = copy.loadingCopy;
+  setText('consultationCtaTitle', copy.consultationCtaTitle);
+  setText('consultationCtaBody', copy.consultationCtaBody);
+  setText('consultationCtaMeta', copy.consultationCtaMeta);
+  setText('consultationCtaLink', copy.consultationCtaButton);
+  syncConsultationLinks();
   setText('requiredInfoLabel', copy.requiredInfoLabel);
   setText('requiredInfoCopy', copy.requiredInfoCopy);
   setText('optionalInfoLabel', copy.optionalInfoLabel);
@@ -1483,7 +2127,11 @@ function applyCopy() {
   setText('generalPeopleLabel', copy.generalPeopleLabel);
   setText('ageFieldLabel', copy.ageFieldLabel);
   setText('ageFieldHint', copy.ageFieldHint);
+  setText('profileAgeLabel', copy.profileAgeLabel);
+  if (els.profileAgeInput) els.profileAgeInput.placeholder = copy.profileAgePlaceholder;
   setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
+  setText('studioFamilyLabel', copy.studioFamilyLabel);
+  if (els.studioFamilyInput) els.studioFamilyInput.placeholder = copy.studioFamilyPlaceholder;
   setText('optionFieldLabel', copy.optionFieldLabel);
   setText('reshootingTitle', copy.reshootingTitle);
   setText('passAddonTitle', copy.passAddonTitle);
@@ -1524,10 +2172,10 @@ function applyCopy() {
   setText('optionalConsentLabel', copy.optionalConsentLabel);
   setText('selectAllLabel', copy.selectAllLabel);
   setText('selectAllSub', copy.selectAllSub);
+  setText('contractTermsLabel', copy.contractTermsLabel);
+  setText('contractTermsSub', copy.contractTermsSub);
   setText('gdprLabel', copy.gdprLabel);
   setText('gdprSub', copy.gdprSub);
-  setText('aiLabel', copy.aiLabel);
-  setText('aiSub', copy.aiSub);
   syncMarketingConsentCopy(copy);
   els.passportHint.textContent = copy.passportHint;
   els.prevMonthBtn.textContent = copy.monthPrev;
@@ -1592,6 +2240,7 @@ function applyCopy() {
   renderPromoHighlightPanel();
   syncConsentVisibility();
   syncSelectAllRequired();
+  renderContractPriceSummary();
   refreshBannerCopy();
 }
 
@@ -1657,6 +2306,7 @@ function getPromoProductLabels() {
 
 function renderPromoHighlightPanel() {
   if (!els.promoHighlightPanel) return;
+  els.promoHighlightPanel.querySelector('.promo-highlight-button')?.setAttribute('href', `/promo/?lang=${encodeURIComponent(state.lang)}`);
   const settings = state.init?.settings || {};
   if (!settings.promoEnabled || !isHeroIntroStepVisible()) {
     els.promoHighlightPanel.classList.add('hidden-field');
@@ -1733,6 +2383,7 @@ function renderPanelLoading(message) {
       </div>
     </div>
   `;
+  syncConsultationLinks();
 }
 
 function setCalendarBusy(isBusy) {
@@ -1754,27 +2405,101 @@ function setText(id, value) {
   if (el) el.textContent = value;
 }
 
+function getContractQuoteLabel() {
+  return '상담 후 견적 / Angebot nach Beratung';
+}
+
+function formatContractBruttoAmount(value) {
+  return `€${formatEuroAmount(value)} brutto`;
+}
+
+function getContractPriceSnapshot() {
+  const item = state.selectedProduct;
+  if (!item) {
+    return {
+      quoteOnly: false,
+      total: 0,
+      deposit: 0,
+      balance: 0,
+      location: DEFAULT_SHOOTING_LOCATION
+    };
+  }
+  const quote = state.quote || getPreviewQuote() || {};
+  const quoteOnly = !!quote.isQuoteOnly || isQuoteOnlyProduct(item);
+  const total = roundCurrency(Number(quote.totalPrice ?? getEstimatedPrice()) || 0);
+  let deposit = quote.depositAmount !== undefined && quote.depositAmount !== null
+    ? roundCurrency(quote.depositAmount)
+    : 0;
+  if (!quoteOnly && quote.depositAmount === undefined && total > 100 && item.g !== 'pass' && item.g !== 'biz' && item.g !== 'promo') {
+    deposit = item.g === 'wed' ? roundCurrency(total * 0.20) : 50;
+  }
+  const balance = quote.balanceAmount !== undefined && quote.balanceAmount !== null
+    ? roundCurrency(quote.balanceAmount)
+    : roundCurrency(Math.max(0, total - deposit));
+  const typedLocation = String(els.locationInput?.value || '').trim();
+  return {
+    quoteOnly,
+    total,
+    deposit,
+    balance,
+    location: needsBookingLocation(item) ? (typedLocation || DEFAULT_SHOOTING_LOCATION) : DEFAULT_SHOOTING_LOCATION
+  };
+}
+
+function renderContractPriceSummary() {
+  const box = document.getElementById('contractPriceSummary');
+  if (!box) return;
+  if (!state.selectedProduct) {
+    box.innerHTML = '';
+    return;
+  }
+  const snapshot = getContractPriceSnapshot();
+  const quoteLabel = getContractQuoteLabel();
+  const value = (amount) => snapshot.quoteOnly ? quoteLabel : formatContractBruttoAmount(amount);
+  box.innerHTML = [
+    ['총 비용 / Gesamtbetrag', value(snapshot.total)],
+    ['계약금 / Anzahlung', value(snapshot.deposit)],
+    ['잔금 / Restbetrag', value(snapshot.balance)]
+  ].map(([label, amount]) => `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(amount)}</div>`).join('');
+}
+
+function getContractSubmissionData(formData = new FormData(els.form)) {
+  const snapshot = getContractPriceSnapshot();
+  return {
+    contract_terms_version: CONTRACT_TERMS_VERSION,
+    contract_terms_accepted: formData.get('contractTermsConsent') === 'on',
+    privacy_terms_accepted: formData.get('gdprConsent') === 'on',
+    accepted_at: new Date().toISOString(),
+    accepted_language: state.lang || 'ko',
+    selected_service: getDisplayProductTitle(state.selectedProduct) || getProductLabel(state.selectedProduct),
+    shooting_date: state.selectedDate || '',
+    shooting_time: state.selectedSlot || '',
+    shooting_location: snapshot.location,
+    total_price_brutto: snapshot.quoteOnly ? '' : snapshot.total,
+    deposit_price_brutto: snapshot.quoteOnly ? '' : snapshot.deposit,
+    balance_price_brutto: snapshot.quoteOnly ? '' : snapshot.balance
+  };
+}
+
 function toggleAllRequired(event) {
   const checked = !!event?.target?.checked;
+  if (els.form.elements.contractTermsConsent) els.form.elements.contractTermsConsent.checked = checked;
   if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
-  if (state.selectedGroup !== 'pass' && els.form.elements.aiConsent) els.form.elements.aiConsent.checked = checked;
   syncSelectAllRequired();
 }
 
 function syncSelectAllRequired() {
   const el = document.getElementById('selectAllRequired');
   if (!el) return;
+  const contract = !!els.form.elements.contractTermsConsent?.checked;
   const gdpr = !!els.form.elements.gdprConsent?.checked;
-  const ai = state.selectedGroup === 'pass' ? true : !!els.form.elements.aiConsent?.checked;
-  el.checked = gdpr && ai;
+  el.checked = contract && gdpr;
 }
 
 function syncConsentVisibility() {
   const isPass = state.selectedGroup === 'pass' || state.selectedProduct?.g === 'pass';
   const consentBox = document.getElementById('consentBox');
   const marketingRow = document.getElementById('marketingRow');
-  const aiRow = document.getElementById('aiRow');
-  const selectAllRow = document.getElementById('selectAllRow');
   const optionalConsentGroup = document.getElementById('optionalConsentGroup');
   if (consentBox) consentBox.classList.toggle('pass-mode', isPass);
   const toggleRow = (row, hidden) => {
@@ -1788,14 +2513,9 @@ function syncConsentVisibility() {
     });
   };
   toggleRow(marketingRow, isPass);
-  toggleRow(aiRow, isPass);
-  toggleRow(selectAllRow, isPass);
   if (optionalConsentGroup) optionalConsentGroup.classList.toggle('hidden-field', isPass);
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
-    if (els.form.elements.aiConsent) els.form.elements.aiConsent.checked = false;
-    const selectAll = document.getElementById('selectAllRequired');
-    if (selectAll) selectAll.checked = false;
   }
   syncSelectAllRequired();
 }
@@ -1803,10 +2523,12 @@ function syncConsentVisibility() {
 function renderReturnNotice() {
   const box = document.getElementById('returnNotice');
   if (!box) return;
+  const selected = state.selectedProduct;
+  const isPassportProduct = selected?.g === 'pass' || selected?.t === 'passport';
   const name = String(els.form.elements.name?.value || '').trim();
   const phone = String(els.form.elements.phone?.value || '').trim();
   const email = String(els.form.elements.email?.value || '').trim();
-  const show = !!(name && phone && email);
+  const show = !!(name && phone && email && !isPassportProduct);
   box.classList.toggle('hidden-field', !show);
   if (!show) {
     box.textContent = '';
@@ -1815,15 +2537,15 @@ function renderReturnNotice() {
     return;
   }
   box.textContent = state.lang === 'en'
-    ? 'Checking return-customer eligibility...'
+    ? 'Checking same-day reshoot discount eligibility...'
     : state.lang === 'de'
-      ? 'Prüfe Stammkundenberechtigung...'
-      : '재방문 할인 대상 여부를 확인하는 중입니다...';
+      ? 'Prüfe Rabatt für erneute Aufnahme...'
+      : '재촬영 할인 대상 여부를 확인하는 중입니다...';
   if (state.returnNoticeTimer) clearTimeout(state.returnNoticeTimer);
   const token = ++state.returnNoticeToken;
   state.returnNoticeTimer = setTimeout(async () => {
     try {
-      const result = await fetchReturnEligibility({ name, phone, email });
+      const result = await fetchReturnEligibility({ name, phone, email, itemGroup: selected?.g || '', product: selected?.nameKo || selected?.nameDe || selected?.nameEn || '' });
       if (token !== state.returnNoticeToken) return;
       const nextEligible = !!result?.eligible;
       const changed = state.returnEligible !== nextEligible;
@@ -1836,10 +2558,10 @@ function renderReturnNotice() {
       }
       box.classList.remove('hidden-field');
       box.textContent = state.lang === 'en'
-        ? 'Return-customer discount is available if you are rebooking after finishing today’s shoot.'
+        ? 'Same-day discount is available after any finished shoot today, including passport photos, when the new booking is not passport / visa.'
         : state.lang === 'de'
-          ? 'Der Stammkundenrabatt ist verfügbar, wenn Sie nach dem heutigen Shooting erneut buchen.'
-          : '오늘 촬영을 마친 뒤 같은 날 재예약하는 경우, 재방문 할인이 자동 적용됩니다.';
+          ? 'Der Tagesrabatt gilt nach einem heutigen Shooting, auch nach Passfotos, wenn die neue Buchung kein Pass-/Visafoto ist.'
+          : '당일 촬영을 마친 뒤 여권/비자가 아닌 상품을 새로 예약하면 할인이 자동 적용됩니다. 이전 촬영이 여권/비자인 경우도 가능합니다.';
       if (changed && state.selectedProduct) await refreshQuote();
     } catch (error) {
       if (token !== state.returnNoticeToken) return;
@@ -1964,6 +2686,115 @@ function needsReshootingConsent(product = state.selectedProduct) {
   return false;
 }
 
+function needsBookingLocation(product = state.selectedProduct) {
+  return !!product && (product.g === 'snap' || product.g === 'wed' || product.g === 'biz');
+}
+
+function needsBusinessDetails(product = state.selectedProduct) {
+  return !!product && product.g === 'biz';
+}
+
+function isBabyBirthdayType(value = state.babyType) {
+  return value === 'baekil' || value === 'dol';
+}
+
+function needsBabyTypeChoice(product = state.selectedProduct) {
+  if (!product) return false;
+  return (product.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby');
+}
+
+function requiresExplicitBabyBirthdayType(product = state.selectedProduct) {
+  return !!product && state.surveyKeys.includes('baby') && !isBabyBirthdayType(state.babyType);
+}
+
+function getActiveBabyType(product = state.selectedProduct) {
+  if (!needsBabyTypeChoice(product)) return '';
+  if (state.surveyKeys.includes('baby') && !isBabyBirthdayType(state.babyType)) return '';
+  return state.babyType || '';
+}
+
+function needsBabyNameForBooking(product = state.selectedProduct) {
+  if (!product) return false;
+  return (product.g === 'prof' && state.ageGroup === 'baby' && isBabyBirthdayType(state.babyType))
+    || state.surveyKeys.includes('baby');
+}
+
+function needsProfileAgeField(product = state.selectedProduct) {
+  return !!product && product.g === 'prof' && ['baby', 'kids', 'senior'].includes(state.ageGroup);
+}
+
+function needsStudioFamilyField(product = state.selectedProduct) {
+  return !!product && product.g === 'stud';
+}
+
+function getProfileAgeValue(product = state.selectedProduct) {
+  if (!needsProfileAgeField(product)) return '';
+  return String(els.profileAgeInput?.value || '').trim();
+}
+
+function getStudioFamilyValue(product = state.selectedProduct) {
+  if (!needsStudioFamilyField(product)) return '';
+  return String(els.studioFamilyInput?.value || '').trim();
+}
+
+function getBabyTypeLabel(key = state.babyType, lang = state.lang) {
+  const item = BABY_TYPE_META.find((meta) => meta.key === key);
+  return item?.label?.[lang] || item?.label?.ko || key || '';
+}
+
+function getStep2MissingFields(product = state.selectedProduct) {
+  if (!product) return [];
+  const missing = [];
+  if (product.g === 'biz' && !state.eventCategory) missing.push('eventCategory');
+  if (requiresExplicitBabyBirthdayType(product)) missing.push('babyType');
+  if (needsBookingLocation(product) && !String(els.locationInput?.value || '').trim()) missing.push('location');
+  if (needsBusinessDetails(product) && !String(els.businessInput?.value || '').trim()) missing.push('business');
+  return missing;
+}
+
+function getBusinessDetailsRequiredMessage() {
+  return state.lang === 'en'
+    ? 'Enter event details to continue.'
+    : state.lang === 'de'
+      ? 'Geben Sie die Veranstaltungsdetails ein.'
+      : '행사 상세 내용을 입력해야 다음으로 넘어갈 수 있습니다.';
+}
+
+function getStep2MissingMessage(missingFields) {
+  const missing = new Set(missingFields || []);
+  if (missing.has('eventCategory')) {
+    return state.lang === 'en'
+      ? 'Choose the event type first.'
+      : state.lang === 'de'
+        ? 'Wählen Sie zuerst den Event-Typ aus.'
+        : '행사 유형을 먼저 선택해 주세요.';
+  }
+  if (missing.has('babyType')) {
+    return state.lang === 'en'
+      ? 'Choose whether this is a 100-day session or a 1st birthday session.'
+      : state.lang === 'de'
+        ? 'Bitte wählen Sie, ob es ein 100-Tage- oder 1. Geburtstags-Shooting ist.'
+        : '백일 촬영인지 돌 촬영인지 선택해 주세요.';
+  }
+  if (missing.has('location') && missing.has('business')) {
+    return state.lang === 'en'
+      ? 'Enter the shooting location and event details to continue.'
+      : state.lang === 'de'
+        ? 'Geben Sie den Aufnahmeort und die Veranstaltungsdetails ein.'
+        : '촬영 장소와 행사 상세 내용을 입력해야 다음으로 넘어갈 수 있습니다.';
+  }
+  if (missing.has('location')) return getCopy().locationRequired;
+  if (missing.has('business')) return getBusinessDetailsRequiredMessage();
+  return '';
+}
+
+function syncStep2RequiredFieldState(product = state.selectedProduct) {
+  const missing = new Set(getStep2MissingFields(product));
+  els.babyTypeField?.classList.toggle('field-attention', missing.has('babyType'));
+  els.locationInput?.classList.toggle('field-attention', missing.has('location'));
+  els.businessInput?.classList.toggle('field-attention', missing.has('business'));
+}
+
 function getMaxUnlockedStep() {
   const hasGroup = !!state.selectedGroup;
   const hasProduct = !!state.selectedProduct;
@@ -1971,7 +2802,7 @@ function getMaxUnlockedStep() {
   const hasRequiredStep2 = !hasProduct ? false : (
     (isPass
       ? hasPassportCountrySelections() && (!state.selectedCountries.includes('OTHER') || !!String(els.form.elements.otherCountry?.value || '').trim())
-      : !((state.selectedProduct?.g === 'snap' || state.selectedProduct?.g === 'wed') && !String(els.locationInput?.value || '').trim()))
+      : getStep2MissingFields(state.selectedProduct).length === 0)
   );
   const hasDate = !!state.selectedDate;
   const hasSlot = !!state.selectedSlot;
@@ -2008,6 +2839,7 @@ function updateWizardButtons(maxStep) {
 function renderStepWarnings() {
   const product = state.selectedProduct;
   const isPass = product?.g === 'pass';
+  syncStep2RequiredFieldState(product);
   const step1Message = state.selectedGroup ? '' : (
     state.lang === 'en'
       ? 'Choose the main shoot category to continue.'
@@ -2016,7 +2848,13 @@ function renderStepWarnings() {
         : '촬영 종류를 선택해야 다음으로 넘어갈 수 있습니다.'
   );
   let step2Message = '';
-  if (state.selectedGroup && !product) {
+  if (state.selectedGroup === 'biz' && !state.eventCategory) {
+    step2Message = state.lang === 'en'
+      ? 'Choose the event type first.'
+      : state.lang === 'de'
+        ? 'Wählen Sie zuerst den Event-Typ aus.'
+        : '행사 유형을 먼저 선택해 주세요.';
+  } else if (state.selectedGroup && !product) {
     step2Message = state.lang === 'en'
       ? 'Choose a detailed package first.'
       : state.lang === 'de'
@@ -2030,14 +2868,8 @@ function renderStepWarnings() {
       : state.lang === 'de'
         ? 'Geben Sie den Namen des anderen Landes ein.'
         : '기타 국가명을 입력해야 합니다.';
-  } else if ((product?.g === 'snap' || product?.g === 'wed') && !String(els.locationInput?.value || '').trim()) {
-    step2Message = getCopy().locationRequired;
-  } else if (product?.g === 'biz' && !String(els.businessInput?.value || '').trim()) {
-    step2Message = state.lang === 'en'
-      ? 'Enter event details to continue.'
-      : state.lang === 'de'
-        ? 'Geben Sie die Veranstaltungsdetails ein.'
-        : '행사 상세 내용을 입력해야 다음으로 넘어갈 수 있습니다.';
+  } else {
+    step2Message = getStep2MissingMessage(getStep2MissingFields(product));
   }
 
   let step3Message = '';
@@ -2058,9 +2890,9 @@ function renderStepWarnings() {
   const formData = new FormData(els.form);
   const email = String(formData.get('email') || '').trim();
   const emailOk = /\S+@\S+\.\S+/.test(email);
+  const contractOk = formData.get('contractTermsConsent') === 'on';
   const gdprOk = formData.get('gdprConsent') === 'on';
-  const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
-  const babyNameOk = !((product?.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant') || state.surveyKeys.includes('baby')) || !!String(formData.get('babyName') || '').trim();
+  const babyNameOk = !needsBabyNameForBooking(product) || !!String(formData.get('babyName') || '').trim();
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
@@ -2075,7 +2907,7 @@ function renderStepWarnings() {
       : state.lang === 'de'
         ? 'Geben Sie eine gültige E-Mail-Adresse ein.'
         : '올바른 이메일 형식을 입력해 주세요.';
-  } else if (!gdprOk || !aiOk) {
+  } else if (!contractOk || !gdprOk) {
     step5Message = state.lang === 'en'
       ? 'Required consent items must be checked.'
       : state.lang === 'de'
@@ -2120,8 +2952,15 @@ function renderSurveyChips() {
       const key = button.dataset.survey;
       const index = state.surveyKeys.indexOf(key);
       if (index >= 0) state.surveyKeys.splice(index, 1);
-      else state.surveyKeys.push(key);
+      else {
+        state.surveyKeys.push(key);
+        if (key === 'baby' && !isBabyBirthdayType(state.babyType)) state.babyType = '';
+      }
+      if (key === 'baby' && index >= 0 && !(state.selectedProduct?.g === 'prof' && state.ageGroup === 'baby')) {
+        state.babyType = 'infant';
+      }
       renderSurveyChips();
+      renderBabyTypeChips();
       syncConditionalFields();
       renderReview();
       refreshStepLocks();
@@ -2163,9 +3002,11 @@ function renderAgeChips() {
     button.addEventListener('click', () => {
       state.ageGroup = button.dataset.age;
       if (state.ageGroup !== 'baby') state.babyType = 'infant';
+      else if (!state.babyType) state.babyType = 'infant';
       renderAgeChips();
       renderBabyTypeChips();
       renderSeniorWarning();
+      syncConditionalFields();
       handleQuoteInputChange();
       refreshStepLocks();
     });
@@ -2216,7 +3057,7 @@ function getPreviewQuote() {
     : 0;
   let total = Number(item.p || 0);
 
-  if (item.g === 'biz') {
+  if (isGenericBusinessProduct(item)) {
     const business = getBusinessSelection();
     return {
       itemId: item.id,
@@ -2229,6 +3070,7 @@ function getPreviewQuote() {
       totalDuration: business.duration + Number(item.prep || 0),
       product: item,
       marketingDiscount: 0,
+      returnDiscount: 0,
       passAddon: false,
       passAddonPeople: 0,
       passAddonDur: 0,
@@ -2237,6 +3079,8 @@ function getPreviewQuote() {
       otherCountry: '',
       totalCountries: 0,
       optionKeys: [],
+      isQuoteOnly: true,
+      weekendSurcharge: 0,
       businessMode: business.mode,
       businessHours: business.hours,
       businessVideoEdit: business.edit,
@@ -2255,6 +3099,9 @@ function getPreviewQuote() {
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people === 1) total -= 30;
+
+  const weekendSurcharge = getWeekendSurcharge(item, state.selectedDate);
+  if (weekendSurcharge) total += weekendSurcharge;
 
   const optMeta = { dog: 15, bg: 20, outfit: 20 };
   optionKeys.forEach((key) => {
@@ -2326,6 +3173,7 @@ function getPreviewQuote() {
     product: item,
     earlyBirdDiscount,
     marketingDiscount,
+    returnDiscount: 0,
     passAddon,
     passAddonPeople,
     passAddonDur,
@@ -2334,12 +3182,16 @@ function getPreviewQuote() {
     passPersonCountries,
     otherCountry,
     totalCountries,
-    optionKeys
+    optionKeys,
+    weekendSurcharge,
+    isQuoteOnly: isQuoteOnlyProduct(item)
   };
 }
 
 function renderBabyTypeChips() {
-  els.babyTypeGrid.innerHTML = BABY_TYPE_META.map((item) => {
+  const forceBirthdayChoice = state.surveyKeys.includes('baby') && !(state.selectedProduct?.g === 'prof' && state.ageGroup === 'baby');
+  const items = forceBirthdayChoice ? BABY_TYPE_META.filter((item) => item.key !== 'infant') : BABY_TYPE_META;
+  els.babyTypeGrid.innerHTML = items.map((item) => {
     const label = item.label[state.lang] || item.label.ko;
     const selected = state.babyType === item.key ? ' subtle-selected' : '';
     return `<button type="button" class="survey-chip${selected}" data-baby-type="${item.key}">${escapeHtml(label)}</button>`;
@@ -2348,6 +3200,7 @@ function renderBabyTypeChips() {
     button.addEventListener('click', () => {
       state.babyType = button.dataset.babyType;
       renderBabyTypeChips();
+      syncConditionalFields();
       renderReview();
       refreshStepLocks();
     });
@@ -2456,6 +3309,278 @@ function getProductLabel(product) {
   return product.nameKo || product.nameEn || product.nameDe;
 }
 
+function getLocalizedText(value, fallback = '') {
+  if (!value) return fallback;
+  if (typeof value === 'string') return value;
+  return value[state.lang] || value.ko || value.en || value.de || fallback;
+}
+
+function getProductDurationLabel(duration) {
+  const minutes = Number(duration || 0);
+  if (state.lang === 'en') return `${minutes} min`;
+  if (state.lang === 'de') return `${minutes} Min`;
+  return `촬영 ${minutes}분`;
+}
+
+function getCompositionCopy() {
+  if (state.lang === 'en') {
+    return {
+      title: 'Package Includes',
+      included: 'Included',
+      notes: 'Options / conditions',
+      price: 'Price',
+      shootTime: 'Shoot time',
+      studioA4: '1 A4 print included'
+    };
+  }
+  if (state.lang === 'de') {
+    return {
+      title: 'Paketumfang',
+      included: 'Inklusive',
+      notes: 'Optionen / Bedingungen',
+      price: 'Preis',
+      shootTime: 'Shootingzeit',
+      studioA4: '1 A4-Abzug inklusive'
+    };
+  }
+  return {
+    title: '상품 기본 구성',
+    included: '포함',
+    notes: '추가 / 조건',
+    price: '금액',
+    shootTime: '촬영 시간',
+    studioA4: '기본 A4 1장 포함'
+  };
+}
+
+function normalizeCompositionPart(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\u2713\u2714\u2705]\ufe0f?\s*/u, '')
+    .replace(/^\[(?:상세|detail|details?)\]\s*/i, '')
+    .replace(/^includes?:\s*/i, '')
+    .replace(/^inkl\.?\s*/i, '')
+    .replace(/^포함\s*[:：]?\s*/i, '')
+    .trim();
+}
+
+function splitCompositionLine(line) {
+  return String(line || '')
+    .split(/\s*\|\s*|(?:\s+\/\s+|\s+\/|\/\s+)/)
+    .map(normalizeCompositionPart)
+    .filter(Boolean);
+}
+
+function isCompositionDurationPart(value) {
+  const text = String(value || '').toLowerCase();
+  if (/studio|스튜디오|studio/.test(text) && /incl|포함|inkl|included/.test(text)) return false;
+  return /^촬영\s*(약\s*)?\d+/.test(value)
+    || /^약\s*\d+\s*(분|시간)/.test(value)
+    || /^ca\.?\s*\d+/.test(text)
+    || /^\d+\s*(min|std|hour|hours)\b/.test(text);
+}
+
+function isCompositionConditionPart(value) {
+  const text = String(value || '').toLowerCase();
+  const includedPattern = /포함|included|incl\.?|inklusive|inkl\.?/i;
+  if (includedPattern.test(value)) return false;
+  return /추가|인원 추가|평일|토요일|할인|add-?on|additional|weekday|saturday|wochentag|samstag|\+€|\+\s*\d+\s*(?:€|eur|euro|분|min|시간|h|std|명|person|personen)\b/.test(text);
+}
+
+function isCompositionDeliveryPart(value) {
+  return /원본|클라우드|구글|보정본|편집본|출력|인화|프린트|우편발송|배송|디지털|파일|qr\s*코드|e-?passbild|original|originale|cloud|retouch|retouched|bearbeitung|retusch|print|prints?|druck|ausdruck|abzug|digital|datei|a[34]\b|10\s*[×x]\s*15|6\s*[×x]\s*4|video|영상/i.test(String(value || ''));
+}
+
+function uniqueCompositionParts(parts) {
+  const seen = new Set();
+  return parts.filter((part) => {
+    const key = part.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getProductComposition(product) {
+  if (!product) return { included: [], notes: [] };
+  const hasFixedDeliverySpec = productHasFixedDeliverySpec(product);
+  const lines = getProductDescription(product)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const included = getProductDeliveryLines(product, state.lang, { includeNoPrintLine: true });
+  const notes = [];
+
+  lines.forEach((line) => {
+    const parts = splitCompositionLine(line);
+    (parts.length ? parts : [normalizeCompositionPart(line)]).forEach((part) => {
+      if (!part || isCompositionDurationPart(part)) return;
+      if (hasFixedDeliverySpec && isCompositionDeliveryPart(part)) return;
+      if (isCompositionConditionPart(part)) notes.push(part);
+      else included.push(part);
+    });
+  });
+
+  return {
+    included: uniqueCompositionParts(included),
+    notes: uniqueCompositionParts(notes)
+  };
+}
+
+function getProductCardCompositionItems(product) {
+  const composition = getProductComposition(product);
+  const priority = composition.included.filter((part) => !/google|cloud|구글|클라우드|원본|originale|originals/i.test(part));
+  const fallback = composition.included.filter((part) => !priority.includes(part));
+  const rank = (part) => {
+    if (/보정본|retouched|retuschierte/i.test(part)) return 1;
+    if (/출력물|인화|print|prints?|druck|abzug|a[34]|10\s*[×x]\s*15|6\s*[×x]\s*4/i.test(part)) return 2;
+    if (/배경|의상|background|outfit|hintergrund/i.test(part)) return 3;
+    if (isCompositionPeopleBasisPart(product, part)) return 4;
+    return 8;
+  };
+  return [...priority, ...fallback]
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 4);
+}
+
+function renderProductCardComposition(product) {
+  const items = getProductCardCompositionItems(product);
+  if (!items.length) return '';
+  return `
+    <div class="product-card-summary" aria-label="${escapeHtml(getCompositionCopy().included)}">
+      ${items.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
+    </div>
+  `;
+}
+
+function getCompositionPartKey(value) {
+  return normalizeCompositionPart(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function getProductDetailIntro(product, desc, composition) {
+  const raw = String(desc || '').trim();
+  if (!raw) return '';
+  const hasFixedDeliverySpec = productHasFixedDeliverySpec(product);
+  const captured = new Set([...(composition?.included || []), ...(composition?.notes || [])].map(getCompositionPartKey));
+  const lines = raw.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const remaining = lines.filter((line) => {
+    const parts = splitCompositionLine(line);
+    const meaningfulParts = parts.length ? parts : [normalizeCompositionPart(line)];
+    if (hasFixedDeliverySpec && meaningfulParts.every((part) => !part || isCompositionDeliveryPart(part) || isCompositionDurationPart(part))) return false;
+    const allCaptured = meaningfulParts.every((part) => {
+      if (!part || isCompositionDurationPart(part)) return true;
+      if (product?.g === 'stud' && /a4/i.test(part)) return true;
+      return captured.has(getCompositionPartKey(part));
+    });
+    if (allCaptured) return false;
+    if (isCompositionDurationPart(line) || isCompositionConditionPart(line)) return false;
+    return line.length >= 16;
+  });
+  return uniqueCompositionParts(remaining).slice(0, 2).join('\n');
+}
+
+function isCompositionPeopleBasisPart(product, part) {
+  if (!(product?.t === 'group' || product?.t === 'snap' || product?.g === 'stud' || product?.g === 'snap')) return false;
+  const text = String(part || '').toLowerCase();
+  return /\d+\s*인\s*기준/.test(text)
+    || /base price.*\d+\s*people/.test(text)
+    || /\d+\s*people.*included/.test(text)
+    || /\d+\s*personen/.test(text);
+}
+
+function renderProductCompositionPanel(product) {
+  if (!product) return '';
+  const copy = getCompositionCopy();
+  const composition = getProductComposition(product);
+  const detailIncluded = composition.included.filter((part) => !isCompositionPeopleBasisPart(product, part));
+  const detailNotes = composition.notes.filter((part) => !isCompositionPeopleBasisPart(product, part));
+  const quoteOnly = !!state.quote?.isQuoteOnly || isQuoteOnlyProduct(product);
+  const priceLabel = `€${formatEuroAmount(getEstimatedPrice())} brutto`;
+  const shootDuration = getShootDuration() || Number(product.d || 0);
+  const metaItems = quoteOnly
+    ? [[copy.shootTime, getProductDurationLabel(shootDuration)]]
+    : [
+        [copy.price, priceLabel],
+        [copy.shootTime, getProductDurationLabel(shootDuration)]
+      ];
+  if (!detailIncluded.length && !detailNotes.length) return '';
+  return `
+    <section class="package-composition-panel">
+      <div class="package-composition-title">${escapeHtml(copy.title)}</div>
+      <div class="package-composition-meta">
+        ${metaItems.map(([label, value]) => `
+          <div class="package-composition-meta-item">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join('')}
+      </div>
+      ${detailIncluded.length ? `
+        <div class="package-composition-section">
+          <div class="package-composition-label">${escapeHtml(copy.included)}</div>
+          <ul class="package-composition-list">
+            ${detailIncluded.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+      ${detailNotes.length ? `
+        <div class="package-composition-section muted">
+          <div class="package-composition-label">${escapeHtml(copy.notes)}</div>
+          <ul class="package-composition-list">
+            ${detailNotes.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
+function getProductPriceLabel(product) {
+  if (!product) return '';
+  if (product.id === 'amtp') {
+    if (state.lang === 'en') return 'Weekday €350 brutto · Sat €400 brutto';
+    if (state.lang === 'de') return 'Wochentag 350€ brutto · Sa 400€ brutto';
+    return '평일 €350 brutto · 토 €400 brutto';
+  }
+  return isQuoteOnlyProduct(product) ? getQuotePriceLabel() : `€${formatEuroAmount(product.p)} brutto`;
+}
+
+function getEventProductCardTimingLabel(product) {
+  if (!product) return '';
+  if (isQuoteOnlyProduct(product)) {
+    if (state.lang === 'en') return 'Schedule checked after request';
+    if (state.lang === 'de') return 'Ablauf nach Anfrage';
+    return '일정 확인 후 안내';
+  }
+  return getProductDurationLabel(product.d);
+}
+
+function getSelectedEventCategoryMeta() {
+  return EVENT_PRODUCT_CATEGORIES.find((item) => item.key === state.eventCategory) || null;
+}
+
+function getSelectedEventCategoryLabel() {
+  const meta = getSelectedEventCategoryMeta();
+  return meta ? getLocalizedText(meta.title) : '';
+}
+
+function getEventProductCardMeta(product) {
+  if (!product) return {};
+  const base = EVENT_PRODUCT_CARD_META[product.id] || {};
+  const override = EVENT_PRODUCT_CATEGORY_OVERRIDES[state.eventCategory]?.[product.id] || {};
+  return { ...base, ...override };
+}
+
+function getDisplayProductTitle(product) {
+  if (product?.g === 'biz' && state.eventCategory) {
+    const eventTitle = getLocalizedText(getEventProductCardMeta(product).title, '');
+    if (eventTitle) return eventTitle;
+  }
+  return getProductLabel(product);
+}
+
 function getBusinessSelection() {
   const mode = state.businessMode || 'photo';
   const hours = Number(state.businessHours || 2);
@@ -2474,6 +3599,51 @@ function getBusinessSelection() {
     ? `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'} · ${editLabel}`
     : `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`;
   return { mode, hours, edit, tableKey, price, label, duration: hours * 60 };
+}
+
+function isGenericBusinessProduct(product) {
+  return !!product && product.g === 'biz' && product.id === 'biz';
+}
+
+function isQuoteOnlyProduct(product) {
+  return !!product && (product.t === 'custom' || Number(product.p || 0) <= 0);
+}
+
+function getSaturdaySurcharge(product) {
+  if (!product) return 0;
+  return { amtp: 50, ob: 20, op: 30, oprm: 40 }[product.id] || 0;
+}
+
+function isSaturdayDate(dateStr) {
+  return !!dateStr && new Date(`${dateStr}T12:00:00`).getDay() === 6;
+}
+
+function getWeekendSurcharge(product, dateStr) {
+  return isSaturdayDate(dateStr) ? getSaturdaySurcharge(product) : 0;
+}
+
+function getQuotePriceLabel() {
+  if (state.lang === 'en') return 'Custom quote';
+  if (state.lang === 'de') return 'Angebot nach Beratung';
+  return '상담 후 견적';
+}
+
+function getGeneralPanelHelpCopy(product) {
+  if (product?.g === 'biz' || state.selectedGroup === 'biz') {
+    if (state.lang === 'en') return 'Event details and optional requests update the consultation summary.';
+    if (state.lang === 'de') return 'Eventdetails und Zusatzwünsche aktualisieren die Beratungsübersicht.';
+    return '행사 정보와 추가 요청을 선택하면 상담 요약이 갱신됩니다.';
+  }
+  return getCopy().generalCopy;
+}
+
+function getProductDetailEmptyCopy() {
+  if (state.selectedGroup === 'biz') {
+    if (state.lang === 'en') return 'Select an event option to see the consultation guide.';
+    if (state.lang === 'de') return 'Wählen Sie eine Event-Option, um die Beratungshinweise zu sehen.';
+    return '행사 옵션을 선택하면 상담 안내가 여기에 표시됩니다.';
+  }
+  return getCopy().selectProductDetailEmpty;
 }
 
 function getProductDescription(product) {
@@ -2504,7 +3674,7 @@ function getPrepDuration() {
 function getEstimatedPrice() {
   if (state.quote?.totalPrice !== undefined) return Number(state.quote.totalPrice) || 0;
   if (!state.selectedProduct) return 0;
-  if (state.selectedProduct.g === 'biz') return getBusinessSelection().price;
+  if (isGenericBusinessProduct(state.selectedProduct)) return getBusinessSelection().price;
   return Number(state.selectedProduct.p || 0);
 }
 
@@ -2587,12 +3757,15 @@ function renderPeopleOptions() {
 
 function renderBusinessOptions() {
   if (!els.bizMode || !els.bizHours || !els.bizEdit || !els.bizAddonGrid || !els.bizAddonHelp) return;
-  const isBiz = state.selectedProduct?.g === 'biz';
-  if (!isBiz) {
+  const showConfig = isGenericBusinessProduct(state.selectedProduct);
+  if (!showConfig) {
+    els.bizConfigField?.classList.add('hidden-field');
     els.bizEditField?.classList.add('hidden-field');
     els.bizAddonGrid.innerHTML = '';
+    els.bizAddonHelp.textContent = '';
     return;
   }
+  els.bizConfigField?.classList.remove('hidden-field');
   els.bizMode.innerHTML = BUSINESS_MODE_META
     .map((item) => `<option value="${item.key}">${escapeHtml(item.label[state.lang] || item.label.ko)}</option>`)
     .join('');
@@ -2732,10 +3905,10 @@ function getProductGuideList(product) {
   }
   if (product.g === 'stud') {
     return state.lang === 'en'
-      ? ['Background and outfit options change the styling, not the shoot flow itself.', 'Please arrive a few minutes early if multiple people are included.', 'Studio family/group sessions are priced for two people by default.']
+      ? ['Background and outfit options change the styling, not the shoot flow itself.', 'Please arrive a few minutes early if multiple people are included.']
       : state.lang === 'de'
-        ? ['Hintergrund- und Outfitoptionen verändern den Stil, nicht den grundsätzlichen Ablauf.', 'Bitte kommen Sie bei mehreren Personen ein paar Minuten früher.', 'Studio-Familien/Gruppen-Sessions sind standardmäßig für zwei Personen kalkuliert.']
-        : ['배경/의상 옵션은 촬영 스타일에만 영향을 주고 진행 흐름은 그대로 유지됩니다.', '여러 명이 함께 촬영하는 경우 약간 일찍 도착해 주세요.', '스튜디오 가족/그룹 촬영은 기본 2인 기준으로 계산됩니다.'];
+        ? ['Hintergrund- und Outfitoptionen verändern den Stil, nicht den grundsätzlichen Ablauf.', 'Bitte kommen Sie bei mehreren Personen ein paar Minuten früher.']
+        : ['배경/의상 옵션은 촬영 스타일에만 영향을 주고 진행 흐름은 그대로 유지됩니다.', '여러 명이 함께 촬영하는 경우 약간 일찍 도착해 주세요.'];
   }
   if (product.g === 'snap' || product.g === 'wed') {
     return state.lang === 'en'
@@ -2745,21 +3918,21 @@ function getProductGuideList(product) {
         : ['달력 확인 전 2단계에서 희망 촬영 장소를 먼저 입력해 주세요.', '프랑크푸르트 50km 외 지역은 추가 이동 비용이 발생할 수 있습니다.', '야외 촬영은 날씨 영향을 받아 검토 후 대체안을 안내드릴 수 있습니다.'];
   }
   if (product.g === 'biz') {
-    const business = getBusinessSelection();
+    const business = isGenericBusinessProduct(product) ? getBusinessSelection() : null;
     return state.lang === 'en'
       ? [
-          `${business.label} package is currently selected.`,
+          `${business ? business.label : getProductLabel(product)} is currently selected.`,
           'Please describe the event purpose, schedule, and required deliverables in detail.',
           'SNS, rush delivery, and branding requests are reviewed after booking.'
         ]
       : state.lang === 'de'
         ? [
-            `${business.label} ist aktuell ausgewählt.`,
+            `${business ? business.label : getProductLabel(product)} ist aktuell ausgewählt.`,
             'Bitte beschreiben Sie Zweck, Ablauf und gewünschte Deliverables des Events möglichst genau.',
             'SNS, Express-Lieferung und Branding-Wünsche werden nach der Buchung einzeln geprüft.'
           ]
         : [
-            `${business.label} 패키지가 현재 선택되어 있습니다.`,
+            `${business ? business.label : getProductLabel(product)} 상품이 현재 선택되어 있습니다.`,
             '행사 목적, 시간대, 필요한 결과물을 가능한 자세히 적어 주세요.',
             'SNS, 긴급 납품, 자막/로고/BGM 요청은 예약 접수 후 개별 검토됩니다.'
           ];
@@ -2812,6 +3985,14 @@ function getAppliedDiscountLines() {
       : state.lang === 'de'
         ? `Aktionsrabatt -${state.quote.eventDiscount}€ angewendet.`
         : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`);
+  }
+  if (state.quote.returnDiscount > 0) {
+    const rate = Number(state.init?.settings?.returnDiscount || 10) || 10;
+    lines.push(state.lang === 'en'
+      ? `Same-day reshoot discount ${rate}% (-€${formatEuroAmount(state.quote.returnDiscount)}) applied.`
+      : state.lang === 'de'
+        ? `Rabatt für erneute Aufnahme ${rate}% (-${formatEuroAmount(state.quote.returnDiscount)}€) angewendet.`
+        : `당일 재촬영 할인 ${rate}% (-€${formatEuroAmount(state.quote.returnDiscount)})가 적용되었습니다.`);
   }
   if (item.g === 'prof') {
     if (state.ageGroup === 'kids') {
@@ -2933,6 +4114,18 @@ function getWeddingBenefitBoxHtml() {
 function getSecondaryPriceNote() {
   const item = state.selectedProduct;
   if (!item) return '';
+  const sat = getSaturdaySurcharge(item);
+  if (sat && !state.selectedDate) {
+    if (state.lang === 'en') return `Weekday base price. Saturday adds +€${sat}.`;
+    if (state.lang === 'de') return `Basispreis für Wochentage. Samstag +${sat}€.`;
+    return `평일 기준 금액입니다. 토요일 선택 시 +${sat}€가 적용됩니다.`;
+  }
+  if (state.quote?.weekendSurcharge || getWeekendSurcharge(item, state.selectedDate)) {
+    const amount = state.quote?.weekendSurcharge || getWeekendSurcharge(item, state.selectedDate);
+    if (state.lang === 'en') return `Saturday surcharge +€${amount} applied.`;
+    if (state.lang === 'de') return `Samstagszuschlag +${amount}€ angewendet.`;
+    return `토요일 요금 +${amount}€가 적용되었습니다.`;
+  }
   const discountNote = getAppliedDiscountLines();
   const peopleNote = getPeoplePricingNote(item, getPeopleCount());
   if (!discountNote.length) return peopleNote;
@@ -2942,19 +4135,35 @@ function getSecondaryPriceNote() {
 }
 
 function renderProducts(products) {
-  const cards = (products || []).map((product) => {
+  els.productGrid.className = state.selectedGroup === 'biz' ? 'product-grid event-product-grid' : 'product-grid';
+  let safeProducts = Array.isArray(products) ? products : [];
+  if (!safeProducts.length && state.selectedGroup) {
+    const fallbackProducts = getVisibleProductsForSelectedGroup();
+    if (fallbackProducts.length) safeProducts = fallbackProducts;
+  }
+  if (state.selectedGroup === 'biz') {
+    renderEventProducts(safeProducts);
+    return;
+  }
+  const cards = safeProducts.map((product) => {
     const duration = Number(product.d || 0);
     const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
+    const priceLabel = getProductPriceLabel(product);
     const eventBadge = getEventPeriodLabel()
       ? `<div class="product-badge">${escapeHtml(getEventPeriodLabel())}</div>`
       : '';
+    const subtitle = state.lang === 'ko' && product.nameEn ? product.nameEn : '';
     return `
       <button type="button" class="product-card${selected}" data-id="${escapeHtml(product.id)}">
         ${eventBadge}
-        <h3>${escapeHtml(getProductLabel(product))}</h3>
+        <div class="product-card-head">
+          <h3>${escapeHtml(getProductLabel(product))}</h3>
+          <strong class="product-card-price">${escapeHtml(priceLabel)}</strong>
+        </div>
+        ${subtitle ? `<div class="product-card-subtitle">${escapeHtml(subtitle)}</div>` : ''}
+        ${renderProductCardComposition(product)}
         <div class="product-meta">
-          <div>${escapeHtml(product.nameEn || '')}</div>
-          <div>€${escapeHtml(product.p)} · ${state.lang === 'en' ? `${escapeHtml(duration)} min` : state.lang === 'de' ? `${escapeHtml(duration)} Min` : `촬영 ${escapeHtml(duration)}분`}</div>
+          <span>${escapeHtml(getProductDurationLabel(duration))}</span>
         </div>
       </button>
     `;
@@ -2963,6 +4172,112 @@ function renderProducts(products) {
   els.productGrid.querySelectorAll('.product-card').forEach((button) => {
     button.addEventListener('click', () => selectProduct(button.dataset.id));
   });
+}
+
+function renderEventProducts(products) {
+  if (els.generalCopy) els.generalCopy.textContent = getGeneralPanelHelpCopy({ g: 'biz' });
+  const productById = new Map((products || []).map((product) => [product.id, product]));
+  const selectLabel = state.lang === 'en' ? 'Event type' : state.lang === 'de' ? 'Event-Typ' : '행사 유형';
+  const selectPlaceholder = state.lang === 'en' ? 'Please choose an event type' : state.lang === 'de' ? 'Bitte Event-Typ wählen' : '행사 유형을 선택해 주세요';
+  const selectorHtml = `
+    <div class="event-type-panel">
+      <label class="event-type-field">
+        <span>${escapeHtml(selectLabel)}</span>
+        <select id="eventCategorySelect">
+          <option value="">${escapeHtml(selectPlaceholder)}</option>
+          ${EVENT_PRODUCT_CATEGORIES.map((category) => `
+            <option value="${escapeHtml(category.key)}"${category.key === state.eventCategory ? ' selected' : ''}>
+              ${escapeHtml(getLocalizedText(category.title))}
+            </option>
+          `).join('')}
+        </select>
+      </label>
+      ${state.eventCategory ? `<p>${escapeHtml(getLocalizedText(getSelectedEventCategoryMeta()?.sub))}</p>` : `<p>${escapeHtml(state.lang === 'en'
+        ? 'Only related photo/video options will appear after this choice.'
+        : state.lang === 'de'
+          ? 'Danach werden nur passende Foto-/Video-Optionen angezeigt.'
+          : '선택 후 관련 사진/영상 옵션만 표시됩니다.')}</p>`}
+    </div>
+  `;
+  if (!state.eventCategory) {
+    els.productGrid.innerHTML = `${selectorHtml}<div class="empty-state">${escapeHtml(selectPlaceholder)}</div>`;
+    wireEventCategorySelect();
+    return;
+  }
+
+  const sections = EVENT_PRODUCT_SECTIONS.filter((section) => section.category === state.eventCategory).map((section) => {
+    const cards = section.ids.map((id) => productById.get(id)).filter(Boolean).map((product) => {
+      const cardMeta = getEventProductCardMeta(product);
+      const selected = state.selectedProduct?.id === product.id ? ' selected' : '';
+      const priceLabel = getProductPriceLabel(product);
+      const title = getLocalizedText(cardMeta.title, getProductLabel(product));
+      const kicker = getLocalizedText(cardMeta.kicker, '');
+      const type = getLocalizedText(cardMeta.type, '');
+      const summary = getLocalizedText(cardMeta.summary, getProductDescription(product));
+      return `
+        <button type="button" class="product-card event-product-card${selected}" data-id="${escapeHtml(product.id)}">
+          <div class="event-product-top">
+            <span class="event-product-kicker">${escapeHtml(kicker)}</span>
+            ${type ? `<span class="event-product-type">${escapeHtml(type)}</span>` : ''}
+          </div>
+          <h3>${escapeHtml(title)}</h3>
+          <div class="event-product-summary">${escapeHtml(summary)}</div>
+          ${renderProductCardComposition(product)}
+          <div class="event-product-meta">
+            <strong>${escapeHtml(priceLabel)}</strong>
+            <span>${escapeHtml(getEventProductCardTimingLabel(product))}</span>
+          </div>
+        </button>
+      `;
+    }).join('');
+    if (!cards) return '';
+    return `
+      <section class="event-product-section">
+        <div class="event-product-section-head">
+          <div>
+            <div class="event-product-section-title">${escapeHtml(getLocalizedText(section.title))}</div>
+            <p>${escapeHtml(getLocalizedText(section.sub))}</p>
+          </div>
+        </div>
+        <div class="event-product-list">${cards}</div>
+      </section>
+    `;
+  }).join('');
+
+  els.productGrid.innerHTML = `${selectorHtml}${sections || `<div class="empty-state">${escapeHtml(getCopy().selectCategoryEmpty)}</div>`}`;
+  wireEventCategorySelect();
+  els.productGrid.querySelectorAll('.product-card').forEach((button) => {
+    button.addEventListener('click', () => selectProduct(button.dataset.id));
+  });
+}
+
+function wireEventCategorySelect() {
+  const select = document.getElementById('eventCategorySelect');
+  if (!select) return;
+  select.addEventListener('change', () => changeEventCategory(select.value));
+}
+
+function changeEventCategory(categoryKey) {
+  state.eventCategory = categoryKey;
+  state.selectedProduct = null;
+  state.selectedDate = '';
+  state.selectedSlot = '';
+  state.selectedSlotMeta = null;
+  state.showAllSlots = false;
+  state.quote = null;
+  state.earliestSlotInfo = null;
+  state.businessMode = 'photo';
+  state.businessHours = '2';
+  state.businessVideoEdit = 'raw';
+  state.businessAddonKeys = [];
+  if (els.businessInput) els.businessInput.value = '';
+  renderProducts((state.init?.products || []).filter((item) => item.g === 'biz'));
+  renderGeneralPanel();
+  renderProductDetail();
+  renderEarliestSlotBox();
+  renderReview();
+  clearCalendarSelection();
+  refreshStepLocks();
 }
 
 function getCalendarWarmupTasks() {
@@ -3116,6 +4431,7 @@ function selectGroup(groupKey) {
   state.businessHours = '2';
   state.businessVideoEdit = 'raw';
   state.businessAddonKeys = [];
+  state.eventCategory = '';
   els.form.reset();
   els.generalPeople.value = '1';
   els.generalPeopleCustom?.classList.add('hidden-field');
@@ -3134,7 +4450,7 @@ function selectGroup(groupKey) {
   renderEarliestSlotBox();
   renderReview();
   clearCalendarSelection();
-  syncStepPanels();
+  refreshStepLocks();
   syncConsentVisibility();
 }
 
@@ -3166,6 +4482,7 @@ async function selectProduct(productId) {
   state.businessHours = '2';
   state.businessVideoEdit = 'raw';
   state.businessAddonKeys = [];
+  if (state.selectedProduct?.g !== 'biz') state.eventCategory = '';
   els.form.reset();
   els.generalPeople.value = String(getDefaultPeopleForProduct(state.selectedProduct));
   els.generalPeopleCustom?.classList.add('hidden-field');
@@ -3180,7 +4497,7 @@ async function selectProduct(productId) {
   renderBabyTypeChips();
   renderBgChips();
   renderGeneralPanel();
-  syncStepPanels();
+  refreshStepLocks();
   syncConsentVisibility();
   await refreshQuote();
   updateEarliestSlotBox().catch((error) => console.error(error));
@@ -3210,6 +4527,7 @@ function renderGeneralPanel() {
     syncConditionalFields();
     return;
   }
+  if (els.generalCopy) els.generalCopy.textContent = getGeneralPanelHelpCopy(product);
   const showPeople = !(product.g === 'prof' || product.g === 'wed' || product.g === 'biz');
   els.peopleField.classList.toggle('hidden', !showPeople);
   const showPassAddon = product.g === 'prof' || product.g === 'stud';
@@ -3350,20 +4668,22 @@ async function updateEarliestSlotBox() {
 
 function syncConditionalFields() {
   const group = state.selectedProduct?.g || '';
-  const needsBabyName = (group === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant')
-    || state.surveyKeys.includes('baby');
+  const needsBabyType = needsBabyTypeChoice(state.selectedProduct);
+  const needsBabyName = needsBabyNameForBooking(state.selectedProduct);
   const needsPayerName = Number(state.quote?.depositAmount || getPreviewQuote()?.depositAmount || 0) > 0;
   const needsBusinessInvoice = !!els.form?.elements?.businessInvoiceNeeded?.checked;
   syncPassportPersonCountries();
   els.addressField?.classList.toggle('hidden-field', needsBusinessInvoice);
   els.businessInvoiceFields?.classList.toggle('hidden-field', !needsBusinessInvoice);
   els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
-  els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed'));
+  els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed' || group === 'biz'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
-  els.babyTypeField.classList.toggle('hidden-field', !(group === 'prof' && state.ageGroup === 'baby'));
+  els.profileAgeField?.classList.toggle('hidden-field', !needsProfileAgeField());
+  els.babyTypeField.classList.toggle('hidden-field', !needsBabyType);
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
+  els.studioFamilyField?.classList.toggle('hidden-field', !needsStudioFamilyField());
   els.payerNameField.classList.toggle('hidden-field', !needsPayerName);
   els.reshootingField.classList.toggle('hidden-field', !needsReshootingConsent(state.selectedProduct));
   els.bgField.classList.toggle('hidden-field', !(group === 'prof' || group === 'stud'));
@@ -3405,14 +4725,14 @@ function getQuoteRequest() {
     otherCountry: product.g === 'pass' ? String(els.form.elements.otherCountry?.value || '').trim() : '',
     date: state.selectedDate || '',
     marketing: els.form.elements.marketing?.checked || false,
-    isReturn: state.returnEligible,
+    isReturn: product.g !== 'pass' && product.t !== 'passport' && !!state.returnEligible,
     ageGroup: product.g === 'prof' ? state.ageGroup : 'adult',
-    babyType: product.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
+    babyType: getActiveBabyType(product),
     bgColors: [...state.bgColors],
-    businessMode: product.g === 'biz' ? state.businessMode : '',
-    businessHours: product.g === 'biz' ? Number(state.businessHours || 2) : '',
-    businessVideoEdit: product.g === 'biz' ? state.businessVideoEdit : '',
-    businessAddonKeys: product.g === 'biz' ? [...state.businessAddonKeys] : [],
+    businessMode: isGenericBusinessProduct(product) ? state.businessMode : '',
+    businessHours: isGenericBusinessProduct(product) ? Number(state.businessHours || 2) : '',
+    businessVideoEdit: isGenericBusinessProduct(product) ? state.businessVideoEdit : '',
+    businessAddonKeys: isGenericBusinessProduct(product) ? [...state.businessAddonKeys] : [],
     passAddon: (product.g === 'prof' || product.g === 'stud') && !!els.passAddonToggle?.checked,
     passAddonPeople: Number(els.passAddonPeople?.value || 1)
   };
@@ -3542,10 +4862,11 @@ function removePassportConfig(configIndex) {
 function renderProductDetail() {
   if (!state.selectedProduct) {
     els.productDetail.className = 'detail-box empty-state';
-    els.productDetail.textContent = getCopy().selectProductDetailEmpty;
+    els.productDetail.textContent = getProductDetailEmptyCopy();
+    syncConsultationLinks();
     return;
   }
-  const business = state.selectedProduct.g === 'biz' ? getBusinessSelection() : null;
+  const business = isGenericBusinessProduct(state.selectedProduct) ? getBusinessSelection() : null;
   const desc = business
     ? (state.lang === 'en'
       ? `${business.label}. Original files are included. Optional requests are reviewed after booking.`
@@ -3553,13 +4874,25 @@ function renderProductDetail() {
         ? `${business.label}. Originaldateien sind inklusive. Zusatzwünsche werden nach der Buchung geprüft.`
         : `${business.label}. 원본 제공이 포함되며, 추가 요청은 예약 접수 후 검토됩니다.`)
     : getProductDescription(state.selectedProduct);
-  const price = getEstimatedPrice();
-  const hideBizPrice = state.selectedProduct.g === 'biz';
+  const quoteOnly = !!state.quote?.isQuoteOnly || isQuoteOnlyProduct(state.selectedProduct);
+  const quoteHeroLabel = state.lang === 'en'
+    ? 'Consultation quote'
+    : state.lang === 'de'
+      ? 'Beratungsangebot'
+      : '상담 견적';
+  const quoteHeroCopy = state.lang === 'en'
+    ? 'We review the event purpose, schedule, location and deliverables, then send a clear quote by email.'
+    : state.lang === 'de'
+      ? 'Wir prüfen Zweck, Ablauf, Ort und gewünschte Lieferung und senden danach ein klares Angebot per E-Mail.'
+      : '행사 목적, 시간대, 장소, 필요한 결과물을 확인한 뒤 이메일로 맞춤 견적을 안내드립니다.';
   const discountLines = getAppliedDiscountLines();
   const discountHtml = discountLines.length
     ? `<div class="discount-note-list">${discountLines.map((line) => `<div class="discount-note-item">${escapeHtml(line)}</div>`).join('')}</div>`
     : '';
   const weddingBenefitHtml = getWeddingBenefitBoxHtml();
+  const composition = getProductComposition(state.selectedProduct);
+  const detailIntro = getProductDetailIntro(state.selectedProduct, desc, composition);
+  const compositionHtml = renderProductCompositionPanel(state.selectedProduct);
   const productGuideList = getProductGuideList(state.selectedProduct);
   const visitGuideList = getVisitGuideList(state.selectedProduct);
   const eventBadge = state.quote?.eventDiscount > 0
@@ -3603,30 +4936,22 @@ function renderProductDetail() {
   ` : '';
   els.productDetail.className = 'detail-box';
   els.productDetail.innerHTML = `
-    <div class="detail-title">${escapeHtml(getProductLabel(state.selectedProduct))}</div>
-    <div class="detail-copy">${escapeHtml(desc)}</div>
+    <div class="detail-title">${escapeHtml(getDisplayProductTitle(state.selectedProduct))}</div>
+    ${detailIntro ? `<div class="detail-copy product-detail-intro">${escapeHtml(detailIntro)}</div>` : ''}
     ${businessSummary}
+    ${compositionHtml}
     ${eventBadge}
-    ${hideBizPrice ? `
+    ${quoteOnly ? `
       <div class="price-hero">
-        <div class="price-hero-label">${state.lang === 'en' ? 'Pricing' : state.lang === 'de' ? 'Preis' : '가격 안내'}</div>
-        <div class="price-hero-value" style="font-size:26px;">${state.lang === 'en' ? 'Quote after review' : state.lang === 'de' ? 'Angebot nach Prüfung' : '상담 후 견적 안내'}</div>
-        <div class="price-hero-copy">${state.lang === 'en'
-          ? `${business.hours} hours selected · detailed quote will be sent after review`
-          : state.lang === 'de'
-            ? `${business.hours} Stunden ausgewählt · das genaue Angebot senden wir nach Prüfung`
-            : `${business.hours}시간 선택 · 세부 내용 확인 후 맞춤 견적을 안내드립니다.`}</div>
+        <div class="price-hero-label">${quoteHeroLabel}</div>
+        <div class="price-hero-value" style="font-size:26px;">${escapeHtml(getQuotePriceLabel())}</div>
+        <div class="price-hero-copy">${quoteHeroCopy}</div>
+      </div>
+      <div class="consultation-inline-card">
+        <p class="consultation-inline-copy">${escapeHtml(getCopy().quoteConsultationCopy)}</p>
+        <a class="consultation-inline-link" data-consultation-link href="${escapeHtml(getConsultationUrl())}">${escapeHtml(getCopy().quoteConsultationButton)}</a>
       </div>
     ` : `
-      <div class="price-hero">
-        <div class="price-hero-label">${state.lang === 'en' ? 'Estimated price' : state.lang === 'de' ? 'Geschätzter Preis' : '예상 금액'}</div>
-        <div class="price-hero-value">€${formatEuroAmount(price)}</div>
-        <div class="price-hero-copy">${state.lang === 'en'
-          ? `About ${getShootDuration()} min`
-          : state.lang === 'de'
-            ? `Ca. ${getShootDuration()} Min`
-            : `촬영 약 ${getShootDuration()}분`}</div>
-      </div>
       ${discountHtml}
       ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
       ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
@@ -3684,7 +5009,7 @@ async function loadCalendar() {
   setBanner(getCopy().calendarLoaded, 'success');
   if (!state.selectedDate) {
     const nearestDate = getNearestAvailableDate(batch);
-    if (nearestDate) await selectDate(nearestDate);
+    if (nearestDate) await selectDate(nearestDate, { auto: true });
   }
   prefetchNextCalendarMonth();
 }
@@ -3811,7 +5136,7 @@ function getNearestAvailableDate(data) {
   return '';
 }
 
-async function selectDate(dateKey) {
+async function selectDate(dateKey, options = {}) {
   state.slotRequestToken += 1;
   state.selectedDate = dateKey;
   state.activeStep = 3;
@@ -3825,11 +5150,10 @@ async function selectDate(dateKey) {
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
   await loadSlotsForDate(dateKey);
-  scrollSlotPanelIntoView();
+  if (!options.auto) scrollSlotPanelIntoView();
   refreshQuote().catch((error) => console.error(error));
   renderReview();
   syncStepPanels();
-  goToStep(3);
 }
 
 function normalizeSlotEntry(slot) {
@@ -3886,6 +5210,7 @@ function bindSlotButtons(entries) {
       updateSubmitState();
       renderReview();
       syncStepPanels();
+      renderStepWarnings();
       setBanner(
         state.lang === 'en'
           ? 'Date and time selected. Review once more, then continue.'
@@ -3909,11 +5234,7 @@ function renderSlots(slots) {
   const entries = slots
     .map(normalizeSlotEntry)
     .filter((entry) => entry.time)
-    .sort((a, b) => {
-      if (a.status === 'recommended' && b.status !== 'recommended') return -1;
-      if (a.status !== 'recommended' && b.status === 'recommended') return 1;
-      return String(a.time).localeCompare(String(b.time));
-    });
+    .sort((a, b) => String(a.time).localeCompare(String(b.time)));
   els.slotGrid.classList.remove('empty-state');
   els.slotGrid.innerHTML = `<div class="slot-list slot-list-unified">${entries.map(renderSlotButton).join('')}</div>`;
   bindSlotButtons(entries);
@@ -4159,6 +5480,7 @@ function getSelectedDuration() {
 
 function renderReview() {
   syncConsentVisibility();
+  renderContractPriceSummary();
   if (!state.selectedProduct) {
     els.reviewBox.className = 'detail-box empty-state';
     els.reviewBox.textContent = getCopy().reviewEmpty;
@@ -4166,7 +5488,7 @@ function renderReview() {
   }
   const copy = getCopy();
   const rows = [[copy.reviewProduct, getProductLabel(state.selectedProduct)]];
-  if (state.selectedProduct.g !== 'biz') rows.push([copy.reviewPrice, `€${formatEuroAmount(getEstimatedPrice())}`]);
+  rows.push([copy.reviewPrice, (state.quote?.isQuoteOnly || isQuoteOnlyProduct(state.selectedProduct)) ? getQuotePriceLabel() : `€${formatEuroAmount(getEstimatedPrice())} brutto`]);
   const discountLines = getAppliedDiscountLines();
   if (discountLines.length) {
     const label = state.selectedProduct.g === 'wed'
@@ -4187,15 +5509,19 @@ function renderReview() {
   if (state.selectedProduct.g === 'prof') {
     const ageLabel = AGE_META.find((item) => item.key === state.ageGroup)?.label[state.lang] || AGE_META.find((item) => item.key === state.ageGroup)?.label.ko || state.ageGroup;
     rows.push([state.lang === 'en' ? 'Age Group' : state.lang === 'de' ? 'Altersgruppe' : '연령대', ageLabel]);
+    const profileAge = getProfileAgeValue();
+    if (profileAge) rows.push([copy.reviewProfileAge, profileAge]);
     if (state.ageGroup === 'baby') {
-      const babyTypeLabel = BABY_TYPE_META.find((item) => item.key === state.babyType)?.label[state.lang] || BABY_TYPE_META.find((item) => item.key === state.babyType)?.label.ko || state.babyType;
+      const babyTypeLabel = getBabyTypeLabel(state.babyType);
       rows.push([state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류', babyTypeLabel]);
     }
   }
+  const studioFamily = getStudioFamilyValue();
+  if (studioFamily) rows.push([copy.reviewStudioFamily, studioFamily]);
   if (state.surveyKeys.includes('baby') && !(state.selectedProduct.g === 'prof' && state.ageGroup === 'baby')) {
     rows.push([
       state.lang === 'en' ? 'Session Type' : state.lang === 'de' ? 'Aufnahmetyp' : '촬영 종류',
-      state.lang === 'en' ? 'Baby / Birthday' : state.lang === 'de' ? 'Baby / Geburtstag' : '백일/돌'
+      getBabyTypeLabel(state.babyType) || (state.lang === 'en' ? 'Please choose 100 Days or 1st Birthday' : state.lang === 'de' ? 'Bitte 100 Tage oder 1. Geburtstag wählen' : '백일/돌 중 선택 필요')
     ]);
   }
   const babyName = String(els.form.elements.babyName?.value || '').trim();
@@ -4215,7 +5541,10 @@ function renderReview() {
   const location = String(els.locationInput?.value || '').trim();
   if (location) rows.push([copy.reviewLocation, location]);
   const businessDetails = String(els.businessInput?.value || '').trim();
-  if (state.selectedProduct.g === 'biz') {
+  if (state.selectedProduct.g === 'biz' && getSelectedEventCategoryLabel()) {
+    rows.push([state.lang === 'en' ? 'Event type' : state.lang === 'de' ? 'Event-Typ' : '행사 유형', getSelectedEventCategoryLabel()]);
+  }
+  if (isGenericBusinessProduct(state.selectedProduct)) {
     rows.push([copy.reviewBusinessPackage, state.quote?.businessLabel || getBusinessSelection().label]);
     rows.push([copy.bizModeLabel, BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label[state.lang] || BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label.ko || state.businessMode]);
     rows.push([copy.bizHoursLabel, `${state.businessHours || 2}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`]);
@@ -4278,21 +5607,21 @@ function updateSubmitState() {
   const email = String(formData.get('email') || '').trim();
   const emailOk = /\S+@\S+\.\S+/.test(email);
   const isPass = product.g === 'pass';
+  const contractOk = formData.get('contractTermsConsent') === 'on';
   const gdprOk = formData.get('gdprConsent') === 'on';
-  const aiOk = isPass ? true : formData.get('aiConsent') === 'on';
   const passCountriesOk = !isPass || hasPassportCountrySelections();
   const otherCountryOk = !isPass || !state.selectedCountries.includes('OTHER') || !!String(formData.get('otherCountry') || '').trim();
-  const locationOk = (product.g === 'snap' || product.g === 'wed') ? !!String(els.locationInput?.value || '').trim() : true;
-  const businessOk = product.g !== 'biz' || !!String(els.businessInput?.value || '').trim();
+  const locationOk = !needsBookingLocation(product) || !!String(els.locationInput?.value || '').trim();
+  const businessOk = !needsBusinessDetails(product) || !!String(els.businessInput?.value || '').trim();
   const babyName = String(formData.get('babyName') || '').trim();
-  const babyNameOk = !((product.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant') || state.surveyKeys.includes('baby')) || !!babyName;
+  const babyNameOk = !needsBabyNameForBooking(product) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
     || (businessInvoice.companyName
       && businessInvoice.companyAddress
       && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
-  els.submitBtn.disabled = !(name && phone && emailOk && gdprOk && aiOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
+  els.submitBtn.disabled = !(name && phone && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -4328,9 +5657,12 @@ async function changeMonth(offset) {
 async function onSubmit(event) {
   event.preventDefault();
   if (!state.selectedProduct || !state.selectedDate || !state.selectedSlot) return;
+  normalizeBookingContactFields();
   const formData = new FormData(els.form);
-  const isPass = state.selectedProduct.g === 'pass';
+  const isPass = state.selectedProduct.g === 'pass' || state.selectedProduct.t === 'passport';
   const businessInvoice = getBusinessInvoiceFormData(formData);
+  const eventCategoryLabel = state.selectedProduct.g === 'biz' ? getSelectedEventCategoryLabel() : '';
+  const businessDetailsText = state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '';
   const payload = {
     requestId: createRequestId('booking'),
     itemId: state.selectedProduct.id,
@@ -4343,6 +5675,8 @@ async function onSubmit(event) {
     address: businessInvoice.needed ? businessInvoice.companyAddress : String(formData.get('address') || '').trim(),
     payerName: String(formData.get('payerName') || '').trim(),
     babyName: String(formData.get('babyName') || '').trim(),
+    profileAge: getProfileAgeValue(),
+    studioFamilyMembers: getStudioFamilyValue(),
     memo: '',
     website: String(formData.get('website') || ''),
     lang: state.lang,
@@ -4353,24 +5687,28 @@ async function onSubmit(event) {
     passPersonCountries: state.selectedProduct.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [],
     otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
-    businessDetails: state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '',
-    businessMode: state.selectedProduct.g === 'biz' ? state.businessMode : '',
-    businessHours: state.selectedProduct.g === 'biz' ? Number(state.businessHours || 2) : '',
-    businessVideoEdit: state.selectedProduct.g === 'biz' ? state.businessVideoEdit : '',
-    businessAddonKeys: state.selectedProduct.g === 'biz' ? [...state.businessAddonKeys] : [],
-    location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') ? String(els.locationInput?.value || '').trim() : '',
+    eventCategory: state.selectedProduct.g === 'biz' ? state.eventCategory : '',
+    businessDetails: state.selectedProduct.g === 'biz'
+      ? [eventCategoryLabel ? `[행사유형: ${eventCategoryLabel}]` : '', businessDetailsText].filter(Boolean).join('\n')
+      : '',
+    businessMode: isGenericBusinessProduct(state.selectedProduct) ? state.businessMode : '',
+    businessHours: isGenericBusinessProduct(state.selectedProduct) ? Number(state.businessHours || 2) : '',
+    businessVideoEdit: isGenericBusinessProduct(state.selectedProduct) ? state.businessVideoEdit : '',
+    businessAddonKeys: isGenericBusinessProduct(state.selectedProduct) ? [...state.businessAddonKeys] : [],
+    location: (state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed' || state.selectedProduct.g === 'biz') ? String(els.locationInput?.value || '').trim() : '',
     marketing: !isPass && formData.get('marketing') === 'on',
     gdprConsent: formData.get('gdprConsent') === 'on',
-    aiConsent: isPass ? true : formData.get('aiConsent') === 'on',
+    aiConsent: false,
+    ...getContractSubmissionData(formData),
     businessInvoiceNeeded: businessInvoice.needed,
     businessCompanyName: businessInvoice.companyName,
     businessCompanyAddress: businessInvoice.companyAddress,
     businessVatId: businessInvoice.vatId,
     businessInvoiceEmail: businessInvoice.invoiceEmail,
     businessInvoiceRef: businessInvoice.reference,
-    isReturn: state.returnEligible,
+    isReturn: !isPass && !!state.returnEligible,
     ageGroup: state.selectedProduct.g === 'prof' ? state.ageGroup : 'adult',
-    babyType: state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' ? state.babyType : '',
+    babyType: getActiveBabyType(state.selectedProduct),
     bgColors: [...state.bgColors],
     passAddon: (state.selectedProduct.g === 'prof' || state.selectedProduct.g === 'stud') && !!els.passAddonToggle?.checked,
     passAddonPeople: Number(els.passAddonPeople?.value || 1),
@@ -4391,7 +5729,18 @@ async function onSubmit(event) {
   const userMemo = String(formData.get('memo') || '').trim();
   const passMemoPrefix = buildPassportMemoPrefix();
   payload.memo = [passMemoPrefix, userMemo].filter(Boolean).join('\n');
-  if (state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' && state.babyType !== 'infant' && !payload.babyName) {
+  if (requiresExplicitBabyBirthdayType(state.selectedProduct)) {
+    setBanner(
+      state.lang === 'en'
+        ? 'Please choose whether this is a 100-day session or a 1st birthday session.'
+        : state.lang === 'de'
+          ? 'Bitte wählen Sie, ob es ein 100-Tage- oder 1. Geburtstags-Shooting ist.'
+          : '백일 촬영인지 돌 촬영인지 선택해 주세요.',
+      'error'
+    );
+    return;
+  }
+  if (state.selectedProduct.g === 'prof' && state.ageGroup === 'baby' && isBabyBirthdayType(state.babyType) && !payload.babyName) {
     setBanner(
       state.lang === 'en'
         ? 'Please enter the baby name for the 100-day / 1st birthday session.'
@@ -4413,11 +5762,11 @@ async function onSubmit(event) {
     );
     return;
   }
-  if ((state.selectedProduct.g === 'snap' || state.selectedProduct.g === 'wed') && !payload.location) {
+  if (needsBookingLocation(state.selectedProduct) && !payload.location) {
     setBanner(getCopy().locationRequired, 'error');
     return;
   }
-  if (state.selectedProduct.g === 'biz' && !payload.businessDetails) {
+  if (state.selectedProduct.g === 'biz' && !businessDetailsText) {
     setBanner(
       state.lang === 'en'
         ? 'Please describe the event details before submitting.'
@@ -4436,7 +5785,7 @@ async function onSubmit(event) {
     setBanner(getCopy().businessInvoiceEmailInvalid, 'error');
     return;
   }
-  if (!payload.gdprConsent || (!isPass && !payload.aiConsent)) {
+  if (!payload.contract_terms_accepted || !payload.privacy_terms_accepted) {
     setBanner(getCopy().consentRequired, 'error');
     return;
   }
@@ -4465,6 +5814,7 @@ async function onSubmit(event) {
     state.selectedSlotMeta = null;
     syncConditionalFields();
     renderReview();
+    renderContractPriceSummary();
     updateSubmitState();
   } catch (error) {
     console.error(error);
@@ -4512,6 +5862,7 @@ function resetBookingFlow() {
   state.businessHours = '2';
   state.businessVideoEdit = 'raw';
   state.businessAddonKeys = [];
+  state.eventCategory = '';
   state.quote = null;
   state.returnEligible = false;
   state.returnNoticeToken += 1;
@@ -4642,12 +5993,12 @@ function getSuccessGuideHtml(payload) {
   }
 
   if (product.g === 'biz') {
-    const business = state.quote || getBusinessSelection();
+    const business = isGenericBusinessProduct(product) ? (state.quote || getBusinessSelection()) : null;
     sections.push(`
       <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? '📸 기업/행사 촬영 안내' : 'Corporate / Event Booking Guide'}</h4>
+        <h4 class="result-guide-title">${isKo ? '📸 행사/이벤트 촬영 안내' : 'Event Booking Guide'}</h4>
         <div class="result-guide-body">
-          ${isKo ? `
+          ${business ? (isKo ? `
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> 기준으로 예약이 접수되었습니다.</p>
             <h5>선택 내용</h5>
             <ul>
@@ -4658,9 +6009,9 @@ function getSuccessGuideHtml(payload) {
             </ul>
             <h5>제공 방식</h5>
             <ul>
-              <li>행사 사진은 촬영 시간별 투명한 가격으로 진행되며 JPG 원본과 기본 색보정본이 제공됩니다.</li>
-              <li>행사 영상은 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.</li>
-              <li>SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 행사 목적과 일정에 따라 개별 검토 후 안내드립니다.</li>
+              <li>최종 금액은 행사 목적, 진행 시간, 장소, 예상 인원, 납품 범위를 확인한 뒤 안내드립니다.</li>
+              <li>사진은 원본/JPG 및 기본 색보정 범위를, 영상은 촬영/편집 범위를 확정 메일에서 정리합니다.</li>
+              <li>SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 일정과 사용 목적에 따라 개별 검토 후 안내드립니다.</li>
             </ul>
             <h5>예약 후 진행</h5>
             <ul>
@@ -4672,11 +6023,25 @@ function getSuccessGuideHtml(payload) {
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> has been requested.</p>
             <ul>
               <li>${state.businessMode === 'video' ? 'Video production' : 'Event photography'} · ${escapeHtml(String(state.businessHours || 2))}${isKo ? '시간' : ' hours'}</li>
-              <li>We will review the event purpose, timeline, deliverables, and any optional requests.</li>
-              <li>SNS short-form, rush delivery, and branding requests are confirmed after internal review.</li>
+              <li>We will review the event purpose, timeline, location, guest count, deliverables, and any optional requests before sending the final quote.</li>
+              <li>SNS short-form, rush delivery, and branding requests are confirmed after schedule and usage review.</li>
               <li>We may contact you again to coordinate timing, location flow, and delivery expectations.</li>
             </ul>
-          `}
+          `) : (isKo ? `
+            <p><b>${escapeHtml(getProductLabel(product))}</b> 상품으로 예약이 접수되었습니다.</p>
+            <ul>
+              <li>사진과 영상은 택1 기준으로 진행됩니다.</li>
+              <li>장소, 진행 시간, 피로연/파티 포함 여부를 확인한 뒤 최종 안내드립니다.</li>
+              <li>상담 견적 상품은 세부 확인 후 이메일로 금액을 안내드립니다.</li>
+            </ul>
+          ` : `
+            <p><b>${escapeHtml(getProductLabel(product))}</b> has been requested.</p>
+            <ul>
+              <li>Photo and video are offered as separate choices.</li>
+              <li>We will confirm the location, schedule, and reception/party coverage after review.</li>
+              <li>For custom quote packages, pricing will be sent by email after consultation.</li>
+            </ul>
+          `)}
         </div>
       </section>
     `);
@@ -4748,7 +6113,7 @@ function getSuccessGuideHtml(payload) {
 function renderSubmitResult(payload, result) {
   const copy = getCopy();
   const totalPrice = result?.quote?.totalPrice ?? getEstimatedPrice();
-  const hideBizPrice = state.selectedProduct?.g === 'biz';
+  const quoteOnly = !!result?.quote?.isQuoteOnly || !!state.quote?.isQuoteOnly || isQuoteOnlyProduct(state.selectedProduct);
   const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
   const successGuideHtml = getSuccessGuideHtml(payload);
   els.hero?.classList.add('hidden-step');
@@ -4776,9 +6141,9 @@ function renderSubmitResult(payload, result) {
         <strong>${escapeHtml(copy.submitCardProduct)}</strong>
         <span>${escapeHtml(getProductLabel(state.selectedProduct))}</span>
       </div>
-      ${hideBizPrice ? '' : `<div class="result-item">
+      ${quoteOnly ? '' : `<div class="result-item">
         <strong>${escapeHtml(copy.submitCardPrice)}</strong>
-        <span>${escapeHtml(`€${formatEuroAmount(totalPrice)}`)}</span>
+        <span>${escapeHtml(`€${formatEuroAmount(totalPrice)} brutto`)}</span>
       </div>`}
     </div>
     ${returnNote}

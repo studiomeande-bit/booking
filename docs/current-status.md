@@ -1,6 +1,6 @@
 # Current Status
 
-Updated: 2026-04-13 Europe/Berlin
+Updated: 2026-05-08 Europe/Berlin
 
 ## Live Endpoints
 
@@ -52,6 +52,8 @@ Updated: 2026-04-13 Europe/Berlin
   - 돌상 무료 셋팅 안내
   - 공통 오시는 길 / 주차 안내
 - 예약 메일 안내문도 확장됨
+- 예약 확정 메일에 고객용 `.ics` 캘린더 파일 첨부가 추가됨
+  - 캘린더 메모에는 시간, 장소, 상품, 인원, 총금액, 계약금, 잔금, 결제/입금 안내, 지도 링크, 연락처, 요청사항 포함
 - Select는 운영형 성공 화면, 인보이스 번호, 추가 비용 요약까지 반영됨
 - 촬영 후 감사 메일 / 보정본 완료 후 메일 / 백일 촬영 후 돌촬영 추천 메일 자동화가 추가됨
 - 기본 구글 리뷰 링크와 인스타 태그 링크가 메일에 반영됨
@@ -83,10 +85,13 @@ Updated: 2026-04-13 Europe/Berlin
 - Business / Event
   - 카드 설명에 돌잔치촬영, 결혼식, 암트결혼식, 기업행사 포함
   - 고객 화면은 상담형 견적 구조
-  - 상세 패널에 시간별 가격표가 아직 남아 있어 제거 필요
+  - 상세 패널과 완료 안내는 시간별 가격 노출 대신 상담 견적 문구로 정리됨
 - Common
   - 인보이스용 주소는 선택 입력
-  - 재방문 할인은 백엔드 검증 기반
+  - 당일 재촬영 할인은 백엔드 검증 기반
+  - 새 예약이 여권/비자면 할인 제외
+  - 이전 촬영이 여권/비자이고 새 예약이 프로필/스튜디오 등 다른 상품이면 할인 가능
+  - 모바일 캘린더는 날짜/시간 선택 단계 안에서 유지되도록 조정됨
   - 현재 시각 기준 3시간 이내 슬롯 차단
   - 2026년까지만 예약 허용
 
@@ -103,6 +108,25 @@ Updated: 2026-04-13 Europe/Berlin
   - `select-submit`
   - `select-update`
 - Customer booking still saves to sheet, creates calendar event, sends customer/admin emails
+- Confirmed booking email now attaches `studio-mean-booking.ics`
+- Admin dashboard booking E2E diagnostics are implemented in Apps Script HEAD
+  - base check verifies public booking API, booking frontend, product loading, return-discount calculation, booking sheet headers, Calendar access, mail quota, and latest booking linkage
+  - optional probes can create/delete a temporary Calendar event or send an admin-only test mail
+  - production deployment is pending Apps Script Project History version cleanup
+- Select link sending supports per-booking marketing bonus quantity
+  - MyRealTrip bookings default to 5 bonus retouches
+  - regular bookings default to 2 bonus retouches
+  - Apps Script HEAD preserves edited base retouch and marketing bonus counts on select-link resend
+  - production deployment is pending Apps Script Project History version cleanup
+- Admin settings includes same-day reshoot discount audit / repair
+- Reshoot discount audit / repair excludes passport / visa only as the target booking; passport / visa can be the source booking
+  - scans recent bookings by submission time, not only the current day
+  - verifies name plus phone suffix or email match
+  - applies missing discount to total, balance, return flag, memo, and calendar memo
+- Gutschein V1 ledger now includes tax-safe tracking fields
+  - `발행시점세율`, `세무판단근거`, `실제사용상품ID`, `실제사용상품명`, `실제사용일시`
+  - Admin Gutschein tab has a `세무필드 보정` action for existing voucher rows
+  - voucher PDF includes visible SPV / MPV tax timing wording
 - Admin update / reschedule / cancel flows remain on Apps Script
 - Follow-up mail related columns added:
   - 예약장부: `촬영후감사메일발송일시`, `돌촬영추천메일발송일시`
@@ -138,37 +162,50 @@ Updated: 2026-04-13 Europe/Berlin
 - 성공 화면 추가
 - 추가 비용 / 인보이스 번호 / 드라이브 링크 요약 반영
 - 기존 제출 복원 / 수정 제출 경로 반영
+- 갤러리 로딩 안정화 반영
+  - Apps Script Drive 목록 API는 900장 제한, 24초 time budget, 부분 응답, CacheService v3 사용
+  - Drive 폴더 공유 권한은 파일별 반복 변경 대신 루트 폴더 기준으로 1회만 확인
+  - 고객 화면은 28초 timeout, 재시도 버튼, 부분 로딩 안내를 제공
+  - Drive thumbnail endpoint와 CSP-safe image event listener로 운영 미리보기 161장 로딩 확인
 - 실세션 기준 최종 회귀 점검은 아직 필요
 
 ## Known Open Items
 
-1. 기업/행사 상세 패널의 시간별 가격표 제거
-2. Booking 모바일 하단 버튼 / 경고문 / 달력 헤더 최종 마감
-3. Booking 단계별 로딩 카드 디자인 일관성 개선
-4. 실예약 1건 기준 end-to-end 검증
+1. Booking 모바일 하단 버튼 / 경고문 / 달력 헤더 최종 마감
+2. Booking 단계별 로딩 카드 디자인 일관성 개선
+3. 실예약 1건 기준 end-to-end 검증
+   - Apps Script Project History에서 미사용 버전 삭제 후 운영 배포
+   - 먼저 Admin `예약 E2E 진단` 기본 점검 / 캘린더 쓰기 / 메일 점검 실행
    - 시트 저장
    - Google Calendar 생성
    - Apple Calendar 반영 여부
    - 고객 메일 수신
    - 관리자 수정
-5. Select 실세션 기준 신규 제출 / 수정 제출 / 추가 인화 검증
+4. Select 실세션 기준 신규 제출 / 수정 제출 / 추가 인화 검증
 
 ## Accounting / Lexware Status
 
-- Lexware 연결 방식은 OAuth 앱이 아니라 `API key + organization id` 기준으로 구성됨
+- Lexware 연결 방식은 OAuth 앱이 아니라 `Public API key` 기준으로 구성됨
+- `organization id`는 필수 입력값이 아니라 연결 테스트 시 `/v1/profile`에서 자동 확인/보정
 - 확보 및 설정 완료:
   - `LEXWARE_API_KEY`
   - `LEXWARE_ORGANIZATION_ID`
   - `LEXWARE_ENABLED`
 - AdminV2에 반영된 UI:
   - 설정 탭 `📚 Lexware 연동`
-  - 인보이스 탭 `📚 전송`, `💶 상태`
+  - 인보이스 탭 `점검/전송`, `💶 상태`
   - 예약장부 `💶결제`
   - 회계 장부 `🔗 Lexware 대조`, `⬇️ Lexware 가져오기`, `🩺 Lexware 진단`
+- Lexware 전송은 실제 외부 문서를 생성하므로, 신규 인보이스 생성 직후 자동 전송은 기본 비활성화
+- `점검/전송` 클릭 시 서버에서 Lexware 설정, 연결, 고객, 이메일, 주소, 품목, 금액, 연락처 상태를 먼저 확인하고 전송 불가 항목이 있으면 실제 전송을 막음
 
 ## Lexware Diagnostic Result
 
 - 연결 테스트는 성공
+- 2026-05-06 HTTP smoke test:
+  - Company: `Taewoong Min (Studio_mean)`
+  - Tax type: `net`
+  - Contacts: `4`
 - 진단 결과:
   - `Contacts: 4`
   - `Invoices: 0`
@@ -182,10 +219,12 @@ Updated: 2026-04-13 Europe/Berlin
 
 - 현재 프로젝트의 주 흐름은 아래로 정리됨
   1. 우리 시스템에서 예약/추가금 인보이스를 먼저 Lexware로 생성
-  2. 이후 `💶 상태`로 Lexware 결제 상태를 읽어옴
-  3. 예약장부/인보이스/회계장부의 계약금, 잔금, 미수금을 갱신
+  2. 인보이스는 `finalize=true`로 생성해서 Lexware 결제 상태 조회가 가능한 `open` 문서로 만듦
+  3. 이후 `💶 상태`로 Lexware 결제 상태를 읽어옴
+  4. 예약장부/인보이스/회계장부의 계약금, 잔금, 미수금을 갱신
 - 즉 `Lexware -> admin 역가져오기`는 보조 기능이고,
 - 핵심 자동화는 `admin -> Lexware -> payment status back` 구조임
+- 기존에 draft로 생성된 문서는 결제 조회가 406으로 막힐 수 있으므로 `재전송`으로 새 open 문서를 생성하고 행의 Lexware ID를 교체
 
 ## Receivables Logic Decision
 
@@ -208,6 +247,38 @@ Updated: 2026-04-13 Europe/Berlin
   - 10일 미입금 자동 취소
 - 계약금 없는 상품:
   - 환불 규정 메일 제외
+
+## Bank CSV Import Decision
+
+- Deutsche Bank CSV는 `결제대조`에 입금/출금을 모두 원장 그대로 저장
+- 은행 출금:
+  - `은행 출금 지출장부 자동 반영` 옵션으로 지출장부에 `bank_out:` 로컬 증빙 ID 생성
+  - 대표자/개인 이체, 사적 이체로 보이는 건은 비용 자동반영 제외
+- 은행 입금:
+  - `은행 입금 예약금/잔금 자동 확인` 옵션으로 고객 계좌이체를 예약장부의 계약금/잔금과 자동 매칭
+  - 금액 + 입금자/고객명 + 촬영일 관계로 점수화하고, 애매한 입금은 검토 항목 유지
+  - SumUp 정산 입금, 대표자 이체, 세무 환급은 예약금 자동확인 대상에서 제외
+
+## Payment Matching Direction
+
+- 예약페이지에는 결제 시스템을 연결하지 않음
+- 예약페이지는 접수/견적/일정 선택까지만 담당
+- 실제 결제 흐름은 어드민에서 아래 3개 채널로 관리
+  1. 현장 카드: SumUp 거래내역 API를 15분 간격으로 조회해 `결제대조`에 저장하고 예약장부 잔금/전액과 자동 매칭
+  2. 현금: 외부 데이터가 없으므로 데일리 검토 메일에 `현금 수납 확인` 항목으로 표시하고 현장 확인 후 수동 반영
+  3. 계좌입금: Deutsche Bank CSV 기준으로 입금/출금을 대조하고, 입금은 예약장부 계약금/잔금과 자동 매칭
+- AdminV2 설정 탭에 `SumUp 카드결제 대조` 카드 추가
+  - `SUMUP_API_KEY`
+  - `SUMUP_MERCHANT_CODE`
+  - `SUMUP_ENABLED`
+  - `SUMUP_LAST_SYNC_AT`
+- API key 입력 후 Merchant Code가 비어 있으면 `/v0.1/me` 프로필 조회로 Merchant Code 자동 확인/저장을 시도
+- 자동화:
+  - `syncRecentSumupTransactionsTrigger`: 15분마다 SumUp 최근 거래 동기화
+  - `dailyTasks`: SumUp 동기화 후 결제 일일검토 메일 발송
+- SumUp 카드 매칭은 금액 + 촬영일 + 결제수단 + 이름 단서로 점수화
+  - 이름 단서가 없어도 같은 날/같은 금액의 유일 후보면 매칭 가능
+  - 후보가 애매하면 예약장부를 자동 수정하지 않고 검토 항목으로 유지
 
 ## Important Lexware Limitation
 

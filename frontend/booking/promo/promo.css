@@ -1886,3 +1886,34 @@ h1 {
     min-width: 0;
   }
 }
+
+/* Keep the estimate card readable even when global panel styles change. */
+.price-card {
+  background: #171513 !important;
+  color: #fff;
+}
+
+.price-label {
+  color: #d16a4f !important;
+  -webkit-text-fill-color: #d16a4f;
+}
+
+.price-main,
+.price-sub,
+.price-meta-value {
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+}
+
+.price-meta-item {
+  background: rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.16);
+}
+
+.price-meta-label {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.price-note {
+  color: rgba(255, 255, 255, 0.78);
+}

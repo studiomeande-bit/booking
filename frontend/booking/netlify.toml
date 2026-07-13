@@ -24,6 +24,12 @@
   force = true
 
 [[redirects]]
+  from = "/consultation"
+  to = "/consultation/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/status"
   to = "/status/index.html"
   status = 200
@@ -37,7 +43,8 @@
 [[headers]]
   for = "/promo"
   [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+    Clear-Site-Data = "\"cache\""
 
 [[headers]]
   for = "/gutschein"
@@ -48,6 +55,7 @@
   for = "/walkin"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
 
 [[headers]]
   for = "/*.html"
@@ -57,7 +65,8 @@
 [[headers]]
   for = "/promo/"
   [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+    Clear-Site-Data = "\"cache\""
 
 [[headers]]
   for = "/gutschein/"
@@ -66,6 +75,12 @@
 
 [[headers]]
   for = "/walkin/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/consultation/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
@@ -84,7 +99,8 @@
 [[headers]]
   for = "/promo/*.html"
   [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+    Clear-Site-Data = "\"cache\""
 
 [[headers]]
   for = "/gutschein/*.html"
@@ -93,6 +109,12 @@
 
 [[headers]]
   for = "/walkin/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/consultation/*.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
@@ -117,6 +139,11 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
+  for = "/consultation/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
   for = "/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
@@ -137,6 +164,11 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
+  for = "/consultation/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
   for = "/*.png"
   [headers.values]
     Cache-Control = "public, max-age=2592000"
@@ -151,5 +183,6 @@
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: https://drive.google.com https://drive.usercontent.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; font-src 'self'; object-src 'none'; base-uri 'self';"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; img-src 'self' data: https://drive.google.com https://drive.usercontent.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self' https://fonts.gstatic.com; frame-src https://www.google.com https://www.googletagmanager.com; object-src 'none'; base-uri 'self';"

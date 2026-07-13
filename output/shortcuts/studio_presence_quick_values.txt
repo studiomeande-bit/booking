@@ -1,10 +1,10 @@
 Shortcut Name (Open): Studio Open
 Shortcut Name (Close): Studio Close
-Calendar: 사진촬영 일정
-Title: Studio Open
-Location: Holzweg-passage 3, 61440 Oberursel
-Duration: 2 hours
-Note: Studio presence auto-open
+Location trigger: Holzweg-passage 3, 61440 Oberursel
+Config URL: https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec?api=studio-presence-config&password=ERP비밀번호
+Use returned field: openUrl
+Use returned field: closeUrl
+Default open duration: 120 minutes
 
 Eligible booking groups:
 - pass

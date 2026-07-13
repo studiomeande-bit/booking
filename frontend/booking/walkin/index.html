@@ -8,14 +8,16 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./walkin.min.css?v=20260417-walkin1" as="style">
+  <link rel="preload" href="/walkin/walkin.min.css?v=20260613-walkin-security1" as="style">
   <link rel="icon" href="../studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean walk-in customer info form">
   <meta property="og:title" content="Studio mean Walk-in Form">
   <meta property="og:description" content="Fill in your customer information for Studio mean">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./walkin.min.css?v=20260417-walkin1">
+  <link rel="stylesheet" href="/walkin/walkin.min.css?v=20260613-walkin-security1">
+  <script src="/site-analytics.js?v=20260430-consent6"></script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
 <body>
   <main class="shell">
@@ -48,12 +50,59 @@
     <section id="formPanel" class="panel">
       <form id="walkinForm" novalidate>
         <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <input type="hidden" id="formToken" name="formToken">
+        <input type="hidden" id="formStartedAt" name="formStartedAt">
 
         <div class="form-grid">
           <div class="form-field full">
             <label for="serviceGroup" id="serviceLabel">촬영 종류</label>
             <select id="serviceGroup" name="serviceGroup"></select>
           </div>
+
+          <section id="serviceDetailPanel" class="service-detail full hidden-field" aria-live="polite">
+            <div class="service-detail-head">
+              <div>
+                <div id="serviceDetailTitle" class="service-detail-title">예약 내용</div>
+                <p id="serviceDetailCopy" class="subcopy">선택한 촬영에 필요한 내용만 입력해 주세요.</p>
+              </div>
+            </div>
+            <div class="form-grid service-fields">
+              <div class="form-field full" data-detail-field="serviceDetail">
+                <label for="serviceDetail" id="serviceDetailLabel">예약 내용 / 상품명</label>
+                <select id="serviceDetail" name="serviceDetail"></select>
+              </div>
+              <div class="form-field" data-detail-field="preferredSchedule">
+                <label for="preferredSchedule" id="preferredScheduleLabel">희망 일정 / 시간</label>
+                <select id="preferredSchedule" name="preferredSchedule"></select>
+              </div>
+              <div class="form-field" data-detail-field="passCountries">
+                <label id="passCountriesLabel">필요 국가</label>
+                <input id="passCountries" name="passCountries" type="hidden">
+                <div id="passCountriesGrid" class="choice-grid" role="group" aria-labelledby="passCountriesLabel"></div>
+              </div>
+              <div class="form-field" data-detail-field="passPurpose">
+                <label id="passPurposeLabel">사용 용도</label>
+                <input id="passPurpose" name="passPurpose" type="hidden">
+                <div id="passPurposeGrid" class="choice-grid" role="group" aria-labelledby="passPurposeLabel"></div>
+              </div>
+              <div class="form-field" data-detail-field="passPeople">
+                <label for="passPeople" id="passPeopleLabel">촬영 인원</label>
+                <select id="passPeople" name="passPeople"></select>
+              </div>
+              <div class="form-field full" data-detail-field="shootingLocation">
+                <label for="shootingLocation" id="shootingLocationLabel">촬영 / 행사 장소</label>
+                <select id="shootingLocation" name="shootingLocation"></select>
+              </div>
+              <div class="form-field" data-detail-field="eventCompany">
+                <label for="eventCompany" id="eventCompanyLabel">회사 / 행사명</label>
+                <select id="eventCompany" name="eventCompany"></select>
+              </div>
+              <div class="form-field full" data-detail-field="eventDetails">
+                <label for="eventDetails" id="eventDetailsLabel">행사 내용</label>
+                <select id="eventDetails" name="eventDetails"></select>
+              </div>
+            </div>
+          </section>
 
           <div class="form-field">
             <label for="name" id="nameLabel">이름</label>
@@ -75,7 +124,7 @@
             <label for="payerName" id="payerNameLabel">입금자명</label>
             <input id="payerName" name="payerName" autocomplete="off">
           </div>
-          <div class="form-field">
+          <div id="babyNameField" class="form-field">
             <label for="babyName" id="babyNameLabel">아기 이름</label>
             <input id="babyName" name="babyName" autocomplete="off">
           </div>
@@ -152,6 +201,6 @@
     </section>
   </main>
 
-  <script src="./walkin.min.js?v=20260417-walkin1" defer></script>
+  <script src="/walkin/walkin.min.js?v=20260613-walkin-security1" defer></script>
 </body>
 </html>

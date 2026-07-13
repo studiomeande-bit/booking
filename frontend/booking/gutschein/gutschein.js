@@ -12,9 +12,6 @@ const COPY = {
   codeLabel: 'Code',
   validLabel: 'Gültig bis',
   issuedLabel: 'Ausgestellt am',
-  recipientLabel: 'Für',
-  fromLabel: 'Von',
-  messageLabel: 'Nachricht',
   guideTitle: 'Einlösung',
   guideCopy: 'Bitte zeigen Sie im Studio den QR-Code oder den Code vor. Unser Team prüft den Gutschein und verrechnet ihn bei der Buchung.',
   guideNotes: [
@@ -109,9 +106,6 @@ function renderStaticCopy() {
   els.codeLabel.textContent = COPY.codeLabel;
   els.validLabel.textContent = COPY.validLabel;
   els.issuedLabel.textContent = COPY.issuedLabel;
-  els.recipientLabel.textContent = COPY.recipientLabel;
-  els.fromLabel.textContent = COPY.fromLabel;
-  els.messageLabel.textContent = COPY.messageLabel;
   els.guideTitle.textContent = COPY.guideTitle;
   els.guideCopy.textContent = COPY.guideCopy;
   els.guideNotes.innerHTML = COPY.guideNotes
@@ -142,9 +136,6 @@ function renderTicket() {
   els.ticketCode.textContent = ticket.code || '-';
   els.ticketValidUntil.textContent = formatDate(ticket.validUntil);
   els.ticketIssuedAt.textContent = formatDate(ticket.issuedAt);
-  els.ticketRecipient.textContent = maskBlank(ticket.recipientName, COPY.noName);
-  els.ticketPurchaser.textContent = maskBlank(ticket.purchaserName, COPY.noName);
-  els.ticketMessage.textContent = maskBlank(ticket.message, COPY.noMessage);
   els.contactBody.innerHTML = `${escapeHtml(ticket.studio?.address || '')}<br>${escapeHtml(ticket.studio?.phone || '')}<br>${escapeHtml(ticket.studio?.email || '')}`;
   if (ticket.qrDataUri) {
     els.ticketQrImage.src = ticket.qrDataUri;
@@ -199,12 +190,6 @@ function bindUi() {
   els.issuedLabel = document.querySelector('#issuedLabel');
   els.ticketValidUntil = document.querySelector('#ticketValidUntil');
   els.ticketIssuedAt = document.querySelector('#ticketIssuedAt');
-  els.recipientLabel = document.querySelector('#recipientLabel');
-  els.fromLabel = document.querySelector('#fromLabel');
-  els.messageLabel = document.querySelector('#messageLabel');
-  els.ticketRecipient = document.querySelector('#ticketRecipient');
-  els.ticketPurchaser = document.querySelector('#ticketPurchaser');
-  els.ticketMessage = document.querySelector('#ticketMessage');
   els.guideTitle = document.querySelector('#guideTitle');
   els.guideCopy = document.querySelector('#guideCopy');
   els.guideNotes = document.querySelector('#guideNotes');

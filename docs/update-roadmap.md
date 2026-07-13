@@ -1,21 +1,12 @@
 # Update Roadmap
 
-Updated: 2026-04-13 Europe/Berlin
+Updated: 2026-05-08 Europe/Berlin
 
 ## Immediate
 
-1. Business / Event customer UI cleanup
-- remove visible hour-by-hour price table from booking customer detail panel
-- keep only current selection summary and consultation message
-- verify mail / success screen still avoid direct customer price exposure
-
-2. Booking mobile and calendar polish
-- tighten mobile footer layout
-- refine month header spacing
-- refine loading card size and hierarchy
-- keep date/time on same page without auto-jump after time click
-
-3. Booking end-to-end verification
+1. Booking end-to-end verification
+- Apps Script production deploy is pending version cleanup because the project reached the 200-version limit
+- run Admin booking E2E diagnostics before a real customer-flow test
 - Netlify booking submit
 - Google Sheets row creation
 - Google Calendar event creation
@@ -24,63 +15,107 @@ Updated: 2026-04-13 Europe/Berlin
 - admin notification mail
 - admin edit / reschedule / cancel
 
-4. Lexware actual workflow validation
-- send one real invoice via `📚 전송`
+2. Lexware actual workflow validation
+- run `점검/전송` preflight on one real invoice
+- send one real invoice only after the preflight confirms customer / amount / address / contact state
 - sync payment status via `💶 상태`
 - verify booking ledger / invoice sheet / accounting tab update consistently
 - confirm receivables are driven by Lexware status when available
 
-5. Receivables cleanup
+3. Receivables cleanup
 - verify which rows should truly remain `미수금`
 - remove false positives from local-only completed payments
 - confirm contract deposit / balance payments show consistently
 
 ## Next
 
-6. Calendar performance follow-up
+6. Gutschein V2 customer redemption design
+- add `예약중` hold state
+- customer-side code validation in booking final step
+- hold release on timeout / cancel / failed submit
+- finalize voucher on successful booking submit only
+- add admin hold monitor and release tools
+
+7. Calendar performance follow-up
 - measure current month / next month / third month load gap
 - tune month-summary cache TTL
 - refine background prefetch order
 - reduce visual confusion while loading later months
 
-7. Select real-session verification
+8. Select real-session verification
 - open existing session link
 - restore existing submission
 - submit update flow
 - extra prints / extra retouch totals
 - success screen / invoice number / drive link confirmation
 
-8. Mail content cleanup
+9. Mail content cleanup
 - reduce repeated text across pending / confirmed / follow-up mails
 - unify Korean / English / German tone
 - verify pre-wedding / passport infant / dol guide content balance
 
 ## Later
 
-9. Corporate / Event product redesign
+10. Corporate / Event product redesign
 - split photo vs video more clearly
 - separate wedding / registry wedding / dol / corporate use cases if needed
 - improve consultation payload structure without exposing pricing
 
-10. Final design pass
+11. Final design pass
 - booking success screen polish
 - select design alignment with booking
 - spacing / typography consistency review
 - mobile safe-area and in-app browser polish
 
-11. Ops checklist refresh
+12. Ops checklist refresh
 - deployment notes
 - known caveats
 - regression checklist
 - admin dirty-file warning
 
-12. Optional finance expansion
+13. Optional finance expansion
 - decide whether instant card sales also create Lexware documents
 - if needed, add SumUp or bank CSV import path
 - otherwise keep those flows as local-ledger + summary export only
 
 ## Done Recently
 
+- Admin booking E2E diagnostics added to Apps Script HEAD
+  - checks booking API, booking frontend, product loading, return-discount rules, booking sheet headers, Google Calendar access, mail quota, and recent booking log linkage
+  - optional calendar write/delete probe and admin-only test mail probe are available from the dashboard
+  - production deployment is pending Project History version cleanup
+- Select retouch count persistence fixed in Apps Script HEAD
+  - resend now preserves edited base retouch count and marketing bonus count instead of recalculating product defaults
+  - Admin select table edit action now updates both base count and marketing bonus count
+  - production deployment is pending Project History version cleanup
+- Booking mobile and calendar polish completed
+  - tightened mobile footer spacing, month header sizing, and loading card hierarchy
+  - selecting a time now stays inside the date/time step without pushing the user into another section
+  - production mobile check passed at 390px width
+- reshoot discount rule corrected
+  - current passport / visa bookings cannot receive the discount
+  - passport / visa bookings can be used as the source booking when the new booking is profile, studio, outdoor, wedding, or event
+  - booking page, admin labels, quote API, submit API, and audit / repair tools use the same exclusion rule
+- Gutschein V1 tax-safe ledger fields completed
+  - added `발행시점세율`, `세무판단근거`, `실제사용상품ID`, `실제사용상품명`, `실제사용일시`
+  - Admin Gutschein tab now has `세무필드 보정` for existing rows
+  - redeem flow records actual booking product into the Gutschein ledger
+  - PDF notes now display Einzweck / Mehrzweck Gutschein tax timing wording
+- reshoot discount audit / repair added to Admin settings
+  - audit uses booking submission time, so same-day reshoot bookings can still be found after midnight
+  - passport / visa bookings are excluded only as target bookings; they can be source bookings
+  - verified source booking is shown before applying
+  - repair updates booking total, balance, discount flag, memo, and calendar memo
+- select gallery loading stabilized for large Drive folders
+  - Apps Script API now caps/list-times Drive photos and returns retry-safe responses
+  - v2 select page now has gallery timeout, retry UI, partial-load notice, cache-busted script, and CSP-safe image handlers
+  - production preview verified at `select.studio-mean.com/v2/?preview=1` with 161 photos
+- booking confirmation email now attaches a customer calendar `.ics` file with schedule, location, total, deposit, balance, payment notes, map link, and request memo
+- select link marketing bonus quantity can be adjusted per booking, with MyRealTrip defaulting to 5 bonus retouches
+- Business / Event customer UI cleanup
+  - removed customer-facing hour-price wording from the booking detail panel
+  - event quote cards now show consultation/schedule-review wording instead of duration as a price anchor
+  - success guide wording now points to email quote review instead of direct price exposure
 - booking/select split to Netlify
 - booking wizard flow rebuilt
 - month/day slot split
@@ -92,5 +127,6 @@ Updated: 2026-04-13 Europe/Berlin
 - booking/select success screens rebuilt
 - Lexware API key integration
 - Lexware settings / connection test / invoice send / payment sync
+- Lexware invoice preflight guard and manual-by-default sending
 - accounting summaries, DATEV/summary CSV, German export labels
 - Lexware import diagnostics confirming `contacts exist but invoices/vouchers are currently 0`

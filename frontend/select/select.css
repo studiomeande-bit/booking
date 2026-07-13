@@ -135,6 +135,35 @@ h1 {
   line-height: 1.7;
   white-space: pre-wrap;
 }
+.included-print-callout {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: #ede6da;
+  color: #4d3f33;
+  border: 1px solid rgba(181, 76, 45, .18);
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.included-print-callout strong {
+  color: #2f2924;
+  font-size: 15px;
+}
+.included-print-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e8ded0;
+  color: #6f4b2d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
 .drive-btn {
   display: block;
   margin-top: 16px;
@@ -166,6 +195,43 @@ h1 {
   border-color: #2f2924;
   box-shadow: inset 0 0 0 1px #2f2924;
 }
+.detail-box.photocard-select-box {
+  border-color: #ead8c2;
+  background: #fffaf2;
+}
+.photocard-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.photocard-mode-card {
+  align-items: flex-start;
+}
+.photocard-mode-card span {
+  display: grid;
+  gap: 4px;
+}
+.photocard-mode-card small {
+  color: #827467;
+  line-height: 1.45;
+}
+.photocard-fields {
+  margin-top: 14px;
+}
+.photocard-select-box input,
+.photocard-select-box textarea {
+  width: 100%;
+  border: 1px solid #d9cfbf;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font: inherit;
+  background: #fff;
+}
+.photocard-select-box textarea {
+  min-height: 84px;
+  resize: vertical;
+}
 .delivery-choice-box {
   display: grid;
   gap: 14px;
@@ -182,6 +248,7 @@ h1 {
   font-weight: 600;
   color: #65584c;
 }
+#mailNameInput,
 #mailAddressInput {
   width: 100%;
   margin-top: 8px;
@@ -190,6 +257,8 @@ h1 {
   padding: 12px 14px;
   font: inherit;
   background: #fff;
+}
+#mailAddressInput {
   resize: vertical;
   min-height: 110px;
 }
@@ -507,6 +576,7 @@ h1 {
   .brand-logo { width: min(260px, 72vw); }
   .entry-grid { grid-template-columns: 1fr; }
   .radio-grid { grid-template-columns: 1fr; }
+  .photocard-mode-grid { grid-template-columns: 1fr; }
   .pickup-calendar-toolbar {
     flex-wrap: wrap;
   }

@@ -6,20 +6,22 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <title>Studio mean - Family Month Promotion</title>
+  <title>Studio mean - Schultüte Portrait Event 2026</title>
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
   <base href="/promo/">
-  <link rel="preload" href="./promo.min.css?v=20260426-recommendslots1" as="style">
+  <link rel="preload" href="./promo.min.css?v=20260623-schultuete2" as="style">
   <link rel="icon" href="../studio-mean-logo.png" type="image/png">
-  <meta name="description" content="Studio mean Family Month promotion booking page in Oberursel.">
-  <meta property="og:title" content="Studio mean Family Month Promotion">
-  <meta property="og:description" content="Book the Studio mean Family Month promotion">
+  <meta name="description" content="Studio mean Schultüte Portrait Event 2026 booking page in Oberursel / Frankfurt.">
+  <meta property="og:title" content="Studio mean Schultüte Portrait Event 2026">
+  <meta property="og:description" content="Book the Schultüte Portrait Event 2026 at Studio mean">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./promo.min.css?v=20260426-recommendslots1">
+  <link rel="stylesheet" href="./promo.min.css?v=20260623-schultuete2">
+  <script src="/site-analytics.js?v=20260430-consent6"></script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
@@ -35,9 +37,9 @@
       <div class="hero-top">
         <img class="header-logo" src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean logo" width="160" height="48">
       </div>
-      <div id="heroEyebrow" class="eyebrow">2026 Family Month Promotion</div>
-      <h1 id="heroTitle">가정의 달 이벤트 예약</h1>
-      <p id="heroLead" class="hero-lead">아이와 가족의 지금을 오래 남는 사진으로 기록해 보세요.</p>
+      <div id="heroEyebrow" class="eyebrow">Studio mean Schultüte Portrait Event 2026</div>
+      <h1 id="heroTitle">Schultüte Portrait Event 2026</h1>
+      <p id="heroLead" class="hero-lead">첫 등교의 설렘을 자연스럽고 따뜻하게 기록합니다.</p>
       <div id="statusBanner" class="status-banner">프로모션 예약 페이지를 준비하고 있습니다.</div>
       <div class="lang-panel" aria-label="Language selection">
         <div class="lang-row">
@@ -58,7 +60,7 @@
         <div class="intro-grid">
           <div class="intro-card">
             <div id="periodLabel" class="meta-label">진행 기간</div>
-            <div id="periodValue" class="meta-value">2026.04.20 - 2026.05.10</div>
+            <div id="periodValue" class="meta-value">현재 예약 가능 - 2026.08.15까지</div>
           </div>
           <div class="intro-card">
             <div id="limitLabel" class="meta-label">모집 안내</div>
@@ -102,19 +104,38 @@
           <label class="inline-field">
             <span id="peopleLabel">인원수</span>
             <select id="peopleSelect"></select>
-            <input id="peopleCustom" class="hidden" type="number" min="6" step="1" placeholder="6명 이상 직접입력">
+            <input id="peopleCustom" class="hidden" type="number" min="5" step="1" placeholder="5명 이상 직접입력">
+        </label>
+          <label id="childNameField" class="inline-field">
+            <span id="childNameLabel">입학 예정 아이 이름</span>
+            <input id="childNameInput" type="text" placeholder="예: Mina">
           </label>
-          <label id="childAgeField" class="inline-field hidden">
-            <span id="childAgeLabel">아이 나이</span>
-            <input id="childAgeInput" type="text" placeholder="예: 4세">
+          <label id="schoolChildCountField" class="inline-field">
+            <span id="schoolChildCountLabel">입학 예정 아이 수</span>
+            <select id="schoolChildCountSelect"></select>
           </label>
-          <label id="familyInfoField" class="inline-field hidden">
+          <label id="siblingOptionField" class="inline-field">
+            <span id="siblingOptionLabel">형제/자매 촬영 여부</span>
+            <select id="siblingOptionSelect"></select>
+          </label>
+          <label id="familyIncludedField" class="inline-field">
+            <span id="familyIncludedLabel">가족 촬영 포함 여부</span>
+            <select id="familyIncludedSelect"></select>
+          </label>
+          <label id="propsField" class="inline-field">
+            <span id="propsLabel">Schultüte 또는 Schulranzen 지참 가능 여부</span>
+            <select id="propsSelect"></select>
+          </label>
+          <label id="extraRetouchField" class="inline-field">
+            <span id="extraRetouchLabel">추가 보정본</span>
+            <select id="extraRetouchSelect"></select>
+          </label>
+          <label id="familyInfoField" class="inline-field">
             <span id="familyInfoLabel">가족 구성</span>
             <input id="familyInfoInput" type="text" placeholder="예: 부모 + 아이 2명">
           </label>
         </div>
         <div id="priceCard" class="price-card"></div>
-        <div id="photocardBox" class="detail-card photocard-box hidden"></div>
         <div class="wizard-nav">
           <div class="wizard-progress">2 / 4</div>
           <div id="step2Warning" class="step-warning"></div>
@@ -185,7 +206,7 @@
           </label>
           <div class="consent-box">
             <div id="consentTitle" class="consent-title">이용 동의</div>
-            <p id="consentLead" class="consent-copy">개인정보 수집 및 이용 동의가 필요합니다.</p>
+            <p id="consentLead" class="consent-copy">개인정보 처리, 예약 조건 및 AI 보정 안내 동의가 필요합니다.</p>
             <div class="consent-group consent-group-required">
               <div id="requiredConsentLabel" class="consent-group-label">필수 동의</div>
               <label id="selectAllRow" class="checkbox-row consent-row consent-row-highlight">
@@ -269,6 +290,6 @@
     </div>
   </footer>
 
-  <script src="./promo.min.js?v=20260426-recommendslots1"></script>
+  <script src="./promo.min.js?v=20260623-schultuete2"></script>
 </body>
 </html>

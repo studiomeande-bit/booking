@@ -5,12 +5,31 @@ const LANG_STORAGE_KEY = 'studio-mean-lang';
 const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
 
 function readStoredLang() {
+  const urlLang = readUrlLang();
+  if (urlLang) {
+    persistLang(urlLang);
+    return urlLang;
+  }
   try {
     const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
     return SUPPORTED_LANGS.has(saved) ? saved : 'ko';
   } catch {
     return 'ko';
   }
+}
+
+function readUrlLang() {
+  try {
+    const params = new URLSearchParams(globalThis.location?.search || '');
+    return normalizeLang(params.get('lang') || params.get('language') || params.get('locale'));
+  } catch {
+    return '';
+  }
+}
+
+function normalizeLang(value) {
+  const lang = String(value || '').trim().toLowerCase().slice(0, 2);
+  return SUPPORTED_LANGS.has(lang) ? lang : '';
 }
 
 function persistLang(lang) {
@@ -23,6 +42,16 @@ function persistLang(lang) {
 
 const PROMO_END_LIMIT = '2026-12-31';
 const QUOTE_REFRESH_DEBOUNCE_MS = 180;
+const SCHULTUETE_IDS = {
+  mini: 'promo_schultuete_mini_2026',
+  classic: 'promo_schultuete_classic_2026',
+  family: 'promo_schultuete_family_2026'
+};
+const SCHULTUETE_BASE_PRICES = {
+  [SCHULTUETE_IDS.mini]: 69,
+  [SCHULTUETE_IDS.classic]: 119,
+  [SCHULTUETE_IDS.family]: 159
+};
 
 function trimPromoDate(dateStr) {
   return String(dateStr || '').trim().slice(0, 10);
@@ -36,21 +65,27 @@ const COPY = {
     statusClosed: '현재 프로모션 예약이 비활성화되어 있습니다.',
     closedTitle: '프로모션 예약이 현재 비활성화되어 있습니다.',
     closedBody: '운영 공지 후 다시 열릴 예정입니다.',
-    eyebrow: '2026 Family Month Promotion',
-    heroTitle: '가정의 달 이벤트 예약',
-    heroLead: '아이와 가족의 지금을 오래 남는 사진으로 기록해 보세요.',
+    eyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    heroTitle: 'Schultüte Portrait Event 2026',
+    heroLead: '첫 등교의 설렘을 자연스럽고 따뜻하게 기록합니다. Schultüte 또는 Schulranzen과 함께 아이의 지금 표정과 가족의 분위기를 따뜻하게 남겨드립니다.',
     periodLabel: '진행 기간',
-    limitLabel: '모집 안내',
-    limitValue: '각 이벤트 선착순 5팀',
-    step1Title: '1. 이벤트 선택',
-    step1Lead: '예약할 이벤트를 선택해 주세요.',
+    limitLabel: '예약 안내',
+    limitValue: '선착순 일정 마감',
+    step1Title: '1. 패키지 선택',
+    step1Lead: '희망 패키지를 선택해 주세요.',
     step2Title: '2. 촬영 구성',
-    step2Lead: '인원만 선택해 주세요.',
+    step2Lead: '입학 예정 아이와 가족 촬영 정보를 입력해 주세요.',
     step3Title: '3. 날짜 및 시간 선택',
     step4Title: '4. 예약 정보',
     step4Lead: '예약자 정보를 입력하고 신청을 완료해 주세요.',
-    peopleLabel: '인원수',
-    childAgeLabel: '아이 나이 (만 3세-13세)',
+    peopleLabel: '촬영 인원',
+    childNameLabel: '입학 예정 아이 이름',
+    schoolChildCountLabel: '입학 예정 아이 수',
+    siblingOptionLabel: '형제/자매 촬영 여부',
+    familyIncludedLabel: '가족 촬영 포함 여부',
+    propsLabel: 'Schultüte 또는 Schulranzen 지참 가능 여부',
+    extraRetouchLabel: '추가 보정본',
+    childAgeLabel: '아이 나이',
     familyInfoLabel: '가족 구성',
     photocardTitle: '포토카드 사진 선택',
     photocardLead: '기본 포토카드는 양면입니다. 앞면과 뒷면에 들어갈 사진 방향을 선택해 주세요.',
@@ -75,8 +110,8 @@ const COPY = {
     requiredConsentLabel: '필수 동의',
     optionalConsentLabel: '선택 동의',
     selectAllLabel: '필수 항목 전체 선택',
-    selectAllSub: '개인정보 및 AI 필수 항목을 한 번에 체크합니다.',
-    gdprLabel: '[필수] 개인정보 수집 및 이용에 동의합니다.',
+    selectAllSub: '개인정보, 예약 조건 및 AI 필수 항목을 한 번에 체크합니다.',
+    gdprLabel: '[필수] 개인정보 수집 및 예약 조건에 동의합니다.',
     gdprSub: '서비스 예약 확인 및 촬영물 전달을 위한 최소한의 정보 처리에 동의합니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
     aiSub: '촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.',
@@ -87,7 +122,7 @@ const COPY = {
     submit: '예약 신청',
     submitBusy: '제출 중...',
     restart: '새 예약 시작',
-    periodValue(start, end) { return `${trimPromoDate(start).replaceAll('-', '.')} - ${trimPromoDate(end).replaceAll('-', '.')}`; },
+    periodValue(start, end) { return `현재 예약 가능 - ${trimPromoDate(end).replaceAll('-', '.')}까지`; },
     packageSummary: '포함 구성',
     dateHint: '예약 가능한 날짜와 시간을 선택해 주세요.',
     loadingCalendar: '달력을 불러오는 중입니다.',
@@ -95,7 +130,8 @@ const COPY = {
     slotTitle: '예약 가능 시간',
     slotEmpty: '날짜를 선택하면 예약 가능한 시간이 표시됩니다.',
     slotNone: '예약 가능한 시간이 없습니다.',
-    step1Warning: '이벤트를 선택해 주세요.',
+    step1Warning: '희망 패키지를 선택해 주세요.',
+    childNameRequired: '입학 예정 아이 이름을 입력해 주세요.',
     childAgeRequired: '아이 나이를 입력해 주세요.',
     familyInfoRequired: '가족 구성을 입력해 주세요.',
     step3WarningDate: '날짜를 먼저 선택해 주세요.',
@@ -104,7 +140,7 @@ const COPY = {
     invalidEmail: '이메일 형식을 확인해 주세요.',
     successTitle: '예약 신청이 접수되었습니다.',
     successLead: '확인 메일을 보내드렸습니다. 순차적으로 안내드릴게요.',
-    successGuide: '프로모션 기간과 선착순 마감 여부를 확인한 뒤 개별 안내드립니다.',
+    successGuide: '예약 가능 여부와 요청 옵션을 확인한 뒤 개별 안내드립니다.',
     bookingTime: '예약 일시',
     packageName: '상품',
     price: '예상 금액',
@@ -113,23 +149,51 @@ const COPY = {
     calendarFullShort: '마감',
     calendarClosedShort: '휴무',
     calendarHintProduct(name) { return `${name} · 예약 가능한 날짜와 시간을 선택해 주세요.`; },
-    peopleCustomPlaceholder: '6명 이상 직접입력',
-    childAgePlaceholder: '예: 만 4세',
+    peopleCustomPlaceholder: '5명 이상 직접입력',
+    childNamePlaceholder: '예: Mina',
+    childAgePlaceholder: '예: 6세',
     familyInfoPlaceholder: '예: 부모 + 아이 2명',
+    schoolChildCountOptions: [
+      ['1', '1명'],
+      ['2', '2명 (+40€, 보정본 2장 추가 포함)']
+    ],
+    siblingOptions: [
+      ['none', '없음'],
+      ['together', '형제/자매 함께 촬영 (+20€)'],
+      ['solo', '형제/자매 단독 컷 추가 (+30€)'],
+      ['both', '함께 촬영 + 단독 컷 추가 (+50€)']
+    ],
+    familyIncludedOptions: [
+      ['yes', '포함'],
+      ['no', '미포함'],
+      ['consult', '상담 후 결정']
+    ],
+    propsOptions: [
+      ['yes', '지참 가능'],
+      ['no', '지참 어려움'],
+      ['unsure', '아직 미정']
+    ],
+    extraRetouchOption(count) { return count ? `${count}장 (+${count * 15}€)` : '없음'; },
     memoPlaceholder: '전달할 요청사항이 있다면 적어 주세요.',
     addressPlaceholder: '인보이스가 필요한 경우만 입력해 주세요',
     groups: {
-      promo_kids_2026: {
-        badge: 'Kids Profile Event',
-        title: '키즈 프로필 이벤트',
-        desc: ['30분 촬영', '보정본 2장', '배경 1컬러 / 의상 1벌', '프리미엄 인화 10x15cm 인원수만큼', '양면 포토카드 추가 증정'],
-        note: '키즈 프로필 이벤트는 만 3세부터 만 13세까지 예약 가능합니다.'
+      promo_schultuete_mini_2026: {
+        badge: 'Mini · 69€',
+        title: 'Mini',
+        desc: ['입학 예정 아이 1명 단독', '촬영 20분', '보정본 2장', 'Schultüte 또는 Schulranzen 지참 추천'],
+        note: '아이 단독으로 짧고 자연스럽게 남기는 패키지입니다.'
       },
-      promo_family_2026: {
-        badge: 'Family Photo Event',
-        title: '가족사진 이벤트',
-        desc: ['30분 촬영', '보정본 3장', '배경 1컬러 / 의상 1벌', '프리미엄 인화 A4 1장 + 10x15cm 2장', '양면 포토카드 2장 포함'],
-        note: '5인 이상은 1인 추가당 +20€가 적용되며, 인원 추가 시 10x15cm 인화 1장이 함께 추가됩니다.'
+      promo_schultuete_classic_2026: {
+        badge: 'Classic · 119€ · 추천',
+        title: 'Classic',
+        desc: ['입학 예정 아이 1명 + 가족 짧은 컷', '촬영 30분', '보정본 4장', '가장 추천드리는 기본 패키지'],
+        note: '아이 단독 컷과 가족 짧은 컷을 함께 남깁니다.'
+      },
+      promo_schultuete_family_2026: {
+        badge: 'Family · 159€',
+        title: 'Family',
+        desc: ['가족 최대 4인', '촬영 40분', '보정본 5장', '5인 이상은 1인 추가당 +20€'],
+        note: '가족 분위기까지 충분히 남기고 싶은 분께 추천드립니다.'
       }
     }
   },
@@ -140,21 +204,27 @@ const COPY = {
     statusClosed: 'Promotion booking is currently disabled.',
     closedTitle: 'Promotion booking is currently disabled.',
     closedBody: 'It will reopen after the next studio notice.',
-    eyebrow: '2026 Family Month Promotion',
-    heroTitle: 'Family Month Promotion Booking',
-    heroLead: 'Capture your child and family as they are now with images that stay with you.',
+    eyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    heroTitle: 'Schultüte Portrait Event 2026',
+    heroLead: 'Natural and warm portraits for children starting school, with their Schultüte or Schulranzen and the feeling of this family season.',
     periodLabel: 'Promotion Period',
-    limitLabel: 'Availability',
-    limitValue: 'Limited to 5 teams per event',
-    step1Title: '1. Choose your event',
-    step1Lead: 'Select the event you want to book.',
+    limitLabel: 'Booking note',
+    limitValue: 'Limited slots, first come first served',
+    step1Title: '1. Choose your package',
+    step1Lead: 'Select the package you would like to book.',
     step2Title: '2. Session details',
-    step2Lead: 'Choose the number of people.',
+    step2Lead: 'Share the school starter and family photo details.',
     step3Title: '3. Select date and time',
     step4Title: '4. Booking details',
     step4Lead: 'Enter your contact details and submit the request.',
-    peopleLabel: 'Number of people',
-    childAgeLabel: 'Child age (3-13 years)',
+    peopleLabel: 'People in the shoot',
+    childNameLabel: 'School starter child name',
+    schoolChildCountLabel: 'Number of school starter children',
+    siblingOptionLabel: 'Sibling photo option',
+    familyIncludedLabel: 'Family photos included',
+    propsLabel: 'Can you bring a Schultüte or Schulranzen?',
+    extraRetouchLabel: 'Extra retouched photos',
+    childAgeLabel: 'Child age',
     familyInfoLabel: 'Family members',
     photocardTitle: 'Photocard image option',
     photocardLead: 'The included photocard is double-sided. Choose how the front and back images should be prepared.',
@@ -179,8 +249,8 @@ const COPY = {
     requiredConsentLabel: 'Required',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Select all required items',
-    selectAllSub: 'Checks the personal data and AI consent items together.',
-    gdprLabel: '[Required] I agree to the collection and use of personal data.',
+    selectAllSub: 'Checks the personal data, booking terms, and AI consent items together.',
+    gdprLabel: '[Required] I agree to personal data processing and the booking terms.',
     gdprSub: 'I agree to the minimum data processing needed to confirm the booking and deliver the final images.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
     aiSub: 'AI-based tools may be used as supportive tools during retouching and production of the final images.',
@@ -191,7 +261,7 @@ const COPY = {
     submit: 'Submit booking',
     submitBusy: 'Submitting...',
     restart: 'Start another booking',
-    periodValue(start, end) { return `${trimPromoDate(start)} - ${trimPromoDate(end)}`; },
+    periodValue(start, end) { return `Bookable now - ${trimPromoDate(end)}`; },
     packageSummary: 'What is included',
     dateHint: 'Choose an available date and time.',
     loadingCalendar: 'Loading calendar...',
@@ -199,7 +269,8 @@ const COPY = {
     slotTitle: 'Available times',
     slotEmpty: 'Select a date to view available times.',
     slotNone: 'No available time for this date.',
-    step1Warning: 'Please choose an event first.',
+    step1Warning: 'Please choose a package first.',
+    childNameRequired: 'Please enter the school starter child name.',
     childAgeRequired: 'Please enter the child age.',
     familyInfoRequired: 'Please enter the family members.',
     step3WarningDate: 'Please choose a date first.',
@@ -208,7 +279,7 @@ const COPY = {
     invalidEmail: 'Please check the email format.',
     successTitle: 'Your booking request has been received.',
     successLead: 'We have sent a confirmation email and will follow up shortly.',
-    successGuide: 'We will confirm availability within the promotion period and the first-come-first-served limit.',
+    successGuide: 'We will review the selected date, package and options, then follow up personally.',
     bookingTime: 'Booking time',
     packageName: 'Package',
     price: 'Estimated price',
@@ -217,23 +288,51 @@ const COPY = {
     calendarFullShort: 'Full',
     calendarClosedShort: 'Closed',
     calendarHintProduct(name) { return `${name} · Choose an available date and time.`; },
-    peopleCustomPlaceholder: '6+ custom input',
-    childAgePlaceholder: 'e.g. 4 years old',
+    peopleCustomPlaceholder: '5+ custom input',
+    childNamePlaceholder: 'e.g. Mina',
+    childAgePlaceholder: 'e.g. 6 years old',
     familyInfoPlaceholder: 'e.g. parents + 2 children',
+    schoolChildCountOptions: [
+      ['1', '1 child'],
+      ['2', '2 children (+40€, includes 2 extra retouched photos)']
+    ],
+    siblingOptions: [
+      ['none', 'No sibling photos'],
+      ['together', 'Sibling together photos (+20€)'],
+      ['solo', 'Extra sibling solo portraits (+30€)'],
+      ['both', 'Together + solo sibling portraits (+50€)']
+    ],
+    familyIncludedOptions: [
+      ['yes', 'Included'],
+      ['no', 'Not included'],
+      ['consult', 'Decide after consultation']
+    ],
+    propsOptions: [
+      ['yes', 'Yes, we can bring one'],
+      ['no', 'No, we cannot bring one'],
+      ['unsure', 'Not sure yet']
+    ],
+    extraRetouchOption(count) { return count ? `${count} photo${count > 1 ? 's' : ''} (+${count * 15}€)` : 'None'; },
     memoPlaceholder: 'Share any requests or notes for the shoot.',
     addressPlaceholder: 'Enter only if you need an invoice',
     groups: {
-      promo_kids_2026: {
-        badge: 'Kids Profile Event',
-        title: 'Kids Profile Event',
-        desc: ['30 min session', '2 retouched photos', '1 background / 1 outfit', 'Premium 10x15cm print per person', 'Extra double-sided photocard included'],
-        note: 'The kids profile event is available for children aged 3 to 13.'
+      promo_schultuete_mini_2026: {
+        badge: 'Mini · 69€',
+        title: 'Mini',
+        desc: ['One school starter child only', '20 min session', '2 retouched photos', 'Schultüte or Schulranzen recommended'],
+        note: 'A short and natural portrait session for the child alone.'
       },
-      promo_family_2026: {
-        badge: 'Family Photo Event',
-        title: 'Family Photo Event',
-        desc: ['30 min session', '3 retouched photos', '1 background / 1 outfit', 'Premium A4 print + 2x 10x15cm prints', '2 double-sided photocards included'],
-        note: 'For 5 or more people, +20€ applies per added person and one extra 10x15cm print is included.'
+      promo_schultuete_classic_2026: {
+        badge: 'Classic · 119€ · Recommended',
+        title: 'Classic',
+        desc: ['One school starter child + short family portraits', '30 min session', '4 retouched photos', 'Recommended package'],
+        note: 'Includes child portraits plus a short family portrait moment.'
+      },
+      promo_schultuete_family_2026: {
+        badge: 'Family · 159€',
+        title: 'Family',
+        desc: ['Family up to 4 people', '40 min session', '5 retouched photos', 'For 5+ people, +20€ per extra person'],
+        note: 'Best if you want to include the family atmosphere more fully.'
       }
     }
   },
@@ -244,21 +343,27 @@ const COPY = {
     statusClosed: 'Die Aktionsbuchung ist derzeit deaktiviert.',
     closedTitle: 'Die Aktionsbuchung ist derzeit deaktiviert.',
     closedBody: 'Sie wird nach der nächsten Studio-Mitteilung wieder geöffnet.',
-    eyebrow: '2026 Familienmonat Aktion',
-    heroTitle: 'Familienmonat Aktionsbuchung',
-    heroLead: 'Halten Sie den jetzigen Moment Ihres Kindes und Ihrer Familie mit Bildern fest, die bleiben.',
+    eyebrow: 'Studio mean Schultüte Portrait Event 2026',
+    heroTitle: 'Schultüten-Portraits zur Einschulung 2026',
+    heroLead: 'Natürliche und warme Erinnerungen an den ersten Schultag mit Schultüte oder Schulranzen.',
     periodLabel: 'Aktionszeitraum',
-    limitLabel: 'Verfügbarkeit',
-    limitValue: 'Jeweils 5 Teams pro Event',
-    step1Title: '1. Event wählen',
-    step1Lead: 'Wählen Sie das gewünschte Event aus.',
+    limitLabel: 'Buchungshinweis',
+    limitValue: 'Begrenzte Termine, nach Eingang',
+    step1Title: '1. Paket wählen',
+    step1Lead: 'Wählen Sie das gewünschte Paket aus.',
     step2Title: '2. Shooting-Konfiguration',
-    step2Lead: 'Wählen Sie nur die Personenzahl aus.',
+    step2Lead: 'Bitte Angaben zum Einschulungskind und zur Familienaufnahme eintragen.',
     step3Title: '3. Datum und Uhrzeit wählen',
     step4Title: '4. Buchungsdaten',
     step4Lead: 'Bitte Kontaktdaten eingeben und die Anfrage absenden.',
-    peopleLabel: 'Personenzahl',
-    childAgeLabel: 'Alter des Kindes (3-13 Jahre)',
+    peopleLabel: 'Personenzahl beim Shooting',
+    childNameLabel: 'Name des Einschulungskindes',
+    schoolChildCountLabel: 'Anzahl der Einschulungskinder',
+    siblingOptionLabel: 'Geschwisterfotos',
+    familyIncludedLabel: 'Familienfotos enthalten',
+    propsLabel: 'Schultüte oder Schulranzen vorhanden?',
+    extraRetouchLabel: 'Zusätzliche bearbeitete Bilder',
+    childAgeLabel: 'Alter des Kindes',
     familyInfoLabel: 'Familienkonstellation',
     photocardTitle: 'Fotokarten-Bildauswahl',
     photocardLead: 'Die enthaltene Fotokarte ist doppelseitig. Bitte wählen Sie, wie Vorder- und Rückseite vorbereitet werden sollen.',
@@ -283,8 +388,8 @@ const COPY = {
     requiredConsentLabel: 'Pflicht',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Alle Pflichtangaben auswählen',
-    selectAllSub: 'Bestätigt Datenschutz und KI-Hinweis zusammen.',
-    gdprLabel: '[Pflicht] Ich stimme der Erhebung und Nutzung personenbezogener Daten zu.',
+    selectAllSub: 'Bestätigt Datenschutz, Buchungsbedingungen und KI-Hinweis zusammen.',
+    gdprLabel: '[Pflicht] Ich stimme der Datenverarbeitung und den Buchungsbedingungen zu.',
     gdprSub: 'Ich stimme der minimalen Datenverarbeitung zu, die für Buchungsbestätigung und Bildübergabe erforderlich ist.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-gestützten Retusche und Verarbeitung zu.',
     aiSub: 'KI-basierte Tools können unterstützend bei Retusche und Erstellung der Ergebnisse eingesetzt werden.',
@@ -295,7 +400,7 @@ const COPY = {
     submit: 'Buchung senden',
     submitBusy: 'Wird gesendet...',
     restart: 'Neue Buchung starten',
-    periodValue(start, end) { return `${trimPromoDate(start).split('-').reverse().join('.')} - ${trimPromoDate(end).split('-').reverse().join('.')}`; },
+    periodValue(start, end) { return `Buchbar bis ${trimPromoDate(end).split('-').reverse().join('.')}`; },
     packageSummary: 'Leistungsumfang',
     dateHint: 'Wählen Sie ein verfügbares Datum und eine Uhrzeit.',
     loadingCalendar: 'Kalender wird geladen...',
@@ -303,7 +408,8 @@ const COPY = {
     slotTitle: 'Verfügbare Zeiten',
     slotEmpty: 'Bitte wählen Sie ein Datum, um verfügbare Zeiten zu sehen.',
     slotNone: 'Für dieses Datum ist keine Uhrzeit verfügbar.',
-    step1Warning: 'Bitte wählen Sie zuerst ein Event.',
+    step1Warning: 'Bitte wählen Sie zuerst ein Paket.',
+    childNameRequired: 'Bitte geben Sie den Namen des Einschulungskindes ein.',
     childAgeRequired: 'Bitte geben Sie das Alter des Kindes ein.',
     familyInfoRequired: 'Bitte geben Sie die Familienkonstellation ein.',
     step3WarningDate: 'Bitte wählen Sie zuerst ein Datum.',
@@ -312,7 +418,7 @@ const COPY = {
     invalidEmail: 'Bitte prüfen Sie das E-Mail-Format.',
     successTitle: 'Ihre Buchungsanfrage wurde empfangen.',
     successLead: 'Wir haben eine Bestätigungsmail gesendet und melden uns zeitnah.',
-    successGuide: 'Wir prüfen die Verfügbarkeit innerhalb des Aktionszeitraums und der begrenzten Plätze.',
+    successGuide: 'Wir prüfen Termin, Paket und Optionen und melden uns persönlich zurück.',
     bookingTime: 'Buchungszeit',
     packageName: 'Paket',
     price: 'Voraussichtlicher Preis',
@@ -321,23 +427,51 @@ const COPY = {
     calendarFullShort: 'Voll',
     calendarClosedShort: 'Ruhe',
     calendarHintProduct(name) { return `${name} · Wählen Sie ein verfügbares Datum und eine Uhrzeit.`; },
-    peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
-    childAgePlaceholder: 'z. B. 4 Jahre',
+    peopleCustomPlaceholder: 'Ab 5 Personen direkt eingeben',
+    childNamePlaceholder: 'z. B. Mina',
+    childAgePlaceholder: 'z. B. 6 Jahre',
     familyInfoPlaceholder: 'z. B. Eltern + 2 Kinder',
+    schoolChildCountOptions: [
+      ['1', '1 Kind'],
+      ['2', '2 Kinder (+40€, inkl. 2 zusätzliche bearbeitete Bilder)']
+    ],
+    siblingOptions: [
+      ['none', 'Keine Geschwisterfotos'],
+      ['together', 'Geschwister gemeinsam (+20€)'],
+      ['solo', 'Zusätzliche Geschwister-Einzelbilder (+30€)'],
+      ['both', 'Gemeinsam + Einzelbilder (+50€)']
+    ],
+    familyIncludedOptions: [
+      ['yes', 'Enthalten'],
+      ['no', 'Nicht enthalten'],
+      ['consult', 'Nach Beratung entscheiden']
+    ],
+    propsOptions: [
+      ['yes', 'Ja, wir bringen etwas mit'],
+      ['no', 'Nein, leider nicht'],
+      ['unsure', 'Noch unklar']
+    ],
+    extraRetouchOption(count) { return count ? `${count} Bild${count > 1 ? 'er' : ''} (+${count * 15}€)` : 'Keine'; },
     memoPlaceholder: 'Notieren Sie Wünsche oder Hinweise zum Shooting.',
     addressPlaceholder: 'Nur eingeben, wenn eine Rechnung benötigt wird',
     groups: {
-      promo_kids_2026: {
-        badge: 'Kids Profile Event',
-        title: 'Kinderprofil Aktion',
-        desc: ['30 Min. Shooting', '2 bearbeitete Bilder', '1 Hintergrund / 1 Outfit', 'Premiumabzug 10x15cm pro Person', 'Zusätzliche doppelseitige Fotokarte inklusive'],
-        note: 'Die Kinderprofil-Aktion ist für Kinder von 3 bis 13 Jahren verfügbar.'
+      promo_schultuete_mini_2026: {
+        badge: 'Mini · 69€',
+        title: 'Mini',
+        desc: ['Ein Einschulungskind allein', '20 Min. Shooting', '2 bearbeitete Bilder', 'Schultüte oder Schulranzen empfohlen'],
+        note: 'Kurze und natürliche Portraits nur für das Kind.'
       },
-      promo_family_2026: {
-        badge: 'Family Photo Event',
-        title: 'Familienfoto Aktion',
-        desc: ['30 Min. Shooting', '3 bearbeitete Bilder', '1 Hintergrund / 1 Outfit', 'Premiumabzug A4 + 2x 10x15cm', '2 doppelseitige Fotokarten inklusive'],
-        note: 'Ab 5 Personen werden pro zusätzlicher Person +20€ berechnet, plus ein weiterer 10x15cm Abzug.'
+      promo_schultuete_classic_2026: {
+        badge: 'Classic · 119€ · Empfehlung',
+        title: 'Classic',
+        desc: ['Ein Einschulungskind + kurze Familienbilder', '30 Min. Shooting', '4 bearbeitete Bilder', 'Empfohlenes Paket'],
+        note: 'Enthält Kinderportraits und einen kurzen Familienmoment.'
+      },
+      promo_schultuete_family_2026: {
+        badge: 'Family · 159€',
+        title: 'Family',
+        desc: ['Familie bis 4 Personen', '40 Min. Shooting', '5 bearbeitete Bilder', 'Ab 5 Personen +20€ pro weitere Person'],
+        note: 'Ideal, wenn auch die Familienatmosphäre vollständig festgehalten werden soll.'
       }
     }
   }
@@ -346,14 +480,19 @@ const COPY = {
 const state = {
   lang: readStoredLang(),
   promoEnabled: false,
-  promoStart: '2026-04-20',
-  promoEnd: '2026-05-10',
+  promoStart: '2026-06-23',
+  promoEnd: '2026-08-15',
   promoContent: {},
   products: [],
   selectedProduct: null,
   people: 1,
-  photocardMode: 'retouched',
   customPeople: '',
+  childName: '',
+  schoolChildCount: '1',
+  siblingOption: 'none',
+  familyIncluded: 'yes',
+  propsAvailable: 'yes',
+  extraRetouchCount: '0',
   childAge: '',
   familyInfo: '',
   selectedDate: '',
@@ -382,12 +521,18 @@ const els = {
   detailCard: document.getElementById('detailCard'),
   peopleSelect: document.getElementById('peopleSelect'),
   peopleCustom: document.getElementById('peopleCustom'),
+  childNameField: document.getElementById('childNameField'),
+  childNameInput: document.getElementById('childNameInput'),
+  schoolChildCountSelect: document.getElementById('schoolChildCountSelect'),
+  siblingOptionSelect: document.getElementById('siblingOptionSelect'),
+  familyIncludedSelect: document.getElementById('familyIncludedSelect'),
+  propsSelect: document.getElementById('propsSelect'),
+  extraRetouchSelect: document.getElementById('extraRetouchSelect'),
   childAgeField: document.getElementById('childAgeField'),
   childAgeInput: document.getElementById('childAgeInput'),
   familyInfoField: document.getElementById('familyInfoField'),
   familyInfoInput: document.getElementById('familyInfoInput'),
   priceCard: document.getElementById('priceCard'),
-  photocardBox: document.getElementById('photocardBox'),
   calendarHint: document.getElementById('calendarHint'),
   prevMonthBtn: document.getElementById('prevMonthBtn'),
   nextMonthBtn: document.getElementById('nextMonthBtn'),
@@ -479,13 +624,16 @@ function showStep(step) {
 
 function setProductDefaults() {
   if (!state.selectedProduct) return;
-  if (state.selectedProduct.id === 'promo_kids_2026') {
-    state.people = 1;
-  } else {
-    state.people = 2;
-  }
-  state.photocardMode = 'retouched';
+  if (state.selectedProduct.id === SCHULTUETE_IDS.family) state.people = 4;
+  else if (state.selectedProduct.id === SCHULTUETE_IDS.classic) state.people = 3;
+  else state.people = 1;
   state.customPeople = '';
+  state.childName = '';
+  state.schoolChildCount = '1';
+  state.siblingOption = 'none';
+  state.familyIncluded = state.selectedProduct.id === SCHULTUETE_IDS.mini ? 'no' : 'yes';
+  state.propsAvailable = 'yes';
+  state.extraRetouchCount = '0';
   state.childAge = '';
   state.familyInfo = '';
   state.selectedDate = '';
@@ -494,9 +642,39 @@ function setProductDefaults() {
 
 function getPeopleValue() {
   if (String(state.people) === 'custom') {
-    return Math.max(6, Number(state.customPeople || 0) || 0);
+    return Math.max(5, Number(state.customPeople || 0) || 0);
   }
   return Number(state.people || 0) || 0;
+}
+
+function getSelectedOptionLabel(options, value) {
+  const found = (options || []).find(([optionValue]) => String(optionValue) === String(value));
+  return found ? found[1] : '';
+}
+
+function getExtraRetouchCount() {
+  return Math.max(0, Math.min(10, parseInt(state.extraRetouchCount, 10) || 0));
+}
+
+function buildPromoOptionKeys() {
+  const keys = [];
+  if (String(state.schoolChildCount) === '2') keys.push('school_child_2');
+  if (state.siblingOption === 'together' || state.siblingOption === 'both') keys.push('sibling_together');
+  if (state.siblingOption === 'solo' || state.siblingOption === 'both') keys.push('sibling_solo');
+  const extraRetouchCount = getExtraRetouchCount();
+  if (extraRetouchCount) keys.push(`extra_retouch_${extraRetouchCount}`);
+  return keys;
+}
+
+function getPromoExtraPrice() {
+  const people = getPeopleValue();
+  let total = 0;
+  if (String(state.schoolChildCount) === '2') total += 40;
+  if (state.siblingOption === 'together' || state.siblingOption === 'both') total += 20;
+  if (state.siblingOption === 'solo' || state.siblingOption === 'both') total += 30;
+  if (people > 4) total += (people - 4) * 20;
+  total += getExtraRetouchCount() * 15;
+  return total;
 }
 
 function buildQuotePayload() {
@@ -504,8 +682,44 @@ function buildQuotePayload() {
   return {
     itemId: state.selectedProduct.id,
     people: getPeopleValue() || undefined,
+    schoolChildCount: state.schoolChildCount,
+    siblingOption: state.siblingOption,
+    familyIncluded: state.familyIncluded,
+    propsAvailable: state.propsAvailable,
+    extraRetouchCount: getExtraRetouchCount(),
     surveyKeys: [],
-    optionKeys: []
+    optionKeys: buildPromoOptionKeys()
+  };
+}
+
+function selectedProductTitle(c = copy()) {
+  if (!state.selectedProduct) return '';
+  return getProductMeta(state.selectedProduct, c).title;
+}
+
+function getProductDisplayName(product) {
+  if (!product) return '';
+  return product.nameKo || product.nameEn || product.nameDe || product.id || '';
+}
+
+function getProductDescription(product) {
+  if (!product) return [];
+  return [product.descKo || product.descEn || product.descDe || ''].filter(Boolean);
+}
+
+function getProductMeta(product, c = copy()) {
+  const fallbackTitle = getProductDisplayName(product);
+  const sourceMeta = product?.id && c.groups[product.id] && typeof c.groups[product.id] === 'object'
+    ? c.groups[product.id]
+    : {};
+  const desc = Array.isArray(sourceMeta.desc) && sourceMeta.desc.length
+    ? sourceMeta.desc
+    : getProductDescription(product);
+  return {
+    badge: sourceMeta.badge || fallbackTitle,
+    title: sourceMeta.title || fallbackTitle,
+    desc,
+    note: sourceMeta.note || ''
   };
 }
 
@@ -513,15 +727,16 @@ function setLang(lang) {
   if (!SUPPORTED_LANGS.has(lang)) return;
   state.lang = lang;
   persistLang(lang);
+  updateLangQueryParam(lang);
   renderStaticCopy();
   renderProducts();
   renderDetailCard();
   renderPeopleOptions();
   renderPriceCard();
-  renderPhotocardBox();
   updateReview();
   if (state.selectedProduct) {
-    els.calendarHint.textContent = copy().calendarHintProduct(copy().groups[state.selectedProduct.id].title);
+    const c = copy();
+    els.calendarHint.textContent = c.calendarHintProduct(selectedProductTitle(c));
   } else {
     els.calendarHint.textContent = copy().dateHint;
   }
@@ -542,20 +757,23 @@ function setLang(lang) {
   updateStepButtons();
 }
 
+function updateLangQueryParam(lang) {
+  try {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set('lang', lang);
+    globalThis.history?.replaceState(null, '', url.toString());
+  } catch {
+    // Keep language switching functional even if history state is unavailable.
+  }
+}
+
 function getPromoPreviewQuote() {
   if (!state.selectedProduct) return null;
   const people = getPeopleValue();
   if (!people) return null;
-  let totalPrice = null;
-  if (state.selectedProduct.id === 'promo_kids_2026') {
-    totalPrice = people === 1 ? 69 : people === 2 ? 89 : 109;
-  } else if (state.selectedProduct.id === 'promo_family_2026') {
-    if (people <= 2) totalPrice = 129;
-    else if (people === 3) totalPrice = 149;
-    else if (people === 4) totalPrice = 169;
-    else totalPrice = 169 + ((people - 4) * 20);
-  }
-  if (totalPrice === null) return null;
+  const basePrice = SCHULTUETE_BASE_PRICES[state.selectedProduct.id];
+  if (basePrice === undefined) return null;
+  const totalPrice = basePrice + getPromoExtraPrice();
   const duration = Number(state.selectedProduct?.d || 0);
   const prep = Number(state.selectedProduct?.prep || 0);
   return {
@@ -564,7 +782,8 @@ function getPromoPreviewQuote() {
     totalPrice,
     duration,
     prep,
-    totalDuration: duration + prep
+    totalDuration: duration + prep,
+    optionKeys: buildPromoOptionKeys()
   };
 }
 
@@ -631,6 +850,34 @@ function queueQuoteRefresh(delay = 0) {
   }, delay);
 }
 
+function renderOptionSelect(select, options, value) {
+  if (!select) return;
+  select.innerHTML = (options || [])
+    .map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}">${escapeHtml(label)}</option>`)
+    .join('');
+  select.value = String(value);
+}
+
+function renderPromoOptionControls() {
+  const c = copy();
+  renderOptionSelect(els.schoolChildCountSelect, c.schoolChildCountOptions, state.schoolChildCount);
+  renderOptionSelect(els.siblingOptionSelect, c.siblingOptions, state.siblingOption);
+  renderOptionSelect(els.familyIncludedSelect, c.familyIncludedOptions, state.familyIncluded);
+  renderOptionSelect(els.propsSelect, c.propsOptions, state.propsAvailable);
+  if (els.extraRetouchSelect) {
+    els.extraRetouchSelect.innerHTML = Array.from({ length: 6 }, (_, count) => (
+      `<option value="${count}">${escapeHtml(c.extraRetouchOption(count))}</option>`
+    )).join('');
+    els.extraRetouchSelect.value = String(getExtraRetouchCount());
+  }
+}
+
+function syncPromoInputValues() {
+  if (els.childNameInput) els.childNameInput.value = state.childName;
+  if (els.familyInfoInput) els.familyInfoInput.value = state.familyInfo;
+  renderPromoOptionControls();
+}
+
 function renderStaticCopy() {
   const c = copy();
   const setText = (id, value) => {
@@ -655,6 +902,12 @@ function renderStaticCopy() {
   setText('step4Title', c.step4Title);
   setText('step4Lead', c.step4Lead);
   setText('peopleLabel', c.peopleLabel);
+  setText('childNameLabel', c.childNameLabel);
+  setText('schoolChildCountLabel', c.schoolChildCountLabel);
+  setText('siblingOptionLabel', c.siblingOptionLabel);
+  setText('familyIncludedLabel', c.familyIncludedLabel);
+  setText('propsLabel', c.propsLabel);
+  setText('extraRetouchLabel', c.extraRetouchLabel);
   setText('childAgeLabel', c.childAgeLabel);
   setText('familyInfoLabel', c.familyInfoLabel);
   setText('nameLabel', c.nameLabel);
@@ -688,14 +941,16 @@ function renderStaticCopy() {
   els.slotTitle.textContent = c.slotTitle;
   els.slotHint.textContent = state.selectedDate ? `${c.bookingTime}: ${state.selectedDate}` : c.slotEmpty;
   els.calendarHint.textContent = state.selectedProduct
-    ? c.calendarHintProduct(c.groups[state.selectedProduct.id].title)
+    ? c.calendarHintProduct(selectedProductTitle(c))
     : c.dateHint;
   els.calendarGrid.textContent = c.loadingCalendar;
   els.slotGrid.textContent = c.loadingSlots;
   els.form.elements.address.placeholder = c.addressPlaceholder;
   els.form.elements.memo.placeholder = c.memoPlaceholder;
-  els.childAgeInput.placeholder = c.childAgePlaceholder;
+  if (els.childNameInput) els.childNameInput.placeholder = c.childNamePlaceholder;
+  if (els.childAgeInput) els.childAgeInput.placeholder = c.childAgePlaceholder;
   els.familyInfoInput.placeholder = c.familyInfoPlaceholder;
+  renderPromoOptionControls();
   document.getElementById('successTitle').textContent = c.successTitle;
   document.getElementById('successLead').textContent = c.successLead;
   els.successGuide.textContent = c.successGuide;
@@ -706,13 +961,13 @@ function renderStaticCopy() {
 function renderProducts() {
   const c = copy();
   els.productGrid.innerHTML = state.products.map((product) => {
-    const meta = c.groups[product.id];
+    const meta = getProductMeta(product, c);
     const active = state.selectedProduct?.id === product.id ? ' active' : '';
     return `<button type="button" class="product-card${active}" data-product-id="${product.id}">
       <span class="card-badge">${escapeHtml(meta.badge)}</span>
       <strong>${escapeHtml(meta.title)}</strong>
       <ul class="feature-list compact">${meta.desc.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-      <div class="product-note">${escapeHtml(meta.note)}</div>
+      ${meta.note ? `<div class="product-note">${escapeHtml(meta.note)}</div>` : ''}
     </button>`;
   }).join('');
 }
@@ -723,7 +978,7 @@ function renderDetailCard() {
     els.detailCard.innerHTML = '';
     return;
   }
-  const meta = c.groups[state.selectedProduct.id];
+  const meta = getProductMeta(state.selectedProduct, c);
   els.detailCard.innerHTML = `
     <div class="card-badge">${escapeHtml(meta.badge)}</div>
     <h3>${escapeHtml(meta.title)}</h3>
@@ -732,73 +987,44 @@ function renderDetailCard() {
         <div class="meta-label">${escapeHtml(c.packageSummary)}</div>
         <ul class="feature-list">${meta.desc.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       </div>
-      <div class="note-box">
-        <strong>${escapeHtml(meta.badge)}</strong>
-        <p>${escapeHtml(meta.note)}</p>
-      </div>
+      ${meta.note ? `<div class="note-box"><strong>${escapeHtml(meta.badge)}</strong><p>${escapeHtml(meta.note)}</p></div>` : ''}
     </div>`;
 }
 
 function renderPeopleOptions() {
   const c = copy();
-  const base = state.selectedProduct?.id === 'promo_family_2026' ? 2 : 1;
+  const base = 1;
   const options = [];
   for (let i = base; i <= 5; i += 1) {
     let label = `${i}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`;
-    if (state.selectedProduct?.id === 'promo_family_2026' && i > 4) label += ' (+20€)';
+    if (i > 4) label += ' (+20€)';
     options.push(`<option value="${i}">${escapeHtml(label)}</option>`);
   }
-  options.push(`<option value="custom">${escapeHtml(state.lang === 'de' ? '6+ direkt eingeben' : state.lang === 'en' ? '6+ custom input' : '6명 이상 직접입력')}</option>`);
+  options.push(`<option value="custom">${escapeHtml(c.peopleCustomPlaceholder)}</option>`);
   els.peopleSelect.innerHTML = options.join('');
   els.peopleSelect.value = String(state.people);
   els.peopleCustom.classList.toggle('hidden', String(state.people) !== 'custom');
 }
 
 function renderConditionalFields() {
-  els.childAgeField.classList.add('hidden');
-  els.familyInfoField.classList.add('hidden');
+  els.childAgeField?.classList.add('hidden');
 }
 
-function renderPhotocardBox() {
-  if (!els.photocardBox) return;
-  if (!state.selectedProduct) {
-    els.photocardBox.classList.add('hidden');
-    els.photocardBox.innerHTML = '';
-    return;
-  }
-  const c = copy();
-  const retouchedActive = state.photocardMode === 'retouched' ? ' active' : '';
-  const mixedActive = state.photocardMode === 'mixed' ? ' active' : '';
-  const originalActive = state.photocardMode === 'original' ? ' active' : '';
-  els.photocardBox.classList.remove('hidden');
-  els.photocardBox.innerHTML = `
-    <div class="meta-label">${escapeHtml(c.photocardTitle)}</div>
-    <div class="photocard-lead">${escapeHtml(c.photocardLead)}</div>
-    <div class="photocard-note">${escapeHtml(c.photocardNote)}</div>
-    <div class="photocard-grid">
-      <label class="photocard-card${retouchedActive}">
-        <input type="radio" name="photocardMode" value="retouched" ${state.photocardMode === 'retouched' ? 'checked' : ''}>
-        <span class="photocard-copy">
-          <strong>${escapeHtml(c.photocardRetouchedLabel)}</strong>
-          <small>${escapeHtml(c.photocardRetouchedSub)}</small>
-        </span>
-      </label>
-      <label class="photocard-card${mixedActive}">
-        <input type="radio" name="photocardMode" value="mixed" ${state.photocardMode === 'mixed' ? 'checked' : ''}>
-        <span class="photocard-copy">
-          <strong>${escapeHtml(c.photocardMixedLabel)}</strong>
-          <small>${escapeHtml(c.photocardMixedSub)}</small>
-        </span>
-      </label>
-      <label class="photocard-card${originalActive}">
-        <input type="radio" name="photocardMode" value="original" ${state.photocardMode === 'original' ? 'checked' : ''}>
-        <span class="photocard-copy">
-          <strong>${escapeHtml(c.photocardOriginalLabel)}</strong>
-          <small>${escapeHtml(c.photocardOriginalSub)}</small>
-        </span>
-      </label>
-    </div>
-  `;
+function peopleText() {
+  return `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`;
+}
+
+function promoDetailRows(c, includeEmpty = false) {
+  const rows = [
+    [c.childNameLabel, state.childName],
+    [c.schoolChildCountLabel, getSelectedOptionLabel(c.schoolChildCountOptions, state.schoolChildCount)],
+    [c.siblingOptionLabel, getSelectedOptionLabel(c.siblingOptions, state.siblingOption)],
+    [c.familyIncludedLabel, getSelectedOptionLabel(c.familyIncludedOptions, state.familyIncluded)],
+    [c.propsLabel, getSelectedOptionLabel(c.propsOptions, state.propsAvailable)],
+    [c.extraRetouchLabel, c.extraRetouchOption(getExtraRetouchCount())],
+    [c.familyInfoLabel, state.familyInfo]
+  ];
+  return includeEmpty ? rows : rows.filter(([, value]) => String(value || '').trim());
 }
 
 function renderPriceCard() {
@@ -808,8 +1034,17 @@ function renderPriceCard() {
     els.priceCard.innerHTML = '';
     return;
   }
-  const meta = c.groups[state.selectedProduct.id];
-  const peopleText = `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`;
+  const meta = getProductMeta(state.selectedProduct, c);
+  const detailRows = [];
+  if (String(state.schoolChildCount) === '2') {
+    detailRows.push([c.schoolChildCountLabel, getSelectedOptionLabel(c.schoolChildCountOptions, state.schoolChildCount)]);
+  }
+  if (state.siblingOption && state.siblingOption !== 'none') {
+    detailRows.push([c.siblingOptionLabel, getSelectedOptionLabel(c.siblingOptions, state.siblingOption)]);
+  }
+  if (getExtraRetouchCount()) {
+    detailRows.push([c.extraRetouchLabel, c.extraRetouchOption(getExtraRetouchCount())]);
+  }
   els.priceCard.innerHTML = `
     <div class="price-label">${escapeHtml(c.price)}</div>
     <div class="price-main">€${escapeHtml(quote.totalPrice)}</div>
@@ -821,10 +1056,16 @@ function renderPriceCard() {
       </div>
       <div class="price-meta-item">
         <span class="price-meta-label">${escapeHtml(c.peopleLabel)}</span>
-        <strong class="price-meta-value">${escapeHtml(peopleText)}</strong>
+        <strong class="price-meta-value">${escapeHtml(peopleText())}</strong>
       </div>
+      ${detailRows.map(([label, value]) => `
+        <div class="price-meta-item">
+          <span class="price-meta-label">${escapeHtml(label)}</span>
+          <strong class="price-meta-value">${escapeHtml(value)}</strong>
+        </div>
+      `).join('')}
     </div>
-    <div class="price-note">${escapeHtml(meta.note)}</div>
+    ${meta.note ? `<div class="price-note">${escapeHtml(meta.note)}</div>` : ''}
   `;
 }
 
@@ -988,16 +1229,12 @@ function updateReview() {
     els.reviewBox.innerHTML = '';
     return;
   }
-  const meta = c.groups[state.selectedProduct.id];
+  const meta = getProductMeta(state.selectedProduct, c);
   const rows = [
     [c.packageName, meta.title],
     [c.price, `€${quote.totalPrice}`],
-    [c.peopleLabel, `${getPeopleValue()}${state.lang === 'de' ? ' Personen' : state.lang === 'en' ? ' people' : '인'}`],
-    [c.photocardReviewLabel, state.photocardMode === 'original'
-      ? c.photocardSummaryOriginal
-      : state.photocardMode === 'mixed'
-        ? c.photocardSummaryMixed
-        : c.photocardSummaryRetouched]
+    [c.peopleLabel, peopleText()],
+    ...promoDetailRows(c)
   ];
   if (state.selectedDate && state.selectedSlot) rows.push([c.bookingTime, `${state.selectedDate} ${state.selectedSlot}`]);
   els.reviewBox.innerHTML = rows.map(([label, value]) => `
@@ -1013,6 +1250,7 @@ function validateStep(step) {
   if (step === 1) return state.selectedProduct ? '' : c.step1Warning;
   if (step === 2) {
     if (!state.selectedProduct) return c.step1Warning;
+    if (!String(state.childName || '').trim()) return c.childNameRequired;
     return '';
   }
   if (step === 3) {
@@ -1067,8 +1305,8 @@ function selectProduct(productId) {
   renderProducts();
   renderConditionalFields();
   renderPeopleOptions();
+  syncPromoInputValues();
   renderDetailCard();
-  renderPhotocardBox();
   syncQuoteFromCache();
   updateStepButtons();
   queueQuoteRefresh();
@@ -1085,18 +1323,20 @@ async function goToCalendarStep() {
     state.currentMonth = { year, monthIndex };
   }
   showStep(3);
-  els.calendarHint.textContent = copy().calendarHintProduct(copy().groups[state.selectedProduct.id].title);
+  const c = copy();
+  els.calendarHint.textContent = c.calendarHintProduct(selectedProductTitle(c));
   await ensureMonthLoaded(state.currentMonth.year, state.currentMonth.monthIndex);
   updateStepButtons();
 }
 
 function renderSuccess(result) {
   const c = copy();
+  const meta = getProductMeta(state.selectedProduct, c);
   const rows = [
     [c.customerName, result.name || els.form.elements.name.value],
     [c.customerEmail, result.email || els.form.elements.email.value],
     [c.bookingTime, `${result.date || state.selectedDate} ${result.time || state.selectedSlot}`],
-    [c.packageName, copy().groups[state.selectedProduct.id].title],
+    [c.packageName, meta.title],
     [c.price, `€${state.quote?.totalPrice || ''}`]
   ];
   els.successGrid.innerHTML = rows.map(([label, value]) => `
@@ -1113,13 +1353,21 @@ function renderSuccess(result) {
 }
 
 function buildSubmitPayload() {
-  const meta = copy().groups[state.selectedProduct.id];
+  const c = copy();
+  const meta = getProductMeta(state.selectedProduct, c);
   const userMemo = String(els.form.elements.memo.value || '').trim();
-  const photocardMemo = state.photocardMode === 'original'
-    ? '[포토카드] 양면 / 무보정 2장 사용'
-    : state.photocardMode === 'mixed'
-      ? '[포토카드] 양면 / 보정본 1장 + 무보정 1장 사용'
-      : '[포토카드] 양면 / 보정본 2장 사용';
+  const detailMemo = [
+    '[Schultüte Portrait Event 2026]',
+    `${c.childNameLabel}: ${state.childName || '-'}`,
+    `${c.schoolChildCountLabel}: ${getSelectedOptionLabel(c.schoolChildCountOptions, state.schoolChildCount) || '-'}`,
+    `${c.siblingOptionLabel}: ${getSelectedOptionLabel(c.siblingOptions, state.siblingOption) || '-'}`,
+    `${c.familyIncludedLabel}: ${getSelectedOptionLabel(c.familyIncludedOptions, state.familyIncluded) || '-'}`,
+    `${c.propsLabel}: ${getSelectedOptionLabel(c.propsOptions, state.propsAvailable) || '-'}`,
+    `${c.peopleLabel}: ${peopleText()}`,
+    `${c.familyInfoLabel}: ${state.familyInfo || '-'}`,
+    `${c.extraRetouchLabel}: ${c.extraRetouchOption(getExtraRetouchCount())}`,
+    userMemo ? `${c.memoLabel}: ${userMemo}` : ''
+  ].filter(Boolean).join('\n');
   return {
     itemId: state.selectedProduct.id,
     people: getPeopleValue(),
@@ -1129,17 +1377,28 @@ function buildSubmitPayload() {
     phone: String(els.form.elements.phone.value || '').trim(),
     email: String(els.form.elements.email.value || '').trim(),
     address: String(els.form.elements.address.value || '').trim(),
-    memo: [userMemo, photocardMemo].filter(Boolean).join('\n'),
+    memo: detailMemo,
     gdprConsent: !!els.form.elements.gdprConsent.checked,
+    privacy_terms_accepted: !!els.form.elements.gdprConsent.checked,
+    contract_terms_accepted: !!els.form.elements.gdprConsent.checked && !!els.form.elements.aiConsent?.checked,
     aiConsent: !!els.form.elements.aiConsent?.checked,
     marketing: !!els.form.elements.marketing.checked,
     lang: state.lang,
-    optionKeys: [],
+    schoolChildCount: state.schoolChildCount,
+    siblingOption: state.siblingOption,
+    familyIncluded: state.familyIncluded,
+    propsAvailable: state.propsAvailable,
+    extraRetouchCount: getExtraRetouchCount(),
+    optionKeys: buildPromoOptionKeys(),
     surveyKeys: [],
     meta: {
       promoType: meta.title,
-      photocardType: 'double_sided',
-      photocardMode: state.photocardMode
+      childName: state.childName,
+      schoolChildCount: state.schoolChildCount,
+      siblingOption: state.siblingOption,
+      familyIncluded: state.familyIncluded,
+      propsAvailable: state.propsAvailable,
+      extraRetouchCount: getExtraRetouchCount()
     }
   };
 }
@@ -1190,18 +1449,27 @@ function bindEvents() {
     updateStepButtons();
     queueQuoteRefresh(QUOTE_REFRESH_DEBOUNCE_MS);
   });
-  els.photocardBox?.addEventListener('change', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement) || target.name !== 'photocardMode') return;
-    state.photocardMode = target.value === 'original'
-      ? 'original'
-      : target.value === 'mixed'
-        ? 'mixed'
-        : 'retouched';
-    renderPhotocardBox();
+  els.childNameInput?.addEventListener('input', () => {
+    state.childName = els.childNameInput.value;
     updateReview();
+    updateStepButtons();
   });
-  els.childAgeInput.addEventListener('input', () => {
+  [
+    ['schoolChildCountSelect', 'schoolChildCount'],
+    ['siblingOptionSelect', 'siblingOption'],
+    ['familyIncludedSelect', 'familyIncluded'],
+    ['propsSelect', 'propsAvailable'],
+    ['extraRetouchSelect', 'extraRetouchCount']
+  ].forEach(([elKey, stateKey]) => {
+    els[elKey]?.addEventListener('change', () => {
+      state[stateKey] = els[elKey].value;
+      syncQuoteFromCache();
+      updateReview();
+      updateStepButtons();
+      queueQuoteRefresh();
+    });
+  });
+  els.childAgeInput?.addEventListener('input', () => {
     state.childAge = els.childAgeInput.value;
     updateReview();
     updateStepButtons();

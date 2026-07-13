@@ -18,6 +18,26 @@ export function buildPayloadUrl(route, data = {}, extraParams = {}) {
   });
 }
 
+export async function postPayload(route, data = {}, extraParams = {}) {
+  let response;
+  try {
+    response = await fetch(buildUrl(route, extraParams), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({ ...extraParams, data })
+    });
+  } catch (error) {
+    if (error?.message === 'Failed to fetch') {
+      throw new Error('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.');
+    }
+    throw error;
+  }
+  return parseJsonResponse(response);
+}
+
 export async function parseJsonResponse(response) {
   const text = await response.text();
   let payload;

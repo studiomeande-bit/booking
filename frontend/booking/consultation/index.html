@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Studio mean Beratung</title>
+  <meta name="description" content="Beratungsformular fur Hochzeiten, Events, Unternehmen und Content-Produktionen bei Studio mean.">
+  <link rel="icon" href="../studio-mean-logo.png" type="image/png">
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="stylesheet" href="./consultation.min.css?v=20260623-i18n1">
+  <script src="/site-analytics.js?v=20260430-consent6"></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="../" aria-label="Studio mean booking home">
+        <img src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean" width="150" height="45">
+      </a>
+      <div class="top-actions">
+        <div class="language-switcher" aria-label="Language selection">
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="ko">KO</button>
+        </div>
+        <a class="ghost-link" href="../">Buchungsseite</a>
+      </div>
+    </header>
+
+    <section class="consult-layout">
+      <aside class="consult-rail">
+        <div class="rail-kicker">Consultation</div>
+        <h1>Beratung</h1>
+        <p>Fur Shootings mit Termin-, Ablauf- oder Umfangsfragen teilen Sie uns bitte zuerst die wichtigsten Details mit.</p>
+        <div class="rail-steps" aria-label="Ablauf der Beratung">
+          <span>Formular</span>
+          <span>Beratung</span>
+          <span>Angebot</span>
+          <span>Buchung</span>
+        </div>
+      </aside>
+
+      <section class="form-panel" id="formPanel">
+        <form id="consultationForm" novalidate>
+          <input type="text" name="website" class="bot-field" tabindex="-1" autocomplete="off">
+
+          <div class="form-section">
+            <div class="section-head">
+              <span>01</span>
+              <h2>Beratungsart</h2>
+            </div>
+            <div class="type-grid" id="typeGrid"></div>
+          </div>
+
+          <div class="form-section">
+            <div class="section-head">
+              <span>02</span>
+              <h2>Kontaktdaten</h2>
+            </div>
+            <div class="field-grid">
+              <label>Name oder Ansprechpartner *
+                <input name="name" required autocomplete="name">
+              </label>
+              <label>E-Mail *
+                <input name="email" type="email" required autocomplete="email">
+              </label>
+              <label>Telefon *
+                <input name="phone" required autocomplete="tel">
+              </label>
+              <label>Firma / Organisation
+                <input name="company" autocomplete="organization">
+              </label>
+              <label>Kundensprache
+                <select name="lang">
+                  <option value="de" selected>Deutsch</option>
+                  <option value="en">English</option>
+                  <option value="ko">한국어</option>
+                </select>
+              </label>
+              <label>Art der Beratung
+                <select name="contactMethod">
+                  <option value="email">Beratung per E-Mail</option>
+                  <option value="phone">Telefontermin</option>
+                  <option value="video">Video-Beratungstermin</option>
+                  <option value="studio">Beratung im Studio</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="section-head">
+              <span>03</span>
+              <h2>Termin und Ort</h2>
+            </div>
+            <div class="field-grid">
+              <label>Beratungstermin Datum
+                <input name="consultationDate" type="date">
+              </label>
+              <label>Beratungstermin Uhrzeit
+                <input name="consultationTime" type="time" step="900">
+              </label>
+              <label>Dauer der Beratung
+                <select name="consultationDuration">
+                  <option value="30">30 Min.</option>
+                  <option value="45">45 Min.</option>
+                  <option value="60">60 Min.</option>
+                </select>
+              </label>
+              <label>Hinweis zum Beratungstermin
+                <input name="preferredSchedule" placeholder="z. B. weitere mogliche Zeiten oder telefonische Erreichbarkeit">
+              </label>
+              <label>Geplanter Shooting- oder Eventtermin
+                <input name="shootDate" placeholder="z. B. 2026-08-22 oder noch offen">
+              </label>
+              <label>Shooting- oder Veranstaltungsort
+                <input name="location" placeholder="z. B. Frankfurt Standesamt, Buro, Eventlocation">
+              </label>
+              <label>Budgetrahmen
+                <select name="budget">
+                  <option value="">Noch offen</option>
+                  <option value="under300">Unter €300</option>
+                  <option value="300-700">€300-700</option>
+                  <option value="700-1500">€700-1,500</option>
+                  <option value="1500-3000">€1,500-3,000</option>
+                  <option value="over3000">Mehr als €3,000</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section" id="dynamicSection">
+            <div class="section-head">
+              <span>04</span>
+              <h2>Detailfragen</h2>
+            </div>
+            <div id="dynamicQuestions"></div>
+          </div>
+
+          <div class="form-section">
+            <div class="section-head">
+              <span>05</span>
+              <h2>Wichtigster Punkt</h2>
+            </div>
+            <div class="choice-group" id="priorityGroup"></div>
+            <label class="textarea-label">Weitere Angaben
+              <textarea name="message" rows="5" placeholder="Ziel, wichtige Motive, offene Fragen, Sorgen oder Referenzlinks."></textarea>
+            </label>
+            <label class="check-line">
+              <input type="checkbox" name="marketingConsent">
+              <span>Ich habe Interesse daran, dass ausgewahlte Ergebnisse im Studio mean Portfolio oder auf Social Media gezeigt werden.</span>
+            </label>
+            <label class="check-line">
+              <input type="checkbox" name="privacyConsent" required>
+              <span>Ich stimme der Verarbeitung meiner Daten zur Beratung und Buchungsabwicklung zu. *</span>
+            </label>
+          </div>
+
+          <div class="submit-row">
+            <div id="formStatus" class="form-status" aria-live="polite"></div>
+            <button type="submit" id="submitBtn">Beratung absenden</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="success-panel" id="successPanel" hidden>
+        <div class="success-card">
+          <div class="success-mark">✓</div>
+          <h2>Ihre Anfrage ist angekommen.</h2>
+          <p>Wir haben Ihnen eine Bestatigung per E-Mail gesendet. Studio mean pruft die Angaben und meldet sich mit Beratung, Angebot oder dem nachsten Schritt.</p>
+          <a href="../">Zur Buchungsseite</a>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="./consultation.min.js?v=20260623-i18n1"></script>
+</body>
+</html>

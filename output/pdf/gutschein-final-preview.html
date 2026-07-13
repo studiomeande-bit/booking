@@ -25,90 +25,102 @@ body {
   margin: 0 auto;
 }
 .sheet {
-  page-break-after: always;
   width: 105mm;
   height: 148mm;
   background: #fff;
   padding: 7mm 7mm 8mm;
   position: relative;
   overflow: hidden;
+  break-inside: avoid-page;
+  page-break-inside: avoid;
 }
-.sheet:last-child {
-  page-break-after: auto;
+.sheet.sheet-next {
+  break-before: page;
+  page-break-before: always;
 }
 .sheet-inner {
   position: relative;
   height: 100%;
   display: grid;
+  break-inside: avoid-page;
+  page-break-inside: avoid;
 }
 .front .sheet-inner {
-  grid-template-rows: auto auto 1fr auto;
-  gap: 3.8mm;
+  display: block;
+  padding-bottom: 26mm;
 }
 .back .sheet-inner {
-  grid-template-rows: auto 1fr;
-  gap: 4.5mm;
+  grid-template-rows: auto 1fr auto;
+  gap: 3.8mm;
 }
 .meta-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  font-size: 6.8pt;
-  line-height: 1.25;
+  font-size: 6.2pt;
+  line-height: 1.2;
   color: var(--muted);
-  letter-spacing: .04em;
+  letter-spacing: .05em;
+}
+.polaroid {
+  width: 100%;
+  border: 1px solid rgba(45, 36, 29, .18);
+  background: #fff;
+  padding: 3.5mm 3.5mm 5mm;
+  display: grid;
+  gap: 4mm;
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+}
+.film-window {
+  width: 100%;
+  min-height: 74mm;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+}
+.polaroid-caption {
+  display: grid;
+  grid-template-columns: 1fr 24mm;
+  align-items: end;
+  gap: 3.5mm;
+}
+.caption-copy {
+  display: grid;
+  gap: 1.4mm;
 }
 .script-title {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
   white-space: pre-line;
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
   font-weight: 500;
-  font-size: 26pt;
-  line-height: .96;
-  letter-spacing: -.035em;
+  font-size: 18.5pt;
+  line-height: .98;
+  letter-spacing: -.03em;
+  max-width: 100%;
 }
-.panel {
-  position: relative;
-  width: 100%;
-  background: var(--panel);
-  border: 1px solid var(--panel-line);
-}
-.front-panel { min-height: 0; }
-.back-panel { min-height: 0; }
 .voucher-note {
-  position: absolute;
-  left: 6mm;
-  right: 30mm;
-  bottom: 6mm;
-  font-size: 7.2pt;
-  line-height: 1.32;
+  font-size: 6.8pt;
+  line-height: 1.28;
   color: var(--muted);
   text-align: left;
 }
 .voucher-note .value {
   display: block;
-  margin-bottom: 1.4mm;
+  margin-bottom: .8mm;
   color: var(--ink);
-  font-size: 21pt;
+  font-size: 19pt;
   font-weight: 700;
   line-height: 1.05;
 }
 .front-qr {
-  position: absolute;
-  right: 5mm;
-  bottom: 5mm;
   display: grid;
-  gap: 1mm;
+  gap: 0;
   justify-items: center;
 }
 .qr-box {
-  width: 22mm;
-  height: 22mm;
-  padding: 1.5mm;
+  width: 24mm;
+  height: 24mm;
+  padding: 1.4mm;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -121,36 +133,37 @@ body {
   height: 100%;
   object-fit: contain;
 }
-.qr-caption {
-  font-size: 6.4pt;
-  letter-spacing: .08em;
-  color: var(--muted);
-}
 .notes {
   margin: 0;
   padding-left: 4.4mm;
-  font-size: 6.5pt;
-  line-height: 1.28;
+  font-size: 6pt;
+  line-height: 1.24;
   color: var(--ink);
 }
-.notes li { margin: .45mm 0; }
+.notes li { margin: .3mm 0; }
 .front-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: grid;
-  gap: 3.2mm;
+  gap: 2.4mm;
+  break-inside: avoid-page;
+  page-break-inside: avoid;
 }
 .logo-footer {
   text-align: center;
 }
 .brand-logo {
-  width: 40mm;
+  width: 38mm;
   height: auto;
   display: block;
   margin: 0 auto;
 }
 .footer-line {
-  margin-top: 1.5mm;
-  font-size: 7.1pt;
-  line-height: 1.28;
+  margin-top: 1.2mm;
+  font-size: 6.8pt;
+  line-height: 1.22;
   color: var(--ink);
 }
 .field-row {
@@ -162,7 +175,7 @@ body {
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
   font-weight: 500;
-  font-size: 17pt;
+  font-size: 16pt;
   line-height: 1;
 }
 .field-line {
@@ -175,6 +188,9 @@ body {
   font-size: 12.5pt;
   line-height: 1.15;
   font-family: Arial, Helvetica, sans-serif;
+}
+.back .logo-footer {
+  padding-top: .6mm;
 }
 @page {
   size: 105mm 148mm;
@@ -199,25 +215,27 @@ body {
       <div>GA3J-JJB8-79V2</div>
       <div>Verfallsdatum : 2029/04/23</div>
     </div>
-    <div class="script-title">Geschenk
+    <div class="polaroid">
+      <div class="film-window"></div>
+      <div class="polaroid-caption">
+        <div class="caption-copy">
+          <div class="script-title">Geschenk
 gutschein</div>
-    <div class="panel front-panel">
-      <div class="voucher-note">
-        <span class="value">€100</span>
-        Wertgutschein · Gutschein
-      </div>
-      <div class="front-qr">
-        <div class="qr-box"><img src="./gutschein-preview-qr.png" alt="QR"></div>
-        <div class="qr-caption">QR</div>
+          <div class="voucher-note">
+            <span class="value">€100</span>
+            Wertgutschein · Gutschein
+          </div>
+        </div>
+        <div class="front-qr">
+          <div class="qr-box"><img src="./gutschein-preview-qr.png" alt="QR"></div>
+        </div>
       </div>
     </div>
     <div class="front-footer">
       <ul class="notes">
-        <li>Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.</li>
-        <li>Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.</li>
-        <li>Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.</li>
-        <li>Der Gutschein ist nur mit vorheriger Terminvereinbarung einlösbar.</li>
-        <li>Der Gutschein ist nicht rückerstattbar.</li>
+        <li>Gültig für Studio_mean Fotografie Dienstleistungen.</li>
+        <li>3 Jahre gültig, nur nach Terminvereinbarung einlösbar.</li>
+        <li>Nicht kombinierbar und nicht rückerstattbar.</li>
       </ul>
       <div class="logo-footer">
         <img class="brand-logo" src="./gutschein-preview-logo.png" alt="Studio mean logo">
@@ -227,10 +245,15 @@ gutschein</div>
   </div>
 </section>
 
-<section class="sheet back">
+<section class="sheet back sheet-next">
   <div class="sheet-inner">
     <div class="field-row"><span>Für :</span><span class="field-line">Jenna Knight</span></div>
-    <div class="panel back-panel"></div>
+    <div class="polaroid">
+      <div class="film-window"></div>
+    </div>
+    <div class="logo-footer">
+      <img class="brand-logo" src="./gutschein-preview-logo.png" alt="Studio mean logo">
+    </div>
   </div>
 </section>
 </body>
