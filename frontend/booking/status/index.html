@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Studio mean — 내 예약 / My Booking</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="dns-prefetch" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="icon" href="../studio-mean-logo.png" type="image/png">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Studio mean — Buchungsstatus ansehen und verwalten">
+  <link rel="stylesheet" href="/status/status.css?v=20260712-status1">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <img class="brand-logo" src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean" width="150" height="46">
+      <div class="lang-panel" id="langPanel" aria-label="Language">
+        <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="de">DE</button>
+      </div>
+    </header>
+
+    <section id="loadingCard" class="card center">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText" class="muted">예약 정보를 불러오는 중입니다…</p>
+    </section>
+
+    <section id="errorCard" class="card center hidden">
+      <div class="emoji">🔒</div>
+      <h2 id="errorTitle">링크를 확인할 수 없습니다</h2>
+      <p id="errorText" class="muted"></p>
+      <a id="errorMail" class="btn btn-outline" href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a>
+    </section>
+
+    <section id="statusApp" class="hidden">
+      <div class="card">
+        <div class="status-head">
+          <div>
+            <div class="kicker" id="greetLabel"></div>
+            <h1 id="customerName" class="name"></h1>
+          </div>
+          <span id="statusBadge" class="badge"></span>
+        </div>
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div id="requestMemoBlock" class="memo hidden">
+          <div class="memo-label" id="requestMemoLabel"></div>
+          <div id="requestMemoText" class="memo-text"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" id="paymentTitle"></div>
+        <div class="pay-rows" id="payRows"></div>
+        <p class="muted small" id="payNote"></p>
+      </div>
+
+      <div class="card" id="manageCard">
+        <div class="card-title" id="manageTitle"></div>
+        <p class="muted small" id="manageIntro"></p>
+        <div class="btn-row" id="manageBtns"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" id="infoTitle"></div>
+        <div id="directionsBox" class="directions"></div>
+        <div class="btn-row">
+          <a id="mapBtn" class="btn btn-primary" target="_blank" rel="noopener"></a>
+          <a id="mailBtn" class="btn btn-outline" href="mailto:studio.mean.de@gmail.com"></a>
+          <a id="igBtn" class="btn btn-outline" target="_blank" rel="noopener">Instagram</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">Studio mean · Oberursel (Taunus) · studio.mean.de@gmail.com</footer>
+  </main>
+
+  <script defer src="/status/status.js?v=20260712-status1"></script>
+</body>
+</html>
