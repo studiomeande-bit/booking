@@ -61,6 +61,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .btn-ghost:hover{background:var(--muted-bg);}
 .btn-outline{background:transparent;border-color:var(--line);color:var(--brand);}
 .btn-outline:hover{border-color:var(--brand);}
+.btn-sm{padding:8px 14px;font-size:12.5px;border-radius:9px;}
+.btn:disabled{opacity:.55;cursor:default;}
+
+.resend-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--soft);}
+.resend-row .small{flex:1 1 160px;min-width:0;}
+
+.checklist{list-style:none;display:grid;gap:9px;margin-top:4px;}
+.checklist li{position:relative;padding-left:26px;font-size:13.5px;line-height:1.6;color:var(--ink);}
+.checklist li::before{content:'✓';position:absolute;left:0;top:1px;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--ok-bg);color:var(--ok);font-size:11px;font-weight:900;}
 
 .thread-list{display:grid;gap:8px;max-height:340px;overflow-y:auto;padding:4px 2px;margin:10px 0 12px;}
 .thread-msg{max-width:82%;padding:10px 13px;border-radius:14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;}

@@ -10,7 +10,7 @@
   <link rel="icon" href="../studio-mean-logo.png" type="image/png">
   <meta name="robots" content="noindex, nofollow">
   <meta name="description" content="Studio mean — Buchungsstatus ansehen und verwalten">
-  <link rel="stylesheet" href="/status/status.css?v=20260712-status1">
+  <link rel="stylesheet" href="/status/status.css?v=20260713-status2">
 </head>
 <body>
   <main class="shell">
@@ -55,6 +55,22 @@
         <div class="card-title" id="paymentTitle"></div>
         <div class="pay-rows" id="payRows"></div>
         <p class="muted small" id="payNote"></p>
+        <div id="resendRow" class="resend-row hidden">
+          <button id="resendBtn" class="btn btn-outline btn-sm" type="button"></button>
+          <span id="resendHint" class="muted small"></span>
+        </div>
+      </div>
+
+      <div class="card hidden" id="selectCard">
+        <div class="card-title" id="selectTitle"></div>
+        <p class="muted small" id="selectIntro"></p>
+        <div class="btn-row"><a id="selectBtn" class="btn btn-primary" target="_blank" rel="noopener"></a></div>
+      </div>
+
+      <div class="card hidden" id="prepCard">
+        <div class="card-title" id="prepTitle"></div>
+        <p class="muted small" id="prepIntro"></p>
+        <ul class="checklist" id="prepList"></ul>
       </div>
 
       <div class="card" id="manageCard">
@@ -89,6 +105,6 @@
     <footer class="foot">Studio mean · Oberursel (Taunus) · studio.mean.de@gmail.com</footer>
   </main>
 
-  <script defer src="/status/status.js?v=20260712-status1"></script>
+  <script defer src="/status/status.js?v=20260713-status2"></script>
 </body>
 </html>

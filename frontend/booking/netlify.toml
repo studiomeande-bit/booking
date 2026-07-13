@@ -23,6 +23,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/status"
+  to = "/status/index.html"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/"
   [headers.values]
@@ -62,6 +68,18 @@
   for = "/walkin/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/status/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/status/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
 
 [[headers]]
   for = "/promo/*.html"

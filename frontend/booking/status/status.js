@@ -29,7 +29,17 @@
       threadError: '전송에 실패했습니다. 잠시 후 다시 시도해 주세요.', threadMe: '나', threadStudio: 'Studio mean',
       info: '오시는 길·문의', map: '지도에서 보기', mail: '이메일 문의',
       memoLabel: '요청사항',
-      noManage: '이 예약은 현재 온라인 변경이 어렵습니다. 도움이 필요하시면 이메일로 연락 주세요.'
+      noManage: '이 예약은 현재 온라인 변경이 어렵습니다. 도움이 필요하시면 이메일로 연락 주세요.',
+      resend: '📧 안내 메일 다시 받기', resendSending: '보내는 중…',
+      resendSent: '안내 메일을 다시 보냈어요. 메일함(스팸함 포함)을 확인해 주세요.',
+      resendCooldown: '방금 보냈어요. 잠시 후 다시 시도해 주세요.',
+      resendNotConfirmed: '예약 확정 후에 계약금 안내 메일을 다시 받을 수 있어요.',
+      resendNoEmail: '등록된 이메일이 없어 메일을 보낼 수 없어요.',
+      resendError: '메일 발송에 실패했어요. 잠시 후 다시 시도해 주세요.',
+      selectTitle: '📷 사진 선택', selectIntro: '촬영하신 사진 중 보정할 컷을 선택해 주세요.',
+      selectIntroDone: '이미 사진을 선택하셨어요. 필요하면 선택 내용을 확인·수정할 수 있어요.',
+      selectGo: '사진 선택하러 가기', selectEdit: '선택 확인·수정',
+      prepTitle: '✅ 촬영 준비 체크리스트', prepIntro: '촬영 전에 아래 내용을 확인하시면 더 좋은 결과를 얻을 수 있어요.'
     },
     en: {
       loading: 'Loading your booking…',
@@ -49,7 +59,17 @@
       threadError: 'Could not send. Please try again shortly.', threadMe: 'Me', threadStudio: 'Studio mean',
       info: 'Directions & contact', map: 'Open in Maps', mail: 'Email us',
       memoLabel: 'Your note',
-      noManage: 'Online changes aren’t available for this booking. Please email us if you need help.'
+      noManage: 'Online changes aren’t available for this booking. Please email us if you need help.',
+      resend: '📧 Resend booking email', resendSending: 'Sending…',
+      resendSent: 'Sent! Please check your inbox (and spam folder).',
+      resendCooldown: 'Just sent. Please try again in a moment.',
+      resendNotConfirmed: 'You can resend the deposit email once your booking is confirmed.',
+      resendNoEmail: 'No email is on file, so we can’t send it.',
+      resendError: 'Could not send the email. Please try again shortly.',
+      selectTitle: '📷 Photo selection', selectIntro: 'Choose the shots you’d like retouched from your session.',
+      selectIntroDone: 'You’ve already selected your photos. You can review or adjust them if needed.',
+      selectGo: 'Select photos', selectEdit: 'Review / edit selection',
+      prepTitle: '✅ Shoot preparation checklist', prepIntro: 'A quick check before your shoot helps us get the best results.'
     },
     de: {
       loading: 'Ihre Buchung wird geladen…',
@@ -69,7 +89,56 @@
       threadError: 'Senden fehlgeschlagen. Bitte später erneut versuchen.', threadMe: 'Ich', threadStudio: 'Studio mean',
       info: 'Anfahrt & Kontakt', map: 'In Maps öffnen', mail: 'E-Mail schreiben',
       memoLabel: 'Ihre Notiz',
-      noManage: 'Online-Änderungen sind für diese Buchung nicht möglich. Bitte kontaktieren Sie uns per E-Mail.'
+      noManage: 'Online-Änderungen sind für diese Buchung nicht möglich. Bitte kontaktieren Sie uns per E-Mail.',
+      resend: '📧 Buchungs-E-Mail erneut senden', resendSending: 'Wird gesendet…',
+      resendSent: 'Gesendet! Bitte prüfen Sie Ihren Posteingang (auch den Spam-Ordner).',
+      resendCooldown: 'Gerade gesendet. Bitte gleich noch einmal versuchen.',
+      resendNotConfirmed: 'Sie können die Anzahlungs-E-Mail erneut erhalten, sobald Ihre Buchung bestätigt ist.',
+      resendNoEmail: 'Keine E-Mail hinterlegt – Versand nicht möglich.',
+      resendError: 'E-Mail konnte nicht gesendet werden. Bitte später erneut versuchen.',
+      selectTitle: '📷 Fotoauswahl', selectIntro: 'Wählen Sie die Aufnahmen aus, die retuschiert werden sollen.',
+      selectIntroDone: 'Sie haben Ihre Fotos bereits ausgewählt. Bei Bedarf können Sie die Auswahl prüfen oder ändern.',
+      selectGo: 'Fotos auswählen', selectEdit: 'Auswahl prüfen / ändern',
+      prepTitle: '✅ Checkliste zur Vorbereitung', prepIntro: 'Eine kurze Kontrolle vor dem Shooting sorgt für beste Ergebnisse.'
+    }
+  };
+
+  // 촬영 종류별 준비 체크리스트 (클라이언트 현지화, 백엔드 불필요)
+  var PREP = {
+    pass: {
+      ko: ['눈썹이 보이도록 앞머리를 정리해 주세요', '흰색·연한 파스텔 상의는 피하고 진한 색을 추천해요', '안경은 벗는 것을 권장해요 (투명 렌즈만 가능)', '입을 다문 무표정, 유분기는 매트하게 정리해 주세요'],
+      en: ['Keep your eyebrows visible (no bangs over them)', 'Avoid white or pale pastel tops — darker colours work best', 'Glasses off is recommended (only clear lenses allowed)', 'Neutral expression, closed mouth, matte skin'],
+      de: ['Augenbrauen sichtbar lassen (kein Pony darüber)', 'Keine weißen/hellen Pastelltöne — dunklere Farben sind besser', 'Brille möglichst abnehmen (nur klare Kontaktlinsen)', 'Neutraler Ausdruck, geschlossener Mund, matte Haut']
+    },
+    prof: {
+      ko: ['사용 목적(링크드인/이력서/SNS)과 원하는 분위기를 알려주세요', '단색 상의 1~2벌 준비 (큰 로고·강한 패턴은 피해주세요)', '레퍼런스 1~3장이 있으면 미리 보내주세요', '5~10분 전 도착을 권장해요'],
+      en: ['Tell us the purpose (LinkedIn/CV/SNS) and the mood you want', 'Bring 1–2 solid-colour tops (avoid big logos or busy patterns)', 'Send 1–3 reference images in advance if you have any', 'Please arrive 5–10 minutes early'],
+      de: ['Zweck (LinkedIn/Lebenslauf/SNS) und gewünschte Stimmung mitteilen', '1–2 einfarbige Oberteile mitbringen (keine großen Logos/Muster)', 'Falls vorhanden, 1–3 Referenzbilder vorab senden', 'Bitte 5–10 Minuten früher da sein']
+    },
+    stud: {
+      ko: ['원하는 분위기와 사용 목적을 알려주세요 (레퍼런스 환영)', '톤을 맞춘 의상(화이트/크림/베이지/네이비)을 준비해 주세요', '아이와 함께라면 기저귀·간식·장난감을 챙겨주세요', '10분 전 도착을 권장해요'],
+      en: ['Share the mood and purpose (references welcome)', 'Bring tone-matched outfits (white/cream/beige/navy)', 'With children: bring diapers, snacks, and a small toy', 'Please arrive 10 minutes early'],
+      de: ['Stimmung und Verwendungszweck mitteilen (Referenzen willkommen)', 'Farblich abgestimmte Outfits (Weiß/Creme/Beige/Navy)', 'Mit Kindern: Windeln, Snacks und ein kleines Spielzeug', 'Bitte 10 Minuten früher da sein']
+    },
+    snap: {
+      ko: ['레퍼런스(1~5장)와 장소·동선을 미리 공유해 주세요 (골든아워 추천)', '톤을 맞춘 의상 2벌을 추천해요', '헤어 스프레이·수정 메이크업을 챙겨주세요', '10~15분 전 도착을 권장해요'],
+      en: ['Share references (1–5) and locations in advance (golden hour is best)', 'Two tone-matched outfits are recommended', 'Bring hairspray and touch-up makeup', 'Please arrive 10–15 minutes early'],
+      de: ['Referenzen (1–5) und Orte vorab teilen (goldene Stunde ideal)', 'Zwei farblich abgestimmte Outfits empfohlen', 'Haarspray und Korrektur-Make-up mitbringen', 'Bitte 10–15 Minuten früher da sein']
+    },
+    wed: {
+      ko: ['무드·사용 목적과 레퍼런스 1~5장을 공유해 주세요', '일정·로케이션·우천 시 대체 장소를 확인해 주세요', '톤을 맞춘 의상 2벌(포멀+캐주얼)을 추천해요', '소품(부케·반지·청첩장)·편한 신발·수정 메이크업을 챙겨주세요'],
+      en: ['Share the mood, purpose, and 1–5 reference images', 'Confirm the schedule, locations, and a rain backup plan', 'Two tone-matched outfits (formal + casual) recommended', 'Bring props (bouquet/rings/invitation), comfy shoes, touch-up makeup'],
+      de: ['Stimmung, Zweck und 1–5 Referenzbilder teilen', 'Termin, Orte und eine Schlechtwetter-Alternative abklären', 'Zwei abgestimmte Outfits (formell + casual) empfohlen', 'Requisiten (Bouquet/Ringe/Einladung), bequeme Schuhe, Korrektur-Make-up']
+    },
+    biz: {
+      ko: ['촬영 목적·구성·인원을 미리 공유해 주세요', '결과물 용도(홈페이지/홍보/기록)를 알려주세요', '일정·장소·동선을 사전에 확정해 주세요', '문의는 아래 1:1 문의 또는 이메일로 연락 주세요'],
+      en: ['Share the purpose, format, and number of people', 'Tell us how the results will be used (website/PR/record)', 'Confirm the schedule, location, and flow in advance', 'Questions? Use the 1:1 messages below or email us'],
+      de: ['Zweck, Format und Personenzahl vorab mitteilen', 'Verwendung der Ergebnisse angeben (Website/PR/Doku)', 'Termin, Ort und Ablauf vorab festlegen', 'Fragen? Nachrichten unten nutzen oder E-Mail schreiben']
+    },
+    _default: {
+      ko: ['원하는 분위기나 레퍼런스를 미리 공유해 주세요', '촬영 시작 10분 전 도착을 권장해요', '궁금한 점은 아래 1:1 문의로 남겨주세요'],
+      en: ['Share your preferred mood or references in advance', 'Please arrive about 10 minutes early', 'Any questions? Leave them in the 1:1 messages below'],
+      de: ['Gewünschte Stimmung oder Referenzen vorab teilen', 'Bitte etwa 10 Minuten früher da sein', 'Fragen? Hinterlassen Sie sie in den Nachrichten unten']
     }
   };
 
@@ -199,6 +268,12 @@
     $('payRows').innerHTML = rows;
     $('payNote').textContent = t.payNote;
 
+    // 안내 메일 다시 받기 (확정 예약만)
+    if (data.canResend) {
+      $('resendBtn').textContent = t.resend;
+      show('resendRow');
+    } else { hide('resendRow'); }
+
     // 변경·취소
     $('manageTitle').textContent = t.manage;
     if (data.canManage && (data.rescheduleUrl || data.cancelUrl)) {
@@ -211,6 +286,19 @@
       $('manageIntro').textContent = t.noManage;
       $('manageBtns').innerHTML = '';
     }
+
+    // 사진 선택(셀렉) 링크
+    if (data.selectUrl) {
+      $('selectTitle').textContent = t.selectTitle;
+      $('selectIntro').textContent = data.selectSubmitted ? t.selectIntroDone : t.selectIntro;
+      var selBtn = $('selectBtn');
+      selBtn.textContent = data.selectSubmitted ? t.selectEdit : t.selectGo;
+      selBtn.href = data.selectUrl;
+      show('selectCard');
+    } else { hide('selectCard'); }
+
+    // 촬영 준비 체크리스트
+    renderPrep();
 
     // 1:1 문의 스레드
     $('threadTitle').textContent = '💬 ' + t.thread;
@@ -240,6 +328,52 @@
     if (paidState === 'paid') chip = '<span class="pay-chip paid">✓ ' + esc(t.paid) + '</span>';
     else if (paidState === 'unpaid') chip = '<span class="pay-chip unpaid">' + esc(t.unpaid) + '</span>';
     return '<div class="pay-row"><span class="pay-label">' + esc(label) + '</span><span class="pay-right"><b>' + esc(value) + '</b>' + chip + '</span></div>';
+  }
+
+  /* ── 촬영 준비 체크리스트 ── */
+  function renderPrep() {
+    var t = T[lang];
+    var upcoming = ['대기중', '확정됨', '변경대기'].indexOf(String(data.status || '')) > -1;
+    var group = String(data.itemGroup || '').trim();
+    var set = PREP[group] || PREP._default;
+    var items = set[lang] || set.ko || [];
+    if (!upcoming || !items.length) { hide('prepCard'); return; }
+    $('prepTitle').textContent = t.prepTitle;
+    $('prepIntro').textContent = t.prepIntro;
+    $('prepList').innerHTML = items.map(function (it) { return '<li>' + esc(it) + '</li>'; }).join('');
+    show('prepCard');
+  }
+
+  /* ── 안내 메일 다시 받기 ── */
+  function sendResend() {
+    var t = T[lang];
+    var btn = $('resendBtn');
+    var hint = $('resendHint');
+    btn.disabled = true;
+    btn.textContent = t.resendSending;
+    hint.textContent = '';
+    fetch(API_BASE + '?api=booking-status-resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ requestId: requestId(), data: { ref: ref } })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false;
+        btn.textContent = t.resend;
+        var d = res && (res.data || res);
+        if (d && d.ok) { hint.textContent = t.resendSent; return; }
+        var reason = (d && d.reason) || '';
+        hint.textContent =
+          reason === 'cooldown' ? t.resendCooldown :
+          reason === 'not_confirmed' ? t.resendNotConfirmed :
+          reason === 'no_email' ? t.resendNoEmail : t.resendError;
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = t.resend;
+        hint.textContent = t.resendError;
+      });
   }
 
   /* ── 1:1 문의 스레드 ── */
@@ -328,6 +462,10 @@
     if (input) input.addEventListener('keydown', function (ev) {
       if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') sendThreadMessage();
     });
+  })();
+  (function wireResend() {
+    var btn = $('resendBtn');
+    if (btn) btn.addEventListener('click', sendResend);
   })();
 
   boot();
