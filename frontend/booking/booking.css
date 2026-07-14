@@ -4516,3 +4516,73 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Gutschein (상품권) 예약 적용 ===== */
+.gutschein-box {
+  margin: 18px 0 6px;
+  padding: 16px 18px;
+  background: #fdfaf3;
+  border: 1px solid #f0e3c4;
+  border-radius: 14px;
+}
+.gutschein-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #7c5c10;
+  margin-bottom: 4px;
+}
+.gutschein-copy {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: #8a7440;
+  line-height: 1.6;
+}
+.gutschein-input-row {
+  display: flex;
+  gap: 8px;
+}
+.gutschein-input-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e6d9b8;
+  border-radius: 10px;
+  padding: 11px 13px;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: #fff;
+}
+.gutschein-input-row button {
+  border: none;
+  border-radius: 10px;
+  background: #2D2A26;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gutschein-input-row button:disabled { opacity: .55; cursor: default; }
+.gutschein-result {
+  margin-top: 10px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.gutschein-result.is-applied { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+.gutschein-result.is-checking { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; }
+.gutschein-result.is-error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+.gutschein-result .gs-strong { font-weight: 800; }
+.gutschein-result .gs-timer { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.gutschein-result .gs-remove {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 3px 12px;
+  cursor: pointer;
+}

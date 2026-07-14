@@ -132,12 +132,13 @@ const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
-const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시'];
+const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON'];
 const QUOTE_COL=QUOTE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
-const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시'];
+const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
-const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
+const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
+const GUTSCHEIN_HOLD_TTL_MIN=15;
 const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
 let SETTINGS_MAP_CACHE = null;
 
@@ -340,6 +341,11 @@ function adminRpc(token, action, payload){
       return applyGutscheinToBookingAdmin(token, Number(payload&&payload.bookingRowIndex||0), String(payload&&payload.code||''), String(payload&&payload.method||'manual'));
     case 'repairGutscheinTaxFields':
       return repairGutscheinTaxFieldsAdmin(token);
+    case 'releaseGutscheinHold':
+      return releaseGutscheinHoldAdmin(token, String(payload&&payload.code||''));
+    case 'cleanupGutscheinHolds':
+      assertAdmin_(token);
+      return {ok:true,cleaned:cleanupExpiredGutscheinHolds_()};
     case 'auditReturnDiscounts':
       return auditReturnDiscountsAdmin(token, payload||{});
     case 'repairReturnDiscount':
@@ -943,6 +949,24 @@ function handlePublicApiRequest_(route,method,e){
       const code=String(p.code||'').trim();
       if(!code) return jsonError_('INVALID_ARGUMENT','Missing voucher code');
       return jsonOk_(getPublicGutscheinTicket_(code));
+    }
+    if(route==='gutschein-validate'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/gutschein-validate');
+      const request=getPublicPayloadFromRequest_(e);
+      return jsonOk_(publicGutscheinValidate_(request.payload||{}));
+    }
+    if(route==='gutschein-hold'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/gutschein-hold');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body||{};
+      const payload=request.payload||{};
+      assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
+      return jsonOk_(publicGutscheinHold_(payload));
+    }
+    if(route==='gutschein-release'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/gutschein-release');
+      const request=getPublicPayloadFromRequest_(e);
+      return jsonOk_(publicGutscheinRelease_(request.payload||{}));
     }
     if(route==='studio-presence-config'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-config');
@@ -7162,6 +7186,25 @@ function processForm(data){
     bookingSheet.appendRow(bookingRow);
     const bookingRowIndex=bookingSheet.getLastRow();
     upsertTravelLedgerForBooking_(bookingRowIndex,bookingRow);
+    // Gutschein V2: 고객이 예약 화면에서 hold한 상품권을 예약행에 최종 확정
+    let gutscheinResult=null;
+    const gutscheinCode=extractGutscheinCode_(String((data.gutschein&&data.gutschein.code)||data.gutscheinCode||''));
+    if(gutscheinCode){
+      const gutscheinHoldToken=String((data.gutschein&&data.gutschein.holdToken)||data.gutscheinHoldToken||'').trim();
+      try{
+        gutscheinResult=_finalizeGutscheinForBooking_(gutscheinCode,gutscheinHoldToken,bookingRowIndex);
+        if(gutscheinResult&&gutscheinResult.ok&&!gutscheinResult.alreadyFinalized){
+          quote.totalPrice=gutscheinResult.adjustedTotal;
+          if(gutscheinResult.adjustedDeposit!=null) quote.depositAmount=gutscheinResult.adjustedDeposit;
+          quote.balanceAmount=gutscheinResult.finalBalance;
+          quote.gutscheinCode=gutscheinCode;
+          quote.gutscheinDiscount=gutscheinResult.discountAmount;
+        }
+      }catch(gutscheinErr){
+        gutscheinResult={ok:false,message:gutscheinErr.message};
+        try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[굿샤인 자동적용 실패] ${data.name}님 예약 (행 ${bookingRowIndex})`,htmlBody:`<p>예약은 정상 접수되었지만 굿샤인 자동 적용이 실패했습니다. 어드민에서 수동 적용해 주세요.</p><p>코드: <b>${escapeHtml_(gutscheinCode)}</b><br>오류: ${escapeHtml_(String(gutscheinErr.message||gutscheinErr))}</p>`});}catch(alertErr){}
+      }
+    }
     logMessage_({
       channel:'booking-page',
       direction:'inbound',
@@ -7179,7 +7222,7 @@ function processForm(data){
     const bookingMailMeta={type:'예약',bookingRowIndex,customerName:data.name,email:data.email,ref:event.getId()};
     sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId(),bookingMailMeta);
     sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn,bookingMailMeta);
-    return{ok:true,quote,isReturn,bookingRowIndex};
+    return{ok:true,quote,isReturn,bookingRowIndex,gutschein:gutscheinResult};
   }catch(err){return{ok:false,message:err.message};}
   finally{try{lock.releaseLock();}catch(e){}}
 }
@@ -7913,8 +7956,8 @@ function handleActionRoute_(p){
     return HtmlService.createHtmlOutput('<h2>❌ 알 수 없는 액션입니다.</h2>');
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
 }
-function createActionLink_(action,eventId){const exp=Math.floor(Date.now()/1000)+CONFIG.ACTION_LINK_TTL_SEC;const sig=signAction_(action,eventId,exp);return`${ScriptApp.getService().getUrl()}?action=${encodeURIComponent(action)}&eventId=${encodeURIComponent(eventId)}&exp=${exp}&sig=${encodeURIComponent(sig)}`;}
-function createHtmlActionLink_(action,eventId){return createActionLink_(action,eventId).replace(/&/g,'&amp;');}
+function createActionLink_(action,eventId,ttlSec){const exp=Math.floor(Date.now()/1000)+(Number(ttlSec)>0?Number(ttlSec):CONFIG.ACTION_LINK_TTL_SEC);const sig=signAction_(action,eventId,exp);return`${ScriptApp.getService().getUrl()}?action=${encodeURIComponent(action)}&eventId=${encodeURIComponent(eventId)}&exp=${exp}&sig=${encodeURIComponent(sig)}`;}
+function createHtmlActionLink_(action,eventId,ttlSec){return createActionLink_(action,eventId,ttlSec).replace(/&/g,'&amp;');}
 function signAction_(action,eventId,exp){const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET');return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(`${action}|${eventId}|${exp}`,secret)).replace(/=+$/g,'');}
 function bookingRowActionToken_(row){
   const seed=[
@@ -8690,8 +8733,12 @@ function approveRetouch_(sessionId,p){
     const idx=rows.slice(1).findIndex(r=>String(r[0])===String(sessionId));
     if(idx===-1)return HtmlService.createHtmlOutput('<h2>❌ 세션을 찾을 수 없습니다.</h2>');
     const row=rows[idx+1];const rowLang=String(row[SELECT_COL['언어']]||'ko');
-    selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
-    try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. 인화 작업을 진행해 주세요.<br>상품: ${row[7]}</p>`});}catch(e){}
+    // 이미 승인된 세션이면 재처리하지 않음 (중복 클릭 시 어드민 메일 중복 방지)
+    const alreadyApproved=String(row[SELECT_COL['상태']]||'')==='보정본확인완료';
+    if(!alreadyApproved){
+      selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
+      try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. 인화 작업을 진행해 주세요.<br>상품: ${row[7]}</p>`});}catch(e){}
+    }
     const msgs={ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>Studio mean에서 인화 작업을 진행할 예정입니다. 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Studio mean will proceed with printing. Thank you!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Studio mean wird mit dem Druck beginnen. Vielen Dank!</p>'};
     return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
@@ -8739,10 +8786,11 @@ function renderRetouchRevisionForm_(sessionId,rowLang,name,currentCount,errorMsg
     submit:'재수정 요청 보내기',
     required:'수정 요청 내용을 입력해 주세요.'
   };
-  const auth=actionParams||{};
-  const formEventId=String(auth.eventId||sessionId||'');
-  const formExp=String(auth.exp||'');
-  const formSig=String(auth.sig||'');
+  // 폼을 연 시점 기준으로 서명을 재발급 — 메일 링크가 임박/만료돼도 폼 제출은 14일간 유효
+  const formEventId=String(sessionId||'');
+  const freshExp=Math.floor(Date.now()/1000)+CONFIG.ACTION_LINK_TTL_SEC;
+  const formExp=String(freshExp);
+  const formSig=String(signAction_('revise_retouch',formEventId,freshExp)||'');
   const formActionUrl=String(ScriptApp.getService().getUrl()||'');
   const safeNote=escapeHtml_(existingNote||'');
   const safeErr=errorMsg?`<div style="margin:0 0 16px;padding:12px 14px;background:#fff7ed;color:#c2410c;font-size:13px;border-radius:10px;">${escapeHtml_(errorMsg)}</div>`:'';
@@ -8757,7 +8805,7 @@ function renderRetouchRevisionForm_(sessionId,rowLang,name,currentCount,errorMsg
       <p style="margin:0 0 8px;font-size:15px;line-height:1.7;">${escapeHtml_(t.intro)}</p>
       <p style="margin:0 0 18px;font-size:13px;line-height:1.7;color:#6b7280;">${escapeHtml_(t.desc)}</p>
       ${safeErr}
-      <form method="post" action="${escapeHtml_(formActionUrl)}" style="display:flex;flex-direction:column;gap:12px;">
+      <form method="post" action="${escapeHtml_(formActionUrl)}" style="display:flex;flex-direction:column;gap:12px;" onsubmit="var b=document.getElementById('rvSubmitBtn');if(b.disabled)return false;b.disabled=true;b.style.opacity='.55';b.textContent=b.getAttribute('data-busy');return true;">
         <input type="hidden" name="action" value="revise_retouch">
         <input type="hidden" name="eventId" value="${escapeHtml_(formEventId)}">
         <input type="hidden" name="exp" value="${escapeHtml_(formExp)}">
@@ -8766,7 +8814,7 @@ function renderRetouchRevisionForm_(sessionId,rowLang,name,currentCount,errorMsg
         <label style="font-size:13px;font-weight:700;color:#374151;">${escapeHtml_(t.field)}</label>
         <textarea name="note" required maxlength="1200" placeholder="${escapeHtml_(t.placeholder)}" style="min-height:180px;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;font:inherit;font-size:14px;line-height:1.7;resize:vertical;background:#faf9f7;color:#111827;">${safeNote}</textarea>
         <div style="font-size:12px;line-height:1.6;color:#92400e;">${escapeHtml_(t.hint)}</div>
-        <button type="submit" style="margin-top:4px;border:none;border-radius:999px;background:#1f2937;color:#fff;padding:14px 18px;font-size:14px;font-weight:700;cursor:pointer;">${escapeHtml_(t.submit)}</button>
+        <button type="submit" id="rvSubmitBtn" data-busy="⏳ ${escapeHtml_(t.submit)}…" style="margin-top:4px;border:none;border-radius:999px;background:#1f2937;color:#fff;padding:14px 18px;font-size:14px;font-weight:700;cursor:pointer;">${escapeHtml_(t.submit)}</button>
       </form>
     </div>
   </div>
@@ -8774,19 +8822,28 @@ function renderRetouchRevisionForm_(sessionId,rowLang,name,currentCount,errorMsg
   return HtmlService.createHtmlOutput(html).setTitle(t.title);
 }
 
+function _retouchRevisionMaxedPage_(rowLang){
+  const msgs={ko:'<h2 style="color:#ef4444;">⚠️ 재수정 가능 횟수(2회)를 초과했습니다.</h2><p>추가 수정이 필요하시면 직접 연락 주세요: studio.mean.de@gmail.com</p>',en:'<h2 style="color:#ef4444;">⚠️ Maximum revisions (2) reached.</h2><p>Please contact us: studio.mean.de@gmail.com</p>',de:'<h2 style="color:#ef4444;">⚠️ Maximale Überarbeitungen (2) erreicht.</h2><p>Kontakt: studio.mean.de@gmail.com</p>'};
+  return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
+}
+function _retouchRevisionSuccessPage_(rowLang,count){
+  const msgs={ko:`<h2 style="color:#f59e0b;">✏️ 재수정 요청이 접수되었습니다 (${count}/2회)</h2><p>Studio mean에서 수정 후 다시 보내드리겠습니다. 감사합니다.</p>`,en:`<h2 style="color:#f59e0b;">✏️ Revision Request Received (${count}/2)</h2><p>Studio mean will revise and resend your photos. Thank you!</p>`,de:`<h2 style="color:#f59e0b;">✏️ Überarbeitungsanfrage erhalten (${count}/2)</h2><p>Studio mean wird die Fotos überarbeiten und erneut zusenden.</p>`};
+  return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
+}
 function reviseRetouch_(sessionId,p){
   try{
     const selSh=ensureSelectSheet_(ensureSheets_().ss);
     if(!selSh)return HtmlService.createHtmlOutput('<h2>❌ 시스템 오류</h2>');
-    const rows=selSh.getDataRange().getValues();
-    const idx=rows.slice(1).findIndex(r=>String(r[0])===String(sessionId));
-    if(idx===-1)return HtmlService.createHtmlOutput('<h2>❌ 세션을 찾을 수 없습니다.</h2>');
-    const row=rows[idx+1];const rowNum=idx+2;const rowLang=String(row[SELECT_COL['언어']]||'ko');
-    const revCount=parseInt(row[SELECT_COL['재수정요청횟수']])||0;
-    if(revCount>=2){
-      const msgs={ko:'<h2 style="color:#ef4444;">⚠️ 재수정 가능 횟수(2회)를 초과했습니다.</h2><p>추가 수정이 필요하시면 직접 연락 주세요: studio.mean.de@gmail.com</p>',en:'<h2 style="color:#ef4444;">⚠️ Maximum revisions (2) reached.</h2><p>Please contact us: studio.mean.de@gmail.com</p>',de:'<h2 style="color:#ef4444;">⚠️ Maximale Überarbeitungen (2) erreicht.</h2><p>Kontakt: studio.mean.de@gmail.com</p>'};
-      return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
-    }
+    const findRow=function(){
+      const rows=selSh.getDataRange().getValues();
+      const idx=rows.slice(1).findIndex(r=>String(r[0])===String(sessionId));
+      return idx===-1?null:{row:rows[idx+1],rowNum:idx+2};
+    };
+    let found=findRow();
+    if(!found)return HtmlService.createHtmlOutput('<h2>❌ 세션을 찾을 수 없습니다.</h2>');
+    let row=found.row;let rowNum=found.rowNum;let rowLang=String(row[SELECT_COL['언어']]||'ko');
+    let revCount=parseInt(row[SELECT_COL['재수정요청횟수']])||0;
+    if(revCount>=2) return _retouchRevisionMaxedPage_(rowLang);
     const submitted=String(p.submitted||'').trim()==='1';
     const note=String(p.note||'').trim();
     if(!submitted){
@@ -8796,8 +8853,56 @@ function reviseRetouch_(sessionId,p){
       const err={ko:'수정 요청 내용을 입력해 주세요.',en:'Please enter your revision details.',de:'Bitte geben Sie Ihre Änderungswünsche ein.'};
       return renderRetouchRevisionForm_(sessionId,rowLang,String(row[SELECT_COL['고객명']]||''),revCount,err[rowLang]||err.ko,'',p);
     }
-    const newCount=revCount+1;
+    // 제출 처리는 스크립트 락으로 직렬화 — 이중 클릭/동시 제출이 재수정 횟수를 한 번에 2회 소진하는 문제 방지
+    const lock=LockService.getScriptLock();
+    try{lock.waitLock(15000);}catch(lockErr){
+      const busy={ko:'<h2 style="color:#f59e0b;">⏳ 요청을 처리하고 있습니다.</h2><p>잠시 후 접수 확인 메일을 확인해 주세요. 메일이 오지 않으면 다시 한 번 시도해 주세요.</p>',en:'<h2 style="color:#f59e0b;">⏳ Your request is being processed.</h2><p>Please check your inbox shortly. If no confirmation arrives, please try again.</p>',de:'<h2 style="color:#f59e0b;">⏳ Ihre Anfrage wird bearbeitet.</h2><p>Bitte prüfen Sie in Kürze Ihr Postfach. Falls keine Bestätigung ankommt, versuchen Sie es bitte erneut.</p>'};
+      return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${busy[rowLang]||busy.ko}</div>`);
+    }
+    try{
+    // 락 획득 후 최신 상태 재조회
+    found=findRow();
+    if(!found)return HtmlService.createHtmlOutput('<h2>❌ 세션을 찾을 수 없습니다.</h2>');
+    row=found.row;rowNum=found.rowNum;rowLang=String(row[SELECT_COL['언어']]||'ko');
+    revCount=parseInt(row[SELECT_COL['재수정요청횟수']])||0;
     const history=parseRevisionHistory_(row[SELECT_COL['재수정요청이력JSON']]);
+    const currentStatus=String(row[SELECT_COL['상태']]||'');
+    // 직전 요청과 동일한 내용이 10분 내 이미 접수됐으면 중복 제출로 간주 — 횟수 소진/메일 재발송 없이 완료 화면만 표시
+    const last=history.length?history[history.length-1]:null;
+    if(last&&String(last.note||'').trim()===note){
+      const lastMs=Date.parse(String(last.requestedAt||'').replace(' ','T'));
+      if(!isFinite(lastMs)||(Date.now()-lastMs)<10*60*1000){
+        return _retouchRevisionSuccessPage_(rowLang,parseInt(last.count)||revCount||1);
+      }
+    }
+    // 구버전 데이터(이력 JSON 없음)에서 메모와 동일한 내용이 재도착한 경우도 중복으로 처리
+    if(!last&&currentStatus==='재수정요청'&&String(row[SELECT_COL['재수정요청메모']]||'').trim()===note){
+      return _retouchRevisionSuccessPage_(rowLang,revCount||1);
+    }
+    // 같은 라운드(상태=재수정요청) 안의 재제출은 내용이 달라도 횟수를 소진하지 않음 — 추가 코멘트로 병합
+    if(currentStatus==='재수정요청'&&revCount>0){
+      if(!history.length){
+        const existingNote=String(row[SELECT_COL['재수정요청메모']]||'').trim();
+        if(existingNote) history.push({count:revCount,requestedAt:'',note:existingNote});
+      }
+      history.push({
+        count:revCount,
+        requestedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+        note:note,
+        addendum:true
+      });
+      const prevMemo=String(row[SELECT_COL['재수정요청메모']]||'').trim();
+      selSh.getRange(rowNum,SELECT_COL['재수정요청메모']+1).setValue(prevMemo?prevMemo+'\n[추가] '+note:note);
+      selSh.getRange(rowNum,SELECT_COL['재수정요청이력JSON']+1).setValue(JSON.stringify(history));
+      SpreadsheetApp.flush();
+      try{
+        const customerName=String(row[SELECT_COL['고객명']]||'');
+        sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[재수정요청 추가코멘트] ${customerName}님 (${revCount}/2)`,htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;"><h2 style="margin:0 0 12px;color:#b45309;">재수정 요청 추가 코멘트</h2><p><b>${escapeHtml_(customerName)}</b>님이 진행 중인 재수정 요청(${revCount}/2)에 코멘트를 추가했습니다. 횟수는 추가로 소진되지 않았습니다.</p><div style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;color:#7c2d12;">${escapeHtml_(note)}</div></div>`});
+      }catch(addMailErr){Logger.log('retouch addendum admin mail error: '+addMailErr.message);}
+      return _retouchRevisionSuccessPage_(rowLang,revCount);
+    }
+    if(revCount>=2) return _retouchRevisionMaxedPage_(rowLang);
+    const newCount=revCount+1;
     if(!history.length){
       const existingNote=String(row[SELECT_COL['재수정요청메모']]||'').trim();
       if(existingNote && revCount>0) history.push({count:revCount,requestedAt:'',note:existingNote});
@@ -8811,6 +8916,7 @@ function reviseRetouch_(sessionId,p){
     selSh.getRange(rowNum,SELECT_COL['재수정요청횟수']+1).setValue(newCount);
     selSh.getRange(rowNum,SELECT_COL['재수정요청메모']+1).setValue(note);
     selSh.getRange(rowNum,SELECT_COL['재수정요청이력JSON']+1).setValue(JSON.stringify(history));
+    SpreadsheetApp.flush();
     try{
       const requestedAt=history[history.length-1]&&history[history.length-1].requestedAt||'';
       const customerName=String(row[SELECT_COL['고객명']]||'');
@@ -8876,9 +8982,23 @@ function reviseRetouch_(sessionId,p){
         sendTrackedEmail_({to:email,subject:subjects[L],htmlBody:html});
       }
     }catch(customerMailErr){Logger.log('retouch revision customer mail error: '+customerMailErr.message);}
-    const msgs={ko:`<h2 style="color:#f59e0b;">✏️ 재수정 요청이 접수되었습니다 (${newCount}/2회)</h2><p>Studio mean에서 수정 후 다시 보내드리겠습니다. 감사합니다.</p>`,en:`<h2 style="color:#f59e0b;">✏️ Revision Request Received (${newCount}/2)</h2><p>Studio mean will revise and resend your photos. Thank you!</p>`,de:`<h2 style="color:#f59e0b;">✏️ Überarbeitungsanfrage erhalten (${newCount}/2)</h2><p>Studio mean wird die Fotos überarbeiten und erneut zusenden.</p>`};
-    return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
-  }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
+    return _retouchRevisionSuccessPage_(rowLang,newCount);
+    }finally{try{lock.releaseLock();}catch(e){}}
+  }catch(err){
+    // 최종 안전망: 처리 실패 시에도 고객이 작성한 내용을 어드민 메일로 전달해 유실 방지
+    let relayed=false;
+    try{
+      const failNote=String((p&&p.note)||'').trim();
+      if(failNote){
+        sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[재수정요청 오류·수동확인 필요] 세션 ${String(sessionId||'')}`,htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;"><h2 style="margin:0 0 12px;color:#b91c1c;">재수정 요청 자동 처리 실패</h2><p>아래 고객 요청 내용을 확인하고 수동으로 처리해 주세요. (시트 상태/횟수 반영 안 됐을 수 있음)</p><p style="color:#b91c1c;">오류: ${escapeHtml_(String(err&&err.message||err))}</p><div style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;color:#7c2d12;">${escapeHtml_(failNote)}</div></div>`});
+        relayed=true;
+      }
+    }catch(relayErr){Logger.log('retouch revision failsafe mail error: '+relayErr.message);}
+    if(relayed){
+      return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;max-width:560px;margin:0 auto;"><h2 style="color:#f59e0b;">📨 요청 내용이 스튜디오에 전달되었습니다.</h2><p>자동 접수 중 일시적인 문제가 있었지만, 작성하신 내용은 Studio mean에 안전하게 전달되었습니다. 확인 후 회신드리겠습니다.</p><p style="color:#94a3b8;font-size:12px;">Your message was safely forwarded to Studio mean despite a temporary issue. We will get back to you.</p></div>');
+    }
+    return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;max-width:560px;margin:0 auto;"><h2 style="color:#ef4444;">⚠️ 처리 중 문제가 발생했습니다.</h2><p>불편을 드려 죄송합니다. 아래 주소로 요청 내용을 보내주시면 바로 처리해 드리겠습니다.<br><b>studio.mean.de@gmail.com</b></p><p style="color:#94a3b8;font-size:12px;">Please email your revision request to studio.mean.de@gmail.com — we will handle it right away.<br>${escapeHtml_(String(err&&err.message||err))}</p></div>`);
+  }
 }
 
 function KRW_TO_EUR_RATE_CACHE_KEY_(){return 'krw_to_eur_rate_v1';}
@@ -15843,8 +15963,10 @@ function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
 
     const sessionId=String(selRow[0]||'');
     const reviseCount=parseInt(selRow[SELECT_COL['재수정요청횟수']])||0;
-    const approveUrl=sessionId?createHtmlActionLink_('approve_retouch',sessionId):'';
-    const reviseUrl=(sessionId&&reviseCount<2)?createHtmlActionLink_('revise_retouch',sessionId):'';
+    // 보정본 확인은 고객이 늦게 열어보는 경우가 잦아 60일 유효
+    const RETOUCH_LINK_TTL=60*60*24*60;
+    const approveUrl=sessionId?createHtmlActionLink_('approve_retouch',sessionId,RETOUCH_LINK_TTL):'';
+    const reviseUrl=(sessionId&&reviseCount<2)?createHtmlActionLink_('revise_retouch',sessionId,RETOUCH_LINK_TTL):'';
     const actionBtns=`<div style="display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;">${approveUrl?`<a href="${approveUrl}" style="background:#10b981;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">✅ ${lang==='ko'?'최종 승인':lang==='en'?'Approve':'Bestätigen'}</a>`:''}${reviseUrl?`<a href="${reviseUrl}" style="background:#f59e0b;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">✏️ ${lang==='ko'?'재수정 요청':lang==='en'?'Request Revision':'Überarbeitung anfordern'}</a>`:`<span style="font-size:12px;color:#94a3b8;">${lang==='ko'?'재수정 횟수 초과':lang==='en'?'Max revisions reached':'Max. Überarbeitungen erreicht'}</span>`}</div>`;
     const subj={
       ko:`[Studio mean] 보정본이 완성되었습니다 — ${name}님`,
@@ -15948,6 +16070,9 @@ function autoSelectDailyCheck(){
   const now=new Date();
   const bookSh=sheets.bookingSheet;
   const todayStr=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
+
+  // Gutschein V2: 만료된 예약중(hold) 상품권 자동 해제
+  try{cleanupExpiredGutscheinHolds_();}catch(e){Logger.log('gutschein hold cleanup 오류:'+e.message);}
 
   // 0. 확정됨 + 촬영일 지남 → 촬영완료 자동 전환
   try{
@@ -19757,9 +19882,29 @@ function ensureQuoteFolder_(){
 }
 
 function normalizeQuoteLang_(lang){
+  // 단일(de/ko/en) 또는 조합('de_ko', 'ko_en', 'de_ko_en' 등) 허용
+  // 조합은 항상 de → ko → en 순서로 정규화 (PDF 페이지 순서와 동일)
   const raw=String(lang||'').trim().toLowerCase();
-  if(raw==='ko'||raw==='en'||raw==='de') return raw;
-  return 'de';
+  const order=['de','ko','en'];
+  const parts=raw.split(/[_+,\s]+/).filter(function(p){return order.indexOf(p)>-1;});
+  const uniq=order.filter(function(l){return parts.indexOf(l)>-1;});
+  if(!uniq.length) return 'de';
+  return uniq.join('_');
+}
+// 견적서의 페이지 언어 목록 (예: 'de_ko_en' → ['de','ko','en'])
+function _quoteLangList_(lang){
+  return normalizeQuoteLang_(lang).split('_');
+}
+// 다국어 견적서의 대표 언어(1페이지 언어) — 메일 문안 등 단일 언어가 필요한 곳에 사용
+function _quotePrimaryLang_(lang){
+  return _quoteLangList_(lang)[0];
+}
+// 2개 국어 텍스트 분리 — 줄 단위 구분자 '//' 기준 (앞: 1언어, 뒤: 2언어), 구분자 없으면 공용
+function _pickQuoteLangText_(text,idx){
+  const parts=String(text||'').split(/\r?\n\s*\/\/\s*(?:\r?\n|$)/);
+  if(parts.length<2) return String(text||'').trim();
+  const part=parts[idx]!==undefined?parts[idx]:parts[0];
+  return String(part||'').trim();
 }
 
 function generateQuoteNumber_(quoteSh){
@@ -19794,6 +19939,17 @@ function _parseQuoteItems_(raw){
       };
     }).filter(function(x){return x.description||x.unitGross>0;}):[];
   }catch(e){return[];}
+}
+
+// 견적서 PDF 표시 항목 옵션 — 기본 전부 표시, 명시적 false만 제외 (구버전 행 호환)
+const QUOTE_PDF_OPTION_KEYS=['showValidUntil','showShootDate','showDiscount','showDeposit','showTerms','showBank','showVatId','showMemo'];
+function _normalizeQuotePdfOptions_(raw){
+  let src=raw;
+  if(typeof src==='string'){ try{src=JSON.parse(src||'{}');}catch(e){src={};} }
+  if(!src||typeof src!=='object') src={};
+  const opts={};
+  QUOTE_PDF_OPTION_KEYS.forEach(function(k){ opts[k]=src[k]===false?false:true; });
+  return opts;
 }
 
 function _calcQuoteTotals_(items,discountAmt){
@@ -19846,7 +20002,8 @@ function quoteRowToObject_(row,rowIndex){
     rejectReason:String(row[QUOTE_COL['거절사유']]||''),
     linkedBookingRow:parseInt(row[QUOTE_COL['연결예약행']])||0,
     author:String(row[QUOTE_COL['작성자']]||''),
-    updatedAt:String(row[QUOTE_COL['수정일시']]||'')
+    updatedAt:String(row[QUOTE_COL['수정일시']]||''),
+    pdfOptions:_normalizeQuotePdfOptions_(row[QUOTE_COL['표시옵션JSON']]||'')
   };
 }
 
@@ -19863,17 +20020,19 @@ function _findQuoteRow_(quoteSh,number){
 }
 
 function _defaultQuoteTerms_(lang){
-  const L=normalizeQuoteLang_(lang);
+  // 부가세 안내는 PDF 상단 고정 문구(netto zzgl. 19% MwSt.)로 표기되므로 여기서 중복하지 않음
+  const langs=_quoteLangList_(lang);
   const map={
-    ko:'• 본 견적은 발행일로부터 30일간 유효합니다.\n• 예약 확정은 계약금 입금 후 이루어집니다.\n• 금액은 19% 부가가치세가 포함되어 있습니다.',
-    en:'• This quotation is valid for 30 days from the issue date.\n• Your booking is confirmed upon receipt of the deposit.\n• All amounts include 19% VAT.',
-    de:'• Dieses Angebot ist 30 Tage ab Ausstellungsdatum gültig.\n• Die Buchung wird nach Eingang der Anzahlung bestätigt.\n• Alle Beträge enthalten 19% MwSt.'
+    ko:'- 본 견적은 발행일로부터 30일간 유효합니다.\n- 예약 확정은 계약금 입금 후 이루어집니다.',
+    en:'- This quotation is valid for 30 days from the issue date.\n- Your booking is confirmed upon receipt of the deposit.',
+    de:'- Dieses Angebot ist 30 Tage ab Ausstellungsdatum gültig.\n- Die Buchung wird nach Eingang der Anzahlung bestätigt.'
   };
-  return map[L]||map.de;
+  if(langs.length>1) return langs.map(function(l){return map[l]||map.de;}).join('\n//\n');
+  return map[langs[0]]||map.de;
 }
 
 function buildQuoteEmailDefaults_(q){
-  const L=normalizeQuoteLang_(q.lang);
+  const L=_quotePrimaryLang_(q.lang);
   const nameRaw=String(q.companyName||q.name||'').trim();
   const koName=(nameRaw||'고객').replace(/님$/,'');
   const enName=nameRaw||'Customer';
@@ -19893,106 +20052,133 @@ function buildQuoteEmailDefaults_(q){
 }
 
 function buildQuoteHtml_(q){
-  const L=normalizeQuoteLang_(q.lang);
+  // AN-260003 디자인 미러 — 가로줄 표, 굵은 중앙 헤더, 우측 부가세 문구, 대시(-) 노트
+  // 다국어 조합(de/ko/en) 시 언어당 1페이지 합본. 품목/조건/메모는 '//' 단독 줄로 언어 구분 가능.
+  const pageLangs=_quoteLangList_(q.lang);
+  const opt=_normalizeQuotePdfOptions_(q.pdfOptions);
   const items=(q.items&&q.items.length)?q.items:[{description:q.product||'-',qty:1,unitGross:parseFloat(q.total)||0}];
+  // 표시 옵션은 렌더링만 제어 — 금액 계산은 항상 할인 포함 (시트/메일 총액과 일치 유지)
   const totals=_calcQuoteTotals_(items,q.discount);
-  const dtParts=(q.issuedAt||'').split('-');
-  const fmtDate=dtParts.length===3?`${dtParts[2]}/${dtParts[1]}/${dtParts[0]}`:(q.issuedAt||'');
-  const vdParts=(q.validUntil||'').split('-');
-  const fmtValid=vdParts.length===3?`${vdParts[2]}/${vdParts[1]}/${vdParts[0]}`:(q.validUntil||'');
+  const fmtD=s=>{const p=String(s||'').split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(s||'');};
+  const fmtDate=fmtD(q.issuedAt);
+  const fmtValid=fmtD(q.validUntil);
+  const fmtShoot=fmtD(q.shootDate);
   const T={
-    de:{title:'Angebot',invLabel:'Angebotsnummer',dateLabel:'Angebotsdatum',validLabel:'Gültig bis',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',subtotal:'Zwischensumme',disc:'Rabatt',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Gesamtbetrag',dep:'Anzahlung',notes:'Anmerkungen',terms:'Bedingungen'},
-    ko:{title:'견적서',invLabel:'견적 번호',dateLabel:'발행일',validLabel:'유효 기한',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',subtotal:'소계',disc:'할인',net:'공급가액',mwst:'부가세 19%',end:'총 금액',dep:'계약금',notes:'메모',terms:'조건'},
-    en:{title:'Quotation',invLabel:'Quotation No.',dateLabel:'Issue Date',validLabel:'Valid Until',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',subtotal:'Subtotal',disc:'Discount',net:'Net Total',mwst:'VAT 19%',end:'Total Amount',dep:'Deposit',notes:'Notes',terms:'Terms'}
+    de:{invLabel:'Angebotnummer',dateLabel:'Angebotdatum',validLabel:'Gültig bis',shootLabel:'Geplanter Termin',vatNote:'Alle Preise verstehen sich netto zzgl. der gesetzlichen Mehrwertsteuer (19%).',pos:'Pos.',bez:'Bezeichnung',qty:'Qty',ep:'Einzelpreis',gp:'Gesamtpreis (Netto)',subtotal:'Zwischensumme (brutto)',disc:'Rabatt',net:'Netto',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung'},
+    ko:{invLabel:'견적번호',dateLabel:'발행일',validLabel:'유효기한',shootLabel:'촬영예정일',vatNote:'모든 금액은 세전(Netto) 기준이며, 법정 부가가치세 19%가 별도 가산됩니다.',pos:'번호',bez:'항목',qty:'수량',ep:'단가',gp:'합계(세전)',subtotal:'소계(세후)',disc:'할인',net:'공급가액',mwst:'부가세 19%',end:'총 금액',dep:'계약금'},
+    en:{invLabel:'Quotation No.',dateLabel:'Quotation Date',validLabel:'Valid Until',shootLabel:'Planned Date',vatNote:'All prices are net; statutory VAT (19%) will be added.',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (Net)',subtotal:'Subtotal (gross)',disc:'Discount',net:'Net',mwst:'VAT 19%',end:'Total',dep:'Deposit'}
   };
-  const t=T[L]||T.de;
   const customerName=escapeHtml_(q.companyName||q.name||'');
-  const customerAddr=escapeHtml_(q.billingAddress||q.customerAddress||'');
-  const vatLine=q.vatId?`<div>USt-IdNr: ${escapeHtml_(q.vatId)}</div>`:'';
+  const customerSub=q.companyName&&q.name?`<div>${escapeHtml_(q.name)}</div>`:'';
+  const customerEmail=q.email?`<div>E-Mail: ${escapeHtml_(q.email)}</div>`:'';
+  const customerAddr=q.billingAddress||q.customerAddress?`<div style="white-space:pre-line;">${escapeHtml_(q.billingAddress||q.customerAddress)}</div>`:'';
+  const vatLine=(opt.showVatId&&q.vatId)?`<div>USt-IdNr: ${escapeHtml_(q.vatId)}</div>`:'';
+  const bankHtml='Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX';
+  const showDiscountRow=opt.showDiscount&&totals.discount>0;
+  const showDepositRow=opt.showDeposit&&Number(q.depositAmount)>0;
+  const logoHtml=getInvoiceLogoHtml_();
+  const buildPage=function(L,langIdx,pageBreak){
+    const t=T[L]||T.de;
+    const termsRaw=String(q.terms||'').trim();
+    const termsText=termsRaw?_pickQuoteLangText_(termsRaw,langIdx):_defaultQuoteTerms_(L);
+    const memoText=_pickQuoteLangText_(String(q.memo||'').trim(),langIdx);
+    const noteLines=[];
+    if(opt.showTerms&&termsText) noteLines.push(termsText);
+    if(opt.showMemo&&memoText) noteLines.push(memoText);
+    const notesHtml=noteLines.length?`<div class="notes-block">${escapeHtml_(noteLines.join('\n')).replace(/\n/g,'<br>')}</div>`:'';
+    const rowsHtml=items.map(function(item,idx){
+      const qty=Math.max(1,parseInt(item.qty,10)||1);
+      const lineGross=qty*(parseFloat(item.unitGross)||0);
+      const unitNet=Math.round((((parseFloat(item.unitGross)||0)/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
+      const lineNet=Math.round(((lineGross/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
+      const descText=_pickQuoteLangText_(item.description||'',langIdx);
+      return `<tr><td class="pos">${idx+1}</td><td><div class="item-desc">${escapeHtml_(descText)}</div></td><td class="qty">${qty}</td><td class="ep">€${unitNet.toFixed(2)}</td><td class="gp">€${lineNet.toFixed(2)}</td></tr>`;
+    }).join('');
+    return `<div class="page${pageBreak?' pbreak':''}">
+<div class="header">
+  <div class="logo-wrap">
+    ${logoHtml}
+    <div class="sender-line">Taewoong Min _ Holzwegpassage 3, 61440 Oberursel</div>
+    <div class="customer-block">${customerName?`<div class="customer-name">${customerName}</div>`:''}${customerSub}${customerEmail}${customerAddr}${vatLine}</div>
+  </div>
+  <div class="biz-info">
+    Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland<br><br>
+    Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>
+    Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941${opt.showBank?`<br>${bankHtml}`:''}
+  </div>
+</div>
+<div class="inv-meta">
+  <div class="meta-main"><span class="lbl">${t.invLabel}</span><span>: ${escapeHtml_(q.number||'')}</span></div>
+  <div class="meta-sub"><span class="lbl">${t.dateLabel}</span><span>${escapeHtml_(fmtDate)}</span></div>
+  ${(opt.showValidUntil&&fmtValid)?`<div class="meta-sub"><span class="lbl">${t.validLabel}</span><span>${escapeHtml_(fmtValid)}</span></div>`:''}
+  ${(opt.showShootDate&&fmtShoot)?`<div class="meta-sub"><span class="lbl">${t.shootLabel}</span><span>${escapeHtml_(fmtShoot)}</span></div>`:''}
+</div>
+<div class="vat-note">${t.vatNote}</div>
+<table class="invoice-table"><thead><tr><th style="width:70px;">${t.pos}</th><th>${t.bez}</th><th style="width:44px;">${t.qty}</th><th style="width:90px;">${t.ep}</th><th style="width:110px;">${t.gp}</th></tr></thead><tbody>
+${rowsHtml}
+</tbody></table>
+<div class="totals">
+  ${showDiscountRow?`<div class="t-row t-first"><span>${t.subtotal}</span><span>€${totals.subtotal.toFixed(2)}</span></div>
+  <div class="t-row" style="color:#c00;"><span>${t.disc}</span><span>-€${totals.discount.toFixed(2)}</span></div>
+  <div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`
+  :`<div class="t-row t-first"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`}
+  <div class="t-row"><span>${t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
+  <div class="t-row t-end"><span>${t.end}</span><span>€${totals.total.toFixed(2)}</span></div>
+  ${showDepositRow?`<div class="t-row t-dep"><span>${t.dep}${q.depositRate>0?' ('+q.depositRate+'%)':''}</span><span>€${Number(q.depositAmount).toFixed(2)}</span></div>`:''}
+</div>
+${notesHtml}
+<div class="footer"><div class="footer-sep"></div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>${opt.showBank?bankHtml:''}</div></div></div>
+</div>`;
+  };
+  const pagesHtml=pageLangs.map(function(L,i){return buildPage(L,i,i>0);}).join('');
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(q.number||'Angebot')}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 @page{size:A4 portrait;margin:12mm;}
 html,body{margin:0;padding:0;background:#fff;}
-body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:186mm;min-height:273mm;margin:0 auto;}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:186mm;margin:0 auto;}
 .page{min-height:273mm;display:flex;flex-direction:column;}
+.pbreak{page-break-before:always;break-before:page;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;}
 .logo-wrap{flex:1;max-width:52%;}
-.brand{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:28px;font-weight:600;color:#1f2937;}
-.sender-line{border-top:1px solid #aaa;width:74%;margin-top:10px;padding-top:5px;font-size:9.5px;color:#666;}
-.customer-block{margin-top:28px;font-size:11px;line-height:1.55;min-height:90px;white-space:pre-line;}
-.customer-name{font-weight:700;margin-bottom:4px;}
-.biz-info{text-align:left;font-size:11px;line-height:1.75;min-width:215px;}
-.doc-title{font-size:22px;font-weight:700;margin-top:18px;letter-spacing:1.2px;}
-.inv-meta{margin:10px 0 18px;}
-.inv-meta-row{display:flex;align-items:flex-end;gap:8px;margin-bottom:4px;}
-.inv-meta-main{margin-bottom:2px;}
-.inv-meta-label{font-size:15px;font-weight:700;white-space:nowrap;}
-.inv-meta-label-sm{font-size:11px;white-space:nowrap;}
-.inv-meta-colon{font-size:15px;font-weight:700;line-height:1;}
-.inv-meta-value{font-size:15px;font-weight:700;white-space:nowrap;}
-.inv-meta-value-sm{font-size:11px;white-space:nowrap;}
-.invoice-table{width:100%;border-collapse:collapse;margin-top:16px;}
-.invoice-table thead tr{border-top:1px solid #bbb;border-bottom:1px solid #bbb;}
-.invoice-table th{padding:7px 10px;text-align:left;font-size:11px;font-weight:normal;background:#fff;}
-.invoice-table td{padding:7px 10px;font-size:11px;}
-.invoice-table tbody tr{border-bottom:1px solid #ddd;}
-.r{text-align:right;}
-.totals{margin-top:28px;margin-left:auto;width:260px;}
-.t-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;}
-.t-end{font-weight:bold;font-size:12px;border-top:1px solid #1a1a1a;margin-top:5px;padding-top:6px;}
-.t-dep{color:#2563eb;margin-top:4px;}
-.memo-block{margin:18px 0 0 auto;width:360px;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;color:#555;}
-.memo-title{font-weight:700;color:#1f2937;margin-bottom:4px;}
-.terms-block{margin:22px 0 0;border-top:1px dashed #d1d5db;padding-top:12px;font-size:10.5px;line-height:1.7;color:#444;white-space:pre-line;}
-.terms-title{font-weight:700;color:#1f2937;margin-bottom:6px;font-size:11px;}
+.logo-img{width:240px;height:auto;display:block;}
+.logo-wordmark{width:240px;padding-top:8px;color:#201c1f;}
+.logo-name{font-size:28px;font-weight:700;letter-spacing:.02em;}
+.logo-tag{margin-top:4px;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#666;}
+.sender-line{border-top:1px solid #bbb;width:88%;margin-top:8px;padding-top:5px;font-size:9px;color:#999;}
+.customer-block{margin-top:22px;font-size:11px;line-height:1.6;min-height:60px;}
+.customer-name{font-weight:700;}
+.biz-info{text-align:left;font-size:10.5px;line-height:1.6;min-width:215px;padding-top:6px;}
+.inv-meta{margin:72px 0 26px;}
+.meta-main{display:flex;gap:10px;font-size:16px;font-weight:700;margin-bottom:6px;}
+.meta-main .lbl{min-width:150px;}
+.meta-sub{display:flex;gap:10px;font-size:10.5px;margin-bottom:3px;}
+.meta-sub .lbl{min-width:160px;}
+.vat-note{text-align:right;font-size:10.5px;margin-bottom:6px;}
+.invoice-table{width:100%;border-collapse:collapse;}
+.invoice-table thead tr{border-top:1.2px solid #333;border-bottom:1.2px solid #333;}
+.invoice-table th{padding:5px 8px;font-size:10.5px;font-weight:700;text-align:center;background:#fff;}
+.invoice-table td{padding:5px 8px;font-size:10.5px;vertical-align:middle;}
+.invoice-table tbody tr{border-bottom:1px solid #ccc;}
+.invoice-table td.pos{text-align:center;width:70px;}
+.invoice-table td.qty{text-align:center;width:44px;}
+.invoice-table td.ep{text-align:right;width:90px;}
+.invoice-table td.gp{text-align:right;width:110px;}
+.item-desc{line-height:1.45;white-space:pre-line;}
+.totals{margin-top:20px;margin-left:auto;width:220px;}
+.t-row{display:flex;justify-content:space-between;padding:4px 2px;font-size:10.5px;border-bottom:1px solid #ccc;}
+.t-first{border-top:1.2px solid #333;}
+.t-end{font-weight:700;border-top:1.2px solid #333;border-bottom:1.2px solid #333;}
+.t-dep{color:#2563eb;border-bottom:none;}
+.notes-block{margin:56px 0 0;font-size:10px;line-height:1.9;}
 .footer{margin-top:auto;padding-top:18px;}
-.footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
+.footer-sep{border-top:1px solid #999;margin-bottom:12px;}
 .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
-@media print{html,body{width:auto;min-height:auto;}body{margin:0;}}
+@media print{html,body{width:auto;}body{margin:0;}}
 </style></head><body>
-<div class="page">
-<div class="header">
-  <div class="logo-wrap">
-    <div class="brand">Studio mean</div>
-    <div class="sender-line">Taewoong Min _ Holzwegpassage 3, 61440 Oberursel</div>
-    <div class="customer-block">${customerName?`<div class="customer-name">${customerName}</div>`:''}${customerAddr}${vatLine}</div>
-  </div>
-  <div class="biz-info">
-    Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland<br><br>
-    Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>
-    Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941<br>
-    Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX
-  </div>
-</div>
-<div class="doc-title">${t.title}</div>
-<div class="inv-meta">
-  <div class="inv-meta-row inv-meta-main"><span class="inv-meta-label">${t.invLabel}</span><span class="inv-meta-colon">:</span><span class="inv-meta-value">${escapeHtml_(q.number||'')}</span></div>
-  <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.dateLabel}</span><span class="inv-meta-colon" style="font-size:11px;font-weight:400;">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtDate)}</span></div>
-  <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.validLabel}</span><span class="inv-meta-colon" style="font-size:11px;font-weight:400;">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtValid)}</span></div>
-</div>
-<table class="invoice-table"><thead><tr><th style="width:36px;">${t.pos}</th><th>${t.bez}</th><th style="width:36px;text-align:center;">${t.qty}</th><th style="width:110px;text-align:right;">${t.ep}</th><th style="width:140px;text-align:right;">${t.gp}</th></tr></thead><tbody>
-${items.map(function(item,idx){
-  const qty=Math.max(1,parseInt(item.qty,10)||1);
-  const lineGross=qty*(parseFloat(item.unitGross)||0);
-  const unitNet=Math.round((((parseFloat(item.unitGross)||0)/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
-  const lineNet=Math.round(((lineGross/(1+CONFIG.QUOTE_VAT_RATE)))*100)/100;
-  return `<tr><td>${idx+1}</td><td>${escapeHtml_(item.description||'')}</td><td class="r">${qty}</td><td class="r">€${unitNet.toFixed(2)}</td><td class="r">€${lineNet.toFixed(2)}</td></tr>`;
-}).join('')}
-</tbody></table>
-<div class="totals">
-  <div class="t-row"><span>${t.subtotal}</span><span>€${totals.subtotal.toFixed(2)}</span></div>
-  ${totals.discount>0?`<div class="t-row" style="color:#c00;"><span>${t.disc}</span><span>-€${totals.discount.toFixed(2)}</span></div>`:''}
-  <div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>
-  <div class="t-row"><span>${t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
-  <div class="t-row t-end"><span>${t.end}</span><span>€${totals.total.toFixed(2)}</span></div>
-  ${q.depositAmount>0?`<div class="t-row t-dep"><span>${t.dep}${q.depositRate>0?' ('+q.depositRate+'%)':''}</span><span>€${Number(q.depositAmount).toFixed(2)}</span></div>`:''}
-</div>
-${q.memo?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div style="white-space:pre-line;">${escapeHtml_(q.memo)}</div></div>`:''}
-<div class="terms-block"><div class="terms-title">${t.terms}</div>${escapeHtml_(q.terms||_defaultQuoteTerms_(L))}</div>
-<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(q.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
-</div></body></html>`;
+${pagesHtml}
+</body></html>`;
 }
 
 function createQuotePdf_(q){
@@ -20001,7 +20187,16 @@ function createQuotePdf_(q){
   const safeNum=String(q.number||'').replace(/-/g,'_');
   const fileName=`Studiomean_${safeNum}_${safeName||'customer'}_${Number(q.total||0).toFixed(2)}EUR.pdf`;
   const html=buildQuoteHtml_(q);
-  const pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
+  let pdfBlob;
+  try{
+    pdfBlob=HtmlService.createHtmlOutput(html).getBlob().getAs(MimeType.PDF).setName(fileName);
+  }catch(primaryErr){
+    try{
+      pdfBlob=Utilities.newBlob(html,'text/html',fileName.replace(/\.pdf$/i,'.html')).getAs(MimeType.PDF).setName(fileName);
+    }catch(fallbackErr){
+      throw new Error('PDF 변환 실패: '+String(primaryErr&&primaryErr.message||primaryErr)+' / '+String(fallbackErr&&fallbackErr.message||fallbackErr));
+    }
+  }
   const file=folder.createFile(pdfBlob);
   return {fileId:file.getId(), url:file.getUrl(), name:file.getName()};
 }
@@ -20048,7 +20243,8 @@ function _buildQuotePayloadFromRequest_(payload,existing){
     memo:String(payload.memo!=null?payload.memo:(base.memo||'')).trim(),
     terms:String(payload.terms!=null?payload.terms:(base.terms||'')).trim(),
     mailSubject:String(payload.mailSubject!=null?payload.mailSubject:(base.mailSubject||'')).trim(),
-    mailBody:String(payload.mailBody!=null?payload.mailBody:(base.mailBody||'')).trim()
+    mailBody:String(payload.mailBody!=null?payload.mailBody:(base.mailBody||'')).trim(),
+    pdfOptions:_normalizeQuotePdfOptions_(payload.pdfOptions!=null?payload.pdfOptions:(base.pdfOptions||{}))
   };
 }
 
@@ -20091,7 +20287,8 @@ function createQuoteAdmin(token, payload){
       data.depositAmount,data.depositRate,
       data.memo,terms,
       '','',mailSubject,mailBody,'',
-      '','','',author,updatedAt
+      '','','',author,updatedAt,
+      JSON.stringify(data.pdfOptions)
     ]);
     const rowIndex=quoteSheet.getLastRow();
     const quoteObj={
@@ -20102,7 +20299,8 @@ function createQuoteAdmin(token, payload){
       items:data.items,
       subtotal:data.totals.subtotal,discount:data.totals.discount,netto:data.totals.netto,vat:data.totals.vat,total:data.totals.total,
       depositAmount:data.depositAmount,depositRate:data.depositRate,
-      memo:data.memo,terms
+      memo:data.memo,terms,
+      pdfOptions:data.pdfOptions
     };
     const pdf=_persistQuotePdfToRow_(quoteSheet,rowIndex,quoteObj);
     let mailResult={requested:!!input.sendMail,sent:false,error:''};
@@ -20140,6 +20338,7 @@ function updateQuoteAdmin(token, number, payload){
   set('소계(€)',data.totals.subtotal);set('할인(€)',data.totals.discount);set('순액(€)',data.totals.netto);set('부가세(€)',data.totals.vat);set('총액(€)',data.totals.total);
   set('계약금(€)',data.depositAmount);set('계약금비율',data.depositRate);
   set('메모',data.memo);set('조건',data.terms||_defaultQuoteTerms_(data.lang));
+  set('표시옵션JSON',JSON.stringify(data.pdfOptions));
   set('수정일시',updatedAt);
   if(data.mailSubject) set('메일제목',data.mailSubject);
   if(data.mailBody) set('메일본문',data.mailBody);
@@ -20148,7 +20347,8 @@ function updateQuoteAdmin(token, number, payload){
     companyName:data.companyName,vatId:data.vatId,billingAddress:data.billingAddress,
     itemGroup:data.itemGroup,product:data.product,shootDate:data.shootDate,
     items:data.items,subtotal:data.totals.subtotal,discount:data.totals.discount,netto:data.totals.netto,vat:data.totals.vat,total:data.totals.total,
-    depositAmount:data.depositAmount,depositRate:data.depositRate,memo:data.memo,terms:data.terms||_defaultQuoteTerms_(data.lang)
+    depositAmount:data.depositAmount,depositRate:data.depositRate,memo:data.memo,terms:data.terms||_defaultQuoteTerms_(data.lang),
+    pdfOptions:data.pdfOptions
   });
   _persistQuotePdfToRow_(quoteSheet,rowIndex,merged);
   return {ok:true,number:existing.number};
@@ -20526,8 +20726,39 @@ function gutscheinRowToObject_(row,rowIndex){
     taxDecisionNote:String(row[GUTSCHEIN_COL['세무판단근거']]||'').trim(),
     redeemedProductId:String(row[GUTSCHEIN_COL['실제사용상품ID']]||'').trim(),
     redeemedProductName:String(row[GUTSCHEIN_COL['실제사용상품명']]||'').trim(),
-    redeemedAt:String(row[GUTSCHEIN_COL['실제사용일시']]||'').trim()
+    redeemedAt:String(row[GUTSCHEIN_COL['실제사용일시']]||'').trim(),
+    holdToken:String(row[GUTSCHEIN_COL['hold토큰']]||'').trim(),
+    holdStartedAt:String(row[GUTSCHEIN_COL['hold시작일시']]||'').trim(),
+    holdExpiresAt:normalizeGutscheinHoldExpiry_(row[GUTSCHEIN_COL['hold만료일시']]),
+    holdDraftId:String(row[GUTSCHEIN_COL['hold드래프트ID']]||'').trim(),
+    holdChannel:String(row[GUTSCHEIN_COL['hold채널']]||'').trim(),
+    holdReleasedAt:String(row[GUTSCHEIN_COL['hold해제일시']]||'').trim(),
+    holdAmount:Math.round((Number(row[GUTSCHEIN_COL['예약중차감금액(€)']]||0)||0)*100)/100,
+    finalizedAt:String(row[GUTSCHEIN_COL['최종사용확정일시']]||'').trim()
   };
+}
+
+function normalizeGutscheinHoldExpiry_(value){
+  if(value instanceof Date) return Utilities.formatDate(value,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  return String(value||'').trim();
+}
+
+// hold가 아직 유효한지 (만료시각이 미래인지)
+function isGutscheinHoldActive_(g,nowMs){
+  if(!g||g.status!==GUTSCHEIN_STATUS.HOLD) return false;
+  const exp=Date.parse(String(g.holdExpiresAt||'').replace(' ','T'));
+  if(!isFinite(exp)) return false;
+  return exp>(nowMs||Date.now());
+}
+
+// hold 해제 — 상태를 판매완료로 되돌리고 hold 필드 정리 (해제 사유는 hold채널에 덧붙임)
+function _releaseGutscheinHoldCells_(gutscheinSheet,rowIndex,reason){
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.SOLD);
+  gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['hold토큰']+1).setValue('');
+  gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['hold만료일시']+1).setValue('');
+  gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['hold해제일시']+1).setValue(now+(reason?' ('+reason+')':''));
+  gutscheinSheet.getRange(rowIndex,GUTSCHEIN_COL['예약중차감금액(€)']+1).setValue('');
 }
 
 function getGutscheinDisplayState_(g){
@@ -20536,6 +20767,7 @@ function getGutscheinDisplayState_(g){
   if(g.status===GUTSCHEIN_STATUS.CANCELLED) return 'cancelled';
   if(g.status===GUTSCHEIN_STATUS.STOCK || !g.buyerRegistered) return 'inactive';
   if(g.validUntil && String(g.validUntil).slice(0,10) < Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')) return 'expired';
+  if(g.status===GUTSCHEIN_STATUS.HOLD && isGutscheinHoldActive_(g)) return 'held';
   return 'active';
 }
 
@@ -21198,6 +21430,10 @@ function _bookingMatchesGutschein_(row, g){
 
 function previewGutscheinApplyAdmin(token, bookingRowIndex, rawCode){
   assertAdmin_(token);
+  return _previewGutscheinApplyCore_(bookingRowIndex, rawCode);
+}
+
+function _previewGutscheinApplyCore_(bookingRowIndex, rawCode){
   const code=extractGutscheinCode_(rawCode);
   if(!code) throw new Error('굿샤인 코드를 입력해 주세요.');
   const bookingSheet=getDbSheet();
@@ -21267,7 +21503,13 @@ function applyGutscheinToBookingAdmin(token, bookingRowIndex, rawCode, method){
   const lock=LockService.getScriptLock();
   try{lock.waitLock(12000);}catch(e){throw new Error('다른 굿샤인 적용 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
   try{
-    const preview=previewGutscheinApplyAdmin(token,bookingRowIndex,rawCode);
+    return _applyGutscheinToBookingCore_(bookingRowIndex,rawCode,method||'manual');
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+// 락 없이 실행되는 적용 코어 — 호출자가 락을 보유해야 함 (admin 래퍼 / processForm)
+function _applyGutscheinToBookingCore_(bookingRowIndex, rawCode, method){
+    const preview=_previewGutscheinApplyCore_(bookingRowIndex,rawCode);
     const bookingSheet=getDbSheet();
     const gutscheinSheet=getGutscheinSheet_();
     const row=bookingSheet.getRange(bookingRowIndex,1,1,bookingSheet.getLastColumn()).getValues()[0];
@@ -21301,14 +21543,187 @@ function applyGutscheinToBookingAdmin(token, bookingRowIndex, rawCode, method){
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['실제사용상품ID']+1).setValue(_resolveBookingProductId_(row));
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['실제사용상품명']+1).setValue(String(row[BOOKING_COL['상품']]||'').trim());
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['실제사용일시']+1).setValue(appliedAt);
+    // hold 정리 + 최종 확정 기록
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold토큰']+1).setValue('');
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold만료일시']+1).setValue('');
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['최종사용확정일시']+1).setValue(appliedAt);
     return {
       ok:true,
       code:preview.code,
       discountAmount:preview.calculations.discountAmount,
       adjustedTotal:preview.calculations.adjustedTotal,
+      adjustedDeposit:preview.calculations.adjustedDeposit,
       finalBalance:preview.calculations.finalBalance,
       appliedAt
     };
+}
+
+/* ===== Gutschein V2: 고객 예약 시 코드 사용 (hold → finalize) ===== */
+
+// 공개 예약 컨텍스트에서의 코드 검증 — reason: NOT_FOUND/USED/CANCELLED/INACTIVE/EXPIRED/HELD/PRODUCT_MISMATCH
+function _validateGutscheinForPublicBooking_(g,productId,quoteTotal,holdToken){
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(g.used||g.status===GUTSCHEIN_STATUS.USED) return {ok:false,reason:'USED'};
+  if(g.status===GUTSCHEIN_STATUS.CANCELLED) return {ok:false,reason:'CANCELLED'};
+  if(g.status===GUTSCHEIN_STATUS.STOCK||!g.buyerRegistered) return {ok:false,reason:'INACTIVE'};
+  if(g.validUntil&&String(g.validUntil).slice(0,10)<today) return {ok:false,reason:'EXPIRED'};
+  if(g.status===GUTSCHEIN_STATUS.HOLD&&isGutscheinHoldActive_(g)&&(!holdToken||g.holdToken!==String(holdToken))) return {ok:false,reason:'HELD'};
+  if(g.voucherType==='product'&&g.productId&&productId&&String(g.productId)!==String(productId)) return {ok:false,reason:'PRODUCT_MISMATCH'};
+  const total=Math.max(0,Math.round((Number(quoteTotal||0)||0)*100)/100);
+  const discountAmount=Math.min(total,Math.round((Number(g.amount||0)||0)*100)/100);
+  const adjustedTotal=Math.max(0,Math.round((total-discountAmount)*100)/100);
+  return {ok:true,discountAmount,adjustedTotal};
+}
+
+function _findGutscheinWithLazyHoldCleanup_(gutscheinSheet,code){
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) return {rowIndex:-1};
+  let g=gutscheinRowToObject_(found.row,found.rowIndex);
+  // 만료된 hold는 접근하는 김에 자동 해제
+  if(g.status===GUTSCHEIN_STATUS.HOLD&&!isGutscheinHoldActive_(g)){
+    _releaseGutscheinHoldCells_(gutscheinSheet,found.rowIndex,'expired');
+    const freshRow=gutscheinSheet.getRange(found.rowIndex,1,1,gutscheinSheet.getLastColumn()).getValues()[0];
+    g=gutscheinRowToObject_(freshRow,found.rowIndex);
+  }
+  return {rowIndex:found.rowIndex,g};
+}
+
+function publicGutscheinValidate_(payload){
+  payload=payload||{};
+  const code=extractGutscheinCode_(payload.code);
+  if(!code) return {ok:false,reason:'INVALID_CODE'};
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinWithLazyHoldCleanup_(gutscheinSheet,code);
+  if(found.rowIndex===-1) return {ok:false,reason:'NOT_FOUND'};
+  const g=found.g;
+  const v=_validateGutscheinForPublicBooking_(g,payload.productId,payload.quoteTotal,String(payload.holdToken||'').trim());
+  if(!v.ok) return {ok:false,reason:v.reason};
+  const deposit=Math.max(0,Math.round((Number(payload.depositAmount||0)||0)*100)/100);
+  const adjustedDeposit=Math.min(deposit,v.adjustedTotal);
+  return {
+    ok:true,
+    code:g.code,
+    voucherType:g.voucherType,
+    productSnapshot:g.productSnapshot,
+    amount:g.amount,
+    validUntil:g.validUntil,
+    discountAmount:v.discountAmount,
+    adjustedTotal:v.adjustedTotal,
+    adjustedDeposit:adjustedDeposit,
+    remainingBalanceAfterDeposit:Math.max(0,Math.round((v.adjustedTotal-adjustedDeposit)*100)/100)
+  };
+}
+
+function publicGutscheinHold_(payload){
+  payload=payload||{};
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){return {ok:false,reason:'BUSY'};}
+  try{
+    const code=extractGutscheinCode_(payload.code);
+    if(!code) return {ok:false,reason:'INVALID_CODE'};
+    const gutscheinSheet=getGutscheinSheet_();
+    const found=_findGutscheinWithLazyHoldCleanup_(gutscheinSheet,code);
+    if(found.rowIndex===-1) return {ok:false,reason:'NOT_FOUND'};
+    const g=found.g;
+    const requestToken=String(payload.holdToken||'').trim();
+    const v=_validateGutscheinForPublicBooking_(g,payload.productId,payload.quoteTotal,requestToken);
+    if(!v.ok) return {ok:false,reason:v.reason};
+    const nowDate=new Date();
+    const now=Utilities.formatDate(nowDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    const expiresAt=Utilities.formatDate(new Date(nowDate.getTime()+GUTSCHEIN_HOLD_TTL_MIN*60000),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    // 본인 hold 갱신이면 토큰 유지, 아니면 새 토큰 발급
+    const isOwnHold=g.status===GUTSCHEIN_STATUS.HOLD&&g.holdToken&&g.holdToken===requestToken;
+    const holdToken=isOwnHold?g.holdToken:Utilities.getUuid();
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.HOLD);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold토큰']+1).setValue(holdToken);
+    if(!isOwnHold) gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold시작일시']+1).setValue(now);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold만료일시']+1).setValue(expiresAt);
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold드래프트ID']+1).setValue(String(payload.bookingDraftId||'').trim());
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold채널']+1).setValue('booking-page');
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold해제일시']+1).setValue('');
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['예약중차감금액(€)']+1).setValue(v.discountAmount);
+    return {
+      ok:true,
+      code:g.code,
+      holdToken:holdToken,
+      holdExpiresAt:expiresAt,
+      holdTtlSec:GUTSCHEIN_HOLD_TTL_MIN*60,
+      discountAmount:v.discountAmount,
+      adjustedTotal:v.adjustedTotal
+    };
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+function publicGutscheinRelease_(payload){
+  payload=payload||{};
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){return {ok:false,reason:'BUSY'};}
+  try{
+    const code=extractGutscheinCode_(payload.code);
+    if(!code) return {ok:false,reason:'INVALID_CODE'};
+    const gutscheinSheet=getGutscheinSheet_();
+    const found=_findGutscheinRow_(gutscheinSheet,code);
+    if(found.rowIndex===-1) return {ok:false,reason:'NOT_FOUND'};
+    const g=gutscheinRowToObject_(found.row,found.rowIndex);
+    if(g.status!==GUTSCHEIN_STATUS.HOLD) return {ok:true,released:false};
+    const requestToken=String(payload.holdToken||'').trim();
+    if(!requestToken||g.holdToken!==requestToken) return {ok:false,reason:'TOKEN_MISMATCH'};
+    _releaseGutscheinHoldCells_(gutscheinSheet,found.rowIndex,'customer');
+    return {ok:true,released:true};
+  }finally{try{lock.releaseLock();}catch(e){}}
+}
+
+// 예약 제출 시 최종 확정 — processForm 락 내부에서 호출됨 (별도 락 없음)
+function _finalizeGutscheinForBooking_(code,holdToken,bookingRowIndex){
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  if(g.used||g.status===GUTSCHEIN_STATUS.USED){
+    if(g.linkedBookingRow===bookingRowIndex){
+      return {ok:true,code:g.code,discountAmount:g.usedAmount,adjustedTotal:g.adjustedBookingTotal,adjustedDeposit:null,finalBalance:g.finalBalance,alreadyFinalized:true};
+    }
+    throw new Error('이미 다른 예약에 사용된 굿샤인입니다.');
+  }
+  if(g.status===GUTSCHEIN_STATUS.HOLD&&isGutscheinHoldActive_(g)&&g.holdToken&&g.holdToken!==String(holdToken||'').trim()){
+    throw new Error('다른 고객이 사용 중인 굿샤인입니다.');
+  }
+  return _applyGutscheinToBookingCore_(bookingRowIndex,code,'booking-page');
+}
+
+// 만료된 hold 일괄 해제 — 일일 자동화에서 호출
+function cleanupExpiredGutscheinHolds_(){
+  try{
+    const sheet=getGutscheinSheet_();
+    if(sheet.getLastRow()<2) return 0;
+    const rows=sheet.getDataRange().getValues();
+    let cleaned=0;
+    const nowMs=Date.now();
+    for(let i=1;i<rows.length;i++){
+      if(String(rows[i][GUTSCHEIN_COL['상태']]||'').trim()!==GUTSCHEIN_STATUS.HOLD) continue;
+      const g=gutscheinRowToObject_(rows[i],i+1);
+      if(!isGutscheinHoldActive_(g,nowMs)){
+        _releaseGutscheinHoldCells_(sheet,i+1,'expired');
+        cleaned++;
+      }
+    }
+    if(cleaned>0) Logger.log('cleanupExpiredGutscheinHolds_: '+cleaned+'건 해제');
+    return cleaned;
+  }catch(e){Logger.log('cleanupExpiredGutscheinHolds_ 오류: '+e.message);return 0;}
+}
+
+function releaseGutscheinHoldAdmin(token,code){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){throw new Error('다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');}
+  try{
+    const gutscheinSheet=getGutscheinSheet_();
+    const found=_findGutscheinRow_(gutscheinSheet,extractGutscheinCode_(code));
+    if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
+    const g=gutscheinRowToObject_(found.row,found.rowIndex);
+    if(g.status!==GUTSCHEIN_STATUS.HOLD) throw new Error('예약중(hold) 상태가 아닙니다.');
+    _releaseGutscheinHoldCells_(gutscheinSheet,found.rowIndex,'admin');
+    return {ok:true};
   }finally{try{lock.releaseLock();}catch(e){}}
 }
 

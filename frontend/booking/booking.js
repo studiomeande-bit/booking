@@ -1,4 +1,4 @@
-import { fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
+import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
@@ -1262,7 +1262,10 @@ const state = {
   quote: null,
   earliestSlotInfo: null,
   calendarCache: new Map(),
-  slotCache: new Map()
+  slotCache: new Map(),
+  gutschein: null,
+  gutscheinDraftId: '',
+  gutscheinTimer: null
 };
 
 const els = {
@@ -1525,6 +1528,13 @@ function wireEvents() {
   els.nextMonthBtn.addEventListener('click', () => changeMonth(1));
   els.form.addEventListener('submit', onSubmit);
   setupBookingContactHelpers();
+  document.getElementById('gutscheinApplyBtn')?.addEventListener('click', applyGutscheinCode);
+  document.getElementById('gutscheinCodeInput')?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); applyGutscheinCode(); }
+  });
+  window.addEventListener('pagehide', () => {
+    if (state.gutschein) fireGutscheinRelease(state.gutschein.code, state.gutschein.holdToken);
+  });
   els.wizardButtons.step1Next?.addEventListener('click', () => {
     if (!state.selectedGroup) {
       setBanner(
@@ -2437,13 +2447,233 @@ function getContractPriceSnapshot() {
     ? roundCurrency(quote.balanceAmount)
     : roundCurrency(Math.max(0, total - deposit));
   const typedLocation = String(els.locationInput?.value || '').trim();
+  const location = needsBookingLocation(item) ? (typedLocation || DEFAULT_SHOOTING_LOCATION) : DEFAULT_SHOOTING_LOCATION;
+  const gs = quoteOnly ? null : getActiveGutschein();
+  if (gs) {
+    const discountedTotal = roundCurrency(Math.max(0, total - gs.discountAmount));
+    const adjustedDeposit = Math.min(deposit, discountedTotal);
+    return {
+      quoteOnly,
+      total: discountedTotal,
+      deposit: adjustedDeposit,
+      balance: roundCurrency(Math.max(0, discountedTotal - adjustedDeposit)),
+      location,
+      gutschein: { code: gs.code, discountAmount: gs.discountAmount, originalTotal: total }
+    };
+  }
   return {
     quoteOnly,
     total,
     deposit,
     balance,
-    location: needsBookingLocation(item) ? (typedLocation || DEFAULT_SHOOTING_LOCATION) : DEFAULT_SHOOTING_LOCATION
+    location,
+    gutschein: null
   };
+}
+
+const GUTSCHEIN_MSG = {
+  ko: {
+    empty: '상품권 코드를 입력해 주세요.',
+    noProduct: '상품과 일정을 먼저 선택해 주세요.',
+    noPrice: '상담 후 견적 상품에는 온라인으로 적용할 수 없습니다. 상담 시 말씀해 주세요.',
+    checking: '확인 중…',
+    NOT_FOUND: '코드를 찾을 수 없습니다. 다시 확인해 주세요.',
+    USED: '이미 사용된 상품권입니다.',
+    CANCELLED: '취소된 상품권입니다.',
+    INACTIVE: '아직 활성화되지 않은 상품권입니다. 스튜디오에 문의해 주세요.',
+    EXPIRED: '유효기간이 지난 상품권입니다.',
+    HELD: '다른 예약에서 사용 중인 코드입니다. 15분 후 다시 시도해 주세요.',
+    PRODUCT_MISMATCH: '이 상품에는 사용할 수 없는 상품권입니다.',
+    error: '적용에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+    applied: (code, d) => `✅ ${code} 적용됨 — 할인 -€${d}`,
+    holdNote: '예약 제출 전까지 아래 시간 동안 코드가 확보됩니다.',
+    holdExpired: '⏳ 적용 시간이 만료되었습니다. [적용]을 다시 눌러 주세요.',
+    consumed: '✅ 상품권이 예약에 적용되었습니다. 감사합니다!',
+    remove: '제거'
+  },
+  en: {
+    empty: 'Please enter a voucher code.',
+    noProduct: 'Please choose a service and time first.',
+    noPrice: 'This service is quoted after consultation — the voucher can be applied during the consultation.',
+    checking: 'Checking…',
+    NOT_FOUND: 'Code not found. Please check again.',
+    USED: 'This voucher has already been used.',
+    CANCELLED: 'This voucher has been cancelled.',
+    INACTIVE: 'This voucher is not activated yet. Please contact the studio.',
+    EXPIRED: 'This voucher has expired.',
+    HELD: 'This code is currently in use by another booking. Please try again in 15 minutes.',
+    PRODUCT_MISMATCH: 'This voucher cannot be used for the selected service.',
+    error: 'Could not apply the voucher. Please try again shortly.',
+    applied: (code, d) => `✅ ${code} applied — discount −€${d}`,
+    holdNote: 'The code is reserved for you for the time below until you submit.',
+    holdExpired: '⏳ The reservation time expired. Please press [Apply] again.',
+    consumed: '✅ Your voucher was applied to the booking. Thank you!',
+    remove: 'Remove'
+  },
+  de: {
+    empty: 'Bitte geben Sie einen Gutscheincode ein.',
+    noProduct: 'Bitte wählen Sie zuerst Leistung und Termin.',
+    noPrice: 'Diese Leistung wird nach Beratung angeboten — der Gutschein kann bei der Beratung angerechnet werden.',
+    checking: 'Wird geprüft…',
+    NOT_FOUND: 'Code nicht gefunden. Bitte erneut prüfen.',
+    USED: 'Dieser Gutschein wurde bereits eingelöst.',
+    CANCELLED: 'Dieser Gutschein wurde storniert.',
+    INACTIVE: 'Dieser Gutschein ist noch nicht aktiviert. Bitte kontaktieren Sie das Studio.',
+    EXPIRED: 'Dieser Gutschein ist abgelaufen.',
+    HELD: 'Dieser Code wird gerade in einer anderen Buchung verwendet. Bitte in 15 Minuten erneut versuchen.',
+    PRODUCT_MISMATCH: 'Dieser Gutschein gilt nicht für die gewählte Leistung.',
+    error: 'Der Gutschein konnte nicht angewendet werden. Bitte später erneut versuchen.',
+    applied: (code, d) => `✅ ${code} angewendet — Rabatt −€${d}`,
+    holdNote: 'Der Code ist bis zum Absenden für die unten angezeigte Zeit reserviert.',
+    holdExpired: '⏳ Die Reservierungszeit ist abgelaufen. Bitte erneut auf [Anwenden] klicken.',
+    consumed: '✅ Ihr Gutschein wurde auf die Buchung angewendet. Vielen Dank!',
+    remove: 'Entfernen'
+  }
+};
+
+function gutscheinMsg() {
+  return GUTSCHEIN_MSG[state.lang] || GUTSCHEIN_MSG.ko;
+}
+
+function getActiveGutschein() {
+  const gs = state.gutschein;
+  if (!gs) return null;
+  if (Date.now() >= gs.expireMs) {
+    removeGutschein(false, { reason: 'expired', silentRender: true });
+    return null;
+  }
+  if (state.selectedProduct && gs.productId && state.selectedProduct.id !== gs.productId) {
+    removeGutschein(true, { silentRender: true });
+    return null;
+  }
+  return gs;
+}
+
+function renderGutscheinResult(kind, extra) {
+  const box = document.getElementById('gutscheinResult');
+  if (!box) return;
+  const t = gutscheinMsg();
+  if (kind === 'hidden') {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  if (kind === 'applied' && state.gutschein) {
+    const gs = state.gutschein;
+    box.className = 'gutschein-result is-applied';
+    box.innerHTML = `
+      <div class="gs-line gs-strong">${escapeHtml(t.applied(gs.code, formatEuroAmount(gs.discountAmount)))}</div>
+      <div class="gs-line">${escapeHtml(t.holdNote)}</div>
+      <div class="gs-line gs-timer">⏳ <span id="gutscheinCountdown">--:--</span>
+        <button type="button" id="gutscheinRemoveBtn" class="gs-remove">${escapeHtml(t.remove)}</button>
+      </div>`;
+    document.getElementById('gutscheinRemoveBtn')?.addEventListener('click', () => removeGutschein(true));
+    updateGutscheinCountdownLabel();
+    return;
+  }
+  const messageMap = {
+    empty: t.empty, noProduct: t.noProduct, noPrice: t.noPrice, checking: t.checking,
+    expired: t.holdExpired, consumed: t.consumed, error: t.error
+  };
+  const reasonText = extra && t[extra] ? t[extra] : null;
+  const text = reasonText || messageMap[kind] || t.error;
+  const good = kind === 'consumed';
+  box.className = `gutschein-result ${good ? 'is-applied' : (kind === 'checking' ? 'is-checking' : 'is-error')}`;
+  box.innerHTML = `<div class="gs-line">${escapeHtml(text)}</div>`;
+}
+
+function updateGutscheinCountdownLabel() {
+  const label = document.getElementById('gutscheinCountdown');
+  const gs = state.gutschein;
+  if (!label || !gs) return;
+  const remainMs = Math.max(0, gs.expireMs - Date.now());
+  const mm = String(Math.floor(remainMs / 60000)).padStart(2, '0');
+  const ss = String(Math.floor((remainMs % 60000) / 1000)).padStart(2, '0');
+  label.textContent = `${mm}:${ss}`;
+}
+
+function startGutscheinCountdown() {
+  stopGutscheinCountdown();
+  state.gutscheinTimer = window.setInterval(() => {
+    const gs = state.gutschein;
+    if (!gs) { stopGutscheinCountdown(); return; }
+    if (Date.now() >= gs.expireMs) {
+      removeGutschein(false, { reason: 'expired' });
+      return;
+    }
+    updateGutscheinCountdownLabel();
+  }, 1000);
+}
+
+function stopGutscheinCountdown() {
+  if (state.gutscheinTimer) {
+    window.clearInterval(state.gutscheinTimer);
+    state.gutscheinTimer = null;
+  }
+}
+
+function fireGutscheinRelease(code, holdToken) {
+  try {
+    fetch(buildGutscheinReleaseUrl({ code, holdToken }), { keepalive: true, cache: 'no-store' }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
+function removeGutschein(fireRelease = true, opts = {}) {
+  const gs = state.gutschein;
+  stopGutscheinCountdown();
+  state.gutschein = null;
+  if (gs && fireRelease) fireGutscheinRelease(gs.code, gs.holdToken);
+  renderGutscheinResult(opts.reason === 'expired' ? 'expired' : 'hidden');
+  if (!opts.silentRender) renderContractPriceSummary();
+}
+
+async function applyGutscheinCode() {
+  const input = document.getElementById('gutscheinCodeInput');
+  const btn = document.getElementById('gutscheinApplyBtn');
+  const code = String(input?.value || '').trim().toUpperCase();
+  if (!code) { renderGutscheinResult('empty'); return; }
+  if (!state.selectedProduct) { renderGutscheinResult('noProduct'); return; }
+  const quote = state.quote || getPreviewQuote() || {};
+  if (quote.isQuoteOnly || isQuoteOnlyProduct(state.selectedProduct)) { renderGutscheinResult('noPrice'); return; }
+  const quoteTotal = roundCurrency(Number(quote.totalPrice ?? getEstimatedPrice()) || 0);
+  const depositAmount = roundCurrency(Number(quote.depositAmount || 0) || 0);
+  if (!state.gutscheinDraftId) state.gutscheinDraftId = createRequestId('gsdraft');
+  const previous = state.gutschein;
+  if (btn) { btn.disabled = true; }
+  renderGutscheinResult('checking');
+  try {
+    const res = await holdGutschein({
+      code,
+      productId: state.selectedProduct.id,
+      quoteTotal,
+      depositAmount,
+      bookingDraftId: state.gutscheinDraftId,
+      holdToken: previous && previous.code === code ? previous.holdToken : ''
+    }, createRequestId('gshold'));
+    if (!res || !res.ok) {
+      renderGutscheinResult('error', res && res.reason);
+      return;
+    }
+    if (previous && previous.code !== res.code) fireGutscheinRelease(previous.code, previous.holdToken);
+    state.gutschein = {
+      code: res.code,
+      holdToken: res.holdToken,
+      discountAmount: roundCurrency(Number(res.discountAmount || 0)),
+      adjustedTotal: roundCurrency(Number(res.adjustedTotal || 0)),
+      holdExpiresAt: res.holdExpiresAt || '',
+      expireMs: Date.now() + (Number(res.holdTtlSec || 900)) * 1000,
+      productId: state.selectedProduct.id
+    };
+    renderGutscheinResult('applied');
+    startGutscheinCountdown();
+    renderContractPriceSummary();
+  } catch (error) {
+    console.error(error);
+    renderGutscheinResult('error');
+  } finally {
+    if (btn) { btn.disabled = false; }
+  }
 }
 
 function renderContractPriceSummary() {
@@ -2456,11 +2686,15 @@ function renderContractPriceSummary() {
   const snapshot = getContractPriceSnapshot();
   const quoteLabel = getContractQuoteLabel();
   const value = (amount) => snapshot.quoteOnly ? quoteLabel : formatContractBruttoAmount(amount);
-  box.innerHTML = [
-    ['총 비용 / Gesamtbetrag', value(snapshot.total)],
-    ['계약금 / Anzahlung', value(snapshot.deposit)],
-    ['잔금 / Restbetrag', value(snapshot.balance)]
-  ].map(([label, amount]) => `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(amount)}</div>`).join('');
+  const rows = [];
+  if (snapshot.gutschein) {
+    rows.push(['정상가 / Regulär', formatContractBruttoAmount(snapshot.gutschein.originalTotal)]);
+    rows.push([`상품권 / Gutschein (${snapshot.gutschein.code})`, `-${formatContractBruttoAmount(snapshot.gutschein.discountAmount)}`]);
+  }
+  rows.push(['총 비용 / Gesamtbetrag', value(snapshot.total)]);
+  rows.push(['계약금 / Anzahlung', value(snapshot.deposit)]);
+  rows.push(['잔금 / Restbetrag', value(snapshot.balance)]);
+  box.innerHTML = rows.map(([label, amount]) => `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(amount)}</div>`).join('');
 }
 
 function getContractSubmissionData(formData = new FormData(els.form)) {
@@ -5716,7 +5950,11 @@ async function onSubmit(event) {
     slotConfirmationMode: state.selectedSlotMeta?.confirmationMode || '',
     slotFastConfirm: state.selectedSlotMeta?.fastConfirm ? 'Y' : 'N',
     slotDistanceMin: state.selectedSlotMeta?.distanceMin || '',
-    slotAnchorWindow: state.selectedSlotMeta?.anchorWindow || ''
+    slotAnchorWindow: state.selectedSlotMeta?.anchorWindow || '',
+    gutschein: (() => {
+      const gs = getActiveGutschein();
+      return gs ? { code: gs.code, holdToken: gs.holdToken } : null;
+    })()
   };
   if (!payload.name || !payload.phone || !payload.email) {
     setBanner(getCopy().invalidForm, 'error');
@@ -5807,6 +6045,12 @@ async function onSubmit(event) {
   els.submitBtn.textContent = getCopy().submitLoading;
   try {
     const result = await submitBooking(payload, payload.requestId);
+    if (state.gutschein) {
+      // 제출 성공 → 서버에서 최종 확정됨. hold 해제 호출 없이 정리만.
+      stopGutscheinCountdown();
+      state.gutschein = null;
+      renderGutscheinResult(result?.gutschein && result.gutschein.ok === false ? 'error' : 'consumed');
+    }
     renderSubmitResult(payload, result);
     setBanner(getCopy().submitDone, 'success');
     els.form.reset();

@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-05-08 Europe/Berlin
+Updated: 2026-07-14 Europe/Berlin
 
 ## Immediate
 
@@ -80,6 +80,19 @@ Updated: 2026-05-08 Europe/Berlin
 
 ## Done Recently
 
+- Gutschein V2 customer redemption shipped (2026-07-14)
+  - booking final step has voucher code input with 15-min hold, live discount preview, countdown, and remove button
+  - public APIs: gutschein-validate / gutschein-hold / gutschein-release (LockService-serialized, expired holds lazily released)
+  - finalize runs inside processForm right after the booking row is created; failure alerts admin instead of blocking the booking
+  - hold released on page exit (keepalive), product change, expiry, or manual remove; daily trigger sweeps expired holds
+  - admin Gutschein tab shows 예약중 status with hold expiry, draft id, and force-release button
+- Quote module upgrades shipped (2026-07-14)
+  - quote PDFs follow the AN-260003 layout; per-quote PDF display toggles; multiline items
+  - languages: de/ko/en single or combined multi-page PDFs with `//` per-language text split
+- Retouch revision double-submit hardened (2026-07-14)
+  - button lock + script lock + duplicate detection + same-round addendum (no double count consumption) + failsafe relay mail
+  - retouch action links extended to 60 days; revision form re-signs on open
+- Select flow overhaul deployed (star-rating gallery pre-select, gallery-sourced photos always free, backend extraRetouch aligned)
 - Admin booking E2E diagnostics added to Apps Script HEAD
   - checks booking API, booking frontend, product loading, return-discount rules, booking sheet headers, Google Calendar access, mail quota, and recent booking log linkage
   - optional calendar write/delete probe and admin-only test mail probe are available from the dashboard

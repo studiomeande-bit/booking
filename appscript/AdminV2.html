@@ -1665,6 +1665,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <option value="재고">재고</option>
           <option value="판매완료">판매완료</option>
           <option value="메일발송">메일발송</option>
+          <option value="예약중">예약중 (hold)</option>
           <option value="사용완료">사용완료</option>
           <option value="만료">만료</option>
           <option value="취소">취소</option>
@@ -1815,11 +1816,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
       <div class="form-row">
         <div class="form-group"><label>VAT 번호</label><input type="text" id="qc_vatId" placeholder="DE123456789"></div>
-        <div class="form-group"><label>언어</label>
+        <div class="form-group"><label>언어 (조합 시 언어당 1페이지 합본)</label>
           <select id="qc_lang">
             <option value="de">Deutsch</option>
-            <option value="en">English</option>
             <option value="ko">한국어</option>
+            <option value="en">English</option>
+            <option value="de_ko">Deutsch + 한국어 (2p)</option>
+            <option value="de_en">Deutsch + English (2p)</option>
+            <option value="ko_en">한국어 + English (2p)</option>
+            <option value="de_ko_en">Deutsch + 한국어 + English (3p)</option>
           </select>
         </div>
       </div>
@@ -1845,6 +1850,20 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
 
       <div class="form-group">
+        <label>PDF 표시 항목 <span style="font-weight:400;color:#94a3b8;">(체크 해제 시 견적서 PDF에서 제외됩니다)</span></label>
+        <div id="qc_pdfOptions" style="display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12.5px;">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optValidUntil" checked style="width:auto;margin:0;">유효기한</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optShootDate" checked style="width:auto;margin:0;">촬영예정일</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optDiscount" checked style="width:auto;margin:0;">할인</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optDeposit" checked style="width:auto;margin:0;">계약금</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optTerms" checked style="width:auto;margin:0;">조건(Terms)</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optBank" checked style="width:auto;margin:0;">계좌정보</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optVatId" checked style="width:auto;margin:0;">고객 VAT</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin:0;"><input type="checkbox" id="qc_optMemo" checked style="width:auto;margin:0;">메모</label>
+        </div>
+      </div>
+
+      <div class="form-group">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
           <label style="margin:0;">품목 (Brutto 단가 / 19% VAT 포함)</label>
           <button class="btn btn-outline btn-sm" type="button" onclick="addQuoteItemRow()">항목 추가</button>
@@ -1866,8 +1885,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         </div>
       </div>
 
-      <div class="form-group" style="margin-top:12px;"><label>메모</label><textarea id="qc_memo" rows="2" placeholder="내부/고객 메모"></textarea></div>
-      <div class="form-group"><label>조건 (Terms)</label><textarea id="qc_terms" rows="3" placeholder="비우면 기본 조건 (유효기한/계약금/VAT 안내)이 자동 삽입됩니다."></textarea></div>
+      <div class="form-group" style="margin-top:12px;"><label>메모</label><textarea id="qc_memo" rows="2" placeholder="PDF 하단 조건 아래에 표시 (표시 항목에서 끄면 미표시) · 다국어 시 // 한 줄로 언어 구분"></textarea></div>
+      <div class="form-group"><label>조건 (Terms)</label><textarea id="qc_terms" rows="3" placeholder="비우면 기본 조건(유효/계약금)이 언어별 자동 삽입 · 대시(-) 줄 단위로 PDF 하단 표시 · 다국어 시 // 한 줄로 언어 구분 (순서: 독→한→영 중 선택 언어)"></textarea></div>
 
       <details class="details-panel">
         <summary>메일 옵션</summary>
@@ -11662,7 +11681,7 @@ function confirmCancelBooking(){
 }
 
 /* ====== 굿샤인 ====== */
-const GUTSCHEIN_STATUS_COLORS={재고:'#e2e8f0',판매완료:'#dbeafe',메일발송:'#dcfce7',사용완료:'#ede9fe',만료:'#fee2e2',취소:'#f3f4f6'};
+const GUTSCHEIN_STATUS_COLORS={재고:'#e2e8f0',판매완료:'#dbeafe',메일발송:'#dcfce7',예약중:'#fef3c7',사용완료:'#ede9fe',만료:'#fee2e2',취소:'#f3f4f6'};
 const GUTSCHEIN_TYPE_LABELS={amount:'금액권',product:'상품권'};
 
 function escapeAdminHtml(value){
@@ -12053,18 +12072,37 @@ function renderGutscheinTable(){
     const deleteBtn=!isUsed
       ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#991b1b;border-color:#fca5a5;" onclick="deleteGutscheinQuick('${escapeAdminHtml(g.code)}')">삭제</button>`
       : '';
+    const isHeld=g.status==='예약중';
+    const holdReleaseBtn=isHeld
+      ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px;color:#b45309;border-color:#fde68a;" onclick="releaseGutscheinHoldQuick('${escapeAdminHtml(g.code)}')">홀드해제</button>`
+      : '';
+    const holdInfo=isHeld
+      ? `<div style="font-size:10px;color:#b45309;margin-top:4px;">만료 ${escapeAdminHtml(g.holdExpiresAt||'-')}</div>${g.holdDraftId?`<div style="font-size:10px;color:#94a3b8;margin-top:2px;">draft ${escapeAdminHtml(String(g.holdDraftId).slice(0,12))}</div>`:''}`
+      : '';
     return `<tr>
       <td><div style="font-weight:700;">${escapeAdminHtml(g.code||'-')}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.issueMode||'-')}</div></td>
       <td>${typeBadge}</td>
       <td><div style="font-weight:700;">${escapeAdminHtml(valueLabel)}</div>${g.voucherType==='product'&&g.amount?`<div style="font-size:10px;color:#64748b;margin-top:4px;">고정가 ${formatEuroDisplay(g.amount)}</div>`:''}</td>
-      <td><span style="display:inline-block;background:${statusColor};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;color:#334155;">${escapeAdminHtml(g.status||'-')}</span>${g.mailSentAt?`<div style="font-size:10px;color:#059669;margin-top:4px;">메일 ${escapeAdminHtml(g.mailSentAt)}</div>`:''}</td>
+      <td><span style="display:inline-block;background:${statusColor};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;color:#334155;">${escapeAdminHtml(g.status||'-')}</span>${holdInfo}${g.mailSentAt?`<div style="font-size:10px;color:#059669;margin-top:4px;">메일 ${escapeAdminHtml(g.mailSentAt)}</div>`:''}</td>
       <td><div style="font-weight:700;">${escapeAdminHtml(g.purchaserName||'-')}</div><div style="font-size:11px;color:#64748b;">${escapeAdminHtml(g.purchaserEmail||'')}</div>${g.recipientName?`<div style="font-size:11px;color:#475569;margin-top:4px;">받는 분: ${escapeAdminHtml(g.recipientName)}</div>`:''}${g.saleChannel?`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">채널 ${escapeAdminHtml(g.saleChannel)}</div>`:''}</td>
       <td><div style="font-size:12px;">발행 ${escapeAdminHtml(g.issuedAt||g.stockCreatedAt||'-')}</div><div style="font-size:12px;color:#64748b;margin-top:4px;">유효 ${escapeAdminHtml(g.validUntil||'-')}</div></td>
       <td><div style="font-size:12px;font-weight:700;">${escapeAdminHtml(g.taxType||'-')} · ${escapeAdminHtml(String(g.taxRateAtIssue||19))}%</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.taxRecognition||'-')}</div><div style="font-size:10px;color:#94a3b8;margin-top:4px;white-space:normal;line-height:1.45;">${escapeAdminHtml(g.taxMemo||'')}</div><div style="font-size:10px;color:#94a3b8;margin-top:4px;white-space:normal;line-height:1.45;">${escapeAdminHtml(g.taxDecisionNote||'')}</div></td>
       <td>${g.used?`<div style="font-weight:700;color:#7c3aed;">${formatEuroDisplay(g.usedAmount||0)}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">${escapeAdminHtml(g.usedAt||'')}</div><div style="font-size:10px;color:#64748b;margin-top:4px;">row ${g.linkedBookingRow||'-'}</div>${g.redeemedProductName?`<div style="font-size:10px;color:#475569;margin-top:4px;">${escapeAdminHtml(g.redeemedProductName)}</div>`:''}`:'<span style="font-size:11px;color:#94a3b8;">미사용</span>'}</td>
-      <td style="white-space:nowrap;"><div style="display:flex;gap:4px;flex-wrap:wrap;">${editBtn}${pdfBtn}${mailBtn}${bookingBtn}${cancelBtn}${deleteBtn}</div></td>
+      <td style="white-space:nowrap;"><div style="display:flex;gap:4px;flex-wrap:wrap;">${editBtn}${pdfBtn}${mailBtn}${bookingBtn}${holdReleaseBtn}${cancelBtn}${deleteBtn}</div></td>
     </tr>`;
   }).join(''):'<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:24px;">등록된 굿샤인이 없습니다.</td></tr>';
+}
+function releaseGutscheinHoldQuick(code){
+  const item=(allGutscheins||[]).find(g=>g.code===code);
+  if(!item){showToast('굿샤인을 찾을 수 없습니다.','err');return;}
+  if(item.status!=='예약중'){showToast('예약중(hold) 상태가 아닙니다.','warn');return;}
+  if(!confirm(`${code} 굿샤인의 hold를 해제할까요?\n고객이 예약 화면에서 잡아둔 상태가 풀리고 다시 사용 가능해집니다.`)) return;
+  runExclusive('gutschein:holdrelease:'+code, release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();showToast('hold 해제 완료','ok');loadGutscheinList();})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'releaseGutscheinHold',{code});
+  });
 }
 function openGutscheinPdf(url){
   if(!url){showToast('PDF 링크가 없습니다.','warn');return;}
@@ -12530,31 +12568,36 @@ function openQuoteCreateModal(){
   document.getElementById('qc_discount').value='0';
   document.getElementById('qc_depositRate').value='30';
   document.getElementById('qc_sendMail').checked=false;
+  setQuotePdfOptions(null);
   document.getElementById('qc_itemsWrap').innerHTML='';
   addQuoteItemRow();
   recalcQuoteTotals();
-  document.getElementById('quoteCreateModal').classList.add('active');
+  document.getElementById('quoteCreateModal').classList.add('open');
 }
-function closeQuoteCreateModal(){document.getElementById('quoteCreateModal').classList.remove('active');}
+function closeQuoteCreateModal(){document.getElementById('quoteCreateModal').classList.remove('open');}
 
 function addQuoteItemRow(desc,qty,unitGross){
   const wrap=document.getElementById('qc_itemsWrap');
   const row=document.createElement('div');
-  row.style.cssText='display:grid;grid-template-columns:1fr 70px 130px 30px;gap:8px;margin-bottom:6px;align-items:center;';
+  row.style.cssText='display:grid;grid-template-columns:1fr 70px 130px 30px;gap:8px;margin-bottom:6px;align-items:start;';
   row.innerHTML=`
-    <input type="text" placeholder="항목 설명" value="${desc?String(desc).replace(/"/g,'&quot;'):''}" oninput="recalcQuoteTotals()">
+    <textarea rows="1" placeholder="항목명 (첫 줄) + 상세 설명 (다음 줄) · 다국어 시 // 한 줄로 언어 구분 (순서: 독→한→영 중 선택 언어)" oninput="recalcQuoteTotals();this.style.height='auto';this.style.height=this.scrollHeight+'px';" style="resize:vertical;min-height:36px;overflow:hidden;"></textarea>
     <input type="number" placeholder="수량" value="${qty||1}" min="1" step="1" oninput="recalcQuoteTotals()">
     <input type="number" placeholder="단가 €" value="${unitGross||''}" min="0" step="0.01" oninput="recalcQuoteTotals()">
     <button class="btn btn-outline btn-sm" onclick="this.parentElement.remove();recalcQuoteTotals()" style="padding:4px 8px;">✕</button>`;
+  const ta=row.querySelector('textarea');
+  ta.value=desc?String(desc):'';
   wrap.appendChild(row);
+  ta.style.height='auto';ta.style.height=ta.scrollHeight+'px';
 }
 function readQuoteItems(){
   return Array.from(document.querySelectorAll('#qc_itemsWrap > div')).map(row=>{
+    const desc=row.querySelector('textarea');
     const inputs=row.querySelectorAll('input');
     return {
-      description:(inputs[0].value||'').trim(),
-      qty:Math.max(1,parseInt(inputs[1].value,10)||1),
-      unitGross:Math.max(0,Number(inputs[2].value)||0)
+      description:(desc&&desc.value||'').trim(),
+      qty:Math.max(1,parseInt(inputs[0].value,10)||1),
+      unitGross:Math.max(0,Number(inputs[1].value)||0)
     };
   }).filter(it=>it.description||it.unitGross>0);
 }
@@ -12594,9 +12637,20 @@ function quoteLookupContact(){
   },500);
 }
 
+const QUOTE_PDF_OPT_IDS={showValidUntil:'qc_optValidUntil',showShootDate:'qc_optShootDate',showDiscount:'qc_optDiscount',showDeposit:'qc_optDeposit',showTerms:'qc_optTerms',showBank:'qc_optBank',showVatId:'qc_optVatId',showMemo:'qc_optMemo'};
+function readQuotePdfOptions(){
+  const o={};
+  Object.keys(QUOTE_PDF_OPT_IDS).forEach(k=>{const el=document.getElementById(QUOTE_PDF_OPT_IDS[k]);o[k]=el?el.checked:true;});
+  return o;
+}
+function setQuotePdfOptions(opts){
+  const src=opts||{};
+  Object.keys(QUOTE_PDF_OPT_IDS).forEach(k=>{const el=document.getElementById(QUOTE_PDF_OPT_IDS[k]);if(el) el.checked=src[k]!==false;});
+}
 function buildQuotePayload(){
   const items=readQuoteItems();
   return {
+    pdfOptions:readQuotePdfOptions(),
     lang:document.getElementById('qc_lang').value,
     name:document.getElementById('qc_name').value.trim(),
     companyName:document.getElementById('qc_companyName').value.trim(),
@@ -12676,12 +12730,13 @@ function openQuoteEditModal(number){
       document.getElementById('qc_mailSubject').value=q.mailSubject||'';
       document.getElementById('qc_mailBody').value=q.mailBody||'';
       document.getElementById('qc_sendMail').checked=false;
+      setQuotePdfOptions(q.pdfOptions);
       const wrap=document.getElementById('qc_itemsWrap');
       wrap.innerHTML='';
       (q.items||[]).forEach(it=>addQuoteItemRow(it.description,it.qty,it.unitGross));
       if(!wrap.children.length) addQuoteItemRow();
       recalcQuoteTotals();
-      document.getElementById('quoteCreateModal').classList.add('active');
+      document.getElementById('quoteCreateModal').classList.add('open');
     })
     .withFailureHandler(handleApiError)
     .getQuoteAdmin(adminToken,number);
@@ -12728,9 +12783,9 @@ function openQuoteConvertModal(number){
   document.getElementById('qcv_time').value='10:00';
   document.getElementById('qcv_duration').value='120';
   document.getElementById('qcv_people').value='1';
-  document.getElementById('quoteConvertModal').classList.add('active');
+  document.getElementById('quoteConvertModal').classList.add('open');
 }
-function closeQuoteConvertModal(){document.getElementById('quoteConvertModal').classList.remove('active');}
+function closeQuoteConvertModal(){document.getElementById('quoteConvertModal').classList.remove('open');}
 function confirmQuoteConvert(){
   const number=document.getElementById('qcv_number').value;
   const date=document.getElementById('qcv_date').value;

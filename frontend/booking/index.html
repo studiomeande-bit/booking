@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260623-schultuete-link1" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260714-gutschein-v2" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260623-schultuete-link1">
+  <link rel="stylesheet" href="./booking.min.css?v=20260714-gutschein-v2">
   <script src="/site-analytics.js?v=20260430-consent6"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -352,6 +352,15 @@
           <span id="memoLabel">요청사항</span>
           <textarea name="memo" rows="4"></textarea>
         </label>
+        <div id="gutscheinBox" class="gutschein-box">
+          <div id="gutscheinTitle" class="gutschein-title">🎁 상품권 / Gutschein</div>
+          <p id="gutscheinCopy" class="gutschein-copy">Studio mean 상품권(Gutschein)이 있다면 코드를 입력하고 적용해 주세요.</p>
+          <div class="gutschein-input-row">
+            <input id="gutscheinCodeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="예: SM-XXXXXX">
+            <button type="button" id="gutscheinApplyBtn">적용</button>
+          </div>
+          <div id="gutscheinResult" class="gutschein-result" hidden></div>
+        </div>
         <div id="consentBox" class="consent-box">
           <div id="consentTitle" class="consent-title">표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen</div>
           <p id="consentCopy" class="consent-copy">예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.</p>
@@ -490,6 +499,6 @@
       </div>
     </div>
   </footer>
-  <script src="./booking.min.js?v=20260704-extra-fields1"></script>
+  <script src="./booking.min.js?v=20260714-gutschein-v2"></script>
 </body>
 </html>

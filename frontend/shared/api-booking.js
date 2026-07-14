@@ -56,3 +56,19 @@ export function lookupAddress(data) {
 export function fetchGutscheinTicket(code) {
   return requestJson(buildUrl('gutschein-ticket', { code }));
 }
+
+export function validateGutschein(data) {
+  return requestJson(buildPayloadUrl('gutschein-validate', data));
+}
+
+export function holdGutschein(data, requestId) {
+  return requestJson(buildPayloadUrl('gutschein-hold', data, { requestId }));
+}
+
+export function releaseGutschein(data) {
+  return requestJson(buildPayloadUrl('gutschein-release', data));
+}
+
+export function buildGutscheinReleaseUrl(data) {
+  return buildPayloadUrl('gutschein-release', data);
+}
