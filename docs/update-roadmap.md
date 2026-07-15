@@ -56,12 +56,12 @@ Updated: 2026-07-15 Europe/Berlin
 
 ## Later
 
-10. Corporate / Event product redesign (2026-07-15 제안서 완료 — 결정 대기)
-- proposal: `docs/biz-event-product-redesign.md` (실거래 9건 분석 + 내부 단가표 초안 + 2트랙 상품 개편안)
-- split photo vs video more clearly → photo / video / hybrid 3택 제안
-- separate wedding / registry wedding / dol / corporate use cases if needed → B2C 예약형 / B2B 상담형 2트랙 제안
-- improve consultation payload structure without exposing pricing → 구조화 상담 페이로드 + BUSINESS_PRICE_META 노출 제거(Phase 1)
-- 사장님 결정 4건: 가족파티 고정가 / 현장 프로필 상품 / 시간제 폐지 / 단가표 승인
+10. Corporate / Event product redesign (2026-07-15 Phase 1 배포 완료)
+- proposal: `docs/biz-event-product-redesign.md` — 2트랙(B2C 예약형/B2B 상담형) 구조 사장님 확정
+- ~~Phase 1~~: 단가표 노출 제거(프론트+백엔드) + 하이브리드 모드 + 어드민 수기입력 전환 — 라이브 검증 완료 (8a680be, @582)
+- Phase 2 (대기): 하이브리드 상담상품 신설 · "기업 출장 촬영" 포괄상품(② 확정) · 구조화 상담 페이로드 상담시트 단일화 · (① 결정 시) 가족파티 고정가
+- Phase 3 (④ 대기): 내부 단가표 비공개 설정 이관 + 상담접수 → 견적 드래프트 자동화
+- 남은 결정: ① 가족파티 고정가 €350 / ④ 단가표 v1 승인
 
 11. Final design pass (2026-07-15 부분 완료)
 - booking success screen polish (남음)
