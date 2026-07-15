@@ -1022,6 +1022,13 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
+        // 사진 셀렉 / 보정
+        if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
+        if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
+        if(action==='select-update-status'){
+          if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
+          return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
+        }
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
@@ -10314,6 +10321,62 @@ function updateBookingStatusForAgent_(token,rowIndex,status){
   const st=String(status||'').trim();
   if(AGENT_BOOKING_STATUSES_.indexOf(st)===-1) throw new Error('에이전트로 변경할 수 없는 상태입니다: '+st+' (가능: '+AGENT_BOOKING_STATUSES_.join('/')+' — 취소는 어드민에서 취소 플로우를 사용하세요)');
   return quickUpdateBookingStatus(token,parseInt(rowIndex,10),st);
+}
+
+// 셀렉 상태를 세션 행 번호로 직접 변경 — 한 예약에 세션이 여러 개인 경우 대비
+function updateSelectStatusByRowForAgent_(token,selectRowIndex,newStatus){
+  assertAdmin_(token);
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rIdx=parseInt(selectRowIndex,10);
+  if(!rIdx||rIdx<2||rIdx>selSh.getLastRow()) throw new Error('유효하지 않은 셀렉 행입니다: '+selectRowIndex);
+  const st=String(newStatus||'').trim();
+  if(!st) throw new Error('변경할 상태를 지정해 주세요.');
+  selSh.getRange(rIdx,SELECT_COL['상태']+1).setValue(st);
+  if(st!=='작업대기') selSh.getRange(rIdx,SELECT_COL['어드민알림']+1).setValue('');
+  if(st==='최종작업완료'){
+    const bRow=parseInt(selSh.getRange(rIdx,SELECT_COL['예약장부행']+1).getValue(),10);
+    if(bRow>1) sheets.bookingSheet.getRange(bRow,2).setValue('작업완료');
+  }
+  return {ok:true,selectRowIndex:rIdx,status:st};
+}
+
+// 셀렉 세션 검색 — keyword(이름/이메일), status. 보정본 발송/상태 변경에 쓸 bookingRowIndex 포함
+function searchSelectSessionsForAgent_(token,query){
+  assertAdmin_(token);
+  query=query||{};
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues();
+  const kw=String(query.keyword||'').trim().toLowerCase();
+  const status=String(query.status||'').trim();
+  const limit=Math.min(50,Math.max(1,parseInt(query.limit,10)||20));
+  const out=[];
+  for(let i=rows.length-1;i>=1&&out.length<limit;i--){
+    const row=rows[i];
+    if(!row[0]) continue;
+    const st=String(row[SELECT_COL['상태']]||'').trim();
+    if(status&&st!==status) continue;
+    if(kw){
+      const hay=[row[SELECT_COL['고객명']],row[SELECT_COL['이메일']],row[SELECT_COL['상품']]].join(' ').toLowerCase();
+      if(hay.indexOf(kw)===-1) continue;
+    }
+    out.push({
+      selectRowIndex:i+1,
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      bookingRowIndex:parseInt(row[SELECT_COL['예약장부행']],10)||0,
+      status:st,
+      name:String(row[SELECT_COL['고객명']]||''),
+      email:String(row[SELECT_COL['이메일']]||''),
+      product:String(row[SELECT_COL['상품']]||''),
+      shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      submittedAt:parseDateSafe_(row[SELECT_COL['제출일시']]).str.slice(0,16),
+      retouchSentAt:parseDateSafe_(row[SELECT_COL['보정본발송일시']]).str.slice(0,16),
+      revisionCount:parseInt(row[SELECT_COL['재수정요청횟수']],10)||0,
+      revisionNote:String(row[SELECT_COL['재수정요청메모']]||'').slice(0,400),
+      driveLink:String(row[SELECT_COL['드라이브링크']]||'')
+    });
+  }
+  return {ok:true,count:out.length,sessions:out};
 }
 
 // 하루 브리핑 — 예약(7일)/대기/계약금 미입금/보류 견적/셀렉 현황을 한 번에
@@ -20502,9 +20565,10 @@ function createQuoteAdmin(token, payload){
     }
     const tz=CONFIG.TIMEZONE;
     const now=new Date();
-    const issuedAt=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+    // 과거 견적 등록(마이그레이션) 시 발행일/유효기한 직접 지정 가능
+    const issuedAt=/^\d{4}-\d{2}-\d{2}$/.test(String(input.issuedAt||''))?String(input.issuedAt).slice(0,10):Utilities.formatDate(now,tz,'yyyy-MM-dd');
     const validDays=Math.max(1,parseInt(input.validDays||CONFIG.QUOTE_VALID_DAYS,10)||CONFIG.QUOTE_VALID_DAYS);
-    const validUntil=Utilities.formatDate(new Date(now.getTime()+validDays*86400000),tz,'yyyy-MM-dd');
+    const validUntil=/^\d{4}-\d{2}-\d{2}$/.test(String(input.validUntil||''))?String(input.validUntil).slice(0,10):Utilities.formatDate(new Date(new Date(`${issuedAt}T12:00:00`).getTime()+validDays*86400000),tz,'yyyy-MM-dd');
     const updatedAt=Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss');
     const status=String(input.status||QUOTE_STATUS.DRAFT);
     const author=String((session&&session.email)||CONFIG.ADMIN_EMAIL);
@@ -20574,6 +20638,9 @@ function updateQuoteAdmin(token, number, payload){
   set('계약금(€)',data.depositAmount);set('계약금비율',data.depositRate);
   set('메모',data.memo);set('조건',data.terms||_defaultQuoteTerms_(data.lang));
   set('표시옵션JSON',JSON.stringify(data.pdfOptions));
+  // 마이그레이션/정정용 발행일·유효기한 직접 수정 (YYYY-MM-DD일 때만)
+  if(/^\d{4}-\d{2}-\d{2}$/.test(String(payload&&payload.issuedAt||''))){set('발행일',String(payload.issuedAt).slice(0,10));existing.issuedAt=String(payload.issuedAt).slice(0,10);}
+  if(/^\d{4}-\d{2}-\d{2}$/.test(String(payload&&payload.validUntil||''))){set('유효기한',String(payload.validUntil).slice(0,10));existing.validUntil=String(payload.validUntil).slice(0,10);}
   set('수정일시',updatedAt);
   if(data.mailSubject) set('메일제목',data.mailSubject);
   if(data.mailBody) set('메일본문',data.mailBody);
@@ -20699,21 +20766,23 @@ function markQuoteRejectedAdmin(token, number, reason){
 
 /* ===== 견적 보류(기업 홀드) + 캘린더 가예약 ===== */
 
-// 가예약 캘린더 이벤트 삭제 + 시트 필드 정리. 이벤트가 있었으면 true
+// 가예약 캘린더 이벤트 삭제 + 시트 필드 정리 (여러 날 가예약은 ID가 쉼표로 연결됨). 이벤트가 있었으면 true
 function _clearQuoteTentativeHold_(quoteSheet,rowIndex,q){
-  const evId=String((q&&q.tentativeEventId)||'').trim();
-  if(evId){
-    try{
-      const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
-      const ev=cal.getEventById(evId);
-      if(ev) ev.deleteEvent();
-    }catch(e){Logger.log('quote tentative event delete fail ('+((q&&q.number)||'')+'): '+e.message);}
+  const evIds=String((q&&q.tentativeEventId)||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(evIds.length){
+    const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+    evIds.forEach(function(evId){
+      try{
+        const ev=cal.getEventById(evId);
+        if(ev) ev.deleteEvent();
+      }catch(e){Logger.log('quote tentative event delete fail ('+((q&&q.number)||'')+'): '+e.message);}
+    });
     try{bumpCalCacheVer_();}catch(e){}
   }
   quoteSheet.getRange(rowIndex,QUOTE_COL['가예약시작']+1).setValue('');
   quoteSheet.getRange(rowIndex,QUOTE_COL['가예약소요분']+1).setValue('');
   quoteSheet.getRange(rowIndex,QUOTE_COL['가예약캘린더ID']+1).setValue('');
-  return !!evId;
+  return evIds.length>0;
 }
 
 // 견적을 보류로 전환 (+선택: 캘린더 가예약). payload={reason,followUpDate,tentative:{date,time,durationMin},force}
@@ -20726,7 +20795,11 @@ function holdQuoteAdmin(token, number, payload){
   const q=quoteRowToObject_(found.row,found.rowIndex);
   if([QUOTE_STATUS.CONVERTED,QUOTE_STATUS.REJECTED].indexOf(q.status)>-1) throw new Error(`상태가 "${q.status}"인 견적서는 보류할 수 없습니다.`);
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
-  const hasTentative=!!(payload.tentative&&payload.tentative.date);
+  // tentative: {date,time,durationMin} 단일 또는 {dates:["YYYY-MM-DD",...]} 여러 날 종일 홀드
+  const tentativeDates=(payload.tentative&&Array.isArray(payload.tentative.dates)&&payload.tentative.dates.length)
+    ? payload.tentative.dates.map(function(d){return String(d).slice(0,10);})
+    : (payload.tentative&&payload.tentative.date?[String(payload.tentative.date).slice(0,10)]:[]);
+  const hasTentative=tentativeDates.length>0;
   // 가예약이 걸린 딜은 더 자주 확인 (기본 7일), 아니면 14일
   const followUpDate=String(payload.followUpDate||'').slice(0,10)
     ||Utilities.formatDate(new Date(Date.now()+(hasTentative?7:14)*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
@@ -20734,17 +20807,24 @@ function holdQuoteAdmin(token, number, payload){
   let tentativeInfo=null;
   if(hasTentative){
     const t=payload.tentative;
-    const dateStr=String(t.date).slice(0,10);
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('가예약 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).');
-    const timeStr=String(t.time||'').trim();
+    tentativeDates.forEach(function(d){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error('가예약 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD): '+d);
+    });
+    const multiDay=tentativeDates.length>1;
+    const timeStr=multiDay?'':String(t.time||'').trim();
     if(timeStr&&!/^\d{2}:\d{2}$/.test(timeStr)) throw new Error('가예약 시간 형식이 올바르지 않습니다 (HH:MM).');
     const durMin=Math.max(30,parseInt(t.durationMin,10)||120);
-    const rangeStart=timeStr?new Date(`${dateStr}T${timeStr}:00`):new Date(`${dateStr}T00:00:00`);
-    const rangeEnd=timeStr?new Date(rangeStart.getTime()+durMin*60000):new Date(`${dateStr}T23:59:59`);
     // 기존 일정과 충돌 검사 (force로 무시 가능)
-    const overlapping=(getEventsForRange_(rangeStart,rangeEnd)||[]).length;
-    if(overlapping&&!payload.force){
-      return {ok:false,conflict:true,message:`해당 ${timeStr?'시간대':'날짜'}에 기존 일정 ${overlapping}건이 있습니다. 확인 후 강제 진행 여부를 선택해 주세요.`};
+    let conflictCount=0;
+    const conflictDays=[];
+    tentativeDates.forEach(function(d){
+      const rs=timeStr?new Date(`${d}T${timeStr}:00`):new Date(`${d}T00:00:00`);
+      const re=timeStr?new Date(rs.getTime()+durMin*60000):new Date(`${d}T23:59:59`);
+      const n=(getEventsForRange_(rs,re)||[]).length;
+      if(n){conflictCount+=n;conflictDays.push(d);}
+    });
+    if(conflictCount&&!payload.force){
+      return {ok:false,conflict:true,message:`${conflictDays.join(', ')}에 기존 일정 ${conflictCount}건이 있습니다. 확인 후 강제 진행 여부를 선택해 주세요.`};
     }
     // 기존 가예약이 있으면 새로 교체
     if(q.tentativeEventId) _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
@@ -20758,14 +20838,18 @@ function holdQuoteAdmin(token, number, payload){
       reason?`보류사유=${reason}`:'',
       '※ 견적 전환/거절/만료/보류해제 시 자동 삭제됩니다.'
     ].filter(Boolean).join('\n');
-    const event=timeStr
-      ? cal.createEvent(title,rangeStart,rangeEnd,{description:desc})
-      : cal.createAllDayEvent(title,new Date(`${dateStr}T00:00:00`),{description:desc});
-    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약시작']+1).setValue(timeStr?`${dateStr} ${timeStr}`:dateStr);
+    const eventIds=tentativeDates.map(function(d){
+      const event=timeStr
+        ? cal.createEvent(title,new Date(`${d}T${timeStr}:00`),new Date(new Date(`${d}T${timeStr}:00`).getTime()+durMin*60000),{description:desc})
+        : cal.createAllDayEvent(title,new Date(`${d}T00:00:00`),{description:desc});
+      return event.getId();
+    });
+    const startLabel=timeStr?`${tentativeDates[0]} ${timeStr}`:tentativeDates.join(' ~ ');
+    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약시작']+1).setValue(startLabel);
     quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약소요분']+1).setValue(timeStr?durMin:'');
-    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약캘린더ID']+1).setValue(event.getId());
+    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약캘린더ID']+1).setValue(eventIds.join(','));
     try{bumpCalCacheVer_();}catch(e){}
-    tentativeInfo={start:timeStr?`${dateStr} ${timeStr}`:dateStr,durationMin:timeStr?durMin:null,allDay:!timeStr};
+    tentativeInfo={start:startLabel,dates:tentativeDates,durationMin:timeStr?durMin:null,allDay:!timeStr};
   }
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.HOLD);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['보류사유']+1).setValue(reason);
