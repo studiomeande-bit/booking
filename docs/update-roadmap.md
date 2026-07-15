@@ -56,10 +56,12 @@ Updated: 2026-07-15 Europe/Berlin
 
 ## Later
 
-10. Corporate / Event product redesign
-- split photo vs video more clearly
-- separate wedding / registry wedding / dol / corporate use cases if needed
-- improve consultation payload structure without exposing pricing
+10. Corporate / Event product redesign (2026-07-15 제안서 완료 — 결정 대기)
+- proposal: `docs/biz-event-product-redesign.md` (실거래 9건 분석 + 내부 단가표 초안 + 2트랙 상품 개편안)
+- split photo vs video more clearly → photo / video / hybrid 3택 제안
+- separate wedding / registry wedding / dol / corporate use cases if needed → B2C 예약형 / B2B 상담형 2트랙 제안
+- improve consultation payload structure without exposing pricing → 구조화 상담 페이로드 + BUSINESS_PRICE_META 노출 제거(Phase 1)
+- 사장님 결정 4건: 가족파티 고정가 / 현장 프로필 상품 / 시간제 폐지 / 단가표 승인
 
 11. Final design pass (2026-07-15 부분 완료)
 - booking success screen polish (남음)
