@@ -383,6 +383,8 @@ function hydrateSession(session) {
   // 기존 수정 모드에서 이미 선택된 사진들은 갤러리 별점 5점으로 복원 (갤러리 로드 후 반영)
   if (session.bookingMarketing === 'Y') state.marketing = 'Y';
   syncMarketingBonusRows();
+  syncServiceCutRows();
+  renderServiceCutNotice();
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
@@ -429,14 +431,16 @@ function getIncludedPrintSummary(session = state.session) {
 
 function normalizePhoto(photo) {
   const isBonus = !!photo?.isBonus;
-  // 기존 데이터 호환: source가 없으면 isBonus→bonus, 아니면 manual로 기본
-  // (gallery는 새 별점 부여 시 별도로 설정됨)
-  const source = photo?.source || (isBonus ? 'bonus' : 'manual');
+  // 서비스 컷: 저장된 isService 또는 source==='service' 로 식별 (무료 보정 슬롯, isBonus=true 로 과금 제외).
+  const isService = !!photo?.isService || String(photo?.source || '') === 'service';
+  // 기존 데이터 호환: source가 없으면 서비스→service, 보너스→bonus, 아니면 manual
+  const source = photo?.source || (isService ? 'service' : isBonus ? 'bonus' : 'manual');
   return {
     num: String(photo?.num || ''),
     note: String(photo?.note || ''),
     printType: normalizePrintTypeId(photo?.printType),
     isBonus,
+    isService,
     source
   };
 }
@@ -749,7 +753,7 @@ function makeBonusPhoto() {
 function syncMarketingBonusRows() {
   const bonusCount = getMarketingBonusCount();
   const bonusIndexes = state.photos
-    .map((photo, index) => (photo.isBonus ? index : -1))
+    .map((photo, index) => (photo.isBonus && !photo.isService ? index : -1))
     .filter((index) => index >= 0);
   if (state.marketing === 'Y') {
     for (let i = bonusIndexes.length; i < bonusCount; i += 1) state.photos.push(makeBonusPhoto());
@@ -757,15 +761,52 @@ function syncMarketingBonusRows() {
       let removeCount = bonusIndexes.length - bonusCount;
       for (let i = state.photos.length - 1; i >= 0 && removeCount > 0; i -= 1) {
         const photo = state.photos[i];
-        if (photo?.isBonus && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
+        if (photo?.isBonus && !photo.isService && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
           state.photos.splice(i, 1);
           removeCount -= 1;
         }
       }
     }
   } else if (state.marketing === 'N') {
-    state.photos = state.photos.filter((photo) => !photo.isBonus);
+    state.photos = state.photos.filter((photo) => !photo.isBonus || photo.isService);
   }
+}
+
+function getServiceCutCount() {
+  const n = Number(state.session?.serviceCutCount);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+// 서비스 컷: 무료 보정 슬롯(디커플드 모델 — 출력 자동 포함 없음).
+// isBonus=true 로 과금/기본장수에서 제외, isService=true 로 마케팅 보너스와 구분, source='service'.
+function makeServicePhoto() {
+  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, isService: true, source: 'service' };
+}
+
+// 어드민이 설정한 서비스컷수만큼 무료 슬롯 자동 유지 (0이면 아무 흔적 없음).
+function syncServiceCutRows() {
+  const desired = getServiceCutCount();
+  const current = state.photos.filter((photo) => photo.isService).length;
+  for (let i = current; i < desired; i += 1) state.photos.push(makeServicePhoto());
+  if (current > desired) {
+    let removeCount = current - desired;
+    for (let i = state.photos.length - 1; i >= 0 && removeCount > 0; i -= 1) {
+      const photo = state.photos[i];
+      if (photo?.isService && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
+        state.photos.splice(i, 1);
+        removeCount -= 1;
+      }
+    }
+  }
+}
+
+function renderServiceCutNotice() {
+  const box = document.getElementById('serviceCutBox');
+  if (!box) return;
+  const count = getServiceCutCount();
+  if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다. 출력이 필요하면 다음 <b>출력 선택</b> 단계에서 함께 주문할 수 있어요.</div>`;
 }
 
 function updateMarketingCopy() {
@@ -1837,16 +1878,18 @@ function renderPhotos() {
     const paid = isPhotoPaid(photo, index);
     const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
     const extra = paid ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
-    const bonus = photo.isBonus
-      ? '<span class="bonus-badge">마케팅 보너스</span>'
-      : source === 'gallery'
-        ? '<span class="gallery-badge">갤러리 선택</span>'
-        : '<span class="manual-badge">직접 추가</span>';
+    const bonus = photo.isService
+      ? '<span class="service-badge">서비스 컷</span>'
+      : photo.isBonus
+        ? '<span class="bonus-badge">마케팅 보너스</span>'
+        : source === 'gallery'
+          ? '<span class="gallery-badge">갤러리 선택</span>'
+          : '<span class="manual-badge">직접 추가</span>';
     const key = stripExt(photo.num);
     const star = key ? getStarOf(key) : 0;
     const starChip = star ? `<span class="entry-star-chip">${star}점</span>` : '';
     return `
-      <div class="entry-card${photo.isBonus ? ' bonus' : ''}">
+      <div class="entry-card${photo.isService ? ' service' : photo.isBonus ? ' bonus' : ''}">
         <div class="entry-head">
           <div class="entry-label">#${index + 1} ${starChip} ${bonus} ${extra}</div>
           ${photo.isBonus ? '' : `<button type="button" class="remove-btn" data-remove-photo="${index}">삭제</button>`}
@@ -1859,7 +1902,7 @@ function renderPhotos() {
           </div>
           <div class="field-full">
             <label>보정 요청사항 <small style="color:#9a6a3a;">(구체적으로 작성해 주세요)</small></label>
-            <textarea data-photo-note="${index}" placeholder="예: 얼굴 라인을 자연스럽게 정리해 주세요. / 이마 번들거림을 줄이고 피부 톤을 균일하게 해주세요. / 옷 주름(어깨/가슴)을 자연스럽게 정리해 주세요.">${escapeHtml(photo.note || '')}</textarea>
+            <textarea data-photo-note="${index}" placeholder="예: 턱선을 살짝만 갸름하게 정리(원래 얼굴형 유지). / 이마 번들거림 줄이고 피부 톤 고르게(점·주근깨 살리기). / 어깨·가슴 옷 주름 펴기(실루엣 유지).">${escapeHtml(photo.note || '')}</textarea>
           </div>
         </div>
       </div>
@@ -1926,12 +1969,13 @@ function updatePhotoCounter() {
   const retouchPrice = Number(state.session?.retouchPrice || 0);
   const galleryCount = state.photos.filter((p) => p.source === 'gallery' && !p.isBonus).length;
   const manualCount = state.photos.filter((p) => (p.source || 'manual') === 'manual' && !p.isBonus).length;
-  const bonusCount = state.photos.filter((p) => p.isBonus).length;
-  els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장 포함`;
+  const bonusCount = state.photos.filter((p) => p.isBonus && !p.isService).length;
+  const serviceCount = state.photos.filter((p) => p.isService).length;
+  els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장 포함${serviceCount > 0 ? ` + 서비스 ${serviceCount}장` : ''}`;
   const parts = [];
   if (galleryCount) parts.push(`갤러리 ${galleryCount}장`);
   if (manualCount) parts.push(`직접 추가 ${manualCount}장`);
-  if (bonusCount) parts.push(`마케팅 보너스 ${bonusCount}장(무료)`);
+  if (bonusCount) parts.push(`마케팅 보너스 ${bonusCount}장(무료)`);  if (serviceCount) parts.push(`서비스 컷 ${serviceCount}장(무료)`);
   els.photoCounterSub.textContent = parts.length
     ? parts.join(' · ') + (extra > 0 ? ` · 기본 ${base}장 초과분이 유료로 계산됩니다.` : ' · 추가 보정 비용 없음')
     : '별점을 주거나 직접 항목을 추가하면 여기에 구성이 표시됩니다.';
@@ -2224,11 +2268,13 @@ function updateReview() {
         const paid = isPhotoPaid(photo, index);
         const extra = paid
           ? `+€${retouchPrice}`
-          : photo.isBonus
-            ? '마케팅 보너스'
-            : source === 'gallery'
-              ? '갤러리 선택'
-              : '포함';
+          : photo.isService
+            ? '서비스 컷'
+            : photo.isBonus
+              ? '마케팅 보너스'
+              : source === 'gallery'
+                ? '갤러리 선택'
+                : '포함';
         return `
           <div class="review-item">
             <div>
@@ -2478,7 +2524,8 @@ async function onSubmit() {
       num: String(photo.num || ''),
       note: String(photo.note || ''),
       isBonus: !!photo.isBonus,
-      source: photo.source || (photo.isBonus ? 'bonus' : 'manual')
+      isService: !!photo.isService,
+      source: photo.source || (photo.isService ? 'service' : photo.isBonus ? 'bonus' : 'manual')
     })),
     // 출력 리스트: 통합. 서버가 포함 쿼터/과금을 최종 판정하므로 price 는 참고용.
     prints: [

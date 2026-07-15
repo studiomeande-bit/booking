@@ -840,7 +840,7 @@ function renderPhotos() {
           </div>
           <div class="field-full">
             <label>보정 요청사항</label>
-            <textarea data-photo-note="${index}" placeholder="예: 얼굴 라인을 자연스럽게 정리해 주세요.">${escapeHtml(photo.note || '')}</textarea>
+            <textarea data-photo-note="${index}" placeholder="예: 턱선을 살짝만 갸름하게 정리하고 원래 얼굴형은 유지해 주세요.">${escapeHtml(photo.note || '')}</textarea>
           </div>
           <div class="field-full">
             <label>인화 사이즈</label>

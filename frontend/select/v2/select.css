@@ -719,6 +719,33 @@ h1 {
 }
 .gallery-badge { background: transparent; color: #556a5f; border: 0; }
 .manual-badge { background: transparent; color: #5d6179; border: 0; }
+/* ===== 서비스 컷 (비공개 — 서비스컷수 설정된 세션에만 렌더) ===== */
+.service-cut-box {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  background: #e7f0e8;
+  color: #35463a;
+  border: 1px solid rgba(47, 109, 83, 0.28);
+  font-size: 13px;
+  line-height: 1.62;
+}
+.service-cut-title { font-weight: 800; color: #2f6d53; font-size: 15px; }
+.service-cut-copy { color: #4e6a5e; }
+.service-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #2f6d53;
+}
+.entry-card.service { background: #eef5ef; }
 
 /* ===== Gallery tips / star legend ===== */
 .gallery-tips .star-legend {
