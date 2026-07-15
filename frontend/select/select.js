@@ -229,7 +229,12 @@ function hydrateSession(session) {
     : buildDefaultPhotos(session.baseRetouchCount || 0, session);
   const existingPrints = Array.isArray(session.existingPrints) ? session.existingPrints : [];
   state.prints = state.editMode
-    ? existingPrints.filter((print) => !isPhotocardFallbackPrint(print)).map(normalizePrint).filter(hasMeaningfulPrint)
+    ? existingPrints
+        .filter((print) => !isPhotocardFallbackPrint(print))
+        // 보너스/서비스 인화 업그레이드 차액 항목은 제출 시 자동 생성되므로 복원에서 제외 (중복 청구 방지)
+        .filter((print) => !String(print?.printId || '').startsWith('uplift_'))
+        .map(normalizePrint)
+        .filter(hasMeaningfulPrint)
     : [];
   state.photocard = normalizePhotocardSelection(session.existingPhotocard || extractPhotocardFromPrints(existingPrints));
   if (session.bookingMarketing === 'Y') {
@@ -614,11 +619,23 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 넣어 주세요. 각 서비스 컷에는 <b>기본 10×15cm 인화 1장</b>이 포함되며, 비용은 없습니다.</div>`;
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 넣어 주세요. 각 서비스 컷에는 <b>기본 10×15cm 인화 1장</b>이 무료로 포함됩니다. 더 큰 사이즈로 바꾸시면 차액만 청구돼요.</div>`;
 }
 
 function makeBonusPhoto() {
-  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true };
+  return { num: '', note: '', printType: 'basic_10x15', isBonus: true };
+}
+
+// 보너스/서비스 컷 공통: 기본 10×15cm 인화 무료 포함, 큰 사이즈 선택 시 차액만 청구
+const BONUS_INCLUDED_PRINT_ID = 'basic_10x15';
+function getBonusPrintUpcharge(photo) {
+  const typeId = normalizePrintTypeId(photo?.printType);
+  if (typeId === PRINT_NONE_ID) return 0;
+  const option = PRINT_OPTIONS.find((item) => item.id === typeId);
+  if (!option) return 0;
+  const baseOption = PRINT_OPTIONS.find((item) => item.id === BONUS_INCLUDED_PRINT_ID);
+  const basePrice = baseOption ? baseOption.retouched : 0;
+  return Math.max(0, option.retouched - basePrice);
 }
 
 function syncMarketingBonusRows() {
@@ -758,7 +775,7 @@ function isPrintFreeByQuota(index, printTypeId) {
 function calcTotal() {
   const extraRetouch = getRetouchExtraCount() * Number(state.session?.retouchPrice || 0);
   const printUpgrade = state.photos.reduce((sum, photo, index) => {
-    if (photo?.isBonus) return sum;
+    if (photo?.isBonus) return sum + getBonusPrintUpcharge(photo);
     const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
     if (option.retouched === 0) return sum;
@@ -807,7 +824,8 @@ function renderPhotos() {
     const extra = !photo.isBonus && index >= includedCount ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isService ? '<span class="service-badge">서비스 컷</span>' : photo.isBonus ? '<span class="bonus-badge">보너스</span>' : '';
     const includedPrint = !photo.isBonus && isPrintFreeByQuota(index, typeId);
-    const free = photo.isBonus || option.retouched === 0 || includedPrint;
+    const bonusUpcharge = photo.isBonus ? getBonusPrintUpcharge(photo) : 0;
+    const free = photo.isBonus ? bonusUpcharge === 0 : (option.retouched === 0 || includedPrint);
     const includedPrintBadge = includedPrint ? '<span class="included-print-badge">기본 제공</span>' : '';
     return `
       <div class="entry-card${photo.isService ? ' service' : photo.isBonus ? ' bonus' : ''}">
@@ -829,8 +847,16 @@ function renderPhotos() {
             <select data-photo-print="${index}">
               ${PRINT_OPTIONS.map((item) => {
                 const itemIncluded = item.id === typeId && includedPrint;
-                const priceLabel = photo.isBonus && item.id === typeId
-                  ? (photo.isService ? (item.id === 'basic_10x15' ? '무료(서비스 컷 · 기본 포함)' : '무료(서비스 컷)') : '무료(마케팅 보너스)')
+                const bonusKind = photo.isService ? '서비스 컷' : '마케팅 보너스';
+                const itemUpcharge = Math.max(0, item.retouched - (PRINT_OPTIONS.find((x) => x.id === BONUS_INCLUDED_PRINT_ID)?.retouched || 0));
+                const priceLabel = photo.isBonus
+                  ? (item.retouched === 0
+                      ? '선택 안 함'
+                      : item.id === BONUS_INCLUDED_PRINT_ID
+                        ? `무료(${bonusKind} · 기본 포함)`
+                        : itemUpcharge === 0
+                          ? `무료(${bonusKind})`
+                          : `+€${itemUpcharge} (차액)`)
                   : itemIncluded
                   ? '무료(기본 제공)'
                   : item.retouched === 0
@@ -843,7 +869,7 @@ function renderPhotos() {
         </div>
         <div class="price-line">
           <span>출력 선택 ${includedPrintBadge}</span>
-          <strong class="${free ? 'free' : 'paid'}">${free ? '무료' : `+€${option.retouched}`}</strong>
+          <strong class="${free ? 'free' : 'paid'}">${free ? '무료' : `+€${photo.isBonus ? bonusUpcharge : option.retouched}`}</strong>
         </div>
       </div>
     `;
@@ -1389,7 +1415,21 @@ async function onSubmit() {
       ...(() => {
         const fallback = getPhotocardPrintFallbackPayload();
         return fallback ? [fallback] : [];
-      })()
+      })(),
+      ...state.photos
+        .filter((photo) => photo.isBonus && getBonusPrintUpcharge(photo) > 0)
+        .map((photo) => {
+          const typeId = normalizePrintTypeId(photo.printType);
+          const option = PRINT_OPTIONS.find((item) => item.id === typeId);
+          return {
+            photoNum: String(photo.num || '-').trim() || '-',
+            printId: `uplift_${typeId}`,
+            label: `${option ? option.label : typeId} 업그레이드 차액 (${photo.isService ? '서비스 컷' : '마케팅 보너스'})`,
+            price: getBonusPrintUpcharge(photo),
+            qty: 1,
+            isRetouched: true
+          };
+        })
     ],
     marketing: state.marketing,
     deliveryMethod: deliveryRequired ? state.deliveryMethod : 'none',
