@@ -1017,6 +1017,13 @@ function handlePublicApiRequest_(route,method,e){
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
         if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
+        // 예약
+        if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
+        if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
+        if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
+        if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
+        // 브리핑
+        if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
@@ -10234,6 +10241,136 @@ function quickUpdateBookingStatus(token,rIdx,status){
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   ensureBookingCalendarEventForRow_(sh,rIdx,row);
   return{ok:true};
+}
+
+/* ===== ERP 에이전트: 예약 검색/조회/브리핑 ===== */
+
+function _bookingRowToAgentObject_(row,rowIndex){
+  const dateStr=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+  return {
+    rowIndex:rowIndex,
+    dateTime:dateStr.slice(0,16),
+    status:String(row[BOOKING_COL['상태']]||'').trim(),
+    name:String(row[BOOKING_COL['고객명']]||''),
+    phone:String(row[BOOKING_COL['연락처']]||''),
+    email:String(row[BOOKING_COL['이메일']]||''),
+    lang:String(row[BOOKING_COL['언어']]||''),
+    itemGroup:String(row[BOOKING_COL['촬영종류']]||''),
+    product:String(row[BOOKING_COL['상품']]||''),
+    people:row[BOOKING_COL['인원']]||'',
+    total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0,
+    deposit:String(row[BOOKING_COL['계약금']]||''),
+    balance:parseMoneyValue_(row[BOOKING_COL['잔금']])||0,
+    payMethod:String(row[BOOKING_COL['결제수단']]||''),
+    companyName:String(row[BOOKING_COL['사업자명']]||''),
+    businessInvoiceNeeded:String(row[BOOKING_COL['사업자송장필요']]||'')==='Y',
+    gutscheinCode:String(row[BOOKING_COL['굿샤인코드']]||''),
+    memo:String(row[BOOKING_COL['요청사항']]||'').slice(0,300)
+  };
+}
+
+// 예약 검색 — keyword(이름/이메일/연락처/상품/회사), dateFrom/dateTo(촬영일), status, limit(기본 30, 최신순)
+function searchBookingsForAgent_(token,query){
+  assertAdmin_(token);
+  query=query||{};
+  const sh=getDbSheet();
+  const rows=sh.getDataRange().getValues();
+  const kw=String(query.keyword||'').trim().toLowerCase();
+  const dateFrom=String(query.dateFrom||'').slice(0,10);
+  const dateTo=String(query.dateTo||'').slice(0,10);
+  const status=String(query.status||'').trim();
+  const limit=Math.min(100,Math.max(1,parseInt(query.limit,10)||30));
+  const out=[];
+  for(let i=rows.length-1;i>=1&&out.length<limit;i--){
+    const row=rows[i];
+    if(!row[BOOKING_COL['예약일시']]&&!row[BOOKING_COL['고객명']]) continue;
+    const d10=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
+    if(dateFrom&&(!d10||d10<dateFrom)) continue;
+    if(dateTo&&(!d10||d10>dateTo)) continue;
+    if(status&&String(row[BOOKING_COL['상태']]||'').trim()!==status) continue;
+    if(kw){
+      const hay=[row[BOOKING_COL['고객명']],row[BOOKING_COL['이메일']],row[BOOKING_COL['연락처']],row[BOOKING_COL['상품']],row[BOOKING_COL['사업자명']]].join(' ').toLowerCase();
+      if(hay.indexOf(kw)===-1) continue;
+    }
+    out.push(_bookingRowToAgentObject_(row,i+1));
+  }
+  return {ok:true,count:out.length,bookings:out};
+}
+
+function getBookingForAgent_(token,rowIndex){
+  assertAdmin_(token);
+  const rIdx=parseInt(rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('유효하지 않은 예약 행입니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다.');
+  const row=sh.getRange(rIdx,1,1,sh.getLastColumn()).getValues()[0];
+  if(!row||(!row[BOOKING_COL['예약일시']]&&!row[BOOKING_COL['고객명']])) throw new Error('빈 예약 행입니다.');
+  return {ok:true,booking:_bookingRowToAgentObject_(row,rIdx)};
+}
+
+// 에이전트용 상태 변경 — 취소/환불 계열은 별도 플로우(메일·환불)가 있어 여기서 차단
+const AGENT_BOOKING_STATUSES_=['대기중','확정됨','촬영완료','셀렉완료','작업완료'];
+function updateBookingStatusForAgent_(token,rowIndex,status){
+  const st=String(status||'').trim();
+  if(AGENT_BOOKING_STATUSES_.indexOf(st)===-1) throw new Error('에이전트로 변경할 수 없는 상태입니다: '+st+' (가능: '+AGENT_BOOKING_STATUSES_.join('/')+' — 취소는 어드민에서 취소 플로우를 사용하세요)');
+  return quickUpdateBookingStatus(token,parseInt(rowIndex,10),st);
+}
+
+// 하루 브리핑 — 예약(7일)/대기/계약금 미입금/보류 견적/셀렉 현황을 한 번에
+function getAgentDailyBriefing_(token){
+  assertAdmin_(token);
+  const tz=CONFIG.TIMEZONE;
+  const now=new Date();
+  const today=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const weekEnd=Utilities.formatDate(new Date(now.getTime()+7*86400000),tz,'yyyy-MM-dd');
+  const sh=getDbSheet();
+  const rows=sh.getDataRange().getValues();
+  const upcoming=[],depositWait=[];
+  let pendingCount=0;
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const st=String(row[BOOKING_COL['상태']]||'').trim();
+    const d=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+    const d10=d.slice(0,10);
+    if(st==='대기중') pendingCount++;
+    if(d10&&d10>=today&&d10<=weekEnd&&(st==='확정됨'||st==='대기중')){
+      upcoming.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0});
+    }
+    if(st==='확정됨'&&String(row[BOOKING_COL['계약금']]||'').indexOf('입금전')>-1&&d10>=today){
+      depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),deposit:String(row[BOOKING_COL['계약금']]||'')});
+    }
+  }
+  upcoming.sort(function(a,b){return a.dateTime<b.dateTime?-1:1;});
+  // 견적: 보류(재확인 도래 여부) + 유효기한 임박(7일)
+  const quotes={holdTotal:0,holdDueToday:[],expiringSoon:[]};
+  try{
+    const {quoteSheet}=ensureSheets_();
+    const qRows=quoteSheet.getDataRange().getValues();
+    for(let i=1;i<qRows.length;i++){
+      const st=String(qRows[i][QUOTE_COL['상태']]||'').trim();
+      if(st===QUOTE_STATUS.HOLD){
+        quotes.holdTotal++;
+        const q=quoteRowToObject_(qRows[i],i+1);
+        if(q.followUpDate&&q.followUpDate<=today) quotes.holdDueToday.push({number:q.number,customer:q.companyName||q.name,followUpDate:q.followUpDate,tentativeStart:q.tentativeStart||'',total:q.total});
+      }else if(st===QUOTE_STATUS.SENT){
+        const q=quoteRowToObject_(qRows[i],i+1);
+        if(q.validUntil&&q.validUntil>=today&&q.validUntil<=weekEnd) quotes.expiringSoon.push({number:q.number,customer:q.companyName||q.name,validUntil:q.validUntil,total:q.total});
+      }
+    }
+  }catch(e){Logger.log('briefing quotes fail: '+e.message);}
+  // 셀렉 현황
+  const select={waiting:0,revisionRequested:0,submitted:0};
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    const sRows=selSh.getDataRange().getValues();
+    for(let i=1;i<sRows.length;i++){
+      const st=String(sRows[i][SELECT_COL['상태']]||'').trim();
+      if(st==='대기중') select.waiting++;
+      else if(st==='재수정요청') select.revisionRequested++;
+      else if(st==='제출완료') select.submitted++;
+    }
+  }catch(e){Logger.log('briefing select fail: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,quotes:quotes,select:select};
 }
 
 function confirmBookingAndSendEmailAdmin(token,bookingRowIndex){
