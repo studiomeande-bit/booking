@@ -318,7 +318,7 @@ const EVENT_PRODUCT_SECTIONS = [
     category: 'family',
     title: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
     sub: { ko: '돌상, 케이크, 가족 원판, 행사 스케치를 함께 고려합니다.', en: 'For dol setup, cake, family group shots and party coverage.', de: 'Für Dekoration, Kuchen, Familienbilder und Party-Dokumentation.' },
-    ids: ['evp', 'evv', 'biz']
+    ids: ['dolp', 'evp', 'evv', 'biz']
   },
   {
     key: 'private',
@@ -401,6 +401,12 @@ const EVENT_PRODUCT_CARD_META = {
     kicker: { ko: '암트 결혼식만', en: 'Ceremony only', de: 'Nur Trauung' },
     type: { ko: '사진', en: 'Photo', de: 'Foto' },
     summary: { ko: '90분 · 원본 전체 · 보정본 15장', en: '90 min · all originals · 15 retouched', de: '90 Min. · alle Originale · 15 retuschiert' }
+  },
+  dolp: {
+    title: { ko: '돌잔치/가족파티 사진', en: 'Family party photo', de: 'Familienfeier Foto' },
+    kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
+    type: { ko: '사진', en: 'Photo', de: 'Foto' },
+    summary: { ko: '2시간 · 원본 전체 · 보정본 15장', en: '2h · all originals · 15 retouched', de: '2 Std. · alle Originale · 15 retuschiert' }
   },
   amtv: {
     title: { ko: '암트 결혼식 영상', en: 'Civil wedding video', de: 'Standesamt Video' },
@@ -3843,7 +3849,7 @@ function isQuoteOnlyProduct(product) {
 
 function getSaturdaySurcharge(product) {
   if (!product) return 0;
-  return { amtp: 50, ob: 20, op: 30, oprm: 40 }[product.id] || 0;
+  return { amtp: 50, dolp: 50, ob: 20, op: 30, oprm: 40 }[product.id] || 0;
 }
 
 function isSaturdayDate(dateStr) {

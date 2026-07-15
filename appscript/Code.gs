@@ -3205,7 +3205,7 @@ function ensureProductsSheet_(ss) {
   sh.setFrozenRows(1); return sh;
 }
 function getProductIdsToSync_(){
-  return new Set(['ob','op','oprm','mrt_snap_1p_60','mrt_snap_2p_45','mrt_snap_2p_90','mrt_snap_2p_180','mrt_snap_extra_person','biz','amtp','amtv','amtpr','amtvr','amtpp','amtvp','evp','evv']);
+  return new Set(['ob','op','oprm','mrt_snap_1p_60','mrt_snap_2p_45','mrt_snap_2p_90','mrt_snap_2p_180','mrt_snap_extra_person','biz','amtp','dolp','amtv','amtpr','amtvr','amtpp','amtvp','evp','evv']);
 }
 function ensurePrintSheet_(ss) {
   let sh=ss.getSheetByName(CONFIG.PRINT_SHEET);
@@ -3294,6 +3294,7 @@ function getDefaultProducts_() {
     ['wprm','wed','프리웨딩 Premium (사진+영상)','Pre-Wedding Premium (Photo+Video)','Pre-Wedding Premium (Foto+Video)',1100,360,60,'single','보정본 40장 + 3분 영상 | 촬영 약 6시간 | 1시간 스튜디오 포함\n원본 색보정본 구글클라우드 전송\nA3×1, A4×2, 6×4×3 출력 포함\n추가 보정 €20','40 Retouched + 3min Video | ca. 6 hours | incl. 1h Studio\nAll originals via Google Cloud\nPrints included: 1×A3 + 2×A4 + 3 prints (6×4 inch)','40 Retuschiert + 3 Min. Video | ca. 6 Std. | inkl. 1 Std. Studio\nAlle Originale via Google Cloud\nDrucke inklusive: 1×A3 + 2×A4 + 3 Drucke (6×4 inch)',0],
     ['biz','biz','행사/이벤트 상담 (사진·영상·사진+영상)','Event Consultation (Photo / Video / Hybrid)','Event-Beratung (Foto / Video / Hybrid)',0,60,15,'custom','사진, 영상, 사진+영상 중 선택해 상담 후 맞춤 견적을 안내드립니다.\n암트 결혼식, 피로연, 파티, 기업행사 모두 문의 가능합니다.\n문의: studio.mean.de@gmail.com','Choose photo, video, or photo + video. We will prepare a custom quote after consultation.\nCivil weddings, receptions, parties and corporate events are available.\nContact: studio.mean.de@gmail.com','Foto, Video oder Foto + Video zur Auswahl. Individuelles Angebot nach Beratung.\nStandesamt, Empfang, Party und Firmenevents möglich.\nKontakt: studio.mean.de@gmail.com',0],
     ['amtp','biz','암트 결혼식 사진촬영','Civil Wedding Photo','Standesamt Foto',350,90,15,'event','사진촬영 택1 상품 | 암트 결혼식만 | 촬영 1시간 30분\n평일 €350 | 토요일 €400\n원본 전체 전달 | 보정본 15장 | 출력물: 10×15cm 15장\n피로연/파티 포함 시 별도 옵션을 선택해 주세요.','Photo-only package | Civil ceremony only | 90 min\nWeekday €350 | Saturday €400\nAll originals delivered | 15 retouched photos | Prints included: 15 prints (10×15cm)\nSelect a reception/party option if coverage continues after the ceremony.','Nur Foto | Standesamtliche Trauung | 90 Min.\nWochentag 350€ | Samstag 400€\nAlle Originale | 15 retuschierte Fotos | Drucke inklusive: 15 Drucke (10×15cm)\nFür Empfang/Party bitte die passende Option wählen.',0],
+    ['dolp','biz','돌잔치/가족파티 사진촬영','Family Party Photo','Familienfeier Foto',350,120,15,'event','사진촬영 | 돌잔치·가족 파티 | 촬영 2시간\n평일 €350 | 토요일 €400\n원본 전체 전달 | 보정본 15장 | 출력물: 10×15cm 15장\n돌상·케이크·가족 원판·행사 스케치 포함','Photo package | Dol / family party | 2 hours\nWeekday €350 | Saturday €400\nAll originals delivered | 15 retouched photos | Prints included: 15 prints (10×15cm)\nIncludes dol table, cake, family group shots and party coverage.','Fotopaket | Dol / Familienfeier | 2 Stunden\nWochentag 350€ | Samstag 400€\nAlle Originale | 15 retuschierte Fotos | Drucke inklusive: 15 Drucke (10×15cm)\nInkl. Dol-Tisch, Kuchen, Familienbilder und Party-Reportage.',0],
     ['amtv','biz','암트 결혼식 영상촬영 (상담 견적)','Civil Wedding Video (Custom Quote)','Standesamt Video (Angebot)',0,90,15,'custom','영상촬영 택1 상품 | 암트 결혼식만 | 상담 후 견적\n사진촬영과 영상촬영은 동시 선택이 아닌 택1 기준입니다.','Video-only package | Civil ceremony only | custom quote after consultation\nPhoto and video are offered as separate choices.','Nur Video | Standesamtliche Trauung | Angebot nach Beratung\nFoto und Video werden getrennt angeboten.',0],
     ['amtpr','biz','암트 결혼식+피로연 사진촬영 (상담 견적)','Civil Wedding+Reception Photo (Custom Quote)','Standesamt+Empfang Foto (Angebot)',0,120,15,'custom','사진촬영 택1 상품 | 암트 결혼식 후 간단한 피로연까지 기록\n동선과 시간 확인 후 맞춤 견적을 안내드립니다.','Photo-only package | Civil ceremony plus a simple reception\nCustom quote after checking the schedule and locations.','Nur Foto | Standesamt plus kleiner Empfang\nIndividuelles Angebot nach Ablauf und Orten.',0],
     ['amtvr','biz','암트 결혼식+피로연 영상촬영 (상담 견적)','Civil Wedding+Reception Video (Custom Quote)','Standesamt+Empfang Video (Angebot)',0,120,15,'custom','영상촬영 택1 상품 | 암트 결혼식 후 간단한 피로연까지 기록\n동선과 시간 확인 후 맞춤 견적을 안내드립니다.','Video-only package | Civil ceremony plus a simple reception\nCustom quote after checking the schedule and locations.','Nur Video | Standesamt plus kleiner Empfang\nIndividuelles Angebot nach Ablauf und Orten.',0],
@@ -4386,7 +4387,7 @@ function getWeekendSurcharge_(item,dateStr){
   if(isMyRealTripProduct_(item)) return 0;
   const d=parseYmdDateAtNoon_(dateStr);
   if(!d||d.getDay()!==6) return 0;
-  const map={amtp:50,ob:20,op:30,oprm:40};
+  const map={amtp:50,dolp:50,ob:20,op:30,oprm:40};
   return map[item.id]||0;
 }
 function parseYmdDateAtNoon_(dateStr){
