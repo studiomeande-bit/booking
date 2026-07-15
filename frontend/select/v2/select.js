@@ -55,6 +55,14 @@ function isRetouchedPhotoNum(num) {
 // 백엔드 computeSelectDecoupledPrints_ 와 동일한 규칙 (서버가 최종 판정).
 function computePrintAnnotations() {
   const quota = getSessionIncludedPrintQuota().map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
+  // 서비스 컷: 채워진 서비스 슬롯 번호 1개당 인화 1건에 €5(기본 10×15 보정본가) 크레딧. 서버 computeSelectDecoupledPrints_ 와 동일 규칙.
+  const serviceCredit = {};
+  state.photos.forEach((p) => {
+    if (!p?.isService) return;
+    const k = printNumKey(p.num);
+    if (k) serviceCredit[k] = (serviceCredit[k] || 0) + 1;
+  });
+  const basicPrintCredit = Number(getPrintOption('basic_10x15').retouched) || 0;
   return state.prints.map((print) => {
     const typeId = normalizePrintTypeId(print.printId);
     const option = getPrintOption(typeId);
@@ -69,7 +77,17 @@ function computePrintAnnotations() {
       includedQty += 1;
     }
     const chargedQty = qty - includedQty;
-    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount: chargedQty * unit };
+    let amount = chargedQty * unit;
+    let serviceDiscount = 0;
+    const numKey = printNumKey(print.photoNum);
+    if (chargedQty > 0 && numKey && serviceCredit[numKey] > 0 && unit > 0) {
+      serviceDiscount = Math.min(unit, basicPrintCredit);
+      if (serviceDiscount > 0) {
+        amount = Math.max(0, amount - serviceDiscount);
+        serviceCredit[numKey] -= 1;
+      }
+    }
+    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount, serviceDiscount };
   });
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
@@ -806,7 +824,7 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다. 출력이 필요하면 다음 <b>출력 선택</b> 단계에서 함께 주문할 수 있어요.</div>`;
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다.<br>또한 서비스 컷 사진마다 <b>기본 10×15cm 인화 1장이 무료로 포함</b>돼요. 다음 <b>출력 선택</b> 단계에서 같은 사진 번호로 인화를 주문하면 10×15는 무료, 더 큰 사이즈는 <b>차액만</b> 청구됩니다.</div>`;
 }
 
 function updateMarketingCopy() {
@@ -2016,16 +2034,19 @@ function renderPrints() {
     const ann = annotations[index];
     const option = ann.option;
     const priceRight = ann.amount === 0
-      ? '<strong class="free">무료</strong>'
+      ? `<strong class="free">${ann.serviceDiscount > 0 ? '무료 (서비스 컷)' : '무료'}</strong>`
       : `<strong class="paid">€${ann.amount}</strong>`;
     const tierBadge = ann.isRetouched
       ? '<span class="included-print-badge">보정본 출력</span>'
       : '<span class="manual-badge">원본 출력</span>';
-    const breakdown = ann.includedQty > 0 && ann.chargedQty > 0
+    const serviceLine = ann.serviceDiscount > 0
+      ? `<div class="review-note">🎁 서비스 컷 인화 −€${ann.serviceDiscount}${ann.amount > 0 ? ' (차액만 청구)' : ' (무료)'}</div>`
+      : '';
+    const breakdown = (ann.includedQty > 0 && ann.chargedQty > 0
       ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
       : ann.includedQty > 0
         ? '<div class="review-note">기본 제공 (무료)</div>'
-        : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`;
+        : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`) + serviceLine;
     return `
       <div class="entry-card">
         <div class="entry-head">
@@ -2295,11 +2316,11 @@ function updateReview() {
         const ann = printAnnotations[index];
         const tier = ann.isRetouched ? '보정본' : '원본';
         const priceText = ann.amount === 0 ? '무료' : `€${ann.amount}`;
-        const detail = ann.includedQty > 0 && ann.chargedQty > 0
+        const detail = (ann.includedQty > 0 && ann.chargedQty > 0
           ? ` (포함 ${ann.includedQty} · 추가 ${ann.chargedQty})`
           : ann.includedQty > 0
             ? ' (기본 제공)'
-            : '';
+            : '') + (ann.serviceDiscount > 0 ? ' 🎁서비스 컷' : '');
         return `
           <div class="review-item">
             <span>${escapeHtml(print.photoNum || '-')} · ${escapeHtml(ann.option.label)} × ${escapeHtml(print.qty || 1)} · ${tier}${detail}</span>

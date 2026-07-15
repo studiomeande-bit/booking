@@ -15169,12 +15169,25 @@ function buildRetouchNumSet_(photos){
   });
   return set;
 }
-function computeSelectDecoupledPrints_(prints,row,retouchSet){
+function buildSelectServiceCutNums_(photos){
+  const nums=[];
+  (photos||[]).forEach(function(p){
+    const isService=!!(p&&(p.isService||String(p.source||'')==='service'));
+    const key=selectPhotoNumKey_(p&&p.num);
+    if(isService&&key) nums.push(key);
+  });
+  return nums;
+}
+// 서비스 컷: 채워진 서비스 슬롯 번호 1개당 기본 10×15 인화 크레딧(€5). 큰 사이즈는 차액만.
+function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
   const itemGroup=row&&row[SELECT_COL['촬영종류']];
   const productName=row&&row[SELECT_COL['상품']];
   const quota=(getSelectIncludedPrintQuota_(itemGroup,productName)||[]).map(function(item){
     return{id:item.id,qty:parseInt(item.qty,10)||0};
   });
+  const serviceCredit={};
+  (serviceNums||[]).forEach(function(n){const k=selectPhotoNumKey_(n);if(k)serviceCredit[k]=(serviceCredit[k]||0)+1;});
+  const basicPrintCredit=Number((getPrintInfo_('basic_10x15')||{}).retouchedPrice||0);
   const chargeable=[];
   const included=[];
   (prints||[]).forEach(function(p){
@@ -15204,6 +15217,20 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet){
       }
     }
   });
+  // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1건에 €5(기본 10×15) 차감 (10×15 무료, 큰 사이즈 차액).
+  chargeable.forEach(function(item){
+    const k=selectPhotoNumKey_(item.photoNum);
+    if(k&&serviceCredit[k]>0&&Number(item.price)>0){
+      const disc=Math.min(Number(item.price),basicPrintCredit);
+      if(disc>0){
+        item.price=Math.max(0,Number(item.price)-disc);
+        item.serviceCredit=disc;
+        item.source='service_print';
+        item.label=String(item.label||'')+(item.price>0?' (서비스 컷 차액)':' (서비스 컷 무료)');
+        serviceCredit[k]-=1;
+      }
+    }
+  });
   const items=mergeSelectPrintItems_(chargeable);
   return{
     items:items,
@@ -15224,7 +15251,8 @@ function priceSelectPrints_(sub,row,decoupled){
   if(decoupled){
     const rawPrints=(sub&&sub.prints)||[];
     const retouchSet=buildRetouchNumSet_((sub&&sub.photos)||[]);
-    const pc=computeSelectDecoupledPrints_(rawPrints,row,retouchSet);
+    const serviceNums=buildSelectServiceCutNums_((sub&&sub.photos)||[]);
+    const pc=computeSelectDecoupledPrints_(rawPrints,row,retouchSet,serviceNums);
     // 제작할 전체 출력물(무료 포함분 included:true/price:0) = 작업 지시서.
     // 셀렉 시트에는 이 형태로 저장하고, 인화주문/인보이스에는 과금 항목(pc.items)만 사용.
     const allPrints=(pc.includedItems||[]).concat(pc.items||[]);
