@@ -1031,6 +1031,7 @@ function handlePublicApiRequest_(route,method,e){
         }
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
+        if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
@@ -2059,7 +2060,7 @@ function getOperationsLogAdmin(token, limit){
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화','P2 결제 일일검토 메일',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업'
+  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D7 아침 브리핑 메일'
 ];
 
 // 작업별 최신 실행 상태 보드 + 최근 실행 이력 원본. 운영 로그 탭에서 사용.
@@ -10379,16 +10380,19 @@ function searchSelectSessionsForAgent_(token,query){
   return {ok:true,count:out.length,sessions:out};
 }
 
-// 하루 브리핑 — 예약(7일)/대기/계약금 미입금/보류 견적/셀렉 현황을 한 번에
+// 하루 브리핑 — 예약(7일)/대기/계약금 미입금/보류 견적/셀렉 현황/미수 잔금을 한 번에
 function getAgentDailyBriefing_(token){
   assertAdmin_(token);
+  return _buildDailyBriefingData_();
+}
+function _buildDailyBriefingData_(){
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
   const today=Utilities.formatDate(now,tz,'yyyy-MM-dd');
   const weekEnd=Utilities.formatDate(new Date(now.getTime()+7*86400000),tz,'yyyy-MM-dd');
   const sh=getDbSheet();
   const rows=sh.getDataRange().getValues();
-  const upcoming=[],depositWait=[];
+  const upcoming=[],depositWait=[],unpaidBalances=[];
   let pendingCount=0;
   for(let i=1;i<rows.length;i++){
     const row=rows[i];
@@ -10402,8 +10406,17 @@ function getAgentDailyBriefing_(token){
     if(st==='확정됨'&&String(row[BOOKING_COL['계약금']]||'').indexOf('입금전')>-1&&d10>=today){
       depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),deposit:String(row[BOOKING_COL['계약금']]||'')});
     }
+    // 미수 잔금: 촬영은 끝났는데(과거 촬영일 + 진행 상태) 잔금이 남고 결제수단이 미결제인 건
+    if(d10&&d10<today&&['촬영완료','셀렉완료','작업완료'].indexOf(st)>-1){
+      const balance=parseMoneyValue_(row[BOOKING_COL['잔금']])||0;
+      const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+      if(balance>0&&(payMethod===''||payMethod==='미결제')){
+        unpaidBalances.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),balance:balance});
+      }
+    }
   }
   upcoming.sort(function(a,b){return a.dateTime<b.dateTime?-1:1;});
+  unpaidBalances.sort(function(a,b){return a.dateTime<b.dateTime?-1:1;});
   // 견적: 보류(재확인 도래 여부) + 유효기한 임박(7일)
   const quotes={holdTotal:0,holdDueToday:[],expiringSoon:[]};
   try{
@@ -10433,7 +10446,64 @@ function getAgentDailyBriefing_(token){
       else if(st==='제출완료') select.submitted++;
     }
   }catch(e){Logger.log('briefing select fail: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,quotes:quotes,select:select};
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select};
+}
+
+// D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
+function sendDailyBriefingEmail_(){
+  const b=_buildDailyBriefingData_();
+  const esc=escapeHtml_;
+  const money=function(v){return '€'+Number(v||0).toFixed(2);};
+  const section=function(title,inner){return `<div style="margin:0 0 18px;"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px;">${title}</div>${inner}</div>`;};
+  const line=function(html){return `<div style="padding:7px 10px;border-bottom:1px solid #eef2f7;font-size:13px;line-height:1.55;">${html}</div>`;};
+  const badge=function(text,bg,fg){return `<span style="background:${bg};color:${fg};border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;">${text}</span>`;};
+
+  const parts=[];
+  // 1) 이번 주 일정
+  parts.push(section('📅 이번 주 촬영 (7일)',
+    b.upcomingBookings.length
+      ? b.upcomingBookings.slice(0,10).map(function(u){
+          const isToday=u.dateTime.slice(0,10)===b.date;
+          return line(`${isToday?badge('오늘','#fee2e2','#b91c1c')+' ':''}<b>${esc(u.dateTime.slice(5,16))}</b> — ${esc(u.name)}님 · ${esc(u.product)} · ${money(u.total)} ${u.status==='대기중'?badge('대기중','#fef3c7','#92400e'):''}`);
+        }).join('')+(b.upcomingBookings.length>10?line(`외 ${b.upcomingBookings.length-10}건`):'')
+      : line('<span style="color:#94a3b8;">예정된 촬영이 없습니다.</span>')));
+  // 2) 액션 필요
+  const actions=[];
+  if(b.pendingBookingCount>0) actions.push(line(`🟡 확정 대기 예약 <b>${b.pendingBookingCount}건</b> — 어드민에서 확정 처리 필요`));
+  b.depositWaiting.forEach(function(d){actions.push(line(`💰 계약금 미입금 — <b>${esc(d.name)}</b>님 (${esc(d.dateTime.slice(5,16))} 촬영, ${esc(d.deposit)})`));});
+  b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
+  b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
+  if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
+  parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
+  // 3) 미수 잔금
+  if(b.unpaidBalances.length){
+    const totalUnpaid=b.unpaidBalances.reduce(function(s,u){return s+u.balance;},0);
+    parts.push(section(`💶 미수 잔금 ${b.unpaidBalances.length}건 · 합계 ${money(totalUnpaid)}`,
+      b.unpaidBalances.slice(0,8).map(function(u){
+        return line(`<b>${esc(u.name)}</b>님 · ${esc(u.dateTime.slice(0,10))} ${esc(u.product)} — <b style="color:#b91c1c;">${money(u.balance)}</b> (${esc(u.status)})`);
+      }).join('')+(b.unpaidBalances.length>8?line(`외 ${b.unpaidBalances.length-8}건`):'')));
+  }
+  // 4) 파이프라인 한 줄
+  parts.push(section('📸 셀렉 파이프라인',line(`고객 셀렉 대기 <b>${b.select.waiting}</b> · 재수정 요청 <b>${b.select.revisionRequested}</b> · 제출완료(작업 대기) <b>${b.select.submitted}</b> · 보류 견적 <b>${b.quotes.holdTotal}</b>`)));
+
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
+    <div style="background:#2D2A26;color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;">
+      <div style="font-size:15px;font-weight:800;">Studio mean — 아침 브리핑</div>
+      <div style="font-size:12px;color:#d6d3d1;margin-top:2px;">${b.date}</div>
+    </div>
+    <div style="border:1px solid #e2e8f0;border-top:0;border-radius:0 0 14px 14px;padding:20px;background:#fff;">
+      ${parts.join('')}
+      <div style="font-size:11px;color:#94a3b8;margin-top:6px;">이 메일은 매일 자동 발송됩니다 (D7 아침 브리핑).</div>
+    </div>
+  </div>`;
+  const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
+  const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested;
+  sendTrackedEmail_({
+    to:CONFIG.ADMIN_EMAIL,
+    subject:`[브리핑 ${b.date.slice(5)}] 오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건${b.unpaidBalances.length?` · 미수 ${b.unpaidBalances.length}건`:''}`,
+    htmlBody:html
+  });
+  return {sent:true,todayCount,actionCount,unpaid:b.unpaidBalances.length};
 }
 
 function confirmBookingAndSendEmailAdmin(token,bookingRowIndex){
@@ -19447,7 +19517,8 @@ function dailyTasks(){
     ['C3 보정 후 후속메일',sendPostRetouchFollowupEmails_],
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
-    ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_]
+    ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],
+    ['D7 아침 브리핑 메일',sendDailyBriefingEmail_]
   ];
   jobs.forEach(function(job){
     try{
