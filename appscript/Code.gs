@@ -3528,9 +3528,25 @@ function parseDateListSetting_(value){
 function normalizeDateListSetting_(value){
   return parseDateListSetting_(value).join(',');
 }
+// Utilities.formatDate는 호출당 수십 ms의 GAS 서비스 호출 — 시트 전 행을 파싱하는 장부/목록 경로에서 수십 초를 만든다.
+// 스크립트 타임존이 CONFIG.TIMEZONE과 같으면(배포 전제, 실행당 1회 검증) 순수 JS로 동일한 'yyyy-MM-dd HH:mm'을 만든다.
+let _fastDateFmtOk_=null;
+function _canFormatDateFast_(){
+  if(_fastDateFmtOk_===null){
+    try{_fastDateFmtOk_=(String(Session.getScriptTimeZone())===String(CONFIG.TIMEZONE));}catch(e){_fastDateFmtOk_=false;}
+  }
+  return _fastDateFmtOk_;
+}
+function formatDateMinuteFast_(d){
+  const p=function(n){return (n<10?'0':'')+n;};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+function formatDateMinute_(d){
+  return _canFormatDateFast_() ? formatDateMinuteFast_(d) : Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+}
 function parseDateSafe_(rawDate) {
   if(Object.prototype.toString.call(rawDate)==='[object Date]'){
-    return{obj:rawDate,str:Utilities.formatDate(rawDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')};
+    return{obj:rawDate,str:isNaN(rawDate.getTime())?'':formatDateMinute_(rawDate)};
   }
   const str=String(rawDate||'').trim();
   if(!str) return {obj:new Date(NaN),str:''};
@@ -3546,7 +3562,7 @@ function parseDateSafe_(rawDate) {
       break;
     }
   }
-  return{obj,str:!isNaN(obj.getTime())?Utilities.formatDate(obj,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'):str};
+  return{obj,str:!isNaN(obj.getTime())?formatDateMinute_(obj):str};
 }
 
 function getDepositDeadlineBaseDate_(row){
@@ -11317,10 +11333,14 @@ function batchUpdateAdvanced(token,list,type,val){
 /* ====== 회계장부 ====== */
 function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt) {
   assertAdmin_(token);
+  const _t0=Date.now(); const _timing={};
+  const _mark=function(k){_timing[k]=Date.now()-_t0;};
   const entries = [];
   const sheets = sheetsOpt || ensureSheets_();
+  _mark('sheets');
   const bookSh = sheets.bookingSheet;
   const bookData = bookSh.getDataRange().getValues();
+  _mark('bookRead');
   for(let r=1; r<bookData.length; r++) {
     const row = bookData[r]; if(!row[0]) continue;
     const {str:dStr} = parseDateSafe_(row[0]);
@@ -11388,9 +11408,11 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       openAmount: localOpenAmount
     });
   }
+  _mark('bookLoop');
   const printSh = sheets.printSheet;
   const printColMap = getPrintSheetColMap_(printSh);
   const printData = printSh.getDataRange().getValues();
+  _mark('printRead');
   for(let r=1; r<printData.length; r++) {
     const row = printData[r]; if(!row[0]) continue;
     const normalized = normalizePrintRow_(row, r+1, printColMap);
@@ -11423,8 +11445,10 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       rowIndex: r+1
     });
   }
+  _mark('printLoop');
   const expenseSh = sheets.expenseSheet;
   const expenseData = expenseSh.getDataRange().getValues();
+  _mark('expenseRead');
   for(let r=1; r<expenseData.length; r++) {
     const row = expenseData[r]; if(!row[0]) continue;
     const dStr = parseDateSafe_(row[0]).str;
@@ -11456,6 +11480,7 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       rowIndex: r+1
     });
   }
+  _mark('expenseLoop');
   const mergedEntries = entries.map(function(entry){
     entry.matchStatus = '';
     entry.matchLabel = '';
@@ -11527,8 +11552,11 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
     .map(function(label){ return { label: label, gross: byAccountingClass[label] }; })
     .sort(function(a,b){ return b.gross - a.gross; })
     .slice(0, 6);
+  _mark('summarize');
   const settlementTransactions=getSettlementTransactions_(startDate,endDate,sheets.settlementSheet);
+  _mark('settlement');
   return {
+    _timing: _timing,
     entries: mergedEntries,
     totalGross: Math.round(totalGross*100)/100,
     totalNet: Math.round(totalNet*100)/100,
