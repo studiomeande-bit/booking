@@ -43,6 +43,7 @@ git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2�
 | 캘린더 = 가용성 원본 | 캘린더에 이벤트를 넣으면 그 시간대 공개 슬롯이 막힘 (가예약 포함). 외부에서 직접 지운 이벤트는 시트와 어긋날 수 있음 |
 | 셀렉 세션 중복 | 한 예약에 셀렉 세션이 2개 생길 수 있음 (재발송 이력) — 어드민 표시는 원본 세션 기준, 상태 변경은 `selectRowIndex` 지정 가능 |
 | select 페이지 v1/v2 | `페이지버전` 컬럼으로 분기. 신규 발송 기본 v2. 카탈로그(PRINT_OPTIONS)는 **3곳 동기화 필요**: Code.gs PRINT_LABELS · AdminV2 PRINT_PRICES · select.js(v1+v2) PRINT_OPTIONS |
+| **v1 삭제 불가 (2026-07-15 확인)** | v1은 아직 비활성이 아님 — `sendPassportPhotosAdmin`(여권 직접발송)이 classic 세션 생성(Code.gs~22578), `buildSelectSessionUrl_`이 classic을 루트 `/?id=`로 링크(10곳), resend legacy 기본값 classic(~16394), 기존 classic 링크 존재. **v1 프론트 삭제 시 이들 404.** 지우려면 먼저 마이그레이션: 여권발송+resend를 v2로 전환 + 루트 `/?id=`→`/v2/` 리다이렉트 후 제거. 현재는 휴면 폴백으로 유지 권장 |
 | 보너스/서비스 인화 차액 | `uplift_` printId 항목으로 제출됨 — 수정 모드 복원 시 자동 제외 (중복 청구 방지 로직 존재) |
 | Lexware | 완전 비활성 (LEXWARE_ENABLED=false + 스텁). 코드에 잔재 있으나 죽은 코드. Lexware 계정 측 API 키 폐기 권장 |
 | 일일 자동화 | D1~D8 + B/C/L/M/P/T 시리즈 — dailyTasks() 트리거. 운영 로그 탭에서 상태 확인 |
