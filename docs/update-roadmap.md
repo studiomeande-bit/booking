@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-07-14 Europe/Berlin
+Updated: 2026-07-15 Europe/Berlin
 
 ## Immediate
 
@@ -67,11 +67,7 @@ Updated: 2026-07-14 Europe/Berlin
 - ~~spacing / typography consistency review~~ → 폰트 스택 통일 완료 (Noto Sans KR 우선)
 - ~~mobile safe-area and in-app browser polish~~ → select viewport-fit=cover + safe-area insets 적용 완료
 
-12. Ops checklist refresh
-- deployment notes
-- known caveats
-- regression checklist
-- admin dirty-file warning
+12. ~~Ops checklist refresh~~ → docs/ops-checklist.md 작성 완료 (2026-07-15: 배포 절차·주의사항·회귀 체크리스트)
 
 13. Optional finance expansion
 - decide whether instant card sales also create Lexware documents
@@ -79,6 +75,26 @@ Updated: 2026-07-14 Europe/Berlin
 - otherwise keep those flows as local-ledger + summary export only
 
 ## Done Recently
+
+- ERP agent platform shipped (2026-07-15)
+  - erp-agent public API (automation-key auth, admin-issued/revocable) + scripts/erp-agent.mjs CLI + studio-erp skill
+  - domains: quotes (create/update/send/hold/snooze/extend), invoices, bookings (search/status/confirm-mail), select (search/retouch-send/status), accounting (ledger/settlement/close/expense/cash/sumup/bank)
+  - first production runs: 조미정 재보정 발송, revision status cleanup, AN-260001~005 quote migration, Fissler Korea hold with 10/22-23 tentative block
+- Quote hold pipeline + tentative calendar blocks (2026-07-15)
+  - 보류 status excluded from auto-expiry; reason/follow-up/held-at fields; D6 daily follow-up (due reminders + 60d stale closure)
+  - multi-day all-day 가예약 events block public slots via calendar source-of-truth; auto-released on convert/reject/expire/release
+  - validity extension + PDF regen; admin hold controls
+- Daily ops automation (2026-07-15)
+  - D7 morning briefing email: week schedule, action items, unpaid balances (auto-detected), quote follow-ups, select pipeline, evidence inbox
+  - D8 invoice-mail collector → Drive 회계증빙/인박스; agent evidence upload/list/archive; local 회계/인박스 folder — Lexware fully retired (key revocation on Lexware side pending)
+- Select enhancements (2026-07-15)
+  - private service cuts: admin-set per-session free slots, zero-trace when 0; basic 10x15 print included
+  - bonus/service print upgrades charge difference only (uplift_ print entries keep server totals consistent)
+  - premium A3+ print size (retouched 45 / extra 60) across catalogs
+  - balance quick-confirm button in ledger with shoot-day date default
+- Security hardening (2026-07-15)
+  - '1234' auth fallback removed (verified rejected live); admin password change UI added; automation key rotated after chat exposure
+- Mail copy cleanup shipped (2026-07-15): payment-block dedupe, DE umlauts, pending-mail diet (1B), locale-appropriate greetings, wed/pass guide parity
 
 - Gutschein V2 customer redemption shipped (2026-07-14)
   - booking final step has voucher code input with 15-min hold, live discount preview, countdown, and remove button
