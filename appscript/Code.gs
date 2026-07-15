@@ -1006,6 +1006,17 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='invoice-list') return jsonOk_(getInvoiceList(token));
         if(action==='invoice-create') return jsonOk_(createInvoiceAdmin(token,payload.bookingRowIndex||'',String(payload.type||'일반'),payload.refundAmount||0,String(payload.memo||''),payload.customAmount,String(payload.customProduct||''),String(payload.customInvNumber||'')));
         if(action==='invoice-send') return jsonOk_(sendInvoiceEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        // 회계 — 조회
+        if(action==='accounting-ledger') return jsonOk_(getAccountingLedger(token,String(payload.startDate||''),String(payload.endDate||''),!!payload.forceRefresh));
+        if(action==='accounting-settlement') return jsonOk_(getSettlementReportAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
+        if(action==='accounting-month-close') return jsonOk_(getAccountingMonthCloseChecklistAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
+        if(action==='cash-list') return jsonOk_(getCashLedgerAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||{}));
+        // 회계 — 기록
+        if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='cash-add') return jsonOk_(saveCashLedgerManualEntryAdmin(token,payload.data||{}));
+        // 회계 — 동기화
+        if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
+        if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
