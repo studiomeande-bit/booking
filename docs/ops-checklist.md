@@ -40,6 +40,7 @@ git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2�
 | 항목 | 내용 |
 |---|---|
 | GAS 버전 한도 | 200개 도달 시 배포 차단 — 정기적으로 프로젝트 기록에서 버전 정리 |
+| **Utilities.formatDate 금지 (핫루프)** | GAS 서비스 호출이라 호출당 수십 ms — 시트 전 행을 도는 루프에 넣으면 수십 초가 된다 (2026-07-15 장부 107s→13s 사례). 분 단위 포맷은 `formatDateMinute_`(순수 JS, TZ 가드 내장) 사용. `getAccountingLedger` 응답의 `_timing`으로 페이즈별 진단 가능 |
 | 캘린더 = 가용성 원본 | 캘린더에 이벤트를 넣으면 그 시간대 공개 슬롯이 막힘 (가예약 포함). 외부에서 직접 지운 이벤트는 시트와 어긋날 수 있음 |
 | 셀렉 세션 중복 | 한 예약에 셀렉 세션이 2개 생길 수 있음 (재발송 이력) — 어드민 표시는 원본 세션 기준, 상태 변경은 `selectRowIndex` 지정 가능 |
 | select 페이지 v1/v2 | `페이지버전` 컬럼으로 분기. 신규 발송 기본 v2. 카탈로그(PRINT_OPTIONS)는 **3곳 동기화 필요**: Code.gs PRINT_LABELS · AdminV2 PRINT_PRICES · select.js(v1+v2) PRINT_OPTIONS |
