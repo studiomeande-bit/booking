@@ -132,9 +132,9 @@ const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
-const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON'];
+const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON','보류사유','재확인예정일','보류전환일시','가예약시작','가예약소요분','가예약캘린더ID'];
 const QUOTE_COL=QUOTE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
-const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
+const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',HOLD:'보류',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
 const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
@@ -346,6 +346,20 @@ function adminRpc(token, action, payload){
     case 'cleanupGutscheinHolds':
       assertAdmin_(token);
       return {ok:true,cleaned:cleanupExpiredGutscheinHolds_()};
+    case 'holdQuote':
+      return holdQuoteAdmin(token, String(payload&&payload.number||''), payload&&payload.data||{});
+    case 'snoozeQuoteHold':
+      return snoozeQuoteHoldAdmin(token, String(payload&&payload.number||''), String(payload&&payload.followUpDate||''));
+    case 'releaseQuoteHold':
+      return releaseQuoteHoldAdmin(token, String(payload&&payload.number||''));
+    case 'releaseQuoteTentative':
+      return releaseQuoteTentativeAdmin(token, String(payload&&payload.number||''));
+    case 'extendQuoteValidity':
+      return extendQuoteValidityAdmin(token, String(payload&&payload.number||''), payload&&payload.validDays);
+    case 'issueAutomationKey':
+      return issueAutomationKeyAdmin(token);
+    case 'revokeAutomationKey':
+      return revokeAutomationKeyAdmin(token);
     case 'auditReturnDiscounts':
       return auditReturnDiscountsAdmin(token, payload||{});
     case 'repairReturnDiscount':
@@ -967,6 +981,35 @@ function handlePublicApiRequest_(route,method,e){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/gutschein-release');
       const request=getPublicPayloadFromRequest_(e);
       return jsonOk_(publicGutscheinRelease_(request.payload||{}));
+    }
+    if(route==='erp-agent'){
+      // ERP 자동화 에이전트 API — 발급된 자동화 키로만 접근 (어드민에서 발급/폐기)
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/erp-agent');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const params=(e&&e.parameter)||{};
+      const key=String(payload.apiKey||params.apiKey||'').trim();
+      if(!isValidAutomationKey_(key)) return jsonError_('UNAUTHORIZED','Automation key invalid or not issued');
+      const action=String(payload.agentAction||params.agentAction||'').trim();
+      const token=createAdminSessionToken_();
+      try{
+        try{logMessage_({channel:'erp-agent',direction:'inbound',type:'agent',subject:'erp-agent:'+action,status:'요청',meta:{action}});}catch(logErr){}
+        if(action==='quote-list') return jsonOk_(listQuotesAdmin(token,payload.filters||{}));
+        if(action==='quote-get') return jsonOk_(getQuoteAdmin(token,String(payload.number||'')));
+        if(action==='quote-create') return jsonOk_(createQuoteAdmin(token,payload.data||{}));
+        if(action==='quote-update') return jsonOk_(updateQuoteAdmin(token,String(payload.number||''),payload.data||{}));
+        if(action==='quote-send') return jsonOk_(sendQuoteEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        if(action==='quote-hold') return jsonOk_(holdQuoteAdmin(token,String(payload.number||''),payload.data||{}));
+        if(action==='quote-snooze') return jsonOk_(snoozeQuoteHoldAdmin(token,String(payload.number||''),String(payload.followUpDate||'')));
+        if(action==='quote-release-hold') return jsonOk_(releaseQuoteHoldAdmin(token,String(payload.number||'')));
+        if(action==='quote-extend') return jsonOk_(extendQuoteValidityAdmin(token,String(payload.number||''),payload.validDays));
+        if(action==='invoice-list') return jsonOk_(getInvoiceList(token));
+        if(action==='invoice-create') return jsonOk_(createInvoiceAdmin(token,payload.bookingRowIndex||'',String(payload.type||'일반'),payload.refundAmount||0,String(payload.memo||''),payload.customAmount,String(payload.customProduct||''),String(payload.customInvNumber||'')));
+        if(action==='invoice-send') return jsonOk_(sendInvoiceEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
+      }finally{
+        try{logoutAdmin(token);}catch(outErr){}
+      }
     }
     if(route==='studio-presence-config'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-config');
@@ -1991,7 +2034,7 @@ function getOperationsLogAdmin(token, limit){
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화','P2 결제 일일검토 메일',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리'
+  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업'
 ];
 
 // 작업별 최신 실행 상태 보드 + 최근 실행 이력 원본. 운영 로그 탭에서 사용.
@@ -2252,9 +2295,9 @@ function _sendPortfolioLeadCustomerEmail_(lead){
     de:'[Studio mean] Ihre Anfrage ist angekommen'
   };
   const body={
-    ko:`${escapeHtml_(lead.name)}님, 안녕하세요.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br><b>문의 종류</b>: ${escapeHtml_(lead.projectType)}<br><b>희망 일정</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Dear ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br><b>Project</b>: ${escapeHtml_(lead.projectType)}<br><b>Preferred timing</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Hallo ${escapeHtml_(lead.name)},<br><br>vielen Dank fur Ihre Anfrage bei Studio mean. Wir prufen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zuruck.<br><br><b>Projektart</b>: ${escapeHtml_(lead.projectType)}<br><b>Wunschtermin</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br><b>문의 종류</b>: ${escapeHtml_(lead.projectType)}<br><b>희망 일정</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br><b>Project</b>: ${escapeHtml_(lead.projectType)}<br><b>Preferred timing</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br><b>Projektart</b>: ${escapeHtml_(lead.projectType)}<br><b>Wunschtermin</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:lead.email,subject:subject[L],htmlBody:body[L]},{
@@ -2566,14 +2609,14 @@ function _sendConsultationAppointmentUpdateEmail_(c,appt,mode){
   const location=appt&&appt.location?appt.location:(/방문|visit|studio|스튜디오/i.test(method)?STUDIO_ADDRESS:method);
   const body={
     ko:isCancel
-      ? `${escapeHtml_(c.name)}님, 안녕하세요.<br><br>아래 상담 일정이 취소되었습니다.<br><br><b>상담 일정</b>: ${escapeHtml_(when||'-')}<br><b>상담 방식</b>: ${escapeHtml_(method||'-')}<br><br>새로운 상담 시간이 필요하시면 이 메일로 편하게 회신해 주세요.<br><br>${_getSignatureHtml()}`
-      : `${escapeHtml_(c.name)}님, 안녕하세요.<br><br>상담 일정이 아래와 같이 등록되었습니다.<br><br><b>상담 일정</b>: ${escapeHtml_(when||'-')}<br><b>상담 방식</b>: ${escapeHtml_(method||'-')}<br><b>장소/연결</b>: ${escapeHtml_(location||'-')}<br><br>일정 변경이 필요하시면 이 메일로 회신해 주세요.<br><br>${_getSignatureHtml()}`,
+      ? `안녕하세요, ${escapeHtml_(c.name)}님.<br><br>아래 상담 일정이 취소되었습니다.<br><br><b>상담 일정</b>: ${escapeHtml_(when||'-')}<br><b>상담 방식</b>: ${escapeHtml_(method||'-')}<br><br>새로운 상담 시간이 필요하시면 이 메일로 편하게 회신해 주세요.<br><br>${_getSignatureHtml()}`
+      : `안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 일정이 아래와 같이 등록되었습니다.<br><br><b>상담 일정</b>: ${escapeHtml_(when||'-')}<br><b>상담 방식</b>: ${escapeHtml_(method||'-')}<br><b>장소/연결</b>: ${escapeHtml_(location||'-')}<br><br>일정 변경이 필요하시면 이 메일로 회신해 주세요.<br><br>${_getSignatureHtml()}`,
     en:isCancel
-      ? `Dear ${escapeHtml_(c.name)},<br><br>The following consultation appointment has been cancelled.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><br>If you would like to arrange a new time, simply reply to this email.<br><br>${_getSignatureHtml()}`
-      : `Dear ${escapeHtml_(c.name)},<br><br>Your consultation appointment has been scheduled as follows.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><b>Location/link</b>: ${escapeHtml_(location||'-')}<br><br>If anything needs to be changed, simply reply to this email.<br><br>${_getSignatureHtml()}`,
+      ? `Hello ${escapeHtml_(c.name)},<br><br>The following consultation appointment has been cancelled.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><br>If you would like to arrange a new time, simply reply to this email.<br><br>${_getSignatureHtml()}`
+      : `Hello ${escapeHtml_(c.name)},<br><br>Your consultation appointment has been scheduled as follows.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><b>Location/link</b>: ${escapeHtml_(location||'-')}<br><br>If anything needs to be changed, simply reply to this email.<br><br>${_getSignatureHtml()}`,
     de:isCancel
-      ? `Hallo ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren mochten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
-      : `Hallo ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geandert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      ? `Guten Tag, ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren mochten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      : `Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geandert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:email,subject:subject[L],htmlBody:body[L]},{
@@ -2596,9 +2639,9 @@ function _sendConsultationCustomerEmail_(c){
     de:`[Studio mean] Beratungsformular erhalten — ${c.name}`
   };
   const body={
-    ko:`${escapeHtml_(c.name)}님, 안녕하세요.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>상담 희망</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>촬영 예정</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Dear ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Preferred meeting</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Planned shoot</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Hallo ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Wunschtermin Beratung</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Geplantes Shooting</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>상담 희망</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>촬영 예정</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Preferred meeting</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Planned shoot</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Wunschtermin Beratung</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Geplantes Shooting</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:c.email,subject:subject[L],htmlBody:body[L]},{
@@ -3353,6 +3396,27 @@ function isValidAdminPassword_(password){
   if(!safePassword) return false;
   const p=PropertiesService.getScriptProperties();
   return hashText_(safePassword)===p.getProperty('ADMIN_PASSWORD_HASH') || safePassword==='1234';
+}
+
+/* ===== ERP 자동화 API 키 (Claude 등 에이전트용 — 어드민 비밀번호와 별개, 폐기 가능) ===== */
+function isValidAutomationKey_(key){
+  const k=String(key||'').trim();
+  if(!k||k.length<24) return false;
+  const stored=String(PropertiesService.getScriptProperties().getProperty('AUTOMATION_API_KEY')||'').trim();
+  return !!stored && k===stored;
+}
+
+function issueAutomationKeyAdmin(token){
+  assertAdmin_(token);
+  const key='smk_'+Utilities.getUuid().replace(/-/g,'')+Utilities.getUuid().replace(/-/g,'').slice(0,16);
+  PropertiesService.getScriptProperties().setProperty('AUTOMATION_API_KEY',key);
+  return {ok:true,key};
+}
+
+function revokeAutomationKeyAdmin(token){
+  assertAdmin_(token);
+  PropertiesService.getScriptProperties().deleteProperty('AUTOMATION_API_KEY');
+  return {ok:true};
 }
 
 /* ====== 설정 ====== */
@@ -6623,9 +6687,9 @@ const PARKING_2='https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8';
 const PARKING_3='https://maps.app.goo.gl/S7zA3hEstWqhGhkUA';
 
 const EMAIL_I18N={
-  ko:{greeting:n=>`안녕하세요 <b>${n}</b>님,`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청 접수 안내 (대기중)`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
+  ko:{greeting:n=>`안녕하세요, <b>${n}</b>님.`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청이 접수되었습니다`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
   en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Same-day reshoot discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Same-day reshoot discount applied automatically!'},
-  de:{greeting:n=>`Hallo <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
+  de:{greeting:n=>`Guten Tag, <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
 };
 
 function _isExternalBookingItemGroup_(itemGroup){
@@ -6760,7 +6824,7 @@ function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
       : `<b>📸 Passport & Visa Photo Guide</b><br>Welcome! We photograph according to German E-passbild and Korean passport regulations.<br><br><b>⚠️ Eyebrows must be fully visible</b><br>• Bangs covering the eyebrow line often lead to rejection.<br>• Ears visible is recommended for a cleaner face contour.<br><br><b>📋 Before your visit</b><br>• Avoid white or pale pastel tops.<br>• Glasses are not recommended. Only clear lenses are allowed.<br>• Neutral expression, closed mouth, no visible teeth.<br><br><b>✅ Validity & size</b><br>• Valid for 6 months from the shoot date.<br>• 35mm × 45mm, face height 32–36mm.`;
     if(L==='de')return isBaby
       ? `<b>📸 Hinweise für Baby-Pass / Visumfoto</b><br>• Babys werden im Liegen vor hellem einfarbigem Hintergrund fotografiert.<br>• Die Augen sollten offen sein und Hände, Kleidung oder Schatten der Begleitperson dürfen nicht sichtbar sein.<br>• Weiße Kleidung, Mützen, Brillen und Haaraccessoires bitte vermeiden.<br>• Koreanischer Pass und deutsches Visum können mit denselben Aufnahmen vorbereitet werden.`
-      : `<b>📸 Buchungshinweise Passfoto & Visum</b><br>Wir fotografieren nach den deutschen E-passbild- und koreanischen Passvorgaben.<br><br><b>⚠️ Augenbrauen vollständig sichtbar</b><br>• Ein Pony über der Augenbrauenlinie führt oft zur Ablehnung.<br>• Sichtbare Ohren sind empfohlen.<br><br><b>📋 Vor dem Termin</b><br>• Keine weißen oder sehr hellen Pastelltöne tragen.<br>• Brille möglichst abnehmen. Nur klare Kontaktlinsen sind erlaubt.<br>• Neutraler Gesichtsausdruck, geschlossener Mund, keine Zähne sichtbar.<br><br><b>✅ Gültigkeit & Format</b><br>• 6 Monate ab Aufnahmedatum gültig.<br>• 35mm × 45mm, Gesichtshöhe 32–36mm.`;
+      : `<b>📸 Buchungshinweise Passfoto & Visum</b><br>Willkommen bei Studio mean! Wir fotografieren nach den deutschen E-passbild- und koreanischen Passvorgaben.<br><br><b>⚠️ Augenbrauen vollständig sichtbar</b><br>• Ein Pony über der Augenbrauenlinie führt oft zur Ablehnung.<br>• Sichtbare Ohren sind empfohlen.<br><br><b>📋 Vor dem Termin</b><br>• Keine weißen oder sehr hellen Pastelltöne tragen.<br>• Brille möglichst abnehmen. Nur klare Kontaktlinsen sind erlaubt.<br>• Neutraler Gesichtsausdruck, geschlossener Mund, keine Zähne sichtbar.<br><br><b>✅ Gültigkeit & Format</b><br>• 6 Monate ab Aufnahmedatum gültig.<br>• 35mm × 45mm, Gesichtshöhe 32–36mm.`;
     return isBaby
       ? `<b>👶 영유아 여권 / 비자사진 촬영 조건 안내</b><br>• 아기를 눕힌 상태에서 밝은 단색 배경으로 촬영합니다.<br>• 얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자가 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.<br>• 영유아는 성인보다 규정이 일부 완화 적용되며 한국 여권과 독일 비자에 함께 사용할 수 있도록 촬영합니다.`
       : `<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.`;
@@ -6784,8 +6848,8 @@ function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
     return`<b>📸 야외스냅 촬영 안내</b><br>1) 레퍼런스(1~5장)와 장소/동선을 미리 공유해 주세요. 골든아워 추천.<br>2) 톤 맞춤 의상. 2벌 준비 추천.<br>3) 뚜렷한 메이크업·헤어 스프레이·수정 메이크업 챙기기.<br>4) 10~15분 전 도착 권장.`;
   }
   if(itemGroup==='wed'){
-    if(L==='en')return`<b>📸 Pre-Wedding Shoot Guide</b><br>1) Please share your mood references, preferred colour tones, and intended use (invitation, SNS, album).<br>2) Confirm locations, movement flow, and weather backup plans in advance. Golden hour is usually best for outdoor sessions.<br>3) Matching outfit tones work best. Two outfits are recommended.<br>4) Bring touch-up makeup, comfortable shoes, and small props if needed.<br>5) Please arrive 10–15 minutes early.`;
-    if(L==='de')return`<b>📸 Pre-Wedding Shooting Hinweise</b><br>1) Bitte senden Sie Stimmungsreferenzen, bevorzugte Farbtöne und den Verwendungszweck vorab.<br>2) Orte, Laufwege und Wetter-Alternativen bitte im Voraus abstimmen. Die Goldene Stunde eignet sich meist am besten.<br>3) Aufeinander abgestimmte Outfits wirken hochwertiger. Zwei Outfits werden empfohlen.<br>4) Touch-up Make-up, bequeme Schuhe und kleine Requisiten sind hilfreich.<br>5) Bitte 10–15 Minuten früher kommen.`;
+    if(L==='en')return`<b>📸 Pre-Wedding Shoot Guide</b><br>1) Please share your mood references, preferred colour tones, and intended use (invitation, SNS, album).<br>2) Confirm locations, movement flow, and weather backup plans in advance. Golden hour is usually best for outdoor sessions.<br>3) Matching outfit tones work best. Two outfits are recommended.<br>4) Checklist — Bride: nude-tone underwear and spare stockings · Groom: dark socks, belt, and a spare shirt if possible. Comfortable shoes, water, and small props (bouquet, rings, invitations) are welcome.<br>5) Outdoor sessions are affected by wind and humidity — hair spray, pins, and touch-up makeup are recommended. On-location hair &amp; makeup can be arranged on request.<br>6) Please arrive 10–15 minutes early.`;
+    if(L==='de')return`<b>📸 Pre-Wedding Shooting Hinweise</b><br>1) Bitte senden Sie Stimmungsreferenzen, bevorzugte Farbtöne und den Verwendungszweck vorab.<br>2) Orte, Laufwege und Wetter-Alternativen bitte im Voraus abstimmen. Die Goldene Stunde eignet sich meist am besten.<br>3) Aufeinander abgestimmte Outfits wirken hochwertiger. Zwei Outfits werden empfohlen.<br>4) Checkliste — Braut: hautfarbene Unterwäsche und Ersatzstrümpfe · Bräutigam: dunkle Socken, Gürtel, ggf. ein Ersatzhemd. Bequeme Schuhe, Wasser und kleine Requisiten (Brautstrauß, Ringe, Einladungen) sind willkommen.<br>5) Outdoor-Shootings sind wind- und wetterabhängig — Haarspray, Haarnadeln und Touch-up-Make-up sind empfehlenswert. Hair &amp; Make-up vor Ort vermitteln wir gerne auf Wunsch.<br>6) Bitte kommen Sie 10–15 Minuten früher.`;
     return`<b>📸 프리웨딩 촬영 전 안내사항 (예약 확정 후)</b><br><br><b>1) 촬영 목적/무드 사전 공유</b><br>원하시는 분위기와 사용 목적에 따라 촬영 구도와 보정 톤이 달라집니다. 레퍼런스 사진 1~5장이나 선호하는 색감이 있다면 미리 공유해 주세요.<br><br><b>2) 일정/로케이션(동선) 확인</b><br>• 촬영 날짜, 시작/종료 시간<br>• 장소명과 이동 동선<br>• 우천·강풍 시 대체 장소 여부<br>※ 야외 촬영은 보통 해 질 무렵 골든아워 시간대 결과가 가장 좋습니다.<br><br><b>3) 복장 가이드</b><br>• 크림/베이지/화이트 또는 네이비/블랙처럼 톤을 맞추면 훨씬 고급스럽게 보입니다.<br>• 큰 로고, 강한 패턴, 잔줄무늬는 피해주세요.<br>• 가능하다면 포멀 1벌 + 캐주얼 1벌처럼 2벌 구성을 추천드립니다.<br><br><b>4) 준비물 체크리스트</b><br>• 신부: 누브라/테이프, 누드톤 속옷, 여분 스타킹<br>• 신랑: 검정/네이비 양말, 벨트, 가능 시 셔츠 여분<br>• 이동용 편한 신발, 물, 간단 간식, 부케/반지/청첩장 같은 소품<br><br><b>5) 헤어·메이크업 안내</b><br>야외 촬영은 바람과 습기 영향이 있으니 헤어 스프레이, 핀, 수정 메이크업 용품을 함께 준비해 주세요. 원하시면 출장 헤어·메이크업 연결도 가능합니다.<br><br><b>6) 도착 권장 시간</b><br>촬영 시작 10~15분 전 도착을 권장드립니다. 지각 시 다음 일정에 따라 촬영 구성이 일부 조정될 수 있습니다.<br><br><b>7) 촬영 진행 방식</b><br>포즈, 표정, 시선은 모두 디렉션해 드리며, 핵심 컷부터 디테일 컷 순으로 자연스럽게 진행합니다.<br><br><b>8) 결과물/보정 관련 안내</b><br>밝은 톤 또는 무드 톤으로 맞춤 보정해 드리며, 제공 장수와 원본 제공 여부는 예약하신 패키지 기준으로 진행됩니다.`;
   }
   if(itemGroup==='biz'){
@@ -7284,9 +7348,9 @@ function sendWalkinCustomerReceipt_(payload,submittedAt){
     de:'[Studio mean] Ihre Walk-in-Informationen sind eingegangen'
   };
   const greetings={
-    ko:`안녕하세요 <b>${payload.name}</b>님,`,
+    ko:`안녕하세요, <b>${payload.name}</b>님.`,
     en:`Hello <b>${payload.name}</b>,`,
-    de:`Hallo <b>${payload.name}</b>,`
+    de:`Guten Tag, <b>${payload.name}</b>,`
   };
   const intros={
     ko:'현장에서 안내드린 워크인 고객 정보가 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',
@@ -7412,7 +7476,8 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
   const isExternalMeeting=_isExternalMeetingLocation_(rawMeetingLocation,quote.itemGroup,_isExternalBookingItemGroup_(quote.itemGroup));
   const meetingLocation=(isExternalMeeting&&isStudioLocation_(rawMeetingLocation))?'':rawMeetingLocation;
   const detailLocation=meetingLocation||(isExternalMeeting?'':STUDIO_ADDRESS);
-  const directionHtml=_getDirectionHtml(lang,{location:meetingLocation,itemGroup:quote.itemGroup,external:isExternalMeeting});
+  // 본문 상단에 결제 안내(T.payment_*)가 이미 있으므로 오시는길 블록의 결제 문구는 제외 (중복 방지)
+  const directionHtml=_getDirectionHtml(lang,{location:meetingLocation,itemGroup:quote.itemGroup,external:isExternalMeeting,includePayment:false});
   const bookingDetailsHtml=buildBookingDetailsHtml_(request,quote,{
     lang,
     localProductName,
@@ -7453,7 +7518,16 @@ function sendCustomerPendingEmail_(request,quote,localProductName,isReturn,event
       cancelSection=`<hr style="margin:20px 0;border:none;border-top:1px solid #e2e8f0;"><p style="font-size:12px;color:#64748b;">${infoText[lang||'ko']}</p><div style="display:flex;gap:10px;flex-wrap:wrap;">${portalBtn}<a href="${rescheduleUrl}" style="display:inline-block;padding:10px 20px;background:#eff6ff;color:#2563eb;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📅 ${rescheduleLabel[lang]||rescheduleLabel.ko}</a><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#f1f5f9;color:#475569;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📩 ${cancelLabel[lang]||cancelLabel.ko}</a></div>`;
     }catch(e){Logger.log('pending cancelSection 오류:'+e.message);}
   }
-  const body=`${T.greeting(request.name)}<br><br>${T.pending_intro}${returnBadge}<br><br><b>${T.receipt_title}</b><br>${T.lbl_product} ${localProductName}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} ${request.date} ${request.time}<br>${priceHtml}${discHtml?'<br>'+discHtml:''}${consentNotice}${bookingDetailsHtml}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${guide}<br><br><hr><br>${directionHtml}<br><br>${cancelSection}${_getSignatureHtml()}`;
+  // 1B: 촬영 가이드·오시는 길 전문은 확정이 빠른 여권/비자만 대기 메일에 포함, 그 외 상품은 확정 메일에서 안내
+  const guideTeaser={
+    ko:'촬영 준비 안내와 오시는 길·주차 정보는 예약 확정 메일에서 자세히 보내드립니다.',
+    en:'Preparation tips, directions and parking information will follow in your confirmation email.',
+    de:'Vorbereitungshinweise sowie Anfahrt und Parken senden wir Ihnen mit der Bestätigungs-E-Mail.'
+  };
+  const guideSection=quote.itemGroup==='pass'
+    ? `<br><br><hr><br>${guide}<br><br><hr><br>${directionHtml}`
+    : `<br><br><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#475569;">${guideTeaser[lang]||guideTeaser.ko}</div>`;
+  const body=`${T.greeting(request.name)}<br><br>${T.pending_intro}${returnBadge}<br><br><b>${T.receipt_title}</b><br>${T.lbl_product} ${localProductName}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} ${request.date} ${request.time}<br>${priceHtml}${discHtml?'<br>'+discHtml:''}${consentNotice}${bookingDetailsHtml}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}${guideSection}<br><br>${cancelSection}${_getSignatureHtml()}`;
   try{
     sendTrackedEmail_({to:request.email,subject:T.pending_subject(request.name,localProductName),htmlBody:body},Object.assign({type:'예약',customerName:request.name,email:request.email,ref:eventId},meta||{}));
   }catch(e){Logger.log('sendCustomerPendingEmail_ 실패 ('+request.email+'): '+e.message);}
@@ -7861,7 +7935,8 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   }[lang||'ko']||''):'';
   const consentNotice=getBookingConsentNoticeHtml_(lang||'ko',detail);
   const detailLocation=meetingLocation||(isExternalMeeting?'':STUDIO_ADDRESS);
-  const directionHtml=_getDirectionHtml(lang||'ko',{location:meetingLocation,itemGroup:itemGroup,external:isExternalMeeting});
+  // 본문 상단에 결제 안내(T.payment_*)가 이미 있으므로 오시는길 블록의 결제 문구는 제외 (중복 방지)
+  const directionHtml=_getDirectionHtml(lang||'ko',{location:meetingLocation,itemGroup:itemGroup,external:isExternalMeeting,includePayment:false});
   const priceHtml=isQuoteOnly
     ? (lang==='en'
         ? '■ Pricing: A detailed quote will be sent after reviewing your request.'
@@ -8662,8 +8737,8 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
     };
     const bodies={
       ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      en:`Dear ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      de:`Liebe/r ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
+      en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
     };
     sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
     return;
@@ -8675,8 +8750,8 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
   };
   const bodies={
     ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경은 이번에는 반영되지 않았습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>현재 예약 기준으로 다시 진행됩니다. 다른 가능한 일정이 필요하시면 회신 또는 studio.mean.de@gmail.com 으로 연락해 주세요.<br><br><b>Studio mean</b>`,
-    en:`Dear ${name},<br><br>Unfortunately we could not approve your reschedule request this time.<br><br>📅 Current booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Your booking will remain on the current schedule. If you would like to discuss other options, please reply to this email or contact studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`,
-    de:`Liebe/r ${name},<br><br>Ihre Anfrage zur Terminänderung konnte diesmal leider nicht bestätigt werden.<br><br>📅 Aktueller Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Ihre Buchung bleibt beim aktuellen Termin. Wenn Sie andere Optionen besprechen möchten, antworten Sie bitte auf diese E-Mail oder schreiben Sie an studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`
+    en:`Hello ${name},<br><br>Unfortunately we could not approve your reschedule request this time.<br><br>📅 Current booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Your booking will remain on the current schedule. If you would like to discuss other options, please reply to this email or contact studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`,
+    de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung konnte diesmal leider nicht bestätigt werden.<br><br>📅 Aktueller Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Ihre Buchung bleibt beim aktuellen Termin. Wenn Sie andere Optionen besprechen möchten, antworten Sie bitte auf diese E-Mail oder schreiben Sie an studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`
   };
   sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
 }
@@ -8955,9 +9030,9 @@ function reviseRetouch_(sessionId,p){
           de:`[Studio mean] Überarbeitungsanfrage erhalten — ${customerName}`
         };
         const intros={
-          ko:`안녕하세요 <b>${escapeHtml_(customerName)}</b>님,<br><br>보내주신 재수정 요청이 정상 접수되었습니다. Studio mean에서 내용을 확인한 뒤 수정본을 다시 전달드리겠습니다.`,
+          ko:`안녕하세요, <b>${escapeHtml_(customerName)}</b>님.<br><br>보내주신 재수정 요청이 정상 접수되었습니다. Studio mean에서 내용을 확인한 뒤 수정본을 다시 전달드리겠습니다.`,
           en:`Hello <b>${escapeHtml_(customerName)}</b>,<br><br>Your revision request has been received successfully. Studio mean will review your note and send the revised photos again.`,
-          de:`Hallo <b>${escapeHtml_(customerName)}</b>,<br><br>Ihre Überarbeitungsanfrage wurde erfolgreich empfangen. Studio mean prüft Ihre Nachricht und sendet die überarbeiteten Fotos erneut.`
+          de:`Guten Tag, <b>${escapeHtml_(customerName)}</b>,<br><br>Ihre Überarbeitungsanfrage wurde erfolgreich empfangen. Studio mean prüft Ihre Nachricht und sendet die überarbeiteten Fotos erneut.`
         };
         const labels={
           ko:{product:'상품',count:'재수정 요청 횟수',time:'접수 시각',note:'보내주신 내용',thanks:'감사합니다.'},
@@ -10269,9 +10344,9 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
     return `<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:140px;border-bottom:1px solid #e2e8f0;font-size:12px;">${escapeHtml_(pair[0])}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${escapeHtml_(pair[1])}</td></tr>`;
   }).join('');
   const intro={
-    ko:`<p><b>${escapeHtml_(name)}</b>님, 안녕하세요.</p><p>보내주신 예약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
+    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p><p>보내주신 예약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
     en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p><p>We have received your deposit. Your booking remains confirmed.</p>`,
-    de:`<p>Hallo <b>${escapeHtml_(name)}</b>,</p><p>Ihre Anzahlung ist eingegangen. Ihre Buchung bleibt bestaetigt.</p>`
+    de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p><p>Ihre Anzahlung ist eingegangen. Ihre Buchung bleibt bestätigt.</p>`
   };
   const outro={
     ko:balanceText?`<p>잔금은 촬영 당일 현장 결제 기준으로 안내드립니다. 변경사항이나 문의가 있으시면 이 메일로 편하게 회신해 주세요.</p>`:`<p>문의사항이 있으시면 이 메일로 편하게 회신해 주세요.</p>`,
@@ -10797,8 +10872,8 @@ function sendPostponedRescheduleLinkAdmin(token,bookingRowIndex,memo){
   };
   const bodies={
     ko:`안녕하세요, ${escapeHtml_(name)}님.<br><br>연기된 촬영의 새 날짜와 시간을 아래 링크에서 선택해 주세요.<br>선택하신 일정은 Studio mean에서 최종 확인 후 확정 메일로 다시 안내드립니다.<br><br><b>상품</b>: ${escapeHtml_(product)}<br><b>기존 예약 기준</b>: ${escapeHtml_(currentDate||'-')}<br><b>예약금/결제 내역</b>: 기존 예약 기준으로 유지됩니다.${extraMemo?'<br><br><b>안내</b>: '+escapeHtml_(extraMemo).replace(/\n/g,'<br>'):''}<br><br><a href="${link}" style="display:inline-block;padding:12px 22px;background:#2D2A26;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">새 일정 선택하기</a><br><br><span style="font-size:12px;color:#64748b;">버튼이 열리지 않으면 아래 링크를 복사해 주세요.<br>${link}</span><br><br>감사합니다.<br><b>Studio mean</b>`,
-    en:`Dear ${escapeHtml_(name)},<br><br>Please choose a new date and time for your postponed shoot using the link below.<br>Studio mean will review your selected slot and send a final confirmation email afterwards.<br><br><b>Service</b>: ${escapeHtml_(product)}<br><b>Previous booking reference</b>: ${escapeHtml_(currentDate||'-')}<br><b>Deposit/payment record</b>: remains attached to your existing booking.${extraMemo?'<br><br><b>Note</b>: '+escapeHtml_(extraMemo).replace(/\n/g,'<br>'):''}<br><br><a href="${link}" style="display:inline-block;padding:12px 22px;background:#2D2A26;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">Choose new date</a><br><br><span style="font-size:12px;color:#64748b;">If the button does not open, please copy this link:<br>${link}</span><br><br>Kind regards,<br><b>Studio mean</b>`,
-    de:`Hallo ${escapeHtml_(name)},<br><br>bitte wählen Sie über den folgenden Link ein neues Datum und eine neue Uhrzeit für den verschobenen Fototermin aus.<br>Studio mean prüft den gewählten Termin und sendet Ihnen danach die endgültige Bestätigung per E-Mail.<br><br><b>Leistung</b>: ${escapeHtml_(product)}<br><b>Bisheriger Termin</b>: ${escapeHtml_(currentDate||'-')}<br><b>Anzahlung/Zahlungsstand</b>: bleibt mit Ihrer bestehenden Buchung verknüpft.${extraMemo?'<br><br><b>Hinweis</b>: '+escapeHtml_(extraMemo).replace(/\n/g,'<br>'):''}<br><br><a href="${link}" style="display:inline-block;padding:12px 22px;background:#2D2A26;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">Neuen Termin wählen</a><br><br><span style="font-size:12px;color:#64748b;">Falls der Button nicht funktioniert, kopieren Sie bitte diesen Link:<br>${link}</span><br><br>Viele Grüße<br><b>Studio mean</b>`
+    en:`Hello ${escapeHtml_(name)},<br><br>Please choose a new date and time for your postponed shoot using the link below.<br>Studio mean will review your selected slot and send a final confirmation email afterwards.<br><br><b>Service</b>: ${escapeHtml_(product)}<br><b>Previous booking reference</b>: ${escapeHtml_(currentDate||'-')}<br><b>Deposit/payment record</b>: remains attached to your existing booking.${extraMemo?'<br><br><b>Note</b>: '+escapeHtml_(extraMemo).replace(/\n/g,'<br>'):''}<br><br><a href="${link}" style="display:inline-block;padding:12px 22px;background:#2D2A26;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">Choose new date</a><br><br><span style="font-size:12px;color:#64748b;">If the button does not open, please copy this link:<br>${link}</span><br><br>Kind regards,<br><b>Studio mean</b>`,
+    de:`Guten Tag, ${escapeHtml_(name)},<br><br>bitte wählen Sie über den folgenden Link ein neues Datum und eine neue Uhrzeit für den verschobenen Fototermin aus.<br>Studio mean prüft den gewählten Termin und sendet Ihnen danach die endgültige Bestätigung per E-Mail.<br><br><b>Leistung</b>: ${escapeHtml_(product)}<br><b>Bisheriger Termin</b>: ${escapeHtml_(currentDate||'-')}<br><b>Anzahlung/Zahlungsstand</b>: bleibt mit Ihrer bestehenden Buchung verknüpft.${extraMemo?'<br><br><b>Hinweis</b>: '+escapeHtml_(extraMemo).replace(/\n/g,'<br>'):''}<br><br><a href="${link}" style="display:inline-block;padding:12px 22px;background:#2D2A26;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">Neuen Termin wählen</a><br><br><span style="font-size:12px;color:#64748b;">Falls der Button nicht funktioniert, kopieren Sie bitte diesen Link:<br>${link}</span><br><br>Viele Grüße<br><b>Studio mean</b>`
   };
   sendTrackedEmail_({
     to:email,
@@ -14362,7 +14437,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
   const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — Dear ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
-  const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Dear <b>${data.name}</b>,`,de:`Hallo <b>${data.name}</b>,`};
+  const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Hello <b>${data.name}</b>,`,de:`Guten Tag, <b>${data.name}</b>,`};
   const intro={
     ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.`,
     en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.`,
@@ -15178,7 +15253,7 @@ function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchA
   const email=String(row[3]||'');if(!email||!email.includes('@'))return;
   const lang=String(row[10]||'ko');
   const subj={ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
-  const greet={ko:`안녕하세요 <b>${row[2]}</b>님,`,en:`Dear <b>${row[2]}</b>,`,de:`Hallo <b>${row[2]}</b>,`};
+  const greet={ko:`안녕하세요, <b>${row[2]}</b>님.`,en:`Hello <b>${row[2]}</b>,`,de:`Guten Tag, <b>${row[2]}</b>,`};
   const intro={ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl wurde eingegangen. Bitte überprüfen Sie die Details unten.'};
   const photoListHtml=`<ul style="margin:6px 0 0;padding-left:18px;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul>`;
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
@@ -15209,9 +15284,9 @@ function _sendSelectReminderEmail_(row, stage){
     de:`[Studio mean] Erinnerung zur Fotoauswahl (${stage}) — ${name}`
   };
   const intro={
-    ko:`안녕하세요 <b>${name}</b>님,<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다. ${deadline?`마감일은 <b>${deadline}</b>입니다.`:''}`,
-    en:`Dear <b>${name}</b>,<br><br>Your photo selection is still pending. ${deadline?`The current deadline is <b>${deadline}</b>.`:''}`,
-    de:`Hallo <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen. ${deadline?`Die aktuelle Frist ist <b>${deadline}</b>.`:''}`
+    ko:`안녕하세요, <b>${name}</b>님.<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다. ${deadline?`마감일은 <b>${deadline}</b>입니다.`:''}`,
+    en:`Hello <b>${name}</b>,<br><br>Your photo selection is still pending. ${deadline?`The current deadline is <b>${deadline}</b>.`:''}`,
+    de:`Guten Tag, <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen. ${deadline?`Die aktuelle Frist ist <b>${deadline}</b>.`:''}`
   };
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
   <div style="background:#2D2A26;padding:20px 24px;color:#fff;font-weight:700;">📷 Studio mean · ${stageText[lang]||stageText.ko}</div>
@@ -15974,9 +16049,9 @@ function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
       de:`[Studio mean] Ihre bearbeiteten Fotos sind fertig — ${name}`
     };
     const body={
-      ko:`안녕하세요 <b>${name}</b>님,<br><br>촬영 보정본이 완성되었습니다! 아래 링크에서 확인해 주세요.<br><br><a href="${retouchFolderLink}" style="background:#2D2A26;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">📂 보정본 확인하기</a>${extraMessageHtml}<br><br>확인 후 아래 버튼을 클릭해 주세요:${actionBtns}감사합니다,<br>Studio mean`,
+      ko:`안녕하세요, <b>${name}</b>님.<br><br>촬영 보정본이 완성되었습니다! 아래 링크에서 확인해 주세요.<br><br><a href="${retouchFolderLink}" style="background:#2D2A26;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">📂 보정본 확인하기</a>${extraMessageHtml}<br><br>확인 후 아래 버튼을 클릭해 주세요:${actionBtns}감사합니다,<br>Studio mean`,
       en:`Hello <b>${name}</b>,<br><br>Your retouched photos are ready! Please check them via the link below.<br><br><a href="${retouchFolderLink}" style="background:#2D2A26;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">📂 View Retouched Photos</a>${extraMessageHtml}<br><br>After reviewing, please click below:${actionBtns}Thank you,<br>Studio mean`,
-      de:`Hallo <b>${name}</b>,<br><br>Ihre bearbeiteten Fotos sind fertig! Bitte schauen Sie sich diese über den unten stehenden Link an.<br><br><a href="${retouchFolderLink}" style="background:#2D2A26;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">📂 Bearbeitete Fotos ansehen</a>${extraMessageHtml}<br><br>Bitte klicken Sie nach der Überprüfung:${actionBtns}Vielen Dank,<br>Studio mean`
+      de:`Guten Tag, <b>${name}</b>,<br><br>Ihre bearbeiteten Fotos sind fertig! Bitte schauen Sie sich diese über den unten stehenden Link an.<br><br><a href="${retouchFolderLink}" style="background:#2D2A26;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">📂 Bearbeitete Fotos ansehen</a>${extraMessageHtml}<br><br>Bitte klicken Sie nach der Überprüfung:${actionBtns}Vielen Dank,<br>Studio mean`
     };
     const html=`<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b;"><div style="background:#2D2A26;padding:20px;text-align:center;border-radius:12px 12px 0 0;"><span style="color:#fff;font-size:18px;font-weight:700;">📷 Studio mean</span></div><div style="background:#fff;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;padding:24px;">${body[lang]||body.ko}</div></body></html>`;
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
@@ -18095,7 +18170,7 @@ function buildInvoiceEmailDefaults_(inv, lang){
   const bodyMap={
     ko:`안녕하세요 ${koName}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${inv.number}\n총 금액: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`,
     en:`Hello ${enName},\n\nPlease find your invoice attached.\nInvoice number: ${inv.number}\nTotal amount: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\nIf you have any questions, please contact us.\nStudio mean`,
-    de:`Hallo ${deName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
+    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
   };
   return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
 }
@@ -19160,7 +19235,8 @@ function dailyTasks(){
     ['B4 돌촬영 추천메일',sendDolRecommendationEmails_],
     ['C3 보정 후 후속메일',sendPostRetouchFollowupEmails_],
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
-    ['D5 견적서 만료 처리',_expireStaleQuotes_]
+    ['D5 견적서 만료 처리',_expireStaleQuotes_],
+    ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_]
   ];
   jobs.forEach(function(job){
     try{
@@ -19238,7 +19314,7 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
     de:`[Studio mean] Erinnerung Anzahlung — ${name}`
   };
   const body={
-    ko:`<p><b>${escapeHtml_(name)}</b>님, 안녕하세요.</p>
+    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p>
 <p>현재 예약건의 <b>예약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
 <ul>
   <li>📷 상품: ${escapeHtml_(product)}</li>
@@ -19249,7 +19325,7 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
 <p>아래 계좌로 예약금 입금을 부탁드립니다:<br><b>Studio mean</b> · <i>studio.mean.de@gmail.com</i></p>
 <p>이미 입금하신 경우 이 메일은 무시해 주세요.</p>
 ${_getSignatureHtml()}`,
-    en:`<p>Dear <b>${escapeHtml_(name)}</b>,</p>
+    en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p>
 <p>This is a reminder that your <b>deposit has not yet been received</b>.</p>
 <ul>
   <li>📷 Product: ${escapeHtml_(product)}</li>
@@ -19259,7 +19335,7 @@ ${_getSignatureHtml()}`,
 </ul>
 <p>Please complete the deposit payment. If already sent, kindly ignore this message.</p>
 ${_getSignatureHtml()}`,
-    de:`<p>Hallo <b>${escapeHtml_(name)}</b>,</p>
+    de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p>
 <p>dies ist eine Erinnerung, dass Ihre <b>Anzahlung noch nicht eingegangen</b> ist.</p>
 <ul>
   <li>📷 Produkt: ${escapeHtml_(product)}</li>
@@ -19398,9 +19474,9 @@ function sendBookingReminders_(){
       de:isExternalMeeting?'Wir freuen uns, Sie morgen am Aufnahmeort zu treffen.':'Wir freuen uns auf Sie.'
     };
     const T={
-      ko:{subject:`[Studio mean] 내일 촬영 일정 안내 — ${name}님`,body:`${name}님, 안녕하세요.<br><br>내일로 예약해 주신 촬영 일정을 다시 한 번 안내드립니다.<br><br>📅 <b>일시</b> ${dateStr}<br>🛍 <b>상품</b> ${product}<br><br>${directionHtml}${arrivalLine.ko}<br><br>당일 일정이 변경되거나 궁금하신 점이 있으시면 이 메일로 회신해 주시거나 ${CONFIG.ADMIN_EMAIL} 로 편하게 연락 주세요.<br><br>${closingLine.ko}<br><br>${_getSignatureHtml()}`},
-      en:{subject:`[Studio mean] A reminder for tomorrow's session — ${name}`,body:`Dear ${name},<br><br>This is a friendly reminder that your session at Studio mean is scheduled for tomorrow.<br><br>📅 <b>Date & Time</b> ${dateStr}<br>🛍 <b>Service</b> ${product}<br><br>${directionHtml}${arrivalLine.en}<br><br>If anything changes or you have a question before tomorrow, simply reply to this email or contact us at ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.en}<br><br>${_getSignatureHtml()}`},
-      de:{subject:`[Studio mean] Erinnerung an Ihren Termin morgen — ${name}`,body:`Liebe/r ${name},<br><br>wir möchten Sie freundlich an Ihren morgigen Fototermin bei Studio mean erinnern.<br><br>📅 <b>Datum & Uhrzeit</b> ${dateStr}<br>🛍 <b>Leistung</b> ${product}<br><br>${directionHtml}${arrivalLine.de}<br><br>Falls sich kurzfristig etwas ändert oder Sie noch eine Frage haben, antworten Sie gern direkt auf diese E-Mail oder erreichen uns unter ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.de}<br><br>${_getSignatureHtml()}`}
+      ko:{subject:`[Studio mean] 내일 촬영 일정 안내 — ${name}님`,body:`안녕하세요, ${name}님.<br><br>내일로 예약해 주신 촬영 일정을 다시 한 번 안내드립니다.<br><br>📅 <b>일시</b> ${dateStr}<br>🛍 <b>상품</b> ${product}<br><br>${directionHtml}${arrivalLine.ko}<br><br>당일 일정이 변경되거나 궁금하신 점이 있으시면 이 메일로 회신해 주시거나 ${CONFIG.ADMIN_EMAIL} 로 편하게 연락 주세요.<br><br>${closingLine.ko}<br><br>${_getSignatureHtml()}`},
+      en:{subject:`[Studio mean] A reminder for tomorrow's session — ${name}`,body:`Hello ${name},<br><br>This is a friendly reminder that your session at Studio mean is scheduled for tomorrow.<br><br>📅 <b>Date & Time</b> ${dateStr}<br>🛍 <b>Service</b> ${product}<br><br>${directionHtml}${arrivalLine.en}<br><br>If anything changes or you have a question before tomorrow, simply reply to this email or contact us at ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.en}<br><br>${_getSignatureHtml()}`},
+      de:{subject:`[Studio mean] Erinnerung an Ihren Termin morgen — ${name}`,body:`Guten Tag, ${name},<br><br>wir möchten Sie freundlich an Ihren morgigen Fototermin bei Studio mean erinnern.<br><br>📅 <b>Datum & Uhrzeit</b> ${dateStr}<br>🛍 <b>Leistung</b> ${product}<br><br>${directionHtml}${arrivalLine.de}<br><br>Falls sich kurzfristig etwas ändert oder Sie noch eine Frage haben, antworten Sie gern direkt auf diese E-Mail oder erreichen uns unter ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.de}<br><br>${_getSignatureHtml()}`}
     };
     const msg=T[lang]||T.de;
     try{
@@ -19526,9 +19602,9 @@ function sendPostShootFollowupEmails_(){
       de:`[Studio mean] Vielen Dank für Ihren Besuch — ${name}`
     };
     const body={
-      ko:`${name}님, 안녕하세요.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${_getSignatureHtml()}`,
-      en:`Dear ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${_getSignatureHtml()}`,
-      de:`Liebe/r ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${_getSignatureHtml()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${_getSignatureHtml()}`,
+      en:`Hello ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${_getSignatureHtml()}`,
+      de:`Guten Tag, ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${_getSignatureHtml()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['촬영후감사메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -19558,9 +19634,9 @@ function sendDolRecommendationEmails_(){
       de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`${name}님, 안녕하세요.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${_getSignatureHtml()}`,
-      en:`Dear ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>${_getSignatureHtml()}`,
-      de:`Liebe/r ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>${_getSignatureHtml()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${_getSignatureHtml()}`,
+      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>${_getSignatureHtml()}`,
+      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>${_getSignatureHtml()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -19608,9 +19684,9 @@ function sendPostRetouchFollowupEmails_(){
             : `<a href="${driveLink}" style="color:#2563eb;font-weight:700;">사진 폴더 다시 보기</a><br><br>`)
       : '';
     const body={
-      ko:`${name}님, 안녕하세요.<br><br>보내드린 보정본을 잘 받아보셨는지, 결과물은 마음에 드셨는지 여쭙고 싶어 다시 인사드립니다. 혹시 확인에 불편한 점이 있으셨다면 편하게 알려 주세요.<br><br>${driveLine?driveLine:''}보정 범위 안에서 조정이 필요한 부분이 있다면, 이 메일에 사진 번호와 함께 회신해 주시면 신속히 반영하겠습니다.<br><br>${_followupCommonHtml_('ko',bookingContext)}<br><br>좋은 한 주 보내시길 바랍니다.<br><br>${_getSignatureHtml()}`,
-      en:`Dear ${name},<br><br>We wanted to check in a few days after sending your final photos to make sure everything arrived smoothly and that you are happy with the results. If anything looked off on your end, please let us know — we are glad to help.<br><br>${driveLine?driveLine:''}If there is any fine-tuning you would like within the scope of the delivered retouch, simply reply to this email with the photo numbers and we will take care of it promptly.<br><br>${_followupCommonHtml_('en',bookingContext)}<br><br>We hope you have a lovely week ahead.<br><br>${_getSignatureHtml()}`,
-      de:`Liebe/r ${name},<br><br>wir melden uns einige Tage nach dem Versand Ihrer finalen Fotos, um zu hören, ob alles gut bei Ihnen angekommen ist und Sie mit dem Ergebnis zufrieden sind. Sollte etwas auf Ihrer Seite nicht richtig dargestellt werden, lassen Sie es uns bitte wissen.<br><br>${driveLine?driveLine:''}Falls Sie sich innerhalb der vereinbarten Bildbearbeitung noch kleine Anpassungen wünschen, antworten Sie einfach auf diese E-Mail mit der jeweiligen Bildnummer — wir kümmern uns zeitnah darum.<br><br>${_followupCommonHtml_('de',bookingContext)}<br><br>Wir wünschen Ihnen eine schöne Woche.<br><br>${_getSignatureHtml()}`
+      ko:`안녕하세요, ${name}님.<br><br>보내드린 보정본을 잘 받아보셨는지, 결과물은 마음에 드셨는지 여쭙고 싶어 다시 인사드립니다. 혹시 확인에 불편한 점이 있으셨다면 편하게 알려 주세요.<br><br>${driveLine?driveLine:''}보정 범위 안에서 조정이 필요한 부분이 있다면, 이 메일에 사진 번호와 함께 회신해 주시면 신속히 반영하겠습니다.<br><br>${_followupCommonHtml_('ko',bookingContext)}<br><br>좋은 한 주 보내시길 바랍니다.<br><br>${_getSignatureHtml()}`,
+      en:`Hello ${name},<br><br>We wanted to check in a few days after sending your final photos to make sure everything arrived smoothly and that you are happy with the results. If anything looked off on your end, please let us know — we are glad to help.<br><br>${driveLine?driveLine:''}If there is any fine-tuning you would like within the scope of the delivered retouch, simply reply to this email with the photo numbers and we will take care of it promptly.<br><br>${_followupCommonHtml_('en',bookingContext)}<br><br>We hope you have a lovely week ahead.<br><br>${_getSignatureHtml()}`,
+      de:`Guten Tag, ${name},<br><br>wir melden uns einige Tage nach dem Versand Ihrer finalen Fotos, um zu hören, ob alles gut bei Ihnen angekommen ist und Sie mit dem Ergebnis zufrieden sind. Sollte etwas auf Ihrer Seite nicht richtig dargestellt werden, lassen Sie es uns bitte wissen.<br><br>${driveLine?driveLine:''}Falls Sie sich innerhalb der vereinbarten Bildbearbeitung noch kleine Anpassungen wünschen, antworten Sie einfach auf diese E-Mail mit der jeweiligen Bildnummer — wir kümmern uns zeitnah darum.<br><br>${_followupCommonHtml_('de',bookingContext)}<br><br>Wir wünschen Ihnen eine schöne Woche.<br><br>${_getSignatureHtml()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     selSh.getRange(idx+2,SELECT_COL['보정후안내메일발송일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -19758,9 +19834,9 @@ function _sendWaitlistConfirmEmail_(email,name,lang,dateStr,product){
     de:`[Studio mean] Warteliste – Bestätigung — ${name}`
   };
   const body={
-    ko:`${name}님, 안녕하세요.<br><br>요청해 주신 <b>${dateStr}</b> 날짜의 ${product?product+' ':''}대기 등록이 정상적으로 접수되었습니다.<br><br>해당 날짜에 예약 취소가 발생하면 즉시 이메일로 안내드리며, 선착순으로 예약 페이지에서 일정을 확정하실 수 있습니다. 별도로 등록 취소를 원하시면 이 메일로 회신해 주세요.<br><br>${_getSignatureHtml()}`,
-    en:`Dear ${name},<br><br>Your waitlist request for <b>${dateStr}</b>${product?' ('+product+')':''} has been received. If a slot opens on that day, we will notify you by email right away so you can confirm the time on our booking page on a first-come basis.<br><br>If you wish to withdraw from the waitlist later, just reply to this email.<br><br>${_getSignatureHtml()}`,
-    de:`Liebe/r ${name},<br><br>Ihre Anfrage für die Warteliste am <b>${dateStr}</b>${product?' ('+product+')':''} ist bei uns eingegangen. Sobald an diesem Tag ein Termin frei wird, informieren wir Sie umgehend per E-Mail, sodass Sie den Termin nach dem Prinzip „wer zuerst kommt, bucht zuerst" bestätigen können.<br><br>Möchten Sie die Warteliste später verlassen, antworten Sie einfach auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${name}님.<br><br>요청해 주신 <b>${dateStr}</b> 날짜의 ${product?product+' ':''}대기 등록이 정상적으로 접수되었습니다.<br><br>해당 날짜에 예약 취소가 발생하면 즉시 이메일로 안내드리며, 선착순으로 예약 페이지에서 일정을 확정하실 수 있습니다. 별도로 등록 취소를 원하시면 이 메일로 회신해 주세요.<br><br>${_getSignatureHtml()}`,
+    en:`Hello ${name},<br><br>Your waitlist request for <b>${dateStr}</b>${product?' ('+product+')':''} has been received. If a slot opens on that day, we will notify you by email right away so you can confirm the time on our booking page on a first-come basis.<br><br>If you wish to withdraw from the waitlist later, just reply to this email.<br><br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${name},<br><br>Ihre Anfrage für die Warteliste am <b>${dateStr}</b>${product?' ('+product+')':''} ist bei uns eingegangen. Sobald an diesem Tag ein Termin frei wird, informieren wir Sie umgehend per E-Mail, sodass Sie den Termin nach dem Prinzip „wer zuerst kommt, bucht zuerst" bestätigen können.<br><br>Möchten Sie die Warteliste später verlassen, antworten Sie einfach auf diese E-Mail.<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
@@ -19797,9 +19873,9 @@ function notifyWaitlistForDate_(dateStr,itemGroup){
         de:`[Studio mean] Ein Termin am ${targetDate} ist freigeworden — ${name}`
       };
       const body={
-        ko:`${name}님, 안녕하세요.<br><br>대기 등록해 두신 <b>${targetDate}</b>${product?' '+product:''} 일정에 취소가 발생하여 예약이 가능해졌습니다. 같은 날짜에 여러 분이 대기 중일 수 있어, 다음 링크에서 먼저 확정해 주시는 순서로 일정이 배정됩니다.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">예약 페이지에서 일정 선택</a><br><br>다른 날짜나 시간을 희망하시는 경우에도 편하게 알려 주세요.<br><br>${_getSignatureHtml()}`,
-        en:`Dear ${name},<br><br>A slot has just opened up on <b>${targetDate}</b>${product?' for '+product:''}, which you are on our waitlist for. As several guests may be waiting for the same day, reservations are confirmed on a first-come basis through the link below.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Open the booking page</a><br><br>If you would prefer a different date or time, feel free to let us know.<br><br>${_getSignatureHtml()}`,
-        de:`Liebe/r ${name},<br><br>am <b>${targetDate}</b>${product?' für '+product:''}, wofür Sie auf der Warteliste stehen, ist soeben ein Termin freigeworden. Da möglicherweise mehrere Gäste für diesen Tag warten, werden Termine über den folgenden Link nach dem Prinzip „wer zuerst kommt, bucht zuerst" vergeben.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Zur Buchungsseite</a><br><br>Falls ein anderes Datum oder eine andere Uhrzeit passen würde, sagen Sie uns gern Bescheid.<br><br>${_getSignatureHtml()}`
+        ko:`안녕하세요, ${name}님.<br><br>대기 등록해 두신 <b>${targetDate}</b>${product?' '+product:''} 일정에 취소가 발생하여 예약이 가능해졌습니다. 같은 날짜에 여러 분이 대기 중일 수 있어, 다음 링크에서 먼저 확정해 주시는 순서로 일정이 배정됩니다.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">예약 페이지에서 일정 선택</a><br><br>다른 날짜나 시간을 희망하시는 경우에도 편하게 알려 주세요.<br><br>${_getSignatureHtml()}`,
+        en:`Hello ${name},<br><br>A slot has just opened up on <b>${targetDate}</b>${product?' for '+product:''}, which you are on our waitlist for. As several guests may be waiting for the same day, reservations are confirmed on a first-come basis through the link below.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Open the booking page</a><br><br>If you would prefer a different date or time, feel free to let us know.<br><br>${_getSignatureHtml()}`,
+        de:`Guten Tag, ${name},<br><br>am <b>${targetDate}</b>${product?' für '+product:''}, wofür Sie auf der Warteliste stehen, ist soeben ein Termin freigeworden. Da möglicherweise mehrere Gäste für diesen Tag warten, werden Termine über den folgenden Link nach dem Prinzip „wer zuerst kommt, bucht zuerst" vergeben.<br><br><a href="${bookingBase}" style="color:#2563eb;font-weight:700;">Zur Buchungsseite</a><br><br>Falls ein anderes Datum oder eine andere Uhrzeit passen würde, sagen Sie uns gern Bescheid.<br><br>${_getSignatureHtml()}`
       };
       try{
         sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
@@ -20003,8 +20079,19 @@ function quoteRowToObject_(row,rowIndex){
     linkedBookingRow:parseInt(row[QUOTE_COL['연결예약행']])||0,
     author:String(row[QUOTE_COL['작성자']]||''),
     updatedAt:String(row[QUOTE_COL['수정일시']]||''),
-    pdfOptions:_normalizeQuotePdfOptions_(row[QUOTE_COL['표시옵션JSON']]||'')
+    pdfOptions:_normalizeQuotePdfOptions_(row[QUOTE_COL['표시옵션JSON']]||''),
+    holdReason:String(row[QUOTE_COL['보류사유']]||'').trim(),
+    followUpDate:_quoteCellToDateString_(row[QUOTE_COL['재확인예정일']],'yyyy-MM-dd'),
+    heldAt:_quoteCellToDateString_(row[QUOTE_COL['보류전환일시']],'yyyy-MM-dd HH:mm'),
+    tentativeStart:_quoteCellToDateString_(row[QUOTE_COL['가예약시작']],'yyyy-MM-dd HH:mm'),
+    tentativeDurationMin:parseInt(row[QUOTE_COL['가예약소요분']],10)||0,
+    tentativeEventId:String(row[QUOTE_COL['가예약캘린더ID']]||'').trim()
   };
+}
+
+function _quoteCellToDateString_(value,pattern){
+  if(value instanceof Date) return Utilities.formatDate(value,CONFIG.TIMEZONE,pattern||'yyyy-MM-dd');
+  return String(value||'').trim();
 }
 
 function _findQuoteRow_(quoteSh,number){
@@ -20046,7 +20133,7 @@ function buildQuoteEmailDefaults_(q){
   const bodyMap={
     ko:`안녕하세요 ${koName}님,\n\n요청 주신 내용을 바탕으로 견적서를 첨부드립니다.\n• 견적번호: ${q.number}\n• 총 금액(부가세 포함): €${total}\n• 유효기한: ${q.validUntil}\n\n내용 확인 후 진행 의사를 회신 주시면 빠르게 일정 확정을 도와드리겠습니다. 문의사항은 언제든 편하게 연락 주세요.\n\nStudio mean`,
     en:`Hello ${enName},\n\nPlease find our quotation attached based on your request.\n• Quotation No.: ${q.number}\n• Total (incl. VAT): €${total}\n• Valid until: ${q.validUntil}\n\nIf you wish to proceed, a short reply is all we need — we will arrange the schedule right away. Feel free to reach out with any questions.\n\nBest regards,\nStudio mean`,
-    de:`Guten Tag ${deName},\n\nanbei senden wir Ihnen unser Angebot gemäß Ihrer Anfrage.\n• Angebotsnummer: ${q.number}\n• Gesamtbetrag (inkl. MwSt.): €${total}\n• Gültig bis: ${q.validUntil}\n\nFür eine Beauftragung genügt eine kurze Rückmeldung — wir stimmen den Termin dann umgehend mit Ihnen ab. Bei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nStudio mean`
+    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen unser Angebot gemäß Ihrer Anfrage.\n• Angebotsnummer: ${q.number}\n• Gesamtbetrag (inkl. MwSt.): €${total}\n• Gültig bis: ${q.validUntil}\n\nFür eine Beauftragung genügt eine kurze Rückmeldung — wir stimmen den Termin dann umgehend mit Ihnen ab. Bei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nStudio mean`
   };
   return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
 }
@@ -20323,7 +20410,7 @@ function updateQuoteAdmin(token, number, payload){
   const found=_findQuoteRow_(quoteSheet,number);
   if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
   const existing=quoteRowToObject_(found.row,found.rowIndex);
-  if(existing.status!==QUOTE_STATUS.DRAFT && existing.status!==QUOTE_STATUS.SENT){
+  if(existing.status!==QUOTE_STATUS.DRAFT && existing.status!==QUOTE_STATUS.SENT && existing.status!==QUOTE_STATUS.HOLD){
     throw new Error(`상태가 "${existing.status}"인 견적서는 수정할 수 없습니다.`);
   }
   const data=_buildQuotePayloadFromRequest_(payload||{},existing);
@@ -20394,6 +20481,7 @@ function deleteQuoteAdmin(token, number){
   if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
   const q=quoteRowToObject_(found.row,found.rowIndex);
   if(q.status!==QUOTE_STATUS.DRAFT) throw new Error('초안 상태의 견적서만 삭제할 수 있습니다.');
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
   if(q.pdfFileId){ try{DriveApp.getFileById(q.pdfFileId).setTrashed(true);}catch(e){Logger.log('quote pdf trash fail: '+e.message);} }
   quoteSheet.deleteRow(found.rowIndex);
   return {ok:true};
@@ -20454,9 +20542,192 @@ function markQuoteRejectedAdmin(token, number, reason){
   const {quoteSheet}=ensureSheets_();
   const found=_findQuoteRow_(quoteSheet,number);
   if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.REJECTED);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['거절사유']+1).setValue(String(reason||''));
   return {ok:true};
+}
+
+/* ===== 견적 보류(기업 홀드) + 캘린더 가예약 ===== */
+
+// 가예약 캘린더 이벤트 삭제 + 시트 필드 정리. 이벤트가 있었으면 true
+function _clearQuoteTentativeHold_(quoteSheet,rowIndex,q){
+  const evId=String((q&&q.tentativeEventId)||'').trim();
+  if(evId){
+    try{
+      const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+      const ev=cal.getEventById(evId);
+      if(ev) ev.deleteEvent();
+    }catch(e){Logger.log('quote tentative event delete fail ('+((q&&q.number)||'')+'): '+e.message);}
+    try{bumpCalCacheVer_();}catch(e){}
+  }
+  quoteSheet.getRange(rowIndex,QUOTE_COL['가예약시작']+1).setValue('');
+  quoteSheet.getRange(rowIndex,QUOTE_COL['가예약소요분']+1).setValue('');
+  quoteSheet.getRange(rowIndex,QUOTE_COL['가예약캘린더ID']+1).setValue('');
+  return !!evId;
+}
+
+// 견적을 보류로 전환 (+선택: 캘린더 가예약). payload={reason,followUpDate,tentative:{date,time,durationMin},force}
+function holdQuoteAdmin(token, number, payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if([QUOTE_STATUS.CONVERTED,QUOTE_STATUS.REJECTED].indexOf(q.status)>-1) throw new Error(`상태가 "${q.status}"인 견적서는 보류할 수 없습니다.`);
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  const hasTentative=!!(payload.tentative&&payload.tentative.date);
+  // 가예약이 걸린 딜은 더 자주 확인 (기본 7일), 아니면 14일
+  const followUpDate=String(payload.followUpDate||'').slice(0,10)
+    ||Utilities.formatDate(new Date(Date.now()+(hasTentative?7:14)*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const reason=String(payload.reason||'').trim();
+  let tentativeInfo=null;
+  if(hasTentative){
+    const t=payload.tentative;
+    const dateStr=String(t.date).slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('가예약 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).');
+    const timeStr=String(t.time||'').trim();
+    if(timeStr&&!/^\d{2}:\d{2}$/.test(timeStr)) throw new Error('가예약 시간 형식이 올바르지 않습니다 (HH:MM).');
+    const durMin=Math.max(30,parseInt(t.durationMin,10)||120);
+    const rangeStart=timeStr?new Date(`${dateStr}T${timeStr}:00`):new Date(`${dateStr}T00:00:00`);
+    const rangeEnd=timeStr?new Date(rangeStart.getTime()+durMin*60000):new Date(`${dateStr}T23:59:59`);
+    // 기존 일정과 충돌 검사 (force로 무시 가능)
+    const overlapping=(getEventsForRange_(rangeStart,rangeEnd)||[]).length;
+    if(overlapping&&!payload.force){
+      return {ok:false,conflict:true,message:`해당 ${timeStr?'시간대':'날짜'}에 기존 일정 ${overlapping}건이 있습니다. 확인 후 강제 진행 여부를 선택해 주세요.`};
+    }
+    // 기존 가예약이 있으면 새로 교체
+    if(q.tentativeEventId) _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
+    const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+    const title=`[가예약] ${q.companyName||q.name||''} | ${q.number}`;
+    const desc=[
+      '견적 가예약 (예약 확정 아님)',
+      `견적번호=${q.number}`,
+      `고객=${q.companyName||q.name||''}`,
+      `총액=€${Number(q.total||0).toFixed(2)}`,
+      reason?`보류사유=${reason}`:'',
+      '※ 견적 전환/거절/만료/보류해제 시 자동 삭제됩니다.'
+    ].filter(Boolean).join('\n');
+    const event=timeStr
+      ? cal.createEvent(title,rangeStart,rangeEnd,{description:desc})
+      : cal.createAllDayEvent(title,new Date(`${dateStr}T00:00:00`),{description:desc});
+    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약시작']+1).setValue(timeStr?`${dateStr} ${timeStr}`:dateStr);
+    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약소요분']+1).setValue(timeStr?durMin:'');
+    quoteSheet.getRange(found.rowIndex,QUOTE_COL['가예약캘린더ID']+1).setValue(event.getId());
+    try{bumpCalCacheVer_();}catch(e){}
+    tentativeInfo={start:timeStr?`${dateStr} ${timeStr}`:dateStr,durationMin:timeStr?durMin:null,allDay:!timeStr};
+  }
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.HOLD);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['보류사유']+1).setValue(reason);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['재확인예정일']+1).setValue(followUpDate);
+  if(q.status!==QUOTE_STATUS.HOLD) quoteSheet.getRange(found.rowIndex,QUOTE_COL['보류전환일시']+1).setValue(now);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['수정일시']+1).setValue(now);
+  return {ok:true,number:q.number,followUpDate,tentative:tentativeInfo};
+}
+
+// 재확인 예정일 스누즈
+function snoozeQuoteHoldAdmin(token, number, followUpDate){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status!==QUOTE_STATUS.HOLD) throw new Error('보류 상태의 견적서만 스누즈할 수 있습니다.');
+  const next=String(followUpDate||'').slice(0,10)
+    ||Utilities.formatDate(new Date(Date.now()+14*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['재확인예정일']+1).setValue(next);
+  return {ok:true,followUpDate:next};
+}
+
+// 보류 해제 → 발송 상태 복귀 (가예약도 함께 해제)
+function releaseQuoteHoldAdmin(token, number){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(q.status!==QUOTE_STATUS.HOLD) throw new Error('보류 상태가 아닙니다.');
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['재확인예정일']+1).setValue('');
+  return {ok:true};
+}
+
+// 가예약만 해제 (보류 상태는 유지)
+function releaseQuoteTentativeAdmin(token, number){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if(!q.tentativeEventId&&!q.tentativeStart) throw new Error('가예약이 걸려있지 않습니다.');
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
+  return {ok:true};
+}
+
+// 유효기한 연장 + PDF 재생성 (만료 견적은 발송으로 복귀)
+function extendQuoteValidityAdmin(token, number, validDays){
+  assertAdmin_(token);
+  const {quoteSheet}=ensureSheets_();
+  const found=_findQuoteRow_(quoteSheet,number);
+  if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
+  const q=quoteRowToObject_(found.row,found.rowIndex);
+  if([QUOTE_STATUS.CONVERTED,QUOTE_STATUS.REJECTED].indexOf(q.status)>-1) throw new Error(`상태가 "${q.status}"인 견적서는 연장할 수 없습니다.`);
+  const days=Math.max(1,Math.min(365,parseInt(validDays,10)||30));
+  const now=new Date();
+  const validUntil=Utilities.formatDate(new Date(now.getTime()+days*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['유효기한']+1).setValue(validUntil);
+  if(q.status===QUOTE_STATUS.EXPIRED) quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
+  quoteSheet.getRange(found.rowIndex,QUOTE_COL['수정일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  const merged=Object.assign({},q,{validUntil,status:q.status===QUOTE_STATUS.EXPIRED?QUOTE_STATUS.SENT:q.status});
+  const pdf=_persistQuotePdfToRow_(quoteSheet,found.rowIndex,merged);
+  return {ok:true,validUntil,pdfUrl:pdf.url||''};
+}
+
+// D6: 보류 견적 팔로업 일일 점검 — 재확인일 도래 알림 + 60일 무응답 종결 확인
+function _quoteHoldDailyCheck_(){
+  const {quoteSheet}=ensureSheets_();
+  const rows=quoteSheet.getDataRange().getValues();
+  if(rows.length<2) return 0;
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const nowMs=Date.now();
+  const due=[],stale=[];
+  rows.slice(1).forEach(function(row,idx){
+    if(String(row[QUOTE_COL['상태']]||'')!==QUOTE_STATUS.HOLD) return;
+    const q=quoteRowToObject_(row,idx+2);
+    const heldMs=Date.parse(String(q.heldAt||'').replace(' ','T'));
+    const heldDays=isFinite(heldMs)?Math.floor((nowMs-heldMs)/86400000):0;
+    if(q.followUpDate&&q.followUpDate<=today) due.push({q,heldDays});
+    else if(heldDays>=60&&!q.followUpDate) stale.push({q,heldDays});
+    if(heldDays>=60&&q.followUpDate&&q.followUpDate<=today) stale.push({q,heldDays});
+  });
+  if(!due.length&&!stale.length) return 0;
+  const line=function(item){
+    const q=item.q;
+    const tent=q.tentativeStart?` · 📅 ${q.tentativeStart} 가예약 유지 중`:'';
+    return `<li style="margin-bottom:10px;"><b>${escapeHtml_(q.number)}</b> — ${escapeHtml_(q.companyName||q.name||'-')} (€${Number(q.total||0).toFixed(2)})<br><span style="color:#64748b;font-size:12px;">보류 ${item.heldDays}일차 · 재확인 ${escapeHtml_(q.followUpDate||'-')}${q.holdReason?' · '+escapeHtml_(q.holdReason):''}${tent}</span></li>`;
+  };
+  const staleSet=new Set(stale.map(function(s){return s.q.number;}));
+  const dueOnly=due.filter(function(d){return !staleSet.has(d.q.number);});
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;">
+    <h2 style="margin:0 0 12px;color:#b45309;">보류 견적 팔로업</h2>
+    ${dueOnly.length?`<p style="margin:0 0 6px;"><b>오늘 확인할 보류 견적 ${dueOnly.length}건</b></p><ul style="margin:0 0 14px;padding-left:18px;">${dueOnly.map(line).join('')}</ul>`:''}
+    ${stale.length?`<p style="margin:0 0 6px;color:#b91c1c;"><b>60일 이상 무응답 — 종결 검토 ${stale.length}건</b></p><ul style="margin:0 0 14px;padding-left:18px;">${stale.map(line).join('')}</ul><p style="font-size:12px;color:#64748b;">종결하려면 어드민 견적서 탭에서 거절 처리하세요. 가예약이 걸린 건은 함께 해제됩니다.</p>`:''}
+    <p style="font-size:12px;color:#94a3b8;">확인 후 어드민에서 [스누즈]로 다음 확인일을 미루거나, 진행 확정 시 [예약전환]을 사용하세요.</p>
+  </div>`;
+  try{
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[견적 팔로업] 보류 ${due.length+stale.length>dueOnly.length+stale.length?due.length:dueOnly.length}건 확인 예정${stale.length?` · 종결검토 ${stale.length}건`:''}`,htmlBody:html});
+  }catch(e){Logger.log('_quoteHoldDailyCheck_ mail fail: '+e.message);}
+  // 알림 후 재확인일 자동 +7일 (같은 건 반복 알림 방지, 어드민이 스누즈로 덮어쓸 수 있음)
+  due.forEach(function(item){
+    try{
+      const found=_findQuoteRow_(quoteSheet,item.q.number);
+      if(found.rowIndex>-1) quoteSheet.getRange(found.rowIndex,QUOTE_COL['재확인예정일']+1).setValue(Utilities.formatDate(new Date(nowMs+7*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd'));
+    }catch(e){}
+  });
+  return due.length+stale.length;
 }
 
 function convertQuoteToBookingAdmin(token, number, overrides){
@@ -20500,6 +20771,8 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   if(q.vatId) descLines.push(`VAT: ${q.vatId}`);
   if(quoteMeetingLocation) descLines.push(`촬영장소=${quoteMeetingLocation}`);
   if(q.memo) descLines.push(`메모: ${q.memo}`);
+  // 가예약이 걸려 있었다면 실제 예약 이벤트로 대체되므로 먼저 삭제
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
   const event=calendar.createEvent(
     `${productLabel} | ${displayName} | ${priceLabel}`,
     startTime,endTime,
@@ -20532,6 +20805,7 @@ function convertQuoteToBookingAdmin(token, number, overrides){
 }
 
 function _expireStaleQuotes_(){
+  // 보류(HOLD) 상태는 자동 만료에서 제외 — 기업 홀드 딜은 D6 팔로업 배치가 관리
   const {quoteSheet}=ensureSheets_();
   const rows=quoteSheet.getDataRange().getValues();
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
@@ -20540,6 +20814,8 @@ function _expireStaleQuotes_(){
     const status=String(row[QUOTE_COL['상태']]||'');
     const validUntil=String(row[QUOTE_COL['유효기한']]||'').slice(0,10);
     if((status===QUOTE_STATUS.SENT||status===QUOTE_STATUS.DRAFT)&&validUntil&&validUntil<today){
+      const q=quoteRowToObject_(row,idx+2);
+      _clearQuoteTentativeHold_(quoteSheet,idx+2,q);
       quoteSheet.getRange(idx+2,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.EXPIRED);
       expired++;
     }
@@ -20891,7 +21167,7 @@ function buildGutscheinEmailDefaults_(g){
   const ticketUrl=buildGutscheinTicketUrl_(code);
   const recipientLine=String(g.recipientName||'').trim() ? `Empfänger: ${String(g.recipientName||'').trim()}\n` : '';
   const senderLine=String(g.purchaserName||'').trim() ? `Absender: ${String(g.purchaserName||'').trim()}\n` : '';
-  const greeting=customerName ? `Guten Tag ${customerName},` : 'Guten Tag,';
+  const greeting=customerName ? `Guten Tag, ${customerName},` : 'Guten Tag,';
   const subject=`[Studio mean] Gutschein ${code}`;
   const body=`${greeting}\n\nanbei senden wir Ihren Gutschein von Studio mean.\nCode: ${code}\nGutschein: ${valueLabel}\n${recipientLine}${senderLine}Gültig bis: ${g.validUntil}\nMobiles Ticket: ${ticketUrl}\n\nBitte zeigen Sie im Studio das mobile Ticket, den QR-Code oder den Code vor.\n\nStudio mean`;
   return {subject, body, ticketUrl};
@@ -21769,19 +22045,19 @@ function sendPassportPhotosAdmin(token, rowIndex, payload){
       de:'※ Gültigkeit: 6 Monate ab Aufnahmedatum (deutsche Behörden)'
     };
     const body={
-      ko:`<p><b>${safeName}</b>님, 안녕하세요.<br>촬영해 드린 여권사진을 전달드립니다.</p>
+      ko:`<p>안녕하세요, <b>${safeName}</b>님.<br>촬영해 드린 여권사진을 전달드립니다.</p>
 <p>📁 <b>사진 폴더:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 상품: ${safeProduct}<br>📅 촬영일: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.ko}</p>
 <p>이용해 주셔서 감사합니다.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
-      en:`<p>Dear <b>${safeName}</b>,<br>please find your passport photos below.</p>
+      en:`<p>Hello <b>${safeName}</b>,<br>please find your passport photos below.</p>
 <p>📁 <b>Photo folder:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Product: ${safeProduct}<br>📅 Shoot date: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.en}</p>
 <p>Thank you.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
-      de:`<p>Hallo <b>${safeName}</b>,<br>hier sind Ihre Passfotos.</p>
+      de:`<p>Guten Tag, <b>${safeName}</b>,<br>hier sind Ihre Passfotos.</p>
 <p>📁 <b>Fotoordner:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Produkt: ${safeProduct}<br>📅 Aufnahmedatum: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}

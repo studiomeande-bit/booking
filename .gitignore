@@ -15,3 +15,6 @@ appscript/test-results/
 # Not deleted, just kept out of `git status` noise.
 tmp/
 output/
+
+# 자동화 API 키 등 로컬 시크릿 (커밋 금지)
+.secrets/

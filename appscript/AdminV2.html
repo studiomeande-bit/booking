@@ -1712,6 +1712,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <option value="">전체 상태</option>
           <option value="초안">초안</option>
           <option value="발송">발송</option>
+          <option value="보류">보류 (홀드)</option>
           <option value="수락">수락</option>
           <option value="거절">거절</option>
           <option value="만료">만료</option>
@@ -2052,6 +2053,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>Familien-Leistungen</label><textarea id="promo_de_familyDesc" rows="4"></textarea></div>
         <div class="form-group"><label>Familien-Hinweis</label><textarea id="promo_de_familyNote" rows="2"></textarea></div>
       </details>
+    </div>
+    <div class="card">
+      <div class="card-title">🤖 자동화 API 키 (Claude ERP 에이전트)</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Claude가 견적서·인보이스를 직접 작성/발송할 때 쓰는 전용 키입니다. 어드민 비밀번호와 별개이며 언제든 폐기할 수 있습니다. 발급된 키는 이 화면에서 한 번만 표시되니 복사해서 로컬 <code>reservation/.secrets/erp-automation-key</code> 파일에 저장해 주세요.</div>
+      <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" onclick="issueAutomationKeyUI()">키 발급 / 재발급</button>
+        <button type="button" class="btn btn-outline" style="color:#ef4444;" onclick="revokeAutomationKeyUI()">키 폐기</button>
+      </div>
+      <div id="automationKeyResult" style="margin-top:12px;font-size:13px;color:#475569;word-break:break-all;"></div>
     </div>
     <div class="card">
       <div class="card-title">당일 재촬영 할인</div>
@@ -12499,7 +12509,7 @@ function deleteInvoice(invNumber){
 
 /* ===== 견적서(Angebot) ===== */
 let allQuotes=[];
-const QUOTE_STATUS_COLOR={'초안':'#e2e8f0','발송':'#dbeafe','수락':'#bbf7d0','거절':'#fecaca','만료':'#fed7aa','전환':'#c7d2fe'};
+const QUOTE_STATUS_COLOR={'초안':'#e2e8f0','발송':'#dbeafe','보류':'#fef3c7','수락':'#bbf7d0','거절':'#fecaca','만료':'#fed7aa','전환':'#c7d2fe'};
 const QUOTE_VAT_RATE=0.19;
 
 function loadQuoteList(){
@@ -12534,15 +12544,24 @@ function renderQuoteTable(){
       const customer=q.companyName?`<div style="font-weight:700;">${q.companyName}</div><div style="font-size:11px;color:#64748b;">${q.name||''}</div>`:(q.name||'-');
       const pdfLink=q.pdfUrl?`<a href="${q.pdfUrl}" target="_blank" style="font-size:10px;color:#2563eb;font-weight:700;">PDF</a>`:'<span style="font-size:10px;color:#94a3b8;">PDF 없음</span>';
       const actions=[];
-      if(q.status==='초안'||q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="openQuoteEditModal('${q.number}')">수정</button>`);
+      const isHold=q.status==='보류';
+      if(q.status==='초안'||q.status==='발송'||isHold) actions.push(`<button class="btn btn-outline btn-sm" onclick="openQuoteEditModal('${q.number}')">수정</button>`);
       if(q.status!=='만료'&&q.status!=='거절'&&q.status!=='전환') actions.push(`<button class="btn btn-primary btn-sm" onclick="sendQuoteMailQuick('${q.number}')">메일</button>`);
-      if(q.status==='발송'||q.status==='수락') actions.push(`<button class="btn btn-sm" style="background:#10b981;color:#fff;" onclick="openQuoteConvertModal('${q.number}')">예약전환</button>`);
-      if(q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteAcceptedUI('${q.number}')">✓ 수락</button>`);
-      if(q.status==='발송') actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteRejectedUI('${q.number}')">✗ 거절</button>`);
+      if(q.status==='발송'||q.status==='수락'||isHold) actions.push(`<button class="btn btn-sm" style="background:#10b981;color:#fff;" onclick="openQuoteConvertModal('${q.number}')">예약전환</button>`);
+      if(q.status==='발송') actions.push(`<button class="btn btn-sm" style="background:#f59e0b;color:#fff;" onclick="holdQuoteUI('${q.number}')">⏸ 보류</button>`);
+      if(isHold) actions.push(`<button class="btn btn-outline btn-sm" style="color:#b45309;border-color:#fde68a;" onclick="snoozeQuoteHoldUI('${q.number}')">스누즈</button>`);
+      if(isHold) actions.push(`<button class="btn btn-outline btn-sm" onclick="releaseQuoteHoldUI('${q.number}')">보류해제</button>`);
+      if(isHold&&(q.tentativeEventId||q.tentativeStart)) actions.push(`<button class="btn btn-outline btn-sm" style="color:#b45309;border-color:#fde68a;" onclick="releaseQuoteTentativeUI('${q.number}')">가예약해제</button>`);
+      if(q.status==='발송'||isHold) actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteAcceptedUI('${q.number}')">✓ 수락</button>`);
+      if(q.status==='발송'||isHold) actions.push(`<button class="btn btn-outline btn-sm" onclick="markQuoteRejectedUI('${q.number}')">✗ 거절</button>`);
+      if(q.status==='발송'||isHold||q.status==='만료') actions.push(`<button class="btn btn-outline btn-sm" onclick="extendQuoteValidityUI('${q.number}')">연장</button>`);
       if(q.status==='초안') actions.push(`<button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="deleteQuoteUI('${q.number}')">삭제</button>`);
+      const holdInfo=isHold
+        ? `<div style="font-size:10px;color:#b45309;margin-top:4px;">재확인 ${q.followUpDate||'-'}${q.holdReason?`<br>${escapeAdminHtml(q.holdReason)}`:''}${q.tentativeStart?`<br>📅 가예약 ${escapeAdminHtml(q.tentativeStart)}${q.tentativeDurationMin?` (${q.tentativeDurationMin}분)`:' (종일)'}`:''}</div>`
+        : '';
       return `<tr>
         <td><div style="font-weight:700;">${q.number}</div>${pdfLink}</td>
-        <td>${statusBadge}</td>
+        <td>${statusBadge}${holdInfo}</td>
         <td>${q.issuedAt||'-'}</td>
         <td>${q.validUntil||'-'}</td>
         <td>${customer}<div style="font-size:11px;color:#64748b;">${q.email||''}</div></td>
@@ -12554,6 +12573,120 @@ function renderQuoteTable(){
       </tr>`;
     }).join('')
     :'<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:32px;">발행된 견적서가 없습니다. [새 견적서] 버튼으로 작성해 주세요.</td></tr>';
+}
+
+function issueAutomationKeyUI(){
+  if(!confirm('자동화 API 키를 발급할까요?\n기존 키가 있으면 즉시 무효화되고 새 키로 교체됩니다.')) return;
+  runExclusive('automation:key', release=>{
+    google.script.run
+      .withSuccessHandler(res=>{
+        release();
+        const box=document.getElementById('automationKeyResult');
+        if(res&&res.ok&&res.key){
+          box.innerHTML=`<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 12px;"><b style="color:#065f46;">발급 완료 — 지금 복사하세요 (다시 표시되지 않음)</b><br><code style="font-size:12px;">${escapeAdminHtml(res.key)}</code><br><button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="navigator.clipboard.writeText('${escapeAdminHtml(res.key)}').then(()=>showToast('복사됨','ok'))">📋 복사</button></div>`;
+          showToast('자동화 키 발급됨','ok');
+        } else showToast('발급 실패','err');
+      })
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'issueAutomationKey',{});
+  });
+}
+function revokeAutomationKeyUI(){
+  if(!confirm('자동화 API 키를 폐기할까요?\nClaude ERP 에이전트 접근이 즉시 차단됩니다.')) return;
+  runExclusive('automation:key', release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();document.getElementById('automationKeyResult').textContent='키가 폐기되었습니다.';showToast('키 폐기됨','ok');})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'revokeAutomationKey',{});
+  });
+}
+
+function _quoteDatePlusDays(days){
+  const d=new Date(Date.now()+days*86400000);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function holdQuoteUI(number,force){
+  const q=(allQuotes||[]).find(x=>x.number===number);
+  if(!q){showToast('견적서를 찾을 수 없습니다.','err');return;}
+  const reason=prompt('보류 사유 (예: 예산 결재 대기, 10월 행사)', q.holdReason||'');
+  if(reason===null) return;
+  const wantTentative=confirm('촬영 예정일을 캘린더에 [가예약]으로 잡을까요?\n확인 = 가예약 잡기 (해당 시간대 고객 예약 슬롯이 막힙니다)\n취소 = 보류만 (날짜 홀드 없음)');
+  let tentative=null;
+  let defaultFollow=_quoteDatePlusDays(14);
+  if(wantTentative){
+    const date=prompt('가예약 날짜 (YYYY-MM-DD)', q.shootDate||'');
+    if(date===null) return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())){showToast('날짜 형식이 올바르지 않습니다.','warn');return;}
+    const time=prompt('시작 시간 (HH:MM) — 비우면 종일 홀드','10:00');
+    if(time===null) return;
+    let durationMin=120;
+    if(String(time).trim()){
+      const dur=prompt('소요 시간(분)','120');
+      if(dur===null) return;
+      durationMin=parseInt(dur,10)||120;
+    }
+    tentative={date:String(date).trim(),time:String(time).trim(),durationMin};
+    defaultFollow=_quoteDatePlusDays(7);
+  }
+  const followUpDate=prompt('재확인 예정일 (YYYY-MM-DD)', q.followUpDate||defaultFollow);
+  if(followUpDate===null) return;
+  runExclusive('quote:hold:'+number, release=>{
+    google.script.run
+      .withSuccessHandler(res=>{
+        release();
+        if(res&&res.conflict){
+          if(confirm(res.message+'\n\n그래도 가예약을 강제로 잡을까요?')){
+            google.script.run
+              .withSuccessHandler(r2=>{showToast(r2&&r2.ok?'보류 + 가예약(강제) 완료':'실패','ok');loadQuoteList();})
+              .withFailureHandler(handleApiError)
+              .adminRpc(adminToken,'holdQuote',{number,data:{reason,followUpDate,tentative,force:true}});
+          }
+          return;
+        }
+        if(res&&res.ok){showToast(`보류 처리됨 · 재확인 ${res.followUpDate}${res.tentative?' · 📅 가예약 완료':''}`,'ok');loadQuoteList();}
+        else showToast('보류 실패: '+((res&&res.message)||''),'err');
+      })
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'holdQuote',{number,data:{reason,followUpDate,tentative}});
+  });
+}
+function snoozeQuoteHoldUI(number){
+  const next=prompt('다음 재확인 예정일 (YYYY-MM-DD)',_quoteDatePlusDays(14));
+  if(next===null) return;
+  runExclusive('quote:snooze:'+number, release=>{
+    google.script.run
+      .withSuccessHandler(res=>{release();showToast('재확인일 변경: '+((res&&res.followUpDate)||next),'ok');loadQuoteList();})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'snoozeQuoteHold',{number,followUpDate:String(next).trim()});
+  });
+}
+function releaseQuoteHoldUI(number){
+  if(!confirm(`${number} 보류를 해제하고 "발송" 상태로 되돌릴까요?\n걸려있는 가예약도 함께 해제됩니다.`)) return;
+  runExclusive('quote:releasehold:'+number, release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();showToast('보류 해제 완료','ok');loadQuoteList();})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'releaseQuoteHold',{number});
+  });
+}
+function releaseQuoteTentativeUI(number){
+  if(!confirm(`${number}의 가예약만 해제할까요? (보류 상태는 유지)\n해당 시간대 고객 예약 슬롯이 다시 열립니다.`)) return;
+  runExclusive('quote:releasetent:'+number, release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();showToast('가예약 해제 완료','ok');loadQuoteList();})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'releaseQuoteTentative',{number});
+  });
+}
+function extendQuoteValidityUI(number){
+  const days=prompt('유효기한을 오늘부터 며칠로 연장할까요?','30');
+  if(days===null) return;
+  runExclusive('quote:extend:'+number, release=>{
+    google.script.run
+      .withSuccessHandler(res=>{release();showToast(`유효기한 연장: ${(res&&res.validUntil)||''} · PDF 재생성됨`,'ok');loadQuoteList();})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'extendQuoteValidity',{number,validDays:parseInt(days,10)||30});
+  });
 }
 
 function openQuoteCreateModal(){
