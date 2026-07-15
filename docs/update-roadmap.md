@@ -61,11 +61,11 @@ Updated: 2026-07-14 Europe/Berlin
 - separate wedding / registry wedding / dol / corporate use cases if needed
 - improve consultation payload structure without exposing pricing
 
-11. Final design pass
-- booking success screen polish
-- select design alignment with booking
-- spacing / typography consistency review
-- mobile safe-area and in-app browser polish
+11. Final design pass (2026-07-15 부분 완료)
+- booking success screen polish (남음)
+- ~~select design alignment with booking~~ → 사장님 결정으로 종결: 셀렉은 크림+그린 톤 유지 (의도된 무드 구분)
+- ~~spacing / typography consistency review~~ → 폰트 스택 통일 완료 (Noto Sans KR 우선)
+- ~~mobile safe-area and in-app browser polish~~ → select viewport-fit=cover + safe-area insets 적용 완료
 
 12. Ops checklist refresh
 - deployment notes
