@@ -15057,7 +15057,8 @@ const PRINT_LABELS={
   'premium_10x15':{label:'프리미엄 10×15cm',summaryLabel:'프리미엄 10×15cm',price:8,retouchedPrice:3},
   'basic_a4':{label:'기본 A4',summaryLabel:'A4',price:15,retouchedPrice:10},
   'premium_a4':{label:'프리미엄 A4',summaryLabel:'프리미엄 A4',price:20,retouchedPrice:15},
-  'premium_a3':{label:'프리미엄 A3',summaryLabel:'A3',price:50,retouchedPrice:35}
+  'premium_a3':{label:'프리미엄 A3',summaryLabel:'A3',price:50,retouchedPrice:35},
+  'premium_a3plus':{label:'프리미엄 A3+',summaryLabel:'A3+',price:60,retouchedPrice:45}
 };
 function getPrintInfo_(printId){
   const key=String(printId||'').replace(/_(r|e)$/,'').trim();

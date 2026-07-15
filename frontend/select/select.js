@@ -24,7 +24,8 @@ const PRINT_OPTIONS = [
   { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
   { id: 'basic_a4', label: '기본 A4', retouched: 10, additional: 15 },
   { id: 'premium_a4', label: '프리미엄 A4', retouched: 15, additional: 20 },
-  { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 }
+  { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 },
+  { id: 'premium_a3plus', label: '프리미엄 A3+', retouched: 45, additional: 60 }
 ];
 
 const PHOTOCARD_MODE_LABELS = {
