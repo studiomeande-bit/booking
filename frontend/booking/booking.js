@@ -4605,8 +4605,17 @@ async function warmSelectedProductCalendar(product, durationOverride) {
   }, 40);
 }
 
-const MONTH_CACHE_TTL_MS = 5 * 60 * 1000;
+// 현재 달은 가용성 변동에 민감해 짧게, 미래 달은 서버 캐시(30분)와 정렬해 길게 유지
+const MONTH_CACHE_TTL_CURRENT_MS = 4 * 60 * 1000;
+const MONTH_CACHE_TTL_FUTURE_MS = 20 * 60 * 1000;
 const MAX_BOOKING_MONTH = { year: 2026, month: 11 };
+
+function getMonthCacheTtlMs(year, month) {
+  const now = new Date();
+  return (year === now.getFullYear() && month === now.getMonth())
+    ? MONTH_CACHE_TTL_CURRENT_MS
+    : MONTH_CACHE_TTL_FUTURE_MS;
+}
 
 function getMonthStorageKey(year, month, itemGroup, duration) {
   return `booking:month:v2:${year}_${month}_${itemGroup}_${duration}`;
@@ -4618,7 +4627,7 @@ function readMonthStorage(year, month, itemGroup, duration) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || !parsed.savedAt || !parsed.data) return null;
-    if (Date.now() - Number(parsed.savedAt) > MONTH_CACHE_TTL_MS) return null;
+    if (Date.now() - Number(parsed.savedAt) > getMonthCacheTtlMs(year, month)) return null;
     return parsed.data;
   } catch {
     return null;
@@ -5222,7 +5231,7 @@ async function loadCalendar() {
   setCalendarBusy(true);
   if (!batch) {
     els.calendarGrid.classList.remove('empty-state');
-    els.calendarGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+    els.calendarGrid.innerHTML = renderCalendarSkeleton();
     try {
       const monthBatch = await fetchAndStoreCalendarBatch(state.calendarYear, state.calendarMonth, duration, state.selectedProduct.g);
       if (token !== state.calendarRequestToken) return;
@@ -5265,17 +5274,18 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
 }
 
 async function prefetchNextCalendarMonth() {
+  // 보이는 달 기준 +1, +2달을 순차 프리페치 — 달을 연속으로 넘겨도 로딩 갭이 생기지 않게 함
   if (!state.selectedProduct) return;
-  const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
-  if (next.getFullYear() > MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() > MAX_BOOKING_MONTH.month)) return;
   const duration = getCalendarDuration();
-  const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
-  if (state.calendarCache.has(nextKey)) return;
-  try {
-    await fetchAndStoreCalendarBatch(next.getFullYear(), next.getMonth(), duration, state.selectedProduct.g);
-  } catch (error) {
-    console.error(error);
+  const tasks = [];
+  for (let offset = 1; offset <= 2; offset += 1) {
+    const next = new Date(state.calendarYear, state.calendarMonth + offset, 1);
+    if (next.getFullYear() > MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() > MAX_BOOKING_MONTH.month)) break;
+    const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
+    if (state.calendarCache.has(nextKey)) continue;
+    tasks.push({ year: next.getFullYear(), month: next.getMonth(), itemGroup: state.selectedProduct.g, totalDur: duration });
   }
+  if (tasks.length) await warmCalendarRange(tasks);
 }
 
 async function loadSlotsForDate(dateKey) {
@@ -5308,6 +5318,18 @@ async function loadSlotsForDate(dateKey) {
   if (token !== state.slotRequestToken) return;
   els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: dateLabel });
   renderSlots(slots);
+}
+
+function renderCalendarSkeleton() {
+  // 로딩 중에도 달력 구조(요일 오프셋 + 날짜 숫자)를 유지해 화면 흔들림과 혼란을 줄임
+  const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
+  const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDay; i += 1) cells.push('<div class="calendar-cell muted"></div>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(`<div class="calendar-cell skeleton" aria-hidden="true">${day}</div>`);
+  }
+  return cells.join('');
 }
 
 function renderCalendar(data) {

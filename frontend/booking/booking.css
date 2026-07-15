@@ -4586,3 +4586,19 @@ h1 {
   padding: 3px 12px;
   cursor: pointer;
 }
+
+/* ===== 캘린더 스켈레톤 로딩 ===== */
+.calendar-cell.skeleton {
+  color: #cbd5e1;
+  background: linear-gradient(100deg, #f8fafc 40%, #eef2f7 50%, #f8fafc 60%);
+  background-size: 200% 100%;
+  animation: calendarShimmer 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes calendarShimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -80% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .calendar-cell.skeleton { animation: none; }
+}
