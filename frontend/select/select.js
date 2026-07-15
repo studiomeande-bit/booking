@@ -588,7 +588,7 @@ function getServiceCutCount() {
 }
 
 function makeServicePhoto() {
-  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, isService: true };
+  return { num: '', note: '', printType: 'basic_10x15', isBonus: true, isService: true };
 }
 
 // 서비스 컷: 어드민이 설정한 수량만큼 무료 슬롯 자동 유지 (0이면 아무 흔적 없음)
@@ -614,7 +614,7 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 자유롭게 넣어 주세요 — 비용은 없습니다.</div>`;
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 넣어 주세요. 각 서비스 컷에는 <b>기본 10×15cm 인화 1장</b>이 포함되며, 비용은 없습니다.</div>`;
 }
 
 function makeBonusPhoto() {
@@ -830,7 +830,7 @@ function renderPhotos() {
               ${PRINT_OPTIONS.map((item) => {
                 const itemIncluded = item.id === typeId && includedPrint;
                 const priceLabel = photo.isBonus && item.id === typeId
-                  ? (photo.isService ? '무료(서비스 컷)' : '무료(마케팅 보너스)')
+                  ? (photo.isService ? (item.id === 'basic_10x15' ? '무료(서비스 컷 · 기본 포함)' : '무료(서비스 컷)') : '무료(마케팅 보너스)')
                   : itemIncluded
                   ? '무료(기본 제공)'
                   : item.retouched === 0
