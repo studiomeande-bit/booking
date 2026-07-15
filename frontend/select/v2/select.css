@@ -746,6 +746,23 @@ h1 {
   color: #2f6d53;
 }
 .entry-card.service { background: #eef5ef; }
+/* 스텝0 요약 + 출력 단계의 서비스 컷 안내 */
+.summary-item.service .summary-value { color: #2f6d53; font-weight: 800; }
+.service-cut-inline {
+  padding: 10px 12px;
+  background: #e7f0e8;
+  border: 1px solid rgba(47, 109, 83, 0.28);
+  color: #35463a;
+}
+.service-cut-print-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #e7f0e8;
+  border: 1px solid rgba(47, 109, 83, 0.28);
+  color: #35463a;
+  font-size: 13px;
+  line-height: 1.6;
+}
 
 /* ===== Gallery tips / star legend ===== */
 .gallery-tips .star-legend {

@@ -55,13 +55,15 @@ function isRetouchedPhotoNum(num) {
 // 백엔드 computeSelectDecoupledPrints_ 와 동일한 규칙 (서버가 최종 판정).
 function computePrintAnnotations() {
   const quota = getSessionIncludedPrintQuota().map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
-  // 서비스 컷: 채워진 서비스 슬롯 번호 1개당 인화 1건에 €5(기본 10×15 보정본가) 크레딧. 서버 computeSelectDecoupledPrints_ 와 동일 규칙.
+  // 서비스 컷: 서비스 슬롯 번호마다 인화 1건(1장)에 €5(기본 10×15 보정본가) 크레딧. 총 크레딧은 serviceCutCount로 상한.
+  // 서버 computeSelectDecoupledPrints_ 와 완전히 동일한 규칙 — 유닛(장) 단위 적용 + 상한, 인화 행 순서대로 소진.
   const serviceCredit = {};
   state.photos.forEach((p) => {
     if (!p?.isService) return;
     const k = printNumKey(p.num);
     if (k) serviceCredit[k] = (serviceCredit[k] || 0) + 1;
   });
+  let serviceCreditsRemaining = getServiceCutCount();
   const basicPrintCredit = Number(getPrintOption('basic_10x15').retouched) || 0;
   return state.prints.map((print) => {
     const typeId = normalizePrintTypeId(print.printId);
@@ -77,17 +79,25 @@ function computePrintAnnotations() {
       includedQty += 1;
     }
     const chargedQty = qty - includedQty;
-    let amount = chargedQty * unit;
-    let serviceDiscount = 0;
     const numKey = printNumKey(print.photoNum);
-    if (chargedQty > 0 && numKey && serviceCredit[numKey] > 0 && unit > 0) {
-      serviceDiscount = Math.min(unit, basicPrintCredit);
-      if (serviceDiscount > 0) {
-        amount = Math.max(0, amount - serviceDiscount);
-        serviceCredit[numKey] -= 1;
+    let amount = 0;
+    let serviceDiscount = 0;
+    let serviceCreditUnits = 0;
+    for (let u = 0; u < chargedQty; u += 1) {
+      let unitCharge = unit;
+      if (numKey && serviceCredit[numKey] > 0 && serviceCreditsRemaining > 0 && unit > 0) {
+        const disc = Math.min(unit, basicPrintCredit);
+        if (disc > 0) {
+          unitCharge = Math.max(0, unit - disc);
+          serviceDiscount += disc;
+          serviceCreditUnits += 1;
+          serviceCredit[numKey] -= 1;
+          serviceCreditsRemaining -= 1;
+        }
       }
+      amount += unitCharge;
     }
-    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount, serviceDiscount };
+    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount, serviceDiscount, serviceCreditUnits };
   });
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
@@ -714,6 +724,7 @@ function renderSessionSummary() {
     <div class="summary-item"><div class="summary-label">상품</div><div class="summary-value">${escapeHtml(s.product || '')}</div></div>
     <div class="summary-item"><div class="summary-label">촬영일</div><div class="summary-value">${escapeHtml(s.date || '')}</div></div>
     <div class="summary-item"><div class="summary-label">기본 보정</div><div class="summary-value">${escapeHtml(s.baseRetouchCount || 0)}장</div></div>
+    ${getServiceCutCount() > 0 ? `<div class="summary-item service"><div class="summary-label">서비스 컷</div><div class="summary-value">🎁 ${getServiceCutCount()}장 무료</div></div>` : ''}
     <div class="summary-item"><div class="summary-label">추가 보정 단가</div><div class="summary-value">€${escapeHtml(s.retouchPrice || 0)}</div></div>
     <div class="summary-item"><div class="summary-label">추가 인보이스</div><div class="summary-value">${escapeHtml(s.extraInvoiceNumber || '-')}</div></div>
   `;
@@ -737,6 +748,7 @@ function renderPackageSummary() {
   els.packageSummary.innerHTML = `
     <div class="detail-title">보정 패키지 안내</div>
     <div class="guide-copy">기본 보정 <b>${escapeHtml(s.baseRetouchCount || 0)}장</b> 포함 · 추가 보정 <b>€${escapeHtml(s.retouchPrice || 0)}/장</b></div>
+    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">🎁 스튜디오 <b>서비스 컷 ${getServiceCutCount()}장</b> 추가 증정 — 보정 무료 + 기본 10×15cm 인화 1장씩 포함 (보정 단계에서 사진 번호만 넣어 주세요)</div>` : ''}
     ${includedLine}
     ${autoPrintNotice}
     ${deliveryLines.length ? `<div class="guide-copy">${deliveryLines.map(escapeHtml).join(' · ')}</div>` : ''}
@@ -2011,16 +2023,29 @@ function addPrintRow() {
   updateReview();
 }
 
+function renderServiceCutPrintNote() {
+  const total = getServiceCutCount();
+  if (total <= 0) return '';
+  const used = computePrintAnnotations().reduce((n, ann) => n + (ann.serviceCreditUnits || 0), 0);
+  const nums = state.photos
+    .filter((p) => p?.isService && String(p.num || '').trim())
+    .map((p) => stripExt(p.num))
+    .join(', ');
+  const target = nums ? `서비스 컷 사진 번호(<b>${escapeHtml(nums)}</b>)` : '서비스 컷으로 정한 사진 번호';
+  return `<div class="service-cut-print-note">🎁 <b>서비스 컷 무료 인화 ${used}/${total}장 사용</b> — ${target}로 인화를 추가하면 기본 10×15cm는 <b>무료</b>, 더 큰 사이즈는 <b>차액만</b> 청구돼요.</div>`;
+}
+
 function renderPrintQuotaBanner() {
   const summary = getPrintQuotaSummary();
+  const serviceNote = renderServiceCutPrintNote();
   if (!summary.length) {
-    return '<div class="included-print-callout"><strong>출력 선택</strong><span>이 상품은 기본 제공 출력물이 없습니다. 필요한 사진을 아래에서 인화 주문할 수 있어요. 보정과 다른 사진도 선택할 수 있습니다.</span></div>';
+    return `<div class="included-print-callout"><strong>출력 선택</strong><span>이 상품은 기본 제공 출력물이 없습니다. 필요한 사진을 아래에서 인화 주문할 수 있어요. 보정과 다른 사진도 선택할 수 있습니다.</span>${serviceNote}</div>`;
   }
   const chips = summary.map((q) => {
     const done = q.remaining === 0;
     return `<span class="quota-chip${done ? ' used' : ''}">${escapeHtml(q.label)} <b>${q.used}/${q.total}</b></span>`;
   }).join('');
-  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><div class="quota-chips">${chips}</div></div>`;
+  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
 function renderPrints() {
@@ -2488,6 +2513,7 @@ function buildMockSession() {
     baseRetouchCount: 3,
     retouchPrice: 10,
     marketingBonusCount: 2,
+    serviceCutCount: 2,
     lang: 'ko',
     driveLink: state.previewFolder || 'https://drive.google.com/drive/folders/1J3p6L1xmYnGSi4TzxzOz5Ket2uvkGMLP?usp=drive_link',
     bookingMarketing: '',

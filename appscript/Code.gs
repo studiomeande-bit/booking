@@ -1675,6 +1675,7 @@ function mergeDuplicateDbFiles_(){
     mergedFrom.push({id:candidate.id,name:candidate.name,url:candidate.url,summary});
   });
   props.setProperty('DB_SHEET_ID',primaryInfo.id);
+  invalidateSheetsCache_();
   return {
     ok:true,
     primary:{id:primaryInfo.id,name:primaryInfo.name,url:primaryInfo.url},
@@ -1807,7 +1808,12 @@ function mergeDuplicateDbFiles(){
   return mergeDuplicateDbFiles_();
 }
 
+// 실행(요청)당 1회만 시트 보장/스프레드시트 재채점을 수행하고 결과를 재사용.
+// GAS는 실행마다 전역을 초기화하므로 요청 간 stale 위험 없음. DB 전환/병합 시 invalidateSheetsCache_()로 해제.
+let _sheetsBundleCache_ = null;
+function invalidateSheetsCache_(){ _sheetsBundleCache_ = null; }
 function ensureSheets_() {
+  if(_sheetsBundleCache_) return _sheetsBundleCache_;
   const props = PropertiesService.getScriptProperties();
   const dbId = props.getProperty('DB_SHEET_ID');
   let ss = _openSpreadsheetByIdSafe_(dbId);
@@ -1831,7 +1837,8 @@ function ensureSheets_() {
   const cashSheet=ensureCashSheet_(ss);
   const threadSheet=ensureThreadSheet_(ss);
   ensureSecrets_();
-  return {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,gutscheinSheet:null,expenseSheet,quoteSheet,messageLogSheet,automationLogSheet,leadSheet,consultationSheet,settlementSheet,travelSheet,marketingScheduleSheet,cashSheet,threadSheet};
+  _sheetsBundleCache_ = {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,gutscheinSheet:null,expenseSheet,quoteSheet,messageLogSheet,automationLogSheet,leadSheet,consultationSheet,settlementSheet,travelSheet,marketingScheduleSheet,cashSheet,threadSheet};
+  return _sheetsBundleCache_;
 }
 
 function ensureHeaderSheet_(ss, sheetName, headers, color){
@@ -11019,19 +11026,26 @@ function updateBookingAdmin(token,rIdx,d){
   }
   const normalizedPhone=normalizePhoneForLedger_(d.phone,d.phoneCountry||d.countryCode||'+49');
   const normalizedAddress=normalizeAddressText_(d.address);
-  setBookingStatus_(sh,rIdx,d.status);sh.getRange(rIdx,3).setValue(d.name);sh.getRange(rIdx,4).setValue(normalizedPhone);
+  // 배치 쓰기: 개별 setValue(~22회 왕복) 대신 행을 메모리에서 수정 후 1회 setValues (roadmap: ERP 저장 속도)
+  const newRow=rowBefore.slice();
+  const w=(c,v)=>{ newRow[c-1]=(v==null?'':v); };
+  // setBookingStatus_ 인라인: 셀렉완료 검증 + 상태셀 + 확정 전환 시 확정일시
+  if(String(d.status||'').trim()==='셀렉완료' && !bookingHasSubmittedSelect_(rIdx)) throw new Error('사진셀렉 제출 기록이 없어 예약 상태를 셀렉완료로 변경할 수 없습니다. 셀렉 링크를 다시 발송하거나 수기 셀렉 데이터를 먼저 저장해 주세요.');
+  w(2,d.status);
+  if(String(d.status||'').trim()==='확정됨' && String(rowBefore[1]||'')!=='확정됨' && BOOKING_COL['확정일시']!=null) w(BOOKING_COL['확정일시']+1, Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  w(3,d.name); w(4,normalizedPhone);
   if(d.email!==undefined){
     const email=normalizeEmailAddress_(d.email);
     if(email&&email.indexOf('@')===-1&&email.indexOf('수기등록')===-1) throw new Error('이메일 주소 형식이 올바르지 않습니다.');
-    sh.getRange(rIdx,BOOKING_COL['이메일']+1).setValue(email);
+    w(BOOKING_COL['이메일']+1, email);
     d.email=email;
   }
-  if(d.itemGroup!==undefined) sh.getRange(rIdx,BOOKING_COL['촬영종류']+1).setValue(String(d.itemGroup||'').trim()||String(rowBefore[BOOKING_COL['촬영종류']]||'').trim()||'기타');
-  if(d.product!==undefined) sh.getRange(rIdx,BOOKING_COL['상품']+1).setValue(String(d.product||'').trim()||String(rowBefore[BOOKING_COL['상품']]||'').trim());
-  if(d.people!==undefined) sh.getRange(rIdx,BOOKING_COL['인원']+1).setValue(peopleValue);
-  if(d.location!==undefined && BOOKING_COL['shooting_location']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_location']+1).setValue(nextLocation);
-  if(d.date!==undefined && BOOKING_COL['shooting_date']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_date']+1).setValue(String(d.date||'').slice(0,10));
-  if(d.time!==undefined && BOOKING_COL['shooting_time']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_time']+1).setValue(String(d.time||'').slice(0,5));
+  if(d.itemGroup!==undefined) w(BOOKING_COL['촬영종류']+1, String(d.itemGroup||'').trim()||String(rowBefore[BOOKING_COL['촬영종류']]||'').trim()||'기타');
+  if(d.product!==undefined) w(BOOKING_COL['상품']+1, String(d.product||'').trim()||String(rowBefore[BOOKING_COL['상품']]||'').trim());
+  if(d.people!==undefined) w(BOOKING_COL['인원']+1, peopleValue);
+  if(d.location!==undefined && BOOKING_COL['shooting_location']!=null) w(BOOKING_COL['shooting_location']+1, nextLocation);
+  if(d.date!==undefined && BOOKING_COL['shooting_date']!=null) w(BOOKING_COL['shooting_date']+1, String(d.date||'').slice(0,10));
+  if(d.time!==undefined && BOOKING_COL['shooting_time']!=null) w(BOOKING_COL['shooting_time']+1, String(d.time||'').slice(0,5));
   if(d.optionKeys!==undefined||d.ageGroup!==undefined){
     const optionParts=[];
     if(cleanOptionKeys.length) optionParts.push(cleanOptionKeys.join(','));
@@ -11039,15 +11053,15 @@ function updateBookingAdmin(token,rIdx,d){
     const ageDiscountLabel=getBookingAgeDiscountLabel_(quoteForEdit||{ageGroup:ageGroup});
     if(ageLabel) optionParts.push('촬영대상: '+ageLabel);
     if(ageDiscountLabel) optionParts.push('할인: '+ageDiscountLabel);
-    sh.getRange(rIdx,BOOKING_COL['옵션']+1).setValue(optionParts.join(' | '));
+    w(BOOKING_COL['옵션']+1, optionParts.join(' | '));
   }
   const memoToSave=d.location!==undefined
     ? (nextLocation&&!isStudioLocation_(nextLocation)
       ? ('[촬영장소:'+nextLocation+'] '+String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'')).trim()
       : String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'').trim())
     : d.memo;
-  sh.getRange(rIdx,11).setValue(d.price);sh.getRange(rIdx,12).setValue(d.deposit);sh.getRange(rIdx,13).setValue(d.balance);
-  sh.getRange(rIdx,14).setValue(d.payMethod);sh.getRange(rIdx,16).setValue(memoToSave);sh.getRange(rIdx,18).setValue(d.depPayMethod);
+  w(11,d.price); w(12,d.deposit); w(13,d.balance);
+  w(14,d.payMethod); w(16,memoToSave); w(18,d.depPayMethod);
   let extraItemToSave=String(d.extraItem||'').replace(/\n?\[예약 세부내역\][\s\S]*$/,'').trim();
   if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined){
     const productName=String(d.product||rowBefore[BOOKING_COL['상품']]||'').trim();
@@ -11089,25 +11103,24 @@ function updateBookingAdmin(token,rIdx,d){
     });
     if(detailText) extraItemToSave=[extraItemToSave,'[예약 세부내역]\n'+detailText].filter(Boolean).join('\n');
   }
-  sh.getRange(rIdx,19).setValue(extraItemToSave);
-  if(d.address!==undefined) sh.getRange(rIdx,27).setValue(normalizedAddress||'');
-  if(d.profileAge!==undefined && BOOKING_COL['프로필나이']!=null) sh.getRange(rIdx,BOOKING_COL['프로필나이']+1).setValue(String(d.profileAge||'').trim());
-  if(d.studioFamilyMembers!==undefined && BOOKING_COL['가족구성']!=null) sh.getRange(rIdx,BOOKING_COL['가족구성']+1).setValue(String(d.studioFamilyMembers||'').trim());
-  if(d.paymentLinkType!==undefined && BOOKING_COL['결제연결유형']!=null) sh.getRange(rIdx,BOOKING_COL['결제연결유형']+1).setValue(String(d.paymentLinkType||'').trim());
-  if(d.paymentLinkGroup!==undefined && BOOKING_COL['결제연결그룹']!=null) sh.getRange(rIdx,BOOKING_COL['결제연결그룹']+1).setValue(String(d.paymentLinkGroup||'').trim());
-  if(d.paymentLinkedRows!==undefined && BOOKING_COL['결제연결행']!=null) sh.getRange(rIdx,BOOKING_COL['결제연결행']+1).setValue(String(d.paymentLinkedRows||'').trim());
-  if(d.paymentSplitDetails!==undefined && BOOKING_COL['결제분할내역']!=null) sh.getRange(rIdx,BOOKING_COL['결제분할내역']+1).setValue(String(d.paymentSplitDetails||'').trim());
-  if(d.paymentMemo!==undefined && BOOKING_COL['결제메모']!=null) sh.getRange(rIdx,BOOKING_COL['결제메모']+1).setValue(String(d.paymentMemo||'').trim());
+  w(19,extraItemToSave);
+  if(d.address!==undefined) w(27, normalizedAddress||'');
+  if(d.profileAge!==undefined && BOOKING_COL['프로필나이']!=null) w(BOOKING_COL['프로필나이']+1, String(d.profileAge||'').trim());
+  if(d.studioFamilyMembers!==undefined && BOOKING_COL['가족구성']!=null) w(BOOKING_COL['가족구성']+1, String(d.studioFamilyMembers||'').trim());
+  if(d.paymentLinkType!==undefined && BOOKING_COL['결제연결유형']!=null) w(BOOKING_COL['결제연결유형']+1, String(d.paymentLinkType||'').trim());
+  if(d.paymentLinkGroup!==undefined && BOOKING_COL['결제연결그룹']!=null) w(BOOKING_COL['결제연결그룹']+1, String(d.paymentLinkGroup||'').trim());
+  if(d.paymentLinkedRows!==undefined && BOOKING_COL['결제연결행']!=null) w(BOOKING_COL['결제연결행']+1, String(d.paymentLinkedRows||'').trim());
+  if(d.paymentSplitDetails!==undefined && BOOKING_COL['결제분할내역']!=null) w(BOOKING_COL['결제분할내역']+1, String(d.paymentSplitDetails||'').trim());
+  if(d.paymentMemo!==undefined && BOOKING_COL['결제메모']!=null) w(BOOKING_COL['결제메모']+1, String(d.paymentMemo||'').trim());
   if(d.bookingType!==undefined && BOOKING_COL['예약유형']!=null){
     const nextBookingType=inferBookingClientTypeFromData_(Object.assign({},d,{itemGroup:d.itemGroup||rowBefore[BOOKING_COL['촬영종류']]}));
-    sh.getRange(rIdx,BOOKING_COL['예약유형']+1).setValue(nextBookingType);
+    w(BOOKING_COL['예약유형']+1, nextBookingType);
   }
-
-  // ✅ 추가: 엑셀 21번째 열(U열)에 잔금입금일 쓰기
-  sh.getRange(rIdx,21).setValue(d.balanceDate||'');
+  w(21, d.balanceDate||'');
+  // 1회 배치 쓰기 (개별 setValue 다수 → setValues 1회)
+  sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).setValues([newRow]);
   try{
-    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
-    ensureBookingCalendarEventForRow_(sh,rIdx,rowAfter);
+    ensureBookingCalendarEventForRow_(sh,rIdx,newRow);
   }catch(e){Logger.log('updateBookingAdmin calendar sync failed row '+rIdx+': '+e.message);}
   return{ok:true};
 }
@@ -15187,6 +15200,8 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
   });
   const serviceCredit={};
   (serviceNums||[]).forEach(function(n){const k=selectPhotoNumKey_(n);if(k)serviceCredit[k]=(serviceCredit[k]||0)+1;});
+  // 총 크레딧 상한: 어드민이 설정한 서비스컷수 (클라이언트 isService 플래그만 신뢰하지 않도록 서버에서 캡)
+  let serviceCreditsRemaining=Math.max(0,parseInt((row&&row[SELECT_COL['서비스컷수']]),10)||0);
   const basicPrintCredit=Number((getPrintInfo_('basic_10x15')||{}).retouchedPrice||0);
   const chargeable=[];
   const included=[];
@@ -15217,10 +15232,10 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       }
     }
   });
-  // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1건에 €5(기본 10×15) 차감 (10×15 무료, 큰 사이즈 차액).
+  // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1장에 €5(기본 10×15) 차감 (10×15 무료, 큰 사이즈 차액). 총 상한 = 서비스컷수.
   chargeable.forEach(function(item){
     const k=selectPhotoNumKey_(item.photoNum);
-    if(k&&serviceCredit[k]>0&&Number(item.price)>0){
+    if(k&&serviceCredit[k]>0&&serviceCreditsRemaining>0&&Number(item.price)>0){
       const disc=Math.min(Number(item.price),basicPrintCredit);
       if(disc>0){
         item.price=Math.max(0,Number(item.price)-disc);
@@ -15228,6 +15243,7 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
         item.source='service_print';
         item.label=String(item.label||'')+(item.price>0?' (서비스 컷 차액)':' (서비스 컷 무료)');
         serviceCredit[k]-=1;
+        serviceCreditsRemaining-=1;
       }
     }
   });
