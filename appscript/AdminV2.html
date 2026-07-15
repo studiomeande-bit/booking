@@ -2055,6 +2055,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </details>
     </div>
     <div class="card">
+      <div class="card-title">🔐 어드민 비밀번호 변경</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">8자 이상. 변경 즉시 이전 비밀번호는 사용할 수 없습니다.</div>
+      <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" onclick="changeAdminPasswordUI()">비밀번호 변경</button>
+      </div>
+      <div id="adminPasswordResult" style="margin-top:10px;font-size:13px;color:#475569;"></div>
+    </div>
+    <div class="card">
       <div class="card-title">🤖 자동화 API 키 (Claude ERP 에이전트)</div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Claude가 견적서·인보이스를 직접 작성/발송할 때 쓰는 전용 키입니다. 어드민 비밀번호와 별개이며 언제든 폐기할 수 있습니다. 발급된 키는 이 화면에서 한 번만 표시되니 복사해서 로컬 <code>reservation/.secrets/erp-automation-key</code> 파일에 저장해 주세요.</div>
       <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -12575,6 +12583,20 @@ function renderQuoteTable(){
     :'<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:32px;">발행된 견적서가 없습니다. [새 견적서] 버튼으로 작성해 주세요.</td></tr>';
 }
 
+function changeAdminPasswordUI(){
+  const pw1=prompt('새 어드민 비밀번호 (8자 이상)');
+  if(pw1===null) return;
+  if(String(pw1).trim().length<8){showToast('8자 이상이어야 합니다.','warn');return;}
+  const pw2=prompt('한 번 더 입력해 주세요');
+  if(pw2===null) return;
+  if(String(pw1).trim()!==String(pw2).trim()){showToast('두 입력이 일치하지 않습니다.','err');return;}
+  runExclusive('admin:pwchange', release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();document.getElementById('adminPasswordResult').textContent='변경 완료 — 다음 로그인부터 새 비밀번호를 사용하세요.';showToast('비밀번호 변경됨','ok');})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'changeAdminPassword',{newPassword:String(pw1).trim()});
+  });
+}
 function issueAutomationKeyUI(){
   if(!confirm('자동화 API 키를 발급할까요?\n기존 키가 있으면 즉시 무효화되고 새 키로 교체됩니다.')) return;
   runExclusive('automation:key', release=>{

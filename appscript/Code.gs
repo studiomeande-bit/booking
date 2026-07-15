@@ -360,6 +360,8 @@ function adminRpc(token, action, payload){
       return issueAutomationKeyAdmin(token);
     case 'revokeAutomationKey':
       return revokeAutomationKeyAdmin(token);
+    case 'changeAdminPassword':
+      return changeAdminPasswordAdmin(token, String(payload&&payload.newPassword||''));
     case 'auditReturnDiscounts':
       return auditReturnDiscountsAdmin(token, payload||{});
     case 'repairReturnDiscount':
@@ -3421,7 +3423,17 @@ function isValidAdminPassword_(password){
   const safePassword=String(password||'').trim();
   if(!safePassword) return false;
   const p=PropertiesService.getScriptProperties();
-  return hashText_(safePassword)===p.getProperty('ADMIN_PASSWORD_HASH') || safePassword==='1234';
+  return hashText_(safePassword)===p.getProperty('ADMIN_PASSWORD_HASH');
+}
+
+// 어드민 비밀번호 변경 — 로그인된 세션에서만 가능
+function changeAdminPasswordAdmin(token,newPassword){
+  assertAdmin_(token);
+  const pw=String(newPassword||'').trim();
+  if(pw.length<8) throw new Error('새 비밀번호는 8자 이상이어야 합니다.');
+  if(pw==='1234'||/^(1234|0000|1111|password|admin)/i.test(pw)) throw new Error('너무 쉬운 비밀번호입니다. 다른 비밀번호를 사용해 주세요.');
+  PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(pw));
+  return {ok:true};
 }
 
 /* ===== ERP 자동화 API 키 (Claude 등 에이전트용 — 어드민 비밀번호와 별개, 폐기 가능) ===== */
