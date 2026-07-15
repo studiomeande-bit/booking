@@ -48,11 +48,14 @@ Updated: 2026-07-15 Europe/Berlin
 - submit update flow
 - extra prints / extra retouch totals
 - success screen / invoice number / drive link confirmation
+- ~~서비스컷이 v2에 미구현이던 버그~~ → v2 포팅 완료 (2026-07-15, 8f166ab): 무료 보정 슬롯+안내+복원+제출 왕복. **오너 확인 필요**: 어드민에서 serviceCutCount N 설정한 v2 세션 열어 서비스컷 N슬롯 표시 확인
+- 서비스컷 perk 결정 대기: v1의 "서비스컷당 기본 10×15 인화 무료(차액청구)"는 v2 디커플드 모델상 미이식(v2 보너스도 인화 미포함) — 원하면 백엔드 작업으로 추가 가능
 
 9. Mail content cleanup
 - reduce repeated text across pending / confirmed / follow-up mails
 - unify Korean / English / German tone
 - verify pre-wedding / passport infant / dol guide content balance
+- ~~보정 요청 가이드 예시가 "자연스럽게"(가이드가 경계하는 바로 그 모호어)를 사용~~ → 구체 문구로 재작성 완료 (2026-07-15, 8f166ab): 부위+방향+원본유지 경계. v1/v2 가이드·placeholder 5곳, BAD 예시는 의도적 유지
 
 ## Later
 
