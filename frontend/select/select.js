@@ -236,6 +236,8 @@ function hydrateSession(session) {
     state.marketing = 'Y';
   }
   syncMarketingBonusRows();
+  syncServiceCutRows();
+  renderServiceCutNotice();
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
@@ -304,7 +306,8 @@ function normalizePhoto(photo) {
     num: String(photo?.num || ''),
     note: String(photo?.note || ''),
     printType: normalizePrintTypeId(photo?.printType),
-    isBonus: !!photo?.isBonus
+    isBonus: !!photo?.isBonus,
+    isService: !!photo?.isService
   };
 }
 
@@ -579,27 +582,62 @@ function getMarketingBonusCount() {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2;
 }
 
+function getServiceCutCount() {
+  const n = Number(state.session?.serviceCutCount);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function makeServicePhoto() {
+  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, isService: true };
+}
+
+// 서비스 컷: 어드민이 설정한 수량만큼 무료 슬롯 자동 유지 (0이면 아무 흔적 없음)
+function syncServiceCutRows() {
+  const desired = getServiceCutCount();
+  const current = state.photos.filter((photo) => photo.isService).length;
+  for (let i = current; i < desired; i += 1) state.photos.push(makeServicePhoto());
+  if (current > desired) {
+    let removeCount = current - desired;
+    for (let i = state.photos.length - 1; i >= 0 && removeCount > 0; i -= 1) {
+      const photo = state.photos[i];
+      if (photo?.isService && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
+        state.photos.splice(i, 1);
+        removeCount -= 1;
+      }
+    }
+  }
+}
+
+function renderServiceCutNotice() {
+  const box = document.getElementById('serviceCutBox');
+  if (!box) return;
+  const count = getServiceCutCount();
+  if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 자유롭게 넣어 주세요 — 비용은 없습니다.</div>`;
+}
+
 function makeBonusPhoto() {
   return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true };
 }
 
 function syncMarketingBonusRows() {
   const desired = getMarketingBonusCount();
-  const bonusCount = state.photos.filter((photo) => photo.isBonus).length;
+  const bonusCount = state.photos.filter((photo) => photo.isBonus && !photo.isService).length;
   if (state.marketing === 'Y') {
     for (let i = bonusCount; i < desired; i += 1) state.photos.push(makeBonusPhoto());
     if (bonusCount > desired) {
       let removeCount = bonusCount - desired;
       for (let i = state.photos.length - 1; i >= 0 && removeCount > 0; i -= 1) {
         const photo = state.photos[i];
-        if (photo?.isBonus && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
+        if (photo?.isBonus && !photo.isService && !String(photo.num || '').trim() && !String(photo.note || '').trim()) {
           state.photos.splice(i, 1);
           removeCount -= 1;
         }
       }
     }
   } else if (state.marketing === 'N') {
-    state.photos = state.photos.filter((photo) => !photo.isBonus);
+    state.photos = state.photos.filter((photo) => !photo.isBonus || photo.isService);
   }
 }
 
@@ -767,12 +805,12 @@ function renderPhotos() {
     const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
     const extra = !photo.isBonus && index >= includedCount ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
-    const bonus = photo.isBonus ? '<span class="bonus-badge">보너스</span>' : '';
+    const bonus = photo.isService ? '<span class="service-badge">서비스 컷</span>' : photo.isBonus ? '<span class="bonus-badge">보너스</span>' : '';
     const includedPrint = !photo.isBonus && isPrintFreeByQuota(index, typeId);
     const free = photo.isBonus || option.retouched === 0 || includedPrint;
     const includedPrintBadge = includedPrint ? '<span class="included-print-badge">기본 제공</span>' : '';
     return `
-      <div class="entry-card${photo.isBonus ? ' bonus' : ''}">
+      <div class="entry-card${photo.isService ? ' service' : photo.isBonus ? ' bonus' : ''}">
         <div class="entry-head">
           <div class="entry-label">#${index + 1} ${bonus} ${extra}</div>
           ${photo.isBonus ? '' : `<button type="button" class="remove-btn" data-remove-photo="${index}">삭제</button>`}
@@ -792,7 +830,7 @@ function renderPhotos() {
               ${PRINT_OPTIONS.map((item) => {
                 const itemIncluded = item.id === typeId && includedPrint;
                 const priceLabel = photo.isBonus && item.id === typeId
-                  ? '무료(마케팅 보너스)'
+                  ? (photo.isService ? '무료(서비스 컷)' : '무료(마케팅 보너스)')
                   : itemIncluded
                   ? '무료(기본 제공)'
                   : item.retouched === 0
@@ -913,7 +951,8 @@ function updatePhotoCounter() {
   const base = Number(state.session?.baseRetouchCount || 0);
   const extra = getRetouchExtraCount();
   const retouchPrice = Number(state.session?.retouchPrice || 0);
-  els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장`;
+  const serviceCuts = getServiceCutCount();
+  els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장${serviceCuts > 0 ? ` + 서비스 ${serviceCuts}장` : ''}`;
   els.photoCounterSub.textContent = '보너스 사진이 포함되면 총 선택 장수에 함께 표시됩니다.';
   els.extraCost.textContent = extra > 0 ? `추가 ${extra}장 × €${retouchPrice} = €${extra * retouchPrice}` : '추가 보정 비용 없음';
 }

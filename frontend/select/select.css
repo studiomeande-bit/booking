@@ -705,3 +705,24 @@ h1 {
     padding: 14px 0;
   }
 }
+
+/* ===== 서비스 컷 (비공개 — 설정된 세션에만 렌더) ===== */
+.service-cut-box {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #edf8f3;
+  border: 1px solid #b9decf;
+}
+.service-cut-title { font-weight: 700; color: #0f6d53; font-size: 14px; }
+.service-cut-copy { margin-top: 4px; font-size: 12.5px; color: #4e6a5e; line-height: 1.6; }
+.service-badge {
+  display: inline-block;
+  background: #0f6d53;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.entry-card.service { border-color: #b9decf; background: #f6fbf8; }

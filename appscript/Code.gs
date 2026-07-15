@@ -14307,7 +14307,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -14641,6 +14641,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['추가금인보이스번호']]='';
   row[SELECT_COL['페이지버전']]=normalizeSelectPageVersion_(data.pageVersion||'v2');
   row[SELECT_COL['마케팅보너스수']]=normalizeSelectMarketingBonusCount_(data.marketingBonusCount,data.itemGroup,data.product,data.payMethod);
+  row[SELECT_COL['서비스컷수']]=Math.max(0,parseInt(data.serviceCutCount,10)||0);
   return {sessionId,row,now,schedule};
 }
 
@@ -15019,6 +15020,7 @@ function getSelectSession(sessionId){
       baseRetouchCount:parseInt(row[SELECT_COL['기본보정수']])||0,
       retouchPrice:parseInt(row[SELECT_COL['리터칭단가']])||10,
       marketingBonusCount:normalizeSelectMarketingBonusCount_(row[SELECT_COL['마케팅보너스수']],row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
+      serviceCutCount:Math.max(0,parseInt(row[SELECT_COL['서비스컷수']],10)||0),
       lang:row[SELECT_COL['언어']]||'ko',
       driveLink:row[SELECT_COL['드라이브링크']]||'',
       bookingMarketing,
@@ -15915,6 +15917,7 @@ function getSelectDashboard(token){
               product:String(sr[SELECT_COL['상품']]||''),
               baseCount:Number(sr[SELECT_COL['기본보정수']])||0,
               marketingBonusRaw:String(sr[SELECT_COL['마케팅보너스수']]||''),
+              serviceCutCount:Math.max(0,parseInt(sr[SELECT_COL['서비스컷수']],10)||0),
               marketingBonusCount:normalizeSelectMarketingBonusCount_(sr[SELECT_COL['마케팅보너스수']],sr[SELECT_COL['촬영종류']],sr[SELECT_COL['상품']]),
               deadline:String(sr[SELECT_COL['셀렉마감일']]||''),
               reminder1:String(sr[SELECT_COL['1차알림일']]||''),
