@@ -33,9 +33,20 @@ const [action, ...rest] = process.argv.slice(2);
 if (!action) fail('action이 필요합니다. 예: node scripts/erp-agent.mjs quote-list');
 
 let payload = {};
+let saveB64To = '';
 for (let i = 0; i < rest.length; i += 1) {
   if (rest[i] === '--json' && rest[i + 1]) payload = JSON.parse(rest[i + 1]);
   if (rest[i] === '--file' && rest[i + 1]) payload = JSON.parse(readFileSync(rest[i + 1], 'utf8'));
+  // --upload <경로>: 파일을 base64로 실어 보냄 (expense-evidence-upload용)
+  if (rest[i] === '--upload' && rest[i + 1]) {
+    const fp = rest[i + 1];
+    payload.fileBase64 = readFileSync(fp).toString('base64');
+    if (!payload.fileName) payload.fileName = fp.split('/').pop();
+    if (!payload.mimeType) payload.mimeType = fp.toLowerCase().endsWith('.pdf') ? 'application/pdf'
+      : /\.(jpe?g)$/i.test(fp) ? 'image/jpeg' : /\.png$/i.test(fp) ? 'image/png' : 'application/octet-stream';
+  }
+  // --save-b64 <경로>: 응답의 fileBase64를 파일로 저장 (expense-inbox-file용)
+  if (rest[i] === '--save-b64' && rest[i + 1]) saveB64To = rest[i + 1];
 }
 
 const body = JSON.stringify({ data: { ...payload, apiKey, agentAction: action } });
@@ -51,4 +62,11 @@ const text = await response.text();
 let parsed;
 try { parsed = JSON.parse(text); } catch { fail('API 응답이 JSON이 아닙니다:\n' + text.slice(0, 400)); }
 if (!parsed.ok) fail('API 오류: ' + JSON.stringify(parsed.error || parsed, null, 2));
-console.log(JSON.stringify(parsed.data, null, 2));
+if (saveB64To && parsed.data && parsed.data.fileBase64) {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(saveB64To, Buffer.from(parsed.data.fileBase64, 'base64'));
+  const meta = { ...parsed.data, fileBase64: `(saved to ${saveB64To})` };
+  console.log(JSON.stringify(meta, null, 2));
+} else {
+  console.log(JSON.stringify(parsed.data, null, 2));
+}

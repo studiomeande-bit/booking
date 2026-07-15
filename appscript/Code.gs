@@ -1016,6 +1016,12 @@ function handlePublicApiRequest_(route,method,e){
         // 회계 — 기록
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
         if(action==='cash-add') return jsonOk_(saveCashLedgerManualEntryAdmin(token,payload.data||{}));
+        // 회계 — 증빙 인제스트
+        if(action==='expense-evidence-upload') return jsonOk_(uploadExpenseEvidenceForAgent_(token,payload));
+        if(action==='expense-inbox-list') return jsonOk_(listExpenseInboxForAgent_(token));
+        if(action==='expense-inbox-file') return jsonOk_(getExpenseInboxFileForAgent_(token,payload.fileId));
+        if(action==='expense-inbox-archive') return jsonOk_(archiveExpenseEvidenceForAgent_(token,payload.fileId,payload.month));
+        if(action==='expense-mail-collect') return jsonOk_({ok:true,saved:collectInvoiceEmailsDaily_()});
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
         if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
@@ -2062,7 +2068,7 @@ function getOperationsLogAdmin(token, limit){
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화','P2 결제 일일검토 메일',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D7 아침 브리핑 메일'
+  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D7 아침 브리핑 메일','D8 경비 인보이스 메일 수집'
 ];
 
 // 작업별 최신 실행 상태 보드 + 최근 실행 이력 원본. 운영 로그 탭에서 사용.
@@ -10458,7 +10464,13 @@ function _buildDailyBriefingData_(){
       else if(st==='제출완료') select.submitted++;
     }
   }catch(e){Logger.log('briefing select fail: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select};
+  // 회계 인박스 (미처리 증빙)
+  let evidenceInbox=0;
+  try{
+    const files=ensureExpenseEvidenceSubfolder_('인박스').getFiles();
+    while(files.hasNext()&&evidenceInbox<100){files.next();evidenceInbox++;}
+  }catch(e){Logger.log('briefing evidence inbox fail: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -10486,6 +10498,7 @@ function sendDailyBriefingEmail_(){
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
+  if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
   // 3) 미수 잔금
   if(b.unpaidBalances.length){
@@ -11912,6 +11925,116 @@ function saveExpenseAdmin(token, expense){
     ''
   ]);
   return {ok:true};
+}
+
+/* ===== 회계 증빙 인제스트 (Lexware 대체) =====
+   Drive '회계증빙' 폴더: 인박스(미처리) → 기장 후 YYYY-MM 아카이브.
+   수집 경로: ① Gmail 자동 수집(D8) ② 에이전트 업로드(로컬 영수증) */
+
+function ensureExpenseEvidenceRoot_(){
+  const props=PropertiesService.getScriptProperties();
+  const existingId=props.getProperty('EXPENSE_EVIDENCE_FOLDER_ID');
+  if(existingId){ try{return DriveApp.getFolderById(existingId);}catch(e){} }
+  const it=DriveApp.getFoldersByName('회계증빙');
+  const folder=it.hasNext()?it.next():DriveApp.createFolder('회계증빙');
+  props.setProperty('EXPENSE_EVIDENCE_FOLDER_ID',folder.getId());
+  return folder;
+}
+
+function ensureExpenseEvidenceSubfolder_(name){
+  const root=ensureExpenseEvidenceRoot_();
+  const safe=String(name||'인박스').trim()||'인박스';
+  const it=root.getFoldersByName(safe);
+  return it.hasNext()?it.next():root.createFolder(safe);
+}
+
+// 에이전트: 로컬 영수증 업로드 → Drive 저장 (기본 인박스, month 지정 시 해당 월 아카이브에 바로)
+function uploadExpenseEvidenceForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const b64=String(payload.fileBase64||'').trim();
+  if(!b64) throw new Error('fileBase64가 필요합니다.');
+  if(b64.length>10*1024*1024) throw new Error('파일이 너무 큽니다 (base64 10MB 한도).');
+  const name=String(payload.fileName||'receipt.pdf').replace(/[\\/:*?"<>|]/g,'_');
+  const mime=String(payload.mimeType||'application/pdf');
+  const target=/^\d{4}-\d{2}$/.test(String(payload.month||''))?ensureExpenseEvidenceSubfolder_(String(payload.month)):ensureExpenseEvidenceSubfolder_('인박스');
+  const file=target.createFile(Utilities.newBlob(Utilities.base64Decode(b64),mime,name));
+  return {ok:true,fileId:file.getId(),url:file.getUrl(),name:file.getName()};
+}
+
+// 에이전트: 인박스(미처리 증빙) 목록
+function listExpenseInboxForAgent_(token){
+  assertAdmin_(token);
+  const inbox=ensureExpenseEvidenceSubfolder_('인박스');
+  const files=inbox.getFiles();
+  const out=[];
+  while(files.hasNext()&&out.length<100){
+    const f=files.next();
+    out.push({fileId:f.getId(),name:f.getName(),sizeKb:Math.round(f.getSize()/1024),mimeType:f.getMimeType(),url:f.getUrl(),createdAt:Utilities.formatDate(f.getDateCreated(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')});
+  }
+  out.sort(function(a,b){return a.createdAt<b.createdAt?-1:1;});
+  return {ok:true,count:out.length,files:out};
+}
+
+// 에이전트: 인박스 파일 내용(base64) — 파싱용
+function getExpenseInboxFileForAgent_(token,fileId){
+  assertAdmin_(token);
+  const file=DriveApp.getFileById(String(fileId||''));
+  const size=file.getSize();
+  if(size>8*1024*1024) throw new Error('파일이 8MB를 초과해 직접 다운로드가 필요합니다: '+file.getUrl());
+  return {ok:true,fileId:file.getId(),name:file.getName(),mimeType:file.getMimeType(),fileBase64:Utilities.base64Encode(file.getBlob().getBytes())};
+}
+
+// 에이전트: 기장 완료된 증빙을 월 아카이브로 이동
+function archiveExpenseEvidenceForAgent_(token,fileId,month){
+  assertAdmin_(token);
+  const m=/^\d{4}-\d{2}$/.test(String(month||''))?String(month):Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM');
+  const file=DriveApp.getFileById(String(fileId||''));
+  const target=ensureExpenseEvidenceSubfolder_(m);
+  file.moveTo(target);
+  return {ok:true,fileId:file.getId(),url:file.getUrl(),archivedTo:m};
+}
+
+// D8: 인보이스 메일 자동 수집 — 규칙에 맞는 메일의 PDF 첨부를 증빙 인박스로
+function collectInvoiceEmailsDaily_(){
+  const props=PropertiesService.getScriptProperties();
+  const query=String(props.getProperty('EXPENSE_MAIL_QUERY')||'').trim()
+    ||'(from:amazon.de OR from:amazon.com OR from:marketplace.amazon.de) has:attachment filename:pdf newer_than:3d';
+  const seenRaw=String(props.getProperty('EXPENSE_MAIL_SEEN')||'[]');
+  let seen=[];
+  try{seen=JSON.parse(seenRaw)||[];}catch(e){seen=[];}
+  const seenSet=new Set(seen);
+  const inbox=ensureExpenseEvidenceSubfolder_('인박스');
+  let saved=0;
+  const threads=GmailApp.search(query,0,20);
+  threads.forEach(function(thread){
+    thread.getMessages().forEach(function(msg){
+      const msgKey=String(msg.getId()).slice(-12);
+      if(seenSet.has(msgKey)) return;
+      const atts=msg.getAttachments({includeInlineImages:false,includeAttachments:true})||[];
+      let stored=false;
+      atts.forEach(function(att){
+        const type=String(att.getContentType()||'');
+        if(type.indexOf('pdf')===-1&&type.indexOf('image')===-1) return;
+        if(att.getSize()>8*1024*1024) return;
+        const dateStr=Utilities.formatDate(msg.getDate(),CONFIG.TIMEZONE,'yyyyMMdd');
+        const fromDomain=(String(msg.getFrom()).match(/@([a-z0-9.-]+)/i)||[])[1]||'mail';
+        const safeName=`${dateStr}_${fromDomain}_${att.getName()}`.replace(/[\\/:*?"<>|]/g,'_').slice(0,120);
+        inbox.createFile(att.copyBlob().setName(safeName));
+        stored=true;saved++;
+      });
+      if(stored){seenSet.add(msgKey);}
+    });
+  });
+  // 최근 800개만 유지 (Properties 9KB 한도)
+  const newSeen=Array.from(seenSet).slice(-800);
+  try{props.setProperty('EXPENSE_MAIL_SEEN',JSON.stringify(newSeen));}catch(e){Logger.log('EXPENSE_MAIL_SEEN save fail: '+e.message);}
+  if(saved>0){
+    try{
+      sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[회계 인박스] 인보이스 메일 ${saved}건 수집됨`,htmlBody:`<p>메일에서 증빙 ${saved}건을 Drive '회계증빙/인박스'에 저장했습니다.<br>Claude에게 "영수증 정리해줘"라고 하면 내용을 읽고 경비 장부에 기장합니다.</p>`});
+    }catch(e){}
+  }
+  return saved;
 }
 
 function isCashPayMethod_(value){
@@ -19530,7 +19653,8 @@ function dailyTasks(){
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
     ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],
-    ['D7 아침 브리핑 메일',sendDailyBriefingEmail_]
+    ['D7 아침 브리핑 메일',sendDailyBriefingEmail_],
+    ['D8 경비 인보이스 메일 수집',collectInvoiceEmailsDaily_]
   ];
   jobs.forEach(function(job){
     try{
