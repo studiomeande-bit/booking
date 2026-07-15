@@ -393,7 +393,7 @@ const EVENT_PRODUCT_CARD_META = {
   biz: {
     title: { ko: '상담 먼저', en: 'Consultation first', de: 'Beratung zuerst' },
     kicker: { ko: '맞춤 상담', en: 'Custom', de: 'Individuell' },
-    type: { ko: '사진/영상 택1', en: 'Photo or video', de: 'Foto oder Video' },
+    type: { ko: '사진 · 영상 · 사진+영상', en: 'Photo · Video · Hybrid', de: 'Foto · Video · Hybrid' },
     summary: { ko: '어떤 상품이 맞을지 애매할 때', en: 'For requests that need sorting first', de: 'Wenn der Umfang zuerst geklärt werden soll' }
   },
   amtp: {
@@ -463,7 +463,8 @@ const OPTION_META = {
 
 const BUSINESS_MODE_META = [
   { key: 'photo', label: { ko: '행사 사진', en: 'Event Photo', de: 'Event Foto' } },
-  { key: 'video', label: { ko: '행사 영상', en: 'Event Video', de: 'Event Video' } }
+  { key: 'video', label: { ko: '행사 영상', en: 'Event Video', de: 'Event Video' } },
+  { key: 'hybrid', label: { ko: '사진+영상 (하이브리드)', en: 'Photo + Video (Hybrid)', de: 'Foto + Video (Hybrid)' } }
 ];
 
 const BUSINESS_HOURS_META = [2, 3, 4, 5, 6, 7, 8];
@@ -480,12 +481,7 @@ const BUSINESS_ADDON_META = [
   { key: 'branding', label: { ko: '자막/로고/BGM 요청', en: 'Subtitle / Logo / BGM Request', de: 'Untertitel / Logo / BGM Anfrage' } }
 ];
 
-const BUSINESS_PRICE_META = {
-  photo: { 2: 300, 3: 450, 4: 500, 5: 600, 6: 700, 7: 800, 8: 880 },
-  video_raw: { 2: 400, 3: 550, 4: 700, 5: 850, 6: 1000, 7: 1150, 8: 1300 },
-  video_basic: { 2: 600, 3: 800, 4: 1000, 5: 1200, 6: 1400, 7: 1600, 8: 1800 },
-  video_full: { 2: 800, 3: 1100, 4: 1400, 5: 1700, 6: 2000, 7: 2300, 8: 2600 }
-};
+// 행사/기업 촬영 가격은 상담 후 견적으로만 안내한다 — 단가표를 프론트 번들에 싣지 않는다 (roadmap #10 Phase 1).
 
 const AGE_META = [
   { key: 'baby', label: { ko: '영유아', en: 'Infant', de: 'Kleinkind' } },
@@ -1649,7 +1645,7 @@ function wireEvents() {
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.bizMode?.addEventListener('change', async () => {
     state.businessMode = els.bizMode.value || 'photo';
-    if (state.businessMode !== 'video') state.businessVideoEdit = 'raw';
+    if (!businessModeUsesVideo(state.businessMode)) state.businessVideoEdit = 'raw';
     renderBusinessOptions();
     await handleQuoteInputChange();
     refreshStepLocks();
@@ -3815,24 +3811,26 @@ function getDisplayProductTitle(product) {
   return getProductLabel(product);
 }
 
+function businessModeUsesVideo(mode) {
+  return mode === 'video' || mode === 'hybrid';
+}
+
 function getBusinessSelection() {
   const mode = state.businessMode || 'photo';
   const hours = Number(state.businessHours || 2);
   const edit = state.businessVideoEdit || 'raw';
-  const tableKey = mode === 'video' ? `video_${edit}` : 'photo';
-  const price = BUSINESS_PRICE_META[tableKey]?.[hours] || 0;
   const modeLabel = BUSINESS_MODE_META.find((item) => item.key === mode)?.label[state.lang]
     || BUSINESS_MODE_META.find((item) => item.key === mode)?.label.ko
     || mode;
-  const editLabel = mode === 'video'
+  const editLabel = businessModeUsesVideo(mode)
     ? (BUSINESS_VIDEO_EDIT_META.find((item) => item.key === edit)?.label[state.lang]
       || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === edit)?.label.ko
       || edit)
     : '';
-  const label = mode === 'video'
+  const label = businessModeUsesVideo(mode)
     ? `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'} · ${editLabel}`
     : `${modeLabel} · ${hours}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`;
-  return { mode, hours, edit, tableKey, price, label, duration: hours * 60 };
+  return { mode, hours, edit, price: 0, label, duration: hours * 60 };
 }
 
 function isGenericBusinessProduct(product) {
@@ -4019,7 +4017,7 @@ function renderBusinessOptions() {
   els.bizMode.value = state.businessMode;
   els.bizHours.value = state.businessHours;
   els.bizEdit.value = state.businessVideoEdit;
-  els.bizEditField?.classList.toggle('hidden-field', state.businessMode !== 'video');
+  els.bizEditField?.classList.toggle('hidden-field', !businessModeUsesVideo(state.businessMode));
   els.bizAddonHelp.textContent = getCopy().bizAddonHelp;
   els.bizAddonGrid.innerHTML = BUSINESS_ADDON_META.map((item) => {
     const selected = state.businessAddonKeys.includes(item.key) ? ' selected' : '';
@@ -5166,7 +5164,7 @@ function renderProductDetail() {
           <span>${escapeHtml(getCopy().bizHoursLabel)}</span>
           <strong>${escapeHtml(String(state.businessHours || 2))}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}</strong>
         </div>
-        ${state.businessMode === 'video' ? `<div class="biz-summary-item">
+        ${businessModeUsesVideo(state.businessMode) ? `<div class="biz-summary-item">
           <span>${escapeHtml(getCopy().bizEditLabel)}</span>
           <strong>${escapeHtml(BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label[state.lang] || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko || state.businessVideoEdit)}</strong>
         </div>` : ''}
@@ -5804,7 +5802,7 @@ function renderReview() {
     rows.push([copy.reviewBusinessPackage, state.quote?.businessLabel || getBusinessSelection().label]);
     rows.push([copy.bizModeLabel, BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label[state.lang] || BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label.ko || state.businessMode]);
     rows.push([copy.bizHoursLabel, `${state.businessHours || 2}${state.lang === 'en' ? 'h' : state.lang === 'de' ? ' Std.' : '시간'}`]);
-    if (state.businessMode === 'video') {
+    if (businessModeUsesVideo(state.businessMode)) {
       rows.push([copy.bizEditLabel, BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label[state.lang] || BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko || state.businessVideoEdit]);
     }
     if (state.businessAddonKeys.length) {
@@ -6268,9 +6266,9 @@ function getSuccessGuideHtml(payload) {
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> 기준으로 예약이 접수되었습니다.</p>
             <h5>선택 내용</h5>
             <ul>
-              <li>촬영 유형: ${escapeHtml(state.businessMode === 'video' ? '행사 영상' : '행사 사진')}</li>
+              <li>촬영 유형: ${escapeHtml(BUSINESS_MODE_META.find((item) => item.key === state.businessMode)?.label.ko || state.businessMode)}</li>
               <li>촬영 시간: ${escapeHtml(String(state.businessHours || 2))}시간</li>
-              ${state.businessMode === 'video' ? `<li>편집 옵션: ${escapeHtml((BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko) || state.businessVideoEdit)}</li>` : ''}
+              ${businessModeUsesVideo(state.businessMode) ? `<li>편집 옵션: ${escapeHtml((BUSINESS_VIDEO_EDIT_META.find((item) => item.key === state.businessVideoEdit)?.label.ko) || state.businessVideoEdit)}</li>` : ''}
               ${state.businessAddonKeys.length ? `<li>추가 요청: ${escapeHtml(state.businessAddonKeys.map((key) => BUSINESS_ADDON_META.find((item) => item.key === key)?.label.ko || key).join(', '))}</li>` : ''}
             </ul>
             <h5>제공 방식</h5>
@@ -6288,7 +6286,7 @@ function getSuccessGuideHtml(payload) {
           ` : `
             <p><b>${escapeHtml(business.businessLabel || business.label || '')}</b> has been requested.</p>
             <ul>
-              <li>${state.businessMode === 'video' ? 'Video production' : 'Event photography'} · ${escapeHtml(String(state.businessHours || 2))}${isKo ? '시간' : ' hours'}</li>
+              <li>${state.businessMode === 'video' ? 'Video production' : state.businessMode === 'hybrid' ? 'Photo + video coverage' : 'Event photography'} · ${escapeHtml(String(state.businessHours || 2))}${isKo ? '시간' : ' hours'}</li>
               <li>We will review the event purpose, timeline, location, guest count, deliverables, and any optional requests before sending the final quote.</li>
               <li>SNS short-form, rush delivery, and branding requests are confirmed after schedule and usage review.</li>
               <li>We may contact you again to coordinate timing, location flow, and delivery expectations.</li>

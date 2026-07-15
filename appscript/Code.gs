@@ -3292,7 +3292,7 @@ function getDefaultProducts_() {
     ['mrt_snap_extra_person','마이리얼트립','3인이상 스냅 인원추가 옵션','MyRealTrip Extra Person Option','MyRealTrip Zusatzperson',0,0,0,'custom','마이리얼트립 전용 추가 옵션 | 3명 이상일 때 추가 인원 수만큼 반영\n금액은 마이리얼트립 기간별 판매가를 예약 알림 메일에서 가져옵니다.','MyRealTrip-only add-on | Applied per extra person for 3+ people\nThe amount is imported from the MyRealTrip booking notification because pricing changes by period.','Nur MyRealTrip Zusatzoption | Pro Zusatzperson ab 3 Personen\nDer Betrag wird aus der MyRealTrip-Buchungsbenachrichtigung übernommen, da Preise je nach Zeitraum variieren.',0],
     ['wp','wed','프리웨딩 Plus (사진)','Pre-Wedding Plus (Photo)','Pre-Wedding Plus (Foto)',650,240,60,'single','보정본 30장 | 촬영 약 4시간 | 30분 스튜디오 포함\n원본 색보정본 구글클라우드 전송\nA3×1, A4×2, 6×4×3 출력 포함\n추가 보정 €20','30 Retouched | ca. 4 hours | incl. 30 min Studio\nAll originals via Google Cloud\nIncludes: 1×A3, 2×A4, 3×6×4 prints\nAdd-on retouch €20','30 Retuschiert | ca. 4 Std. | inkl. 30 Min. Studio\nAlle Originale via Google Cloud\n1×A3, 2×A4, 3×6×4 Ausdrucke',0],
     ['wprm','wed','프리웨딩 Premium (사진+영상)','Pre-Wedding Premium (Photo+Video)','Pre-Wedding Premium (Foto+Video)',1100,360,60,'single','보정본 40장 + 3분 영상 | 촬영 약 6시간 | 1시간 스튜디오 포함\n원본 색보정본 구글클라우드 전송\nA3×1, A4×2, 6×4×3 출력 포함\n추가 보정 €20','40 Retouched + 3min Video | ca. 6 hours | incl. 1h Studio\nAll originals via Google Cloud\nPrints included: 1×A3 + 2×A4 + 3 prints (6×4 inch)','40 Retuschiert + 3 Min. Video | ca. 6 Std. | inkl. 1 Std. Studio\nAlle Originale via Google Cloud\nDrucke inklusive: 1×A3 + 2×A4 + 3 Drucke (6×4 inch)',0],
-    ['biz','biz','행사/이벤트 상담 (사진/영상 택1)','Event Consultation (Photo or Video)','Event-Beratung (Foto oder Video)',0,60,15,'custom','사진 또는 영상 중 택1로 상담 후 맞춤 견적을 안내드립니다.\n암트 결혼식, 피로연, 파티, 기업행사 모두 문의 가능합니다.\n문의: studio.mean.de@gmail.com','Choose either photo or video. We will prepare a custom quote after consultation.\nCivil weddings, receptions, parties and corporate events are available.\nContact: studio.mean.de@gmail.com','Foto oder Video zur Auswahl. Individuelles Angebot nach Beratung.\nStandesamt, Empfang, Party und Firmenevents möglich.\nKontakt: studio.mean.de@gmail.com',0],
+    ['biz','biz','행사/이벤트 상담 (사진·영상·사진+영상)','Event Consultation (Photo / Video / Hybrid)','Event-Beratung (Foto / Video / Hybrid)',0,60,15,'custom','사진, 영상, 사진+영상 중 선택해 상담 후 맞춤 견적을 안내드립니다.\n암트 결혼식, 피로연, 파티, 기업행사 모두 문의 가능합니다.\n문의: studio.mean.de@gmail.com','Choose photo, video, or photo + video. We will prepare a custom quote after consultation.\nCivil weddings, receptions, parties and corporate events are available.\nContact: studio.mean.de@gmail.com','Foto, Video oder Foto + Video zur Auswahl. Individuelles Angebot nach Beratung.\nStandesamt, Empfang, Party und Firmenevents möglich.\nKontakt: studio.mean.de@gmail.com',0],
     ['amtp','biz','암트 결혼식 사진촬영','Civil Wedding Photo','Standesamt Foto',350,90,15,'event','사진촬영 택1 상품 | 암트 결혼식만 | 촬영 1시간 30분\n평일 €350 | 토요일 €400\n원본 전체 전달 | 보정본 15장 | 출력물: 10×15cm 15장\n피로연/파티 포함 시 별도 옵션을 선택해 주세요.','Photo-only package | Civil ceremony only | 90 min\nWeekday €350 | Saturday €400\nAll originals delivered | 15 retouched photos | Prints included: 15 prints (10×15cm)\nSelect a reception/party option if coverage continues after the ceremony.','Nur Foto | Standesamtliche Trauung | 90 Min.\nWochentag 350€ | Samstag 400€\nAlle Originale | 15 retuschierte Fotos | Drucke inklusive: 15 Drucke (10×15cm)\nFür Empfang/Party bitte die passende Option wählen.',0],
     ['amtv','biz','암트 결혼식 영상촬영 (상담 견적)','Civil Wedding Video (Custom Quote)','Standesamt Video (Angebot)',0,90,15,'custom','영상촬영 택1 상품 | 암트 결혼식만 | 상담 후 견적\n사진촬영과 영상촬영은 동시 선택이 아닌 택1 기준입니다.','Video-only package | Civil ceremony only | custom quote after consultation\nPhoto and video are offered as separate choices.','Nur Video | Standesamtliche Trauung | Angebot nach Beratung\nFoto und Video werden getrennt angeboten.',0],
     ['amtpr','biz','암트 결혼식+피로연 사진촬영 (상담 견적)','Civil Wedding+Reception Photo (Custom Quote)','Standesamt+Empfang Foto (Angebot)',0,120,15,'custom','사진촬영 택1 상품 | 암트 결혼식 후 간단한 피로연까지 기록\n동선과 시간 확인 후 맞춤 견적을 안내드립니다.','Photo-only package | Civil ceremony plus a simple reception\nCustom quote after checking the schedule and locations.','Nur Foto | Standesamt plus kleiner Empfang\nIndividuelles Angebot nach Ablauf und Orten.',0],
@@ -4446,28 +4446,30 @@ function calculateQuote_(request){
   const isQuoteOnly=item.t==='custom'||Number(item.p)<=0;
   let productLabelKo=item.nameKo, productLabelEn=item.nameEn, productLabelDe=item.nameDe;
   let businessMode=String(request.businessMode||'photo');
+  if(['photo','video','hybrid'].indexOf(businessMode)<0) businessMode='photo';
   let businessHours=Math.min(8,Math.max(2,parseInt(request.businessHours,10)||2));
   let businessVideoEdit=String(request.businessVideoEdit||'raw');
   const businessAddonKeys=(request.businessAddonKeys||[]).filter(Boolean);
   if(isGenericBusinessProduct_(item)){
-    const priceMap={
-      photo:{2:300,3:450,4:500,5:600,6:700,7:800,8:880},
-      video_raw:{2:400,3:550,4:700,5:850,6:1000,7:1150,8:1300},
-      video_basic:{2:600,3:800,4:1000,5:1200,6:1400,7:1600,8:1800},
-      video_full:{2:800,3:1100,4:1400,5:1700,6:2000,7:2300,8:2600}
-    };
-    const tableKey=businessMode==='video'?('video_'+(businessVideoEdit==='basic'||businessVideoEdit==='full'?businessVideoEdit:'raw')):'photo';
-    total=((priceMap[tableKey]||priceMap.photo)[businessHours])||0;
+    // 행사/기업 촬영 금액은 상담 후 견적으로만 안내 — 시간제 단가표 계산 제거 (roadmap #10 Phase 1)
+    total=0;
     const hourKo=businessHours+'시간';
     const hourEn=businessHours+'h';
     const hourDe=businessHours+' Std.';
-    if(businessMode==='video'){
+    const usesVideo=businessMode==='video'||businessMode==='hybrid';
+    if(usesVideo){
       const editKo=businessVideoEdit==='basic'?'기본 편집':businessVideoEdit==='full'?'풀 편집':'촬영만';
       const editEn=businessVideoEdit==='basic'?'Basic Edit':businessVideoEdit==='full'?'Full Edit':'Raw Footage';
       const editDe=businessVideoEdit==='basic'?'Basis-Schnitt':businessVideoEdit==='full'?'Vollschnitt':'Rohmaterial';
-      productLabelKo='행사 영상 '+hourKo+' ('+editKo+')';
-      productLabelEn='Event Video '+hourEn+' ('+editEn+')';
-      productLabelDe='Event Video '+hourDe+' ('+editDe+')';
+      if(businessMode==='hybrid'){
+        productLabelKo='행사 사진+영상 '+hourKo+' ('+editKo+')';
+        productLabelEn='Event Photo+Video '+hourEn+' ('+editEn+')';
+        productLabelDe='Event Foto+Video '+hourDe+' ('+editDe+')';
+      }else{
+        productLabelKo='행사 영상 '+hourKo+' ('+editKo+')';
+        productLabelEn='Event Video '+hourEn+' ('+editEn+')';
+        productLabelDe='Event Video '+hourDe+' ('+editDe+')';
+      }
     }else{
       productLabelKo='행사 사진 '+hourKo;
       productLabelEn='Event Photo '+hourEn;
@@ -6823,20 +6825,26 @@ function _getBusinessGuideHtml(lang,quote){
   if(L==='en'){
     const packageLine=mode==='video'
       ? `Selected package: <b>Event video · ${hours} hours · ${editEn[edit]||edit}</b>`
-      : `Selected package: <b>Event photo · ${hours} hours</b>`;
+      : mode==='hybrid'
+        ? `Selected package: <b>Event photo + video · ${hours} hours · ${editEn[edit]||edit}</b>`
+        : `Selected package: <b>Event photo · ${hours} hours</b>`;
     const addLine=addOnLabel?`<br>Optional requests: ${addOnLabel}.`:'';
     return `<b>📸 Corporate / Event Booking Guide</b><br>${packageLine}<br><br><b>Included</b><br>• Photo packages include JPG originals with basic color correction.<br>• Video packages follow the selected level exactly: shoot only, basic highlight edit, or full edit.<br>• SNS short-form, rush delivery, and branding requests are reviewed after booking depending on scope and schedule.${addLine}<br><br><b>After booking</b><br>• We review the event purpose, timeline, location flow, and expected deliverables.<br>• If needed, we will contact you again to confirm movement flow, branding needs, and delivery schedule.`;
   }
   if(L==='de'){
     const packageLine=mode==='video'
       ? `Gewähltes Paket: <b>Event Video · ${hours} Stunden · ${editDe[edit]||edit}</b>`
-      : `Gewähltes Paket: <b>Event Foto · ${hours} Stunden</b>`;
+      : mode==='hybrid'
+        ? `Gewähltes Paket: <b>Event Foto + Video · ${hours} Stunden · ${editDe[edit]||edit}</b>`
+        : `Gewähltes Paket: <b>Event Foto · ${hours} Stunden</b>`;
     const addLine=addOnLabel?`<br>Zusatzwünsche: ${addOnLabel}.`:'';
     return `<b>📸 Firmen / Event Buchungshinweise</b><br>${packageLine}<br><br><b>Leistungsumfang</b><br>• Fotopakete enthalten JPG-Originale mit grundlegender Farbkorrektur.<br>• Videopakete werden entsprechend der gewählten Stufe umgesetzt: nur Aufnahme, Basisschnitt oder Vollschnitt.<br>• Express-Lieferung, SNS-Kurzformate und Branding-Wünsche werden je nach Umfang geprüft.${addLine}<br><br><b>Nächster Schritt</b><br>• Wir prüfen Zweck, Zeitplan, Ablauf vor Ort und benötigte Ergebnisse.<br>• Bei Bedarf melden wir uns erneut zur Abstimmung von Ablauf, Branding und Lieferterminen.`;
   }
   const packageLine=mode==='video'
     ? `선택 패키지: <b>행사 영상 · ${hours}시간 · ${editKo[edit]||edit}</b>`
-    : `선택 패키지: <b>행사 사진 · ${hours}시간</b>`;
+    : mode==='hybrid'
+      ? `선택 패키지: <b>행사 사진+영상 · ${hours}시간 · ${editKo[edit]||edit}</b>`
+      : `선택 패키지: <b>행사 사진 · ${hours}시간</b>`;
   const addLine=addOnLabel?`<br>추가 요청: ${addOnLabel}`:'';
   return `<b>📸 이벤트 스냅 / 영상 예약 안내</b><br>${packageLine}<br><br><b>제공 사항</b><br>• 사진 패키지는 JPG 원본과 기본 색보정본이 제공됩니다.<br>• 영상 패키지는 촬영만 / 기본 편집 / 풀 편집 중 선택하신 기준으로 진행됩니다.<br>• SNS 숏폼, 긴급 납품, 자막/로고/BGM 요청은 일정과 범위에 따라 별도 검토 후 안내드립니다.${addLine}<br><br><b>예약 후 진행</b><br>• 행사 목적, 시작/종료 시간, 장소, 예상 인원, 필요한 결과물을 기준으로 최종 내용을 확인합니다.<br>• 필요 시 이메일 또는 전화로 동선, 납품 일정, 추가 요청을 다시 조율합니다.`;
 }
@@ -6965,8 +6973,8 @@ function _buildBookingExtraItem_(data, quote, surveyStr){
   if (data.babyName) bits.push(`아기이름: ${String(data.babyName).trim()}`);
   if (data.passAddon) bits.push(`여권콤보: ${data.passAddonPeople||1}명 / 추가 ${quote.passAddonDur||getPassportComboDurationMin_(data.passAddonPeople||1)}분`);
   if (quote.itemGroup === 'biz') {
-    bits.push(`기업행사: ${quote.businessMode === 'video' ? '영상' : '사진'} / ${quote.businessHours||2}시간`);
-    if (quote.businessMode === 'video') {
+    bits.push(`기업행사: ${quote.businessMode === 'video' ? '영상' : quote.businessMode === 'hybrid' ? '사진+영상' : '사진'} / ${quote.businessHours||2}시간`);
+    if (quote.businessMode === 'video' || quote.businessMode === 'hybrid') {
       const editLabel = quote.businessVideoEdit === 'basic' ? '기본편집' : quote.businessVideoEdit === 'full' ? '풀편집' : '촬영만';
       bits.push(`편집: ${editLabel}`);
     }
@@ -7058,9 +7066,9 @@ function buildBookingDetailsRows_(data,quote,opts){
   ].filter(Boolean);
   const businessParts=[];
   if(quote.itemGroup==='biz'||data.businessDetails){
-    if(quote.businessMode) businessParts.push(quote.businessMode==='video'?'영상':'사진');
+    if(quote.businessMode) businessParts.push(quote.businessMode==='video'?'영상':quote.businessMode==='hybrid'?'사진+영상':'사진');
     if(quote.businessHours) businessParts.push(quote.businessHours+'시간');
-    if(quote.businessVideoEdit&&quote.businessMode==='video') businessParts.push('편집: '+quote.businessVideoEdit);
+    if(quote.businessVideoEdit&&(quote.businessMode==='video'||quote.businessMode==='hybrid')) businessParts.push('편집: '+quote.businessVideoEdit);
     if((quote.businessAddonKeys||[]).length) businessParts.push('추가요청: '+quote.businessAddonKeys.join(', '));
     if(data.businessDetails) businessParts.push(String(data.businessDetails).trim());
   }
@@ -18960,6 +18968,7 @@ function buildInvoicePricingOptionText_(quote,payload){
   if(ageDiscountLabel) parts.push(ageDiscountLabel);
   if(quote.weekendSurcharge) parts.push('토요일 추가금 '+formatEuroAmount_(quote.weekendSurcharge)+'€');
   if(quote.itemId==='biz'&&quote.businessHours) parts.push('행사 '+quote.businessHours+'시간');
+  if(quote.itemId==='biz'&&quote.businessMode==='hybrid') parts.push('사진+영상 '+(quote.businessVideoEdit||'raw'));
   if(quote.itemId==='biz'&&quote.businessMode==='video') parts.push('영상 '+(quote.businessVideoEdit||'raw'));
   if(quote.marketingDiscount) parts.push('마케팅 할인 -'+formatEuroAmount_(quote.marketingDiscount)+'€');
   if(quote.earlyBirdDiscount) parts.push('얼리버드 할인 -'+formatEuroAmount_(quote.earlyBirdDiscount)+'€');
