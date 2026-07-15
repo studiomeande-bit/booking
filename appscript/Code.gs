@@ -10682,6 +10682,32 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
   }
 }
 
+// 잔금 결제 확인 — 결제일 자유 지정 (촬영 당일 포함 과거/미래 모두 허용)
+function confirmBookingBalanceAdmin(token,rIdx,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  if(!row||!row[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다.');
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약은 잔금 확인할 수 없습니다.');
+  if(String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y') throw new Error('이미 잔금 결제가 확인된 예약입니다.');
+  const paidDate=String(payload.paidDate||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) throw new Error('결제일 형식이 올바르지 않습니다 (YYYY-MM-DD).');
+  const defaultBalance=parseMoneyValue_(row[BOOKING_COL['잔금']])||0;
+  const amount=Math.round((parseMoneyValue_(payload.amount)||defaultBalance)*100)/100;
+  if(amount<=0) throw new Error('잔금 금액이 0€입니다. 금액을 지정해 주세요.');
+  const payMethod=String(payload.payMethod||'현금').trim()||'현금';
+  sh.getRange(rIdx,BOOKING_COL['잔금결제여부']+1).setValue('Y');
+  sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(amount);
+  if(BOOKING_COL['잔금입금일']!=null) sh.getRange(rIdx,BOOKING_COL['잔금입금일']+1).setValue(paidDate);
+  if(BOOKING_COL['결제수단']!=null) sh.getRange(rIdx,BOOKING_COL['결제수단']+1).setValue(payMethod);
+  if(BOOKING_COL['Lexware결제상태']!=null){
+    const current=String(row[BOOKING_COL['Lexware결제상태']]||'').trim();
+    if(!current||current==='unmatched'||current==='pending') sh.getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue('manual_balance_confirmed');
+  }
+  return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod};
+}
+
 function confirmBookingDepositAdmin(token,rIdx,amount){
   assertAdmin_(token);
   const sh=getDbSheet();
