@@ -15412,7 +15412,7 @@ function isSelectRetouchScopeLimitedGroup_(itemGroup){
   const g=String(itemGroup||'').trim().toLowerCase();
   return g==='snap'||g==='마이리얼트립';
 }
-const SELECT_SCOPE_WARN_RE_=/합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름/i;
+const SELECT_SCOPE_WARN_RE_=/합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름|사람\s*(제거|지워|삭제)|행인|인물\s*(제거|지워|삭제)|지워\s*주/i;
 function buildSelectPhotoLineHtml_(photo,scopeLimited){
   const num=String((photo&&photo.num)||'-');
   const note=String((photo&&photo.note)||'').trim();

@@ -812,7 +812,7 @@ function getServiceCutCount() {
  * 스냅 계열은 간단 보정(피부·미백·잔머리·옷 라인·색감)만 기본 포함.
  * 신체 합성·하늘 합성·의상 주름 제거 등 디테일 작업은 기본 범위 밖 — 접수 후 개별 안내. */
 const RETOUCH_SCOPE_LIMITED_GROUPS = ['snap', '마이리얼트립'];
-const RETOUCH_SCOPE_WARN_RE = /합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름/i;
+const RETOUCH_SCOPE_WARN_RE = /합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름|사람\s*(제거|지워|삭제)|행인|인물\s*(제거|지워|삭제)|지워\s*주/i;
 
 function isRetouchScopeLimited() {
   const g = String(state.session?.itemGroup || '').trim().toLowerCase();
@@ -838,6 +838,7 @@ function retouchScopeNoticeHtml(compact) {
         <ul>
           <li>신체 비율·체형 보정(합성)</li>
           <li>하늘/배경 합성·교체</li>
+          <li>사람 제거(합성) — 행인·배경 인물 지우기</li>
           <li>의상 주름 제거 등 디테일 리터칭</li>
         </ul>
       </div>
@@ -881,7 +882,7 @@ function syncRetouchScopeHint(textarea) {
   if (flagged && !hint) {
     hint = document.createElement('div');
     hint.className = 'scope-hint';
-    hint.textContent = '⚠️ 신체·하늘 합성, 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.';
+    hint.textContent = '⚠️ 신체·하늘 합성, 사람 제거(합성), 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.';
     row.appendChild(hint);
   } else if (!flagged && hint) {
     hint.remove();

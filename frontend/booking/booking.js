@@ -3744,6 +3744,19 @@ function getCompositionPartKey(value) {
     .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
+// 스냅 계열(야외/홈스냅·마이리얼트립) 기본 보정 = 간단 보정 — 예약 전 안내 (셀렉 정책과 동일 문구)
+function getSnapRetouchScopeNote(product) {
+  const g = String(product?.g || '').trim().toLowerCase();
+  if (g !== 'snap' && g !== '마이리얼트립') return '';
+  if (state.lang === 'en') {
+    return '✂️ Retouching scope: basic retouching covers simple work only (skin, brightening, stray hairs, clothing silhouette, color/tone). Detailed compositing — body reshaping, sky replacement, removing people, wrinkle removal on clothing — is not included; we quote it separately if needed.';
+  }
+  if (state.lang === 'de') {
+    return '✂️ Retusche-Umfang: Die Basis-Retusche umfasst nur einfache Arbeiten (Haut, Aufhellung, fliegende Haare, Silhouette, Farbstimmung). Detailarbeiten wie Körper-/Himmelscompositing, Entfernen von Personen oder Faltenretusche an Kleidung sind nicht enthalten — auf Wunsch bieten wir sie separat an.';
+  }
+  return '✂️ 보정 안내: 기본 보정은 간단 보정(피부·미백·잔머리·옷 라인·색감) 기준입니다. 신체·하늘 합성, 사람 제거(합성), 의상 주름 제거 같은 디테일 작업은 포함되지 않아요 — 필요하시면 개별 안내드립니다.';
+}
+
 function getProductDetailIntro(product, desc, composition) {
   const raw = String(desc || '').trim();
   if (!raw) return '';
@@ -5308,6 +5321,7 @@ function renderProductDetail() {
   els.productDetail.innerHTML = `
     <div class="detail-title">${escapeHtml(getDisplayProductTitle(state.selectedProduct))}</div>
     ${detailIntro ? `<div class="detail-copy product-detail-intro">${escapeHtml(detailIntro)}</div>` : ''}
+    ${getSnapRetouchScopeNote(state.selectedProduct) ? `<div class="detail-copy snap-scope-note">${escapeHtml(getSnapRetouchScopeNote(state.selectedProduct))}</div>` : ''}
     ${businessSummary}
     ${compositionHtml}
     ${eventBadge}

@@ -4612,3 +4612,14 @@ a.b2b-consult-card {
 }
 a.b2b-consult-card .event-product-meta strong { color: #0f766e; }
 a.b2b-consult-card:hover { border-color: #0f766e; }
+
+/* 스냅 계열 보정 범위 안내 (상품 상세) */
+.snap-scope-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fdf6ec;
+  border: 1px solid rgba(180, 120, 40, 0.25);
+  color: #4a3f30;
+  font-size: 13px;
+  line-height: 1.6;
+}
