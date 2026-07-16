@@ -1054,6 +1054,17 @@ function handlePublicApiRequest_(route,method,e){
           }
           return jsonOk_(Object.assign({},acceptRes,{number:acceptNumber,noteAppended:!!acceptNote}));
         }
+        // 상담 (B2B 파이프라인: 접수 → 견적 드래프트)
+        if(action==='consult-list') return jsonOk_(listConsultationsAdmin(token,payload.limit||60));
+        if(action==='consult-get'){
+          const cIdx=parseInt(payload.rowIndex,10);
+          if(!cIdx||cIdx<2) throw new Error('rowIndex가 필요합니다 (consult-list의 rowIndex).');
+          const cSh=ensureSheets_().consultationSheet;
+          if(cIdx>cSh.getLastRow()) throw new Error('상담 행을 찾을 수 없습니다: '+cIdx);
+          const cRow=cSh.getRange(cIdx,1,1,CONSULTATION_HEADERS.length).getValues()[0];
+          return jsonOk_({ok:true,consultation:_mapConsultationRow_(cRow,cIdx)});
+        }
+        if(action==='consult-update') return jsonOk_(updateConsultationAdmin(token,payload.rowIndex,String(payload.status||''),payload.memo));
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -10519,7 +10530,32 @@ function _buildDailyBriefingData_(){
     const files=ensureExpenseEvidenceSubfolder_('인박스').getFiles();
     while(files.hasNext()&&evidenceInbox<100){files.next();evidenceInbox++;}
   }catch(e){Logger.log('briefing evidence inbox fail: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox};
+  // 미처리 상담 (B2B 파이프라인): 신규/상담예정/상담중/견적준비 상태를 브리핑에 노출
+  const consultations={open:0,items:[]};
+  try{
+    const cSh=ensureSheets_().consultationSheet;
+    const cLast=cSh.getLastRow();
+    if(cLast>1){
+      const cRows=cSh.getRange(2,1,cLast-1,CONSULTATION_HEADERS.length).getValues();
+      for(let ci=cRows.length-1;ci>=0;ci--){
+        const st=String(cRows[ci][CONSULTATION_COL['상태']]||'신규').trim();
+        if(['신규','상담예정','상담중','견적준비'].indexOf(st)===-1) continue;
+        consultations.open++;
+        if(consultations.items.length<5){
+          consultations.items.push({
+            rowIndex:ci+2,
+            status:st,
+            type:String(cRows[ci][CONSULTATION_COL['상담유형']]||''),
+            name:String(cRows[ci][CONSULTATION_COL['고객명']]||''),
+            company:String(cRows[ci][CONSULTATION_COL['회사명']]||''),
+            submittedAt:String(cRows[ci][CONSULTATION_COL['접수일시']]||''),
+            summary:String(cRows[ci][CONSULTATION_COL['요약']]||'').slice(0,120)
+          });
+        }
+      }
+    }
+  }catch(e){Logger.log('briefing consultations skipped: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -10548,6 +10584,12 @@ function sendDailyBriefingEmail_(){
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
+  if(b.consultations&&b.consultations.open>0){
+    actions.push(line(`💼 미처리 상담 <b>${b.consultations.open}건</b> — Claude에게 "상담 견적 초안 만들어줘"`));
+    (b.consultations.items||[]).forEach(function(c){
+      actions.push(line(`&nbsp;&nbsp;· ${esc(c.status)} — <b>${esc(c.company||c.name)}</b> (${esc(c.type)}) ${esc(String(c.submittedAt).slice(5,16))}`));
+    });
+  }
   parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
   // 3) 미수 잔금
   if(b.unpaidBalances.length){
@@ -14675,6 +14717,15 @@ function _selectSchedule_(baseDate){
   };
 }
 
+// 웨딩급(암트/돌잔치/프리웨딩) 셀렉 세션의 추가 보정 단가 기본값은 €20, 그 외 €10 (biz-event-product-redesign.md §5-4)
+function getDefaultSelectRetouchPrice_(itemGroup,productName){
+  const g=String(itemGroup||'').trim().toLowerCase();
+  const p=String(productName||'');
+  if(g==='wed') return 20;
+  if(/암트|standesamt|civil|돌잔치|가족파티|family party|familienfeier|웨딩|wedding|hochzeit/i.test(p)) return 20;
+  return 10;
+}
+
 function _makeSelectRow_(data){
   const nowDate=new Date();
   const now=Utilities.formatDate(nowDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
@@ -14690,7 +14741,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['촬영종류']]=data.itemGroup||'';
   row[SELECT_COL['상품']]=data.product||'';
   row[SELECT_COL['기본보정수']]=parseInt(data.baseRetouchCount,10)||0;
-  row[SELECT_COL['리터칭단가']]=parseInt(data.retouchPrice,10)||10;
+  row[SELECT_COL['리터칭단가']]=parseInt(data.retouchPrice,10)||getDefaultSelectRetouchPrice_(data.itemGroup,data.product);
   row[SELECT_COL['언어']]=data.lang||'ko';
   row[SELECT_COL['드라이브링크']]=data.driveLink||'';
   row[SELECT_COL['예약장부행']]=data.bookingRowIndex||'';
