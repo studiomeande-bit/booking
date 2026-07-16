@@ -352,7 +352,7 @@ const TYPE_CONFIG = {
 
 const state = {
   lang: detectInitialLanguage(),
-  type: 'wedding',
+  type: detectInitialType(),
   selected: {
     coverage: new Set(),
     deliverables: new Set(),
@@ -390,6 +390,20 @@ function detectInitialLanguage() {
   const pathLang = normalizeLang((window.location.pathname.match(/\/(ko|en|de)(?:\/|$)/i) || [])[1]);
   if (pathLang) return pathLang;
   return normalizeLang(document.documentElement.lang) || normalizeLang(navigator.language) || 'de';
+}
+
+// 예약 페이지 딥링크로 상담 유형 프리셀렉트.
+// 1순위 ?type=wedding|corporate|event|content (B2B 카드), 2순위 기존 CTA의 ?from=/&event= 매핑.
+function detectInitialType() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = String(params.get('type') || '').trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(TYPE_CONFIG, raw)) return raw;
+  const from = String(params.get('from') || '').trim().toLowerCase();
+  const event = String(params.get('event') || '').trim().toLowerCase();
+  if (from === 'wed' || event === 'civil' || event === 'wedparty') return 'wedding';
+  if (event === 'corporate') return 'corporate';
+  if (from === 'biz' || from === 'famevt' || from === 'b2b' || event) return 'event';
+  return 'wedding';
 }
 
 function tr(key) {

@@ -231,19 +231,31 @@ const GROUP_META = {
     }
   },
   wed: {
-    label: { ko: '프리웨딩', en: 'Pre-Wedding', de: 'Pre-Wedding' },
+    label: { ko: '프리웨딩 (커플 화보)', en: 'Pre-Wedding (Couple Shoot)', de: 'Pre-Wedding (Paarshooting)' },
     sub: {
-      ko: '야외 프리웨딩, 커플 컨셉 촬영',
-      en: 'Outdoor pre-wedding and couple concept shoots',
-      de: 'Outdoor Pre-Wedding und Couple-Konzept-Shootings'
+      ko: '결혼 전에 찍는 커플 컨셉 화보입니다. 결혼식 당일 촬영은 "웨딩·가족 행사"에서 예약해 주세요.',
+      en: 'A styled couple shoot before your wedding day. For wedding-day coverage, choose "Wedding & Family Events".',
+      de: 'Ein Paarshooting vor der Hochzeit. Für die Begleitung am Hochzeitstag bitte "Hochzeit & Familienfeiern" wählen.'
     }
   },
-  biz: {
-    label: { ko: '행사/이벤트', en: 'Event', de: 'Event' },
+  // famevt/b2b는 UI 전용 타일 — 실제 데이터 그룹은 'biz' (realGroup). 백엔드/상품 시맨틱 불변.
+  famevt: {
+    realGroup: 'biz',
+    label: { ko: '웨딩 · 가족 행사', en: 'Wedding & Family Events', de: 'Hochzeit & Familienfeiern' },
     sub: {
-      ko: '암트결혼식, 돌잔치/가족파티, 일반/기업행사',
-      en: 'Civil wedding, family party, general and corporate events',
-      de: 'Standesamt, Familienfeier, allgemeine und Firmenevents'
+      ko: '결혼식(암트) 당일, 피로연·파티, 돌잔치 — 행사 현장을 촬영합니다.',
+      en: 'Civil wedding day, reception or party, first-birthday (dol) — we cover your event as it happens.',
+      de: 'Standesamtliche Trauung, Empfang oder Party, Familienfeiern — wir begleiten Ihr Fest vor Ort.'
+    }
+  },
+  b2b: {
+    realGroup: 'biz',
+    consultOnly: true,
+    label: { ko: '기업 · 단체 촬영 (B2B)', en: 'Business & Corporate (B2B)', de: 'Business & Firmen (B2B)' },
+    sub: {
+      ko: '기업 행사, 공연·전시, 출장 촬영(임직원 프로필·공간·제품) — 상담 후 맞춤 견적을 드립니다.',
+      en: 'Corporate events, performances & exhibitions, on-site shoots (staff portraits, spaces, products) — custom quote after a short consultation.',
+      de: 'Firmenevents, Auftritte & Ausstellungen, Vor-Ort-Shootings (Mitarbeiterporträts, Räume, Produkte) — individuelles Angebot nach kurzer Beratung.'
     }
   }
 };
@@ -272,27 +284,45 @@ const GROUP_QUICK_FACTS = {
   biz: {
     delivery: { ko: '납품 일정 별도 협의', en: 'Delivery by agreement', de: 'Lieferung nach Absprache' },
     place: { ko: '출장 / 현장 진행', en: 'On location', de: 'Vor Ort' }
+  },
+  famevt: {
+    delivery: { ko: '납품 일정 협의', en: 'Delivery by agreement', de: 'Lieferung nach Absprache' },
+    place: { ko: '행사 장소로 출장', en: 'At your venue', de: 'An Ihrem Veranstaltungsort' }
+  },
+  b2b: {
+    delivery: { ko: '1–2 영업일 내 맞춤 견적', en: 'Custom quote within 1–2 business days', de: 'Angebot innerhalb von 1–2 Werktagen' },
+    place: { ko: '출장 / 현장 진행', en: 'On location', de: 'Vor Ort' }
   }
 };
 
 const EVENT_PRODUCT_CATEGORIES = [
   {
     key: 'civil',
-    title: { ko: '암트 결혼식', en: 'Civil wedding', de: 'Standesamt' },
-    sub: { ko: '암트 결혼식만, 피로연, 파티 포함 옵션을 선택합니다.', en: 'Civil ceremony only, reception or party options.', de: 'Trauung, Empfang oder Party auswählen.' }
+    track: 'famevt',
+    title: { ko: '암트 결혼식 (본식)', en: 'Civil wedding ceremony', de: 'Standesamtliche Trauung' },
+    sub: { ko: '결혼식 당일, 암트(관청)에서 진행되는 본식을 촬영합니다.', en: 'We photograph your civil ceremony on the wedding day itself.', de: 'Wir fotografieren Ihre standesamtliche Trauung am Hochzeitstag.' }
+  },
+  {
+    key: 'wedparty',
+    track: 'famevt',
+    title: { ko: '웨딩 피로연 · 파티', en: 'Wedding reception & party', de: 'Hochzeitsempfang & Party' },
+    sub: { ko: '본식 후 이어지는 식사 자리나 파티까지 함께 촬영합니다.', en: 'Coverage that continues into your dinner, reception or party after the ceremony.', de: 'Begleitung beim Essen, Empfang oder der Party nach der Trauung.' }
   },
   {
     key: 'family',
-    title: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
-    sub: { ko: '돌잔치, 생일, 가족 모임처럼 가족 중심의 파티입니다.', en: 'First birthday, birthday parties and family gatherings.', de: 'Erster Geburtstag, Geburtstage und Familienfeiern.' }
+    track: 'famevt',
+    title: { ko: '돌잔치 / 가족 파티', en: 'First birthday & family party', de: 'Dol & Familienfeier' },
+    sub: { ko: '돌잔치, 생일, 가족 모임 — 가족이 주인공인 파티를 촬영합니다.', en: 'First birthdays (dol), birthdays and family gatherings.', de: 'Erster Geburtstag (Dol), Geburtstage und Familienfeiern.' }
   },
   {
     key: 'private',
+    track: 'b2b',
     title: { ko: '일반 행사', en: 'General event', de: 'Allgemeines Event' },
     sub: { ko: '공연, 전시, 커뮤니티 행사, 개인 이벤트입니다.', en: 'Performances, exhibitions, community events and private events.', de: 'Auftritte, Ausstellungen, Community-Events und private Veranstaltungen.' }
   },
   {
     key: 'corporate',
+    track: 'b2b',
     title: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
     sub: { ko: '세미나, 컨퍼런스, 브랜드 행사, 사내 행사입니다.', en: 'Seminars, conferences, brand events and company gatherings.', de: 'Seminare, Konferenzen, Brand Events und Firmenfeiern.' }
   }
@@ -308,17 +338,17 @@ const EVENT_PRODUCT_SECTIONS = [
   },
   {
     key: 'civil-after',
-    category: 'civil',
-    title: { ko: '피로연 / 파티 포함', en: 'Reception / party', de: 'Empfang / Party' },
-    sub: { ko: '암트 이후 일정이 이어질 때 선택해 주세요.', en: 'Choose this when coverage continues after the ceremony.', de: 'Für Begleitung nach der Trauung.' },
+    category: 'wedparty',
+    title: { ko: '본식 + 피로연 / 파티', en: 'Ceremony + reception / party', de: 'Trauung + Empfang / Party' },
+    sub: { ko: '본식부터 이어지는 자리까지 하루를 함께 기록합니다.', en: 'We stay with you from the ceremony into the celebration.', de: 'Wir begleiten Sie von der Trauung bis in die Feier.' },
     ids: ['amtpr', 'amtvr', 'amtpp', 'amtvp']
   },
   {
     key: 'family',
     category: 'family',
-    title: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
-    sub: { ko: '돌상, 케이크, 가족 원판, 행사 스케치를 함께 고려합니다.', en: 'For dol setup, cake, family group shots and party coverage.', de: 'Für Dekoration, Kuchen, Familienbilder und Party-Dokumentation.' },
-    ids: ['dolp', 'evp', 'evv', 'biz']
+    title: { ko: '돌잔치 / 가족 파티', en: 'First birthday & family party', de: 'Dol & Familienfeier' },
+    sub: { ko: '돌상, 케이크, 가족 단체사진, 행사 순간들을 담습니다.', en: 'Dol table, cake, family group shots and the moments in between.', de: 'Dol-Tisch, Kuchen, Familienfotos und die Momente dazwischen.' },
+    ids: ['dolp', 'evp', 'evv']
   },
   {
     key: 'private',
@@ -339,14 +369,14 @@ const EVENT_PRODUCT_SECTIONS = [
 const EVENT_PRODUCT_CATEGORY_OVERRIDES = {
   family: {
     evp: {
-      title: { ko: '돌잔치/가족 파티 사진', en: 'Family party photo', de: 'Familienfeier Foto' },
-      kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
-      summary: { ko: '돌상, 케이크, 가족 원판, 행사 스케치', en: 'Dol setup, cake, family group shots, party coverage', de: 'Dekoration, Kuchen, Familienbilder, Party-Reportage' }
+      title: { ko: '가족 파티 사진 (맞춤 상담)', en: 'Family party photo (custom)', de: 'Familienfeier Foto (individuell)' },
+      kicker: { ko: '2시간 초과 · 대규모', en: 'Longer or larger events', de: 'Längere / größere Feiern' },
+      summary: { ko: '2시간이 넘거나 인원·장소가 큰 파티는 내용을 보고 견적을 드립니다.', en: 'For parties longer than 2 hours or with many guests — we quote after checking the details.', de: 'Für längere Feiern oder viele Gäste — Angebot nach Absprache.' }
     },
     evv: {
-      title: { ko: '돌잔치/가족 파티 영상', en: 'Family party video', de: 'Familienfeier Video' },
+      title: { ko: '가족 파티 영상 (맞춤 상담)', en: 'Family party video (custom)', de: 'Familienfeier Video (individuell)' },
       kicker: { ko: '돌잔치 / 가족 파티', en: 'Family party', de: 'Familienfeier' },
-      summary: { ko: '행사 흐름과 편집 범위 확인 후 견적', en: 'Quote after schedule and edit scope check', de: 'Angebot nach Ablauf und Schnittumfang' }
+      summary: { ko: '행사 시간과 편집 범위를 확인한 뒤 견적을 드립니다.', en: 'We quote after checking event length and editing scope.', de: 'Angebot nach Dauer und Schnittumfang.' }
     },
     biz: {
       title: { ko: '돌잔치/가족 파티 상담', en: 'Family party consultation', de: 'Familienfeier Beratung' },
@@ -1231,6 +1261,7 @@ const state = {
   init: null,
   lang: readStoredLang(),
   selectedGroup: '',
+  bizTrack: '',
   selectedProduct: null,
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
@@ -2817,7 +2848,10 @@ function renderGroups() {
     const label = meta.label[state.lang] || meta.label.ko;
     const sub = meta.sub?.[state.lang] || meta.sub?.ko || '';
     const facts = GROUP_QUICK_FACTS[groupKey] || {};
-    const selected = state.selectedGroup === groupKey ? ' selected' : '';
+    const isSelected = meta.realGroup
+      ? (state.selectedGroup === meta.realGroup && state.bizTrack === groupKey)
+      : state.selectedGroup === groupKey;
+    const selected = isSelected ? ' selected' : '';
     const quickItems = [
       [getCopy().groupMetaPriceLabel, getGroupPriceMeta(groupKey)],
       [getCopy().groupMetaDurationLabel, getGroupDurationMeta(groupKey)],
@@ -2839,8 +2873,16 @@ function renderGroups() {
   });
 }
 
+// 웨딩·가족 행사(famevt) 타일이 커버하는 biz 상품 (B2C 예약형)
+const FAMEVT_PRODUCT_IDS = ['amtp', 'amtv', 'amtpr', 'amtvr', 'amtpp', 'amtvp', 'dolp', 'evp', 'evv'];
+
 function getGroupProducts(groupKey) {
-  return (state.init?.products || []).filter((product) => product?.g === groupKey);
+  const tileMeta = GROUP_META[groupKey] || {};
+  const realKey = tileMeta.realGroup || groupKey;
+  let list = (state.init?.products || []).filter((product) => product?.g === realKey);
+  if (groupKey === 'famevt') list = list.filter((product) => FAMEVT_PRODUCT_IDS.includes(product.id));
+  if (groupKey === 'b2b') list = []; // 상담형 — 가격/시간 메타는 "상담 견적/유동적" 폴백
+  return list;
 }
 
 function getGroupPriceMeta(groupKey) {
@@ -3043,6 +3085,7 @@ function getMaxUnlockedStep() {
   const hasDate = !!state.selectedDate;
   const hasSlot = !!state.selectedSlot;
   if (!hasGroup) return 1;
+  if (state.bizTrack === 'b2b') return 2; // B2B는 상담 연결 카드(스텝2)까지만 — 날짜/슬롯 예약 스텝 잠금 (슬롯 미점유)
   if (!hasProduct) return 2;
   if (!hasRequiredStep2) return 2;
   if (!hasDate || !hasSlot) return 3;
@@ -3084,7 +3127,13 @@ function renderStepWarnings() {
         : '촬영 종류를 선택해야 다음으로 넘어갈 수 있습니다.'
   );
   let step2Message = '';
-  if (state.selectedGroup === 'biz' && !state.eventCategory) {
+  if (state.bizTrack === 'b2b') {
+    step2Message = state.lang === 'en'
+      ? 'Business shoots are quoted individually — please continue with the consultation form above.'
+      : state.lang === 'de'
+        ? 'Business-Shootings werden individuell angeboten — bitte über das Beratungsformular oben fortfahren.'
+        : '기업·단체 촬영은 맞춤 견적으로 진행됩니다 — 위의 상담 설문으로 이어서 작성해 주세요.';
+  } else if (state.selectedGroup === 'biz' && !state.eventCategory) {
     step2Message = state.lang === 'en'
       ? 'Choose the event type first.'
       : state.lang === 'de'
@@ -4413,8 +4462,14 @@ function renderProducts(products) {
 }
 
 function renderEventProducts(products) {
+  // B2B 트랙: 상품 카드 대신 상담 연결 카드 (슬롯 예약 없음)
+  if (state.bizTrack === 'b2b') {
+    renderB2bConsultCards();
+    return;
+  }
   if (els.generalCopy) els.generalCopy.textContent = getGeneralPanelHelpCopy({ g: 'biz' });
   const productById = new Map((products || []).map((product) => [product.id, product]));
+  const trackCategories = EVENT_PRODUCT_CATEGORIES.filter((category) => !state.bizTrack || category.track === state.bizTrack);
   const selectLabel = state.lang === 'en' ? 'Event type' : state.lang === 'de' ? 'Event-Typ' : '행사 유형';
   const selectPlaceholder = state.lang === 'en' ? 'Please choose an event type' : state.lang === 'de' ? 'Bitte Event-Typ wählen' : '행사 유형을 선택해 주세요';
   const selectorHtml = `
@@ -4423,7 +4478,7 @@ function renderEventProducts(products) {
         <span>${escapeHtml(selectLabel)}</span>
         <select id="eventCategorySelect">
           <option value="">${escapeHtml(selectPlaceholder)}</option>
-          ${EVENT_PRODUCT_CATEGORIES.map((category) => `
+          ${trackCategories.map((category) => `
             <option value="${escapeHtml(category.key)}"${category.key === state.eventCategory ? ' selected' : ''}>
               ${escapeHtml(getLocalizedText(category.title))}
             </option>
@@ -4487,6 +4542,70 @@ function renderEventProducts(products) {
   els.productGrid.querySelectorAll('.product-card').forEach((button) => {
     button.addEventListener('click', () => selectProduct(button.dataset.id));
   });
+}
+
+// B2B 상담 연결 카드 — 상품/슬롯 예약 없이 상담 설문으로 딥링크 (type 프리셀렉트)
+const B2B_CONSULT_CARDS = [
+  {
+    key: 'corporate-event',
+    type: 'event',
+    title: { ko: '기업 행사', en: 'Corporate event', de: 'Firmenevent' },
+    summary: {
+      ko: '세미나, 컨퍼런스, 브랜드 행사, 사내 행사를 사진·영상으로 기록합니다.',
+      en: 'Photo and video coverage for seminars, conferences, brand and company events.',
+      de: 'Foto- und Videobegleitung für Seminare, Konferenzen, Brand- und Firmenevents.'
+    }
+  },
+  {
+    key: 'onsite',
+    type: 'corporate',
+    title: { ko: '기업 출장 촬영', en: 'On-site business shoot', de: 'Business Vor-Ort-Shooting' },
+    summary: {
+      ko: '임직원 프로필, 팀 단체사진, 사무실·매장 공간, 제품, 인터뷰 영상 — 회사로 찾아가 촬영합니다.',
+      en: 'Staff portraits, team photos, office and store spaces, products, interview videos — we come to you.',
+      de: 'Mitarbeiterporträts, Teamfotos, Büro- und Ladenräume, Produkte, Interviewvideos — wir kommen zu Ihnen.'
+    }
+  },
+  {
+    key: 'general-event',
+    type: 'event',
+    title: { ko: '공연 · 전시 · 일반 행사', en: 'Performance, exhibition & events', de: 'Auftritte, Ausstellungen & Events' },
+    summary: {
+      ko: '공연, 전시, 커뮤니티·개인 이벤트의 현장을 촬영합니다.',
+      en: 'Coverage for performances, exhibitions, community and private events.',
+      de: 'Begleitung von Auftritten, Ausstellungen, Community- und Privatevents.'
+    }
+  }
+];
+
+function renderB2bConsultCards() {
+  const heading = state.lang === 'en'
+    ? 'Tell us about your project — we reply with a custom quote within 1–2 business days.'
+    : state.lang === 'de'
+      ? 'Erzählen Sie uns von Ihrem Projekt — Sie erhalten innerhalb von 1–2 Werktagen ein individuelles Angebot.'
+      : '어떤 촬영이 필요한지 알려주시면, 1–2 영업일 내에 맞춤 견적을 보내드립니다.';
+  const ctaLabel = state.lang === 'en' ? 'Start consultation →' : state.lang === 'de' ? 'Beratung starten →' : '상담 설문 작성 →';
+  const priceNote = state.lang === 'en' ? 'Custom quote' : state.lang === 'de' ? 'Individuelles Angebot' : '상담 후 맞춤 견적';
+  const cards = B2B_CONSULT_CARDS.map((card) => {
+    const url = `/consultation/?lang=${encodeURIComponent(state.lang)}&type=${encodeURIComponent(card.type)}&from=b2b&topic=${encodeURIComponent(card.key)}`;
+    return `
+      <a class="product-card event-product-card b2b-consult-card" href="${escapeHtml(url)}">
+        <div class="event-product-top">
+          <span class="event-product-kicker">B2B</span>
+          <span class="event-product-type">${escapeHtml(priceNote)}</span>
+        </div>
+        <h3>${escapeHtml(getLocalizedText(card.title))}</h3>
+        <div class="event-product-summary">${escapeHtml(getLocalizedText(card.summary))}</div>
+        <div class="event-product-meta">
+          <strong>${escapeHtml(ctaLabel)}</strong>
+        </div>
+      </a>
+    `;
+  }).join('');
+  els.productGrid.innerHTML = `
+    <div class="event-type-panel"><p>${escapeHtml(heading)}</p></div>
+    <div class="event-product-list b2b-consult-list">${cards}</div>
+  `;
 }
 
 function wireEventCategorySelect() {
@@ -4651,13 +4770,17 @@ function writeMonthStorage(year, month, itemGroup, duration, data) {
 
 function selectGroup(groupKey) {
   clearSubmitResult();
-  const groupProducts = (state.init?.products || []).filter((item) => item.g === groupKey);
-  if (groupProducts.length === 1) {
-    state.selectedGroup = groupKey;
+  // famevt/b2b는 UI 타일 — 실제 그룹은 biz. bizTrack으로 트랙만 구분 (백엔드 시맨틱 불변)
+  const tileMeta = GROUP_META[groupKey] || {};
+  const realGroupKey = tileMeta.realGroup || groupKey;
+  state.bizTrack = tileMeta.realGroup ? groupKey : '';
+  const groupProducts = (state.init?.products || []).filter((item) => item.g === realGroupKey);
+  if (groupProducts.length === 1 && !tileMeta.realGroup) {
+    state.selectedGroup = realGroupKey;
     selectProduct(groupProducts[0].id);
     return;
   }
-  state.selectedGroup = groupKey;
+  state.selectedGroup = realGroupKey;
   state.activeStep = 2;
   state.selectedProduct = null;
   state.selectedDate = '';
@@ -6116,6 +6239,7 @@ function resetBookingFlow() {
   clearSubmitResult();
   state.activeStep = 1;
   state.selectedGroup = '';
+  state.bizTrack = '';
   state.selectedProduct = null;
   state.selectedDate = '';
   state.selectedSlot = '';

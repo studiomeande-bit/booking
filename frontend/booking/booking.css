@@ -4602,3 +4602,13 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .calendar-cell.skeleton { animation: none; }
 }
+
+/* ===== B2B 상담 연결 카드 (anchor — product-card 레이아웃 상속 보정) ===== */
+a.b2b-consult-card {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  cursor: pointer;
+}
+a.b2b-consult-card .event-product-meta strong { color: #0f766e; }
+a.b2b-consult-card:hover { border-color: #0f766e; }
