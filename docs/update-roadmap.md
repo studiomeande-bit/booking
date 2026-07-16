@@ -21,7 +21,7 @@ Updated: 2026-07-16 Europe/Berlin
 - 정리 13건: SumUp/은행 증거 6건(Jenna·최성열·정주희·황영목 288+10 분할이체·정채연·Kim yoonsuh) + 현금 완납 추정 7건(손유정·김진아·김수은·김영서·이세은·조미정·차수진, 상태완료+현장결제 관행, evidenceStatus로 구분 기록)
 - 신규 에이전트 액션 `booking-confirm-balance` (paidDate/amount/payMethod/evidenceStatus) — confirmBookingBalanceAdmin 재사용
 - 부수 효과: Jenna·Kim yoonsuh 결제수단 현금→카드 정정으로 현금장부 이중집계 €600 해소 (totalIn 4,608→4,008)
-- ~~Sae-Jin Choi €210(카드 7/11)~~ → 사장님 확인(2026-07-16): GIROCARD €230 = 잔금 €210 + **팁 €20** — 잔금결제금액 230으로 확정(@606). 사업자 본인 수령 팁은 과세 매출이라 별도 매출 행 필요 시 사장님 지시
+- ~~Sae-Jin Choi €210(카드 7/11)~~ → 사장님 확인(2026-07-16): GIROCARD €230 = 잔금 €210 + **팁 €20** — 잔금결제금액 230으로 확정(@606). 팁 €20은 사장님 지시로 수기 매출 행213 "Trinkgeld (카드결제 팁)"로 별도 등록(작업완료·sumup 증거) — 사업자 본인 수령 팁 과세 매출 처리 선례
 - **남은 5건**: HSAD €892.50(진짜 미수, STMIN-260013) + 사장님 확인 4건 ↓
   - 장진욱 €360: SumUp €170(3/21)+은행 €115(3/27 "Jin wook, Chang Photo") 입금 확인, €75 불명 — 잔금 컬럼은 €170으로 수기 수정된 흔적
   - 송영미 €165(카드 4/4)·조재연 €190(카드 4/18): **SumUp 4월 데이터 통째 누락**(1~3월 CSV·6월 Verkaufsbericht만 임포트, 5월도 16건뿐) — 4~5월 거래 리포트 CSV 임포트 필요 (API lookback 30일 제한으로 백필 불가)
