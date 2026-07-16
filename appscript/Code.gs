@@ -10495,7 +10495,7 @@ function _buildDailyBriefingData_(){
     if(d10&&d10<today&&['촬영완료','셀렉완료','작업완료'].indexOf(st)>-1){
       const balance=parseMoneyValue_(row[BOOKING_COL['잔금']])||0;
       const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
-      if(balance>0&&(payMethod===''||payMethod==='미결제')){
+      if(balance>0&&(payMethod===''||/미결제|unpaid|offen/i.test(payMethod))){ // 회계장부 openAmount와 동일 판정 (정확일치 → 정규식)
         unpaidBalances.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),balance:balance});
       }
     }
