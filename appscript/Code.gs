@@ -1032,6 +1032,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
         if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
         // 예약
+        if(action==='booking-create-manual') return jsonOk_(addManualBookingAdmin(token,payload.data||{}));
         if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
