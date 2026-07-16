@@ -15,12 +15,7 @@ Updated: 2026-07-15 Europe/Berlin
 - admin notification mail
 - admin edit / reschedule / cancel
 
-2. Lexware actual workflow validation
-- run `점검/전송` preflight on one real invoice
-- send one real invoice only after the preflight confirms customer / amount / address / contact state
-- sync payment status via `💶 상태`
-- verify booking ledger / invoice sheet / accounting tab update consistently
-- confirm receivables are driven by Lexware status when available
+2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
 3. Receivables cleanup
 - verify which rows should truly remain `미수금`
@@ -29,12 +24,7 @@ Updated: 2026-07-15 Europe/Berlin
 
 ## Next
 
-6. Gutschein V2 customer redemption design
-- add `예약중` hold state
-- customer-side code validation in booking final step
-- hold release on timeout / cancel / failed submit
-- finalize voucher on successful booking submit only
-- add admin hold monitor and release tools
+6. ~~Gutschein V2 customer redemption design~~ → 전항목 배포 완료 (2026-07-14, Done Recently 참조). 실전 코드 적용 1회 확인만 남음
 
 7. Calendar performance follow-up
 - measure current month / next month / third month load gap
@@ -64,8 +54,7 @@ Updated: 2026-07-15 Europe/Berlin
 - ~~Phase 1~~: 단가표 노출 제거(프론트+백엔드) + 하이브리드 모드 + 어드민 수기입력 전환 — 라이브 검증 완료 (8a680be, @582)
 - ~~① 가족파티 고정가~~ → dolp €350/토 €400 신설·배포 완료 (2026-07-15, 0a84f7b·@583). amt 변형은 상담 유지(사장님), 프리미엄 10×15 €3 유지(사장님)
 - ~~④ 단가표 비노출 저장~~ → 스킬 레퍼런스 파일에 저장 완료 (2026-07-15). 견적 작성 시 netto×1.19
-- Phase 2 (대기): 하이브리드 상담상품 신설 · "기업 출장 촬영" 포괄상품(② 확정) · 구조화 상담 페이로드 상담시트 단일화
-- Phase 3 (대기): 상담접수 → 견적 드래프트 자동화 (단가표 저장 완료로 준비됨)
+- Phase 2+3 → **Update 4로 확정** (2026-07-16 사장님 승인): `docs/update-4-plan.md` — 첫 메뉴 B2B/B2C 분리(사장님 지시), 프리웨딩↔웨딩본식 구분, 설명문 개선, B2B 상담형 전환(상담 설문 인프라 재사용), 견적 드래프트는 에이전트 경로만, 계약금 인보이스 명시 실행형, Drehvertrag→Update 5
 
 11. Final design pass (2026-07-15 부분 완료)
 - booking success screen polish (남음)
