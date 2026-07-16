@@ -2494,6 +2494,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeSelectModal()">취소</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('sel_folderManualWrap').style.display='block'">URL 입력</button>
+      <button class="btn btn-outline" id="sel_saveCountsBtn" onclick="saveSelectCountsOnly(this)" title="이미 발송된 세션의 수량만 저장 — 고객 메일은 나가지 않고, 고객이 페이지를 새로고침하면 반영됩니다">수량만 저장 (발송 없음)</button>
       <button class="btn btn-primary" id="sel_sendBtn" onclick="confirmSendSelect(this)">셀렉 링크 발송</button>
     </div>
   </div>
@@ -9453,6 +9454,35 @@ function confirmSendSelect(btn){
     if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='셀렉 링크 발송';}
     statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+e.message;
   }).createSelectSession(adminToken,data);
+}
+
+/* 발송 없이 수량만 저장 — 이미 발송된 세션의 기본보정/마케팅보너스/서비스컷 수정 (고객 메일 미발송) */
+function saveSelectCountsOnly(btn){
+  const statusDiv=document.getElementById('sel_sendStatus');
+  const r=allSelectDashboard.find(x=>x.rowIndex===currentSelectRowIndex);
+  if(!r||!r.sel){statusDiv.style.color='#ef4444';statusDiv.textContent='아직 발송된 셀렉 세션이 없습니다. 수량 수정은 발송 후에 가능합니다.';return;}
+  const orig=btn.textContent;
+  btn.disabled=true;btn.textContent='저장 중...';
+  statusDiv.innerHTML='<span class="spinner"></span> 수량 저장 중...';
+  google.script.run.withSuccessHandler(res=>{
+    btn.disabled=false;btn.textContent=orig;
+    if(res&&res.ok){
+      const u=res.updated||{};
+      statusDiv.style.color='#10b981';
+      statusDiv.innerHTML='✅ 수량 저장 완료 (메일 미발송) — '+Object.keys(u).map(k=>`${escHtml(k)} ${u[k]}장`).join(' · ')+'<br><span style="font-size:12px;color:#64748b;">고객이 셀렉 페이지를 새로고침하면 바로 반영됩니다.</span>';
+      loadSelectHistory();
+    }else{
+      statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+(res&&res.message||'저장 실패');
+    }
+  }).withFailureHandler(e=>{
+    btn.disabled=false;btn.textContent=orig;
+    statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+e.message;
+  }).updateSelectSessionCountsAdmin(adminToken,{
+    bookingRowIndex:currentSelectRowIndex,
+    baseRetouchCount:document.getElementById('sel_baseRetouchCount').value,
+    marketingBonusCount:document.getElementById('sel_marketingBonusCount').value,
+    serviceCutCount:document.getElementById('sel_serviceCutCount').value
+  });
 }
 
 function openSelectDriveRelink(rowIndex){

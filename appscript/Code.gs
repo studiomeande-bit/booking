@@ -1037,6 +1037,23 @@ function handlePublicApiRequest_(route,method,e){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
           return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
         }
+        if(action==='select-set-counts') return jsonOk_(updateSelectSessionCountsAdmin(token,payload));
+        if(action==='quote-accept'){
+          const acceptNumber=String(payload.number||'');
+          const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
+          const acceptNote=String(payload.note||'').trim();
+          if(acceptNote){
+            // 내부 메모 추가 — PDF 재생성 없이 메모 셀에만 append (고객 PDF 불변)
+            const {quoteSheet}=ensureSheets_();
+            const foundQ=_findQuoteRow_(quoteSheet,acceptNumber);
+            if(foundQ.rowIndex!==-1){
+              const memoCell=quoteSheet.getRange(foundQ.rowIndex,QUOTE_COL['메모']+1);
+              const curMemo=String(memoCell.getValue()||'');
+              memoCell.setValue((curMemo?curMemo+'\n':'')+acceptNote);
+            }
+          }
+          return jsonOk_(Object.assign({},acceptRes,{number:acceptNumber,noteAppended:!!acceptNote}));
+        }
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -16600,6 +16617,38 @@ function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
 }
 
 /* === 상태 업데이트 === */
+/* 발송 후 수량만 수정 (메일 미발송) — 기본보정/마케팅보너스/서비스컷.
+ * 셀렉 페이지는 세션을 열 때마다 시트 값을 읽으므로 고객이 새로고침하면 바로 반영된다. */
+function updateSelectSessionCountsAdmin(token, payload){
+  assertAdmin_(token);
+  const p=payload||{};
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  let rowIndex=parseInt(p.selectRowIndex,10)||0;
+  if(!rowIndex){
+    const bri=parseInt(p.bookingRowIndex,10)||0;
+    if(!bri) throw new Error('selectRowIndex 또는 bookingRowIndex가 필요합니다.');
+    const found=getActiveSelectRowForBooking_(selSh,bri);
+    if(!found) throw new Error('해당 예약의 셀렉 세션을 찾을 수 없습니다. 먼저 셀렉 링크를 발송하세요.');
+    rowIndex=found.rowIndex;
+  }
+  const data=selSh.getRange(rowIndex,1,1,SELECT_HEADERS.length).getValues()[0];
+  if(!String(data[SELECT_COL['세션ID']]||'').trim()) throw new Error('셀렉 세션 행이 아닙니다: '+rowIndex);
+  const updated={};
+  const setCount=function(colName,val){
+    if(val===undefined||val===null||String(val).trim()==='') return;
+    const n=Math.max(0,parseInt(val,10)||0);
+    selSh.getRange(rowIndex,SELECT_COL[colName]+1).setValue(n);
+    updated[colName]=n;
+  };
+  setCount('기본보정수',p.baseRetouchCount);
+  setCount('마케팅보너스수',p.marketingBonusCount);
+  setCount('서비스컷수',p.serviceCutCount);
+  if(!Object.keys(updated).length) throw new Error('수정할 수량이 없습니다 (baseRetouchCount/marketingBonusCount/serviceCutCount 중 하나 이상 필요).');
+  try{logMessage_({channel:'select',direction:'internal',type:'counts-edit',subject:'셀렉 수량 수정(발송없음) row '+rowIndex,status:'완료',meta:updated});}catch(e){}
+  return {ok:true,rowIndex:rowIndex,sessionId:String(data[SELECT_COL['세션ID']]||''),name:String(data[SELECT_COL['고객명']]||''),updated:updated};
+}
+
 function updateSelectStatusAdmin(token,bookingRowIndex,newStatus){
   try{
     assertAdmin_(token);
