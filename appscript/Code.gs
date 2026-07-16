@@ -1006,8 +1006,14 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='quote-release-hold') return jsonOk_(releaseQuoteHoldAdmin(token,String(payload.number||'')));
         if(action==='quote-extend') return jsonOk_(extendQuoteValidityAdmin(token,String(payload.number||''),payload.validDays));
         if(action==='invoice-list') return jsonOk_(getInvoiceList(token));
-        if(action==='invoice-create') return jsonOk_(createInvoiceAdmin(token,payload.bookingRowIndex||'',String(payload.type||'일반'),payload.refundAmount||0,String(payload.memo||''),payload.customAmount,String(payload.customProduct||''),String(payload.customInvNumber||'')));
+        if(action==='invoice-create'){
+          // data 객체가 있으면 전체 페이로드 패스스루 (수기/마이그레이션: customerName·items·issuedAt·customInvNumber 등)
+          if(payload.data&&typeof payload.data==='object') return jsonOk_(createInvoiceAdmin(token,payload.data));
+          return jsonOk_(createInvoiceAdmin(token,payload.bookingRowIndex||'',String(payload.type||'일반'),payload.refundAmount||0,String(payload.memo||''),payload.customAmount,String(payload.customProduct||''),String(payload.customInvNumber||'')));
+        }
         if(action==='invoice-send') return jsonOk_(sendInvoiceEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        // 인보이스 수정(고객명/주소/메모 등) — 마지막에 PDF 재생성 포함. 금액/품목은 수정 불가(연번 규정).
+        if(action==='invoice-update') return jsonOk_(updateInvoiceAdmin(token,payload.data||payload));
         // 회계 — 조회
         if(action==='accounting-ledger') return jsonOk_(getAccountingLedger(token,String(payload.startDate||''),String(payload.endDate||''),!!payload.forceRefresh));
         if(action==='accounting-settlement') return jsonOk_(getSettlementReportAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
