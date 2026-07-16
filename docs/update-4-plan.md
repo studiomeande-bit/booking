@@ -1,7 +1,7 @@
 # Update 4 — B2B/B2C 분리 + B2B 딜 파이프라인
 
 Updated: 2026-07-16 Europe/Berlin
-Status: 확정 (사장님 승인 2026-07-16) — Wave A 구현 중
+Status: **Wave A 배포 완료** (2026-07-16, f8f0960 · 백엔드 @589) — 릴리스 게이트(사장님 실전 확인) 대기
 
 ## 배경
 
