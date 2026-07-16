@@ -212,7 +212,9 @@ function inferBookingClientTypeFromData_(data){
   const source=String(data.bookingSource||data.source||'').trim().toLowerCase();
   const group=String(data.itemGroup||data.group||data['촬영종류']||'').trim();
   if(source==='myrealtrip'||group==='마이리얼트립') return '개인';
-  if(hasBusinessInvoiceSignalFromData_(data)||group==='biz') return '기업';
+  if(hasBusinessInvoiceSignalFromData_(data)) return '기업';
+  // 행사(biz)라도 돌잔치/가족파티/암트/웨딩은 개인 — '기업' 신호가 있는 상품만 기업 (2026-07-16 사장님 지시)
+  if(group==='biz'&&/기업|corporate|firmen|b2b|business/i.test(String(data.product||data.productName||data['상품']||''))) return '기업';
   return '개인';
 }
 
@@ -1033,6 +1035,34 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
         // 예약
         if(action==='booking-create-manual') return jsonOk_(addManualBookingAdmin(token,payload.data||{}));
+        if(action==='booking-set-type'){
+          const btIdx=parseInt(payload.rowIndex,10);
+          const btType=normalizeBookingClientType_(payload.type);
+          if(!btIdx||btIdx<2) throw new Error('rowIndex가 필요합니다.');
+          if(!btType) throw new Error("type은 '개인' 또는 '기업'이어야 합니다.");
+          getDbSheet().getRange(btIdx,BOOKING_COL['예약유형']+1).setValue(btType);
+          return jsonOk_({ok:true,rowIndex:btIdx,type:btType});
+        }
+        if(action==='walkin-list'){
+          const wSh=ensureSheets_().walkinSheet;
+          const wRows=wSh.getLastRow()>1?wSh.getRange(2,1,wSh.getLastRow()-1,CONFIG.WALKIN_HEADERS.length).getValues():[];
+          const wOut=wRows.map(function(r,i){return{rowIndex:i+2,submittedAt:String(r[WALKIN_COL['접수일시']]||''),status:String(r[WALKIN_COL['상태']]||''),name:String(r[WALKIN_COL['고객명']]||''),phone:String(r[WALKIN_COL['연락처']]||''),service:String(r[WALKIN_COL['서비스표시명']]||r[WALKIN_COL['서비스분류']]||''),linkedBookingRow:String(r[WALKIN_COL['연결예약행']]||''),memo:String(r[WALKIN_COL['관리메모']]||'')};});
+          return jsonOk_({ok:true,walkins:wOut.reverse()});
+        }
+        if(action==='walkin-update-status'){
+          const wIdx=parseInt(payload.rowIndex,10);
+          const wStatus=String(payload.status||'').trim();
+          if(!wIdx||wIdx<2) throw new Error('rowIndex가 필요합니다.');
+          if(['신규','예약등록','처리완료','취소'].indexOf(wStatus)===-1) throw new Error('상태는 신규/예약등록/처리완료/취소 중 하나여야 합니다.');
+          const wSh=ensureSheets_().walkinSheet;
+          if(wIdx>wSh.getLastRow()) throw new Error('워크인 행을 찾을 수 없습니다: '+wIdx);
+          wSh.getRange(wIdx,WALKIN_COL['상태']+1).setValue(wStatus);
+          if(payload.memo!==undefined){
+            const curMemo=String(wSh.getRange(wIdx,WALKIN_COL['관리메모']+1).getValue()||'');
+            wSh.getRange(wIdx,WALKIN_COL['관리메모']+1).setValue((curMemo?curMemo+'\n':'')+String(payload.memo||''));
+          }
+          return jsonOk_({ok:true,rowIndex:wIdx,status:wStatus});
+        }
         if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
@@ -1847,6 +1877,19 @@ function mergeDuplicateDbFiles(){
 // GAS는 실행마다 전역을 초기화하므로 요청 간 stale 위험 없음. DB 전환/병합 시 invalidateSheetsCache_()로 해제.
 let _sheetsBundleCache_ = null;
 function invalidateSheetsCache_(){ _sheetsBundleCache_ = null; }
+// 공개 읽기 라우트용 경량 접근자 — 시트 보장/재채점 생략 (수십 회 API 호출 절약).
+// 쓰기 경로에는 사용 금지. 필요한 시트가 없으면 ensureSheets_ 폴백. 부분 번들은 캐시에 넣지 않는다.
+function getSheetsReadonly_(){
+  if(_sheetsBundleCache_) return _sheetsBundleCache_;
+  try{
+    const dbId=PropertiesService.getScriptProperties().getProperty('DB_SHEET_ID');
+    const ss=_openSpreadsheetByIdSafe_(dbId);
+    if(!ss) return ensureSheets_();
+    const bookingSheet=ss.getSheetByName(CONFIG.BOOKING_SHEET);
+    if(!bookingSheet) return ensureSheets_();
+    return {ss:ss,bookingSheet:bookingSheet,readonly:true};
+  }catch(e){return ensureSheets_();}
+}
 function ensureSheets_() {
   if(_sheetsBundleCache_) return _sheetsBundleCache_;
   const props = PropertiesService.getScriptProperties();
@@ -15112,10 +15155,13 @@ function buildSubmittedSelectSessionPayload_(row,base){
 
 function getSelectSession(sessionId){
   try{
-    const ss=ensureSheets_().ss;
-    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+    const _t0=Date.now(); const _timing={};
+    const bundle=getSheetsReadonly_();
+    _timing.sheets=Date.now()-_t0;
+    const sh=bundle.ss.getSheetByName(SELECT_SHEET_NAME);
     if(!sh)return{ok:false,message:'준비 중입니다.'};
     const rows=sh.getDataRange().getValues();
+    _timing.read=Date.now()-_t0;
     const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
     if(!row)return{ok:false,message:'유효하지 않은 링크입니다.'};
     // 예약장부에서 마케팅 동의 여부 확인 (이미 동의했으면 셀렉 페이지에서 재요청 불필요)
@@ -15125,14 +15171,16 @@ function getSelectSession(sessionId){
     try{
       const bri=parseInt(row[SELECT_COL['예약장부행']])||0;
       if(bri>=2){
-        const bookSh=ensureSheets_().bookingSheet;
+        const bookSh=bundle.bookingSheet;
         const bRow=bookSh.getRange(bri,1,1,bookSh.getLastColumn()).getValues()[0];
         bookingMarketing=String(bRow[BOOKING_COL['마케팅동의']]||'');
         bookingAddress=String(bRow[BOOKING_COL['고객주소']]||'');
         bookingPayMethod=String(bRow[BOOKING_COL['결제수단']]||'');
       }
     }catch(e){}
+    _timing.booking=Date.now()-_t0;
     const productMeta=getSelectProductMeta_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']]);
+    _timing.meta=Date.now()-_t0;
     const productDescription=String((productMeta&&(productMeta.descKo||productMeta.descEn||productMeta.descDe))||'');
     const existingMail=parseSelectMailAddressText_(row[SELECT_COL['우편주소']],row[SELECT_COL['고객명']]);
     const base={
@@ -15164,6 +15212,8 @@ function getSelectSession(sessionId){
       requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
       photocardSupported:true
     };
+    _timing.build=Date.now()-_t0;
+    base._timing=_timing;
     const rawStatus=String(row[SELECT_COL['상태']]||'').trim();
     if(hasSelectSubmittedContent_(row)){
       if(isSelectFinalLockedStatus_(rawStatus)){

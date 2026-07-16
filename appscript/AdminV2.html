@@ -3683,7 +3683,7 @@ function getAdminOpsQueues(){
     walkin:(allWalkins||[]).filter(w=>String(w.status||'')==='신규'&&!String(w.linkedBookingRow||'').trim()).map(w=>Object.assign({kind:'walkin'},w)),
     today:sortAdminOpsRows(rows.filter(c=>isAdminBookingActive(c)&&adminDateKey(c.dateObj)===today)),
     tomorrow:sortAdminOpsRows(rows.filter(c=>isAdminBookingActive(c)&&adminDateKey(c.dateObj)===tomorrow)),
-    manualReview:sortAdminOpsRows(rows.filter(c=>String(c.confirmationMode||'')==='manual_review_required'||String(c.manualReviewRequired||'')==='Y')),
+    manualReview:sortAdminOpsRows(rows.filter(c=>(String(c.confirmationMode||'')==='manual_review_required'||String(c.manualReviewRequired||'')==='Y')&&String(c.status||'')==='대기중')), // 확정/완료/취소되면 큐에서 제거
     depositNeeded:sortAdminOpsRows(rows.filter(isAdminDepositPending)),
     depositWarned:sortAdminOpsRows(rows.filter(isAdminDepositWarned)),
     selectSend:sortAdminOpsRows(rows.filter(isAdminSelectSendNeeded)),

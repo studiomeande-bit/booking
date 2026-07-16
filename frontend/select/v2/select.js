@@ -417,6 +417,11 @@ function hydrateSession(session) {
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
+  // 갤러리 프리페치: 고객이 스텝0 안내를 읽는 동안 Drive 사진 목록(수 초)을 미리 받아
+  // 1차 셀렉 진입이 즉시 열리도록 한다 (진입 시 loadGallery 가드가 중복 호출 방지)
+  setTimeout(() => {
+    try { if (!state.gallery.loaded && !state.gallery.loading) loadGallery(); } catch (e) {}
+  }, 250);
 }
 
 function getSessionProductInput(session = state.session) {
