@@ -2195,3 +2195,25 @@ h1 {
     min-height: 190px;
   }
 }
+
+/* ===== 보정 범위 안내 (스냅/MRT 전용) + 범위밖 요청 힌트 ===== */
+.retouch-scope-box {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  background: #fdf6ec;
+  border: 1px solid rgba(180, 120, 40, 0.25);
+  color: #4a3f30;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.scope-hint {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fef3c7;
+  border: 1px solid #f0d060;
+  color: #7a5c00;
+  font-size: 12px;
+  line-height: 1.55;
+}

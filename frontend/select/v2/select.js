@@ -413,6 +413,7 @@ function hydrateSession(session) {
   syncMarketingBonusRows();
   syncServiceCutRows();
   renderServiceCutNotice();
+  renderRetouchScopeNotice();
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
@@ -805,6 +806,86 @@ function syncMarketingBonusRows() {
 function getServiceCutCount() {
   const n = Number(state.session?.serviceCutCount);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/* ===== 보정 범위 제한 (야외/홈스냅 · 마이리얼트립) =====
+ * 스냅 계열은 간단 보정(피부·미백·잔머리·옷 라인·색감)만 기본 포함.
+ * 신체 합성·하늘 합성·의상 주름 제거 등 디테일 작업은 기본 범위 밖 — 접수 후 개별 안내. */
+const RETOUCH_SCOPE_LIMITED_GROUPS = ['snap', '마이리얼트립'];
+const RETOUCH_SCOPE_WARN_RE = /합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름/i;
+
+function isRetouchScopeLimited() {
+  const g = String(state.session?.itemGroup || '').trim().toLowerCase();
+  return RETOUCH_SCOPE_LIMITED_GROUPS.some((k) => g === k.toLowerCase());
+}
+
+function retouchScopeNoticeHtml(compact) {
+  return `
+    <div class="detail-title">✂️ 보정 범위 안내 (야외/홈스냅·여행스냅)</div>
+    <div class="guide-copy">스냅 촬영의 기본 보정은 <b>간단 보정</b> 기준이에요.</div>
+    <div class="guide-examples">
+      <div class="guide-ex good">
+        <div class="guide-ex-head">기본 보정에 포함</div>
+        <ul>
+          <li>피부 보정 · 잡티 정리 · 미백(피부 톤)</li>
+          <li>잔머리 정리</li>
+          <li>옷 라인(실루엣) 정리</li>
+          <li>전체 색감 · 밝기 보정</li>
+        </ul>
+      </div>
+      <div class="guide-ex bad">
+        <div class="guide-ex-head">기본 범위에서 제외 (디테일 작업)</div>
+        <ul>
+          <li>신체 비율·체형 보정(합성)</li>
+          <li>하늘/배경 합성·교체</li>
+          <li>의상 주름 제거 등 디테일 리터칭</li>
+        </ul>
+      </div>
+    </div>
+    ${compact ? '' : '<div class="guide-copy lettering-note">제외 항목이 꼭 필요하시면 요청사항에 적어 주세요 — <b>가능 여부와 추가 비용을 접수 후 개별 안내</b>드립니다.</div>'}
+  `;
+}
+
+function renderRetouchScopeNotice() {
+  const box1 = document.getElementById('retouchScopeBox');
+  const box2 = document.getElementById('retouchScopeBox2');
+  const limited = isRetouchScopeLimited();
+  [box1, box2].forEach((box, i) => {
+    if (!box) return;
+    if (!limited) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('hidden');
+    box.innerHTML = retouchScopeNoticeHtml(i === 1);
+  });
+  // 정적 가이드의 "옷 주름 펴기" 예시는 스냅 기본 범위 밖 — 허용 범위 예시로 교체
+  if (limited) {
+    document.querySelectorAll('.ex-good-wrinkle').forEach((li) => {
+      li.textContent = li.textContent.includes('0031')
+        ? '“0031번: 바람에 날린 잔머리를 정리하고, 전체 색감을 조금 따뜻하게 맞춰 주세요.”'
+        : '“잔머리를 정리하고, 전체 색감을 따뜻하게 맞춰 주세요.”';
+    });
+  }
+}
+
+function retouchNotePlaceholder() {
+  return isRetouchScopeLimited()
+    ? '예: 피부 잡티 정리와 미백(원래 피부결 유지). / 잔머리 정리. / 전체 색감을 따뜻하게.'
+    : '예: 턱선을 살짝만 갸름하게 정리(원래 얼굴형 유지). / 이마 번들거림 줄이고 피부 톤 고르게(점·주근깨 살리기). / 어깨·가슴 옷 주름 펴기(실루엣 유지).';
+}
+
+function syncRetouchScopeHint(textarea) {
+  if (!isRetouchScopeLimited()) return;
+  const row = textarea.closest('.field-full');
+  if (!row) return;
+  let hint = row.querySelector('.scope-hint');
+  const flagged = RETOUCH_SCOPE_WARN_RE.test(String(textarea.value || ''));
+  if (flagged && !hint) {
+    hint = document.createElement('div');
+    hint.className = 'scope-hint';
+    hint.textContent = '⚠️ 신체·하늘 합성, 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.';
+    row.appendChild(hint);
+  } else if (!flagged && hint) {
+    hint.remove();
+  }
 }
 
 // 서비스 컷: 무료 보정 슬롯(디커플드 모델 — 출력 자동 포함 없음).
@@ -1932,7 +2013,7 @@ function renderPhotos() {
           </div>
           <div class="field-full">
             <label>보정 요청사항 <small style="color:#9a6a3a;">(구체적으로 작성해 주세요)</small></label>
-            <textarea data-photo-note="${index}" placeholder="예: 턱선을 살짝만 갸름하게 정리(원래 얼굴형 유지). / 이마 번들거림 줄이고 피부 톤 고르게(점·주근깨 살리기). / 어깨·가슴 옷 주름 펴기(실루엣 유지).">${escapeHtml(photo.note || '')}</textarea>
+            <textarea data-photo-note="${index}" placeholder="${escapeHtml(retouchNotePlaceholder())}">${escapeHtml(photo.note || '')}</textarea>
           </div>
         </div>
       </div>
@@ -1960,9 +2041,11 @@ function renderPhotos() {
   els.photoList.querySelectorAll('[data-photo-note]').forEach((input) => {
     input.addEventListener('input', () => {
       state.photos[Number(input.dataset.photoNote)].note = input.value;
+      syncRetouchScopeHint(input);
       updatePhotoCounter();
       updateReview();
     });
+    syncRetouchScopeHint(input); // 복원 시 기존 요청에도 즉시 표시
   });
   els.photoList.querySelectorAll('[data-remove-photo]').forEach((button) => {
     button.addEventListener('click', () => {
