@@ -4623,3 +4623,14 @@ a.b2b-consult-card:hover { border-color: #0f766e; }
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* 성공 화면 폴리시 */
+.result-check {
+  width: 46px; height: 46px; margin: 0 auto 10px;
+  border-radius: 50%;
+  background: #0f766e; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800;
+}
+#resultBox h3 { text-align: center; }
+#resultBox > p { text-align: center; }

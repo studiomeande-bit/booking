@@ -1,7 +1,7 @@
 # 출장비 정책 기획 (스튜디오 기준)
 
 Updated: 2026-07-16 Europe/Berlin
-Status: 제안 — 사장님 확정 대기 (거리표 검증 2026-07-16: Wiesbaden 46km·Koblenz 125km·Fulda 105km 정정, 경계 도시는 구글맵 실측 판정)
+Status: **확정·적용 완료** (2026-07-16 사장님 "전체 진행" 승인 — 추천값 채택: 30km 무료/존2 +€30/존3 +€70/할증 없음/수동 반영). 적용: quick facts·위치 안내·ob 설명(시드 sync)·견적 기본조건. (거리표 검증 2026-07-16: Wiesbaden 46km·Koblenz 125km·Fulda 105km 정정, 경계 도시는 구글맵 실측 판정)
 
 ## 배경
 

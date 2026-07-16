@@ -275,11 +275,11 @@ const GROUP_QUICK_FACTS = {
   },
   snap: {
     delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
-    place: { ko: '프랑크푸르트 반경 50km', en: 'Within 50 km of Frankfurt', de: 'Im Umkreis von 50 km um Frankfurt' }
+    place: { ko: '스튜디오 기준 30km 무료 · 이후 지역별 출장비', en: 'Free within 30 km of the studio · zone fee beyond', de: 'Bis 30 km ab Studio kostenlos · danach Zonenpauschale' }
   },
   wed: {
     delivery: { ko: '원본 1주 이내 · 셀렉 후 2~3주', en: 'Originals within 1 week · finals 2–3 weeks after selection', de: 'Originale innerhalb 1 Woche · finale Bilder 2–3 Wochen nach Rückmeldung' },
-    place: { ko: '프랑크푸르트 반경 50km', en: 'Within 50 km of Frankfurt', de: 'Im Umkreis von 50 km um Frankfurt' }
+    place: { ko: '스튜디오 기준 30km 무료 · 이후 지역별 출장비', en: 'Free within 30 km of the studio · zone fee beyond', de: 'Bis 30 km ab Studio kostenlos · danach Zonenpauschale' }
   },
   biz: {
     delivery: { ko: '납품 일정 별도 협의', en: 'Delivery by agreement', de: 'Lieferung nach Absprache' },
@@ -2264,10 +2264,10 @@ function applyCopy() {
   renderEarliestSlotBox();
   if (els.locationInfo) {
     els.locationInfo.textContent = state.lang === 'en'
-      ? 'Shoots within 50 km of Frankfurt are included in the base price. Additional travel costs may apply outside this area.'
+      ? 'Travel is free within 30 km of our studio (Oberursel) — this covers all of Frankfurt. 30–60 km +€30, 60–100 km +€70, beyond 100 km by consultation. Any travel fee is confirmed with your booking confirmation.'
       : state.lang === 'de'
-        ? 'Aufnahmen im Umkreis von 50 km um Frankfurt sind im Grundpreis enthalten. Außerhalb dieses Radius können zusätzliche Fahrtkosten anfallen.'
-        : '프랑크푸르트 기준 50km 이내 촬영은 기본 비용에 포함됩니다. 이외 지역은 왕복 유류비가 추가될 수 있습니다.';
+        ? 'Bis 30 km ab Studio (Oberursel) ist die Anfahrt kostenlos — ganz Frankfurt inklusive. 30–60 km +30 €, 60–100 km +70 €, über 100 km nach Absprache. Eine etwaige Anfahrtspauschale bestätigen wir mit der Buchungsbestätigung.'
+        : '스튜디오(오버우어젤) 기준 30km까지 출장비 무료입니다 — 프랑크푸르트 전 지역 포함. 30–60km +€30, 60–100km +€70, 100km 초과는 상담으로 안내드려요. 출장비는 예약 확정 메일에서 함께 확정됩니다.';
   }
   if (els.reshootingText) {
     els.reshootingText.textContent = state.lang === 'en'
@@ -6297,7 +6297,38 @@ function resetBookingFlow() {
   els.stepPanels.step1?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// 독일어 성공 가이드 — 그룹별 핵심 안내 (한/영 상세 가이드의 컴팩트 독일어판)
+function buildGermanSuccessGuideHtml(product) {
+  const g = String(product?.g || '');
+  const bullets = [];
+  if (g === 'pass') {
+    bullets.push('Ihre Passbilder werden direkt im Termin aufgenommen und in der Regel am selben Tag übergeben (E-Passbild-QR-Code für deutsche Dokumente, Ausdrucke je nach Land).');
+    bullets.push('Bitte bringen Sie ggf. die Vorgaben Ihres Amts/Konsulats mit — wir richten uns nach den aktuellen biometrischen Anforderungen.');
+    bullets.push('Bezahlung bequem vor Ort (bar oder Karte).');
+  } else if (g === 'wed') {
+    bullets.push('Wir melden uns mit der Bestätigungs-E-Mail und stimmen Ablauf, Orte und Outfits mit Ihnen ab.');
+    bullets.push('Die Buchung wird mit der Anzahlung verbindlich — alle Details (Betrag, Bankverbindung) stehen in der Bestätigung.');
+    bullets.push('Originale erhalten Sie innerhalb ca. 1 Woche, die finale Auswahl und Retusche 2–3 Wochen nach Ihrer Rückmeldung.');
+  } else if (g === 'biz') {
+    bullets.push('Ihre Anfrage ist eingegangen — wir prüfen Termin und Umfang und melden uns kurzfristig mit der Bestätigung bzw. einem individuellen Angebot.');
+    bullets.push('Ablauf, Ort und Ergebnisse (Fotos/Video) stimmen wir vor dem Termin gemeinsam ab.');
+    bullets.push('Bei Fragen antworten Sie einfach auf die Bestätigungs-E-Mail.');
+  } else {
+    bullets.push('Sie erhalten in Kürze unsere Bestätigungs-E-Mail mit allen Details (Adresse, Anfahrt, ggf. Anzahlung).');
+    bullets.push('Outfit-Tipps und Hinweise zur Vorbereitung finden Sie ebenfalls in der Bestätigung — bei Kindern planen wir gern rund um Schlaf- und Essenszeiten.');
+    bullets.push('Originale innerhalb ca. 1 Woche, finale retuschierte Bilder 2–3 Wochen nach Ihrer Auswahl.');
+  }
+  bullets.push('Änderungen oder Fragen? Antworten Sie einfach auf unsere E-Mail oder schreiben Sie an studio.mean.de@gmail.com.');
+  return `
+    <section class="result-guide-box">
+      <h4 class="result-guide-title">✅ Nächste Schritte</h4>
+      <div class="result-guide-body"><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul></div>
+    </section>
+  `;
+}
+
 function getSuccessGuideHtml(payload) {
+  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct);
   const product = state.selectedProduct;
   if (!product) return '';
   const isKo = state.lang === 'ko';
@@ -6529,7 +6560,15 @@ function renderSubmitResult(payload, result) {
   els.successPanel?.classList.remove('hidden-step');
   syncHeroIntroPanels();
   els.resultBox.hidden = false;
+  const travelNote = (['snap','wed','biz'].includes(String(state.selectedProduct?.g||'')) && String(els.locationInput?.value||'').trim())
+    ? `<div class="result-note">${escapeHtml(state.lang==='en'
+        ? 'On-location shoot: any travel fee (free within 30 km of the studio) is confirmed together with your booking confirmation.'
+        : state.lang==='de'
+          ? 'Vor-Ort-Termin: eine etwaige Anfahrtspauschale (bis 30 km ab Studio kostenlos) bestätigen wir mit der Buchungsbestätigung.'
+          : '출장 촬영은 확정 메일에서 출장비(스튜디오 기준 30km 무료, 이후 존별)와 함께 최종 안내드립니다.')}</div>`
+    : '';
   els.resultBox.innerHTML = `
+    <div class="result-check" aria-hidden="true">✓</div>
     <h3>${escapeHtml(copy.submitCardTitle)}</h3>
     <p>${escapeHtml(copy.submitCardCopy)}</p>
     <div class="result-grid">
@@ -6549,12 +6588,13 @@ function renderSubmitResult(payload, result) {
         <strong>${escapeHtml(copy.submitCardProduct)}</strong>
         <span>${escapeHtml(getProductLabel(state.selectedProduct))}</span>
       </div>
-      ${quoteOnly ? '' : `<div class="result-item">
+      <div class="result-item">
         <strong>${escapeHtml(copy.submitCardPrice)}</strong>
-        <span>${escapeHtml(`€${formatEuroAmount(totalPrice)} brutto`)}</span>
-      </div>`}
+        <span>${quoteOnly ? escapeHtml(getQuotePriceLabel()) : escapeHtml(`€${formatEuroAmount(totalPrice)} brutto`)}</span>
+      </div>
     </div>
     ${returnNote}
+    ${travelNote}
     <div class="result-note">${escapeHtml(copy.submitCardNote)}</div>
     ${successGuideHtml}
     <div class="result-actions">

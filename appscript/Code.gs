@@ -1876,7 +1876,23 @@ function mergeDuplicateDbFiles(){
 // 실행(요청)당 1회만 시트 보장/스프레드시트 재채점을 수행하고 결과를 재사용.
 // GAS는 실행마다 전역을 초기화하므로 요청 간 stale 위험 없음. DB 전환/병합 시 invalidateSheetsCache_()로 해제.
 let _sheetsBundleCache_ = null;
-function invalidateSheetsCache_(){ _sheetsBundleCache_ = null; }
+function invalidateSheetsCache_(){
+  _sheetsBundleCache_ = null;
+  try{const id=PropertiesService.getScriptProperties().getProperty('DB_SHEET_ID');if(id)CacheService.getScriptCache().remove('sheets_ok_'+id);}catch(e){}
+}
+// 패스트패스용 지연 getter 번들 — 실제로 쓰는 시트만 getSheetByName (요청당 1~3회)
+function _buildSheetsBundleLazy_(ss){
+  const names={bookingSheet:CONFIG.BOOKING_SHEET,settingsSheet:CONFIG.SETTINGS_SHEET,walkinSheet:CONFIG.WALKIN_SHEET,productsSheet:CONFIG.PRODUCTS_SHEET,printSheet:CONFIG.PRINT_SHEET,invoiceSheet:CONFIG.INVOICE_SHEET,expenseSheet:CONFIG.EXPENSE_SHEET,quoteSheet:CONFIG.QUOTE_SHEET,messageLogSheet:CONFIG.MESSAGE_LOG_SHEET,automationLogSheet:CONFIG.AUTOMATION_LOG_SHEET,leadSheet:CONFIG.LEAD_SHEET,consultationSheet:CONFIG.CONSULTATION_SHEET,settlementSheet:CONFIG.SETTLEMENT_SHEET,travelSheet:CONFIG.TRAVEL_SHEET,marketingScheduleSheet:CONFIG.MARKETING_SHEET,cashSheet:CONFIG.CASH_SHEET,threadSheet:CONFIG.THREAD_SHEET};
+  const bundle={ss:ss,gutscheinSheet:null};
+  Object.keys(names).forEach(function(key){
+    let cached;
+    Object.defineProperty(bundle,key,{configurable:true,enumerable:true,get:function(){
+      if(cached===undefined) cached=ss.getSheetByName(names[key])||null;
+      return cached;
+    }});
+  });
+  return bundle;
+}
 // 공개 읽기 라우트용 경량 접근자 — 시트 보장/재채점 생략 (수십 회 API 호출 절약).
 // 쓰기 경로에는 사용 금지. 필요한 시트가 없으면 ensureSheets_ 폴백. 부분 번들은 캐시에 넣지 않는다.
 function getSheetsReadonly_(){
@@ -1894,6 +1910,16 @@ function ensureSheets_() {
   if(_sheetsBundleCache_) return _sheetsBundleCache_;
   const props = PropertiesService.getScriptProperties();
   const dbId = props.getProperty('DB_SHEET_ID');
+  // 패스트패스: 최근 10분 내 풀 검증(스코어링+시트 보장) 완료 → 생략하고 지연 getter 번들 (모든 라우트 가속)
+  try{
+    if(dbId && CacheService.getScriptCache().get('sheets_ok_'+dbId)){
+      const fastSs=_openSpreadsheetByIdSafe_(dbId);
+      if(fastSs && fastSs.getSheetByName(CONFIG.BOOKING_SHEET)){
+        _sheetsBundleCache_=_buildSheetsBundleLazy_(fastSs);
+        return _sheetsBundleCache_;
+      }
+    }
+  }catch(e){}
   let ss = _openSpreadsheetByIdSafe_(dbId);
   const needsResolution=!ss || _scoreDbSpreadsheet_(ss,dbId)<900;
   if(needsResolution){
@@ -1915,6 +1941,7 @@ function ensureSheets_() {
   const cashSheet=ensureCashSheet_(ss);
   const threadSheet=ensureThreadSheet_(ss);
   ensureSecrets_();
+  try{CacheService.getScriptCache().put('sheets_ok_'+ss.getId(),'1',600);}catch(e){}
   _sheetsBundleCache_ = {ss,bookingSheet,walkinSheet,settingsSheet,productsSheet,printSheet,invoiceSheet,gutscheinSheet:null,expenseSheet,quoteSheet,messageLogSheet,automationLogSheet,leadSheet,consultationSheet,settlementSheet,travelSheet,marketingScheduleSheet,cashSheet,threadSheet};
   return _sheetsBundleCache_;
 }
@@ -3367,7 +3394,7 @@ function getDefaultProducts_() {
     ['sb','stud','스튜디오 Basic','Studio Basic','Studio Basic',170,30,15,'group','보정본 3장 | 1배경 | 1의상 | 촬영 약 30분 (2인 기준)\n원본 전체 구글클라우드 전송\n출력물: A4 1장 + 6×4 inch 2장\n추가 보정 €10 | 인원 추가 €30/인','3 retouched photos | 1 BG | 1 outfit | ca. 30 min (for 2)\nAll originals via Google Cloud\nPrints included: 1×A4 + 2 prints (6×4 inch)\nAdd-on retouch €10 | +€30/person','3 retuschierte Fotos | 1 HG | 1 Outfit | ca. 30 Min. (für 2)\nAlle Originale via Google Cloud\nDrucke inklusive: 1×A4 + 2 Drucke (6×4 inch)',0],
     ['sp','stud','스튜디오 Plus','Studio Plus','Studio Plus',240,60,15,'group','보정본 5장 | 1배경 | 2의상 | 촬영 약 1시간 (2인 기준)\n원본 전체 구글클라우드 전송\n출력물: A4 1장 + 6×4 inch 4장\n추가 보정 €10 | 인원 추가 €30/인','5 retouched photos | 1 BG | 2 outfits | ca. 1 hour (for 2)\nAll originals via Google Cloud\nPrints included: 1×A4 + 4 prints (6×4 inch)\nAdd-on retouch €10 | +€30/person','5 retuschierte Fotos | 1 HG | 2 Outfits | ca. 1 Std. (für 2)\nAlle Originale via Google Cloud\nDrucke inklusive: 1×A4 + 4 Drucke (6×4 inch)',0],
     ['sprm','stud','스튜디오 Premium','Studio Premium','Studio Premium',300,90,15,'group','보정본 7장 | 배경·의상 제한 없음 | 촬영 약 1.5시간 (2인 기준)\n원본 전체 구글클라우드 전송\n출력물: A4 1장 + 6×4 inch 6장\n추가 보정 €10 | 인원 추가 €30/인','7 retouched photos | Unlimited BG & outfits | ca. 1.5h (for 2)\nAll originals via Google Cloud\nPrints included: 1×A4 + 6 prints (6×4 inch)\nAdd-on retouch €10 | +€30/person','7 retuschierte Fotos | Unbegrenzte HG & Outfits | ca. 1,5 Std. (für 2)\nAlle Originale via Google Cloud\nDrucke inklusive: 1×A4 + 6 Drucke (6×4 inch)',0],
-    ['ob','snap','야외/홈스냅 Basic','Outdoor/Home Basic','Outdoor/Home Basic',150,30,15,'snap','보정본 7장 | 야외 또는 홈스냅 | 1개 장소 | 촬영 약 30분 (2인 기준)\n원본 색보정본 구글클라우드 전송\n10×15cm 출력 5장 우편발송\n평일 €150 | 토요일 €170\n추가 보정 €10 | 인원 추가 €30/인 (1인 €30 할인)\n프랑크푸르트 50km 이내','7 Retouched | Outdoor or home snap | 1 location | ca. 30 min (for 2)\nAll color-corrected originals via Google Cloud\n5 prints (10×15cm) by post\nWeekday €150 | Saturday €170\nAdd-on retouch €10 | +€30/person (1 person: -€30)','7 Retuschiert | Outdoor oder Home-Shooting | 1 Ort | ca. 30 Min. (für 2)\nAlle farbkorrigierten Originale via Google Cloud\n5 Drucke (10×15cm) per Post\nWochentag 150€ | Samstag 170€',0],
+    ['ob','snap','야외/홈스냅 Basic','Outdoor/Home Basic','Outdoor/Home Basic',150,30,15,'snap','보정본 7장 | 야외 또는 홈스냅 | 1개 장소 | 촬영 약 30분 (2인 기준)\n원본 색보정본 구글클라우드 전송\n10×15cm 출력 5장 우편발송\n평일 €150 | 토요일 €170\n추가 보정 €10 | 인원 추가 €30/인 (1인 €30 할인)\n출장: 스튜디오 기준 30km 무료 · 30–60km +€30 · 60–100km +€70 · 100km 초과 상담','7 Retouched | Outdoor or home snap | 1 location | ca. 30 min (for 2)\nAll color-corrected originals via Google Cloud\n5 prints (10×15cm) by post\nWeekday €150 | Saturday €170\nAdd-on retouch €10 | +€30/person (1 person: -€30)\nTravel: free within 30 km of the studio · 30–60 km +€30 · 60–100 km +€70 · beyond 100 km on request','7 Retuschiert | Outdoor oder Home-Shooting | 1 Ort | ca. 30 Min. (für 2)\nAlle farbkorrigierten Originale via Google Cloud\n5 Drucke (10×15cm) per Post\nWochentag 150€ | Samstag 170€\nAnfahrt: bis 30 km ab Studio kostenlos · 30–60 km +30€ · 60–100 km +70€',0],
     ['op','snap','야외/홈스냅 Plus','Outdoor/Home Plus','Outdoor/Home Plus',220,60,15,'snap','보정본 10장 | 야외 또는 홈스냅 | 1~2개 장소 | 촬영 약 1시간 (2인 기준)\n원본 색보정본 구글클라우드 전송\n출력물: 포함 없음\n평일 €220 | 토요일 €250\n추가 보정 €10 | 인원 추가 €30/인','10 retouched photos | Outdoor or home snap | 1-2 locations | ca. 1 hour (for 2)\nAll color-corrected originals via Google Cloud\nNo prints included\nWeekday €220 | Saturday €250\nAdd-on retouch €10 | +€30/person','10 retuschierte Fotos | Outdoor oder Home-Shooting | 1-2 Orte | ca. 1 Std. (für 2)\nAlle farbkorrigierten Originale via Google Cloud\nKeine Drucke inklusive\nWochentag 220€ | Samstag 250€',0],
     ['oprm','snap','야외/홈스냅 Premium','Outdoor/Home Premium','Outdoor/Home Premium',350,120,15,'snap','보정본 20장 | 야외 또는 홈스냅 | 최대 3개 장소 | 촬영 약 2시간 (2인 기준)\n원본 색보정본 구글클라우드 전송\n출력물: 포함 없음\n평일 €350 | 토요일 €390\n추가 보정 €10 | 인원 추가 €30/인','20 retouched photos | Outdoor or home snap | Max 3 locations | ca. 2 hours (for 2)\nAll color-corrected originals via Google Cloud\nNo prints included\nWeekday €350 | Saturday €390\nAdd-on retouch €10 | +€30/person','20 retuschierte Fotos | Outdoor oder Home-Shooting | Max. 3 Orte | ca. 2 Std. (für 2)\nAlle farbkorrigierten Originale via Google Cloud\nKeine Drucke inklusive\nWochentag 350€ | Samstag 390€',0],
     ['mrt_snap_1p_60','마이리얼트립','1인스냅 60분','MyRealTrip 1-person Snap 60min','MyRealTrip 1 Person Snap 60 Min.',0,60,0,'snap','마이리얼트립 전용 옵션 | 1인 기준 60분\n촬영 장소: 뢰머광장 + 아이젤너다리 + 마인강변 또는 알테오퍼 + Zeil 거리 + Europark 중 택 1\n금액은 마이리얼트립 기간별 판매가를 예약 알림 메일에서 가져옵니다.','MyRealTrip-only option | 1 person, 60 min\nLocation: Roemer + Eiserner Steg + Main riverside or Alte Oper + Zeil + Europark\nThe amount is imported from the MyRealTrip booking notification because pricing changes by period.','Nur MyRealTrip | 1 Person, 60 Min.\nOrt: Roemer + Eiserner Steg + Mainufer oder Alte Oper + Zeil + Europark\nDer Betrag wird aus der MyRealTrip-Buchungsbenachrichtigung übernommen, da Preise je nach Zeitraum variieren.',0],
@@ -20846,9 +20873,9 @@ function _defaultQuoteTerms_(lang){
   // 부가세 안내는 PDF 상단 고정 문구(netto zzgl. 19% MwSt.)로 표기되므로 여기서 중복하지 않음
   const langs=_quoteLangList_(lang);
   const map={
-    ko:'- 본 견적은 발행일로부터 30일간 유효합니다.\n- 예약 확정은 계약금 입금 후 이루어집니다.',
-    en:'- This quotation is valid for 30 days from the issue date.\n- Your booking is confirmed upon receipt of the deposit.',
-    de:'- Dieses Angebot ist 30 Tage ab Ausstellungsdatum gültig.\n- Die Buchung wird nach Eingang der Anzahlung bestätigt.'
+    ko:'- 본 견적은 발행일로부터 30일간 유효합니다.\n- 예약 확정은 계약금 입금 후 이루어집니다.\n- 출장비: 스튜디오(오버우어젤) 기준 편도 30km 무료, 30–60km +€30, 60–100km +€70, 100km 초과·숙박은 별도 협의 (미포함 시).',
+    en:'- This quotation is valid for 30 days from the issue date.\n- Your booking is confirmed upon receipt of the deposit.\n- Travel: free within 30 km of the studio (Oberursel); 30–60 km +€30, 60–100 km +€70, beyond 100 km / overnight by agreement (unless already included).',
+    de:'- Dieses Angebot ist 30 Tage ab Ausstellungsdatum gültig.\n- Die Buchung wird nach Eingang der Anzahlung bestätigt.\n- Anfahrt: bis 30 km ab Studio (Oberursel) kostenlos; 30–60 km +30 €, 60–100 km +70 €, über 100 km / mit Übernachtung nach Absprache (sofern nicht enthalten).'
   };
   if(langs.length>1) return langs.map(function(l){return map[l]||map.de;}).join('\n//\n');
   return map[langs[0]]||map.de;
