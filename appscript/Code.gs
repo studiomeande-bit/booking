@@ -19601,6 +19601,15 @@ function updateInvoiceAdmin(token, payload){
     if(!(key in INVOICE_COL)) return;
     invoiceSheet.getRange(rowIndex,INVOICE_COL[key]+1).setValue(updates[key]);
   });
+  // 상태 변경 (선택): 발행취소 = 결번/Storno 기록 — 금액은 그대로 두고 문서 상태만 표기, PDF 재생성 생략
+  const nextStatus=String(payload.status||'').trim();
+  if(nextStatus){
+    if(['발행','발행취소'].indexOf(nextStatus)===-1) throw new Error('지원하지 않는 인보이스 상태입니다: '+nextStatus);
+    invoiceSheet.getRange(rowIndex,INVOICE_COL['상태']+1).setValue(nextStatus);
+    if(nextStatus==='발행취소'){
+      return {ok:true, invoiceNumber:invNumber, status:nextStatus, pdfSkipped:true};
+    }
+  }
   const refreshedRow=invoiceSheet.getRange(rowIndex,1,1,invoiceSheet.getLastColumn()).getValues()[0];
   const inv=invoiceRowToObject_(refreshedRow,rowIndex);
   const pdf=createInvoicePdf_(inv,invoiceLang);
