@@ -77,6 +77,8 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **미수금 전수 정리 (2026-07-16, @603)** — Immediate #3 참조: 19건→6건, `booking-confirm-balance` 에이전트 액션 신설, 현금장부 이중집계 €600 해소
+- **Drehvertrag 파이프라인 (2026-07-16)** — `scripts/make_drehvertrag.py`: DEAL 설정→HTML→Chrome PDF→견적 합본(pypdf). 2025 휘슬러 계약(12조) 구조 미러 + 2026 갱신(19% MwSt·USt-IdNr, 교정 1회, 사용범위 웹/SNS/사내·유료광고 별도, 인보이스 기준 지급). 휘슬러 2026 초안 생성: `계약서/2026/Drehvertrag_FisslerKorea_2026_draft*.pdf` (사장님 검토 대기 — 서류상 촬영일 10/19-20 반영, 갑측 주소·대표자명 2025 계약서 기준이므로 확인 필요)
 - **Update 4 전체 배포 (2026-07-16)** — `docs/update-4-plan.md`
   - Wave A: 첫 메뉴 7타일 B2C/B2B 분리(웨딩·가족 행사 / 기업·단체 B2B 상담형), 프리웨딩↔본식 구분 문안, B2B 상담 딥링크(?type= 프리셀렉트)+SLA, 날짜 스텝 잠금(슬롯 미점유)
   - Wave B: consult-list/get/update 에이전트 액션, 브리핑 미처리 상담 섹션, "상담 견적 초안"·"계약금 인보이스" 스킬 워크플로
