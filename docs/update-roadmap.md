@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-07-15 Europe/Berlin
+Updated: 2026-07-16 Europe/Berlin
 
 ## Immediate
 
@@ -70,6 +70,19 @@ Updated: 2026-07-15 Europe/Berlin
 - otherwise keep those flows as local-ledger + summary export only
 
 ## Done Recently
+
+- **Update 4 전체 배포 (2026-07-16)** — `docs/update-4-plan.md`
+  - Wave A: 첫 메뉴 7타일 B2C/B2B 분리(웨딩·가족 행사 / 기업·단체 B2B 상담형), 프리웨딩↔본식 구분 문안, B2B 상담 딥링크(?type= 프리셀렉트)+SLA, 날짜 스텝 잠금(슬롯 미점유)
+  - Wave B: consult-list/get/update 에이전트 액션, 브리핑 미처리 상담 섹션, "상담 견적 초안"·"계약금 인보이스" 스킬 워크플로
+- 인보이스 로컬↔ERP 동기화 (2026-07-16): STMIN-260001~005 마이그레이션(센트 단위 일치), 260006 PDF 재생성→로컬, 260008/9 결번 Storno(발행취소 €0), 연번 15건 완결. invoice-update(상태 발행취소·PDF 재생성)/invoice-create data 패스스루 액션
+- HSAD 매출/미수 등록 (2026-07-16): 예약장부 수기행 212(€892.50, offen) — 장부 openAmount·브리핑 추적, booking-create-manual/booking-set-type 액션, 브리핑 미수 필터 정규식 정합(@595)
+- 스냅 보정범위 제한 (2026-07-16, @597): 셀렉 안내(포함/제외+사람제거 합성)+키워드 힌트+관리자 배지+예약페이지 상품 상세 3개 국어
+- 출장비 정책+자동계산 (2026-07-16): 스튜디오 기준 존제(B2C 30km 무료/+30/+70) 제안, B2B 공식(구간+조명 +€30, KOTRA·휘슬러 캘리브레이션), 도시 거리표(웹 검증: Koblenz 125km 등 정정) — rate card §3
+- ERP 성능 (2026-07-15~16): ensureSheets_ 메모이즈, 예약저장 배치쓰기, 장부 107s→13s(formatDate), select-session 9.1s→~4.2s(getSheetsReadonly_)+_timing, 갤러리 프리페치(1차 셀렉 즉시)
+- 어드민 큐 정리 (2026-07-16, @599): manualReview 대기중만 표시, walkin-list/update-status 액션, 잔존 완료건 정리(워크인 이준경·상담 고도영), 돌잔치/가족파티 분류 개인 전환(신규 규칙+기존 행 정정)
+- 셀렉 재발송·수령 경고 (2026-07-16, @600): [재발송] 제목+빠른제출 안내, 알림에 기본 포함 인화 표시+수령 미선택 빨간 경고+지시서 포함분 표시
+- 셀렉 v2 서비스컷+무료인화 차액 (2026-07-15~16): v2 포팅(무료 보정 슬롯), 10×15 크레딧(차액), 4단계 가시화, 발송 후 수량 수정(select-set-counts+어드민 버튼)
+- 휘슬러 계약 확정 처리 (2026-07-16): quote-accept(가예약 10/22-23 유지), 계약 세부 메모
 
 - ERP agent platform shipped (2026-07-15)
   - erp-agent public API (automation-key auth, admin-issued/revocable) + scripts/erp-agent.mjs CLI + studio-erp skill
