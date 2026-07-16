@@ -15048,6 +15048,12 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
   const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — Dear ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
+  if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
+  const resendNotice=data.isResend?({
+    ko:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 재발송 안내</b><br>이전에 보내드린 사진 셀렉 안내를 다시 보내드립니다. 보정·인화 일정 조율을 위해 <b>확인하시고 빠른 제출 부탁드립니다.</b> 진행이 어렵거나 궁금한 점이 있으면 이 메일에 바로 회신해 주세요.${data.deadline?`<br>셀렉 마감일: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    en:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Resent reminder</b><br>We are resending your photo selection link. <b>Please review and submit at your earliest convenience</b> so we can schedule retouching and printing. If anything is unclear, just reply to this email.${data.deadline?`<br>Selection deadline: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir Retusche und Druck einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
+  })[L]:'';
   const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Hello <b>${data.name}</b>,`,de:`Guten Tag, <b>${data.name}</b>,`};
   const intro={
     ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.`,
@@ -15086,6 +15092,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   </div>
   <div style="padding:28px 25px;">
     <p style="font-size:16px;margin-bottom:6px;">${greet[L]}</p>
+    ${resendNotice}
     <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:20px;">${intro[L]}</p>
     <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:20px;">
       <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">${L==='ko'?'진행 순서':L==='en'?'How it works':'So gehts'}</div>
@@ -15899,13 +15906,33 @@ function getSelectDeliveryCustomerLine_(delivery,lang){
       : `• 우편 주소:<br>${selectMailAddressHtml_(mailAddressText)}<br>`;
 }
 
+// 알림 메일용 인화·수령 메타: 기본 포함분과 추가 청구분을 구분하고, 실물이 있는데 수령방식 미선택이면 경고
+function buildSelectAlertMeta_(row,photos,prints,printUpgradeItems,photocard,deliveryText){
+  const norm=function(v){return String(v||'').replace(/_(r|e)$/,'').trim();};
+  const includedFromPhotos=(photos||[]).filter(function(p){const t=norm(p&&p.printType);return t&&t!=='print_none';}).length;
+  const all=(printUpgradeItems||[]).concat(prints||[]);
+  const chargeItems=all.filter(function(it){return Number(it&&it.price||0)>0;});
+  const includedFromPrints=all.filter(function(it){return it&&(it.included===true);}).reduce(function(sum,it){return sum+(Number(it&&it.qty)||1);},0);
+  const includedTotal=includedFromPhotos+includedFromPrints;
+  const hasPhysical=includedTotal>0||chargeItems.length>0||!!photocard;
+  const deliveryNone=/수령 없음/.test(String(deliveryText||''))||!String(deliveryText||'').trim();
+  const printCell=(chargeItems.length?`추가 ${chargeItems.length}건`:'추가 없음')+(includedTotal?` · <b>기본 포함 ${includedTotal}장</b>`:'');
+  const deliveryCell=(hasPhysical&&deliveryNone)
+    ? '<b style="color:#ef4444;">⚠️ 수령방식 미선택 — 인화물이 있어 고객에게 픽업/우편 확인 필요</b>'
+    : deliveryText;
+  const resendCount=parseInt(row&&row[SELECT_COL['재발송횟수']],10)||0;
+  const resendRow=resendCount>0?`<tr><td style="padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-weight:700;font-size:13px;width:90px;">발송 이력</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">재발송 ${resendCount}회</td></tr>`:'';
+  return {printCell:printCell,deliveryCell:deliveryCell,resendRow:resendRow,workItems:all,chargeCount:chargeItems.length,includedTotal:includedTotal};
+}
+
 function _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery,photocard,printUpgradeItems){
   const td=(l,v)=>`<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:90px;border-bottom:1px solid #e2e8f0;font-size:12px;">${l}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${v}</td></tr>`;
   const deliveryText=getSelectDeliveryAdminText_(delivery);
+  const alertMeta=buildSelectAlertMeta_(row,photos,prints,printUpgradeItems,photocard,deliveryText);
   const captureOneText=buildSelectCaptureOneSearchText_(photos);
   const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',printChargeItems.length?`${printChargeItems.length}건 (${extraPrintsAmt}€)`:'없음')}${td('수령방식',deliveryText)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${printChargeItems.length?printChargeItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉] ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html});
 }
 
@@ -16013,10 +16040,11 @@ function updatePhotoSelection(sessionId,sub){
     // 어드민 수정 알림 메일
     const td=(l,v)=>`<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:90px;border-bottom:1px solid #e2e8f0;font-size:12px;">${l}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${v}</td></tr>`;
     const deliveryText=getSelectDeliveryAdminText_(delivery);
+    const alertMeta=buildSelectAlertMeta_(row,photos,displayPrints||[],[],photocard,deliveryText);
     const captureOneText=buildSelectCaptureOneSearchText_(photos);
     const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
     const printChargeItems=displayPrints||[];
-    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',printChargeItems.length?`${printChargeItems.length}건 (${extraPrintsAmt}€)`:'없음')}${td('수령방식',deliveryText)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${printChargeItems.length?printChargeItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
     sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정] ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html});
     return{
       ok:true,
@@ -16625,6 +16653,9 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
       sendDriveLink=dLink||'';
 	    }
 
+		    data.isResend=true;
+		    data.resendNumber=parseInt(built.row[SELECT_COL['재발송횟수']],10)||1;
+		    data.deadline=String(built.row[SELECT_COL['셀렉마감일']]||'');
 		    _sendSelectLinkEmail(data,url,sendDriveLink,baseCount,retouchPrice,marketingBonusCount);
     resendCache.put(resendCacheKey,'1',120);
 	    return{ok:true,selectUrl:url,emailSent:true};
