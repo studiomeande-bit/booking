@@ -17,10 +17,16 @@ Updated: 2026-07-16 Europe/Berlin
 
 2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
-3. Receivables cleanup
-- verify which rows should truly remain `미수금`
-- remove false positives from local-only completed payments
-- confirm contract deposit / balance payments show consistently
+3. Receivables cleanup → 전수 검증 완료 (2026-07-16, @603): 미수 19건 €4,855.50 → 6건 €1,997.50
+- 정리 13건: SumUp/은행 증거 6건(Jenna·최성열·정주희·황영목 288+10 분할이체·정채연·Kim yoonsuh) + 현금 완납 추정 7건(손유정·김진아·김수은·김영서·이세은·조미정·차수진, 상태완료+현장결제 관행, evidenceStatus로 구분 기록)
+- 신규 에이전트 액션 `booking-confirm-balance` (paidDate/amount/payMethod/evidenceStatus) — confirmBookingBalanceAdmin 재사용
+- 부수 효과: Jenna·Kim yoonsuh 결제수단 현금→카드 정정으로 현금장부 이중집계 €600 해소 (totalIn 4,608→4,008)
+- **남은 6건**: HSAD €892.50(진짜 미수, STMIN-260013) + 사장님 확인 5건 ↓
+  - 장진욱 €360: SumUp €170(3/21)+은행 €115(3/27 "Jin wook, Chang Photo") 입금 확인, €75 불명 — 잔금 컬럼은 €170으로 수기 수정된 흔적
+  - 송영미 €165(카드 4/4)·조재연 €190(카드 4/18): **SumUp 4월 데이터 통째 누락**(1~3월 CSV·6월 Verkaufsbericht만 임포트, 5월도 16건뿐) — 4~5월 거래 리포트 CSV 임포트 필요 (API lookback 30일 제한으로 백필 불가)
+  - 박지은 €180(계좌이체 7/7): 은행 데이터 6/29까지만 — 새 Kontoumsätze CSV 필요
+  - Sae-Jin Choi €210(카드 7/11): 당일 미매칭 GIROCARD €230 후보 존재(+€20 차이, 현장 추가판매?) — 확인 후 매칭
+- 정산(settlement) 리뷰 큐 140건 정리는 별도 트랙
 
 ## Next
 

@@ -1066,6 +1066,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
+        if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
@@ -1102,6 +1103,35 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_({ok:true,consultation:_mapConsultationRow_(cRow,cIdx)});
         }
         if(action==='consult-update') return jsonOk_(updateConsultationAdmin(token,payload.rowIndex,String(payload.status||''),payload.memo));
+        // 마케팅 (인스타그램 자동화 파이프라인)
+        if(action==='marketing-list') return jsonOk_(listMarketingScheduleAdmin(token,payload.filters||{}));
+        if(action==='marketing-pending'){
+          const mkAll=listMarketingScheduleAdmin(token,{});
+          const mkPending=(mkAll.items||[]).filter(function(it){return it.stage!=='게시완료'&&it.stage!=='보류'&&!it.uploaded;});
+          return jsonOk_({ok:true,items:mkPending,count:mkPending.length,generatedAt:mkAll.generatedAt});
+        }
+        if(action==='marketing-save') return jsonOk_(saveMarketingScheduleAdmin(token,payload.data||{}));
+        if(action==='marketing-mark-posted'){
+          const mpIdx=parseInt(payload.bookingRowIndex,10);
+          if(!mpIdx||mpIdx<2) throw new Error('bookingRowIndex가 필요합니다.');
+          const mkCur=listMarketingScheduleAdmin(token,{});
+          const mkItem=(mkCur.items||[]).filter(function(it){return it.bookingRowIndex===mpIdx;})[0];
+          if(!mkItem) throw new Error('마케팅 스케줄 대상에서 예약을 찾지 못했습니다: '+mpIdx);
+          return jsonOk_(saveMarketingScheduleAdmin(token,{
+            bookingRowIndex:mpIdx,
+            contentStatus:'게시완료',
+            postStatus:'게시완료',
+            uploaded:true,
+            platform:String(payload.platform||mkItem.platform||'Instagram'),
+            scheduledDate:String(payload.postedDate||mkItem.scheduledDate||''),
+            scheduledTime:String(payload.postedTime||mkItem.scheduledTime||''),
+            postUrl:String(payload.postUrl||mkItem.postUrl||''),
+            driveLink:String(payload.driveLink||mkItem.driveLink||''),
+            captionMemo:payload.captionMemo!==undefined?String(payload.captionMemo):mkItem.captionMemo,
+            adminMemo:payload.adminMemo!==undefined?String(payload.adminMemo):mkItem.adminMemo,
+            owner:String(payload.owner||mkItem.owner||'automation')
+          }));
+        }
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -10477,6 +10507,26 @@ function updateBookingStatusForAgent_(token,rowIndex,status){
   const st=String(status||'').trim();
   if(AGENT_BOOKING_STATUSES_.indexOf(st)===-1) throw new Error('에이전트로 변경할 수 없는 상태입니다: '+st+' (가능: '+AGENT_BOOKING_STATUSES_.join('/')+' — 취소는 어드민에서 취소 플로우를 사용하세요)');
   return quickUpdateBookingStatus(token,parseInt(rowIndex,10),st);
+}
+
+// 에이전트용 잔금 확정 — confirmBookingBalanceAdmin 재사용 + 증거 출처(sumup/bank) 기록 지원
+const AGENT_BALANCE_EVIDENCE_STATUSES_=['sumup_balance_confirmed','bank_balance_confirmed','manual_balance_confirmed'];
+function confirmBookingBalanceForAgent_(token,payload){
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const result=confirmBookingBalanceAdmin(token,rIdx,{
+    paidDate:String(payload.paidDate||''),
+    amount:payload.amount,
+    payMethod:String(payload.payMethod||'현금')
+  });
+  const evidence=String(payload.evidenceStatus||'').trim();
+  if(evidence){
+    if(AGENT_BALANCE_EVIDENCE_STATUSES_.indexOf(evidence)===-1) throw new Error('허용되지 않은 evidenceStatus: '+evidence);
+    if(BOOKING_COL['Lexware결제상태']!=null) getDbSheet().getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue(evidence);
+    result.evidenceStatus=evidence;
+  }
+  return result;
 }
 
 // 셀렉 상태를 세션 행 번호로 직접 변경 — 한 예약에 세션이 여러 개인 경우 대비
