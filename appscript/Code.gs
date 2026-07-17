@@ -10716,7 +10716,33 @@ function _buildDailyBriefingData_(){
       }
     }
   }catch(e){Logger.log('briefing consultations skipped: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations};
+  // 마케팅(인스타): 예정 게시(7일) + 최근 게시 성과 — 마케팅 스케줄 시트 (자동화 파이프라인이 기록)
+  const marketing={upcoming:[],recent:[]};
+  try{
+    const mSh=ensureSheets_().marketingScheduleSheet;
+    const mLast=mSh.getLastRow();
+    if(mLast>1){
+      const mRows=mSh.getRange(2,1,mLast-1,MARKETING_SCHEDULE_HEADERS.length).getValues();
+      for(let mi=0;mi<mRows.length;mi++){
+        const r=mRows[mi];
+        const due=parseDateSafe_(r[MARKETING_SCHEDULE_COL['게시예정일']]).str.slice(0,10);
+        const url=String(r[MARKETING_SCHEDULE_COL['게시URL']]||'').trim();
+        const platform=String(r[MARKETING_SCHEDULE_COL['플랫폼']]||'IG');
+        const product=String(r[MARKETING_SCHEDULE_COL['상품']]||r[MARKETING_SCHEDULE_COL['촬영종류']]||'');
+        const memo=String(r[MARKETING_SCHEDULE_COL['관리메모']]||'');
+        if(!url&&due&&due>=today&&due<=weekEnd){                    // 예정: 미게시 + 7일 내
+          marketing.upcoming.push({due:due,platform:platform,product:product});
+        }
+        if(url&&/도달|저장|좋아요|reach|save|like/i.test(memo)){       // 최근 성과: 게시됨 + 성과 기록
+          marketing.recent.push({due:due,platform:platform,product:product,url:url,perf:memo.slice(0,90)});
+        }
+      }
+      marketing.upcoming.sort(function(a,b){return a.due<b.due?-1:1;});
+      marketing.recent.sort(function(a,b){return a.due<b.due?1:-1;});
+      marketing.recent=marketing.recent.slice(0,4);
+    }
+  }catch(e){Logger.log('briefing marketing skipped: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -10762,6 +10788,17 @@ function sendDailyBriefingEmail_(){
   }
   // 4) 파이프라인 한 줄
   parts.push(section('📸 셀렉 파이프라인',line(`고객 셀렉 대기 <b>${b.select.waiting}</b> · 재수정 요청 <b>${b.select.revisionRequested}</b> · 제출완료(작업 대기) <b>${b.select.submitted}</b> · 보류 견적 <b>${b.quotes.holdTotal}</b>`)));
+  // 5) 마케팅 (인스타) — 예정 게시 + 최근 성과
+  if(b.marketing&&(b.marketing.upcoming.length||b.marketing.recent.length)){
+    const mLines=[];
+    b.marketing.upcoming.slice(0,5).forEach(function(m){
+      mLines.push(line(`🗓 예정 — <b>${esc(m.due.slice(5))}</b> · ${esc(m.platform)}${m.product?' · '+esc(m.product):''}`));
+    });
+    b.marketing.recent.slice(0,3).forEach(function(m){
+      mLines.push(line(`📊 게시 — ${esc(m.perf)}${m.url?' · <a href="'+esc(m.url)+'" style="color:#2563eb;">보기</a>':''}`));
+    });
+    parts.push(section('📣 마케팅 (인스타)',mLines.join('')));
+  }
 
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
     <div style="background:#2D2A26;color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;">
