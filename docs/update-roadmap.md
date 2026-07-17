@@ -75,6 +75,14 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **강화 백로그 4건 (2026-07-18, @609·@610)** — 코드로 검증 후 부가 구현·배포:
+  - `lead-add` 에이전트 액션(리드 시트 적재, ref 중복방지) + `automation/comment_guard.py` 연동
+    (문의성 댓글 → ERP 리드 시트 자동 기록). 스모크테스트 완료(추가+중복스킵). *리드 시트에 "TEST-스모크" 행 1개 = 삭제 가능.*
+  - `sendAnniversaryRecommendationEmails_`(크론 B5): 가족/아기/돌/키즈/만삭 작업완료 촬영 1년(350~400일) 후
+    재촬영 넛지 3개국어. 신규 컬럼 `기념일추천메일발송일시`(끝에 추가, ensureHeaderSheet_ 자동 마이그레이션).
+  - D6 `_quoteHoldDailyCheck_`에 "발송 후 무응답 7일+·유효" 냉각 세그먼트 추가(어드민 팔로업 다이제스트).
+  - ELSTER: 블라인드 자동생성은 세금 오류 위험(입력·재조정 필요) → **분기 마감 리마인더**를 D7 브리핑에 추가
+    (분기 말25일~초20일 창, "감사팩 요청" 유도). 실제 산출은 입력 확보 후 요청(오너 게이트 유지).
 - **서비스별 SEO 랜딩 9페이지 (2026-07-17)** — `frontend/portfolio/{,en/,ko/}{frankfurt-snap,germany-wedding,passport-photo}/index.html`.
   3서비스(프랑크푸르트 스냅 €150~ / 독일 웨딩·프리웨딩 €650~ / 여권·비자 €30) × 3언어. studio-mean.com 다크
   에디토리얼 디자인 재사용(portfolio.min.css), 언어별 키워드 title·desc, hreflang 4개 상호연결(de/en/ko+x-default),
