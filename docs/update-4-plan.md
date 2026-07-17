@@ -19,7 +19,16 @@ Phase 1(단가표 비노출·하이브리드 선택지·dolp)로 2트랙 기반�
 - 계약금 인보이스는 **명시적 실행형**(수락 후 "계약금 인보이스 만들어줘") — STMIN 번호가 생성 시 소모되므로 자동 드래프트 금지.
 - Drehvertrag(계약서) 자동화 → Update 5 백로그 (별도 문서 파이프라인, 연 2~4회 사용).
 
-## Wave A (지금 구현)
+## Wave A — **배포 완료** (코드 확인 2026-07-17)
+
+> A1~A4 전부 라이브 구현 확인됨(문서만 뒤늦게 갱신). 근거:
+> - **A1** `GROUP_META` 에 `famevt`(웨딩·가족 행사)·`b2b`(기업·단체, `consultOnly`) 타일 존재, 둘 다 `realGroup:'biz'`.
+>   `renderGroups()`는 GROUP_META 키(pass/prof/stud/snap/wed/famevt/b2b)만 순회 → generic 시간제 biz 타일 숨김. `state.bizTrack`으로 트랙 구분.
+> - **A2** 타일·상품 sub 텍스트 ko/en/de 개선(프리웨딩↔본식 구분 "For wedding-day coverage, choose…", B2B SLA "1–2 영업일 내 맞춤 견적").
+> - **A3** `renderB2bConsultCards()` → `/consultation/?lang=..&type=..&from=b2b&topic=..` 딥링크, B2B는 스텝2에서 슬롯 잠금(`getMaxStep` 2, 캘린더 미점유).
+> - **A4** `getDefaultSelectRetouchPrice_` → wed·암트·돌잔치·가족파티·wedding/hochzeit 는 €20, 그 외 €10.
+>
+> 남은 것은 개발이 아니라 **릴리스 게이트 실사용 확인**(아래 체크리스트)뿐.
 
 ### A1. 첫 메뉴 재구성 (booking.js)
 

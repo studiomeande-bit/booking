@@ -5399,12 +5399,15 @@ async function loadCalendar() {
 }
 
 async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+  const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
   const batch = await fetchCalendarBatch({
     year,
     month,
     totalDur: duration,
     itemGroup
   });
+  const ms = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+  recordCalendarTiming(year, month, ms);   // #10 계측: 월별 로드타임 수집 (TTL·프리페치 튜닝 근거)
   Object.entries(batch || {}).forEach(([monthKey, data]) => {
     const fullKey = `${monthKey}_${itemGroup}_${duration}`;
     state.calendarCache.set(fullKey, data);
@@ -5412,6 +5415,34 @@ async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
     writeMonthStorage(Number(yearPart), Number(monthPart), itemGroup, duration, data);
   });
   return batch?.[`${year}_${month}`] || Object.values(batch || {})[0] || null;
+}
+
+// #10 캘린더 성능 계측 — 현재/다음/셋째 달 로드타임 갭을 실측 수집.
+// 롤링 통계를 localStorage(booking:calperf)에 저장. 콘솔에서 __calPerf() 로 열람.
+function recordCalendarTiming(year, month, ms) {
+  try {
+    const now = new Date();
+    const offset = (year - now.getFullYear()) * 12 + (month - now.getMonth());  // 0=현재달
+    const bucket = offset <= 0 ? 'cur' : (offset === 1 ? 'next' : (offset === 2 ? 'third' : 'far'));
+    const raw = window.localStorage.getItem('booking:calperf');
+    const s = raw ? JSON.parse(raw) : {};
+    const b = s[bucket] || { n: 0, sum: 0, max: 0 };
+    b.n += 1; b.sum += ms; b.max = Math.max(b.max, Math.round(ms));
+    s[bucket] = b; s.updatedAt = Date.now();
+    window.localStorage.setItem('booking:calperf', JSON.stringify(s));
+    if (ms > 1500) console.warn(`[calperf] ${bucket} 달 로드 ${Math.round(ms)}ms (느림)`);
+  } catch (e) { /* 계측 실패는 무시 */ }
+}
+if (typeof window !== 'undefined') {
+  window.__calPerf = function () {   // 콘솔 열람용: 버킷별 평균/최대/샘플수
+    try {
+      const s = JSON.parse(window.localStorage.getItem('booking:calperf') || '{}');
+      ['cur', 'next', 'third', 'far'].forEach((k) => {
+        const b = s[k]; if (b) console.log(`${k}: 평균 ${Math.round(b.sum / b.n)}ms · 최대 ${b.max}ms · n=${b.n}`);
+      });
+      return s;
+    } catch (e) { return null; }
+  };
 }
 
 async function prefetchNextCalendarMonth() {
