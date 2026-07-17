@@ -75,6 +75,17 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **서비스별 SEO 랜딩 9페이지 (2026-07-17)** — `frontend/portfolio/{,en/,ko/}{frankfurt-snap,germany-wedding,passport-photo}/index.html`.
+  3서비스(프랑크푸르트 스냅 €150~ / 독일 웨딩·프리웨딩 €650~ / 여권·비자 €30) × 3언어. studio-mean.com 다크
+  에디토리얼 디자인 재사용(portfolio.min.css), 언어별 키워드 title·desc, hreflang 4개 상호연결(de/en/ko+x-default),
+  JSON-LD Service+FAQPage(리치결과), 무JS(FAQ=`<details>`, CSP 준수). sitemap 20 URL. 이미지=포트폴리오 Drive(lh3).
+  **홈페이지 3언어 "촬영 분야" 섹션에 랜딩 3개 키워드 앵커 내부링크** 추가(`./slug/` 언어별 자동해석). 전 페이지 라이브 검증(HTTP 200).
+  생성기: 세션 스크래치패드 `lp_gen.py`/`lp_gen2.py`(KO style 재사용, 콘텐츠 config만 교체) — 확장 시 재사용.
+  남은 선택: 랜딩↔랜딩 상호링크, 서치콘솔 sitemap 제출(색인), 여권 히어로 이미지 교체.
+- **캘린더 성능 계측 배포 (2026-07-17)** — `booking.js recordCalendarTiming`: 월별(현재/다음/셋째) 로드타임 localStorage 수집,
+  콘솔 `__calPerf()` 열람, >1.5s 경고. 라이브(booking.min.js 재빌드+캐시버스트 u6a). **며칠 뒤 실측으로 TTL·프리페치 튜닝 예정.**
+- **아침 브리핑 마케팅 섹션 (2026-07-17, 🟡 구현·미배포/WIP)** — `Code.gs _buildDailyBriefingData_`에 marketing 블록
+  (마케팅 스케줄 시트 예정게시+최근성과) + D7 메일에 "📣 마케팅(인스타)" 섹션. **git 미커밋·clasp 미배포 상태** — 배포 지시 대기.
 - **미수금 전수 정리 (2026-07-16, @603)** — Immediate #3 참조: 19건→6건, `booking-confirm-balance` 에이전트 액션 신설, 현금장부 이중집계 €600 해소
 - **Drehvertrag 파이프라인 (2026-07-16)** — `scripts/make_drehvertrag.py`: DEAL 설정→HTML→Chrome PDF→견적 합본(pypdf). 2025 휘슬러 계약(12조) 구조 미러 + 2026 갱신(19% MwSt·USt-IdNr, 교정 1회, 사용범위 웹/SNS/사내·유료광고 별도, 인보이스 기준 지급). 휘슬러 2026 초안 생성: `계약서/2026/Drehvertrag_FisslerKorea_2026_draft*.pdf`. **2026-07-17 종결: 휘슬러(갑) 측이 자체 계약서를 전달하기로 함 → 우리 초안은 발송 안 함(내부 참고·타사 견적 합본 템플릿으로만 보존).** 상대 계약서 수령 시 조건 리뷰만 하면 됨. 계약금 €300 인보이스는 계약 확정 후 지시 시 발행.
 - **Update 4 전체 배포 (2026-07-16)** — `docs/update-4-plan.md`
