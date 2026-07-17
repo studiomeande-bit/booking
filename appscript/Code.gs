@@ -1132,6 +1132,8 @@ function handlePublicApiRequest_(route,method,e){
             owner:String(payload.owner||mkItem.owner||'automation')
           }));
         }
+        if(action==='marketing-asset-upload') return jsonOk_(uploadMarketingAssetForAgent_(token,payload));
+        if(action==='marketing-asset-delete') return jsonOk_(deleteMarketingAssetsForAgent_(token,payload));
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -10527,6 +10529,38 @@ function confirmBookingBalanceForAgent_(token,payload){
     result.evidenceStatus=evidence;
   }
   return result;
+}
+
+// 마케팅 자산 호스팅 — Phase 5 캐러셀 게시용 (Graph API는 이미지 공개 URL 필수).
+// 업로드 → 링크 공개 → lh3 직링크 반환, 게시 후 marketing-asset-delete 로 정리.
+const MARKETING_ASSET_FOLDER_NAME_='마케팅자산_인스타게시';
+function getMarketingAssetFolder_(){
+  const it=DriveApp.getFoldersByName(MARKETING_ASSET_FOLDER_NAME_);
+  return it.hasNext()?it.next():DriveApp.createFolder(MARKETING_ASSET_FOLDER_NAME_);
+}
+function uploadMarketingAssetForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const b64=String(payload.base64||'');
+  if(!b64) throw new Error('base64가 필요합니다.');
+  const name=String(payload.filename||'asset.jpg').replace(/[\\/:]+/g,'_');
+  const blob=Utilities.newBlob(Utilities.base64Decode(b64),String(payload.mimeType||'image/jpeg'),name);
+  const file=getMarketingAssetFolder_().createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+  const id=file.getId();
+  return {ok:true,fileId:id,
+    url:'https://lh3.googleusercontent.com/d/'+id+'=w1440',
+    fallbackUrl:'https://drive.google.com/uc?export=download&id='+id,
+    viewUrl:file.getUrl()};
+}
+function deleteMarketingAssetsForAgent_(token,payload){
+  assertAdmin_(token);
+  const ids=(payload&&payload.fileIds)||[];
+  let removed=0;
+  ids.forEach(function(id){
+    try{DriveApp.getFileById(String(id)).setTrashed(true);removed++;}catch(e){}
+  });
+  return {ok:true,removed:removed,requested:ids.length};
 }
 
 // 셀렉 상태를 세션 행 번호로 직접 변경 — 한 예약에 세션이 여러 개인 경우 대비
