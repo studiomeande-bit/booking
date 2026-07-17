@@ -10768,7 +10768,15 @@ function _buildDailyBriefingData_(){
       marketing.recent=marketing.recent.slice(0,4);
     }
   }catch(e){Logger.log('briefing marketing skipped: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing};
+  // 분기 마감(ELSTER) 리마인더 — 분기 말(25일~)·초(~20일) 창에만 노출 (신고 준비 시작 알림)
+  const qtr={active:false,label:''};
+  try{
+    const mm=now.getMonth()+1,dd=now.getDate();
+    const endQ={3:'Q1',6:'Q2',9:'Q3',12:'Q4'},startQ={1:'Q4(전년)',4:'Q1',7:'Q2',10:'Q3'};
+    if(endQ[mm]&&dd>=25){qtr.active=true;qtr.label=endQ[mm];}
+    else if(startQ[mm]&&dd<=20){qtr.active=true;qtr.label=startQ[mm];}
+  }catch(e){}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -10824,6 +10832,10 @@ function sendDailyBriefingEmail_(){
       mLines.push(line(`📊 게시 — ${esc(m.perf)}${m.url?' · <a href="'+esc(m.url)+'" style="color:#2563eb;">보기</a>':''}`));
     });
     parts.push(section('📣 마케팅 (인스타)',mLines.join('')));
+  }
+  // 6) 분기 마감 (ELSTER) — 창 안에서만
+  if(b.quarterClose&&b.quarterClose.active){
+    parts.push(section('📊 분기 마감 (ELSTER)',line(`<b>${esc(b.quarterClose.label)}</b> 신고 준비 시기입니다. 은행 CSV · SumUp Verkaufsbericht · MyRealTrip 정산 · 구매 영수증을 확보한 뒤 Claude에게 <b>“분기 감사팩 만들어줘”</b>라고 요청하세요. (기준: <b>스튜디오자료/2026년 kontoauszug</b>)`)));
   }
 
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
