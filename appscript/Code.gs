@@ -48,7 +48,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -1103,6 +1103,7 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_({ok:true,consultation:_mapConsultationRow_(cRow,cIdx)});
         }
         if(action==='consult-update') return jsonOk_(updateConsultationAdmin(token,payload.rowIndex,String(payload.status||''),payload.memo));
+        if(action==='lead-add') return jsonOk_(addLeadForAgent_(token,payload));
         // 마케팅 (인스타그램 자동화 파이프라인)
         if(action==='marketing-list') return jsonOk_(listMarketingScheduleAdmin(token,payload.filters||{}));
         if(action==='marketing-pending'){
@@ -2857,6 +2858,31 @@ function _sendConsultationAdminEmail_(c,rowIndex){
       ref:c.id
     });
   }catch(e){Logger.log('consultation admin mail failed: '+e.message);}
+}
+
+// 에이전트 리드 적재 — 인스타 댓글/DM 등 외부 리드를 리드 시트에 기록 (comment_guard 연동, ref로 중복 방지)
+function addLeadForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sh=ensureLeadSheet_(ensureSheets_().ss);
+  const ref=String(payload.ref||'').slice(0,160);           // permalink 등 고유키
+  if(ref){
+    const vals=sh.getDataRange().getValues();
+    for(let i=1;i<vals.length;i++){
+      if(String(vals[i][LEAD_COL['관리메모']]||'').indexOf(ref)>-1) return {ok:true,skipped:'duplicate',ref:ref};
+    }
+  }
+  const row=new Array(LEAD_HEADERS.length).fill('');
+  row[LEAD_COL['접수일시']]=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  row[LEAD_COL['상태']]='신규';
+  row[LEAD_COL['이름']]=String(payload.name||'').slice(0,80);
+  row[LEAD_COL['언어']]=String(payload.lang||'').slice(0,5);
+  row[LEAD_COL['문의종류']]=String(payload.inquiryType||'인스타 문의').slice(0,40);
+  row[LEAD_COL['메시지']]=String(payload.message||'').slice(0,500);
+  row[LEAD_COL['출처']]=String(payload.source||'instagram-comment').slice(0,60);
+  row[LEAD_COL['관리메모']]=ref?('ref:'+ref):'';
+  sh.appendRow(row);
+  return {ok:true,added:true,rowIndex:sh.getLastRow(),ref:ref};
 }
 
 function createConsultation_(payload,e){
@@ -20115,6 +20141,7 @@ function dailyTasks(){
     ['C2 셀렉 자동 점검',autoSelectDailyCheck],
     ['B3 촬영 후 감사메일',sendPostShootFollowupEmails_],
     ['B4 돌촬영 추천메일',sendDolRecommendationEmails_],
+    ['B5 기념일 재촬영 추천메일',sendAnniversaryRecommendationEmails_],
     ['C3 보정 후 후속메일',sendPostRetouchFollowupEmails_],
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
@@ -20525,6 +20552,48 @@ function sendDolRecommendationEmails_(){
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   });
+}
+
+// B5: 기념일 재촬영 추천 — 가족/아기/돌/키즈/만삭 계열 작업완료 촬영 1년(350~400일) 후 재촬영 넛지 (돌추천 확장)
+function sendAnniversaryRecommendationEmails_(){
+  const sh=ensureSheets_().bookingSheet;                     // ensureHeaderSheet_로 신규 컬럼 자동 보장
+  const col=BOOKING_COL['기념일추천메일발송일시'];
+  if(col==null) return;
+  const data=sh.getDataRange().getValues();
+  const now=new Date();
+  data.slice(1).forEach(function(row,idx){
+    if(String(row[1]||'').trim()!=='작업완료') return;
+    if(isCorporateBookingRow_(row)) return;
+    if(!_isAnniversaryEligibleRow_(row)) return;
+    if(String(row[col]||'').trim()) return;                  // 이미 발송
+    const email=String(row[4]||'').trim();
+    if(!email||!email.includes('@')||email.includes('수기')) return;
+    const shootObj=parseDateSafe_(row[0]).obj;
+    if(!shootObj) return;
+    const diffDays=Math.floor((now-shootObj)/86400000);
+    if(diffDays<350||diffDays>400) return;                   // 촬영 후 약 1년
+    const lang=String(row[5]||'ko').toLowerCase().trim();
+    const name=String(row[2]||'');
+    const product=String(row[7]||'');
+    const subj={
+      ko:`[Studio mean] 벌써 1년, 다시 담아볼 시기예요 — ${name}님`,
+      en:`[Studio mean] A year already — time for the next session, ${name}`,
+      de:`[Studio mean] Schon ein Jahr — Zeit für das nächste Shooting, ${name}`
+    };
+    const body={
+      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영이 벌써 1년 전이 되었네요. 그사이 아이도, 가족의 모습도 조금씩 달라지셨을 텐데요. 매년 같은 시기에 한 장씩 남겨두면 시간이 지날수록 더 특별한 기록이 됩니다.<br><br>비슷한 구성으로 다시, 또는 새로운 컨셉으로도 편하게 상의드릴 수 있어요. 일정이 궁금하시면 이 메일에 회신 주시거나 예약 페이지에서 확인해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${_getSignatureHtml()}`,
+      en:`Hello ${name},<br><br>It has already been a year since your <b>${product}</b> session. Children and families change so much in that time — keeping one frame each year makes the record more meaningful as the years pass.<br><br>We're happy to do a similar setup again, or something new. If you'd like to talk about dates, just reply to this email or check the booking page.<br><br>${_followupCommonHtml_('en',row)}<br><br>${_getSignatureHtml()}`,
+      de:`Guten Tag, ${name},<br><br>Ihr <b>${product}</b>-Shooting ist bereits ein Jahr her. Kinder und Familien verändern sich in dieser Zeit sehr — ein Bild pro Jahr wird mit den Jahren zu einer besonderen Erinnerung.<br><br>Gerne wieder in ähnlicher Gestaltung oder mit einem neuen Konzept. Für Termine antworten Sie einfach auf diese E-Mail oder schauen Sie auf der Buchungsseite.<br><br>${_followupCommonHtml_('de',row)}<br><br>${_getSignatureHtml()}`
+    };
+    sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+    sh.getRange(idx+2,col+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
+  });
+}
+
+// 기념일 재촬영 대상: 가족/아기/돌/키즈/만삭 계열 (여권·프로필·기업 제외)
+function _isAnniversaryEligibleRow_(row){
+  const blob=[row[BOOKING_COL['촬영종류']],row[BOOKING_COL['상품']],row[BOOKING_COL['옵션']]].map(function(v){return String(v||'');}).join(' ').toLowerCase();
+  return /stud|fam|dol|baby|가족|아기|돌|백일|키즈|만삭|family|kids|maternity/.test(blob);
 }
 
 function sendPostRetouchFollowupEmails_(){
@@ -21598,17 +21667,24 @@ function _quoteHoldDailyCheck_(){
   if(rows.length<2) return 0;
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const nowMs=Date.now();
-  const due=[],stale=[];
+  const due=[],stale=[],cooling=[];
   rows.slice(1).forEach(function(row,idx){
-    if(String(row[QUOTE_COL['상태']]||'')!==QUOTE_STATUS.HOLD) return;
+    const st=String(row[QUOTE_COL['상태']]||'');
     const q=quoteRowToObject_(row,idx+2);
-    const heldMs=Date.parse(String(q.heldAt||'').replace(' ','T'));
-    const heldDays=isFinite(heldMs)?Math.floor((nowMs-heldMs)/86400000):0;
-    if(q.followUpDate&&q.followUpDate<=today) due.push({q,heldDays});
-    else if(heldDays>=60&&!q.followUpDate) stale.push({q,heldDays});
-    if(heldDays>=60&&q.followUpDate&&q.followUpDate<=today) stale.push({q,heldDays});
+    if(st===QUOTE_STATUS.HOLD){
+      const heldMs=Date.parse(String(q.heldAt||'').replace(' ','T'));
+      const heldDays=isFinite(heldMs)?Math.floor((nowMs-heldMs)/86400000):0;
+      if(q.followUpDate&&q.followUpDate<=today) due.push({q,heldDays});
+      else if(heldDays>=60&&!q.followUpDate) stale.push({q,heldDays});
+      if(heldDays>=60&&q.followUpDate&&q.followUpDate<=today) stale.push({q,heldDays});
+    }else if(st===QUOTE_STATUS.SENT){                        // D6 확장: 발송 후 무응답(냉각) 세그먼트
+      const sentMs=Date.parse(String(row[QUOTE_COL['메일발송일시']]||'').replace(' ','T'));
+      const sentDays=isFinite(sentMs)?Math.floor((nowMs-sentMs)/86400000):-1;
+      const validUntil=String(row[QUOTE_COL['유효기한']]||'').slice(0,10);
+      if(sentDays>=7&&(!validUntil||validUntil>=today)) cooling.push({q:q,sentDays:sentDays,validUntil:validUntil});
+    }
   });
-  if(!due.length&&!stale.length) return 0;
+  if(!due.length&&!stale.length&&!cooling.length) return 0;
   const line=function(item){
     const q=item.q;
     const tent=q.tentativeStart?` · 📅 ${q.tentativeStart} 가예약 유지 중`:'';
@@ -21619,11 +21695,12 @@ function _quoteHoldDailyCheck_(){
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;">
     <h2 style="margin:0 0 12px;color:#b45309;">보류 견적 팔로업</h2>
     ${dueOnly.length?`<p style="margin:0 0 6px;"><b>오늘 확인할 보류 견적 ${dueOnly.length}건</b></p><ul style="margin:0 0 14px;padding-left:18px;">${dueOnly.map(line).join('')}</ul>`:''}
+    ${cooling.length?`<p style="margin:0 0 6px;color:#0369a1;"><b>발송 후 무응답 — 팔로업 권장 ${cooling.length}건</b></p><ul style="margin:0 0 14px;padding-left:18px;">${cooling.map(function(item){const q=item.q;return `<li style="margin-bottom:10px;"><b>${escapeHtml_(q.number)}</b> — ${escapeHtml_(q.companyName||q.name||'-')} (€${Number(q.total||0).toFixed(2)})<br><span style="color:#64748b;font-size:12px;">발송 ${item.sentDays}일차 · 유효 ${escapeHtml_(item.validUntil||'-')}까지 · 확인 연락 권장</span></li>`;}).join('')}</ul>`:''}
     ${stale.length?`<p style="margin:0 0 6px;color:#b91c1c;"><b>60일 이상 무응답 — 종결 검토 ${stale.length}건</b></p><ul style="margin:0 0 14px;padding-left:18px;">${stale.map(line).join('')}</ul><p style="font-size:12px;color:#64748b;">종결하려면 어드민 견적서 탭에서 거절 처리하세요. 가예약이 걸린 건은 함께 해제됩니다.</p>`:''}
     <p style="font-size:12px;color:#94a3b8;">확인 후 어드민에서 [스누즈]로 다음 확인일을 미루거나, 진행 확정 시 [예약전환]을 사용하세요.</p>
   </div>`;
   try{
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[견적 팔로업] 보류 ${due.length+stale.length>dueOnly.length+stale.length?due.length:dueOnly.length}건 확인 예정${stale.length?` · 종결검토 ${stale.length}건`:''}`,htmlBody:html});
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[견적 팔로업] 보류 ${due.length+stale.length>dueOnly.length+stale.length?due.length:dueOnly.length}건 확인 예정${cooling.length?` · 무응답 ${cooling.length}건`:''}${stale.length?` · 종결검토 ${stale.length}건`:''}`,htmlBody:html});
   }catch(e){Logger.log('_quoteHoldDailyCheck_ mail fail: '+e.message);}
   // 알림 후 재확인일 자동 +7일 (같은 건 반복 알림 방지, 어드민이 스누즈로 덮어쓸 수 있음)
   due.forEach(function(item){
@@ -21632,7 +21709,7 @@ function _quoteHoldDailyCheck_(){
       if(found.rowIndex>-1) quoteSheet.getRange(found.rowIndex,QUOTE_COL['재확인예정일']+1).setValue(Utilities.formatDate(new Date(nowMs+7*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd'));
     }catch(e){}
   });
-  return due.length+stale.length;
+  return due.length+stale.length+cooling.length;
 }
 
 function convertQuoteToBookingAdmin(token, number, overrides){
