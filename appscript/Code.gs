@@ -1080,6 +1080,9 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
         }
         if(action==='select-set-counts') return jsonOk_(updateSelectSessionCountsAdmin(token,payload));
+        if(action==='select-create') return jsonOk_(createSelectSession(token,payload.data||{}));
+        if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
+        if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='quote-accept'){
           const acceptNumber=String(payload.number||'');
           const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
@@ -16943,6 +16946,23 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
 		  }catch(e){return{ok:false,message:e.message};}
   finally{try{lock.releaseLock();}catch(e){}}
 		}
+
+function deleteSelectSessionByRowAdmin(token,selectRowIndex,expectBookingRowIndex){
+  try{
+    assertAdmin_(token);
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    const idx=parseInt(selectRowIndex,10);
+    if(!idx||idx<2) throw new Error('selectRowIndex가 필요합니다 (2 이상).');
+    if(idx>selSh.getLastRow()) throw new Error('셀렉 행을 찾을 수 없습니다: '+idx);
+    const row=selSh.getRange(idx,1,1,SELECT_HEADERS.length).getValues()[0];
+    const info={selectRowIndex:idx,sessionId:String(row[SELECT_COL['세션ID']]||''),bookingRowIndex:String(row[SELECT_COL['예약장부행']]||''),name:String(row[SELECT_COL['고객명']]||''),email:String(row[SELECT_COL['이메일']]||''),status:String(row[SELECT_COL['상태']]||'')};
+    if(expectBookingRowIndex!==undefined&&expectBookingRowIndex!==null&&String(expectBookingRowIndex).trim()!==''&&String(expectBookingRowIndex).trim()!==info.bookingRowIndex){
+      throw new Error('예약장부행 불일치 — 안전을 위해 삭제 취소. 기대='+expectBookingRowIndex+' / 실제='+info.bookingRowIndex);
+    }
+    selSh.deleteRow(idx);
+    return{ok:true,deleted:info};
+  }catch(err){return{ok:false,message:err.message};}
+}
 
 function confirmSelectSubmissionAdmin(token,bookingRowIndex){
   try{
