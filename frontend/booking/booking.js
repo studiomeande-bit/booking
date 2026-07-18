@@ -698,6 +698,9 @@ const COPY = {
     submitDone: '예약 신청이 정상적으로 접수되었습니다.',
     submitCardTitle: '예약 신청이 접수되었습니다.',
     submitCardCopy: '확인 메일을 보내드렸습니다. 관리자 확인 후 순차적으로 안내드립니다.',
+    voucherPromoTitle: '촬영을 선물하세요 🎁',
+    voucherPromoBody: '소중한 분께 Studio mean 촬영권을 선물해 보세요. 기프트 바우처는 이메일 또는 인스타 DM으로 편하게 문의해 주세요.',
+    voucherPromoCta: '기프트 바우처 문의',
     submitCardName: '이름',
     submitCardEmail: '이메일',
     submitCardDateTime: '예약 일시',
@@ -898,6 +901,9 @@ const COPY = {
     submitDone: 'Your booking request was submitted successfully.',
     submitCardTitle: 'Your booking request has been received.',
     submitCardCopy: 'A confirmation email has been sent. We will follow up after reviewing the request.',
+    voucherPromoTitle: 'Gift a photo session 🎁',
+    voucherPromoBody: 'Give someone special a Studio mean session. For gift vouchers, just reach out by email or Instagram DM.',
+    voucherPromoCta: 'Ask about gift vouchers',
     submitCardName: 'Name',
     submitCardEmail: 'Email',
     submitCardDateTime: 'Booking time',
@@ -1098,6 +1104,9 @@ const COPY = {
     submitDone: 'Ihre Buchungsanfrage wurde erfolgreich übermittelt.',
     submitCardTitle: 'Ihre Buchungsanfrage ist eingegangen.',
     submitCardCopy: 'Eine Bestätigungs-E-Mail wurde gesendet. Nach Prüfung melden wir uns bei Ihnen.',
+    voucherPromoTitle: 'Verschenken Sie ein Shooting 🎁',
+    voucherPromoBody: 'Schenken Sie einem lieben Menschen ein Studio-mean-Shooting. Gutscheine gerne per E-Mail oder Instagram-DM anfragen.',
+    voucherPromoCta: 'Gutschein anfragen',
     submitCardName: 'Name',
     submitCardEmail: 'E-Mail',
     submitCardDateTime: 'Termin',
@@ -2147,6 +2156,12 @@ function applyCopy() {
   setText('consultationCtaBody', copy.consultationCtaBody);
   setText('consultationCtaMeta', copy.consultationCtaMeta);
   setText('consultationCtaLink', copy.consultationCtaButton);
+  setText('voucherPromoTitle', copy.voucherPromoTitle);
+  setText('voucherPromoBody', copy.voucherPromoBody);
+  setText('voucherPromoCta', copy.voucherPromoCta);
+  setText('voucherPromoTitle2', copy.voucherPromoTitle);
+  setText('voucherPromoBody2', copy.voucherPromoBody);
+  setText('voucherPromoCta2', copy.voucherPromoCta);
   syncConsultationLinks();
   setText('requiredInfoLabel', copy.requiredInfoLabel);
   setText('requiredInfoCopy', copy.requiredInfoCopy);

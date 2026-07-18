@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=20260717-u6a" as="style">
+  <link rel="preload" href="./booking.min.css?v=20260718-u7a" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=20260717-u6a">
+  <link rel="stylesheet" href="./booking.min.css?v=20260718-u7a">
   <script src="/site-analytics.js?v=20260430-consent6"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -88,6 +88,14 @@
 
     <section class="panel hidden-step success-panel" id="successPanel">
       <div id="resultBox" class="result-box" hidden></div>
+      <div id="voucherPromoSuccess" style="margin-top:20px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:18px 20px;background:var(--accent-soft);border:1px solid var(--line);border-radius:14px;">
+        <span aria-hidden="true" style="font-size:1.8rem;line-height:1;">🎁</span>
+        <div style="flex:1;min-width:200px;">
+          <h3 id="voucherPromoTitle" style="margin:0 0 4px;font-size:1.05rem;color:var(--text);"></h3>
+          <p id="voucherPromoBody" style="margin:0;font-size:.9rem;color:var(--muted);line-height:1.55;"></p>
+        </div>
+        <a id="voucherPromoCta" class="ghost-btn" href="mailto:studio.mean.de@gmail.com?subject=Gift%20Voucher%20%2F%20%EA%B8%B0%ED%94%84%ED%8A%B8%20%EB%B0%94%EC%9A%B0%EC%B2%98%20%EB%AC%B8%EC%9D%98" style="white-space:nowrap;"></a>
+      </div>
     </section>
 
     <section class="panel" id="stepPanel1">
@@ -464,6 +472,14 @@
         </div>
       </form>
     </section>
+    <section id="voucherPromoStrip" aria-label="Gift voucher" style="margin:22px auto 0;padding:16px 18px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;background:var(--accent-soft);border:1px solid var(--line);border-radius:14px;">
+      <span aria-hidden="true" style="font-size:1.5rem;line-height:1;">🎁</span>
+      <div style="flex:1;min-width:200px;">
+        <strong id="voucherPromoTitle2" style="display:block;font-size:.98rem;color:var(--text);margin-bottom:2px;"></strong>
+        <span id="voucherPromoBody2" style="font-size:.86rem;color:var(--muted);line-height:1.5;"></span>
+      </div>
+      <a id="voucherPromoCta2" class="ghost-btn" href="mailto:studio.mean.de@gmail.com?subject=Gift%20Voucher%20%2F%20%EA%B8%B0%ED%94%84%ED%8A%B8%20%EB%B0%94%EC%9A%B0%EC%B2%98%20%EB%AC%B8%EC%9D%98" style="white-space:nowrap;"></a>
+    </section>
   </main>
   <footer class="site-footer" aria-label="Studio information and legal notice">
     <div class="site-footer-inner">
@@ -499,6 +515,6 @@
       </div>
     </div>
   </footer>
-  <script src="./booking.min.js?v=20260717-u6a"></script>
+  <script src="./booking.min.js?v=20260718-u7a"></script>
 </body>
 </html>
