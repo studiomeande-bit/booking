@@ -20491,7 +20491,13 @@ function _followupCommonHtml_(lang,row){
     : lang==='de'
       ? `Wenn Sie Ihre Bilder auf Instagram teilen, markieren Sie uns gerne mit <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a>. Wir freuen uns immer, Ihre Bilder in ihrem neuen Kontext zu sehen.`
       : `인스타그램에 사진을 올리실 때 <a href="${links.instagram}" style="color:#2563eb;font-weight:700;">@studio_mean</a> 태그를 남겨 주시면, 저희도 즐겁게 감상할 수 있어 감사한 마음입니다.`;
-  return `${reviewLine}<br><br>${instaLine}`;
+  // 고객모집 접점: 소중한 분께 '추억을 선물' — Studio mean 기프트 바우처 안내 (후속·후기 메일 공통)
+  const voucherLine=lang==='en'
+    ? `And if you'd like to gift this experience to someone you love, <b>Studio mean gift vouchers</b> are available — just reply to this email and we'll help you prepare one.`
+    : lang==='de'
+      ? `Und wenn Sie dieses Erlebnis einem lieben Menschen schenken möchten: <b>Studio-mean-Gutscheine</b> sind möglich — antworten Sie einfach auf diese E-Mail, wir bereiten gern einen vor.`
+      : `혹시 소중한 분께 이 순간을 선물하고 싶으시다면, <b>Studio mean 기프트 바우처</b>로 추억을 선물하실 수 있어요. 이 메일에 회신 주시면 편하게 안내해 드릴게요.`;
+  return `${reviewLine}<br><br>${instaLine}<br><br>${voucherLine}`;
 }
 
 function _isBaekilBookingRow_(row){
