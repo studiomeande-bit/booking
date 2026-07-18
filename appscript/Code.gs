@@ -15267,6 +15267,34 @@ function resolvePassportDeliveryFolder_(payload,name,dateStr){
   return shared;
 }
 
+// 셀렉 발송용 Drive 폴더 해결기 — resolvePassportDeliveryFolder_와 동일 패턴.
+// 명시 폴더가 있으면 그걸 공유; 없으면 고객명+촬영일로 자동탐색해 유일하면 공유,
+// 없거나 애매하면 {ok:false}를 돌려주어 호출부가 세션 생성/메일 발송을 중단하게 한다.
+function resolveSelectDeliveryFolder_(payload,name,dateStr){
+  payload=payload||{};
+  const explicitRef=String(payload.driveFolderId||payload.driveUrl||payload.driveFolderUrl||payload.driveFolderLink||payload.driveLink||'').trim();
+  // 셀렉은 원본 폴더 안 사진 파일까지 링크로 열람돼야 하므로 파일 포함 공유.
+  const shareOptions={recursive:true,includeFiles:true,maxItems:300,maxDepth:3};
+  if(explicitRef)return ensureDriveFolderEditorLink_(explicitRef,shareOptions);
+  const folders=findDriveFoldersForCustomerDate_(name,dateStr);
+  if(!folders.length){
+    return{ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'셀렉 고객명/촬영일과 일치하는 Drive 폴더를 찾지 못했습니다. driveFolderId를 지정해 다시 시도해 주세요.'};
+  }
+  const top=folders[0];
+  const sameTop=folders.filter(function(f){return Number(f.score||0)===Number(top.score||0);});
+  if(Number(top.score||0)<80||sameTop.length>1){
+    return{
+      ok:false,
+      code:'AMBIGUOUS_DRIVE_FOLDER',
+      message:'Drive 폴더 후보가 여러 개입니다. driveFolderId를 지정해 재호출해 주세요.',
+      candidates:folders.slice(0,8)
+    };
+  }
+  const shared=ensureDriveFolderEditorLink_(top.id,shareOptions);
+  if(shared.ok)shared.autoMatched=true;
+  return shared;
+}
+
 function createSelectSession(token,data){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'셀렉 링크 발송 처리 중입니다. 잠시 후 다시 시도해 주세요.'};
@@ -15297,6 +15325,16 @@ function createSelectSession(token,data){
         emailSent:false,
         message:'이미 생성된 셀렉 링크가 있어 중복 발송하지 않았습니다. 다시 보내려면 재발송 버튼을 사용해 주세요.'
       };
+    }
+    // 명시 폴더(driveFolderId/driveLink)도 없으면 고객명+촬영일로 Drive 폴더 자동탐색.
+    // 없거나 후보가 애매하면 세션도 만들지 않고 메일도 보내지 않는다 —
+    // 사진 없는 빈 셀렉 페이지가 고객에게 발송되는 사고를 원천 차단.
+    if(!driveLink && !data.driveFolderId){
+      const resolved=resolveSelectDeliveryFolder_(data,data.name,data.date||data.dateStr);
+      if(!resolved || resolved.ok!==true){
+        return resolved || {ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'셀렉 발송용 Drive 폴더를 찾지 못했습니다.'};
+      }
+      driveLink=resolved.url||driveLink;
     }
     const ri=getRetouchInfo_(data.itemGroup,data.product);
     const baseCount=normalizeSelectBaseRetouchCount_(data.baseRetouchCount,ri.count);
