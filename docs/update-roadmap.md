@@ -75,6 +75,11 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **기프트 바우처 상시 광고 (2026-07-18)** — 예약 사이트에 선물용 바우처 프로모 2곳: 페이지 하단 상시 스트립
+  (`#voucherPromoStrip`) + 예약완료 패널 카드(`#voucherPromoSuccess`). 3개국어(booking.js COPY `voucherPromo*` +
+  applyCopy setText), CTA=이메일 문의(자가구매 페이지 없음·바우처는 admin 발행). booking.min.js 재빌드+캐시버스트 u7a.
+  라이브 검증(스트립 1100×89px 렌더·ko/de/en 전환·mailto href). 기존 Gutschein 시스템 무변경 — 판촉 레이어만 추가.
+  다음: 시즌 인스타 캠페인(이벤트 카드 생성기와 묶기)·바우처 발행 시 판매채널 태깅.
 - **강화 백로그 4건 (2026-07-18, @609·@610)** — 코드로 검증 후 부가 구현·배포:
   - `lead-add` 에이전트 액션(리드 시트 적재, ref 중복방지) + `automation/comment_guard.py` 연동
     (문의성 댓글 → ERP 리드 시트 자동 기록). 스모크테스트 완료(추가+중복스킵). *리드 시트에 "TEST-스모크" 행 1개 = 삭제 가능.*
