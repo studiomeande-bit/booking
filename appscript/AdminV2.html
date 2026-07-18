@@ -585,6 +585,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <button type="button" class="nav-item" data-tab="leads" onclick="switchTab('leads');loadPortfolioLeads()">문의 리드</button>
       <button type="button" class="nav-item" data-tab="consultation" onclick="switchTab('consultation');loadConsultations()">상담</button>
       <button type="button" class="nav-item" data-tab="marketing" onclick="switchTab('marketing')">마케팅</button>
+      <button type="button" class="nav-item" data-tab="instareview" onclick="switchTab('instareview');loadInstaReview()">인스타 검수</button>
     </div>
     <div class="nav-group">
       <div class="nav-group-label">재무</div>
@@ -2298,6 +2299,21 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <tbody id="selectHistoryBody"><tr><td colspan="16" style="text-align:center;color:#94a3b8;padding:20px;">불러오는 중...</td></tr></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div class="content" id="tab_instareview">
+    <div class="card">
+      <div class="card-title-row">
+        <div>
+          <div class="card-title">인스타 검수 (게시 대기)</div>
+          <div class="card-sub">파이프라인이 만든 게시 대기 콘텐츠를 미리보고 승인하면 다음 슬롯에 자동 게시됩니다.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="loadInstaReview()">새로고침</button>
+        </div>
+      </div>
+      <div id="instaReviewList" style="display:grid;gap:14px;margin-top:14px;">불러오는 중…</div>
     </div>
   </div>
 
@@ -4248,6 +4264,38 @@ function marketingStageClass(stage){
   return 'candidate';
 }
 
+function loadInstaReview(){
+  var box=document.getElementById('instaReviewList');
+  if(box) box.textContent='불러오는 중…';
+  google.script.run.withSuccessHandler(renderInstaReview).withFailureHandler(handleApiError).listInstaReviewAdmin(adminToken);
+}
+function renderInstaReview(res){
+  var box=document.getElementById('instaReviewList');
+  if(!box) return;
+  var items=(res&&res.items)||[];
+  if(!items.length){ box.innerHTML='<div style="color:#94a3b8;padding:20px;">게시 대기 중인 콘텐츠가 없습니다.</div>'; return; }
+  box.innerHTML=items.map(function(it){
+    var pending = it.status==='검수대기';
+    var cap=String(it.caption||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
+    var cover=it.coverUrl?('<img src="'+it.coverUrl+'" referrerpolicy="no-referrer" style="width:120px;height:150px;object-fit:cover;border-radius:10px;border:1px solid #e8e4dd;flex:none;">'):'<div style="width:120px;height:150px;border-radius:10px;background:#f1f5f9;flex:none;"></div>';
+    var badge='<span class="marketing-stage '+(pending?'ready':'scheduled')+'">'+it.status+'</span>';
+    var btns = pending
+      ? '<button class="btn btn-primary btn-sm" onclick="approveInstaReview(\''+it.key+'\',true)">승인 · 게시</button> <button class="btn btn-outline btn-sm" onclick="approveInstaReview(\''+it.key+'\',false)">보류</button>'
+      : '<span style="color:#7c3aed;font-weight:700;font-size:12px;">승인됨 — 게시 대기</span>';
+    return '<div style="display:flex;gap:16px;border:1px solid #ece4d8;border-radius:14px;padding:14px;background:#fff;">'
+      + cover
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;"><b style="font-size:15px;">'+String(it.name||'')+'</b> '+badge+' <span style="color:#94a3b8;font-size:12px;">'+String(it.type||'')+' · '+(it.slideCount||'')+'컷</span></div>'
+      + '<div style="font-size:12px;color:#64748b;margin-bottom:8px;">슬롯: '+String(it.slot||'-')+'</div>'
+      + '<div style="font-size:13px;color:#334155;line-height:1.5;max-height:130px;overflow:auto;background:#fafaf8;border-radius:8px;padding:8px 10px;">'+cap+'</div>'
+      + '<div style="margin-top:10px;display:flex;gap:8px;">'+btns+'</div>'
+      + '</div></div>';
+  }).join('');
+}
+function approveInstaReview(key, approve){
+  if(approve && !confirm('이 콘텐츠를 승인하면 다음 슬롯에 자동 게시됩니다. 승인할까요?')) return;
+  google.script.run.withSuccessHandler(function(){ loadInstaReview(); }).withFailureHandler(handleApiError).approveInstaReviewAdmin(adminToken, key, approve);
+}
 function loadMarketingSchedule(){
   const body=document.getElementById('marketingBody');
   if(body) body.innerHTML='<tr><td colspan="9" style="text-align:center;color:#64748b;padding:22px;"><span class="spinner"></span> 불러오는 중...</td></tr>';

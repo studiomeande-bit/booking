@@ -20,6 +20,7 @@ const CONFIG = {
   SETTLEMENT_SHEET: '결제대조',
   TRAVEL_SHEET: '출장장부',
   MARKETING_SHEET: '마케팅게시스케줄',
+  INSTA_REVIEW_SHEET: '인스타검수',
   CASH_SHEET: '현금장부',
   THREAD_SHEET: '문의스레드',
   INVOICE_FOLDER_NAME: 'Studio mean Invoices',
@@ -130,6 +131,9 @@ const TRAVEL_HEADERS=['예약장부행','기록일시','예약일시','예약상
 const TRAVEL_COL=TRAVEL_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트일시','고객명','연락처','이메일','촬영일시','촬영종류','상품','마케팅동의','콘텐츠상태','플랫폼','게시예정일','게시시간','게시상태','업로드여부','게시URL','드라이브링크','캡션메모','관리메모','담당자'];
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+// 인스타 검수: 로컬 파이프라인의 built(게시대기) 항목을 ERP에서 미리보기+승인 (릴스·캐러셀·캠페인 공통)
+const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시'];
+const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
 const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON','보류사유','재확인예정일','보류전환일시','가예약시작','가예약소요분','가예약캘린더ID'];
@@ -1135,6 +1139,9 @@ function handlePublicApiRequest_(route,method,e){
         }
         if(action==='marketing-asset-upload') return jsonOk_(uploadMarketingAssetForAgent_(token,payload));
         if(action==='marketing-asset-delete') return jsonOk_(deleteMarketingAssetsForAgent_(token,payload));
+        // 인스타 검수 (게시대기 미리보기+승인)
+        if(action==='insta-review-upsert') return jsonOk_(upsertInstaReviewForAgent_(token,payload));
+        if(action==='insta-review-poll') return jsonOk_(pollInstaReviewForAgent_(token,payload));
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -2025,6 +2032,94 @@ function ensureTravelSheet_(ss){
 
 function ensureMarketingScheduleSheet_(ss){
   return ensureHeaderSheet_(ss,CONFIG.MARKETING_SHEET,MARKETING_SCHEDULE_HEADERS,'#fce7f3');
+}
+function ensureInstaReviewSheet_(ss){
+  return ensureHeaderSheet_(ss,CONFIG.INSTA_REVIEW_SHEET,INSTA_REVIEW_HEADERS,'#ede9fe');
+}
+
+// ── 인스타 검수 (게시대기 미리보기 + 승인) ─────────────────────────────────
+// 로컬 파이프라인이 built 항목을 upsert(에이전트), 어드민이 미리보기 후 승인, 로컬이 승인분을 poll→게시.
+function upsertInstaReviewForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const key=String(payload.key||'').trim();
+  if(!key) throw new Error('key(큐키)가 필요합니다.');
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const now=_nowStamp_();
+  const vals=sh.getDataRange().getValues();
+  let rIdx=-1;
+  for(let i=1;i<vals.length;i++){ if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')===key){ rIdx=i+1; break; } }
+  const cur=rIdx>-1 ? String(vals[rIdx-1][INSTA_REVIEW_COL['상태']]||'') : '';
+  // 이미 승인/게시완료면 상태 보존 (미리보기 필드만 갱신)
+  const status=(cur==='승인'||cur==='게시완료') ? cur : '검수대기';
+  const row=rIdx>-1 ? vals[rIdx-1].slice() : new Array(INSTA_REVIEW_HEADERS.length).fill('');
+  row[INSTA_REVIEW_COL['큐키']]=key;
+  row[INSTA_REVIEW_COL['유형']]=String(payload.type||'');
+  row[INSTA_REVIEW_COL['이름']]=String(payload.name||'');
+  row[INSTA_REVIEW_COL['상태']]=status;
+  row[INSTA_REVIEW_COL['커버URL']]=String(payload.coverUrl||'');
+  row[INSTA_REVIEW_COL['슬라이드URL']]=String(payload.slideUrls||'');
+  row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
+  row[INSTA_REVIEW_COL['예정슬롯']]=String(payload.slot||'');
+  row[INSTA_REVIEW_COL['슬라이드수']]=payload.slideCount||'';
+  row[INSTA_REVIEW_COL['폴더']]=String(payload.folder||'');
+  row[INSTA_REVIEW_COL['업데이트일시']]=now;
+  if(rIdx>-1){ sh.getRange(rIdx,1,1,INSTA_REVIEW_HEADERS.length).setValues([row]); }
+  else { row[INSTA_REVIEW_COL['등록일시']]=now; sh.appendRow(row); rIdx=sh.getLastRow(); }
+  return {ok:true,key:key,status:status,rowIndex:rIdx};
+}
+
+// 로컬 poll — 승인된 큐키 목록 반환 (로컬이 APPROVE 파일 생성). markPosted=true면 게시완료 처리.
+function pollInstaReviewForAgent_(token,payload){
+  assertAdmin_(token);
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  const approved=[];
+  for(let i=1;i<vals.length;i++){
+    if(String(vals[i][INSTA_REVIEW_COL['상태']]||'')==='승인'){
+      approved.push({key:String(vals[i][INSTA_REVIEW_COL['큐키']]||''),folder:String(vals[i][INSTA_REVIEW_COL['폴더']]||'')});
+    }
+  }
+  return {ok:true,approved:approved,count:approved.length};
+}
+
+// 어드민(AdminV2) — 검수 목록 (google.script.run 직접 호출)
+function listInstaReviewAdmin(token){
+  assertAdmin_(token);
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  const items=[];
+  for(let i=1;i<vals.length;i++){
+    const r=vals[i];
+    const st=String(r[INSTA_REVIEW_COL['상태']]||'');
+    if(st==='게시완료') continue;                       // 대기/승인만 노출
+    items.push({
+      key:String(r[INSTA_REVIEW_COL['큐키']]||''), type:String(r[INSTA_REVIEW_COL['유형']]||''),
+      name:String(r[INSTA_REVIEW_COL['이름']]||''), status:st,
+      coverUrl:String(r[INSTA_REVIEW_COL['커버URL']]||''), slideUrls:String(r[INSTA_REVIEW_COL['슬라이드URL']]||''),
+      caption:String(r[INSTA_REVIEW_COL['캡션']]||''), slot:String(r[INSTA_REVIEW_COL['예정슬롯']]||''),
+      slideCount:r[INSTA_REVIEW_COL['슬라이드수']]||'', updatedAt:String(r[INSTA_REVIEW_COL['업데이트일시']]||'')
+    });
+  }
+  items.sort(function(a,b){return String(b.updatedAt).localeCompare(String(a.updatedAt));});
+  return {ok:true,items:items,generatedAt:_nowStamp_()};
+}
+
+// 어드민 — 승인 처리 (상태 검수대기 → 승인). 로컬 poll 이 감지해 게시.
+function approveInstaReviewAdmin(token,key,approve){
+  assertAdmin_(token);
+  key=String(key||'').trim();
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  for(let i=1;i<vals.length;i++){
+    if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')===key){
+      const newSt=(approve===false)?'보류':'승인';
+      sh.getRange(i+1,INSTA_REVIEW_COL['상태']+1).setValue(newSt);
+      sh.getRange(i+1,INSTA_REVIEW_COL['승인일시']+1).setValue((approve===false)?'':_nowStamp_());
+      return {ok:true,key:key,status:newSt};
+    }
+  }
+  throw new Error('검수 항목을 찾지 못했습니다: '+key);
 }
 
 function ensureThreadSheet_(ss){
