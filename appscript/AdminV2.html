@@ -2090,6 +2090,17 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div id="automationKeyResult" style="margin-top:12px;font-size:13px;color:#475569;word-break:break-all;"></div>
     </div>
     <div class="card">
+      <div class="card-title">🧳 마이리얼트립 Open API 키</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">MRT <b>파트너 페이지 → Open API → API Key 발급</b>에서 만든 키를 붙여넣으세요. 등록하면 매일 자동으로 <b>취소 감지</b>와 <b>판매금액 보정</b>(예약번호 매칭)이 실행됩니다. 키는 서버(Script Properties)에만 저장됩니다.</div>
+      <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <input type="password" id="mrtApiKeyInput" placeholder="Bearer 키 붙여넣기" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;">
+        <button type="button" class="btn btn-primary" onclick="setMrtApiKeyUI()">키 등록</button>
+        <button type="button" class="btn btn-outline" onclick="testMrtApiUI()">연결 테스트</button>
+        <button type="button" class="btn btn-outline" style="color:#ef4444;" onclick="clearMrtApiKeyUI()">키 삭제</button>
+      </div>
+      <div id="mrtApiKeyResult" style="margin-top:12px;font-size:13px;color:#475569;word-break:break-all;"></div>
+    </div>
+    <div class="card">
       <div class="card-title">당일 재촬영 할인</div>
       <div class="form-row"><div class="form-group"><label>재촬영 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div></div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">예약 제출 시각 기준으로 같은 날 촬영이 끝난 고객의 추가 예약을 점검합니다. 새 예약이 여권/비자일 때는 제외하고, 이전 촬영이 여권/비자인 경우는 할인 근거로 허용합니다.</div>
@@ -12847,6 +12858,50 @@ function revokeAutomationKeyUI(){
       .withSuccessHandler(()=>{release();document.getElementById('automationKeyResult').textContent='키가 폐기되었습니다.';showToast('키 폐기됨','ok');})
       .withFailureHandler(e=>{release();handleApiError(e);})
       .adminRpc(adminToken,'revokeAutomationKey',{});
+  });
+}
+
+/* ── 마이리얼트립 Open API 키 ── */
+function setMrtApiKeyUI(){
+  const input=document.getElementById('mrtApiKeyInput');
+  const key=String(input.value||'').trim();
+  if(!key){showToast('키를 붙여넣어 주세요.','warn');return;}
+  runExclusive('mrt:apikey', release=>{
+    google.script.run
+      .withSuccessHandler(res=>{
+        release();
+        input.value='';
+        document.getElementById('mrtApiKeyResult').textContent='✅ 키 등록됨 ('+(res&&res.preview||'')+') — [연결 테스트]로 확인해 보세요. 매일 자동 대사가 활성화되었습니다.';
+        showToast('MRT API 키 등록됨','ok');
+      })
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'setMrtApiKey',{key:key});
+  });
+}
+function testMrtApiUI(){
+  runExclusive('mrt:apikey', release=>{
+    const box=document.getElementById('mrtApiKeyResult');
+    box.textContent='연결 확인 중…';
+    google.script.run
+      .withSuccessHandler(res=>{
+        release();
+        if(res&&res.ok){
+          const sample=(res.sample||[]).map(s=>`<div style="font-size:12px;color:#475569;">· ${escapeAdminHtml(s.reservationNo)} — ${escapeAdminHtml(s.status)} · ${Number(s.salePrice||0).toLocaleString()}원 · ${escapeAdminHtml(s.product)} (${escapeAdminHtml(s.tripStartKst||'')})</div>`).join('');
+          box.innerHTML=`<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 12px;"><b style="color:#065f46;">연결 성공</b> — 최근 30일 예약 ${res.totalCount??res.count}건${sample?'<div style="margin-top:6px;">'+sample+'</div>':''}</div>`;
+          showToast('MRT API 연결 성공','ok');
+        } else box.textContent='연결 실패';
+      })
+      .withFailureHandler(e=>{release();document.getElementById('mrtApiKeyResult').textContent='❌ '+(e&&e.message||'연결 실패');handleApiError(e);})
+      .adminRpc(adminToken,'testMrtApi',{});
+  });
+}
+function clearMrtApiKeyUI(){
+  if(!confirm('MRT Open API 키를 삭제할까요?\n매일 자동 취소감지·금액보정이 중단됩니다.')) return;
+  runExclusive('mrt:apikey', release=>{
+    google.script.run
+      .withSuccessHandler(()=>{release();document.getElementById('mrtApiKeyResult').textContent='키가 삭제되었습니다.';showToast('MRT API 키 삭제됨','ok');})
+      .withFailureHandler(e=>{release();handleApiError(e);})
+      .adminRpc(adminToken,'clearMrtApiKey',{});
   });
 }
 

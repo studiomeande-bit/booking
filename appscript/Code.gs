@@ -369,6 +369,12 @@ function adminRpc(token, action, payload){
       return issueAutomationKeyAdmin(token);
     case 'revokeAutomationKey':
       return revokeAutomationKeyAdmin(token);
+    case 'setMrtApiKey':
+      return setMrtPartnerApiKeyAdmin(token, String(payload&&payload.key||''));
+    case 'clearMrtApiKey':
+      return clearMrtPartnerApiKeyAdmin(token);
+    case 'testMrtApi':
+      return mrtApiTestAdmin(token);
     case 'changeAdminPassword':
       return changeAdminPasswordAdmin(token, String(payload&&payload.newPassword||''));
     case 'auditReturnDiscounts':
@@ -1082,6 +1088,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
+        if(action==='mrt-api-test') return jsonOk_(mrtApiTestAdmin(token));
+        if(action==='mrt-api-reconcile') return jsonOk_(mrtApiReconcileAdmin(token));
         if(action==='quote-accept'){
           const acceptNumber=String(payload.number||'');
           const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
@@ -10360,8 +10368,12 @@ function syncMyRealTripBookingEmails_(options){
       }
     }
   }catch(e){Logger.log('MRT phone repair skipped: '+e.message);}
+  // Open API 키가 등록돼 있으면 장부 대사(취소 감지·금액 보정)까지 매 실행마다 수행
+  let apiReconcile=null;
+  try{apiReconcile=mrtApiReconcileLedger_();}catch(e){apiReconcile={ok:false,error:e.message};}
   return {
     ok:failed===0,
+    apiReconcile:apiReconcile,
     count:created,
     created,
     duplicates,
@@ -10418,6 +10430,119 @@ function setBookingTimeForAgent_(token,payload){
   }catch(e){Logger.log('setBookingTimeForAgent_ calendar sync failed row '+rIdx+': '+e.message);}
   bumpCalCacheVer_();
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),dateTime:m[1]+' '+m[2],eventId:eventId,customerMailSent:false};
+}
+
+/* ===== MRT Open API (마케팅파트너 API, partner-ext-api.myrealtrip.com) =====
+ * 파트너 페이지 "Open API" 메뉴에서 셀프 발급한 키를 어드민 설정에서 등록하면 동작.
+ * 주의: 이 API는 어필리에이트 예약 조회용이라 고객 연락처·요청사항은 없다(파트너센터에만 존재).
+ * 여기서는 ①취소 감지 ②판매금액 자동보정(예약번호 정밀 매칭)에 사용한다. */
+function getMrtPartnerApiKey_(){
+  return String(PropertiesService.getScriptProperties().getProperty('MRT_PARTNER_API_KEY')||'').trim();
+}
+function setMrtPartnerApiKeyAdmin(token,key){
+  assertAdmin_(token);
+  const k=String(key||'').trim();
+  if(k.length<20) throw new Error('키 형식이 올바르지 않습니다(너무 짧음). 파트너 페이지 Open API에서 발급한 키를 붙여넣으세요.');
+  PropertiesService.getScriptProperties().setProperty('MRT_PARTNER_API_KEY',k);
+  return {ok:true,preview:k.slice(0,6)+'…'+k.slice(-4)};
+}
+function clearMrtPartnerApiKeyAdmin(token){
+  assertAdmin_(token);
+  PropertiesService.getScriptProperties().deleteProperty('MRT_PARTNER_API_KEY');
+  return {ok:true};
+}
+function mrtApiListReservations_(opts){
+  const key=getMrtPartnerApiKey_();
+  if(!key) throw new Error('MRT_PARTNER_API_KEY 미등록 — 어드민 설정에서 등록하세요.');
+  opts=opts||{};
+  const params=[
+    'startDate='+encodeURIComponent(String(opts.startDate||'')),
+    'endDate='+encodeURIComponent(String(opts.endDate||'')),
+    'dateSearchType='+encodeURIComponent(String(opts.dateSearchType||'RESERVATION_DATE')),
+    'page='+(parseInt(opts.page,10)||1),
+    'pageSize='+(parseInt(opts.pageSize,10)||300)
+  ];
+  (opts.statuses||[]).forEach(function(s){params.push('statuses='+encodeURIComponent(s));});
+  const resp=UrlFetchApp.fetch('https://partner-ext-api.myrealtrip.com/v1/reservations?'+params.join('&'),{
+    method:'get',
+    headers:{Authorization:'Bearer '+key},
+    muteHttpExceptions:true
+  });
+  const status=resp.getResponseCode();
+  if(status!==200) throw new Error('MRT API 오류 '+status+': '+String(resp.getContentText()||'').slice(0,180));
+  try{return JSON.parse(resp.getContentText()||'{}');}catch(e){throw new Error('MRT API 응답 파싱 실패');}
+}
+// 연결 테스트 — PII 없는 요약만 반환
+function mrtApiTestAdmin(token){
+  assertAdmin_(token);
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const from=Utilities.formatDate(new Date(Date.now()-30*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const body=mrtApiListReservations_({startDate:from,endDate:today,pageSize:50});
+  const rows=(body&&body.data)||[];
+  const pg=body&&body.meta&&body.meta.pagination;
+  return {ok:true,count:rows.length,totalCount:pg?pg.totalCount:rows.length,
+    sample:rows.slice(0,5).map(function(r){return {reservationNo:r.reservationNo,status:r.statusKor||r.status,salePrice:r.salePrice,product:String(r.productTitle||'').slice(0,40),tripStartKst:String(r.tripStartedAtKst||'').slice(0,10)};})};
+}
+// 장부 대사: API 예약번호 ↔ 장부 MRT 행 매칭 → 취소 감지 + 금액 보정
+function mrtApiReconcileLedger_(){
+  if(!getMrtPartnerApiKey_()) return {ok:false,skipped:'no_api_key'};
+  const today=new Date();
+  const startDate=Utilities.formatDate(new Date(today.getTime()-180*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const endDate=Utilities.formatDate(today,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const map={};
+  let page=1;
+  while(page<=5){ // 최대 1500건 안전 상한
+    const body=mrtApiListReservations_({startDate:startDate,endDate:endDate,page:page,pageSize:300});
+    const rows=(body&&body.data)||[];
+    rows.forEach(function(r){ if(r&&r.reservationNo) map[String(r.reservationNo).trim()]=r; });
+    const pg=body&&body.meta&&body.meta.pagination;
+    if(!rows.length||!pg||page*300>=Number(pg.totalCount||0)) break;
+    page++;
+  }
+  const out={ok:true,apiRows:Object.keys(map).length,checked:0,cancelFlagged:[],amountFilled:[]};
+  const sh=getDbSheet();
+  if(sh.getLastRow()<2||!out.apiRows) return out;
+  const vals=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  for(let i=0;i<vals.length;i++){
+    const row=vals[i];
+    if(!isMyRealTripBookingRow_(row)) continue;
+    const rowText=_bookingRowSearchText_(row);
+    const resNoMatch=rowText.match(/[A-Z]{2,4}-\d{8}-\d{8}/);
+    if(!resNoMatch) continue;
+    const api=map[resNoMatch[0]];
+    if(!api) continue;
+    out.checked++;
+    const rIdx=i+2;
+    const rowStatus=String(row[BOOKING_COL['상태']]||'').trim();
+    // ① 취소 감지: API가 취소/취소요청인데 장부는 활성 상태
+    if((api.status==='CANCEL'||api.status==='REQUEST_CANCEL') && !isBookingCancelledStatus_(rowStatus) && rowText.indexOf('MRT API 취소 감지')===-1){
+      const note='⚠️ MRT API 취소 감지('+(api.statusKor||api.status)+', '+String(api.canceledAtKst||'').slice(0,10)+') — 파트너센터 확인 후 장부 취소 처리 필요';
+      const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+      sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo,note].filter(Boolean).join('\n'));
+      if(BOOKING_COL['수동확인필요']!=null) sh.getRange(rIdx,BOOKING_COL['수동확인필요']+1).setValue('Y');
+      out.cancelFlagged.push({row:rIdx,reservationNo:resNoMatch[0]});
+    }
+    // ② 금액 보정: 장부 총결제액 0 && API 판매금액 존재
+    const curTotal=Number(row[BOOKING_COL['총결제액']]||0)||0;
+    const saleKrw=Number(api.salePrice||0)||0;
+    if(curTotal<=0 && saleKrw>0){
+      try{
+        const q=convertKrwToEur_(saleKrw);
+        sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(q.eurAmount);
+        if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(q.eurAmount);
+        if(String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y') sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(q.eurAmount);
+        const note='💶 MRT API 금액 보정: '+q.krwAmount.toLocaleString()+'원 → '+formatEuroAmount_(q.eurAmount)+'€ (환율 '+q.rate.toFixed(6)+', '+q.fetchedAt+')';
+        const curMemo2=String(sh.getRange(rIdx,BOOKING_COL['요청사항']+1).getValue()||'').trim();
+        sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo2,note].filter(Boolean).join('\n'));
+        out.amountFilled.push({row:rIdx,reservationNo:resNoMatch[0],krw:saleKrw,eur:q.eurAmount});
+      }catch(e){Logger.log('MRT amount fill failed row '+rIdx+': '+e.message);}
+    }
+  }
+  return out;
+}
+function mrtApiReconcileAdmin(token){
+  assertAdmin_(token);
+  return mrtApiReconcileLedger_();
 }
 
 // MRT 파트너센터에서 읽은 전체 예약정보(연락처·이메일·인원·판매금액·요청사항)를
