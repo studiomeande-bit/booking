@@ -1079,6 +1079,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-create') return jsonOk_(createSelectSession(token,payload.data||{}));
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
+        if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='quote-accept'){
           const acceptNumber=String(payload.number||'');
           const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
@@ -9713,11 +9714,20 @@ function addManualBookingAdmin(token, data) {
       }
     }
     if(useKrwMode){
-      const quote=convertKrwToEur_(data.krwTotal||data.krwAmount||data.price);
-      priceEuro=quote.eurAmount;
-      priceText=`${formatEuroAmount_(priceEuro)}€`;
-      priceDisplayText=`${priceText} (₩${quote.krwAmount.toLocaleString()} / MyRealTrip)`;
-      exchangeNote=`마이리얼트립 원화결제 ${quote.krwAmount.toLocaleString()}원 / 환율 ${quote.rate.toFixed(6)} / 환산 ${priceText} / 기준 ${quote.fetchedAt}`;
+      const krwRaw=parseInt(String(data.krwTotal||data.krwAmount||data.price||'').replace(/[^0-9]/g,''),10)||0;
+      if(krwRaw>0){
+        const quote=convertKrwToEur_(krwRaw);
+        priceEuro=quote.eurAmount;
+        priceText=`${formatEuroAmount_(priceEuro)}€`;
+        priceDisplayText=`${priceText} (₩${quote.krwAmount.toLocaleString()} / MyRealTrip)`;
+        exchangeNote=`마이리얼트립 원화결제 ${quote.krwAmount.toLocaleString()}원 / 환율 ${quote.rate.toFixed(6)} / 환산 ${priceText} / 기준 ${quote.fetchedAt}`;
+      }else{
+        // MRT 확정완료 메일에는 판매금액이 없다 → 0€ 가등록 허용, 파트너센터 확인 후 수기 입력.
+        priceEuro=0;
+        priceText='0€';
+        priceDisplayText='0€ (₩미확인 / MyRealTrip)';
+        exchangeNote='마이리얼트립 판매금액 미확인 — 파트너센터 확인 후 예약수정에서 입력';
+      }
       extraMetaToSave=exchangeNote;
     }
 
@@ -9836,7 +9846,7 @@ function addManualBookingAdmin(token, data) {
       manualCalendarDescription.push('---');
       manualCalendarDescription.push(`메모: ${String(data.memo||'').trim()}`);
 
-      const ev = cal.createEvent(`[수기/확정] ${productName} | ${name} | ${peopleToSave}인 | ${priceLabel}`, s, e2, {
+      const ev = cal.createEvent(`${String(data.calendarTitlePrefix||'')}[수기/확정] ${productName} | ${name} | ${peopleToSave}인 | ${priceLabel}`, s, e2, {
         description: manualCalendarDescription.join('\n'),
         location: savedBookingLocation
       });
@@ -9848,7 +9858,8 @@ function addManualBookingAdmin(token, data) {
     bookingRow[BOOKING_COL['예약일시']] = `${date} ${time}`;
     bookingRow[BOOKING_COL['상태']] = '확정됨';
     bookingRow[BOOKING_COL['고객명']] = name;
-    bookingRow[BOOKING_COL['연락처']] = phone;
+    // '+49…'는 시트가 수식/숫자로 해석한다(공백 포함 시 #ERROR!) → 아포스트로피로 텍스트 강제.
+    bookingRow[BOOKING_COL['연락처']] = (phone&&phone.charAt(0)==='+') ? ("'"+phone) : phone;
     bookingRow[BOOKING_COL['이메일']] = emailToSave;
     bookingRow[BOOKING_COL['언어']] = langToSave;
     bookingRow[BOOKING_COL['촬영종류']] = groupToSave;
@@ -9882,7 +9893,7 @@ function addManualBookingAdmin(token, data) {
     bookingRow[BOOKING_COL['확정일시']] = nowStr;
     bookingRow[BOOKING_COL['추천시간상태']] = '수기등록';
     bookingRow[BOOKING_COL['확정처리모드']] = 'manual_admin';
-    bookingRow[BOOKING_COL['수동확인필요']] = '';
+    bookingRow[BOOKING_COL['수동확인필요']] = data.manualReviewRequired ? 'Y' : '';
     bookingRow[BOOKING_COL['shooting_date']] = date;
     bookingRow[BOOKING_COL['shooting_time']] = time;
     bookingRow[BOOKING_COL['shooting_location']] = savedBookingLocation;
@@ -10000,6 +10011,13 @@ function _mrtField_(text, labels){
       const re=new RegExp('^\\s*'+pattern+'\\s*(?:[:：]|-|–)?\\s*(.+)$','i');
       const m=line.match(re);
       if(m&&String(m[1]||'').trim()) return String(m[1]||'').trim();
+      // MRT 파트너 알림은 HTML 표(라벨 셀/값 셀)라 텍스트 변환 시 라벨과 값이
+      // 서로 다른 줄로 떨어진다 → 라벨 단독 줄이면 다음 줄을 값으로 취급.
+      const soloRe=new RegExp('^\\s*'+pattern+'\\s*(?:[:：]|-|–)?\\s*$','i');
+      if(soloRe.test(line)&&i+1<lines.length){
+        const nextLine=String(lines[i+1]||'').trim();
+        if(nextLine) return nextLine;
+      }
     }
   }
   return '';
@@ -10057,7 +10075,7 @@ function _mrtFindProductMeta_(text){
 }
 
 function _mrtExtractDateTime_(text){
-  const dateLine=_mrtField_(text,['촬영일','이용일','예약일','사용일','날짜','Date','Experience date','Booking date']);
+  const dateLine=_mrtField_(text,['여행일','촬영일','이용일','예약일','사용일','날짜','Date','Experience date','Booking date']);
   const timeLine=_mrtField_(text,['촬영시간','이용시간','예약시간','시간','Time','Start time']);
   const dateSource=[dateLine,text].filter(Boolean).join(' ');
   const dateMatch=dateSource.match(/(20\d{2})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\-/])\s*(\d{1,2})\s*(?:일|\.)?/);
@@ -10151,23 +10169,31 @@ function parseMyRealTripBookingEmail_(message){
   const text=_mrtPlainTextFromMessage_(message);
   if(!/myrealtrip|my real trip|마이리얼트립/i.test(text)) return null;
   if(!/예약|booking|reservation|confirmed|확정/i.test(text)) return null;
+  // [확정완료] 메일만 가져온다. [확정대기](파트너센터 수락 전)·취소·문의 메일은 등록 대상 아님.
+  if(!/확정완료|예약이 확정되었습니다|booking (?:is )?confirmed/i.test(text)) return null;
+  if(/확정대기|새로운 예약이 들어왔|예약.?취소|취소되었습니다/i.test(text.slice(0,400))) return null;
   const productMeta=_mrtFindProductMeta_(text);
   const dt=_mrtExtractDateTime_(text);
   const amountKrw=_mrtAmountKrw_(text);
-  const name=_mrtField_(text,['예약자명','예약자','고객명','성함','이름','Name','Customer'])||'마이리얼트립 고객';
+  const name=_mrtField_(text,['여행자','예약자명','예약자','고객명','성함','이름','Name','Customer','Traveler'])||'마이리얼트립 고객';
   const email=_mrtFirstEmail_(text);
   const phone=_mrtFirstPhone_(text);
   const location=_mrtField_(text,['촬영장소','촬영 장소','미팅장소','미팅 장소','집결지','장소','Location','Meeting point']) || (productMeta&&productMeta.location) || '';
   const reservationNo=_mrtReservationNo_(text);
   const subject=(function(){try{return message.getSubject()||'';}catch(e){return '';}})();
+  // 확정완료 메일에는 시간·금액·연락처가 원래 없다(시간은 고객 협의 후 확정, 금액은 파트너센터).
+  // → 상품·촬영일만 필수. 시간 없으면 00:00 가등록, 금액 없으면 0 등록 후 수기 보완.
   const missing=[];
   if(!productMeta || productMeta.id==='mrt_snap_extra_person') missing.push('상품');
   if(!dt.date) missing.push('촬영일');
-  if(!dt.time) missing.push('촬영시간');
-  if(!amountKrw) missing.push('원화금액');
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   return {
     ok:missing.length===0,
     missing,
+    timeTbd:!dt.time,
+    amountMissing:!amountKrw,
+    pastDate:!!dt.date&&dt.date<todayStr,
+    partnerUrl:reservationNo?('https://partner.myrealtrip.com/reservations/tourActivity/'+reservationNo):'',
     reservationNo,
     subject,
     text,
@@ -10196,12 +10222,21 @@ function _findExistingMyRealTripBookingRow_(parsed){
   const targetDateTime=String(parsed.date||'')+' '+String(parsed.time||'');
   const targetPhone=_mrtDigits_(parsed.phone);
   const targetEmail=String(parsed.email||'').trim().toLowerCase();
+  const targetDate=String(parsed.date||'');
+  const targetName=String(parsed.name||'').replace(/\s+/g,'').toLowerCase();
   for(let i=0;i<rows.length;i++){
     const row=rows[i];
     const rowText=_bookingRowSearchText_(row);
     if(reservationNo && rowText.indexOf(reservationNo)>-1) return i+2;
     if(!isMyRealTripBookingRow_(row)) continue;
     const rowDateTime=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16);
+    const rowDate=rowDateTime.slice(0,10);
+    // 같은 여행일 + 같은 이름의 MRT 행이면 시간이 달라도 동일 예약으로 본다
+    // (수기 선등록·시간미정 00:00 등록 후 시간 확정 케이스에서 중복 생성 방지).
+    if(targetDate&&targetName&&rowDate===targetDate){
+      const rowName=String(row[BOOKING_COL['고객명']]||'').replace(/\s+/g,'').toLowerCase();
+      if(rowName&&rowName===targetName&&!isBookingCancelledStatus_(row[BOOKING_COL['상태']])) return i+2;
+    }
     if(rowDateTime!==targetDateTime) continue;
     const rowPhone=_mrtDigits_(row[BOOKING_COL['연락처']]);
     const rowEmail=String(row[BOOKING_COL['이메일']]||'').trim().toLowerCase();
@@ -10215,6 +10250,9 @@ function _addMyRealTripBookingFromParsed_(parsed){
   try{
     const memo=[
       '마이리얼트립 예약 알림 자동등록',
+      parsed.timeTbd?'⏰ 촬영시간 미정(00:00 가등록) — 고객과 협의 후 어드민 [일정변경]으로 입력':'',
+      parsed.amountMissing?'💰 판매금액 미확인 — 파트너센터 확인 후 예약수정에서 금액 입력':'',
+      parsed.partnerUrl?'파트너센터: '+parsed.partnerUrl:'',
       parsed.reservationNo?'마이리얼트립 예약번호: '+parsed.reservationNo:'',
       parsed.messageId?'Gmail Message ID: '+parsed.messageId:'',
       parsed.subject?'메일제목: '+parsed.subject:'',
@@ -10227,7 +10265,9 @@ function _addMyRealTripBookingFromParsed_(parsed){
       email:parsed.email,
       lang:'ko',
       date:parsed.date,
-      time:parsed.time,
+      time:parsed.time||'00:00',
+      calendarTitlePrefix:parsed.timeTbd?'[시간미정] ':'',
+      manualReviewRequired:parsed.timeTbd||parsed.amountMissing,
       itemGroup:'마이리얼트립',
       itemId:parsed.itemId,
       product:parsed.product,
@@ -10275,6 +10315,13 @@ function syncMyRealTripBookingEmails_(options){
         errors.push({subject:parsed.subject,missing:parsed.missing,reservationNo:parsed.reservationNo});
         return;
       }
+      if(parsed.pastDate){
+        // 이미 지난 여행일은 등록 의미가 없다(수동 처리됐을 것) — 라벨만 붙여 재스캔을 멈춘다.
+        skipped++;
+        markImported=true;
+        imported.push({reservationNo:parsed.reservationNo,pastDate:parsed.date,skippedPast:true});
+        return;
+      }
       const existingRow=_findExistingMyRealTripBookingRow_(parsed);
       if(existingRow){
         duplicates++;
@@ -10296,6 +10343,21 @@ function syncMyRealTripBookingEmails_(options){
       try{thread.addLabel(label);}catch(e){}
     }
   });
+  // 자가복구: '+49 …' 전화가 시트 수식으로 해석돼 #ERROR!가 된 MRT 행의 연락처 셀 치유.
+  let repairedPhones=0;
+  try{
+    const sh=getDbSheet();
+    if(sh.getLastRow()>1){
+      const vals=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.BOOKING_HEADERS.length).getValues();
+      for(let i=0;i<vals.length;i++){
+        const cell=String(vals[i][BOOKING_COL['연락처']]||'');
+        if(/^#(ERROR|VALUE|REF|NAME|N\/A|DIV)/i.test(cell)&&isMyRealTripBookingRow_(vals[i])){
+          sh.getRange(i+2,BOOKING_COL['연락처']+1).setValue("'+49 000 000000");
+          repairedPhones++;
+        }
+      }
+    }
+  }catch(e){Logger.log('MRT phone repair skipped: '+e.message);}
   return {
     ok:failed===0,
     count:created,
@@ -10303,6 +10365,7 @@ function syncMyRealTripBookingEmails_(options){
     duplicates,
     skipped,
     failed,
+    repairedPhones,
     threads:threads.length,
     imported,
     errors:errors.slice(0,10),
