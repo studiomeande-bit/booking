@@ -1080,6 +1080,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
+        if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='quote-accept'){
           const acceptNumber=String(payload.number||'');
           const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
@@ -10380,6 +10381,48 @@ function syncMyRealTripBookingEmailsAdmin(token, options){
 
 function syncMyRealTripBookingEmailsTrigger(){
   return syncMyRealTripBookingEmails_({source:'trigger'});
+}
+
+// MRT 파트너센터에서 읽은 전체 예약정보(연락처·이메일·인원·판매금액·요청사항)를
+// 기존 MRT 예약 행에 보강한다. 확정완료 메일에는 이 정보가 없어(파트너센터에만 존재)
+// 에이전트가 Chrome으로 파트너 페이지를 읽은 뒤 이 액션으로 반영하는 2단계 흐름.
+// 안전장치: MRT 행에만 허용 + expectName으로 대상 행 재확인.
+function enrichMyRealTripBookingForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  if(!isMyRealTripBookingRow_(row)) throw new Error('마이리얼트립 예약 행이 아닙니다: '+rIdx);
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  const updated=[];
+  const set=function(col,v){ sh.getRange(rIdx,BOOKING_COL[col]+1).setValue(v); updated.push(col); };
+  const phone=String(payload.phone||'').trim();
+  if(phone) set('연락처', phone.charAt(0)==='+'?("'"+phone):phone); // '+…'는 수식 해석 방지 텍스트 강제
+  const email=normalizeEmailAddress_(payload.email);
+  if(email&&email.indexOf('@')>-1) set('이메일', email);
+  const people=parseInt(payload.people,10)||0;
+  if(people>0) set('인원', people);
+  const krw=parseInt(String(payload.krwTotal||'').replace(/[^0-9]/g,''),10)||0;
+  let exchangeNote='';
+  if(krw>0){
+    const q=convertKrwToEur_(krw);
+    set('총결제액', q.eurAmount);
+    if(BOOKING_COL['total_price_brutto']!=null) set('total_price_brutto', q.eurAmount);
+    if(String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y') set('잔금결제금액', q.eurAmount);
+    exchangeNote='마이리얼트립 원화결제 '+q.krwAmount.toLocaleString()+'원 / 환율 '+q.rate.toFixed(6)+' / 환산 '+formatEuroAmount_(q.eurAmount)+'€ / 기준 '+q.fetchedAt;
+  }
+  const memoAppendParts=[String(payload.memoAppend||'').trim(), exchangeNote].filter(Boolean);
+  if(memoAppendParts.length){
+    const cur=String(row[BOOKING_COL['요청사항']]||'').trim();
+    set('요청사항',[cur,memoAppendParts.join('\n')].filter(Boolean).join('\n'));
+  }
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),updated:updated};
 }
 
 function setupMyRealTripImportAutomation(token){
