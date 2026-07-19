@@ -15,8 +15,9 @@ Studio mean 사진 인화 웹앱. 정적 사이트(빌드 없음): `index.html` 
 - ERP URL은 `app.js`의 `ERP_BASE` 상수(= 기존 `frontend/shared/config.js`의 공개 /exec).
 
 ## 원본 갱신 시
-`website/photo-print/index.html`을 수정하면 `frontend/print/`도 다시 생성해야 함(스크립트를 app.js로 분리):
+`website/photo-print/index.html`을 수정하면 이 폴더를 재생성한다(인라인 `<script>`를 `app.js`로 분리 + `index.html`은 `<script src="app.js">`로 치환). `netlify.toml`·`README.md`는 손관리라 건드리지 않는다.
 ```
-node scripts/build-print.mjs   # (또는 split 로직 재실행)
+node scripts/build-print.mjs           # 재생성
+node scripts/build-print.mjs --check   # 원본과 배포본이 동기화됐는지만 검증(쓰기 X, exit 0=동기화)
 ```
-현재는 수동 분리(split.js) 사용. 정식 빌드 스크립트는 추후.
+빌드 후 `git status`로 변경 확인 → 커밋·푸시하면 Netlify가 자동 배포. 스크립트는 ERP_BASE가 공개 GAS `/exec` 형식인지, 인라인 스크립트가 남지 않았는지 자체 검증한다.
