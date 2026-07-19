@@ -1081,6 +1081,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
+        if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
         if(action==='quote-accept'){
           const acceptNumber=String(payload.number||'');
           const acceptRes=markQuoteAcceptedAdmin(token,acceptNumber);
@@ -10381,6 +10382,42 @@ function syncMyRealTripBookingEmailsAdmin(token, options){
 
 function syncMyRealTripBookingEmailsTrigger(){
   return syncMyRealTripBookingEmails_({source:'trigger'});
+}
+
+// 예약 시간 확정(에이전트용) — 고객 메일 발송 없이 예약일시+캘린더만 갱신한다.
+// rescheduleBookingAdmin은 '변경요청 승인' 고객메일을 보내므로(고객이 요청한 적 없는
+// MRT 시간확정 맥락에 부적절) 별도 액션. 캘린더는 ensure→sync가 행 기준으로 시간·제목
+// ([시간미정] 접두 제거)·설명(인원/금액)까지 재구성한다.
+function setBookingTimeForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  const m=String(payload.dateTime||'').trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if(!m) throw new Error("dateTime 형식이 필요합니다: 'yyyy-MM-dd HH:mm'");
+  sh.getRange(rIdx,BOOKING_COL['예약일시']+1).setValue(m[1]+' '+m[2]);
+  if(BOOKING_COL['shooting_date']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_date']+1).setValue(m[1]);
+  if(BOOKING_COL['shooting_time']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_time']+1).setValue(m[2]);
+  if(payload.clearManualReview && BOOKING_COL['수동확인필요']!=null) sh.getRange(rIdx,BOOKING_COL['수동확인필요']+1).setValue('');
+  const memoLine=String(payload.memoAppend||'').trim();
+  if(memoLine){
+    const cur=String(row[BOOKING_COL['요청사항']]||'').trim();
+    sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([cur,memoLine].filter(Boolean).join('\n'));
+  }
+  let eventId='';
+  try{
+    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    eventId=ensureBookingCalendarEventForRow_(sh,rIdx,rowAfter);
+  }catch(e){Logger.log('setBookingTimeForAgent_ calendar sync failed row '+rIdx+': '+e.message);}
+  bumpCalCacheVer_();
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),dateTime:m[1]+' '+m[2],eventId:eventId,customerMailSent:false};
 }
 
 // MRT 파트너센터에서 읽은 전체 예약정보(연락처·이메일·인원·판매금액·요청사항)를
