@@ -1,0 +1,25 @@
+[build]
+  publish = "."
+
+# print.studio-mean.com — Studio mean Photo Print (정적, 빌드 없음: index.html + app.js)
+# 스크립트는 app.js로 분리해 script-src 'self' CSP를 지킴. 인라인 CSS는 style-src 'unsafe-inline'로 허용.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    X-Robots-Tag = "noindex, nofollow"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data: blob: https://drive.google.com https://drive.usercontent.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/app.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

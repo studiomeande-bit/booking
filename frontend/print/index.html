@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio mean · Photo Print</title>
+<style>
+  /* =========================================================================
+     Studio mean — Photo Print   (WYSIWYG 인화 앱)
+     화면에 mm 실측으로 배치 → @page size + margin:0 로 100% 실측 인쇄
+     기능: 자유배치 / 꽉채우기 / 증명·여권 / 분할 · 정렬·스냅 · 눈금자·격자
+           · 용지 프로파일 · 사진별 색보정 · 레이아웃 저장/불러오기
+     ========================================================================= */
+  :root{
+    --accent:#0066cc; --accent-d:#0052a6;
+    --bg-work:#e6e8ec; --panel:#fff; --line:#e2e5ea;
+    --ink:#2a2d33; --muted:#8b9099;
+  }
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none;}
+  html,body{height:100%;margin:0;}
+  body{font-family:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:var(--ink);display:flex;overflow:hidden;background:var(--bg-work);font-size:13px;}
+
+  /* ---------- Left sidebar ---------- */
+  .sidebar{width:270px;flex:0 0 270px;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;height:100vh;}
+  .brand{padding:15px 18px 13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .theme-btn{flex:0 0 auto;width:32px;height:32px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:9px;cursor:pointer;font-size:15px;line-height:1;transition:.12s;}
+  .theme-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .brand h1{margin:0;font-family:"Cormorant Garamond",Georgia,serif;font-style:italic;font-size:21px;font-weight:600;letter-spacing:.3px;}
+  .brand span{display:block;font-size:10.5px;letter-spacing:2.5px;color:var(--muted);text-transform:uppercase;margin-top:2px;}
+  .scroll{overflow-y:auto;flex:1;padding:4px 0 16px;}
+  .grp{padding:13px 18px 4px;}
+  .grp+.grp{border-top:1px solid var(--line);}
+  .grp h2{margin:0 0 9px;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:700;
+    display:flex;justify-content:space-between;align-items:center;}
+  label.f{display:block;font-size:11.5px;color:var(--muted);margin:9px 0 4px;font-weight:500;}
+  select,input[type=number],input[type=text]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;
+    font:inherit;font-size:12.5px;color:var(--ink);background:#fff;-webkit-user-select:text;user-select:text;}
+  select:focus,input:focus{outline:none;border-color:var(--accent);}
+  .row{display:flex;gap:8px;} .row>*{flex:1;min-width:0;}
+
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .modes button{padding:9px 6px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;
+    font:inherit;font-size:11.5px;color:var(--ink);display:flex;flex-direction:column;gap:3px;align-items:center;transition:.12s;}
+  .modes button .ico{font-size:15px;line-height:1;}
+  .modes button:hover{border-color:#c3c8d0;}
+  .modes button.on{border-color:var(--accent);background:#eef5ff;color:var(--accent-d);box-shadow:inset 0 0 0 1px var(--accent);}
+
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .seg button{flex:1;padding:7px;border:0;background:#fff;cursor:pointer;font:inherit;font-size:12px;color:var(--muted);}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:600;}
+
+  .check{display:flex;align-items:center;gap:8px;margin:9px 0 2px;cursor:pointer;font-size:12.5px;}
+  .check input{width:16px;height:16px;accent-color:var(--accent);}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:8px;border:1px solid var(--line);
+    background:#fff;border-radius:8px;cursor:pointer;font:inherit;font-size:12px;color:var(--ink);transition:.12s;}
+  .btn:hover{border-color:#c3c8d0;background:#fafbfc;}
+  .btn.sm{padding:6px;font-size:11.5px;}
+
+  .drop{border:1.5px dashed #c3c8d0;border-radius:10px;padding:15px 10px;text-align:center;color:var(--muted);
+    font-size:12px;cursor:pointer;transition:.12s;line-height:1.5;}
+  .drop:hover,.drop.over{border-color:var(--accent);background:#f2f7ff;color:var(--accent-d);}
+  .drop b{color:var(--ink);}
+
+  .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;}
+  .thumb{position:relative;aspect-ratio:1;border-radius:7px;overflow:hidden;border:1px solid var(--line);cursor:pointer;background:#f4f5f7;}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumb.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);}
+  .thumb .x{position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,.55);
+    color:#fff;font-size:11px;line-height:16px;text-align:center;opacity:0;transition:.1s;}
+  .thumb:hover .x{opacity:1;}
+
+  .print-btn{margin:12px 18px 4px;padding:13px;background:var(--accent);color:#fff;border:0;border-radius:10px;
+    font:inherit;font-size:14px;font-weight:600;cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:center;
+    box-shadow:0 2px 8px rgba(0,102,204,.3);transition:.12s;}
+  .print-btn:hover{background:var(--accent-d);}
+  .hint{font-size:10.5px;color:var(--muted);line-height:1.55;padding:8px 18px 0;}
+
+  /* ---------- Workspace ---------- */
+  .workspace{flex:1;position:relative;overflow:auto;display:flex;align-items:center;justify-content:center;padding:40px;}
+  .page-holder{position:relative;margin:auto;flex:0 0 auto;}
+  .page{position:relative;background:var(--pg-bg,#fff);transform-origin:top left;overflow:hidden;
+    box-shadow:0 6px 30px rgba(20,30,50,.18),0 1px 3px rgba(0,0,0,.12);
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .safe{position:absolute;pointer-events:none;border:1px dashed rgba(0,102,204,.4);z-index:5;}
+  .grid-ov{position:absolute;inset:0;pointer-events:none;z-index:4;}
+
+  .item{position:absolute;overflow:hidden;}
+  .item img,.cell img{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .item img{width:100%;height:100%;display:block;pointer-events:none;}
+  .cell{position:absolute;overflow:hidden;background:#f0f0f0;}
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;}
+  .guide{position:absolute;pointer-events:none;border:.2mm dashed rgba(120,120,120,.75);}
+  .faceguide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;}
+
+  /* selection overlay */
+  .overlay{position:absolute;inset:0;pointer-events:none;z-index:50;}
+  .sel-box{position:absolute;border:1.5px solid var(--accent);pointer-events:none;}
+  .handle{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--accent);border-radius:50%;pointer-events:auto;}
+  .handle.nw{left:-6px;top:-6px;cursor:nwse-resize;} .handle.ne{right:-6px;top:-6px;cursor:nesw-resize;}
+  .handle.sw{left:-6px;bottom:-6px;cursor:nesw-resize;} .handle.se{right:-6px;bottom:-6px;cursor:nwse-resize;}
+  .handle.rot{left:50%;top:-30px;margin-left:-7px;width:14px;height:14px;cursor:grab;background:var(--accent);}
+  .handle.rot::after{content:"";position:absolute;left:50%;top:14px;width:1.5px;height:16px;background:var(--accent);transform:translateX(-50%);}
+  .snapline{position:absolute;background:#ff2d78;z-index:60;pointer-events:none;}
+
+  .empty-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);
+    font-size:13px;text-align:center;pointer-events:none;padding:20px;line-height:1.7;}
+
+  /* rulers (fixed overlay, screen only) */
+  #ruler{position:fixed;top:0;bottom:0;pointer-events:none;z-index:40;display:none;}
+
+  .zoombar{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:2px;background:#fff;
+    border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:0 2px 10px rgba(0,0,0,.1);z-index:85;}
+  .zoombar button{border:0;background:none;width:30px;height:28px;cursor:pointer;font-size:15px;color:var(--ink);border-radius:6px;}
+  .zoombar button:hover{background:#f0f2f5;}
+  .zoombar button:disabled{opacity:.3;cursor:default;}
+  .zoombar .sep{width:1px;background:var(--line);margin:4px 3px;}
+  .zoombar .lvl{min-width:52px;text-align:center;font-size:12px;color:var(--muted);align-self:center;font-variant-numeric:tabular-nums;}
+
+  /* right panel */
+  .props{position:absolute;top:16px;right:16px;width:232px;max-height:calc(100vh - 32px);overflow-y:auto;background:#fff;
+    border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 20px rgba(20,30,50,.12);z-index:70;}
+  .props header{padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--muted);font-weight:700;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;}
+  .props .body{padding:11px 14px;}
+  .props label.f{margin-top:8px;}
+  .props .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .props .actions{display:flex;gap:6px;margin-top:11px;}
+  .props .actions button{flex:1;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;font:inherit;font-size:12px;}
+  .props .actions button:hover{background:#f7f8fa;}
+  .props .actions button.del{color:#d23f3f;border-color:#f2c9c9;} .props .actions button.del:hover{background:#fdf1f1;}
+  .slider{width:100%;accent-color:var(--accent);margin:2px 0;}
+  .align{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:4px;}
+  .align button{padding:6px 0;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-size:13px;line-height:1;}
+  .align button:hover{background:#eef5ff;border-color:var(--accent);}
+
+  /* color section */
+  .csec{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;}
+  .csec .ch{font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:4px;
+    display:flex;justify-content:space-between;align-items:center;}
+  .csec .slab{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:7px;}
+  .csec .slab b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;}
+  .presets{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:9px;}
+  .presets button{padding:6px 2px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font:inherit;font-size:11px;}
+  .presets button:hover{background:#f7f8fa;} .presets button.on{border-color:var(--accent);background:#eef5ff;color:var(--accent-d);}
+  .mini-reset{font-size:10.5px;color:var(--accent);cursor:pointer;background:none;border:0;padding:0;}
+
+  .saved{margin-top:8px;display:flex;flex-direction:column;gap:5px;}
+  .saved .it{display:flex;align-items:center;gap:6px;font-size:11.5px;}
+  .saved .it button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:12px;padding:2px 4px;border-radius:5px;}
+  .saved .it button:hover{background:#f0f2f5;color:var(--ink);}
+  .saved .it .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:3px 0;}
+  .saved .it .nm:hover{color:var(--accent);}
+
+  .dpi-line{font-size:11px;color:var(--muted);margin:0 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .dpi-sub{font-size:10px;color:#aab0b8;}
+  .dpi-badge{padding:1px 7px;border-radius:20px;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .dpi-badge.ok{background:#e5f5ea;color:#1a8a4a;} .dpi-badge.warn{background:#fdf2df;color:#b8791a;} .dpi-badge.bad{background:#fbe6e6;color:#cf3a3a;}
+
+  /* calibration: trim marks (print) + print-area guide (screen) */
+  .cropmark{position:absolute;background:#000;z-index:6;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .printarea{position:absolute;border:1.5px dashed #ff2d78;z-index:7;pointer-events:none;}
+  .printarea::after{content:"실제 인쇄영역";position:absolute;top:-16px;left:0;font-size:9px;color:#ff2d78;white-space:nowrap;}
+
+  /* calibration modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(20,25,35,.45);z-index:200;display:flex;align-items:center;justify-content:center;}
+  .modal{width:390px;max-height:90vh;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.32);}
+  .modal>header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px;position:sticky;top:0;background:#fff;z-index:2;}
+  .modal-x{border:0;background:none;font-size:23px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px;}
+  .modal-body{padding:4px 18px 18px;}
+  .modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .modal .slab{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px;}
+  .modal .slab b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;}
+  .cal-note{font-size:11.5px;color:#4a5568;line-height:1.6;background:#f1f6fc;padding:10px 12px;border-radius:8px;margin:12px 0;}
+  .cal-sec{margin-top:15px;padding-top:13px;border-top:1px solid var(--line);}
+  .cal-sec:first-of-type{border-top:0;}
+  .cal-sec h4{margin:0 0 9px;font-size:10.5px;letter-spacing:1.1px;text-transform:uppercase;color:var(--accent-d);font-weight:700;}
+  .cal-actions{display:flex;gap:8px;margin-top:20px;}
+  .cal-actions .btn{padding:11px;font-size:12.5px;}
+  #calPage{display:none;}
+  .logo-ov{position:absolute;z-index:8;pointer-events:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .anchor-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:4px 0 4px;}
+  .anchor-grid .lanchor{padding:8px 0;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;font-size:14px;line-height:1;color:var(--ink);}
+  .anchor-grid .lanchor:hover{background:#eef5ff;border-color:var(--accent);}
+  .anchor-grid .lanchor.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  body.pro .anchor-grid .lanchor{background:#26272a;} body.pro .anchor-grid .lanchor:hover{background:rgba(74,158,255,.14);}
+  .logo-preview{margin-top:8px;border:1px solid var(--line);border-radius:8px;min-height:54px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#eee 0 25%,#fafafa 0 50%) 0/16px 16px;}
+  .logo-preview img{max-width:100%;max-height:90px;}
+  body.pro .logo-preview{background:repeating-conic-gradient(#2a2b2e 0 25%,#232427 0 50%) 0/16px 16px;}
+
+  .ord-ta{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:11px;-webkit-user-select:text;user-select:text;}
+  .ord-ta:focus{outline:none;border-color:var(--accent);}
+  .oqlist{max-height:190px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:4px;}
+  .oq{display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;cursor:pointer;border-bottom:1px solid var(--line);}
+  .oq:last-child{border-bottom:0;} .oq:hover{background:#eef5ff;} .oq.cur{background:#dbeafe;box-shadow:inset 2px 0 0 var(--accent);}
+  .oq .onum{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} .oq .osz{color:var(--muted);white-space:nowrap;}
+  .ostep{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;}
+  .ostep .olvl{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:56px;text-align:center;}
+  .ostep .btn{flex:0 0 auto;width:46px;}
+  body.pro .ord-ta{background:#2a2b2e;} body.pro .oq:hover{background:rgba(74,158,255,.12);} body.pro .oq.cur{background:rgba(74,158,255,.2);}
+  .media-note{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:6px;}
+  .media-note b{color:var(--ink);}
+  body.pro .media-note{background:#203049;color:#cad7ea;padding:7px 9px;border-radius:7px;}
+  body.pro .media-note b{color:#fff;}
+
+  /* ========== PRO (dark) THEME ========== */
+  body.pro{ --bg-work:#3b3c3e; --panel:#202124; --line:#3a3c40; --ink:#e9ebed; --muted:#9aa0a8; --accent:#4a9eff; --accent-d:#3f8ae6; }
+  body.pro select,body.pro input[type=number],body.pro input[type=text]{background:#2a2b2e;color:var(--ink);border-color:#3a3c40;}
+  body.pro input[type=color]{background:#2a2b2e;border-color:#3a3c40;}
+  body.pro .modes button,body.pro .seg button,body.pro .btn,body.pro .props .actions button,body.pro .align button,body.pro .presets button,body.pro .zoombar,body.pro .zoombar button{background:#26272a;color:var(--ink);}
+  body.pro .seg{border-color:#3a3c40;} body.pro .seg button{color:var(--muted);}
+  body.pro .modes button:hover,body.pro .btn:hover,body.pro .props .actions button:hover,body.pro .align button:hover,body.pro .presets button:hover,body.pro .zoombar button:hover{background:#303236;border-color:#4a4d52;}
+  body.pro .modes button.on,body.pro .presets button.on{background:rgba(74,158,255,.16);color:#93c3ff;border-color:var(--accent);}
+  body.pro .drop{background:#26272a;border-color:#484b50;}
+  body.pro .drop:hover,body.pro .drop.over{background:rgba(74,158,255,.1);border-color:var(--accent);color:#93c3ff;}
+  body.pro .drop b{color:var(--ink);}
+  body.pro .thumb{background:#2a2b2e;border-color:#3a3c40;}
+  body.pro .props,body.pro .modal{background:#242528;border-color:#3a3c40;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+  body.pro .props header,body.pro .modal>header{background:#242528;border-color:#3a3c40;}
+  body.pro .zoombar{border-color:#3a3c40;box-shadow:0 2px 12px rgba(0,0,0,.45);}
+  body.pro .cal-note{background:#203049;color:#cad7ea;}
+  body.pro .cal-sec,body.pro .csec{border-color:#3a3c40;}
+  body.pro .page{box-shadow:0 10px 44px rgba(0,0,0,.6),0 2px 10px rgba(0,0,0,.45);}
+  body.pro .saved .it button:hover{background:#303236;color:var(--ink);}
+  body.pro .modal-x:hover{color:var(--ink);}
+  body.pro .dpi-badge.ok{background:#183a26;color:#5fd08a;} body.pro .dpi-badge.warn{background:#3a2e14;color:#e6b45a;} body.pro .dpi-badge.bad{background:#3a1c1c;color:#f07a7a;}
+
+  /* ---------- Print ---------- */
+  @media print{
+    body{background:#fff;display:block;}
+    .sidebar,.props,.zoombar,.overlay,.safe,.grid-ov,.empty-hint,#ruler,.snapline,.printarea,.modal-bg,.faceguide{display:none !important;}
+    .workspace{overflow:visible;padding:0;display:block;position:static;}
+    .page-holder{margin:0 !important;width:auto !important;height:auto !important;}
+    .page{transform:var(--print-tf,none) !important;transform-origin:center center !important;box-shadow:none !important;position:absolute;left:0;top:0;}
+    body.calmode .page-holder{display:none !important;}
+    body.calmode #calPage{display:block !important;position:absolute;left:0;top:0;transform:var(--print-tf,none);transform-origin:center center;}
+  }
+</style>
+<style id="pageStyle">@page{size:210mm 297mm;margin:0;}</style>
+</head>
+<body>
+
+<!-- SVG defs for color-temperature/tint filters -->
+<svg id="ttdefs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs></defs></svg>
+
+<!-- ==================== SIDEBAR ==================== -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-t"><h1>Studio mean</h1><span>Photo Print</span></div>
+    <button id="themeBtn" class="theme-btn" title="프로(다크) 모드로 전환">◐</button>
+  </div>
+  <div class="scroll">
+
+    <div class="grp">
+      <h2>레이아웃</h2>
+      <div class="modes" id="modes">
+        <button data-mode="free" class="on"><span class="ico">🖼️</span>자유 배치</button>
+        <button data-mode="fill"><span class="ico">⬛</span>꽉 채우기</button>
+        <button data-mode="id"><span class="ico">🪪</span>증명·여권</button>
+        <button data-mode="grid"><span class="ico">▦</span>분할·콜라주</button>
+        <button data-mode="order"><span class="ico">📋</span>주문 인화</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>용지</h2>
+      <label class="f">크기</label>
+      <select id="paper"></select>
+      <div id="customWrap" style="display:none">
+        <div class="row" style="margin-top:8px">
+          <div><label class="f">가로 mm</label><input type="number" id="cw" value="210" min="10" max="1200"></div>
+          <div><label class="f">세로 mm</label><input type="number" id="ch" value="297" min="10" max="1200"></div>
+        </div>
+      </div>
+      <label class="f">방향</label>
+      <div class="seg" id="orient"><button data-o="portrait" class="on">세로</button><button data-o="landscape">가로</button></div>
+      <label class="check"><input type="checkbox" id="borderless" checked> 여백 없음(가장자리까지)</label>
+      <div id="marginWrap" style="display:none"><label class="f">여백 mm</label><input type="number" id="margin" value="5" min="0" max="50" step="0.5"></div>
+      <label class="f">용지 프로파일 <span style="text-transform:none;letter-spacing:0;font-weight:400">(용지별 보정 프리셋)</span></label>
+      <select id="media"></select>
+      <div id="mediaNote" class="media-note"></div>
+      <label class="f">출력 해상도 <span style="text-transform:none;letter-spacing:0;font-weight:400">· 사진 품질 목표</span></label>
+      <select id="dpi"><option value="240">240 DPI</option><option value="300" selected>300 DPI (권장)</option><option value="600">600 DPI</option></select>
+      <label class="f">배경색</label>
+      <input type="color" id="bg" value="#ffffff" style="width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer">
+    </div>
+
+    <div class="grp">
+      <h2>보기 · 가이드</h2>
+      <label class="check"><input type="checkbox" id="v_ruler"> mm 눈금자</label>
+      <label class="check"><input type="checkbox" id="v_grid"> 격자 표시</label>
+      <div id="gridStepWrap" style="display:none"><label class="f">격자 간격 mm</label><input type="number" id="v_step" value="10" min="1" max="50" step="1"></div>
+      <label class="check"><input type="checkbox" id="v_snap" checked> 스냅(가장자리·중앙에 붙기)</label>
+    </div>
+
+    <div class="grp">
+      <h2>프레임 · 테두리</h2>
+      <label class="check"><input type="checkbox" id="fr_on"> 흰 테두리/프레임</label>
+      <div id="frWrap" style="display:none">
+        <div class="row" style="margin-top:6px"><div><label class="f">두께 mm</label><input type="number" id="fr_w" value="3" min="0" max="40" step="0.5"></div><div><label class="f">라운드 mm</label><input type="number" id="fr_r" value="0" min="0" max="30" step="0.5"></div></div>
+        <label class="f">색</label>
+        <input type="color" id="fr_c" value="#ffffff" style="width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer">
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>사진</h2>
+      <div class="drop" id="drop"><b>사진 추가</b><br>클릭 · 드래그 · 붙여넣기(⌘V)</div>
+      <input type="file" id="file" accept="image/*" multiple hidden>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+
+    <div class="grp">
+      <h2>전문가 · 프린터</h2>
+      <button class="btn" id="calBtn">🎯 프린터 보정 · 위치 오프셋</button>
+      <button class="btn" id="logoBtn" style="margin-top:6px">🏷 행사용 로고 · 워터마크</button>
+    </div>
+
+    <div class="grp">
+      <h2>레이아웃 저장</h2>
+      <button class="btn sm" id="saveBtn">＋ 현재 배치 저장</button>
+      <div class="saved" id="savedList"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sm" id="exportBtn">⭳ 파일로</button>
+        <button class="btn sm" id="importBtn">⭱ 불러오기</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="grp">
+      <h2>이미지 내보내기</h2>
+      <div class="row">
+        <button class="btn sm" id="exp_png">PNG</button>
+        <button class="btn sm" id="exp_jpg">JPG</button>
+        <button class="btn sm" id="exp_pdf">PDF</button>
+      </div>
+      <div class="hint" style="padding:6px 0 0">목표 DPI로 합성해 파일 저장(랩 전송·보관). 프린터 보정(위치·색)은 뺀 <b>디자인 원본</b>입니다.</div>
+    </div>
+
+  </div>
+
+  <button class="print-btn" id="printBtn">🖨️ 인쇄</button>
+  <div class="hint">인쇄 대화상자에서 <b>용지 크기</b> 동일 · <b>여백: 없음</b> · <b>배율: 100%</b>로 설정하세요. 사진은 <b>원본 해상도 그대로(≥목표 DPI)</b> 인쇄되며 색보정은 인쇄 시 원본에 합성됩니다. 목표 미만 사진은 우측에 <span style="color:#b8791a">노랑</span>/<span style="color:#cf3a3a">빨강</span>으로 표시됩니다.</div>
+  <div style="height:12px"></div>
+</aside>
+
+<!-- ==================== WORKSPACE ==================== -->
+<canvas id="ruler"></canvas>
+<main class="workspace" id="workspace">
+  <div class="page-holder" id="holder">
+    <div class="page" id="page"></div>
+    <div class="overlay" id="overlay"></div>
+  </div>
+  <div class="zoombar">
+    <button id="undoBtn" title="실행취소 (⌘Z)">↶</button><button id="redoBtn" title="다시실행 (⌘⇧Z)">↷</button><span class="sep"></span>
+    <button id="zOut">−</button><span class="lvl" id="zLvl">100%</span><button id="zIn">+</button><button id="zFit" title="화면 맞춤">⤢</button>
+  </div>
+  <div id="propsMount"></div>
+</main>
+
+<!-- ==================== CALIBRATION MODAL ==================== -->
+<div id="calModal" class="modal-bg" style="display:none">
+  <div class="modal">
+    <header>🎯 프린터 보정 (Calibration)<button class="modal-x" id="cal_x">×</button></header>
+    <div class="modal-body">
+      <p class="cal-note">실제 출력물이 화면과 어긋날 때 보정합니다. <b>① 테스트 인쇄 → ② 자로 측정 → ③ 값 입력</b> 순으로 맞추세요. 보정은 <b>실제 인쇄에만</b> 적용되며, 화면엔 분홍 점선(실제 인쇄영역)으로 표시됩니다.</p>
+
+      <div class="cal-sec"><h4>프린터 (로컬 프린터에 맞춰 등록)</h4>
+        <select id="cal_profile"></select>
+        <div class="row" style="margin-top:7px">
+          <button class="btn sm" id="cal_saveProf">현재값 저장</button>
+          <button class="btn sm" id="cal_saveAsProf">＋ 새 프린터</button>
+          <button class="btn sm" id="cal_delProf">삭제</button>
+        </div>
+        <button class="btn sm" id="cal_setDefault" style="margin-top:6px">⭐ 이 프린터를 기본으로 (시작 시 자동 적용)</button>
+        <p class="cal-note" style="margin:8px 0 0">브라우저는 OS 프린터 목록을 직접 읽을 수 없어, 프린터를 <b>이름으로 등록</b>해 보정을 관리합니다(예: <i>EPSON …</i>). 실제 인쇄 대화상자에서 <b>같은 EPSON 프린터</b>를 선택하세요. 기본 프린터로 지정하면 앱을 열 때 그 보정이 자동 적용됩니다.</p>
+      </div>
+
+      <div class="cal-sec"><h4>위치 오프셋 · 출력물 이동</h4>
+        <div class="row2">
+          <div><label class="f">가로 X mm <span style="color:#aab0b8">(+오른쪽)</span></label><input type="number" id="cal_offX" step="0.1"></div>
+          <div><label class="f">세로 Y mm <span style="color:#aab0b8">(+아래)</span></label><input type="number" id="cal_offY" step="0.1"></div>
+        </div>
+      </div>
+
+      <div class="cal-sec"><h4>배율 보정</h4>
+        <div class="row2">
+          <div><label class="f">가로 %</label><input type="number" id="cal_scaleX" step="0.01"></div>
+          <div><label class="f">세로 %</label><input type="number" id="cal_scaleY" step="0.01"></div>
+        </div>
+        <label class="f" style="margin-top:9px">측정 도우미 — 테스트 인쇄의 100mm 선 실측값 입력</label>
+        <div class="row2">
+          <div><label class="f">가로 실측 mm</label><input type="number" id="cal_measX" step="0.1" placeholder="100"></div>
+          <div><label class="f">세로 실측 mm</label><input type="number" id="cal_measY" step="0.1" placeholder="100"></div>
+        </div>
+        <button class="btn sm" id="cal_autoScale" style="margin-top:7px">측정값으로 배율 자동 계산</button>
+      </div>
+
+      <div class="cal-sec"><h4>출력 색 보정 (device)</h4>
+        <div class="slab"><span>R 게인</span><b id="cal_rGainV"></b></div><input type="range" class="slider" id="cal_rGain" min="70" max="130">
+        <div class="slab"><span>G 게인</span><b id="cal_gGainV"></b></div><input type="range" class="slider" id="cal_gGain" min="70" max="130">
+        <div class="slab"><span>B 게인</span><b id="cal_bGainV"></b></div><input type="range" class="slider" id="cal_bGain" min="70" max="130">
+        <div class="slab"><span>감마</span><b id="cal_gammaV"></b></div><input type="range" class="slider" id="cal_gamma" min="70" max="140">
+      </div>
+
+      <div class="cal-sec"><h4>출력 샤프닝 · 재단</h4>
+        <div class="slab"><span>언샤프 샤프닝</span><b id="cal_sharpenV"></b></div><input type="range" class="slider" id="cal_sharpen" min="0" max="100">
+        <label class="check"><input type="checkbox" id="cal_crop"> 재단(트림) 마크 표시</label>
+      </div>
+
+      <div class="cal-actions">
+        <button class="btn" id="cal_test">🎯 보정 테스트 인쇄</button>
+        <button class="btn" id="cal_reset">보정 초기화</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="calPage"></div>
+
+<!-- ==================== LOGO / WATERMARK MODAL ==================== -->
+<div id="logoModal" class="modal-bg" style="display:none">
+  <div class="modal">
+    <header>🏷 행사용 로고 · 워터마크<button class="modal-x" id="logo_x">×</button></header>
+    <div class="modal-body">
+      <label class="check"><input type="checkbox" id="logo_on"> 로고/워터마크 표시</label>
+      <div class="cal-sec"><h4>프리셋 (행사별 저장·편집)</h4>
+        <select id="logo_preset"></select>
+        <div class="row" style="margin-top:7px"><button class="btn sm" id="logo_save">현재값 저장</button><button class="btn sm" id="logo_saveas">＋ 새 이름</button><button class="btn sm" id="logo_del">삭제</button></div>
+        <button class="btn sm" id="logo_default" style="margin-top:6px">⭐ 기본 로고로 (시작 시 자동)</button>
+      </div>
+      <div class="cal-sec"><h4>내용</h4>
+        <div class="seg" id="logo_type"><button data-t="text">텍스트</button><button data-t="image">이미지</button></div>
+        <div id="logo_textRow" style="margin-top:8px">
+          <label class="f">문구</label><input type="text" id="logo_text">
+          <label class="check"><input type="checkbox" id="logo_bold"> 굵게</label>
+          <label class="f">색</label><input type="color" id="logo_color" style="width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer">
+        </div>
+        <div id="logo_imgRow" style="display:none;margin-top:8px">
+          <div class="row"><button class="btn sm" id="logo_pick">로고 이미지 선택 (PNG 권장)</button><button class="btn sm" id="logo_remove">제거</button></div>
+          <input type="file" id="logo_img" accept="image/*" hidden>
+          <div id="logo_preview" class="logo-preview"></div>
+        </div>
+      </div>
+      <div class="cal-sec"><h4>위치 · 크기</h4>
+        <label class="f">위치 (9방향)</label>
+        <div class="anchor-grid" id="logo_anchor">
+          <button class="lanchor" data-a="tl">↖</button><button class="lanchor" data-a="tc">↑</button><button class="lanchor" data-a="tr">↗</button>
+          <button class="lanchor" data-a="ml">←</button><button class="lanchor" data-a="mc">•</button><button class="lanchor" data-a="mr">→</button>
+          <button class="lanchor" data-a="bl">↙</button><button class="lanchor" data-a="bc">↓</button><button class="lanchor" data-a="br">↘</button>
+        </div>
+        <div class="slab"><span>크기</span><b id="logo_sizeV"></b></div><input type="range" class="slider" id="logo_size" min="4" max="120" step="1">
+        <div class="row2"><div><label class="f">여백 X mm</label><input type="number" id="logo_offx" step="0.5"></div><div><label class="f">여백 Y mm</label><input type="number" id="logo_offy" step="0.5"></div></div>
+        <div class="slab"><span>불투명도</span><b id="logo_opV"></b></div><input type="range" class="slider" id="logo_op" min="5" max="100">
+        <div class="slab"><span>회전</span><b id="logo_rotV"></b></div><input type="range" class="slider" id="logo_rot" min="-180" max="180">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
