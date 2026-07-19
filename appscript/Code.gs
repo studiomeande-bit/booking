@@ -132,7 +132,7 @@ const TRAVEL_COL=TRAVEL_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트일시','고객명','연락처','이메일','촬영일시','촬영종류','상품','마케팅동의','콘텐츠상태','플랫폼','게시예정일','게시시간','게시상태','업로드여부','게시URL','드라이브링크','캡션메모','관리메모','담당자'];
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 인스타 검수: 로컬 파이프라인의 built(게시대기) 항목을 ERP에서 미리보기+승인 (릴스·캐러셀·캠페인 공통)
-const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시'];
+const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL'];
 const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
@@ -240,7 +240,10 @@ function doGet(e) {
   return HtmlService.createHtmlOutputFromFile('AdminV2')
     .addMetaTag('viewport','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no')
     .setTitle(CONFIG.APP_TITLE+' ERP')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    // 🔒 클릭재킹 방어: 어드민 페이지는 제3자 사이트가 iframe으로 감싸지 못하게 한다.
+    // DEFAULT = 동일 출처(구글 자체 래퍼)에서만 프레이밍 허용. /exec 직접 접속은 영향 없음.
+    // (외부 사이트에 어드민을 임베드해야 하는 상황이 생기면 ALLOWALL로 되돌리면 됨)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 function getPrintSheetColMap_(sh) {
@@ -714,12 +717,10 @@ function handlePublicApiRequest_(route,method,e){
   try{
     assertPublicOrigin_(e);
     if(route==='admin-db-maint'){
-      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/admin-db-maint');
-      const p=(e&&e.parameter)||{};
-      const request=getPublicPayloadFromRequest_(e);
-      const payload=request.payload||{};
-      const password=String(payload.password||p.password||'').trim();
-      const action=String(payload.action||p.action||'').trim().toLowerCase();
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/admin-db-maint');
+      const payload=requirePostBodyPayload_(e);
+      const password=String(payload.password||'').trim();
+      const action=String(payload.action||'').trim().toLowerCase();
       if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
       if(action==='list'){
         return jsonOk_({candidates:_listDbCandidateSpreadsheets_()});
@@ -730,12 +731,10 @@ function handlePublicApiRequest_(route,method,e){
       return jsonError_('INVALID_ACTION','Unknown admin db action');
     }
     if(route==='admin-test-issued'){
-      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/admin-test-issued');
-      const p=(e&&e.parameter)||{};
-      const request=getPublicPayloadFromRequest_(e);
-      const payload=request.payload||{};
-      const password=String(payload.password||p.password||'').trim();
-      const action=String(payload.action||p.action||'preview').trim().toLowerCase();
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/admin-test-issued');
+      const payload=requirePostBodyPayload_(e);
+      const password=String(payload.password||'').trim();
+      const action=String(payload.action||'preview').trim().toLowerCase();
       if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
       if(action==='preview'){
         return jsonOk_(_previewTestIssuedRecords_());
@@ -746,15 +745,13 @@ function handlePublicApiRequest_(route,method,e){
       return jsonError_('INVALID_ACTION','Unknown admin test-issued action');
     }
     if(route==='admin-accounting'){
-      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/admin-accounting');
-      const p=(e&&e.parameter)||{};
-      const request=getPublicPayloadFromRequest_(e);
-      const payload=request.payload||{};
-      const password=String(payload.password||p.password||'').trim();
-      const action=String(payload.action||p.action||'').trim().toLowerCase();
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/admin-accounting');
+      const payload=requirePostBodyPayload_(e);
+      const password=String(payload.password||'').trim();
+      const action=String(payload.action||'').trim().toLowerCase();
       if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
-      const startDate=String(payload.startDate||p.startDate||'').slice(0,10);
-      const endDate=String(payload.endDate||p.endDate||'').slice(0,10);
+      const startDate=String(payload.startDate||'').slice(0,10);
+      const endDate=String(payload.endDate||'').slice(0,10);
       const auth=verifyAdmin(password);
       const token=auth&&auth.token;
       try{
@@ -992,13 +989,12 @@ function handlePublicApiRequest_(route,method,e){
     }
     if(route==='erp-agent'){
       // ERP 자동화 에이전트 API — 발급된 자동화 키로만 접근 (어드민에서 발급/폐기)
-      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/erp-agent');
-      const request=getPublicPayloadFromRequest_(e);
-      const payload=request.payload||{};
-      const params=(e&&e.parameter)||{};
-      const key=String(payload.apiKey||params.apiKey||'').trim();
+      // 키는 URL 로그에 남지 않도록 POST 바디에서만 받는다 (erp-agent.mjs는 이미 POST 바디 전송).
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/erp-agent');
+      const payload=requirePostBodyPayload_(e);
+      const key=String(payload.apiKey||'').trim();
       if(!isValidAutomationKey_(key)) return jsonError_('UNAUTHORIZED','Automation key invalid or not issued');
-      const action=String(payload.agentAction||params.agentAction||'').trim();
+      const action=String(payload.agentAction||'').trim();
       const token=createAdminSessionToken_();
       try{
         try{logMessage_({channel:'erp-agent',direction:'inbound',type:'agent',subject:'erp-agent:'+action,status:'요청',meta:{action}});}catch(logErr){}
@@ -1154,11 +1150,9 @@ function handlePublicApiRequest_(route,method,e){
       }
     }
     if(route==='studio-presence-config'){
-      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/studio-presence-config');
-      const p=(e&&e.parameter)||{};
-      const request=getPublicPayloadFromRequest_(e);
-      const payload=request.payload||{};
-      const password=String(payload.password||p.password||'').trim();
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/studio-presence-config');
+      const payload=requirePostBodyPayload_(e);
+      const password=String(payload.password||'').trim();
       if(!isValidAdminPassword_(password)) return jsonError_('UNAUTHORIZED','Admin auth failed');
       return jsonOk_(getStudioPresenceShortcutConfig_());
     }
@@ -1253,6 +1247,16 @@ function getPublicPayloadFromRequest_(e){
   return {body:body||{},payload:(body&&body.data)||body||{}};
 }
 
+// 시크릿(어드민 비번/자동화 키)은 절대 URL 쿼리로 받지 않는다 — 쿼리는 서버 로그·브라우저
+// 히스토리·Referer에 남는다. POST 바디(JSON)에서만 payload를 추출하고, GET/빈 바디는 거부한다.
+function requirePostBodyPayload_(e){
+  const raw=String((e&&e.postData&&e.postData.contents)||'').trim();
+  if(!raw) throw new Error('This endpoint requires a POST request with a JSON body.');
+  let body;
+  try{body=JSON.parse(raw);}catch(err){throw new Error('Invalid JSON body');}
+  return (body&&body.data)||body||{};
+}
+
 function isPublicTruthy_(value){
   if(value===true) return true;
   const s=String(value||'').trim().toLowerCase();
@@ -1310,6 +1314,26 @@ function normalizeAddressText_(address){
 function _addressComponent_(components,type,shortName){
   const found=(components||[]).find(function(c){return (c.types||[]).indexOf(type)!==-1;});
   return found ? String(shortName?found.short_name:found.long_name||'').trim() : '';
+}
+
+// ── 스프레드시트 수식(CSV) 인젝션 방어 ──────────────────────────────────
+// 고객이 이름/메모/주소 등에 '=IMPORTXML(...)' 같은 수식을 넣으면, 사장님이 시트를
+// 열 때 사장님 계정 권한으로 실행되어 옆 셀(다른 고객정보)이 외부로 유출될 수 있다.
+// GAS appendRow/setValue는 '='로 시작하는 문자열을 수식으로 저장한다. 아래 헬퍼는
+// '수식처럼 보이는' 값 앞에만 텍스트 강제용 아포스트로피를 붙인다. 정상 전화(+49…,
+// 괄호 없음)·이름·주소·이메일은 트리거에 안 걸리므로 절대 변형되지 않는다.
+function neutralizeFormula_(v){
+  if(typeof v!=='string' || !v) return v;
+  const first=v.charAt(0);
+  if(first==='=') return "'"+v;                                            // 명시적 수식 =...
+  if((first==='+'||first==='-'||first==='@') && /\(/.test(v)) return "'"+v; // +/-/@ 로 시작하는 함수호출형 수식
+  if(first==='\t'||first==='\r'||first==='\n') return "'"+v;                // 제어문자 선두
+  return v;
+}
+// 행 배열의 문자열 셀을 일괄 무력화 (공개 접수 → 시트 기록 경로 전용)
+function neutralizeRow_(row){
+  if(Array.isArray(row)){ for(let i=0;i<row.length;i++){ if(typeof row[i]==='string') row[i]=neutralizeFormula_(row[i]); } }
+  return row;
 }
 
 function lookupAddress_(query){
@@ -1623,9 +1647,7 @@ function debugListDbCandidates_(){
   return _listDbCandidateSpreadsheets_();
 }
 
-function debugListDbCandidates(){
-  return debugListDbCandidates_();
-}
+// 🔒 공개 래퍼 제거: 익명 google.script.run 노출 차단. 어드민은 adminRpc('debugListDbCandidates')로만 접근(assertAdmin_).
 
 function _mergeManagedSheetNames_(){
   return [
@@ -1912,9 +1934,7 @@ function _cleanupTestIssuedRecords_(){
   };
 }
 
-function mergeDuplicateDbFiles(){
-  return mergeDuplicateDbFiles_();
-}
+// 🔒 공개 래퍼 제거: 익명 google.script.run 노출 차단. 어드민은 adminRpc('mergeDuplicateDbFiles')로만 접근(assertAdmin_).
 
 // 실행(요청)당 1회만 시트 보장/스프레드시트 재채점을 수행하고 결과를 재사용.
 // GAS는 실행마다 전역을 초기화하므로 요청 간 stale 위험 없음. DB 전환/병합 시 invalidateSheetsCache_()로 해제.
@@ -2053,8 +2073,10 @@ function upsertInstaReviewForAgent_(token,payload){
   let rIdx=-1;
   for(let i=1;i<vals.length;i++){ if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')===key){ rIdx=i+1; break; } }
   const cur=rIdx>-1 ? String(vals[rIdx-1][INSTA_REVIEW_COL['상태']]||'') : '';
-  // 이미 승인/게시완료면 상태 보존 (미리보기 필드만 갱신)
-  const status=(cur==='승인'||cur==='게시완료') ? cur : '검수대기';
+  // 이미 승인/게시완료면 상태 보존. 로컬에서 이미 승인된 항목(presetStatus='승인')은 시트도 승인으로
+  // — 게시 예약된 콘텐츠를 미리보기만 하려는 것이라 오해 방지("보류" 버튼 대신 "승인됨" 표기).
+  const status=(cur==='승인'||cur==='게시완료') ? cur
+    : (String(payload.presetStatus||'')==='승인' ? '승인' : '검수대기');
   const row=rIdx>-1 ? vals[rIdx-1].slice() : new Array(INSTA_REVIEW_HEADERS.length).fill('');
   row[INSTA_REVIEW_COL['큐키']]=key;
   row[INSTA_REVIEW_COL['유형']]=String(payload.type||'');
@@ -2062,6 +2084,7 @@ function upsertInstaReviewForAgent_(token,payload){
   row[INSTA_REVIEW_COL['상태']]=status;
   row[INSTA_REVIEW_COL['커버URL']]=String(payload.coverUrl||'');
   row[INSTA_REVIEW_COL['슬라이드URL']]=String(payload.slideUrls||'');
+  row[INSTA_REVIEW_COL['영상URL']]=String(payload.videoUrl||'');
   row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
   row[INSTA_REVIEW_COL['예정슬롯']]=String(payload.slot||'');
   row[INSTA_REVIEW_COL['슬라이드수']]=payload.slideCount||'';
@@ -2100,6 +2123,7 @@ function listInstaReviewAdmin(token){
       key:String(r[INSTA_REVIEW_COL['큐키']]||''), type:String(r[INSTA_REVIEW_COL['유형']]||''),
       name:String(r[INSTA_REVIEW_COL['이름']]||''), status:st,
       coverUrl:String(r[INSTA_REVIEW_COL['커버URL']]||''), slideUrls:String(r[INSTA_REVIEW_COL['슬라이드URL']]||''),
+      videoUrl:String(r[INSTA_REVIEW_COL['영상URL']]||''),
       caption:String(r[INSTA_REVIEW_COL['캡션']]||''), slot:String(r[INSTA_REVIEW_COL['예정슬롯']]||''),
       slideCount:r[INSTA_REVIEW_COL['슬라이드수']]||'', updatedAt:String(r[INSTA_REVIEW_COL['업데이트일시']]||'')
     });
@@ -2632,10 +2656,10 @@ function createPortfolioLead_(payload,e){
   };
   const sh=ensureSheets_().leadSheet;
   const at=_nowStamp_();
-  sh.appendRow([
+  sh.appendRow(neutralizeRow_([
     at,'신규',lead.name,lead.email,lead.phone,lead.lang,lead.projectType,lead.preferredDate,lead.location,lead.message,
     lead.sourceUrl||lead.source,lead.utm,lead.ip,lead.userAgent,lead.marketingConsent,lead.privacyConsent,'',''
-  ]);
+  ]));
   const rowIndex=sh.getLastRow();
   _sendPortfolioLeadAdminEmail_(lead,rowIndex);
   _sendPortfolioLeadCustomerEmail_(lead);
@@ -2979,7 +3003,7 @@ function addLeadForAgent_(token,payload){
   row[LEAD_COL['메시지']]=String(payload.message||'').slice(0,500);
   row[LEAD_COL['출처']]=String(payload.source||'instagram-comment').slice(0,60);
   row[LEAD_COL['관리메모']]=ref?('ref:'+ref):'';
-  sh.appendRow(row);
+  sh.appendRow(neutralizeRow_(row));
   return {ok:true,added:true,rowIndex:sh.getLastRow(),ref:ref};
 }
 
@@ -3030,11 +3054,11 @@ function createConsultation_(payload,e){
     c.appointmentEventId=_createConsultationCalendarEvent_(c,appointment);
   }
   const sh=ensureSheets_().consultationSheet;
-  sh.appendRow([
+  sh.appendRow(neutralizeRow_([
     c.id,c.submittedAt,c.status,c.consultationType,c.lang,c.name,c.email,c.phone,c.company,c.preferredSchedule,c.contactMethod,c.shootDate,c.location,c.budget,c.priority,
     JSON.stringify(c.answers),c.summary,'[]','', '', '', '', c.sourceUrl||c.source,c.utm,c.ip,c.userAgent,c.marketingConsent,c.privacyConsent,'',
     c.appointmentAt,c.appointmentDuration,c.appointmentEventId
-  ]);
+  ]));
   const rowIndex=sh.getLastRow();
   _sendConsultationAdminEmail_(c,rowIndex);
   _sendConsultationCustomerEmail_(c);
@@ -3630,7 +3654,7 @@ function getStudioPresenceShortcutConfig_(){
   };
 }
 
-function debugGetStudioPresenceShortcutConfig(){
+function debugGetStudioPresenceShortcutConfig_(){ // 🔒 _접미사: 익명 노출 차단(프레즌스 토큰 평문 유출 방지)
   return getStudioPresenceShortcutConfig_();
 }
 function hashText_(t) {
@@ -3682,13 +3706,43 @@ function logoutAdmin(token){
   }catch(e){}
   return{ok:true};
 }
+// 🔒 현재 관리자 비밀번호가 초기 기본값(1234)인지 여부 — 강제 변경 유도용
+function isDefaultAdminPassword_(){
+  try{
+    ensureSecrets_();
+    return PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD_HASH')===hashText_('1234');
+  }catch(e){return false;}
+}
+// 온라인 무차별 대입 완화용 지연 스로틀.
+// 글로벌 하드락(계정 잠금)은 공격자가 사장님 로그인을 막는 DoS로 악용될 수 있어 사용하지 않고,
+// 실패가 누적될수록 응답을 점진적으로 지연시켜 대입 속도만 떨어뜨린다.
+function _adminLoginThrottleDelay_(){
+  try{
+    const fails=parseInt(CacheService.getScriptCache().get('adminpw_fails')||'0',10)||0;
+    if(fails>=3) Utilities.sleep(Math.min(8000,(fails-2)*1500));
+  }catch(e){}
+}
+function _bumpAdminLoginThrottle_(){
+  try{
+    const c=CacheService.getScriptCache();
+    const fails=(parseInt(c.get('adminpw_fails')||'0',10)||0)+1;
+    c.put('adminpw_fails',String(fails),600); // 10분 창
+  }catch(e){}
+}
+function _resetAdminLoginThrottle_(){
+  try{CacheService.getScriptCache().remove('adminpw_fails');}catch(e){}
+}
 function verifyAdmin(password){
   try{
     // ✅ 로그인 시 ensureSheets_ 제거 → 속도 개선 + 타임아웃 방지
     // ensureSheets_는 첫 getInitDataAdmin 때 호출됨
     ensureSecrets_(); // 비밀번호 해시만 초기화
-    if(isValidAdminPassword_(password))
-      return{ok:true,token:createAdminSessionToken_(),ttlSec:CONFIG.ADMIN_SESSION_TTL_SEC};
+    _adminLoginThrottleDelay_();
+    if(isValidAdminPassword_(password)){
+      _resetAdminLoginThrottle_();
+      return{ok:true,token:createAdminSessionToken_(),ttlSec:CONFIG.ADMIN_SESSION_TTL_SEC,mustChangePassword:isDefaultAdminPassword_()};
+    }
+    _bumpAdminLoginThrottle_();
     return{ok:false,message:'비밀번호가 틀렸습니다.'};
   }catch(e){return{ok:false,message:e.message};}
 }
@@ -3707,7 +3761,12 @@ function changeAdminPasswordAdmin(token,newPassword){
   const pw=String(newPassword||'').trim();
   if(pw.length<8) throw new Error('새 비밀번호는 8자 이상이어야 합니다.');
   if(pw==='1234'||/^(1234|0000|1111|password|admin)/i.test(pw)) throw new Error('너무 쉬운 비밀번호입니다. 다른 비밀번호를 사용해 주세요.');
-  PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(pw));
+  const p=PropertiesService.getScriptProperties();
+  p.setProperty('ADMIN_PASSWORD_HASH',hashText_(pw));
+  // 🔒 비밀번호 변경 = 침해 대응 경로: 기존 세션·기억기기·PIN 전부 폐기하고 재로그인 요구
+  p.deleteProperty('ADMIN_SESSIONS');
+  p.deleteProperty('ADMIN_DEVICES');
+  _resetAdminLoginThrottle_();
   return {ok:true};
 }
 
@@ -3730,6 +3789,110 @@ function revokeAutomationKeyAdmin(token){
   assertAdmin_(token);
   PropertiesService.getScriptProperties().deleteProperty('AUTOMATION_API_KEY');
   return {ok:true};
+}
+
+/* ============================================================
+   로그인 편의: 기억기기(로그인 유지 30일) + PIN 빠른잠금
+   - 기존 비밀번호 로그인(verifyAdmin)과 병행하는 "추가" 경로.
+   - 기기토큰: 176bit 난수, 서버 저장, 30일 절대만료, 언제든 폐기(비번 변경 시 자동 폐기).
+   - PIN: 설치별 솔트 해시 + 상수시간 비교 + 기기별 5회 실패 15분 잠금(전역 잠금 아님 → 사장님 비번 로그인은 영향 없음).
+   ============================================================ */
+const ADMIN_DEVICE_TTL_SEC = 60*60*24*30; // 30일 절대 만료
+const ADMIN_DEVICE_MAX = 8;
+
+function _getAdminDevices_(){
+  try{return JSON.parse(PropertiesService.getScriptProperties().getProperty('ADMIN_DEVICES')||'[]');}catch(e){return [];}
+}
+function _saveAdminDevices_(list){
+  PropertiesService.getScriptProperties().setProperty('ADMIN_DEVICES',JSON.stringify(Array.isArray(list)?list:[]));
+}
+function _getAdminPinSalt_(){
+  const p=PropertiesService.getScriptProperties();
+  let s=p.getProperty('ADMIN_PIN_SALT');
+  if(!s){ s=Utilities.getUuid().replace(/-/g,''); p.setProperty('ADMIN_PIN_SALT',s); }
+  return s;
+}
+function _hashAdminPin_(pin){
+  return hashText_(_getAdminPinSalt_()+'|'+String(pin));
+}
+
+// 어드민 세션에서 현재 기기를 등록. withPin=true면 PIN 잠금, 아니면 자동로그인(로그인 유지).
+function registerAdminDevice(token,options){
+  assertAdmin_(token);
+  const opts=options||{};
+  const withPin=!!opts.withPin;
+  let pinHash='';
+  if(withPin){
+    const pin=String(opts.pin||'').trim();
+    if(!/^\d{4,8}$/.test(pin)) throw new Error('PIN은 숫자 4~8자리로 설정해 주세요.');
+    if(/^(\d)\1+$/.test(pin)||pin==='1234'||pin==='0000') throw new Error('너무 쉬운 PIN입니다. 다른 번호를 사용해 주세요.');
+    pinHash=_hashAdminPin_(pin);
+  }
+  const now=Math.floor(Date.now()/1000);
+  const deviceToken=Utilities.getUuid().replace(/-/g,'')+Utilities.getUuid().replace(/-/g,'').slice(0,12);
+  let list=_getAdminDevices_().filter(d=>d && d.exp>now);
+  list.push({ id:deviceToken, pin:pinHash, label:String(opts.label||'').slice(0,40), created:now, exp:now+ADMIN_DEVICE_TTL_SEC });
+  if(list.length>ADMIN_DEVICE_MAX) list=list.slice(-ADMIN_DEVICE_MAX);
+  _saveAdminDevices_(list);
+  return {ok:true,deviceToken:deviceToken,withPin:withPin,expiresInDays:30};
+}
+
+// 기기토큰으로 재로그인 → 새 어드민 세션 발급. PIN 기기는 pin 필수.
+function deviceLogin(deviceToken,pin){
+  const dt=String(deviceToken||'').trim();
+  if(dt.length<24) return {ok:false,message:'기기 인증 정보가 없습니다.'};
+  const now=Math.floor(Date.now()/1000);
+  let list=_getAdminDevices_();
+  const device=list.find(d=>d && d.id===dt);
+  if(!device || device.exp<=now){
+    _saveAdminDevices_(list.filter(d=>d && d.exp>now && d.id!==dt));
+    return {ok:false,expired:true,message:'기기 기억이 만료되었습니다. 비밀번호로 다시 로그인해 주세요.'};
+  }
+  if(device.pin){
+    const cacheKey='pinfail_'+dt;
+    const c=CacheService.getScriptCache();
+    const fails=parseInt(c.get(cacheKey)||'0',10)||0;
+    if(fails>=5) return {ok:false,locked:true,message:'PIN 시도 횟수를 초과했습니다. 15분 후 또는 비밀번호로 로그인해 주세요.'};
+    if(!safeTokenEquals_(_hashAdminPin_(String(pin||'')),device.pin)){
+      c.put(cacheKey,String(fails+1),900); // 15분
+      return {ok:false,message:'PIN이 올바르지 않습니다.',remaining:Math.max(0,4-fails)};
+    }
+    c.remove(cacheKey);
+  }
+  device.exp=now+ADMIN_DEVICE_TTL_SEC; // 슬라이딩 갱신(절대상한도 30일씩)
+  _saveAdminDevices_(list.filter(d=>d && d.exp>now));
+  return {ok:true,token:createAdminSessionToken_(),ttlSec:CONFIG.ADMIN_SESSION_TTL_SEC,withPin:!!device.pin};
+}
+
+// 기기토큰 소유자만 자기 기기 상태 조회(PIN 잠금 여부 등). 토큰 없으면 아무 정보도 주지 않음.
+function getAdminDeviceInfo(deviceToken){
+  const dt=String(deviceToken||'').trim();
+  const now=Math.floor(Date.now()/1000);
+  const device=_getAdminDevices_().find(d=>d && d.id===dt && d.exp>now);
+  if(!device) return {ok:true,known:false};
+  return {ok:true,known:true,withPin:!!device.pin,label:device.label||'',expiresAt:device.exp};
+}
+
+// 이 기기 기억 해제(로그아웃 시). 자기 deviceToken으로만 자신을 제거.
+function forgetAdminDevice(deviceToken){
+  const dt=String(deviceToken||'').trim();
+  if(dt) _saveAdminDevices_(_getAdminDevices_().filter(d=>d && d.id!==dt));
+  return {ok:true};
+}
+
+// 어드민: 모든 기억기기/PIN 폐기(분실·침해 대응)
+function revokeAllAdminDevices(token){
+  assertAdmin_(token);
+  PropertiesService.getScriptProperties().deleteProperty('ADMIN_DEVICES');
+  return {ok:true};
+}
+
+// 어드민: 등록된 기억기기 요약
+function getAdminDeviceSummary(token){
+  assertAdmin_(token);
+  const now=Math.floor(Date.now()/1000);
+  const list=_getAdminDevices_().filter(d=>d && d.exp>now);
+  return {ok:true,count:list.length,withPin:list.filter(d=>d.pin).length};
 }
 
 /* ====== 설정 ====== */
@@ -7584,7 +7747,7 @@ function processForm(data){
     bookingRow[BOOKING_COL['balance_price_brutto']] = quote.isQuoteOnly?'':quote.balanceAmount;
     if(BOOKING_COL['예약유형']!=null) bookingRow[BOOKING_COL['예약유형']] = bookingClientType;
     const bookingSheet=getDbSheet();
-    bookingSheet.appendRow(bookingRow);
+    bookingSheet.appendRow(neutralizeRow_(bookingRow));
     const bookingRowIndex=bookingSheet.getLastRow();
     upsertTravelLedgerForBooking_(bookingRowIndex,bookingRow);
     // Gutschein V2: 고객이 예약 화면에서 hold한 상품권을 예약행에 최종 확정
@@ -7780,7 +7943,7 @@ function submitWalkinIntake_(payload){
   row[WALKIN_COL['촬영장소']]=cleanPayload.shootingLocation;
   row[WALKIN_COL['희망일정']]=cleanPayload.preferredSchedule;
   row[WALKIN_COL['보안검증']]=`token ${submittedAt}`;
-  sh.appendRow(row);
+  sh.appendRow(neutralizeRow_(row));
   try{sendWalkinAdminEmail_(cleanPayload,submittedAt);}catch(e){Logger.log('walkin admin mail error: '+e.message);}
   try{sendWalkinCustomerReceipt_(cleanPayload,submittedAt);}catch(e){Logger.log('walkin customer mail error: '+e.message);}
   return {submittedAt,serviceLabel:cleanPayload.serviceLabel};
@@ -11361,9 +11524,8 @@ function adminCleanupAndConfirmAllDeposits_(){
   };
 }
 
-function adminCleanupAndConfirmAllDeposits(){
-  return adminCleanupAndConfirmAllDeposits_();
-}
+// 🔒 공개 래퍼 제거: 익명이 예약금 일괄 입금확정(자동취소 안전장치 무력화)을 호출하던 경로 차단.
+// 어드민 전용 로직은 adminCleanupAndConfirmAllDeposits_() 로 유지(내부/에디터 실행용).
 
 function cleanupBookingDepositFlagsAdmin(token){
   assertAdmin_(token);
@@ -14872,9 +15034,28 @@ function repairSelectRevisionHistoryColumn_(sh){
   }
 }
 
+// 암호학적으로 안전한 난수 인덱스. Math.random은 V8 내부상태가 몇 개 출력으로 역산되어
+// 예측 가능하므로 상품권 코드·셀렉 세션 URL 토큰(=권한)에는 부적합하다. Utilities.getUuid()는
+// Java SecureRandom 기반이며, SHA-256으로 균일화한 바이트 풀에서 거부 표본추출(rejection
+// sampling)로 모듈로 편향 없이 [0,alphabetLen) 인덱스를 뽑는다.
+function _secureRandomIndices_(count, alphabetLen){
+  if(alphabetLen<1||alphabetLen>256) throw new Error('bad alphabet length');
+  const limit=256-(256%alphabetLen); // 이 값 이상 바이트는 버려 편향 제거
+  const out=[];
+  while(out.length<count){
+    const seed=Utilities.getUuid()+'|'+Utilities.getUuid();
+    const bytes=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, seed, Utilities.Charset.UTF_8);
+    for(let i=0;i<bytes.length && out.length<count;i++){
+      const b=(bytes[i]+256)%256;
+      if(b<limit) out.push(b%alphabetLen);
+    }
+  }
+  return out;
+}
 function generateSessionId_(){
   const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let id='';for(let i=0;i<20;i++)id+=c[Math.floor(Math.random()*c.length)];return id;
+  const idx=_secureRandomIndices_(20,c.length);
+  let id='';for(let i=0;i<20;i++)id+=c[idx[i]];return id;
 }
 
 function getDefaultSelectMarketingBonusCount_(itemGroup,productName,payMethod){
@@ -20296,6 +20477,13 @@ function setupWarmupTrigger(){
 }
 
 function dailyTasks(){
+  // 🔒 익명 google.script.run 남용 방지: 5분 내 재실행 차단(1일 1회 트리거엔 영향 없음).
+  // 방어적으로 try/catch — 캐시 오류가 정규 실행을 막지 않도록 함.
+  try{
+    const _c=CacheService.getScriptCache();
+    if(_c.get('dailyTasks_guard')) return {ok:false,skipped:true,reason:'reentrancy_guard'};
+    _c.put('dailyTasks_guard','1',300);
+  }catch(_e){}
   const jobs=[
     ['D1 DB 백업',backupSpreadsheetDaily_],
     ['M1 마이리얼트립 예약 알림 가져오기',syncMyRealTripBookingEmails_],
@@ -20451,7 +20639,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   }
 }
 
-function debugListAutoCancelledBookings(){
+function debugListAutoCancelledBookings_(){ // 🔒 _접미사: 익명 google.script.run 노출 차단
   const {bookingSheet}=ensureSheets_();
   const rows=bookingSheet.getDataRange().getValues();
   return rows.slice(1).map(function(row, idx){
@@ -20478,7 +20666,7 @@ function debugListAutoCancelledBookings(){
   }).slice(0, 20);
 }
 
-function debugFindBookingsByNames(names){
+function debugFindBookingsByNames_(names){ // 🔒 _접미사: 익명 google.script.run 노출 차단(고객 PII 덤프 방지)
   const queries=(Array.isArray(names)?names:[names]).map(function(v){
     return String(v||'').trim().toLowerCase();
   }).filter(Boolean);
@@ -20941,11 +21129,11 @@ function joinWaitlist_(payload){
   );
   if(dup) return {ok:true,message:'이미 해당 날짜에 대기 등록되어 있습니다.',duplicate:true};
 
-  sh.appendRow([
+  sh.appendRow(neutralizeRow_([
     Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
     '대기중', name, email, phone, lang, productName, itemGroup,
     desiredDate, desiredTime, totalDur, memo, '', 0
-  ]);
+  ]));
 
   _sendWaitlistConfirmEmail_(email,name,lang,desiredDate,productName);
   return {ok:true,message:'대기 등록이 완료되었습니다.'};
@@ -21029,10 +21217,31 @@ function _guessItemGroupFromProduct_(productName){
 const ADMIN_SESSION_SLIDE_THRESHOLD_SEC=60*60*2;
 
 /* ====== D4: 연락처 히스토리 조회 (자동 채움용) ====== */
+// 전화번호를 뒤 8자리(가입자번호 꼬리)로 정규화 — 0176… ↔ +49 176… 국가코드 표기차 흡수
+function _contactPhoneKey_(p){
+  const d=String(p||'').replace(/\D/g,'');
+  return d.length>8 ? d.slice(-8) : d;
+}
+// 개인정보 보호(GDPR): 재방문 고객 자동입력 편의용. 이메일 '그리고' 전화번호가 모두
+// 같은 예약과 일치할 때만 정보를 반환한다 — 이메일만/전화만 하나로 남의 이름·집주소를
+// 캐내는 열거(오라클)를 차단. 조합/전역 레이트리밋으로 무차별 대입도 완화. 이메일은
+// 호출자가 이미 보냈으므로 응답에서 에코하지 않는다.
 function lookupContactHistory_(payload){
   const email=String((payload&&payload.email)||'').trim().toLowerCase();
-  const phone=String((payload&&payload.phone)||'').replace(/[\s\-\(\)]/g,'');
-  if(!email&&!phone) return {found:false};
+  const phoneKey=_contactPhoneKey_(payload&&payload.phone);
+  if(!email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||phoneKey.length<7) return {found:false};
+  try{
+    const cache=CacheService.getScriptCache();
+    const digest=Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,email+'|'+phoneKey)
+      .map(function(b){return ('0'+(b&0xFF).toString(16)).slice(-2);}).join('').slice(0,24);
+    const tryKey='cl_try_'+digest;
+    const tries=Number(cache.get(tryKey)||'0')+1;
+    cache.put(tryKey,String(tries),300);
+    if(tries>8) return {found:false};
+    const gTries=Number(cache.get('cl_global')||'0')+1;
+    cache.put('cl_global',String(gTries),300);
+    if(gTries>400) return {found:false};
+  }catch(e){}
   try{
     const sh=getDbSheet();
     const data=sh.getDataRange().getValues();
@@ -21041,12 +21250,8 @@ function lookupContactHistory_(payload){
     for(let i=1;i<data.length;i++){
       const r=data[i];
       if(isBookingCalendarInactiveStatus_(r[1])) continue;
-      const rEmail=String(r[4]||'').trim().toLowerCase();
-      const rPhone=String(r[3]||'').replace(/[\s\-\(\)]/g,'');
-      let match=false;
-      if(email&&rEmail===email) match=true;
-      else if(phone&&phone.length>=6&&rPhone===phone) match=true;
-      if(!match) continue;
+      if(String(r[4]||'').trim().toLowerCase()!==email) continue;
+      if(_contactPhoneKey_(r[3])!==phoneKey) continue; // 이메일 '그리고' 전화 모두 일치해야 함
       const dt=parseDateSafe_(r[0]).obj;
       if(!dt) continue;
       if(dt.getTime()<=now) visits++;
@@ -21057,7 +21262,6 @@ function lookupContactHistory_(payload){
       found:true,
       name:String(latestRow[2]||''),
       phone:String(latestRow[3]||''),
-      email:String(latestRow[4]||''),
       lang:String(latestRow[5]||''),
       address:String(latestRow[BOOKING_COL['고객주소']]||''),
       lastProduct:String(latestRow[7]||''),
@@ -21066,7 +21270,7 @@ function lookupContactHistory_(payload){
     };
   }catch(err){
     Logger.log('lookupContactHistory_ error: '+err.message);
-    return {found:false,error:err.message};
+    return {found:false};
   }
 }
 
@@ -22029,10 +22233,11 @@ function extractGutscheinCode_(raw){
 
 function generateGutscheinCode_(){
   const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const idx=_secureRandomIndices_(12,chars.length); // 상품권=돈: 예측 불가능해야 함(CSPRNG)
   let code='';
   for(let block=0;block<3;block++){
     let chunk='';
-    for(let i=0;i<4;i++) chunk+=chars[Math.floor(Math.random()*chars.length)];
+    for(let i=0;i<4;i++) chunk+=chars[idx[block*4+i]];
     code+=(block?'-':'')+chunk;
   }
   return code;
@@ -23288,7 +23493,8 @@ function listSelectPhotosPublic_(sessionId,options){
     limit:limit,
     recursive:recursive,
     timeBudgetMs:opts.timeBudgetMs,
-    cursor:opts.cursor
+    cursor:opts.cursor,
+    allowShare:true // 유효한 셀렉 세션의 폴더만 공개 열람 허용
   });
   if(!out||out.ok===false) return out||{ok:false,message:'Drive folder not linked'};
   if(!hasCursor){
@@ -23312,7 +23518,11 @@ function listDriveFolderPhotosPublic_(folderRef,options){
   if(!hasCursor&&cached){try{return JSON.parse(cached);}catch(e){}}
   let folder;
   try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
-  try{folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(e){}
+  // 🔒 ACL 강제확장은 신뢰된 세션 경로(select-photos, allowShare:true)에서만 허용.
+  // 임의 folder ID를 받는 공개 미리보기(select-photos-preview)는 폴더를 공개로 바꾸지 못하게 한다.
+  if(opts.allowShare===true){
+    try{folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(e){}
+  }
   const photos=[];
   const seenFiles=new Set();
   const state=_getSelectPhotoCursorState_(rawCursor,folderId,recursive);
