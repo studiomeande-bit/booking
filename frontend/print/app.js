@@ -401,6 +401,8 @@ function renderOrderPanel(){
     ${q.length?`<label class="f" style="margin-top:11px">③ 인화 큐 (사이즈별) — 클릭해 이동</label>
     <div class="oqlist">${rows}</div>
     <div class="ostep"><button class="btn sm" id="ord_prev">◀</button><span class="olvl">${state.order.idx+1} / ${q.length}</span><button class="btn sm" id="ord_next">▶</button></div>
+    <div class="row" style="margin-top:7px"><button class="btn sm" id="ord_autoone" style="flex:1">🖨️ 이 장 자동출력</button><button class="btn sm" id="ord_autoall" style="flex:1">🖨️ 전체 자동출력 (${st.sheets}장)</button></div>
+    <div class="hint" id="ord_helper_note" style="padding:4px 0 0">시스템 자동출력: 인화지=<b>${(state.media||'').replace(/</g,'&lt;')}</b> · 사이즈·여백없음 자동 · lp로 EPSON 직접 (헬퍼 필요)</div>
     <button class="btn sm" id="ord_pdf" style="margin-top:7px">📄 주문 전체 멀티페이지 PDF</button>
     ${cur?(isCardId(cur.printId)?(()=>{const cap=cardCapacity(),sheets=Math.ceil(cur.qty/cap),dbl=cur.printId==='photocard_double';return `<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · 포토카드 <b>55×85mm</b> · <b>${cur.qty}장</b><br><b>ET-18100은 카드 급지 불가</b> → ${(state.order.cardSheet||'A4').split(' ')[0]} 1장에 <b>${cap}장</b> 갱 인쇄 후 <b>재단</b>. ${cur.qty}장 = <b>${sheets}시트</b>.${dbl?'<br>⚠ 양면(더블)은 뒷면 이미지로 2차 인쇄 필요.':''}</div><label class="f">갱 시트 (ET-18100)</label><div class="seg"><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A4')?'on':''}" data-s="A4 (210×297)">A4·9장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3 ')?'on':''}" data-s="A3 (297×420)">A3·20장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3+')?'on':''}" data-s="A3+ (329×483)">A3+·25장</button></div>`;})():`<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · ${(PRINT_SIZE_MM[cur.printId]||{}).label} · <b>${cur.qty}장</b> → 인쇄 대화상자 <b>매수 ${cur.qty}</b>로.</div>`):''}
     ${st.total-st.matched>0?`<div class="hint" style="padding:6px 0 0;color:#c98">⚠ 미매칭 ${st.total-st.matched}건 — 원본을 더 불러오세요.</div>`:''}`:''}
@@ -420,6 +422,8 @@ function renderOrderPanel(){
   if($("#ord_next"))$("#ord_next").addEventListener('click',()=>setOrderIdx(state.order.idx+1));
   document.querySelectorAll('.cardsheet').forEach(b=>b.addEventListener('click',()=>{state.order.cardSheet=b.dataset.s;render();fit();}));
   if($("#ord_pdf"))$("#ord_pdf").addEventListener('click',exportOrderPDF);
+  if($("#ord_autoone"))$("#ord_autoone").addEventListener('click',()=>autoprintViaHelper(false));
+  if($("#ord_autoall"))$("#ord_autoall").addEventListener('click',()=>autoprintViaHelper(true));
   if($("#ord_fetch"))$("#ord_fetch").addEventListener('click',fetchErpSession);
   if($("#ord_list_refresh"))$("#ord_list_refresh").addEventListener('click',()=>loadPrintSessionList(true));
   if($("#ord_sid_pick"))$("#ord_sid_pick").addEventListener('change',e=>{
@@ -513,6 +517,43 @@ async function exportOrderPDF(){ // 주문 전체 → 멀티페이지 PDF (항�
   state.order.idx=savedIdx; render(); fit();
   if(btn){btn.disabled=false;btn.textContent="📄 주문 전체 멀티페이지 PDF";}
 }
+/* ── 로컬 프린터 헬퍼(시스템 자동출력) ──
+   127.0.0.1:17600 헬퍼가 lp로 용지크기·인화지(미디어)·여백없음을 자동 지정해 EPSON으로 직접 출력.
+   각 주문 장을 원본해상도 PDF로 조판(테두리 프레임 포함)해 POST. state.media=현재 물리 인화지. */
+const PRINT_HELPER_URL = "http://127.0.0.1:17600";
+let _helperOk = null;
+async function pingPrintHelper(){
+  try{ const r=await fetch(PRINT_HELPER_URL+"/ping",{cache:"no-store"}); const j=await r.json(); _helperOk=!!(j&&j.ok); return j; }
+  catch(e){ _helperOk=false; return null; }
+}
+function _blobToB64(blob){ return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob);}); }
+async function autoprintViaHelper(all){
+  const q=orderQueue();
+  if(!q.length){alert("주문이 없습니다.");return;}
+  await pingPrintHelper();
+  if(!_helperOk){ alert("로컬 프린터 헬퍼에 연결할 수 없습니다.\n인화 헬퍼(자동 상주)가 켜져 있는지, 맥에서 실행 중인지 확인해 주세요."); return; }
+  const targets = all ? q.map((l,i)=>i) : [Math.min(state.order.idx,q.length-1)];
+  const savedIdx=state.order.idx, results=[];
+  const btns=[$("#ord_autoone"),$("#ord_autoall")]; btns.forEach(b=>{if(b)b.disabled=true;});
+  try{
+    for(const i of targets){
+      const line=q[i];
+      if(!matchRec(line.photoNum)){ results.push("⚠ "+line.photoNum+" · 원본없음(건너뜀)"); continue; }
+      state.order.idx=i; render();
+      const cvs=await renderPageCanvas(state.dpi), pm=paperMm();
+      const pdf=makePDFmultiPage([{jpeg:cvs.toDataURL("image/jpeg",0.92),iw:cvs.width,ih:cvs.height,pwMm:pm[0],phMm:pm[1]}]);
+      const b64=await _blobToB64(pdf);
+      const spec={pdfBase64:b64, sizeKey:line.printId, mediaName:state.media, borderless:true, copies:line.qty, jobName:"studio "+line.photoNum};
+      let j; try{ const r=await fetch(PRINT_HELPER_URL+"/print",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}); j=await r.json(); }catch(e){ j={ok:false,error:e.message||String(e)}; }
+      const rv=j&&j.resolved;
+      results.push((j&&j.ok?"✅ ":"❌ ")+line.photoNum+" → "+(rv?(rv.PageSize+" · 미디어"+rv.MediaType+(rv.borderless?" · 여백없음":"")+" ×"+rv.copies):((j&&j.error)||"실패")));
+    }
+  }catch(e){ results.push("오류: "+(e.message||e)); }
+  state.order.idx=savedIdx; render(); fit();
+  btns.forEach(b=>{if(b)b.disabled=false;});
+  alert("🖨️ 시스템 자동출력 (인화지="+state.media+")\n\n"+results.join("\n"));
+}
+
 /* ERP 직결: 셀렉 세션 → existingPrints → 주문 라인 자동 로드 (호스팅 시 활성; file://은 CORS로 실패) */
 async function fetchErpSession(){
   const base=($("#ord_erpBase")&&$("#ord_erpBase").value||"").trim(), id=($("#ord_sid")&&$("#ord_sid").value||"").trim();
