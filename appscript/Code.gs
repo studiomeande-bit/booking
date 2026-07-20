@@ -959,6 +959,15 @@ function handlePublicApiRequest_(route,method,e){
       if(!result||!result.ok) return jsonError_('SELECT_UPDATE_FAILED',(result&&result.message)||'Select update failed');
       return jsonOk_(result);
     }
+    if(route==='select-print-order'){
+      // 고객 셀프 출력주문 제출 (print.studio-mean.com 고객 모드). 세션ID가 접근권한.
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-print-order');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const result=submitCustomerPrintOrder_(String(payload.sessionId||payload.id||''),payload.order||payload);
+      if(!result||!result.ok) return jsonError_('PRINT_ORDER_FAILED',(result&&result.message)||'Print order failed');
+      return jsonOk_(result);
+    }
     if(route==='select-photos'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-photos');
       const p=(e&&e.parameter)||{};
@@ -1092,6 +1101,8 @@ function handlePublicApiRequest_(route,method,e){
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
+        if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
+        if(action==='customer-print-order-status') return jsonOk_(setCustomerPrintOrderStatusForAgent_(token,payload||{}));
         if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
         if(action==='select-update-status'){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
@@ -15198,7 +15209,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -16115,7 +16126,9 @@ function getSelectSession(sessionId){
       existingPickupEventId:String(row[SELECT_COL['픽업캘린더ID']]||''),
       hasPhotocard:selectHasIncludedPhotocard_(row),
       requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
-      photocardSupported:true
+      photocardSupported:true,
+      printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
+      printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:''
     };
     _timing.build=Date.now()-_t0;
     base._timing=_timing;
@@ -16635,6 +16648,115 @@ function syncSelectPickupEvent_(existingEventId,row,sessionId,delivery){
     return event.getId();
   }
   return calendar.createEvent(title,startTime,endTime,{location:STUDIO_ADDRESS,description}).getId();
+}
+
+/* ===== 고객 출력(인화) 주문 — print.studio-mean.com 고객 모드에서 레이아웃/콜라주/텍스트를
+   디자인해 제출. 세션ID가 접근권한(셀렉 링크와 동일 신뢰모델). 결제는 미포함(주문 등록만).
+   저해상 웹 미리보기로 디자인 → 스튜디오가 로컬 고해상(Selects 동기화)으로 실제 출력. ===== */
+var CUSTOMER_PRINT_ORDER_MAX_BYTES=600000; // 프리뷰 dataURL 포함 상한(과도한 payload 차단)
+function submitCustomerPrintOrder_(sessionId,order){
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'주문이 처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  try{
+    const sid=String(sessionId||'').trim();
+    if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+    if(!order||typeof order!=='object') return{ok:false,message:'주문 내용이 비어 있습니다.'};
+    const sheets=ensureSheets_();
+    const selSh=sheets.ss.getSheetByName(SELECT_SHEET_NAME);
+    if(!selSh) return{ok:false,message:'시스템 오류'};
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+    if(idx===-1) return{ok:false,message:'유효하지 않은 링크입니다.'};
+    const rowNum=idx+2;
+    // 주문 구조 정규화 — 신뢰 안 하는 필드는 버리고 크기 제한.
+    const sheetsList=Array.isArray(order.sheets)?order.sheets.slice(0,50):[];
+    const clean={
+      sheets:sheetsList,
+      itemCount:sheetsList.length,
+      totalPrints:Math.max(0,parseInt(order.totalPrints,10)||0),
+      note:String(order.note||'').slice(0,1000),
+      preview:(typeof order.preview==='string'&&/^data:image\/(png|jpeg);base64,/.test(order.preview))?order.preview:'',
+      submittedFrom:String(order.submittedFrom||'print-app').slice(0,40)
+    };
+    let json=JSON.stringify(clean);
+    if(json.length>CUSTOMER_PRINT_ORDER_MAX_BYTES){
+      // 프리뷰 이미지가 너무 크면 떼어내고 저장(주문 스펙 자체는 유지).
+      clean.preview='';
+      clean.previewDropped=true;
+      json=JSON.stringify(clean);
+      if(json.length>CUSTOMER_PRINT_ORDER_MAX_BYTES) return{ok:false,message:'주문 데이터가 너무 큽니다. 시트 수를 줄여 다시 시도해 주세요.'};
+    }
+    const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+    if(SELECT_COL['고객출력주문JSON']!=null) selSh.getRange(rowNum,SELECT_COL['고객출력주문JSON']+1).setValue(neutralizeFormula_(json));
+    if(SELECT_COL['고객출력주문일시']!=null) selSh.getRange(rowNum,SELECT_COL['고객출력주문일시']+1).setValue(now);
+    if(SELECT_COL['고객출력주문상태']!=null) selSh.getRange(rowNum,SELECT_COL['고객출력주문상태']+1).setValue('접수');
+    try{ _notifyCustomerPrintOrderAdmin_(rows[idx+1],clean,now); }catch(e){ Logger.log('print order admin notify fail: '+e.message); }
+    return{ok:true,submittedAt:now,itemCount:clean.itemCount,totalPrints:clean.totalPrints};
+  }catch(e){
+    return{ok:false,message:e.message};
+  }finally{
+    try{lock.releaseLock();}catch(e){}
+  }
+}
+// 스튜디오 처리용: 접수 상태의 고객 출력주문 조회 (자동화키 인증). 주문 JSON 전체 포함.
+function listCustomerPrintOrdersForAgent_(token,options){
+  assertAdmin_(token);
+  options=options||{};
+  const wantAll=!!options.all;
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh||SELECT_COL['고객출력주문JSON']==null) return {orders:[]};
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return {orders:[]};
+  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const out=[];
+  for(let i=rows.length-1;i>=0;i--){
+    const row=rows[i];
+    const json=String(row[SELECT_COL['고객출력주문JSON']]||'').trim();
+    if(!json) continue;
+    const status=String(row[SELECT_COL['고객출력주문상태']]||'').trim();
+    if(!wantAll && status && status!=='접수') continue;
+    let order=null; try{order=JSON.parse(json);}catch(e){}
+    out.push({
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      name:String(row[SELECT_COL['고객명']]||'').trim(),
+      shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      product:String(row[SELECT_COL['상품']]||''),
+      driveLink:String(row[SELECT_COL['드라이브링크']]||''),
+      status:status||'접수',
+      submittedAt:parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str,
+      order:order
+    });
+  }
+  return {orders:out};
+}
+function setCustomerPrintOrderStatusForAgent_(token,payload){
+  assertAdmin_(token);
+  const sid=String(payload.sessionId||'').trim();
+  const status=String(payload.status||'').trim()||'출력완료';
+  if(!sid) throw new Error('sessionId가 필요합니다.');
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh||SELECT_COL['고객출력주문상태']==null) throw new Error('시트 없음');
+  const rows=sh.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+  if(idx===-1) throw new Error('세션을 찾지 못함: '+sid);
+  sh.getRange(idx+2,SELECT_COL['고객출력주문상태']+1).setValue(status);
+  return {ok:true,sessionId:sid,status:status};
+}
+function _notifyCustomerPrintOrderAdmin_(row,order,now){
+  const name=String(row[SELECT_COL['고객명']]||'').trim()||'고객';
+  const sid=String(row[SELECT_COL['세션ID']]||'');
+  const shootDate=parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10);
+  const subject='[Studio mean] 🖨️ 고객 출력 주문 — '+name;
+  const body=[
+    name+'님이 출력(인화) 주문을 보냈습니다.',
+    '촬영일: '+shootDate,
+    '시트 수: '+order.itemCount+' / 총 출력 매수: '+order.totalPrints,
+    order.note?('메모: '+order.note):'',
+    '세션ID: '+sid,
+    '',
+    '인화앱(스튜디오 모드)에서 이 세션을 열어 로컬 고해상으로 출력하세요.'
+  ].filter(Boolean).join('\n');
+  MailApp.sendEmail(CONFIG.ADMIN_EMAIL,subject,body);
 }
 
 function submitPhotoSelection(sessionId,sub){
