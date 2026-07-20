@@ -527,26 +527,58 @@ async function pingPrintHelper(){
   catch(e){ _helperOk=false; return null; }
 }
 function _blobToB64(blob){ return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob);}); }
+function _orderItemDpi(line){
+  const rec=matchRec(line.photoNum), sz=PRINT_SIZE_MM[line.printId]||{};
+  if(!rec||!sz.w) return null;
+  let bw=sz.w,bh=sz.h; if(rec.w>rec.h){bw=sz.h;bh=sz.w;}
+  return Math.round(effDPI(rec.w,rec.h,bw,bh,"cover"));
+}
+async function _sendPrint(line,results){
+  const cvs=await renderPageCanvas(state.dpi), pm=paperMm();
+  const pdf=makePDFmultiPage([{jpeg:cvs.toDataURL("image/jpeg",0.92),iw:cvs.width,ih:cvs.height,pwMm:pm[0],phMm:pm[1]}]);
+  const b64=await _blobToB64(pdf);
+  const spec={pdfBase64:b64, sizeKey:line.printId, mediaName:state.media, borderless:true, copies:line.qty, jobName:"studio "+line.photoNum};
+  let j; try{ const r=await fetch(PRINT_HELPER_URL+"/print",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}); j=await r.json(); }catch(e){ j={ok:false,error:e.message||String(e)}; }
+  const rv=j&&j.resolved;
+  results.push((j&&j.ok?"✅ ":"❌ ")+line.photoNum+" → "+(rv?(rv.PageSize+" · 미디어"+rv.MediaType+(rv.borderless?" · 여백없음":"")+" ×"+rv.copies):((j&&j.error)||"실패")));
+  return !!(j&&j.ok);
+}
 async function autoprintViaHelper(all){
   const q=orderQueue();
   if(!q.length){alert("주문이 없습니다.");return;}
-  await pingPrintHelper();
-  if(!_helperOk){ alert("로컬 프린터 헬퍼에 연결할 수 없습니다.\n인화 헬퍼(자동 상주)가 켜져 있는지, 맥에서 실행 중인지 확인해 주세요."); return; }
-  const targets = all ? q.map((l,i)=>i) : [Math.min(state.order.idx,q.length-1)];
+  const ping=await pingPrintHelper();
+  if(!_helperOk){ alert("로컬 프린터 헬퍼에 연결할 수 없습니다.\n인화 헬퍼가 실행 중인지 확인해 주세요."); return; }
+  const targetIdx = all ? q.map((l,i)=>i) : [Math.min(state.order.idx,q.length-1)];
+  // ── 출력 전 안전점검 (셋팅 없이 눌러도 사고 방지) ──
+  const printer=(ping&&ping.printer)||"";
+  const printable=targetIdx.filter(i=>matchRec(q[i].photoNum));
+  if(!printable.length){ alert("출력할 매칭 사진이 없습니다. 원본 파일을 먼저 불러오세요."); return; }
+  const unmatched=targetIdx.length-printable.length;
+  const lowdpi=printable.filter(i=>{const d=_orderItemDpi(q[i]); return d!==null && d<state.dpi;}).length;
+  let online=null; try{ const s=await fetch(PRINT_HELPER_URL+"/status?printer="+encodeURIComponent(printer)); online=(await s.json()).online; }catch(e){}
+  const warns=[];
+  if(online===false) warns.push("⚠ 프린터가 오프라인/정지 상태로 보입니다 (전원·연결 확인).");
+  if(unmatched) warns.push("⚠ 원본 없는 사진 "+unmatched+"건 — 건너뜁니다.");
+  if(lowdpi) warns.push("⚠ 목표 해상도("+state.dpi+"dpi) 미달 "+lowdpi+"건 — 화질 저하 가능.");
+  if(warns.length && !confirm("출력 전 점검\n\n"+warns.join("\n")+"\n\n그래도 진행할까요?")) return;
+  // ── 용지 크기별 그룹 배치 (교체 지점에서 일시정지) ──
   const savedIdx=state.order.idx, results=[];
+  const groups=[]; let cur=null;
+  targetIdx.forEach(i=>{ const pid=q[i].printId; if(!cur||cur.pid!==pid){cur={pid,idxs:[]};groups.push(cur);} cur.idxs.push(i); });
   const btns=[$("#ord_autoone"),$("#ord_autoall")]; btns.forEach(b=>{if(b)b.disabled=true;});
   try{
-    for(const i of targets){
-      const line=q[i];
-      if(!matchRec(line.photoNum)){ results.push("⚠ "+line.photoNum+" · 원본없음(건너뜀)"); continue; }
-      state.order.idx=i; render();
-      const cvs=await renderPageCanvas(state.dpi), pm=paperMm();
-      const pdf=makePDFmultiPage([{jpeg:cvs.toDataURL("image/jpeg",0.92),iw:cvs.width,ih:cvs.height,pwMm:pm[0],phMm:pm[1]}]);
-      const b64=await _blobToB64(pdf);
-      const spec={pdfBase64:b64, sizeKey:line.printId, mediaName:state.media, borderless:true, copies:line.qty, jobName:"studio "+line.photoNum};
-      let j; try{ const r=await fetch(PRINT_HELPER_URL+"/print",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}); j=await r.json(); }catch(e){ j={ok:false,error:e.message||String(e)}; }
-      const rv=j&&j.resolved;
-      results.push((j&&j.ok?"✅ ":"❌ ")+line.photoNum+" → "+(rv?(rv.PageSize+" · 미디어"+rv.MediaType+(rv.borderless?" · 여백없음":"")+" ×"+rv.copies):((j&&j.error)||"실패")));
+    for(let g=0; g<groups.length; g++){
+      const grp=groups[g], sz=PRINT_SIZE_MM[grp.pid]||{};
+      if(all && g>0){
+        const ok=confirm("🔄 용지 교체\n\n다음 용지: "+(sz.label||grp.pid)+"\n인화지: "+state.media+"\n\n프린터에 위 용지를 넣고 [확인]을 누르면 계속 출력합니다.\n(인화지 종류가 다르면 취소 → 좌측에서 변경 후 다시 실행)");
+        if(!ok){ results.push("⏸ '"+(sz.label||grp.pid)+"' 그룹부터 중단됨"); break; }
+      }
+      for(const i of grp.idxs){
+        const line=q[i];
+        if(!matchRec(line.photoNum)){ results.push("⚠ "+line.photoNum+" · 원본없음(건너뜀)"); continue; }
+        state.order.idx=i; render();
+        await _sendPrint(line, results);
+      }
     }
   }catch(e){ results.push("오류: "+(e.message||e)); }
   state.order.idx=savedIdx; render(); fit();
