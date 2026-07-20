@@ -1060,16 +1060,51 @@ window.addEventListener("keydown",e=>{const tag=(e.target.tagName||"").toLowerCa
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();}
   else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();}});
 
-bindCal(); bindLogo(); applyDefaultPrinter(); applyDefaultLogo(); updateMediaNote(); renderSaved(); render(); fit(); initHistory();
+function initApp(){
+  bindCal(); bindLogo(); applyDefaultPrinter(); applyDefaultLogo(); updateMediaNote(); renderSaved(); render(); fit(); initHistory();
 
-/* URL ?session=<셀렉세션ID> — ERP에서 링크로 열면 주문 인화 모드로 전환 + 지시서 자동 로드 (호스팅 시) */
-(function(){
+  /* URL ?session=<셀렉세션ID> — ERP에서 링크로 열면 주문 인화 모드로 전환 + 지시서 자동 로드 (호스팅 시) */
   try{
     const sid=new URLSearchParams(location.search).get("session");
-    if(!sid) return;
-    state.mode="order"; state.order.sid=sid;
-    [...document.querySelectorAll("#modes button")].forEach(b=>b.classList.toggle("on",b.dataset.mode==="order"));
-    render(); fit();
-    if(location.protocol!=="file:") fetchErpSession(); // file://은 CORS라 프리필만
+    if(sid){
+      state.mode="order"; state.order.sid=sid;
+      [...document.querySelectorAll("#modes button")].forEach(b=>b.classList.toggle("on",b.dataset.mode==="order"));
+      render(); fit();
+      if(location.protocol!=="file:") fetchErpSession(); // file://은 CORS라 프리필만
+    }
   }catch(e){}
-})();
+}
+
+/* ---------- PIN 잠금 (호스팅 도메인 전용) ----------
+   ③목록과 같은 암호를 공유: select-print-list를 limit=1로 호출해 검증(별도 엔드포인트 불필요).
+   file://(로컬 파일로 직접 열기)은 ERP 연결 자체가 안 되므로 잠금 없이 바로 진입. */
+function _lockErpBase(){ return (localStorage.getItem("smphoto:erpBase")||ERP_BASE||"").trim(); }
+async function _verifyAppPin(pin){
+  const base=_lockErpBase(); if(!base) return false;
+  try{
+    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list&limit=1&passcode="+encodeURIComponent(pin)+"&_ts="+Date.now();
+    const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
+    return !!(j&&j.ok);
+  }catch(e){ return false; }
+}
+function _showLock(msg){
+  const ov=$("#lockOverlay"); if(ov) ov.style.display="flex";
+  const err=$("#lockError"); if(err) err.textContent=msg||"";
+  const inp=$("#lockPin"); if(inp){inp.value="";inp.focus();}
+}
+function _hideLock(){ const ov=$("#lockOverlay"); if(ov) ov.style.display="none"; }
+async function _attemptUnlock(pin,silent){
+  if(!pin){ if(!silent)_showLock(""); return; }
+  const ok=await _verifyAppPin(pin);
+  if(ok){ try{localStorage.setItem("smphoto:printListPasscode",pin);}catch(e){} _hideLock(); initApp(); return; }
+  if(!silent){ try{localStorage.removeItem("smphoto:printListPasscode");}catch(e){} _showLock("PIN이 올바르지 않습니다."); }
+}
+if(location.protocol==="file:"){
+  initApp();
+}else{
+  const submitBtn=$("#lockSubmit"), pinInput=$("#lockPin");
+  if(submitBtn)submitBtn.addEventListener("click",()=>_attemptUnlock((pinInput.value||"").trim(),false));
+  if(pinInput)pinInput.addEventListener("keydown",e=>{if(e.key==="Enter")_attemptUnlock((pinInput.value||"").trim(),false);});
+  const cached=localStorage.getItem("smphoto:printListPasscode")||"";
+  if(cached){ _showLock(""); _attemptUnlock(cached,true); } else { _showLock(""); }
+}

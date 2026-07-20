@@ -242,6 +242,15 @@
 </head>
 <body>
 
+<!-- ==================== PIN 잠금화면 (호스팅 도메인 전용, file://은 미적용) ==================== -->
+<div id="lockOverlay" style="position:fixed;inset:0;z-index:99999;background:#1a1b1e;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:26px;font-weight:700;color:#f0f0f0;">Studio mean</div>
+  <div style="color:#9aa0a8;font-size:13px;letter-spacing:.05em;">PIN을 입력하세요</div>
+  <input id="lockPin" type="password" autocomplete="off" inputmode="text" style="font-size:22px;text-align:center;letter-spacing:.3em;padding:10px 14px;border-radius:10px;border:1px solid #444;background:#242527;color:#fff;width:180px;outline:none;" placeholder="••••••">
+  <button id="lockSubmit" style="padding:10px 26px;border-radius:999px;background:#2563eb;color:#fff;border:none;font-weight:700;cursor:pointer;font-size:14px;">잠금 해제</button>
+  <div id="lockError" style="color:#f87171;font-size:12px;min-height:16px;"></div>
+</div>
+
 <!-- SVG defs for color-temperature/tint filters -->
 <svg id="ttdefs" width="0" height="0" style="position:absolute" aria-hidden="true"><defs></defs></svg>
 
