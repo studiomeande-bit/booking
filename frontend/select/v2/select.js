@@ -29,6 +29,18 @@ const PRINT_OPTIONS = [
   { id: 'premium_a3plus', label: '프리미엄 A3+', retouched: 45, additional: 60 }
 ];
 
+// 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
+const PRINT_SIZE_MM_V2 = {
+  basic_10x15: [100, 150], premium_10x15: [100, 150],
+  basic_a4: [210, 297], premium_a4: [210, 297],
+  premium_a3: [297, 420], premium_a3plus: [329, 483],
+  photocard_single: [55, 85], photocard_double: [55, 85],
+};
+function printAspect(printId) {
+  const s = PRINT_SIZE_MM_V2[normalizePrintTypeId(printId)] || [100, 150];
+  return s[0] / s[1]; // 세로 기준 w/h
+}
+
 const PHOTOCARD_MODE_LABELS = {
   retouched: '양면 · 보정본 2장',
   mixed: '양면 · 보정본 1장 + 원본 1장',
@@ -513,7 +525,8 @@ function normalizePrint(print) {
       print?.photoNum ?? print?.photo ?? print?.num ?? print?.number ?? print?.photoNumber ?? ''
     ),
     printId: resolvedId,
-    qty: Math.max(1, Number(print?.qty || 1) || 1)
+    qty: Math.max(1, Number(print?.qty || 1) || 1),
+    finish: (String(print?.finish || (print?.border ? 'border' : '')) === 'border') ? 'border' : 'full'
   };
 }
 
@@ -1893,6 +1906,32 @@ function thumbHtmlForNum(num) {
   </div>`;
 }
 
+// 가장자리 마감(풀프레임/테두리) 토글 + 용지 비율 프리뷰. 인화앱 주문모드가 이 값대로 자동 셋팅한다.
+function printFinishHtml(index, print) {
+  const finish = print.finish === 'border' ? 'border' : 'full';
+  const asp = printAspect(print.printId);
+  const key = stripExt(print.photoNum || '');
+  const g = key ? state.gallery.byKey.get(key) : null;
+  const src = g ? (g.thumb || g.full) : '';
+  const inner = src
+    ? `<img src="${escapeHtml(src)}" referrerpolicy="no-referrer" alt="" loading="lazy" decoding="async">`
+    : '<span class="finish-preview-empty">사진 번호 입력 시 미리보기</span>';
+  return `
+    <div class="field-full finish-field">
+      <label>가장자리 마감</label>
+      <div class="finish-toggle" role="group" aria-label="가장자리 마감 선택">
+        <button type="button" class="finish-opt${finish === 'full' ? ' active' : ''}" data-finish-idx="${index}" data-finish="full">여백 없음 · 풀프레임</button>
+        <button type="button" class="finish-opt${finish === 'border' ? ' active' : ''}" data-finish-idx="${index}" data-finish="border">흰 테두리</button>
+      </div>
+      <div class="finish-preview finish-${finish}">
+        <div class="finish-paper" style="aspect-ratio:${asp.toFixed(4)}">${inner}</div>
+      </div>
+      <div class="finish-help">${finish === 'border'
+        ? '사진 둘레에 흰 여백을 남겨 인화합니다.'
+        : '용지 끝까지 사진으로 꽉 채웁니다 (가장자리가 약간 잘릴 수 있어요).'}</div>
+    </div>`;
+}
+
 function renderPhotocardBox() {
   if (!els.photocardBox) return;
   if (!hasIncludedPhotocard()) {
@@ -2107,7 +2146,7 @@ function updatePhotoCounter() {
 function addPrintRow() {
   // 기본값: 아직 남은 포함 쿼터 사이즈를 우선 제안, 없으면 기본 10×15
   const remaining = getPrintQuotaSummary().find((q) => q.remaining > 0);
-  state.prints.push({ photoNum: '', printId: remaining ? remaining.id : 'basic_10x15', qty: 1 });
+  state.prints.push({ photoNum: '', printId: remaining ? remaining.id : 'basic_10x15', qty: 1, finish: 'full' });
   renderPrints();
   updateReview();
 }
@@ -2184,6 +2223,7 @@ function renderPrints() {
             </select>
           </div>
         </div>
+        ${printFinishHtml(index, print)}
         <div class="price-line">
           <span>${breakdown}</span>
           ${priceRight}
@@ -2222,6 +2262,27 @@ function renderPrints() {
       renderPrints();
       updateReview();
     });
+  });
+  els.printList.querySelectorAll('[data-finish-idx]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const i = Number(button.dataset.finishIdx);
+      state.prints[i].finish = button.dataset.finish === 'border' ? 'border' : 'full';
+      renderPrints();
+      updateReview();
+    });
+  });
+  // 프리뷰 용지 방향을 실제 사진 방향에 맞춰(가로 사진→가로 용지) 인화앱 자동 셋팅과 동일하게 보이도록.
+  els.printList.querySelectorAll('.finish-paper img').forEach((img) => {
+    const orient = () => {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      const paper = img.closest('.finish-paper');
+      if (!paper) return;
+      const asp = Number(paper.style.aspectRatio) || 0.66;
+      const portrait = asp <= 1;
+      const wantLandscape = img.naturalWidth > img.naturalHeight;
+      paper.style.aspectRatio = (wantLandscape === portrait) ? (1 / asp).toFixed(4) : asp.toFixed(4);
+    };
+    if (img.complete) orient(); else img.addEventListener('load', orient);
   });
   els.printList.querySelectorAll('[data-remove-print]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2673,7 +2734,8 @@ async function onSubmit() {
           qty: Math.max(1, Number(print.qty) || 1),
           isRetouched: ann.isRetouched,
           label: ann.option.label,
-          price: ann.unit
+          price: ann.unit,
+          finish: print.finish === 'border' ? 'border' : 'full'
         };
       }),
       ...(() => {

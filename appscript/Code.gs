@@ -16231,9 +16231,11 @@ function mergeSelectPrintItems_(items){
   const map={};
   const order=[];
   (items||[]).forEach(function(it){
-    const key=[String(it.photoNum||'-'),String(it.printId||''),Number(it.price)||0,it.included?'1':'0',it.isRetouched?'r':'e'].join('|');
+    const finish=(String(it.finish||'')==='border')?'border':'full';
+    // 가장자리 마감(full/border)이 다르면 별도 항목으로 유지 (병합 시 소실 방지).
+    const key=[String(it.photoNum||'-'),String(it.printId||''),Number(it.price)||0,it.included?'1':'0',it.isRetouched?'r':'e',finish].join('|');
     if(!map[key]){
-      map[key]={photoNum:String(it.photoNum||'-'),printId:String(it.printId||''),label:it.label,qty:0,price:Number(it.price)||0,isRetouched:!!it.isRetouched,included:!!it.included,source:it.source};
+      map[key]={photoNum:String(it.photoNum||'-'),printId:String(it.printId||''),label:it.label,qty:0,price:Number(it.price)||0,isRetouched:!!it.isRetouched,included:!!it.included,source:it.source,finish:finish};
       if(it.includedPhotocard) map[key].includedPhotocard=true;
       if(it.photocard) map[key].photocard=it.photocard;
       order.push(key);
@@ -16288,6 +16290,8 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
     }
     const info=getPrintInfo_(printId);
     const label=String((p&&p.label)||'')||info.label;
+    // 여백처리: 'full'(여백없는 풀프레임) / 'border'(흰 테두리). 고객이 셀렉에서 선택 → 인화앱이 자동 셋팅.
+    const finish=(String((p&&p.finish)||(p&&p.border?'border':''))==='border')?'border':'full';
     // 보정본/원본 단가 판정은 서버가 보정 리스트 기준으로 재계산 (클라이언트 플래그 미신뢰).
     const isRet=retouchSet
       ? !!retouchSet[selectPhotoNumKey_(p&&p.photoNum)]
@@ -16297,9 +16301,9 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       const match=quota.find(function(item){return item.id===printId&&item.qty>0;});
       if(match){
         match.qty-=1;
-        included.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:0,isRetouched:isRet,included:true,source:'included_print'});
+        included.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:0,isRetouched:isRet,included:true,source:'included_print',finish:finish});
       }else{
-        chargeable.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:unit,isRetouched:isRet,source:isRet?'retouch_print':'extra_print'});
+        chargeable.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:unit,isRetouched:isRet,source:isRet?'retouch_print':'extra_print',finish:finish});
       }
     }
   });

@@ -349,7 +349,8 @@ function parseOrder(text){let d;try{d=JSON.parse(text);}catch(e){throw new Error
   if(!Array.isArray(arr))throw new Error('배열/existingPrints 형식이 아님');
   return arr.map(p=>({photoNum:String(p.photoNum??p.photo??p.num??p.number??p.photoNumber??'').trim(),
     printId:normPrintId(p.printId??p.printType??p.size??p.type??p.id),
-    qty:Math.max(1,Number(p.qty??p.quantity??p.count??1)||1)})).filter(l=>l.photoNum);}
+    qty:Math.max(1,Number(p.qty??p.quantity??p.count??1)||1),
+    finish:(String(p.finish||(p.border?'border':''))==='border')?'border':'full'})).filter(l=>l.photoNum);}
 function matchRec(photoNum){const k=normNum(photoNum),t=numTail(photoNum);
   let r=state.library.find(x=>normNum(x.name)===k); if(r)return r;
   if(t){r=state.library.find(x=>numTail(x.name)===t); if(r)return r;}
@@ -377,6 +378,9 @@ function renderOrder(){
     return;
   }
   state.paper='사용자 지정…'; state.cw=sz.w; state.ch=sz.h; state.orient=(rec&&rec.w>rec.h)?'landscape':'portrait';
+  // 고객이 셀렉에서 고른 가장자리 마감을 항목별 자동 셋팅: 테두리=흰 프레임, 풀프레임=여백없음.
+  state.frame.on=(line.finish==='border');
+  if(state.frame.on){ state.frame.w=Math.max(3,Math.min(8,Math.round(Math.min(sz.w,sz.h)*0.04))); state.frame.color=state.frame.color||'#ffffff'; }
   syncPaperUI(); applyPageSize();
   if(rec){ state.fill.id=rec.id; renderFill(); }
   else page.appendChild(hint('⚠ 미매칭 · 원본 파일 없음<br><b>'+line.photoNum+'</b><br>원본을 더 불러오세요'));
@@ -385,7 +389,7 @@ function renderOrderPanel(){
   const q=orderQueue(), st=orderStats(), cur=q.length?q[Math.min(state.order.idx,q.length-1)]:null;
   const rows=q.map((l,i)=>{const sz=PRINT_SIZE_MM[l.printId]||{}, rec=matchRec(l.photoNum);
     let bw=sz.w,bh=sz.h; if(rec&&rec.w>rec.h){bw=sz.h;bh=sz.w;} const dpi=rec?effDPI(rec.w,rec.h,bw,bh,'cover'):0;
-    return `<div class="oq ${i===state.order.idx?'cur':''}" data-i="${i}"><span class="onum">${l.photoNum}</span><span class="osz">${sz.label||l.printId} ×${l.qty}</span>${rec?dpiBadge(dpi,state.dpi):'<span class="dpi-badge bad">✗없음</span>'}</div>`;}).join('');
+    return `<div class="oq ${i===state.order.idx?'cur':''}" data-i="${i}"><span class="onum">${l.photoNum}</span><span class="osz">${sz.label||l.printId} ×${l.qty}${l.finish==='border'?' · 🔲테두리':''}</span>${rec?dpiBadge(dpi,state.dpi):'<span class="dpi-badge bad">✗없음</span>'}</div>`;}).join('');
   propsMount.innerHTML=`<div class="props"><header>주문 인화 (ERP) <span style="text-transform:none;letter-spacing:0">${st.matched}/${st.total} 매칭</span></header><div class="body">
     <label class="f">① 주문(작업지시서) 붙여넣기</label>
     <textarea id="ord_json" rows="3" class="ord-ta" placeholder='[{"photoNum":"IMG_0045","printId":"basic_10x15","qty":2}]'>${(state.order.raw||'').replace(/</g,'&lt;')}</textarea>
@@ -521,7 +525,7 @@ async function fetchErpSession(){
     const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
     const d=j&&(j.data||j), prints=(d&&d.existingPrints)||[];
     if(!Array.isArray(prints)||!prints.length){alert("이 세션에 인화 주문(existingPrints)이 없습니다.");}
-    state.order.lines=prints.map(p=>({photoNum:String(p.photoNum??p.num??p.photo??"").trim(),printId:normPrintId(p.printId??p.printType??p.size),qty:Math.max(1,Number(p.qty??p.quantity??1)||1)})).filter(l=>l.photoNum);
+    state.order.lines=prints.map(p=>({photoNum:String(p.photoNum??p.num??p.photo??"").trim(),printId:normPrintId(p.printId??p.printType??p.size),qty:Math.max(1,Number(p.qty??p.quantity??1)||1),finish:(String(p.finish||(p.border?"border":""))==="border")?"border":"full"})).filter(l=>l.photoNum);
     state.order.idx=0; render(); fit();
   }catch(e){ alert("ERP 불러오기 실패: "+(e.message||e)+"\n(file://·미호스팅에선 CORS로 실패합니다 — 호스팅 후 사용하세요)"); }
   if(btn){btn.disabled=false;btn.textContent="불러오기";}
