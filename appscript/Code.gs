@@ -923,6 +923,25 @@ function handlePublicApiRequest_(route,method,e){
       _resetPrintListThrottle_();
       return jsonOk_(listRecentPrintReadySessions_(p.limit));
     }
+    if(route==='select-print-done'){
+      // 인화앱 자동출력 완료 기록 — 최근주문 passcode로 게이트(고객 아닌 스튜디오만).
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-print-done');
+      const p=(e&&e.parameter)||{};
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      const passcode=String(payload.passcode||p.passcode||'').trim();
+      _printListThrottleDelay_();
+      if(!isValidPrintListPasscode_(passcode)){
+        _bumpPrintListThrottle_();
+        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
+      }
+      _resetPrintListThrottle_();
+      const sid=String(payload.sessionId||payload.id||p.sessionId||p.id||'');
+      const count=payload.count!=null?payload.count:p.count;
+      const result=markSelectPrintDone_(sid,{count:count});
+      if(!result||!result.ok) return jsonError_('PRINT_DONE_FAILED',(result&&result.message)||'기록 실패');
+      return jsonOk_(result);
+    }
     if(route==='select-pickup-calendar'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-pickup-calendar');
       const p=(e&&e.parameter)||{};
@@ -15209,7 +15228,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -15458,7 +15477,8 @@ function listRecentPrintReadySessions_(limit){
       shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
       product:String(row[SELECT_COL['상품']]||''),
       submittedAt:parseDateSafe_(row[SELECT_COL['제출일시']]).str,
-      printCount:printCount
+      printCount:printCount,
+      printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str:''
     });
   }
   return {sessions:out};
@@ -16128,7 +16148,9 @@ function getSelectSession(sessionId){
       requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
       photocardSupported:true,
       printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
-      printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:''
+      printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:'',
+      printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str:'',
+      printDoneCount:SELECT_COL['출력완료매수']!=null?(parseInt(row[SELECT_COL['출력완료매수']],10)||0):0
     };
     _timing.build=Date.now()-_t0;
     base._timing=_timing;
@@ -16658,6 +16680,25 @@ function syncSelectPickupEvent_(existingEventId,row,sessionId,delivery){
    디자인해 제출. 세션ID가 접근권한(셀렉 링크와 동일 신뢰모델). 결제는 미포함(주문 등록만).
    저해상 웹 미리보기로 디자인 → 스튜디오가 로컬 고해상(Selects 동기화)으로 실제 출력. ===== */
 var CUSTOMER_PRINT_ORDER_MAX_BYTES=600000; // 프리뷰 dataURL 포함 상한(과도한 payload 차단)
+// 스튜디오 자동출력 완료 기록 — 인화앱에서 lp 출력 성공 후 호출(최근주문 passcode로 게이트).
+// 출력완료일시/매수를 셀렉 세션에 남겨 재인화 방지·추적. automation key 불필요(passcode+세션ID).
+function markSelectPrintDone_(sessionId,info){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  const selSh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!selSh) return{ok:false,message:'시스템 오류'};
+  const rows=selSh.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+  if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+  const rowNum=idx+2;
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  const prev=SELECT_COL['출력완료일시']!=null?String(rows[idx+1][SELECT_COL['출력완료일시']]||'').trim():'';
+  const count=Math.max(0,parseInt((info&&info.count),10)||0);
+  if(SELECT_COL['출력완료일시']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료일시']+1).setValue(now);
+  if(SELECT_COL['출력완료매수']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료매수']+1).setValue(count);
+  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev};
+}
+
 function submitCustomerPrintOrder_(sessionId,order){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'주문이 처리 중입니다. 잠시 후 다시 시도해 주세요.'};

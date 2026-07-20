@@ -543,6 +543,20 @@ async function _sendPrint(line,results){
   results.push((j&&j.ok?"✅ ":"❌ ")+line.photoNum+" → "+(rv?(rv.PageSize+" · 미디어"+rv.MediaType+(rv.borderless?" · 여백없음":"")+" ×"+rv.copies):((j&&j.error)||"실패")));
   return !!(j&&j.ok);
 }
+// 자동출력 성공 후 ERP에 '출력완료' 기록(재인화 방지·추적). 최근주문 passcode로 게이트.
+async function _recordPrintDone(count, results){
+  const sid=(state.order&&state.order.sid||"").trim();
+  const base=(localStorage.getItem("smphoto:erpBase")||ERP_BASE||"").trim();
+  const pc=localStorage.getItem("smphoto:printListPasscode")||"";
+  if(!sid||!base||!pc||!count) return;
+  try{
+    const url=base+(base.includes("?")?"&":"?")+"api=select-print-done";
+    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({data:{sessionId:sid,passcode:pc,count:count}})});
+    const j=await r.json();
+    if(j&&j.ok) results.push("📝 ERP 출력완료 기록 ("+count+"장)"+(j.data&&j.data.reprint?" · ⚠재출력":""));
+    else results.push("📝 ERP 기록 실패: "+((j&&j.error&&j.error.message)||"확인 필요"));
+  }catch(e){ results.push("📝 ERP 기록 실패(네트워크)"); }
+}
 async function autoprintViaHelper(all){
   const q=orderQueue();
   if(!q.length){alert("주문이 없습니다.");return;}
@@ -562,7 +576,7 @@ async function autoprintViaHelper(all){
   if(lowdpi) warns.push("⚠ 목표 해상도("+state.dpi+"dpi) 미달 "+lowdpi+"건 — 화질 저하 가능.");
   if(warns.length && !confirm("출력 전 점검\n\n"+warns.join("\n")+"\n\n그래도 진행할까요?")) return;
   // ── 용지 크기별 그룹 배치 (교체 지점에서 일시정지) ──
-  const savedIdx=state.order.idx, results=[];
+  const savedIdx=state.order.idx, results=[]; let printedSheets=0;
   const groups=[]; let cur=null;
   targetIdx.forEach(i=>{ const pid=q[i].printId; if(!cur||cur.pid!==pid){cur={pid,idxs:[]};groups.push(cur);} cur.idxs.push(i); });
   const btns=[$("#ord_autoone"),$("#ord_autoall")]; btns.forEach(b=>{if(b)b.disabled=true;});
@@ -577,9 +591,10 @@ async function autoprintViaHelper(all){
         const line=q[i];
         if(!matchRec(line.photoNum)){ results.push("⚠ "+line.photoNum+" · 원본없음(건너뜀)"); continue; }
         state.order.idx=i; render();
-        await _sendPrint(line, results);
+        if(await _sendPrint(line, results)) printedSheets+=line.qty;
       }
     }
+    await _recordPrintDone(printedSheets, results); // 출력완료 → ERP 자동기록
   }catch(e){ results.push("오류: "+(e.message||e)); }
   state.order.idx=savedIdx; render(); fit();
   btns.forEach(b=>{if(b)b.disabled=false;});
@@ -599,7 +614,9 @@ async function fetchErpSession(){
     const d=j&&(j.data||j), prints=(d&&d.existingPrints)||[];
     if(!Array.isArray(prints)||!prints.length){alert("이 세션에 인화 주문(existingPrints)이 없습니다.");}
     state.order.lines=prints.map(p=>({photoNum:String(p.photoNum??p.num??p.photo??"").trim(),printId:normPrintId(p.printId??p.printType??p.size),qty:Math.max(1,Number(p.qty??p.quantity??1)||1),finish:(String(p.finish||(p.border?"border":""))==="border")?"border":"full"})).filter(l=>l.photoNum);
+    state.order.printDoneAt=(d&&d.printDoneAt)||"";
     state.order.idx=0; render(); fit();
+    if(state.order.printDoneAt){ setTimeout(()=>alert("⚠ 이미 출력한 세션입니다\n\n출력완료: "+state.order.printDoneAt+((d&&d.printDoneCount)?(" · "+d.printDoneCount+"장"):"")+"\n\n재인화(재출력)가 맞으면 그대로 진행하세요."),60); }
   }catch(e){ alert("ERP 불러오기 실패: "+(e.message||e)+"\n(file://·미호스팅에선 CORS로 실패합니다 — 호스팅 후 사용하세요)"); }
   if(btn){btn.disabled=false;btn.textContent="불러오기";}
 }
@@ -627,7 +644,7 @@ async function loadPrintSessionList(promptIfMissing){
     localStorage.setItem("smphoto:printListPasscode",pc);
     const sessions=(j.data&&j.data.sessions)||[];
     sel.innerHTML='<option value="">최근 주문 세션 선택… ('+sessions.length+'건)</option>'+
-      sessions.map(s=>`<option value="${esc(s.sessionId)}">${esc(s.name)} · ${esc(s.shootDate)} · ${esc(s.product)} (${s.printCount}장)</option>`).join('');
+      sessions.map(s=>`<option value="${esc(s.sessionId)}">${s.printDoneAt?'✓출력됨 · ':''}${esc(s.name)} · ${esc(s.shootDate)} · ${esc(s.product)} (${s.printCount}장)</option>`).join('');
   }catch(e){ if(promptIfMissing) alert("목록 불러오기 실패: "+(e.message||e)); }
   if(btn){btn.disabled=false;btn.textContent="🔄 목록";}
 }
