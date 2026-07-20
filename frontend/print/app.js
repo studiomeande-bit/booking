@@ -1,8 +1,9 @@
 "use strict";
 const MM = 96/25.4, NS="http://www.w3.org/2000/svg";
 const ERP_BASE = "https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec"; // 호스팅 시 ERP 직결 기본 URL
+function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 const PAPERS = {
-  "A4 (210×297)":[210,297],"A3 (297×420)":[297,420],"A5 (148×210)":[148,210],"A6 (105×148)":[105,148],
+  "A4 (210×297)":[210,297],"A3 (297×420)":[297,420],"A3+ (329×483)":[329,483],"A5 (148×210)":[148,210],"A6 (105×148)":[105,148],
   "엽서 (100×148)":[100,148],"L판 (89×127)":[89,127],"2L (127×178)":[127,178],
   "KG·4×6\" (102×152)":[102,152],"5×7\" (127×178)":[127,178],"8×10\" (203×254)":[203,254],
   "Letter (216×279)":[216,279],"사용자 지정…":"custom"
@@ -71,7 +72,7 @@ const state = {
   grid:{ kind:"even", rows:2, cols:2, cw:100, ch:150, std:"10×15 (KG)", gap:3, guides:false, fit:"cover", adj:newAdj() },
   view:{ ruler:false, grid:false, step:10, snap:true },
   cal:{ offX:0, offY:0, scaleX:100, scaleY:100, rGain:100, gGain:100, bGain:100, gamma:100, sharpen:0, cropMarks:false },
-  order:{ raw:"", lines:[], idx:0, _card:false, cardSheet:"A4 (210×297)" },
+  order:{ raw:"", lines:[], idx:0, sid:"", _card:false, cardSheet:"A4 (210×297)" },
   frame:{ on:false, w:3, color:"#ffffff", radius:0 },
   logo:{ on:false, type:"text", text:"Studio mean", src:"", anchor:"br", size:12, offX:6, offY:6, opacity:80, rotation:0, color:"#ffffff", bold:true },
   sel:null, scale:1, autoFit:true
@@ -397,12 +398,13 @@ function renderOrderPanel(){
     <div class="oqlist">${rows}</div>
     <div class="ostep"><button class="btn sm" id="ord_prev">◀</button><span class="olvl">${state.order.idx+1} / ${q.length}</span><button class="btn sm" id="ord_next">▶</button></div>
     <button class="btn sm" id="ord_pdf" style="margin-top:7px">📄 주문 전체 멀티페이지 PDF</button>
-    ${cur?(isCardId(cur.printId)?(()=>{const cap=cardCapacity(),sheets=Math.ceil(cur.qty/cap),dbl=cur.printId==='photocard_double';return `<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · 포토카드 <b>55×85mm</b> · <b>${cur.qty}장</b><br><b>ET-18100은 카드 급지 불가</b> → ${(state.order.cardSheet||'A4').split(' ')[0]} 1장에 <b>${cap}장</b> 갱 인쇄 후 <b>재단</b>. ${cur.qty}장 = <b>${sheets}시트</b>.${dbl?'<br>⚠ 양면(더블)은 뒷면 이미지로 2차 인쇄 필요.':''}</div><label class="f">갱 시트 (ET-18100)</label><div class="seg"><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A4')?'on':''}" data-s="A4 (210×297)">A4·9장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3 ')?'on':''}" data-s="A3 (297×420)">A3·20장</button></div>`;})():`<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · ${(PRINT_SIZE_MM[cur.printId]||{}).label} · <b>${cur.qty}장</b> → 인쇄 대화상자 <b>매수 ${cur.qty}</b>로.</div>`):''}
+    ${cur?(isCardId(cur.printId)?(()=>{const cap=cardCapacity(),sheets=Math.ceil(cur.qty/cap),dbl=cur.printId==='photocard_double';return `<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · 포토카드 <b>55×85mm</b> · <b>${cur.qty}장</b><br><b>ET-18100은 카드 급지 불가</b> → ${(state.order.cardSheet||'A4').split(' ')[0]} 1장에 <b>${cap}장</b> 갱 인쇄 후 <b>재단</b>. ${cur.qty}장 = <b>${sheets}시트</b>.${dbl?'<br>⚠ 양면(더블)은 뒷면 이미지로 2차 인쇄 필요.':''}</div><label class="f">갱 시트 (ET-18100)</label><div class="seg"><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A4')?'on':''}" data-s="A4 (210×297)">A4·9장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3 ')?'on':''}" data-s="A3 (297×420)">A3·20장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3+')?'on':''}" data-s="A3+ (329×483)">A3+·25장</button></div>`;})():`<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · ${(PRINT_SIZE_MM[cur.printId]||{}).label} · <b>${cur.qty}장</b> → 인쇄 대화상자 <b>매수 ${cur.qty}</b>로.</div>`):''}
     ${st.total-st.matched>0?`<div class="hint" style="padding:6px 0 0;color:#c98">⚠ 미매칭 ${st.total-st.matched}건 — 원본을 더 불러오세요.</div>`:''}`:''}
     <label class="f" style="margin-top:11px">④ ERP 직결 (호스팅 시 자동 로드)</label>
     <input type="text" id="ord_erpBase" placeholder="GAS /exec URL (호스팅 후 입력)" value="${(localStorage.getItem('smphoto:erpBase')||ERP_BASE||'').replace(/"/g,'&quot;')}">
-    <div class="row" style="margin-top:6px"><input type="text" id="ord_sid" placeholder="셀렉 세션 ID" style="flex:2"><button class="btn sm" id="ord_fetch" style="flex:1">불러오기</button></div>
-    <div class="hint" style="padding:6px 0 0">호스팅(예: print.studio-mean.com) 후 세션ID로 <b>주문 자동 로드</b>. file://·미호스팅 시 CORS로 실패 — 그땐 위 붙여넣기/로컬 사용. 사진 원본은 로컬 매칭 권장(고해상).</div>
+    <div class="row" style="margin-top:6px"><select id="ord_sid_pick" style="flex:2"><option value="">최근 주문 세션 선택…</option></select><button class="btn sm" id="ord_list_refresh" style="flex:1">🔄 목록</button></div>
+    <div class="row" style="margin-top:6px"><input type="text" id="ord_sid" placeholder="셀렉 세션 ID" style="flex:2" value="${(state.order.sid||'').replace(/"/g,'&quot;')}"><button class="btn sm" id="ord_fetch" style="flex:1">불러오기</button></div>
+    <div class="hint" style="padding:6px 0 0">호스팅(예: print.studio-mean.com) 후 세션ID로 <b>주문 자동 로드</b>. file://·미호스팅 시 CORS로 실패 — 그땐 위 붙여넣기/로컬 사용. 사진 원본은 로컬 매칭 권장(고해상). 드롭다운은 암호로 보호됩니다(최초 1회 입력, 이 기기에 저장).</div>
   </div></div>`;
   $("#ord_apply").addEventListener('click',()=>{try{const l=parseOrder($("#ord_json").value);state.order.lines=l;state.order.raw=$("#ord_json").value;state.order.idx=0;render();fit();}catch(e){alert('주문 형식 오류: '+e.message);}});
   $("#ord_file").addEventListener('click',()=>$("#ord_fileInput").click());
@@ -415,6 +417,13 @@ function renderOrderPanel(){
   document.querySelectorAll('.cardsheet').forEach(b=>b.addEventListener('click',()=>{state.order.cardSheet=b.dataset.s;render();fit();}));
   if($("#ord_pdf"))$("#ord_pdf").addEventListener('click',exportOrderPDF);
   if($("#ord_fetch"))$("#ord_fetch").addEventListener('click',fetchErpSession);
+  if($("#ord_list_refresh"))$("#ord_list_refresh").addEventListener('click',()=>loadPrintSessionList(true));
+  if($("#ord_sid_pick"))$("#ord_sid_pick").addEventListener('change',e=>{
+    const v=e.target.value; if(!v)return;
+    if($("#ord_sid"))$("#ord_sid").value=v;
+    fetchErpSession();
+  });
+  if(location.protocol!=="file:") loadPrintSessionList(false); // 캐시된 암호가 있을 때만 조용히 채움
 }
 
 /* ---------- export to image (PNG/JPG/PDF) — 목표 DPI 합성, 프린터 보정 제외한 디자인 원본 ---------- */
@@ -504,6 +513,7 @@ async function exportOrderPDF(){ // 주문 전체 → 멀티페이지 PDF (항�
 async function fetchErpSession(){
   const base=($("#ord_erpBase")&&$("#ord_erpBase").value||"").trim(), id=($("#ord_sid")&&$("#ord_sid").value||"").trim();
   if(!base||!id){alert("ERP /exec URL과 셀렉 세션 ID를 입력하세요.");return;}
+  state.order.sid=id;
   try{localStorage.setItem("smphoto:erpBase",base);}catch(e){}
   const btn=$("#ord_fetch"); if(btn){btn.disabled=true;btn.textContent="…";}
   try{
@@ -515,6 +525,34 @@ async function fetchErpSession(){
     state.order.idx=0; render(); fit();
   }catch(e){ alert("ERP 불러오기 실패: "+(e.message||e)+"\n(file://·미호스팅에선 CORS로 실패합니다 — 호스팅 후 사용하세요)"); }
   if(btn){btn.disabled=false;btn.textContent="불러오기";}
+}
+/* 최근 주문 세션 드롭다운: 암호는 이 기기 localStorage에 캐시(서버는 해시만 보관).
+   promptIfMissing=false면 캐시된 암호가 있을 때만 조용히 새로고침(패널 열 때마다 자동). */
+async function loadPrintSessionList(promptIfMissing){
+  const base=($("#ord_erpBase")&&$("#ord_erpBase").value||"").trim();
+  const sel=$("#ord_sid_pick");
+  if(!base||!sel) return;
+  let pc=localStorage.getItem("smphoto:printListPasscode")||"";
+  if(!pc){
+    if(!promptIfMissing) return;
+    pc=(prompt("최근 주문 목록을 보려면 암호를 입력하세요:")||"").trim();
+    if(!pc) return;
+  }
+  const btn=$("#ord_list_refresh"); if(btn){btn.disabled=true;btn.textContent="…";}
+  try{
+    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list&passcode="+encodeURIComponent(pc)+"&_ts="+Date.now();
+    const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
+    if(!j||!j.ok){
+      localStorage.removeItem("smphoto:printListPasscode");
+      if(promptIfMissing) alert("암호가 올바르지 않습니다: "+((j&&j.error&&j.error.message)||"확인 실패"));
+      return;
+    }
+    localStorage.setItem("smphoto:printListPasscode",pc);
+    const sessions=(j.data&&j.data.sessions)||[];
+    sel.innerHTML='<option value="">최근 주문 세션 선택… ('+sessions.length+'건)</option>'+
+      sessions.map(s=>`<option value="${esc(s.sessionId)}">${esc(s.name)} · ${esc(s.shootDate)} · ${esc(s.product)} (${s.printCount}장)</option>`).join('');
+  }catch(e){ if(promptIfMissing) alert("목록 불러오기 실패: "+(e.message||e)); }
+  if(btn){btn.disabled=false;btn.textContent="🔄 목록";}
 }
 async function exportImage(fmt){
   if(!state.library.length){alert("사진을 먼저 추가하세요.");return;}
@@ -1023,3 +1061,15 @@ window.addEventListener("keydown",e=>{const tag=(e.target.tagName||"").toLowerCa
   else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();}});
 
 bindCal(); bindLogo(); applyDefaultPrinter(); applyDefaultLogo(); updateMediaNote(); renderSaved(); render(); fit(); initHistory();
+
+/* URL ?session=<셀렉세션ID> — ERP에서 링크로 열면 주문 인화 모드로 전환 + 지시서 자동 로드 (호스팅 시) */
+(function(){
+  try{
+    const sid=new URLSearchParams(location.search).get("session");
+    if(!sid) return;
+    state.mode="order"; state.order.sid=sid;
+    [...document.querySelectorAll("#modes button")].forEach(b=>b.classList.toggle("on",b.dataset.mode==="order"));
+    render(); fit();
+    if(location.protocol!=="file:") fetchErpSession(); // file://은 CORS라 프리필만
+  }catch(e){}
+})();

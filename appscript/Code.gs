@@ -71,6 +71,8 @@ const PUBLIC_API_CONFIG = {
     'https://studio-mean.com',
     'https://www.studio-mean.com',
     'https://portfolio.studio-mean.com',
+    'https://print.studio-mean.com',
+    'https://studio-mean-print.netlify.app',
     'http://localhost:5173',
     'http://127.0.0.1:5173'
   ],
@@ -908,6 +910,19 @@ function handlePublicApiRequest_(route,method,e){
       if(!sessionId) return jsonError_('INVALID_SESSION','Missing session id');
       return jsonOk_(getSelectSession(sessionId));
     }
+    if(route==='select-print-list'){
+      // 인화앱(print.studio-mean.com) 드롭다운용 — 세션ID 없이도 여러 고객이 보이므로 별도 암호로 게이트.
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-print-list');
+      const p=(e&&e.parameter)||{};
+      const passcode=String(p.passcode||'').trim();
+      _printListThrottleDelay_();
+      if(!isValidPrintListPasscode_(passcode)){
+        _bumpPrintListThrottle_();
+        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
+      }
+      _resetPrintListThrottle_();
+      return jsonOk_(listRecentPrintReadySessions_(p.limit));
+    }
     if(route==='select-pickup-calendar'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-pickup-calendar');
       const p=(e&&e.parameter)||{};
@@ -1086,6 +1101,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
+        if(action==='print-list-passcode-generate') return jsonOk_(generatePrintListPasscodeAdmin(token));
+        if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
         if(action==='mrt-api-test') return jsonOk_(mrtApiTestAdmin(token));
@@ -15324,6 +15341,78 @@ function generateSessionId_(){
   const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   const idx=_secureRandomIndices_(20,c.length);
   let id='';for(let i=0;i<20;i++)id+=c[idx[i]];return id;
+}
+
+/* ===== 인화앱(print.studio-mean.com) 최근 주문 세션 목록 — 암호로 보호되는 공개 조회 =====
+   개별 셀렉 세션 상세(select-session)는 세션ID 자체가 열람권한이지만, "최근 주문 목록"은
+   세션ID 없이도 여러 고객의 이름/촬영일/상품을 한 번에 볼 수 있어 노출 범위가 다르다.
+   그래서 automation key(풀어드민)와 별개인 가벼운 암호로 문을 하나 더 둔다. */
+function isValidPrintListPasscode_(code){
+  const stored=String(PropertiesService.getScriptProperties().getProperty('PRINT_LIST_PASSCODE_HASH')||'').trim();
+  if(!stored) return false; // 미설정 시 항상 거부(기본값 없음)
+  const safe=String(code||'').trim();
+  if(!safe) return false;
+  return hashText_(safe)===stored;
+}
+function setPrintListPasscodeAdmin(token,newPasscode){
+  assertAdmin_(token);
+  const pc=String(newPasscode||'').trim();
+  if(pc.length<6) throw new Error('암호는 6자 이상이어야 합니다.');
+  PropertiesService.getScriptProperties().setProperty('PRINT_LIST_PASSCODE_HASH',hashText_(pc));
+  return {ok:true};
+}
+function generatePrintListPasscodeAdmin(token){
+  assertAdmin_(token);
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const idx=_secureRandomIndices_(6,chars.length);
+  let pc='';for(let i=0;i<6;i++)pc+=chars[idx[i]];
+  PropertiesService.getScriptProperties().setProperty('PRINT_LIST_PASSCODE_HASH',hashText_(pc));
+  return {ok:true,passcode:pc};
+}
+// 온라인 무차별 대입 완화용 지연 스로틀(어드민 로그인과 동일 패턴, 전역 카운터 — IP락은 DoS 악용 방지 위해 미사용)
+function _printListThrottleDelay_(){
+  try{
+    const fails=parseInt(CacheService.getScriptCache().get('printlist_fails')||'0',10)||0;
+    if(fails>=3) Utilities.sleep(Math.min(8000,(fails-2)*1500));
+  }catch(e){}
+}
+function _bumpPrintListThrottle_(){
+  try{
+    const c=CacheService.getScriptCache();
+    const fails=(parseInt(c.get('printlist_fails')||'0',10)||0)+1;
+    c.put('printlist_fails',String(fails),600);
+  }catch(e){}
+}
+function _resetPrintListThrottle_(){
+  try{CacheService.getScriptCache().remove('printlist_fails');}catch(e){}
+}
+// 인화 주문(추가인화)이 실제로 있는 최근 셀렉 세션만 — 이메일/연락처는 목록에 담지 않는다.
+function listRecentPrintReadySessions_(limit){
+  const cap=Math.max(1,Math.min(50,parseInt(limit,10)||30));
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return {sessions:[]};
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return {sessions:[]};
+  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const out=[];
+  for(let i=rows.length-1;i>=0&&out.length<cap;i--){
+    const row=rows[i];
+    if(!selectJsonArrayHasItems_(row[SELECT_COL['추가인화']])) continue;
+    let printCount=0;
+    try{
+      const arr=JSON.parse(String(row[SELECT_COL['추가인화']]||'[]'));
+      if(Array.isArray(arr)) printCount=arr.reduce(function(s,p){return s+(Number(p&&(p.qty||p.quantity)||1)||1);},0);
+    }catch(e){}
+    out.push({
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      name:String(row[SELECT_COL['고객명']]||'').trim()||'(이름없음)',
+      shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      product:String(row[SELECT_COL['상품']]||''),
+      submittedAt:parseDateSafe_(row[SELECT_COL['제출일시']]).str,
+      printCount:printCount
+    });
+  }
+  return {sessions:out};
 }
 
 function getDefaultSelectMarketingBonusCount_(itemGroup,productName,payMethod){
