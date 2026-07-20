@@ -1091,6 +1091,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
+        if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
         if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
         if(action==='select-update-status'){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
@@ -15386,6 +15387,43 @@ function _bumpPrintListThrottle_(){
 function _resetPrintListThrottle_(){
   try{CacheService.getScriptCache().remove('printlist_fails');}catch(e){}
 }
+// 로컬 RAW→Selects 자동복사 스크립트(automation/raw_select_sync.py)용 — 고객이 선택사진 번호를
+// 제출한 최근 세션 목록. 자동화키 인증(어드민 전용), "이미 처리함" 여부는 로컬 상태파일이 추적
+// (consent_watcher.py의 queue.json과 동일 패턴) — 서버에 처리플래그를 두지 않아 상태필드 재활용 리스크 없음.
+function listRecentRawSelectSessionsForAgent_(token,options){
+  assertAdmin_(token);
+  options=options||{};
+  const days=Math.max(1,Math.min(90,parseInt(options.days,10)||30));
+  const cutoff=new Date(Date.now()-days*86400000);
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return {items:[]};
+  const lastRow=sh.getLastRow();
+  if(lastRow<2) return {items:[]};
+  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const out=[];
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i];
+    if(!selectJsonArrayHasItems_(row[SELECT_COL['선택사진']])) continue;
+    const submitted=parseDateSafe_(row[SELECT_COL['제출일시']]);
+    if(submitted.obj&&!isNaN(submitted.obj.getTime())&&submitted.obj<cutoff) continue;
+    let nums=[];
+    try{
+      const arr=JSON.parse(String(row[SELECT_COL['선택사진']]||'[]'));
+      if(Array.isArray(arr)) nums=arr.map(function(p){return selectPhotoNumKey_(p&&p.num);}).filter(Boolean);
+    }catch(e){}
+    if(!nums.length) continue;
+    out.push({
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      name:String(row[SELECT_COL['고객명']]||'').trim(),
+      shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      product:String(row[SELECT_COL['상품']]||''),
+      submittedAt:submitted.str,
+      photoNumbers:nums
+    });
+  }
+  return {items:out};
+}
+
 // 인화 주문(추가인화)이 실제로 있는 최근 셀렉 세션만 — 이메일/연락처는 목록에 담지 않는다.
 function listRecentPrintReadySessions_(limit){
   const cap=Math.max(1,Math.min(50,parseInt(limit,10)||30));
