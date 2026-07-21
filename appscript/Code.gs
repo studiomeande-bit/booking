@@ -16186,7 +16186,8 @@ function getSelectSession(sessionId){
       extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(row[SELECT_COL['페이지버전']]),
       existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
-      existingPickupAt:String(row[SELECT_COL['픽업일시']]||''),
+      existingPickupAt:parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16), // 시트 Date 자동변환 정규화
+
       existingMailName:existingMail.mailName,
       existingMailAddress:existingMail.mailAddress,
       existingMailAddressRaw:String(row[SELECT_COL['우편주소']]||''),
@@ -16764,7 +16765,8 @@ function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
     if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') return{ok:false,message:'픽업 수령으로 신청된 세션이 아닙니다. 변경을 원하시면 스튜디오로 연락해 주세요.'};
     const printDone=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
     if(!printDone) return{ok:false,message:'아직 인화 준비 중입니다. 인화가 완료되면 예약 안내 메일을 보내드립니다.'};
-    const prevPickupAt=String(row[SELECT_COL['픽업일시']]||'').trim();
+    // 시트가 "yyyy-MM-dd HH:mm" 문자열을 Date로 자동 변환하므로 정규화해서 비교(no-op 판정 정확성)
+    const prevPickupAt=parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16);
     if(prevPickupAt===`${date} ${time}`) return{ok:true,pickupAt:prevPickupAt,rescheduled:false,unchanged:true}; // 동일 슬롯 재요청 no-op(메일/캘린더 재작업 방지)
     const existingEventId=String(row[SELECT_COL['픽업캘린더ID']]||'').trim();
     if(!selectPickupSlotAvailable_(date,time,existingEventId)) return{ok:false,message:'선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.'};
@@ -17374,7 +17376,7 @@ function getPhotoSelectionsAdmin(token){
       extraInvoiceNumber:String(r[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(r[SELECT_COL['페이지버전']]),
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
-      pickupAt:String(r[SELECT_COL['픽업일시']]||''),
+      pickupAt:parseDateSafe_(r[SELECT_COL['픽업일시']]).str.slice(0,16),
       mailAddress:String(r[SELECT_COL['우편주소']]||''),
       printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(r[SELECT_COL['출력완료일시']]).str:'',
       invoiceRequested:false,
@@ -17453,7 +17455,7 @@ function getSelectDashboard(token){
               lastRevisionRequestedAt:getLatestRevisionRequestedAt_(revisionHistory),
               extraInvoiceNumber:String(sr[SELECT_COL['추가금인보이스번호']]||''),
               deliveryMethod:String(sr[SELECT_COL['수령방식']]||''),
-              pickupAt:String(sr[SELECT_COL['픽업일시']]||''),
+              pickupAt:parseDateSafe_(sr[SELECT_COL['픽업일시']]).str.slice(0,16),
               mailAddress:String(sr[SELECT_COL['우편주소']]||''),
               printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(sr[SELECT_COL['출력완료일시']]).str:'',
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
