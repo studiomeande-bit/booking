@@ -9179,14 +9179,66 @@ function plainSelectDeliveryDetail(detail){
   return String(detail||'-').trim().replace(/\s*\r?\n\s*/g,' / ');
 }
 
-function renderSelectDeliveryCell(sel){
+function renderSelectDeliveryCell(sel,rowIndex){
   const info=selectDeliveryInfo(sel);
   const detail=info.detail||'-';
   const detailPlain=plainSelectDeliveryDetail(detail);
+  // 수령 전환 버튼: 셀렉 세션이 있고(제출됨) 행 컨텍스트가 있을 때만
+  const switchBtn=(sel&&sel.submittedAt&&rowIndex)
+    ? `<button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#92400e;border-color:#fde68a;" onclick="switchSelDelivery(${rowIndex})" title="픽업↔우편 수령 전환">전환</button>`
+    : '';
   return `<div title="${escHtml(detailPlain)}" style="max-width:220px;">
     <span style="display:inline-block;${info.tone}padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;">${info.label}</span>
     <div style="margin-top:4px;font-size:10px;line-height:1.4;color:#64748b;max-width:220px;white-space:normal;overflow:visible;">${formatSelectDeliveryDetailHtml(detail)}</div>
+    ${switchBtn}
   </div>`;
+}
+
+/* 수령방식 전환 (픽업↔우편) — 전화로 변경 요청받았을 때 원클릭 처리.
+   픽업→우편: 예약·캘린더 자동 취소 + 주소 저장. 우편→픽업: 일정은 출력 후 고객 예약(인화 완료면 안내메일 즉시). */
+// 합성된 '수령인:/주소:' 텍스트에서 도로명 주소 부분만 추출 (프롬프트 프리필용, 중첩 저장 방지)
+function plainMailAddrForEdit(t){
+  t=String(t||'');
+  const parts=t.split(/주소\s*[:：]/);
+  const tail=parts.length>1?parts[parts.length-1]:t;
+  return tail.replace(/\s*\r?\n\s*/g,' ').trim();
+}
+function switchSelDelivery(rowIndex){
+  const r=allSelectDashboard.find(x=>Number(x.rowIndex)===Number(rowIndex));
+  const sel=r&&r.sel;
+  if(!sel){showToast('셀렉 세션이 없습니다.','warn');return;}
+  const cur=String(sel.deliveryMethod||'').trim();
+  const custName=(r&&r.name)||'';
+  const runSwitch=(delivery,okMsg)=>{
+    google.script.run.withSuccessHandler(res=>{
+      if(res&&res.ok){showToast(okMsg+(res.inviteSent?' (픽업 예약 안내 메일 발송됨)':''),'ok');loadSelectHistory();}
+      else if(res&&/force/.test(String(res.message||''))){
+        // 완료/발송 상태 보호 가드 — 명시 확인 후에만 강제
+        if(confirm('⚠ '+res.message+'\n\n강제로 전환할까요?')) runSwitch(Object.assign({},delivery,{force:true}),okMsg);
+      }
+      else alert('전환 실패: '+((res&&res.message)||'오류'));
+    }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+    .updateSelectDeliveryAdmin(adminToken,{bookingRowIndex:rowIndex},delivery);
+  };
+  if(cur==='mail'){
+    // 실수 방지: 기본값(1)=비파괴적인 주소 수정, 2=픽업 전환, 취소=중단
+    const choice=prompt(`${custName}님 · 현재 우편 수령\n\n1 = 우편 주소 수정\n2 = 픽업 수령으로 전환 (일정은 인화 완료 후 고객이 예약)`,'1');
+    if(choice===null)return;
+    if(String(choice).trim()==='2'){
+      runSwitch({method:'pickup'},'픽업 수령으로 전환했습니다.');
+    }else{
+      const nm=prompt('받으실 분 성함:',custName); if(nm===null)return;
+      const ad=prompt('우편 주소 (우편번호+도시 포함):',plainMailAddrForEdit(sel.mailAddress)); if(ad===null)return;
+      runSwitch({method:'mail',mailName:nm,mailAddress:ad},'우편 주소를 수정했습니다.');
+    }
+    return;
+  }
+  // 픽업(또는 미정) → 우편
+  const warn=cur==='pickup'&&sel.pickupAt?`\n예약된 픽업(${sel.pickupAt})과 캘린더 일정이 취소됩니다.`:'';
+  if(!confirm(`${custName}님 수령 방식을 우편으로 전환합니다.${warn}\n계속할까요?`))return;
+  const nm=prompt('받으실 분 성함:',custName); if(nm===null)return;
+  const ad=prompt('우편 주소 (우편번호+도시 포함):',plainMailAddrForEdit(sel.mailAddress)); if(ad===null)return;
+  runSwitch({method:'mail',mailName:nm,mailAddress:ad},'우편 수령으로 전환했습니다.');
 }
 
 function copySelectUrl(rowIndex){
@@ -9463,7 +9515,7 @@ function renderSelectDashboard(){
 	      ? `<div style="margin-top:4px;font-size:10px;line-height:1.35;color:#b45309;font-weight:800;">수정 제출 확인 필요${editSubmitAt?` · ${editSubmitAt.slice(5,16)}`:''}</div>`
 	      : '';
 	    const submittedLabel=(sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'')+editSubmitAlert;
-    const deliveryCell=renderSelectDeliveryCell(sel);
+    const deliveryCell=renderSelectDeliveryCell(sel,r.rowIndex);
     const bsBadgeStyle=BOOKING_STATUS_BADGE[bs]||'background:#f1f5f9;color:#475569;';
     const bsBadge=`<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;${bsBadgeStyle}">${bs}</span>`;
     const relinkAction=sel&&sel.selectUrl

@@ -973,6 +973,16 @@ function handlePublicApiRequest_(route,method,e){
       if(!result||!result.ok) return jsonError_('PICKUP_SCHEDULE_FAILED',(result&&result.message)||'예약 실패');
       return jsonOk_(result);
     }
+    if(route==='select-delivery-switch-mail'){
+      // 픽업 페이지에서 고객이 직접 우편 수령으로 전환(세션ID capability). 예약된 픽업이 있으면 취소.
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-delivery-switch-mail');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload;
+      const sid=String(payload.sessionId||payload.id||'').trim();
+      const result=switchSelectDeliveryToMailPublic_(sid,{mailName:payload.mailName,mailAddress:payload.mailAddress});
+      if(!result||!result.ok) return jsonError_('DELIVERY_SWITCH_FAILED',(result&&result.message)||'전환 실패');
+      return jsonOk_(result);
+    }
     if(route==='select-submit'){
       if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-submit');
       const request=getPublicPayloadFromRequest_(e);
@@ -1144,6 +1154,9 @@ function handlePublicApiRequest_(route,method,e){
         }
         if(action==='select-set-counts') return jsonOk_(updateSelectSessionCountsAdmin(token,payload));
         if(action==='select-create') return jsonOk_(createSelectSession(token,payload.data||{}));
+        if(action==='select-set-delivery') return jsonOk_(updateSelectDeliveryAdmin(token,
+          {sessionId:payload.sessionId,selectRowIndex:payload.selectRowIndex,bookingRowIndex:payload.bookingRowIndex},
+          payload.delivery||{method:payload.method,mailName:payload.mailName,mailAddress:payload.mailAddress}));
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
@@ -16743,13 +16756,11 @@ function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
   const time=String(pickupTime||'').trim();
   if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{2}:\d{2}$/.test(time)) return{ok:false,message:'픽업 날짜와 시간을 선택해 주세요.'};
-  // 세션당 쿨다운(10초) — 이중클릭·다중탭·스팸 재예약으로 인한 캘린더 이벤트 난사/메일 폭주 방지
-  try{
-    const cd=CacheService.getScriptCache();
-    const cdKey='pickup_sched_cd_'+sid;
-    if(cd.get(cdKey)) return{ok:false,message:'방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.'};
-    cd.put(cdKey,'1',10);
-  }catch(e){}
+  // 세션당 쿨다운(10초) — 이중클릭·다중탭·스팸 재예약으로 인한 캘린더 이벤트 난사/메일 폭주 방지.
+  // 검증 실패(슬롯 마감 등)는 쿨다운을 태우지 않도록 성공 시에만 기록한다.
+  const cd=(function(){try{return CacheService.getScriptCache();}catch(e){return null;}})();
+  const cdKey='pickup_sched_cd_'+sid;
+  if(cd&&cd.get(cdKey)) return{ok:false,message:'방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.'};
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
   let done=null; // 락 안에서는 시트/캘린더만 만지고, 메일은 락 해제 후 발송(락 점유시간 최소화)
@@ -16784,6 +16795,7 @@ function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
   }finally{
     lock.releaseLock();
   }
+  if(cd){ try{ cd.put(cdKey,'1',10); }catch(e){} }
   // 고객 확인 메일 (트라이링구얼) + 어드민 알림 — 락 밖
   if(done.email&&done.email.indexOf('@')>0){
     try{ _sendSelectPickupConfirmEmail_(done.email,done.name,done.lang,date,time,sid,!!done.prevPickupAt); }catch(e){Logger.log('pickup confirm mail fail: '+e.message);}
@@ -16860,6 +16872,177 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
   sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html});
   selSh.getRange(rowNum,SELECT_COL['픽업안내메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
   return true;
+}
+
+/* ===== 수령방식 전환 (픽업↔우편) — 어드민 원클릭·픽업페이지 셀프전환·에이전트 공용 코어.
+   픽업→우편: 캘린더 이벤트 삭제 + 예약 클리어 + 주소 저장. 우편/미정→픽업: 일정은 연기
+   (출력 후 예약 흐름), 이미 인화 완료면 예약 안내 메일 즉시 발송. ===== */
+function setSelectDeliveryMethodCore_(selSh,row,rowNum,sessionId,delivery){
+  const target=String(delivery&&delivery.method||'').trim();
+  if(target!=='mail'&&target!=='pickup') return{ok:false,message:'수령 방식(mail/pickup)을 지정해 주세요.'};
+  const currentMethod=String(row[SELECT_COL['수령방식']]||'').trim();
+  const prevPickupAt=parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16);
+  const eventId=String(row[SELECT_COL['픽업캘린더ID']]||'').trim();
+  if(target==='mail'){
+    let rawAddr=String(delivery.mailAddress||'');
+    let mailName=normalizeSelectMailName_(delivery.mailName);
+    // 이미 합성된 '수령인:/주소:' 텍스트가 다시 들어오면(어드민 프리필 재저장 등) 먼저 분해 — 중첩 방지
+    if(/수령인\s*[:：]|주소\s*[:：]/.test(rawAddr)){
+      const parsedC=parseSelectMailAddressText_(rawAddr,mailName||'');
+      if(parsedC.mailAddress){ rawAddr=parsedC.mailAddress; if(!mailName) mailName=parsedC.mailName; }
+    }
+    let mailAddress=normalizeSelectMailAddress_(rawAddr);
+    if((!mailName||!mailAddress)&&rawAddr){
+      const parsed=parseSelectMailAddressText_(rawAddr,'');
+      if(!mailName) mailName=parsed.mailName;
+      if(!mailAddress) mailAddress=parsed.mailAddress;
+    }
+    if(!mailName) return{ok:false,message:'우편 수령 받으실 분 성함을 입력해 주세요.'};
+    if(!mailAddress) return{ok:false,message:'우편 수령 주소를 입력해 주세요.'};
+    if(!selectMailAddressHasPostalCity_(mailAddress)) return{ok:false,message:'우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel'};
+    const mailAddressText=buildSelectMailAddressText_(mailName,mailAddress);
+    // 동일 내용 재제출(mail→mail) no-op — 공개 라우트의 메일 재발송/시트 재작업 방지
+    if(currentMethod==='mail'&&String(row[SELECT_COL['우편주소']]||'').trim()===mailAddressText.trim()){
+      return{ok:true,method:'mail',mailAddressText:mailAddressText,unchanged:true,fromMethod:currentMethod};
+    }
+    syncSelectPickupEvent_(eventId,row,sessionId,{method:'mail'}); // 기존 픽업 캘린더 이벤트 삭제
+    selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([['mail','',mailAddressText,'']]);
+    // 픽업 안내 멱등 스탬프 해제 — 나중에 다시 픽업으로 전환하면 안내 메일이 재발송되도록
+    if(SELECT_COL['픽업안내메일발송일시']!=null){
+      selSh.getRange(rowNum,SELECT_COL['픽업안내메일발송일시']+1).setValue('');
+      row[SELECT_COL['픽업안내메일발송일시']]='';
+    }
+    if(eventId) bumpCalCacheVer_();
+    row[SELECT_COL['수령방식']]='mail'; row[SELECT_COL['픽업일시']]=''; row[SELECT_COL['우편주소']]=mailAddressText; row[SELECT_COL['픽업캘린더ID']]='';
+    return{ok:true,method:'mail',mailAddressText:mailAddressText,cancelledPickup:prevPickupAt,fromMethod:currentMethod};
+  }
+  // → pickup
+  if(currentMethod==='pickup') return{ok:true,method:'pickup',unchanged:true,fromMethod:currentMethod}; // 이미 픽업 — 잡힌 예약 보존
+  // 우편주소는 보존(감사 흔적 + 재전환 시 프리필용). 픽업 표시엔 영향 없음.
+  selSh.getRange(rowNum,SELECT_COL['수령방식']+1).setValue('pickup');
+  selSh.getRange(rowNum,SELECT_COL['픽업일시']+1).setValue('');
+  selSh.getRange(rowNum,SELECT_COL['픽업캘린더ID']+1).setValue('');
+  row[SELECT_COL['수령방식']]='pickup'; row[SELECT_COL['픽업일시']]=''; row[SELECT_COL['픽업캘린더ID']]='';
+  let inviteSent=false;
+  try{ inviteSent=maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId); }
+  catch(e){ Logger.log('invite on delivery switch fail: '+e.message); }
+  return{ok:true,method:'pickup',inviteSent:inviteSent,fromMethod:currentMethod};
+}
+
+// 어드민/에이전트: 수령방식 전환. ref = {bookingRowIndex}|{selectRowIndex}|{sessionId}
+function updateSelectDeliveryAdmin(token,ref,delivery){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    ref=(ref&&typeof ref==='object')?ref:{bookingRowIndex:ref};
+    let rowNum=0;
+    if(ref.sessionId){
+      const rows=selSh.getDataRange().getValues();
+      const idx=rows.slice(1).findIndex(function(r){return String(r[0])===String(ref.sessionId);});
+      rowNum=idx===-1?0:idx+2;
+    }else if(ref.selectRowIndex){
+      rowNum=parseInt(ref.selectRowIndex,10)||0;
+    }else if(ref.bookingRowIndex){
+      const found=getActiveSelectRowForBooking_(selSh,ref.bookingRowIndex);
+      rowNum=found?found.rowIndex:0;
+    }
+    if(rowNum<2||rowNum>selSh.getLastRow()) return{ok:false,message:'셀렉 세션을 찾지 못했습니다.'};
+    const row=selSh.getRange(rowNum,1,1,SELECT_HEADERS.length).getValues()[0];
+    const sid=String(row[SELECT_COL['세션ID']]||'').trim();
+    if(!sid) return{ok:false,message:'셀렉 세션을 찾지 못했습니다.'};
+    // 완료/발송된 세션 보호 — force:true로만 강제 (실수로 발송기록·상태와 모순되는 전환 방지)
+    const st=String(row[SELECT_COL['상태']]||'').trim();
+    if(!(delivery&&delivery.force)&&(isSelectFinalLockedStatus_(st)||st==='우편발송')){
+      return{ok:false,message:`'${st}' 상태의 세션입니다. 정말 전환하려면 force 옵션을 사용하세요.`};
+    }
+    return setSelectDeliveryMethodCore_(selSh,row,rowNum,sid,delivery||{});
+  }finally{
+    lock.releaseLock();
+  }
+}
+
+// 픽업 페이지 셀프 전환(공개, 세션ID capability): 픽업(또는 기존 우편 주소수정) → 우편
+function switchSelectDeliveryToMailPublic_(sessionId,mail){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  // 쿨다운(10초)·일일 상한(3회): 검증 실패는 쿨다운을 태우지 않고, 성공 시에만 기록한다.
+  const cd=(function(){try{return CacheService.getScriptCache();}catch(e){return null;}})();
+  const cdKey='delivery_switch_cd_'+sid;
+  const dayKey='delivery_switch_day_'+sid;
+  if(cd){
+    if(cd.get(cdKey)) return{ok:false,message:'방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.'};
+    const n=parseInt(cd.get(dayKey),10)||0;
+    if(n>=3) return{ok:false,message:'주소 변경이 여러 번 요청되었습니다. 추가 변경은 스튜디오로 연락해 주세요.'};
+  }
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  let done=null;
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    if(!selSh) return{ok:false,message:'시스템 오류'};
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+    if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+    const row=rows[idx+1];
+    const rowNum=idx+2;
+    const st=String(row[SELECT_COL['상태']]||'').trim();
+    if(isSelectFinalLockedStatus_(st)) return{ok:false,message:'이미 완료된 세션입니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
+    if(st==='우편발송') return{ok:false,message:'이미 인화물이 발송되었습니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
+    const currentMethod=String(row[SELECT_COL['수령방식']]||'').trim();
+    if(currentMethod!=='pickup'&&currentMethod!=='mail') return{ok:false,message:'수령 방식 선택이 필요한 세션이 아닙니다. 문의는 스튜디오로 연락해 주세요.'};
+    const result=setSelectDeliveryMethodCore_(selSh,row,rowNum,sid,{method:'mail',mailName:mail&&mail.mailName,mailAddress:mail&&mail.mailAddress});
+    if(!result.ok) return result;
+    done={result:result,
+      name:String(row[SELECT_COL['고객명']]||''),
+      lang:String(row[SELECT_COL['언어']]||'ko'),
+      email:String(row[SELECT_COL['이메일']]||'').trim(),
+      product:String(row[SELECT_COL['상품']]||'')};
+  }finally{
+    lock.releaseLock();
+  }
+  if(cd){ try{
+    cd.put(cdKey,'1',10);
+    if(!done.result.unchanged) cd.put(dayKey,String((parseInt(cd.get(dayKey),10)||0)+1),21600);
+  }catch(e){} }
+  // 동일 내용 재제출이면 메일 재발송 없이 성공 반환
+  if(done.result.unchanged) return done.result;
+  // 메일은 락 밖 — 고객 확인 + 어드민 알림
+  if(done.email&&done.email.indexOf('@')>0){
+    try{ _sendSelectDeliverySwitchMailEmail_(done.email,done.name,done.lang,done.result.mailAddressText,done.result.cancelledPickup); }
+    catch(e){ Logger.log('delivery switch mail fail: '+e.message); }
+  }
+  try{
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,
+      subject:`[수령전환] ${done.name}님 — 픽업→우편`,
+      htmlBody:`<div style="font-family:-apple-system,sans-serif;font-size:14px;line-height:1.7;">📮 <b>${escapeHtml_(done.name)}</b>님이 수령 방식을 <b>우편</b>으로 변경했습니다.${done.result.cancelledPickup?`<br>취소된 픽업: ${escapeHtml_(done.result.cancelledPickup)} (캘린더 일정 삭제됨)`:''}<br>주소:<br>${selectMailAddressHtml_(done.result.mailAddressText)}<br>상품: ${escapeHtml_(done.product)}<br>세션: ${escapeHtml_(sid)}<br><br>발송 후 어드민에서 상태를 '우편발송'으로 전환해 주세요.</div>`});
+  }catch(e){}
+  return done.result;
+}
+
+// 우편 전환 확인 메일 (트라이링구얼)
+function _sendSelectDeliverySwitchMailEmail_(email,name,lang,mailAddressText,cancelledPickup){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const subj={
+    ko:'[Studio mean] 📮 우편 수령으로 변경되었습니다',
+    en:'[Studio mean] 📮 Switched to postal delivery',
+    de:'[Studio mean] 📮 Auf Postversand umgestellt'
+  };
+  const addrHtml=selectMailAddressHtml_(mailAddressText);
+  const body={
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>수령 방식이 <b>우편 수령</b>으로 변경되었습니다.${cancelledPickup?`<br>기존 픽업 예약(${escapeHtml_(cancelledPickup)})은 취소되었습니다.`:''}<br><br>📮 배송 주소:<br><b>${addrHtml}</b><br><br>인화물 발송이 완료되면 다시 안내드리겠습니다.`,
+    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your delivery method has been changed to <b>postal delivery</b>.${cancelledPickup?`<br>Your previous pickup appointment (${escapeHtml_(cancelledPickup)}) has been cancelled.`:''}<br><br>📮 Shipping address:<br><b>${addrHtml}</b><br><br>We will let you know once your prints have been shipped.`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihre Zustellart wurde auf <b>Postversand</b> umgestellt.${cancelledPickup?`<br>Ihr bisheriger Abholtermin (${escapeHtml_(cancelledPickup)}) wurde storniert.`:''}<br><br>📮 Versandadresse:<br><b>${addrHtml}</b><br><br>Wir informieren Sie, sobald Ihre Abzüge versandt wurden.`
+  };
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
+      <div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#fff;">Studio mean</div>
+    </div>
+    <div style="padding:26px 25px;font-size:14px;color:#334155;line-height:1.8;">${body[L]}</div>
+    <div style="background:#f8fafc;padding:14px 25px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · ${STUDIO_ADDRESS} · studio.mean.de@gmail.com</div>
+  </div>`;
+  sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html});
 }
 
 /* ===== 고객 출력(인화) 주문 — print.studio-mean.com 고객 모드에서 레이아웃/콜라주/텍스트를

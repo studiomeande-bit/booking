@@ -23,6 +23,7 @@
     loading:    { ko: '불러오는 중입니다…', en: 'Loading…', de: 'Wird geladen…' },
     noSession:  { ko: '유효하지 않은 링크입니다. 안내 메일의 링크로 다시 접속해 주세요.', en: 'Invalid link. Please use the link from our email.', de: 'Ungültiger Link. Bitte nutzen Sie den Link aus unserer E-Mail.' },
     notPickup:  { ko: '이 세션은 픽업 수령으로 신청되어 있지 않습니다. 변경을 원하시면 스튜디오로 연락해 주세요.', en: 'This session is not set for studio pickup. Please contact us if you would like to change it.', de: 'Diese Sitzung ist nicht für Abholung vorgesehen. Bitte kontaktieren Sie uns für eine Änderung.' },
+    isMail:     { ko: '이 세션은 📮 우편 수령으로 진행됩니다. 인화물 발송이 완료되면 메일로 안내드립니다. 픽업으로 변경을 원하시면 스튜디오로 연락해 주세요.', en: 'This session is set for 📮 postal delivery. We will email you once your prints are shipped. Contact us if you prefer pickup instead.', de: 'Diese Sitzung läuft über 📮 Postversand. Wir informieren Sie per E-Mail nach dem Versand. Für Abholung kontaktieren Sie uns bitte.' },
     notPrinted: { ko: '아직 인화 준비 중입니다. 인화가 완료되면 예약 안내 메일을 보내드립니다. 😊', en: 'Your prints are still in production. We will email you as soon as they are ready. 😊', de: 'Ihre Abzüge sind noch in Bearbeitung. Wir informieren Sie per E-Mail, sobald sie fertig sind. 😊' },
     ready:      { ko: '인화가 완료되었습니다! 아래에서 편하신 시간을 선택해 주세요.', en: 'Your prints are ready! Please pick a convenient time below.', de: 'Ihre Abzüge sind fertig! Bitte wählen Sie unten eine passende Zeit.' },
     calTitle:   { ko: '날짜 선택', en: 'Choose a date', de: 'Datum wählen' },
@@ -37,6 +38,19 @@
     current:    { ko: '현재 예약된 픽업', en: 'Current pickup appointment', de: 'Aktueller Abholtermin' },
     change:     { ko: '다른 시간으로 변경하기', en: 'Choose a different time', de: 'Anderen Termin wählen' },
     loadFail:   { ko: '일정을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.', en: 'Could not load the calendar. Please refresh shortly.', de: 'Kalender konnte nicht geladen werden. Bitte später aktualisieren.' },
+    msTitle:    { ko: '우편 수령으로 변경', en: 'Switch to Postal Delivery', de: 'Auf Postversand umstellen' },
+    msCopy:     { ko: '직접 방문이 어려우시면 우편 수령으로 변경할 수 있습니다. 예약된 픽업이 있다면 자동으로 취소됩니다.', en: 'If visiting the studio is difficult, you can switch to postal delivery. Any booked pickup will be cancelled automatically.', de: 'Falls ein Besuch schwierig ist, können Sie auf Postversand umstellen. Ein gebuchter Abholtermin wird automatisch storniert.' },
+    msOpen:     { ko: '📮 우편 수령으로 변경하기', en: '📮 Switch to postal delivery', de: '📮 Auf Postversand umstellen' },
+    msName:     { ko: '받으실 분 성함', en: 'Recipient name', de: 'Name des Empfängers' },
+    msAddr:     { ko: '주소 (우편번호 + 도시 포함)', en: 'Address (incl. postal code + city)', de: 'Adresse (inkl. PLZ + Stadt)' },
+    msSubmit:   { ko: '우편 수령으로 변경 확정', en: 'Confirm Postal Delivery', de: 'Postversand bestätigen' },
+    msNeedBoth: { ko: '성함과 주소를 모두 입력해 주세요.', en: 'Please enter both name and address.', de: 'Bitte Name und Adresse eingeben.' },
+    errPostal:  { ko: '우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel', en: 'Please include the postal code and city in the address, e.g. 61440 Oberursel.', de: 'Bitte PLZ und Stadt in der Adresse angeben, z. B. 61440 Oberursel.' },
+    errCooldown:{ ko: '방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.', en: 'Your previous request was just processed. Please try again in a moment.', de: 'Ihre letzte Anfrage wurde gerade verarbeitet. Bitte versuchen Sie es gleich erneut.' },
+    errSlotGone:{ ko: '선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.', en: 'That pickup time was just taken. Please choose another slot.', de: 'Dieser Termin wurde gerade vergeben. Bitte wählen Sie einen anderen.' },
+    errLimit:   { ko: '주소 변경이 여러 번 요청되었습니다. 추가 변경은 스튜디오로 연락해 주세요.', en: 'The address has been changed several times already. Please contact the studio for further changes.', de: 'Die Adresse wurde bereits mehrfach geändert. Bitte kontaktieren Sie das Studio.' },
+    msDone:     { ko: '📮 우편 수령으로 변경되었습니다', en: '📮 Switched to postal delivery', de: '📮 Auf Postversand umgestellt' },
+    msDoneNote: { ko: '확인 메일을 보내드렸습니다. 인화물 발송이 완료되면 다시 안내드리겠습니다.', en: 'A confirmation email is on its way. We will let you know once your prints have been shipped.', de: 'Eine Bestätigungs-E-Mail ist unterwegs. Wir informieren Sie, sobald Ihre Abzüge versandt wurden.' },
     weekdays:   { ko: ['일','월','화','수','목','금','토'], en: ['Su','Mo','Tu','We','Th','Fr','Sa'], de: ['So','Mo','Di','Mi','Do','Fr','Sa'] },
     monthLabel: { ko: function (y, m) { return y + '년 ' + (m + 1) + '월'; },
                   en: function (y, m) { return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m] + ' ' + y; },
@@ -78,6 +92,16 @@
     el.className = 'status-banner' + (cls ? ' ' + cls : '');
     el.classList.remove('hidden');
   }
+  // 서버 오류는 한국어 — EN/DE 고객에겐 알려진 메시지를 번역해서 보여준다
+  function trErr(msg) {
+    var m = String(msg || '');
+    if (LANG === 'ko') return m || t('loadFail');
+    if (/우편번호/.test(m)) return t('errPostal');
+    if (/방금 요청/.test(m)) return t('errCooldown');
+    if (/마감되었습니다/.test(m)) return t('errSlotGone');
+    if (/여러 번 요청/.test(m)) return t('errLimit');
+    return m || t('loadFail');
+  }
   function applyStaticText() {
     $('pageTitle').textContent = t('title');
     $('pageLede').textContent = t('lede');
@@ -86,6 +110,12 @@
     $('confirmBtn').textContent = t('confirm');
     $('changeBtn').textContent = t('change');
     $('rebookBtn').textContent = t('change');
+    $('msTitle').textContent = t('msTitle');
+    $('msCopy').textContent = t('msCopy');
+    $('msOpenBtn').textContent = t('msOpen');
+    $('msNameLabel').textContent = t('msName');
+    $('msAddrLabel').textContent = t('msAddr');
+    $('msSubmitBtn').textContent = t('msSubmit');
     var row = $('weekdayRow');
     row.innerHTML = '';
     t('weekdays').forEach(function (w) {
@@ -190,6 +220,7 @@
   function showSuccess(pickupAt) {
     $('schedulerCard').classList.add('hidden');
     $('currentBox').classList.add('hidden');
+    $('mailSwitchCard').classList.add('hidden'); // 성공 화면 위에 전환 카드가 떠 있지 않도록
     $('statusBanner').classList.add('hidden');
     $('successCard').classList.remove('hidden');
     $('successWhen').textContent = pickupAt;
@@ -209,7 +240,7 @@
         $('statusBanner').classList.remove('hidden');
       })
       .catch(function (err) {
-        setBanner(err.message || t('loadFail'), 'error');
+        setBanner(trErr(err.message), 'error');
         btn.textContent = t('confirm');
         btn.disabled = false;
         // 슬롯 마감 등: 최신 상태로 다시 표시
@@ -246,7 +277,12 @@
         var pickupAt = String(session.existingPickupAt || '').trim();
         var printed = String(session.printDoneAt || '').trim();
 
+        if (method === 'mail') { setBanner(t('isMail')); return; } // 우편 세션(방금 전환 포함): 에러 아님
         if (method !== 'pickup') { setBanner(t('notPickup'), 'error'); return; }
+
+        // 픽업 세션은 어느 상태에서든 우편 수령으로 셀프 전환 가능
+        $('mailSwitchCard').classList.remove('hidden');
+        if (!$('msName').value) $('msName').value = String(session.name || '');
 
         if (pickupAt) {
           $('currentBox').classList.remove('hidden');
@@ -286,6 +322,36 @@
     renderCalendar();
   });
   $('rebookBtn').addEventListener('click', function () { location.reload(); });
+  $('msOpenBtn').addEventListener('click', function () {
+    $('msForm').classList.toggle('hidden');
+  });
+  $('msSubmitBtn').addEventListener('click', function () {
+    if (busy) return;
+    var name = String($('msName').value || '').trim();
+    var addr = String($('msAddr').value || '').trim();
+    if (!name || !addr) { setBanner(t('msNeedBoth'), 'error'); return; }
+    busy = true;
+    var btn = $('msSubmitBtn');
+    btn.disabled = true; btn.textContent = t('confirming');
+    postData('select-delivery-switch-mail', { sessionId: sessionId, mailName: name, mailAddress: addr })
+      .then(function (data) {
+        $('schedulerCard').classList.add('hidden');
+        $('currentBox').classList.add('hidden');
+        $('mailSwitchCard').classList.add('hidden');
+        $('successCard').classList.remove('hidden');
+        $('rebookBtn').classList.add('hidden');
+        $('successWhen').textContent = t('msDone');
+        $('successAddr').textContent = (data && data.mailAddressText) ? String(data.mailAddressText).replace(/\n/g, ' · ') : (name + ' · ' + addr);
+        $('successNote').textContent = t('msDoneNote');
+        setBanner(t('msDone'), 'ok');
+      })
+      .catch(function (err) {
+        setBanner(trErr(err.message), 'error');
+        btn.textContent = t('msSubmit');
+        btn.disabled = false;
+      })
+      .then(function () { busy = false; });
+  });
 
   init();
 })();

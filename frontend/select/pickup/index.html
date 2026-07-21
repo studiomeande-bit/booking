@@ -107,6 +107,19 @@
       <button id="confirmBtn" class="confirm-btn" type="button" disabled>픽업 예약 확정</button>
     </section>
 
+    <section id="mailSwitchCard" class="card hidden">
+      <div class="card-title" id="msTitle">우편 수령으로 변경</div>
+      <div class="copy" id="msCopy">직접 방문이 어려우시면 우편 수령으로 변경할 수 있습니다. 예약된 픽업이 있다면 자동으로 취소됩니다.</div>
+      <button id="msOpenBtn" class="nav-btn" type="button" style="margin-top:10px;">📮 우편 수령으로 변경하기</button>
+      <div id="msForm" class="hidden" style="margin-top:14px;">
+        <label class="copy" for="msName" id="msNameLabel" style="display:block;font-weight:700;margin-bottom:4px;">받으실 분 성함</label>
+        <input id="msName" type="text" autocomplete="name" style="width:100%;border:1px solid #d9cfbf;border-radius:12px;background:#fff;color:#2f2924;padding:11px 14px;font:inherit;font-size:14px;margin-bottom:10px;">
+        <label class="copy" for="msAddr" id="msAddrLabel" style="display:block;font-weight:700;margin-bottom:4px;">주소 (우편번호 + 도시 포함)</label>
+        <textarea id="msAddr" rows="3" autocomplete="street-address" placeholder="Musterstraße 1, 61440 Oberursel" style="width:100%;border:1px solid #d9cfbf;border-radius:12px;background:#fff;color:#2f2924;padding:11px 14px;font:inherit;font-size:14px;resize:vertical;"></textarea>
+        <button id="msSubmitBtn" class="confirm-btn" type="button">우편 수령으로 변경 확정</button>
+      </div>
+    </section>
+
     <section id="successCard" class="card hidden">
       <div class="success-check">✅</div>
       <div class="success-when" id="successWhen"></div>
@@ -117,6 +130,6 @@
 
     <div class="footer">Studio mean · Holzweg-Passage 3, 61440 Oberursel (Taunus)<br>studio.mean.de@gmail.com · +49 176 60939400</div>
   </main>
-  <script src="./pickup.js?v=20260721-pickup1"></script>
+  <script src="./pickup.js?v=20260721-pickup2"></script>
 </body>
 </html>
