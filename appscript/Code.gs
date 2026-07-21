@@ -1164,6 +1164,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
+        if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='mrt-api-test') return jsonOk_(mrtApiTestAdmin(token));
         if(action==='mrt-api-reconcile') return jsonOk_(mrtApiReconcileAdmin(token));
         if(action==='quote-accept'){
@@ -9824,6 +9825,19 @@ function addManualBookingAdmin(token, data) {
     const depositAmt = fullPaidBySource ? 0 : roundCurrency_(toNumberOrZero_(String(data.deposit||'').trim()!==''?data.deposit:(quote?quote.depositAmount:0)));
     const balanceInput = roundCurrency_(toNumberOrZero_(data.balance));
     const balanceAmt = fullPaidBySource ? 0 : roundCurrency_((String(data.balance||'').trim()!==''?balanceInput:Math.max(0, priceEuro - depositAmt)));
+    // 총결제액↔잔금 일관성 보정: 잔금을 명시 입력했는데 총결제액(price)은 비워둔 경우,
+    // 총결제액은 quote로만 잡혀 여권 인화옵션(+€3~5) 등 '잔금에만 반영된 금액'이 매출에서 누락된다.
+    // (회계장부는 매출 gross를 '총결제액'에서 읽으므로 부가세까지 함께 누락됨.) 총결제액 = 계약금 + 잔금 으로 맞춘다.
+    if(!useKrwMode && !fullPaidBySource && !String(data.price||'').trim() && String(data.balance||'').trim()!==''){
+      const reconciledTotal=roundCurrency_(depositAmt + balanceAmt);
+      // raise-only: 잔금이 quote 상품가를 초과할 때만 올린다(인화옵션 등 add-on). 0/부분 잔금이
+      // quote 총액을 아래로 끌어내려 매출을 오히려 누락시키는 것을 방지.
+      if(reconciledTotal-priceEuro>0.01){
+        priceEuro=reconciledTotal;
+        priceText=`${formatEuroAmount_(priceEuro)}€`;
+        priceDisplayText=priceText;
+      }
+    }
     const depPayMethod = String(data.depositPayMethod || '-').trim() || '-';
     const payMethodToSave = useKrwMode ? '마이리얼트립' : (data.payMethod || '계좌이체');
     const bookingClientType=inferBookingClientTypeFromData_(Object.assign({},data,{itemGroup:groupToSave,bookingSource:useKrwMode?'myrealtrip':data.bookingSource}));
@@ -10506,6 +10520,65 @@ function setBookingTimeForAgent_(token,payload){
   }catch(e){Logger.log('setBookingTimeForAgent_ calendar sync failed row '+rIdx+': '+e.message);}
   bumpCalCacheVer_();
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),dateTime:m[1]+' '+m[2],eventId:eventId,customerMailSent:false};
+}
+
+// 예약 총결제액 정정 (매출 소급 정정·예외 대응). 회계장부는 매출 gross를 '총결제액'에서 읽으므로
+// 이 값만 맞추면 net/MwSt는 자동 파생된다(별도 저장 안 함). 취소/환불건 차단, 감사메모 1줄 기록.
+function setBookingAmountForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])){
+    throw new Error('취소/자동취소 상태의 예약은 금액 정정할 수 없습니다 (환불 처리 별도).');
+  }
+  if(payload.total==null||String(payload.total).trim()===''||!isFinite(Number(payload.total))){
+    throw new Error("total(새 총결제액)이 필요합니다. 예: {\"rowIndex\":218,\"total\":35}");
+  }
+  const newTotal=roundCurrency_(Number(payload.total));
+  if(newTotal<0) throw new Error('total은 0 이상이어야 합니다.');
+  const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const depositAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+  const recomputeBalance=payload.recomputeBalance===undefined?true:!!payload.recomputeBalance;
+  const prevBalance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+  const newBalance=recomputeBalance?roundCurrency_(Math.max(0,newTotal-depositAmt)):prevBalance;
+
+  sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
+  if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
+  if(recomputeBalance){
+    sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(newBalance);
+    if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+  }
+  // 감사메모 1줄 (요청사항 컬럼에 append)
+  const reason=String(payload.reason||'').trim();
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const auditLine=`[금액정정 ${stamp}] ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€`
+    +(recomputeBalance?` (잔금 ${formatEuroAmount_(prevBalance)}→${formatEuroAmount_(newBalance)}€)`:'')
+    +(reason?` 사유: ${reason}`:'')+' (agent)';
+  const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo,auditLine].filter(Boolean).join('\n'));
+
+  // 캘린더 제목의 금액 라벨 갱신(있으면)
+  try{
+    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const evId=String(rowAfter[BOOKING_COL['캘린더ID']]||'').trim();
+    if(evId){
+      const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+      const ev=cal.getEventById(evId);
+      if(ev) ev.setTitle(buildBookingCalendarTitleFromRow_(rowAfter));
+    }
+  }catch(e){Logger.log('setBookingAmountForAgent_ calendar title update skipped: '+e.message);}
+  bumpCalCacheVer_();
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
+    previousTotal:prevTotal,newTotal:newTotal,
+    previousBalance:prevBalance,newBalance:newBalance,recomputeBalance:recomputeBalance,auditLine:auditLine};
 }
 
 /* ===== MRT Open API (마케팅파트너 API, partner-ext-api.myrealtrip.com) =====
@@ -12008,6 +12081,17 @@ function updateBookingAdmin(token,rIdx,d){
       : String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'').trim())
     : d.memo;
   w(11,d.price); w(12,d.deposit); w(13,d.balance);
+  // 총결제액↔잔금 일관성: 잔금(+계약금)이 총결제액을 초과하면(여권 인화옵션 등이 잔금에만 더해진 경우)
+  // 총결제액을 계약금+잔금으로 올려 매출 누락을 막는다. 정상 할인(잔금도 함께 감소)에는 발화하지 않음.
+  if(d.balance!==undefined){
+    const _priceN=parseMoneyValue_(d.price!==undefined?d.price:rowBefore[BOOKING_COL['총결제액']]);
+    const _depN=parseMoneyValue_(d.deposit!==undefined?d.deposit:rowBefore[BOOKING_COL['계약금']]);
+    const _balN=parseMoneyValue_(d.balance);
+    const _reconciled=roundCurrency_(_depN+_balN);
+    // 총액을 '직접 낮춘 할인'을 되돌리지 않도록, 가격 칸이 기존 총결제액 그대로일 때만(=잔금만 올린 add-on 케이스) 발화.
+    const _priceUnchanged=(d.price===undefined)||Math.abs(_priceN-parseMoneyValue_(rowBefore[BOOKING_COL['총결제액']]))<0.01;
+    if(_priceUnchanged && _reconciled-_priceN>0.01){ w(11,_reconciled); }
+  }
   w(14,d.payMethod); w(16,memoToSave); w(18,d.depPayMethod);
   let extraItemToSave=String(d.extraItem||'').replace(/\n?\[예약 세부내역\][\s\S]*$/,'').trim();
   if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined){

@@ -9,6 +9,11 @@
  *   quote-list | quote-get | quote-create | quote-update | quote-send
  *   quote-hold | quote-snooze | quote-release-hold | quote-extend
  *   invoice-list | invoice-create | invoice-send
+ *   booking-search | booking-get | booking-set-time | booking-set-amount
+ *
+ * booking-set-amount: 예약 총결제액 정정(매출 소급 정정). 회계장부 gross는 총결제액에서 파생.
+ *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'
+ *   옵션: recomputeBalance(기본 true, 잔금=총결제액−계약금), expectName(행 고객명 안전확인).
  *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)
