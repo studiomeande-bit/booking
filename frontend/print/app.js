@@ -553,7 +553,7 @@ async function _recordPrintDone(count, results){
     const url=base+(base.includes("?")?"&":"?")+"api=select-print-done";
     const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({data:{sessionId:sid,passcode:pc,count:count}})});
     const j=await r.json();
-    if(j&&j.ok) results.push("📝 ERP 출력완료 기록 ("+count+"장)"+(j.data&&j.data.reprint?" · ⚠재출력":""));
+    if(j&&j.ok) results.push("📝 ERP 출력완료 기록 ("+count+"장)"+(j.data&&j.data.reprint?" · ⚠재출력":"")+(j.data&&j.data.inviteSent?" · 📧 픽업안내 발송됨":""));
     else results.push("📝 ERP 기록 실패: "+((j&&j.error&&j.error.message)||"확인 필요"));
   }catch(e){ results.push("📝 ERP 기록 실패(네트워크)"); }
 }

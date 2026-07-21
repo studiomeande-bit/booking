@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=20260716-perf1" as="style">
+  <link rel="preload" href="./select.min.css?v=20260721-pickup1" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=20260716-perf1">
+  <link rel="stylesheet" href="./select.min.css?v=20260721-pickup1">
   <script src="/site-analytics.js?v=20260430-consent6"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -280,6 +280,12 @@
             </div>
           </div>
 
+          <div id="pickupDeferredNote" class="detail-box delivery-panel hidden">
+            <div class="detail-title">픽업 시간 예약 안내</div>
+            <div class="guide-copy">픽업 시간은 지금 정하지 않으셔도 됩니다. <b>인화가 완료되면</b> 픽업 시간을 예약할 수 있는 링크를 이메일로 보내드립니다.<br><span style="color:#94a3b8;">Once your prints are ready, we will email you a link to book your pickup time.</span></div>
+            <div id="pickupExistingLine" class="detail-copy hidden"></div>
+          </div>
+
           <div id="pickupScheduler" class="detail-box delivery-panel hidden">
             <div class="detail-title">픽업 시간 예약</div>
             <div class="guide-copy">외부 일정 때문에 스튜디오에 있는 시간에만 픽업이 가능합니다. 여권, 프로필, 스튜디오 촬영 일정이 있는 날만 열리며, 같은 날 스튜디오 일정이 여러 건이면 그 사이 가능한 시간도 함께 표시됩니다.</div>
@@ -422,6 +428,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=20260716-perf1"></script>
+  <script src="./select.min.js?v=20260721-pickup1"></script>
 </body>
 </html>

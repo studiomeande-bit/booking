@@ -958,6 +958,21 @@ function handlePublicApiRequest_(route,method,e){
       if(!date) return jsonError_('INVALID_ARGUMENT','Missing pickup slot date');
       return jsonOk_(getSelectPickupSlots_(date,ignoreEventId));
     }
+    if(route==='select-pickup-schedule'){
+      // 출력 후 픽업예약: 고객이 인화 완료 안내 메일의 링크에서 일정 신청/변경.
+      // 세션ID가 접근권한(셀렉 링크와 동일 신뢰모델) — 서버가 인화완료·pickup 방식·슬롯을 재검증.
+      // 상태 변경 + 메일 발송 라우트이므로 POST 전용(링크 스캐너/프리뷰의 GET 부작용 차단).
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-pickup-schedule');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload;
+      const p=(e&&e.parameter)||{};
+      const sid=String(payload.sessionId||payload.id||p.sessionId||p.id||'').trim();
+      const pickupDate=String(payload.pickupDate||p.pickupDate||'').trim();
+      const pickupTime=String(payload.pickupTime||p.pickupTime||'').trim();
+      const result=scheduleSelectPickup_(sid,pickupDate,pickupTime);
+      if(!result||!result.ok) return jsonError_('PICKUP_SCHEDULE_FAILED',(result&&result.message)||'예약 실패');
+      return jsonOk_(result);
+    }
     if(route==='select-submit'){
       if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/select-submit');
       const request=getPublicPayloadFromRequest_(e);
@@ -15260,7 +15275,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 
@@ -16037,9 +16052,9 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     de:printSummary?`Drucke inklusive: <b>${printSummary}</b>`:(fixedPrintQuota?'<b>Keine Drucke inklusive</b>':'Inklusive Drucke werden auf der Auswahlseite angezeigt.')
   };
   const printGuide={
-    ko:printSummary?'셀렉페이지에서 기본 제공 출력 사이즈가 보정 사진 목록에 미리 적용되어 있습니다. 포함 수량 외 출력은 추가 인화에서 입력해 주세요.':'출력물이 포함되지 않은 상품은 수령 방식 선택이 표시되지 않습니다. 추가 인화를 신청하는 경우에만 수령 방식을 선택합니다.',
-    en:printSummary?'Included print sizes are pre-selected on the selection page. Please add only extra print orders separately.':'If no prints are included, pickup/postal delivery is hidden unless extra prints are added.',
-    de:printSummary?'Die enthaltenen Druckgrößen sind auf der Auswahlseite vorausgewählt. Zusätzliche Drucke bitte separat hinzufügen.':'Wenn keine Drucke inklusive sind, erscheint Abholung/Versand nur bei zusätzlichen Drucken.'
+    ko:(printSummary?'셀렉페이지에서 기본 제공 출력 사이즈가 보정 사진 목록에 미리 적용되어 있습니다. 포함 수량 외 출력은 추가 인화에서 입력해 주세요.':'출력물이 포함되지 않은 상품은 수령 방식 선택이 표시되지 않습니다. 추가 인화를 신청하는 경우에만 수령 방식을 선택합니다.')+' 픽업을 선택하시면 인화 완료 후 픽업 시간 예약 링크를 이메일로 보내드립니다.',
+    en:(printSummary?'Included print sizes are pre-selected on the selection page. Please add only extra print orders separately.':'If no prints are included, pickup/postal delivery is hidden unless extra prints are added.')+' If you choose pickup, we will email you a booking link for your pickup time once printing is finished.',
+    de:(printSummary?'Die enthaltenen Druckgrößen sind auf der Auswahlseite vorausgewählt. Zusätzliche Drucke bitte separat hinzufügen.':'Wenn keine Drucke inklusive sind, erscheint Abholung/Versand nur bei zusätzlichen Drucken.')+' Bei Abholung senden wir Ihnen nach dem Druck einen Link zur Terminbuchung per E-Mail.'
   };
   const viewBtn={ko:'📂 촬영 사진 보기',en:'📂 View Your Photos',de:'📂 Fotos ansehen'};
   const selBtn={ko:'✅ 사진 셀렉 시작하기',en:'✅ Start Photo Selection',de:'✅ Fotoauswahl starten'};
@@ -16652,6 +16667,10 @@ function validateSelectDelivery_(sub,existingPickupEventId,row,prints,photocard,
   if(method==='pickup'){
     const pickupDate=String(sub.pickupDate||'').trim();
     const pickupTime=String(sub.pickupTime||'').trim();
+    // 출력 후 픽업예약 흐름(2026-07): 제출 시엔 방식만 확정하고 일정은 인화 완료 후
+    // 별도 예약 페이지에서 신청한다. 날짜/시간이 안 오면 '연기'로 처리(deferred).
+    // 둘 중 하나만 온 경우는 여전히 입력 오류.
+    if(!pickupDate&&!pickupTime) return {method,pickupDate:'',pickupTime:'',deferred:true,mailName:'',mailAddress:'',mailAddressText:''};
     if(!pickupDate||!pickupTime) throw new Error('픽업 날짜와 시간을 선택해 주세요.');
     if(!selectPickupSlotAvailable_(pickupDate,pickupTime,existingPickupEventId)) throw new Error('선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.');
     return {method,pickupDate,pickupTime,mailName:'',mailAddress:'',mailAddressText:''};
@@ -16680,6 +16699,9 @@ function syncSelectPickupEvent_(existingEventId,row,sessionId,delivery){
     }
     return '';
   }
+  // 픽업 연기(출력 후 예약 대기): 일정이 아직 없으면 이벤트를 만들지도 지우지도 않는다.
+  // 구흐름에서 이미 잡힌 이벤트가 있으면 그대로 유지(재제출 시 예약 소실 방지).
+  if(!delivery.pickupDate||!delivery.pickupTime) return currentId;
 
   const startTime=new Date(`${delivery.pickupDate}T${delivery.pickupTime}:00`);
   const endTime=new Date(startTime.getTime()+SELECT_PICKUP_DURATION_MIN*60000);
@@ -16708,6 +16730,136 @@ function syncSelectPickupEvent_(existingEventId,row,sessionId,delivery){
   return calendar.createEvent(title,startTime,endTime,{location:STUDIO_ADDRESS,description}).getId();
 }
 
+/* ===== 출력 후 픽업 예약 (2026-07) — 제출 시엔 수령방식만 확정하고, 인화 완료 후
+   markSelectPrintDone_이 예약 안내 메일을 보내면 고객이 전용 페이지(select.studio-mean.com/pickup/)
+   에서 일정을 신청한다. 세션ID가 접근권한(셀렉 링크와 동일 신뢰모델). ===== */
+var SELECT_PICKUP_PAGE_BASE='https://select.studio-mean.com/pickup/';
+
+// 고객 픽업 일정 신청/변경 — 공개 라우트 select-pickup-schedule에서 호출
+function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
+  const sid=String(sessionId||'').trim();
+  const date=String(pickupDate||'').trim();
+  const time=String(pickupTime||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{2}:\d{2}$/.test(time)) return{ok:false,message:'픽업 날짜와 시간을 선택해 주세요.'};
+  // 세션당 쿨다운(10초) — 이중클릭·다중탭·스팸 재예약으로 인한 캘린더 이벤트 난사/메일 폭주 방지
+  try{
+    const cd=CacheService.getScriptCache();
+    const cdKey='pickup_sched_cd_'+sid;
+    if(cd.get(cdKey)) return{ok:false,message:'방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.'};
+    cd.put(cdKey,'1',10);
+  }catch(e){}
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  let done=null; // 락 안에서는 시트/캘린더만 만지고, 메일은 락 해제 후 발송(락 점유시간 최소화)
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss); // 신규 컬럼 마이그레이션 보장
+    if(!selSh) return{ok:false,message:'시스템 오류'};
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+    if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+    const row=rows[idx+1];
+    const rowNum=idx+2;
+    if(isSelectFinalLockedStatus_(row[SELECT_COL['상태']])) return{ok:false,message:'이미 완료된 세션입니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
+    if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') return{ok:false,message:'픽업 수령으로 신청된 세션이 아닙니다. 변경을 원하시면 스튜디오로 연락해 주세요.'};
+    const printDone=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
+    if(!printDone) return{ok:false,message:'아직 인화 준비 중입니다. 인화가 완료되면 예약 안내 메일을 보내드립니다.'};
+    const prevPickupAt=String(row[SELECT_COL['픽업일시']]||'').trim();
+    if(prevPickupAt===`${date} ${time}`) return{ok:true,pickupAt:prevPickupAt,rescheduled:false,unchanged:true}; // 동일 슬롯 재요청 no-op(메일/캘린더 재작업 방지)
+    const existingEventId=String(row[SELECT_COL['픽업캘린더ID']]||'').trim();
+    if(!selectPickupSlotAvailable_(date,time,existingEventId)) return{ok:false,message:'선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.'};
+    const eventId=syncSelectPickupEvent_(existingEventId,row,sid,{method:'pickup',pickupDate:date,pickupTime:time});
+    selSh.getRange(rowNum,SELECT_COL['픽업일시']+1).setValue(`${date} ${time}`);
+    selSh.getRange(rowNum,SELECT_COL['픽업캘린더ID']+1).setValue(eventId||'');
+    bumpCalCacheVer_();
+    done={
+      name:String(row[SELECT_COL['고객명']]||''),
+      lang:String(row[SELECT_COL['언어']]||'ko'),
+      email:String(row[SELECT_COL['이메일']]||'').trim(),
+      product:String(row[SELECT_COL['상품']]||''),
+      prevPickupAt:prevPickupAt
+    };
+  }finally{
+    lock.releaseLock();
+  }
+  // 고객 확인 메일 (트라이링구얼) + 어드민 알림 — 락 밖
+  if(done.email&&done.email.indexOf('@')>0){
+    try{ _sendSelectPickupConfirmEmail_(done.email,done.name,done.lang,date,time,sid,!!done.prevPickupAt); }catch(e){Logger.log('pickup confirm mail fail: '+e.message);}
+  }
+  try{
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,
+      subject:`[픽업예약${done.prevPickupAt?'변경':''}] ${done.name}님 — ${date} ${time}`,
+      htmlBody:`<div style="font-family:-apple-system,sans-serif;font-size:14px;line-height:1.7;">📦 <b>${escapeHtml_(done.name)}</b>님이 픽업 시간을 ${done.prevPickupAt?'변경':'예약'}했습니다.<br>일시: <b>${date} ${time}</b>${done.prevPickupAt?`<br>이전: ${escapeHtml_(done.prevPickupAt)}`:''}<br>상품: ${escapeHtml_(done.product)}<br>세션: ${escapeHtml_(sid)}</div>`});
+  }catch(e){}
+  return{ok:true,pickupAt:`${date} ${time}`,rescheduled:!!done.prevPickupAt};
+}
+
+// 픽업 예약/변경 확인 메일 — 일시·주소·변경 안내
+function _sendSelectPickupConfirmEmail_(email,name,lang,date,time,sessionId,isReschedule){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const subj={
+    ko:`[Studio mean] ✅ 픽업 예약 ${isReschedule?'변경 ':''}확인 — ${date} ${time}`,
+    en:`[Studio mean] ✅ Pickup ${isReschedule?'rescheduled':'confirmed'} — ${date} ${time}`,
+    de:`[Studio mean] ✅ Abholung ${isReschedule?'geändert':'bestätigt'} — ${date} ${time}`
+  };
+  const body={
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>픽업 예약이 ${isReschedule?'변경':'확정'}되었습니다. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>예약 시간에 방문해 주시면 인화물을 전달해 드립니다.<br>일정 변경이 필요하시면 <a href="${pickupUrl}" style="color:#2563eb;">이 링크</a>에서 다시 선택하시면 됩니다.`,
+    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your pickup appointment has been ${isReschedule?'rescheduled':'confirmed'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Please visit us at the scheduled time to collect your prints.<br>Need to change it? Simply pick a new slot <a href="${pickupUrl}" style="color:#2563eb;">here</a>.`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihr Abholtermin wurde ${isReschedule?'geändert':'bestätigt'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Bitte besuchen Sie uns zum vereinbarten Termin, um Ihre Abzüge abzuholen.<br>Terminänderung? Wählen Sie <a href="${pickupUrl}" style="color:#2563eb;">hier</a> einfach einen neuen Slot.`
+  };
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
+      <div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#fff;">Studio mean</div>
+    </div>
+    <div style="padding:26px 25px;font-size:14px;color:#334155;line-height:1.8;">${body[L]}</div>
+    <div style="background:#f8fafc;padding:14px 25px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · ${STUDIO_ADDRESS} · studio.mean.de@gmail.com</div>
+  </div>`;
+  sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html});
+}
+
+// 인화 완료 → 픽업 예약 안내 메일 (1회, 픽업안내메일발송일시로 멱등). markSelectPrintDone_에서 호출.
+function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
+  if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') return false;
+  if(SELECT_COL['출력완료일시']==null||!String(row[SELECT_COL['출력완료일시']]||'').trim()) return false; // 인화 완료 전엔 안내 없음
+  if(String(row[SELECT_COL['픽업일시']]||'').trim()) return false;            // 이미 예약됨(구흐름 포함)
+  if(SELECT_COL['픽업안내메일발송일시']==null) return false;
+  if(String(row[SELECT_COL['픽업안내메일발송일시']]||'').trim()) return false; // 이미 안내함(재출력 멱등)
+  const email=String(row[SELECT_COL['이메일']]||'').trim();
+  if(!email||email.indexOf('@')<1) return false;
+  const name=String(row[SELECT_COL['고객명']]||'');
+  const lang=String(row[SELECT_COL['언어']]||'ko');
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const subj={
+    ko:`[Studio mean] 🖼 인화 완료 — 픽업 시간을 예약해 주세요, ${name}님`,
+    en:`[Studio mean] 🖼 Your prints are ready — book your pickup time`,
+    de:`[Studio mean] 🖼 Ihre Abzüge sind fertig — Abholtermin buchen`
+  };
+  const body={
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 월–금 09:30–18:30 · 토 09:00–16:30 (일/공휴일 휴무)</i>`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Mon–Fri 09:30–18:30 · Sat 09:00–16:30 (closed Sun/holidays)</i>`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Mo–Fr 09:30–18:30 · Sa 09:00–16:30 (So/Feiertage geschlossen)</i>`
+  };
+  const btn={ko:'📅 픽업 시간 예약하기',en:'📅 Book Pickup Time',de:'📅 Abholtermin buchen'};
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
+      <div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#fff;">Studio mean</div>
+    </div>
+    <div style="padding:26px 25px;font-size:14px;color:#334155;line-height:1.8;">
+      ${body[L]}
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="${pickupUrl}" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;padding:13px 34px;border-radius:999px;font-size:14px;font-weight:700;">${btn[L]}</a>
+      </div>
+      <div style="text-align:center;font-size:11px;color:#94a3b8;word-break:break-all;">${pickupUrl}</div>
+    </div>
+    <div style="background:#f8fafc;padding:14px 25px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">📍 Studio mean · ${STUDIO_ADDRESS} · studio.mean.de@gmail.com</div>
+  </div>`;
+  sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html});
+  selSh.getRange(rowNum,SELECT_COL['픽업안내메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
+  return true;
+}
+
 /* ===== 고객 출력(인화) 주문 — print.studio-mean.com 고객 모드에서 레이아웃/콜라주/텍스트를
    디자인해 제출. 세션ID가 접근권한(셀렉 링크와 동일 신뢰모델). 결제는 미포함(주문 등록만).
    저해상 웹 미리보기로 디자인 → 스튜디오가 로컬 고해상(Selects 동기화)으로 실제 출력. ===== */
@@ -16717,7 +16869,7 @@ var CUSTOMER_PRINT_ORDER_MAX_BYTES=600000; // 프리뷰 dataURL 포함 상한(�
 function markSelectPrintDone_(sessionId,info){
   const sid=String(sessionId||'').trim();
   if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
-  const selSh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  const selSh=ensureSelectSheet_(ensureSheets_().ss); // 신규 컬럼(픽업안내메일발송일시 등) 마이그레이션 보장
   if(!selSh) return{ok:false,message:'시스템 오류'};
   const rows=selSh.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
@@ -16728,7 +16880,13 @@ function markSelectPrintDone_(sessionId,info){
   const count=Math.max(0,parseInt((info&&info.count),10)||0);
   if(SELECT_COL['출력완료일시']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료일시']+1).setValue(now);
   if(SELECT_COL['출력완료매수']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료매수']+1).setValue(count);
-  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev};
+  // 출력 후 픽업예약 흐름: 픽업 세션이고 아직 미예약이면 예약 안내 메일 발송(1회 멱등)
+  let inviteSent=false;
+  try{
+    if(SELECT_COL['출력완료일시']!=null) rows[idx+1][SELECT_COL['출력완료일시']]=now; // 인메모리 행도 갱신(인바이트의 출력완료 게이트 통과)
+    inviteSent=maybeSendSelectPickupInvite_(selSh,rows[idx+1],rowNum,sid);
+  }catch(e){ Logger.log('pickup invite fail: '+e.message); }
+  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent};
 }
 
 function submitCustomerPrintOrder_(sessionId,order){
@@ -16874,7 +17032,9 @@ function submitPhotoSelection(sessionId,sub){
     selSh.getRange(rowNum,SELECT_COL['포토카드선택']+1).setValue(photocard?JSON.stringify(photocard):'');
     selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([[
       delivery.method==='none'?'':delivery.method,
-      delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      delivery.pickupDate&&delivery.pickupTime
+        ? `${delivery.pickupDate} ${delivery.pickupTime}`
+        : (delivery.method==='pickup'?String(row[SELECT_COL['픽업일시']]||''):''), // 연기 시 구흐름 예약 보존
       delivery.mailAddressText||delivery.mailAddress||'',
       pickupEventId||''
     ]]);
@@ -16889,7 +17049,7 @@ function submitPhotoSelection(sessionId,sub){
         const deliverySummary=delivery.method==='none'
           ? ''
           : delivery.method==='pickup'
-          ? `/픽업:${delivery.pickupDate} ${delivery.pickupTime}`
+          ? (delivery.pickupDate?`/픽업:${delivery.pickupDate} ${delivery.pickupTime}`:'/픽업:출력후예약')
           : '/우편수령';
         const photocardSummary=photocard?`/포토카드:${photocard.frontNum||'-'}-${photocard.backNum||'-'}`:'';
         const printChargeCount=prints.length+(printUpgrade.items||[]).length;
@@ -16982,13 +17142,25 @@ function submitPhotoSelection(sessionId,sub){
 
 function getSelectDeliveryAdminText_(delivery){
   if(!delivery||delivery.method==='none') return '출력물 수령 없음';
-  if(delivery.method==='pickup') return `픽업 예약 (${delivery.pickupDate} ${delivery.pickupTime})`;
+  if(delivery.method==='pickup'){
+    return delivery.pickupDate
+      ? `픽업 예약 (${delivery.pickupDate} ${delivery.pickupTime})`
+      : '픽업 (출력 후 예약 대기)';
+  }
   return `우편 발송<br>${selectMailAddressHtml_(delivery.mailAddressText||buildSelectMailAddressText_(delivery.mailName,delivery.mailAddress)||delivery.mailAddress)}`;
 }
 
 function getSelectDeliveryCustomerLine_(delivery,lang){
   if(!delivery||delivery.method==='none') return '';
   if(delivery.method==='pickup'){
+    if(!delivery.pickupDate){
+      // 출력 후 픽업예약 흐름: 제출 시엔 일정이 없다 — 인화 완료 후 예약 안내 메일이 간다.
+      return lang==='en'
+        ? '• Pickup: once your prints are ready, we will email you a link to book your pickup time.<br>'
+        : lang==='de'
+          ? '• Abholung: sobald Ihre Abzüge fertig sind, senden wir Ihnen per E-Mail einen Link zur Terminbuchung.<br>'
+          : '• 픽업: 인화가 완료되면 픽업 시간 예약 링크를 이메일로 보내드립니다.<br>';
+    }
     return lang==='en'
       ? `• Pickup appointment: ${delivery.pickupDate} ${delivery.pickupTime}<br>`
       : lang==='de'
@@ -17121,10 +17293,20 @@ function updatePhotoSelection(sessionId,sub){
     selSh.getRange(rowNum,SELECT_COL['포토카드선택']+1).setValue(photocard?JSON.stringify(photocard):'');
     selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([[
       delivery.method==='none'?'':delivery.method,
-      delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
+      delivery.pickupDate&&delivery.pickupTime
+        ? `${delivery.pickupDate} ${delivery.pickupTime}`
+        : (delivery.method==='pickup'?String(row[SELECT_COL['픽업일시']]||''):''), // 연기 시 구흐름 예약 보존
       delivery.mailAddressText||delivery.mailAddress||'',
       pickupEventId||''
     ]]);
+    // 이미 인화가 끝난 세션이 수정에서 픽업으로 전환(또는 픽업인데 미예약 유지)한 경우:
+    // markSelectPrintDone_은 다시 안 오므로 여기서 예약 안내 메일을 보낸다(멱등 컬럼으로 1회).
+    if(delivery.method==='pickup'&&!delivery.pickupDate){
+      try{
+        row[SELECT_COL['수령방식']]='pickup'; // 인메모리 행을 쓴 값으로 갱신 후 인바이트 조건 검사
+        maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId);
+      }catch(e){Logger.log('pickup invite on update fail: '+e.message);}
+    }
     const saveCheck=verifySelectSubmissionSaved_(selSh,rowNum,photos.length);
     const bookingRow=parseInt(row[SELECT_COL['예약장부행']]);
     if(bookingRow>1){
@@ -17194,6 +17376,7 @@ function getPhotoSelectionsAdmin(token){
       deliveryMethod:String(r[SELECT_COL['수령방식']]||''),
       pickupAt:String(r[SELECT_COL['픽업일시']]||''),
       mailAddress:String(r[SELECT_COL['우편주소']]||''),
+      printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(r[SELECT_COL['출력완료일시']]).str:'',
       invoiceRequested:false,
       businessInvoiceEmail:'',
       businessCompanyName:''
@@ -17272,6 +17455,7 @@ function getSelectDashboard(token){
               deliveryMethod:String(sr[SELECT_COL['수령방식']]||''),
               pickupAt:String(sr[SELECT_COL['픽업일시']]||''),
               mailAddress:String(sr[SELECT_COL['우편주소']]||''),
+              printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(sr[SELECT_COL['출력완료일시']]).str:'',
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')
             };

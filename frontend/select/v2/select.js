@@ -231,6 +231,8 @@ const els = {
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
   pickupScheduler: document.getElementById('pickupScheduler'),
+  pickupDeferredNote: document.getElementById('pickupDeferredNote'),
+  pickupExistingLine: document.getElementById('pickupExistingLine'),
   pickupCalendarStatus: document.getElementById('pickupCalendarStatus'),
   pickupPrevMonthBtn: document.getElementById('pickupPrevMonthBtn'),
   pickupNextMonthBtn: document.getElementById('pickupNextMonthBtn'),
@@ -314,12 +316,8 @@ async function boot() {
     updateReview();
     updateSubmitState();
     showApp();
-    if (state.deliveryMethod === 'pickup') {
-      await ensurePickupCalendarLoaded();
-      if (state.pickupDate) await loadPickupSlots(state.pickupDate);
-      updateReview();
-      updateSubmitState();
-    }
+    // 출력 후 픽업예약 흐름: 제출 단계에서 달력을 더 이상 열지 않는다.
+    // (구흐름에서 이미 잡힌 픽업일시는 state에 하이드레이션되어 안내문에 표시만 한다)
     setBanner(state.editMode ? '기존 제출 내용을 불러왔습니다. 수정 후 다시 제출할 수 있습니다.' : '셀렉 세션을 불러왔습니다.', 'success');
   } catch (error) {
     console.error(error);
@@ -1003,18 +1001,8 @@ function setDeliveryMethod(value) {
   }
   state.deliveryMethod = value;
   syncDeliveryUi();
-  if (value === 'pickup') {
-    ensurePickupCalendarLoaded()
-      .then(() => {
-        if (state.pickupDate) return loadPickupSlots(state.pickupDate).then(() => updateReview());
-        renderPickupSlots([]);
-        return null;
-      })
-      .catch((error) => {
-        console.error(error);
-        setBanner(`픽업 일정 조회 실패: ${error.message}`, 'error');
-      });
-  }
+  // 출력 후 픽업예약 흐름: 픽업을 선택해도 여기서 시간을 예약하지 않는다.
+  // 인화 완료 후 이메일로 받는 예약 페이지에서 일정을 신청한다.
   updateReview();
 }
 
@@ -1029,7 +1017,13 @@ function syncDeliveryUi() {
   els.deliveryReviewBlock?.classList.toggle('hidden', !deliveryRequired);
   els.deliveryPickupCard?.classList.toggle('active', method === 'pickup');
   els.deliveryMailCard?.classList.toggle('active', method === 'mail');
-  els.pickupScheduler?.classList.toggle('hidden', !deliveryRequired || method !== 'pickup');
+  els.pickupScheduler?.classList.add('hidden'); // 출력 후 픽업예약: 제출 단계 스케줄러 비활성
+  els.pickupDeferredNote?.classList.toggle('hidden', !deliveryRequired || method !== 'pickup');
+  if (els.pickupExistingLine) {
+    const hasExisting = method === 'pickup' && state.pickupDate && state.pickupTime;
+    els.pickupExistingLine.classList.toggle('hidden', !hasExisting);
+    els.pickupExistingLine.textContent = hasExisting ? `현재 예약된 픽업: ${state.pickupDate} ${state.pickupTime}` : '';
+  }
   els.mailAddressBox?.classList.toggle('hidden', !deliveryRequired || method !== 'mail');
   if (els.mailNameInput) els.mailNameInput.value = state.mailName || '';
   if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
@@ -2419,7 +2413,7 @@ function getDeliveryReviewText() {
   if (!requiresDeliverySelection()) return '출력물 수령 없음';
   if (state.deliveryMethod === 'pickup') {
     if (state.pickupDate && state.pickupTime) return `스튜디오 픽업 · ${state.pickupDate} ${state.pickupTime}`;
-    return '스튜디오 픽업 · 날짜와 시간을 선택해 주세요.';
+    return '스튜디오 픽업 · 인화 완료 후 예약 링크를 이메일로 보내드립니다.';
   }
   if (state.deliveryMethod === 'mail') {
     const mailName = getMailNameForSubmission();
@@ -2436,7 +2430,7 @@ function validateDeliverySelection() {
   if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) { setBanner('수령 방식을 먼저 선택해 주세요.', 'error'); return false; }
   if (state.deliveryMethod === 'pickup') {
-    if (!state.pickupDate || !state.pickupTime) { setBanner('픽업 날짜와 시간을 모두 선택해 주세요.', 'error'); return false; }
+    // 출력 후 픽업예약: 제출 시 일정 불필요 — 인화 완료 후 예약 페이지에서 신청
     return true;
   }
   const mailName = getMailNameForSubmission();
@@ -2580,7 +2574,6 @@ function canSubmit() {
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
   if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) return false;
-  if (state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)) return false;
   if (state.deliveryMethod === 'mail') {
     const mailName = getMailNameForSubmission();
     const mailAddress = getMailAddressForSubmission();
@@ -2634,8 +2627,6 @@ function renderStepWarnings() {
       ? '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.'
       : !state.deliveryMethod
       ? '수령 방식을 선택해야 제출할 수 있습니다.'
-      : state.deliveryMethod === 'pickup' && (!state.pickupDate || !state.pickupTime)
-        ? '픽업 날짜와 시간을 선택해야 제출할 수 있습니다.'
       : state.deliveryMethod === 'mail' && !getMailNameForSubmission()
         ? '우편 수령 받으실 분 성함을 입력해야 제출할 수 있습니다.'
       : state.deliveryMethod === 'mail' && !getMailAddressForSubmission()
@@ -2745,8 +2736,10 @@ async function onSubmit() {
     ],
     marketing: state.marketing,
     deliveryMethod: deliveryRequired ? state.deliveryMethod : 'none',
-    pickupDate: deliveryRequired && state.deliveryMethod === 'pickup' ? state.pickupDate : '',
-    pickupTime: deliveryRequired && state.deliveryMethod === 'pickup' ? state.pickupTime : '',
+    // 출력 후 픽업예약: 제출 시 일정을 보내지 않는다(백엔드가 연기 처리·구흐름 예약 보존).
+    // 과거 슬롯 재검증 오류도 함께 회피된다.
+    pickupDate: '',
+    pickupTime: '',
     mailName: deliveryRequired && state.deliveryMethod === 'mail' ? getMailNameForSubmission() : '',
     mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
     photocard: getPhotocardPayload(),

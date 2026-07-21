@@ -9145,9 +9145,19 @@ function escHtml(v){
 function selectDeliveryInfo(sel){
   const method=String((sel&&sel.deliveryMethod)||'').trim();
   if(method==='pickup'){
+    const pickupAt=String(sel.pickupAt||'').trim();
+    if(!pickupAt){
+      // 출력 후 픽업예약 흐름: 일정 미정 — 인화 완료 여부에 따라 대기 단계 구분
+      const printed=String(sel.printDoneAt||'').trim();
+      return {
+        label:printed?'픽업·예약대기':'픽업·인화대기',
+        detail:printed?('인화완료 '+printed+' · 고객 예약 대기'):'인화 완료 시 예약 안내 자동발송',
+        tone:'background:#fffbeb;color:#b45309;border:1px solid #fde68a;'
+      };
+    }
     return {
       label:'픽업',
-      detail:String(sel.pickupAt||'').trim(),
+      detail:pickupAt,
       tone:'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;'
     };
   }
