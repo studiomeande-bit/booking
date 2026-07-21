@@ -11276,16 +11276,41 @@ function _buildDailyBriefingData_(){
       }
     }
   }catch(e){Logger.log('briefing quotes fail: '+e.message);}
-  // 셀렉 현황
+  // 셀렉 현황 + 인화 출력 대기
   const select={waiting:0,revisionRequested:0,submitted:0};
+  // 인화 출력 대기: 추가인화 주문이 있고 아직 출력완료 기록이 없으며, 실제 물리 출력/배송이
+  // 필요한(디지털전용·MRT·출력물없음 제외) 세션. 앵커일 = 제출/보정본발송/촬영일 중 가장 최근
+  // 활동일 기준 60일 창 — 기능 도입(2026-07-20) 전 미기록 과거 세션의 영구 '대기' 홍수를 막고
+  // (롤링 윈도, 자가정리), 보정이 느린 건이 제출일 기준으로 조기 탈락하는 것도 막는다.
+  const printPending={count:0,items:[]};
   try{
     const selSh=ensureSelectSheet_(ensureSheets_().ss);
     const sRows=selSh.getDataRange().getValues();
+    const printCutoff=Utilities.formatDate(new Date(now.getTime()-60*86400000),tz,'yyyy-MM-dd');
     for(let i=1;i<sRows.length;i++){
       const st=String(sRows[i][SELECT_COL['상태']]||'').trim();
       if(st==='대기중') select.waiting++;
       else if(st==='재수정요청') select.revisionRequested++;
       else if(st==='제출완료') select.submitted++;
+      if(SELECT_COL['출력완료일시']!=null && selectJsonArrayHasItems_(sRows[i][SELECT_COL['추가인화']])
+         && !String(sRows[i][SELECT_COL['출력완료일시']]||'').trim()){
+        const anchor=[SELECT_COL['제출일시'],SELECT_COL['보정본발송일시'],SELECT_COL['촬영일']]
+          .map(function(c){return c!=null?parseDateSafe_(sRows[i][c]).str.slice(0,10):'';})
+          .filter(Boolean).sort().pop()||'';
+        // 배송필요 판정은 예약장부 행 읽기가 있어 비싸므로 값싼 조건을 모두 통과한 뒤에만 호출한다.
+        if(anchor && anchor>=printCutoff && selectSessionRequiresDeliveryForRow_(sRows[i])){
+          let cnt=0;
+          try{const arr=JSON.parse(String(sRows[i][SELECT_COL['추가인화']]||'[]'));
+              if(Array.isArray(arr)) cnt=arr.reduce(function(s,p){return s+(Number(p&&(p.qty||p.quantity)||1)||1);},0);}catch(e){}
+          printPending.count++;
+          if(printPending.items.length<6) printPending.items.push({
+            name:String(sRows[i][SELECT_COL['고객명']]||'').trim()||'(이름없음)',
+            shootDate:(parseDateSafe_(sRows[i][SELECT_COL['촬영일']]).str||'').slice(0,10),
+            submittedAt:(parseDateSafe_(sRows[i][SELECT_COL['제출일시']]).str||'').slice(0,10),
+            count:cnt
+          });
+        }
+      }
     }
   }catch(e){Logger.log('briefing select fail: '+e.message);}
   // 회계 인박스 (미처리 증빙)
@@ -11353,7 +11378,7 @@ function _buildDailyBriefingData_(){
     if(endQ[mm]&&dd>=25){qtr.active=true;qtr.label=endQ[mm];}
     else if(startQ[mm]&&dd<=20){qtr.active=true;qtr.label=startQ[mm];}
   }catch(e){}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -11381,6 +11406,13 @@ function sendDailyBriefingEmail_(){
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
+  if(b.printPending&&b.printPending.count>0){
+    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b> — 인화앱에서 세션 불러와 자동출력`));
+    (b.printPending.items||[]).forEach(function(p){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`));
+    });
+    if(b.printPending.count>(b.printPending.items||[]).length) actions.push(line(`&nbsp;&nbsp;· 외 ${b.printPending.count-(b.printPending.items||[]).length}건`));
+  }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   if(b.consultations&&b.consultations.open>0){
     actions.push(line(`💼 미처리 상담 <b>${b.consultations.open}건</b> — Claude에게 "상담 견적 초안 만들어줘"`));
@@ -11426,7 +11458,7 @@ function sendDailyBriefingEmail_(){
     </div>
   </div>`;
   const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
-  const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested;
+  const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
   sendTrackedEmail_({
     to:CONFIG.ADMIN_EMAIL,
     subject:`[브리핑 ${b.date.slice(5)}] 오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건${b.unpaidBalances.length?` · 미수 ${b.unpaidBalances.length}건`:''}`,
@@ -15456,7 +15488,7 @@ function listRecentRawSelectSessionsForAgent_(token,options){
 
 // 인화 주문(추가인화)이 실제로 있는 최근 셀렉 세션만 — 이메일/연락처는 목록에 담지 않는다.
 function listRecentPrintReadySessions_(limit){
-  const cap=Math.max(1,Math.min(50,parseInt(limit,10)||30));
+  const cap=Math.max(1,Math.min(50,parseInt(limit,10)||50)); // 기본 50 — 브리핑 대기건과 드롭다운 노출 정렬(헤드룸)
   const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
   if(!sh) return {sessions:[]};
   const lastRow=sh.getLastRow();
