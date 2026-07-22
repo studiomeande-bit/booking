@@ -4497,11 +4497,18 @@ function renderInstaReview(res){
       + '<textarea class="insta-cap-carousel" rows="4" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical;margin-bottom:8px;">'+capC+'</textarea>'
       + (isReel?('<label style="font-size:11px;color:#64748b;">캡션 (릴스)</label>'
           + '<textarea class="insta-cap-reel" rows="4" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical;margin-bottom:8px;">'+capR+'</textarea>'):'')
-      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'
-      + '<span style="font-size:11px;color:#64748b;">게시 예정(첫 게시 기준):</span>'
-      + '<input type="date" class="insta-sched-date" value="'+_instaEsc(ej.scheduledDate||'')+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
-      + '<input type="time" class="insta-sched-time" value="'+_instaEsc(ej.scheduledTime||'')+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
-      + '<span style="font-size:11px;color:#94a3b8;">현재: '+_instaEsc(it.slot||'-')+'</span></div>'
+      // 게시 예정 입력칸 프리필: 편집한 값(editJson) 우선, 없으면 현재 예약된 실제 시각(schedISO 분해).
+      + (function(){
+          var iso=String(it.schedISO||''); var curD='', curT='';
+          if(iso.indexOf('T')>-1){ curD=iso.split('T')[0]; curT=iso.split('T')[1].slice(0,5); }
+          var vD=(ej.scheduledDate!=null&&ej.scheduledDate!=='')?ej.scheduledDate:curD;
+          var vT=(ej.scheduledTime!=null&&ej.scheduledTime!=='')?ej.scheduledTime:curT;
+          return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'
+            + '<span style="font-size:11px;color:#64748b;">게시 예정(첫 게시 기준):</span>'
+            + '<input type="date" class="insta-sched-date" data-cur="'+_instaEsc(curD)+'" value="'+_instaEsc(vD)+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
+            + '<input type="time" class="insta-sched-time" data-cur="'+_instaEsc(curT)+'" value="'+_instaEsc(vT)+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
+            + '<span style="font-size:11px;color:#94a3b8;">현재: '+_instaEsc(it.slot||'-')+'</span></div>';
+        })()
       + '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
       + '<button class="btn btn-outline btn-sm" style="border-color:#c4b5fd;color:#6d28d9;" onclick="saveInstaReviewEdit(\''+keyJs+'\',this)">💾 편집 저장</button>'
       + btns + '</div>'
@@ -4544,13 +4551,18 @@ function saveInstaReviewEdit(key, btn){
   // 편집 가능한 슬라이드가 있을 때만 최소 1장 검증(읽기전용 카드는 캡션·예정시각만 저장 — order/dropped 빈값).
   if(slides.length && !order.length){ alert('슬라이드를 최소 1장은 남겨야 합니다.'); return; }
   var capCEl=card.querySelector('.insta-cap-carousel'), capREl=card.querySelector('.insta-cap-reel');
+  // 예정 시각: 현재 예약값과 동일하면 오버라이드하지 않음(불필요한 재배정 방지) — 실제 변경했을 때만 전송.
+  var dEl=card.querySelector('.insta-sched-date'), tEl=card.querySelector('.insta-sched-time');
+  var sD=dEl?dEl.value:'', sT=tEl?tEl.value:'';
+  var curD=dEl?(dEl.getAttribute('data-cur')||''):'', curT=tEl?(tEl.getAttribute('data-cur')||''):'';
+  var schedChanged = (sD!==curD) || (sT!==curT);
   var edit={
     captionCarousel: capCEl?capCEl.value:'',
     captionReel: capREl?capREl.value:'',
     slideOrder: order,
     dropped: dropped,
-    scheduledDate: (card.querySelector('.insta-sched-date')||{}).value||'',
-    scheduledTime: (card.querySelector('.insta-sched-time')||{}).value||''
+    scheduledDate: schedChanged?sD:'',
+    scheduledTime: schedChanged?sT:''
   };
   if(btn){ btn.disabled=true; btn.textContent='저장 중…'; }
   google.script.run

@@ -134,7 +134,7 @@ const TRAVEL_COL=TRAVEL_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트일시','고객명','연락처','이메일','촬영일시','촬영종류','상품','마케팅동의','콘텐츠상태','플랫폼','게시예정일','게시시간','게시상태','업로드여부','게시URL','드라이브링크','캡션메모','관리메모','담당자'];
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 인스타 검수: 로컬 파이프라인의 built(게시대기) 항목을 ERP에서 미리보기+승인 (릴스·캐러셀·캠페인 공통)
-const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL','캡션릴스','슬라이드파일명','편집JSON','편집상태'];
+const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL','캡션릴스','슬라이드파일명','편집JSON','편집상태','예정ISO'];
 const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
@@ -1231,6 +1231,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='insta-review-poll') return jsonOk_(pollInstaReviewForAgent_(token,payload));
         if(action==='insta-review-save-edit') return jsonOk_(saveInstaReviewEditAdmin(token,payload.key,payload.edit||payload));
         if(action==='insta-review-mark-applied') return jsonOk_(markInstaReviewAppliedForAgent_(token,payload));
+        if(action==='insta-review-mark-posted') return jsonOk_(markInstaReviewPostedForAgent_(token,payload));
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -2197,6 +2198,8 @@ function upsertInstaReviewForAgent_(token,payload){
   if(!edited) row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
   if(INSTA_REVIEW_COL['캡션릴스']!=null && !edited) row[INSTA_REVIEW_COL['캡션릴스']]=String(payload.captionReel||'').slice(0,2000);
   if(INSTA_REVIEW_COL['슬라이드파일명']!=null) row[INSTA_REVIEW_COL['슬라이드파일명']]=String(payload.slideNames||'');
+  // 예정ISO: 현재 예약된 첫 게시 시각(raw, 'yyyy-MM-ddTHH:mm') — 어드민 입력칸 프리필용. 편집과 무관하게 갱신.
+  if(INSTA_REVIEW_COL['예정ISO']!=null && payload.schedISO!=null) row[INSTA_REVIEW_COL['예정ISO']]=String(payload.schedISO||'');
   row[INSTA_REVIEW_COL['예정슬롯']]=String(payload.slot||'');
   row[INSTA_REVIEW_COL['슬라이드수']]=payload.slideCount||'';
   row[INSTA_REVIEW_COL['폴더']]=String(payload.folder||'');
@@ -2250,7 +2253,8 @@ function listInstaReviewAdmin(token){
       captionReel:INSTA_REVIEW_COL['캡션릴스']!=null?String(r[INSTA_REVIEW_COL['캡션릴스']]||''):'',
       slideNames:INSTA_REVIEW_COL['슬라이드파일명']!=null?String(r[INSTA_REVIEW_COL['슬라이드파일명']]||''):'',
       editJson:INSTA_REVIEW_COL['편집JSON']!=null?String(r[INSTA_REVIEW_COL['편집JSON']]||''):'',
-      editState:INSTA_REVIEW_COL['편집상태']!=null?String(r[INSTA_REVIEW_COL['편집상태']]||''):''
+      editState:INSTA_REVIEW_COL['편집상태']!=null?String(r[INSTA_REVIEW_COL['편집상태']]||''):'',
+      schedISO:INSTA_REVIEW_COL['예정ISO']!=null?String(r[INSTA_REVIEW_COL['예정ISO']]||''):''
     });
   }
   items.sort(function(a,b){return String(b.updatedAt).localeCompare(String(a.updatedAt));});
@@ -2328,6 +2332,23 @@ function saveInstaReviewEditAdmin(token,key,edit){
     return {ok:true,key:key,editState:'편집됨',dropped:dropped.length,keptOrder:order.length};
   }
   throw new Error('검수 항목을 찾지 못했습니다: '+key);
+}
+
+// 게시 완료된 항목을 검수 목록에서 제거 (상태 → 게시완료). 로컬 publish 파이프라인이 게시/종료 시 호출.
+function markInstaReviewPostedForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const key=String(payload.key||'').trim();
+  if(!key) throw new Error('key(큐키)가 필요합니다.');
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  for(let i=1;i<vals.length;i++){
+    if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')===key){
+      sh.getRange(i+1,INSTA_REVIEW_COL['상태']+1).setValue('게시완료');
+      return {ok:true,key:key,status:'게시완료'};
+    }
+  }
+  return {ok:true,key:key,status:'not-found'};   // 이미 없으면 조용히 성공(멱등)
 }
 
 // 로컬이 편집을 파이프라인에 반영 완료했음을 표시 (편집상태 편집됨 → 반영됨). erp-agent insta-review-mark-applied.
