@@ -134,7 +134,7 @@ const TRAVEL_COL=TRAVEL_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트일시','고객명','연락처','이메일','촬영일시','촬영종류','상품','마케팅동의','콘텐츠상태','플랫폼','게시예정일','게시시간','게시상태','업로드여부','게시URL','드라이브링크','캡션메모','관리메모','담당자'];
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 인스타 검수: 로컬 파이프라인의 built(게시대기) 항목을 ERP에서 미리보기+승인 (릴스·캐러셀·캠페인 공통)
-const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL'];
+const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL','캡션릴스','슬라이드파일명','편집JSON','편집상태'];
 const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
@@ -1229,6 +1229,8 @@ function handlePublicApiRequest_(route,method,e){
         // 인스타 검수 (게시대기 미리보기+승인)
         if(action==='insta-review-upsert') return jsonOk_(upsertInstaReviewForAgent_(token,payload));
         if(action==='insta-review-poll') return jsonOk_(pollInstaReviewForAgent_(token,payload));
+        if(action==='insta-review-save-edit') return jsonOk_(saveInstaReviewEditAdmin(token,payload.key,payload.edit||payload));
+        if(action==='insta-review-mark-applied') return jsonOk_(markInstaReviewAppliedForAgent_(token,payload));
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
@@ -2166,6 +2168,25 @@ function upsertInstaReviewForAgent_(token,payload){
   const status=(cur==='승인'||cur==='게시완료') ? cur
     : (String(payload.presetStatus||'')==='승인' ? '승인' : '검수대기');
   const row=rIdx>-1 ? vals[rIdx-1].slice() : new Array(INSTA_REVIEW_HEADERS.length).fill('');
+  // 사장님이 편집한 행(편집상태 편집됨/반영됨)이면 캡션·캡션릴스·편집JSON은 로컬 push가 덮어쓰지 않는다.
+  // 반영됨까지 보존 — mark-applied 후 다음 일일 push가 편집 캡션을 자동캡션으로 되돌리지 않게.
+  // 미디어·예정슬롯·슬라이드수·슬라이드파일명만 갱신(콘텐츠 재호스팅 반영). 편집 보존이 핵심.
+  const es=(INSTA_REVIEW_COL['편집상태']!=null)?String(row[INSTA_REVIEW_COL['편집상태']]||''):'';
+  const edited=(es==='편집됨'||es==='반영됨');
+  // 콘텐츠(슬라이드 파일명)가 편집 이후 바뀌었으면, 파일명 기준 슬라이드 편집(slideOrder/dropped)은
+  // 엉뚱한 슬라이드에 적용될 수 있으므로 무효화한다(캡션·예정시각 편집은 유지).
+  if(edited && INSTA_REVIEW_COL['편집JSON']!=null && payload.slideNames!=null){
+    const newNames=String(payload.slideNames||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    try{
+      const ej=JSON.parse(String(row[INSTA_REVIEW_COL['편집JSON']]||'{}'))||{};
+      const refNames=[].concat(ej.slideOrder||[],ej.dropped||[]);
+      const stale=refNames.some(function(n){return newNames.indexOf(n)===-1;});
+      if((ej.slideOrder&&ej.slideOrder.length||ej.dropped&&ej.dropped.length) && stale){
+        ej.slideOrder=[]; ej.dropped=[];
+        row[INSTA_REVIEW_COL['편집JSON']]=JSON.stringify(ej);
+      }
+    }catch(e){}
+  }
   row[INSTA_REVIEW_COL['큐키']]=key;
   row[INSTA_REVIEW_COL['유형']]=String(payload.type||'');
   row[INSTA_REVIEW_COL['이름']]=String(payload.name||'');
@@ -2173,14 +2194,18 @@ function upsertInstaReviewForAgent_(token,payload){
   row[INSTA_REVIEW_COL['커버URL']]=String(payload.coverUrl||'');
   row[INSTA_REVIEW_COL['슬라이드URL']]=String(payload.slideUrls||'');
   row[INSTA_REVIEW_COL['영상URL']]=String(payload.videoUrl||'');
-  row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
+  if(!edited) row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
+  if(INSTA_REVIEW_COL['캡션릴스']!=null && !edited) row[INSTA_REVIEW_COL['캡션릴스']]=String(payload.captionReel||'').slice(0,2000);
+  if(INSTA_REVIEW_COL['슬라이드파일명']!=null) row[INSTA_REVIEW_COL['슬라이드파일명']]=String(payload.slideNames||'');
   row[INSTA_REVIEW_COL['예정슬롯']]=String(payload.slot||'');
   row[INSTA_REVIEW_COL['슬라이드수']]=payload.slideCount||'';
   row[INSTA_REVIEW_COL['폴더']]=String(payload.folder||'');
   row[INSTA_REVIEW_COL['업데이트일시']]=now;
   if(rIdx>-1){ sh.getRange(rIdx,1,1,INSTA_REVIEW_HEADERS.length).setValues([row]); }
   else { row[INSTA_REVIEW_COL['등록일시']]=now; sh.appendRow(row); rIdx=sh.getLastRow(); }
-  return {ok:true,key:key,status:status,rowIndex:rIdx};
+  // slideNamesCol: 슬라이드파일명 컬럼이 마이그레이션됐는지 — 로컬이 백필 필요 여부 판단(배포순서 무관).
+  return {ok:true,key:key,status:status,rowIndex:rIdx,editPreserved:edited,
+          slideNamesCol:INSTA_REVIEW_COL['슬라이드파일명']!=null};
 }
 
 // 로컬 poll — 승인된 큐키 목록 반환 (로컬이 APPROVE 파일 생성). markPosted=true면 게시완료 처리.
@@ -2191,7 +2216,15 @@ function pollInstaReviewForAgent_(token,payload){
   const approved=[];
   for(let i=1;i<vals.length;i++){
     if(String(vals[i][INSTA_REVIEW_COL['상태']]||'')==='승인'){
-      approved.push({key:String(vals[i][INSTA_REVIEW_COL['큐키']]||''),folder:String(vals[i][INSTA_REVIEW_COL['폴더']]||'')});
+      const it={key:String(vals[i][INSTA_REVIEW_COL['큐키']]||''),folder:String(vals[i][INSTA_REVIEW_COL['폴더']]||'')};
+      // 승인 전 편집 반영: 로컬 poll_approvals 가 APPROVE 생성 직전에 적용(멱등). 편집 안 한 건은 빈 값.
+      if(INSTA_REVIEW_COL['편집상태']!=null){
+        it.editState=String(vals[i][INSTA_REVIEW_COL['편집상태']]||'');
+        it.caption=String(vals[i][INSTA_REVIEW_COL['캡션']]||'');
+        it.captionReel=INSTA_REVIEW_COL['캡션릴스']!=null?String(vals[i][INSTA_REVIEW_COL['캡션릴스']]||''):'';
+        it.editJson=INSTA_REVIEW_COL['편집JSON']!=null?String(vals[i][INSTA_REVIEW_COL['편집JSON']]||''):'';
+      }
+      approved.push(it);
     }
   }
   return {ok:true,approved:approved,count:approved.length};
@@ -2213,7 +2246,11 @@ function listInstaReviewAdmin(token){
       coverUrl:String(r[INSTA_REVIEW_COL['커버URL']]||''), slideUrls:String(r[INSTA_REVIEW_COL['슬라이드URL']]||''),
       videoUrl:String(r[INSTA_REVIEW_COL['영상URL']]||''),
       caption:String(r[INSTA_REVIEW_COL['캡션']]||''), slot:String(r[INSTA_REVIEW_COL['예정슬롯']]||''),
-      slideCount:r[INSTA_REVIEW_COL['슬라이드수']]||'', updatedAt:String(r[INSTA_REVIEW_COL['업데이트일시']]||'')
+      slideCount:r[INSTA_REVIEW_COL['슬라이드수']]||'', updatedAt:String(r[INSTA_REVIEW_COL['업데이트일시']]||''),
+      captionReel:INSTA_REVIEW_COL['캡션릴스']!=null?String(r[INSTA_REVIEW_COL['캡션릴스']]||''):'',
+      slideNames:INSTA_REVIEW_COL['슬라이드파일명']!=null?String(r[INSTA_REVIEW_COL['슬라이드파일명']]||''):'',
+      editJson:INSTA_REVIEW_COL['편집JSON']!=null?String(r[INSTA_REVIEW_COL['편집JSON']]||''):'',
+      editState:INSTA_REVIEW_COL['편집상태']!=null?String(r[INSTA_REVIEW_COL['편집상태']]||''):''
     });
   }
   items.sort(function(a,b){return String(b.updatedAt).localeCompare(String(a.updatedAt));});
@@ -2232,6 +2269,82 @@ function approveInstaReviewAdmin(token,key,approve){
       sh.getRange(i+1,INSTA_REVIEW_COL['상태']+1).setValue(newSt);
       sh.getRange(i+1,INSTA_REVIEW_COL['승인일시']+1).setValue((approve===false)?'':_nowStamp_());
       return {ok:true,key:key,status:newSt};
+    }
+  }
+  throw new Error('검수 항목을 찾지 못했습니다: '+key);
+}
+
+// ── 승인 전 편집 (사장님이 AdminV2에서 캡션·슬라이드·예정시각 수정) ─────────────
+// edit = {captionCarousel, captionReel, slideOrder:[파일명...], dropped:[파일명...],
+//         scheduledDate:'YYYY-MM-DD', scheduledTime:'HH:MM'}
+// 캡션/캡션릴스/편집JSON 기록 + 편집상태='편집됨'. 로컬 poll 이 승인 시 편집을 파이프라인에 반영한다.
+// erp-agent 액션 insta-review-save-edit 로도 노출(로컬 검증용). add-only.
+function saveInstaReviewEditAdmin(token,key,edit){
+  assertAdmin_(token);
+  key=String(key||'').trim();
+  if(!key) throw new Error('key(큐키)가 필요합니다.');
+  edit=edit||{};
+  if(INSTA_REVIEW_COL['편집상태']==null) throw new Error('인스타검수 시트가 아직 마이그레이션되지 않았습니다. 목록을 새로고침해 주세요.');
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  for(let i=1;i<vals.length;i++){
+    if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')!==key) continue;
+    const st=String(vals[i][INSTA_REVIEW_COL['상태']]||'');
+    if(st==='게시완료') throw new Error('이미 게시완료된 항목은 편집할 수 없습니다.');
+    // 슬라이드 파일명 목록(참조) — 슬라이드 편집은 현재 파일명에 존재하는 것만 저장(스테일/'#N' 방지).
+    const allNames=String(vals[i][INSTA_REVIEW_COL['슬라이드파일명']]||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    let dropped=(edit.dropped||[]).map(function(s){return String(s||'').trim();}).filter(Boolean);
+    let order=(edit.slideOrder||[]).map(function(s){return String(s||'').trim();}).filter(Boolean);
+    if(!allNames.length){
+      // 파일명 미동기화 상태 — 슬라이드 편집은 저장하지 않음(캡션·예정시각만). 잘못된 편집 반영 원천 차단.
+      order=[]; dropped=[];
+    }else{
+      order=order.filter(function(n){return allNames.indexOf(n)>-1;});
+      dropped=dropped.filter(function(n){return allNames.indexOf(n)>-1;});
+      if(order.length||dropped.length){
+        const kept=(order.length?order:allNames).filter(function(n){return dropped.indexOf(n)===-1;});
+        if(!kept.length) throw new Error('슬라이드를 최소 1장은 남겨야 합니다.');
+      }
+    }
+    const editObj={
+      captionCarousel:String(edit.captionCarousel||'').slice(0,2000),
+      captionReel:String(edit.captionReel||'').slice(0,2000),
+      slideOrder:order,
+      dropped:dropped,
+      scheduledDate:String(edit.scheduledDate||'').trim(),
+      scheduledTime:String(edit.scheduledTime||'').trim(),
+      editedAt:_nowStamp_()
+    };
+    const rowNum=i+1;
+    sh.getRange(rowNum,INSTA_REVIEW_COL['캡션']+1).setValue(editObj.captionCarousel);
+    if(INSTA_REVIEW_COL['캡션릴스']!=null) sh.getRange(rowNum,INSTA_REVIEW_COL['캡션릴스']+1).setValue(editObj.captionReel);
+    sh.getRange(rowNum,INSTA_REVIEW_COL['편집JSON']+1).setValue(JSON.stringify(editObj));
+    sh.getRange(rowNum,INSTA_REVIEW_COL['편집상태']+1).setValue('편집됨');
+    // 예정 시각 편집 시 목록 표시용 예정슬롯도 갱신(참고용, 실제 반영은 로컬 스케줄러)
+    if(editObj.scheduledDate){
+      sh.getRange(rowNum,INSTA_REVIEW_COL['예정슬롯']+1).setValue('✏️ '+editObj.scheduledDate+(editObj.scheduledTime?' '+editObj.scheduledTime:''));
+    }
+    sh.getRange(rowNum,INSTA_REVIEW_COL['업데이트일시']+1).setValue(_nowStamp_());
+    return {ok:true,key:key,editState:'편집됨',dropped:dropped.length,keptOrder:order.length};
+  }
+  throw new Error('검수 항목을 찾지 못했습니다: '+key);
+}
+
+// 로컬이 편집을 파이프라인에 반영 완료했음을 표시 (편집상태 편집됨 → 반영됨). erp-agent insta-review-mark-applied.
+function markInstaReviewAppliedForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const key=String(payload.key||'').trim();
+  if(!key) throw new Error('key(큐키)가 필요합니다.');
+  if(INSTA_REVIEW_COL['편집상태']==null) return {ok:true,key:key,skipped:'no-column'};
+  const sh=ensureInstaReviewSheet_(ensureSheets_().ss);
+  const vals=sh.getDataRange().getValues();
+  for(let i=1;i<vals.length;i++){
+    if(String(vals[i][INSTA_REVIEW_COL['큐키']]||'')===key){
+      if(String(vals[i][INSTA_REVIEW_COL['편집상태']]||'')==='편집됨'){
+        sh.getRange(i+1,INSTA_REVIEW_COL['편집상태']+1).setValue('반영됨');
+      }
+      return {ok:true,key:key,editState:String(sh.getRange(i+1,INSTA_REVIEW_COL['편집상태']+1).getValue()||'')};
     }
   }
   throw new Error('검수 항목을 찾지 못했습니다: '+key);

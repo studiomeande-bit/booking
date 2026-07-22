@@ -4390,41 +4390,142 @@ function loadInstaReview(){
   if(box) box.textContent='불러오는 중…';
   google.script.run.withSuccessHandler(renderInstaReview).withFailureHandler(handleApiError).listInstaReviewAdmin(adminToken);
 }
+var _instaReviewItems={};   // key → item (편집 저장 시 슬라이드 파일명 목록 등 참조)
+function _instaEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function _instaJs(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/</g,'\\x3c'); } // 작은따옴표 onclick 인자용
 function renderInstaReview(res){
   var box=document.getElementById('instaReviewList');
   if(!box) return;
   var items=(res&&res.items)||[];
+  _instaReviewItems={};
   if(!items.length){ box.innerHTML='<div style="color:#94a3b8;padding:20px;">게시 대기 중인 콘텐츠가 없습니다.</div>'; return; }
   box.innerHTML=items.map(function(it){
+    _instaReviewItems[it.key]=it;
     var pending = it.status==='검수대기';
-    var cap=String(it.caption||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');
-    var badge='<span class="marketing-stage '+(pending?'ready':'scheduled')+'">'+it.status+'</span>';
-    // 게시될 콘텐츠 전부: 영상(릴스) + 사진 슬라이드 전체를 가로 스크롤로
-    var media='';
+    var edited = it.editState==='편집됨';
+    var badge='<span class="marketing-stage '+(pending?'ready':'scheduled')+'">'+_instaEsc(it.status)+'</span>'
+      + (edited?' <span class="marketing-stage" style="background:#fef3c7;color:#92400e;">✏️ 편집됨</span>':'');
+    // 릴스 영상 미리보기
+    var video='';
     if(it.videoUrl){
-      media+='<div style="flex:none;text-align:center;"><iframe src="'+it.videoUrl+'" width="132" height="234" style="border:1px solid #e8e4dd;border-radius:10px;" allow="autoplay"></iframe><div style="font-size:11px;color:#94a3b8;margin-top:3px;">🎬 릴스 영상</div></div>';
+      video='<div style="flex:none;text-align:center;"><iframe src="'+_instaEsc(it.videoUrl)+'" width="132" height="234" style="border:1px solid #e8e4dd;border-radius:10px;" allow="autoplay"></iframe><div style="font-size:11px;color:#94a3b8;margin-top:3px;">🎬 릴스 영상</div></div>';
     }
+    var ej={}; try{ ej=JSON.parse(it.editJson||'{}')||{}; }catch(e){}
+    // 슬라이드 편집 가능 조건: 파일명 목록이 URL과 정렬돼 있어야(파일명 기준 편집이 실제 반영되므로).
     var slideUrls=String(it.slideUrls||'').split(',').filter(function(u){return u;});
-    if(slideUrls.length){
-      media+=slideUrls.map(function(u){return '<img src="'+u+'" referrerpolicy="no-referrer" style="height:200px;width:auto;border-radius:8px;border:1px solid #e8e4dd;flex:none;">';}).join('');
-    }else if(it.coverUrl){
-      media+='<img src="'+it.coverUrl+'" referrerpolicy="no-referrer" style="height:200px;width:auto;border-radius:8px;border:1px solid #e8e4dd;flex:none;">';
+    var slideNames=String(it.slideNames||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    var canEditSlides = slideNames.length>0 && slideNames.length===slideUrls.length;
+    // 파일명→URL 매핑(저장된 편집 순서대로 재현하기 위함)
+    var urlByName={}; if(canEditSlides){ slideNames.forEach(function(n,i){ urlByName[n]=slideUrls[i]; }); }
+    var savedOrder=(edited && ej.slideOrder && ej.slideOrder.length)?ej.slideOrder.slice():null;
+    var droppedSet={}; (edited?(ej.dropped||[]):[]).forEach(function(n){ droppedSet[n]=1; });
+    // 표시 순서: 저장된 편집이 있으면 그 순서(유지분) + 제거분, 없으면 원본 순서
+    var displayNames;
+    if(canEditSlides && savedOrder){
+      var seen={}; displayNames=[];
+      savedOrder.forEach(function(n){ if(urlByName[n]!=null && !seen[n]){ displayNames.push(n); seen[n]=1; } });
+      slideNames.forEach(function(n){ if(!seen[n]){ displayNames.push(n); seen[n]=1; } }); // 제거분·신규분 뒤에
+    } else {
+      displayNames = canEditSlides ? slideNames.slice() : slideNames;
     }
-    if(!media) media='<div style="width:160px;height:200px;border-radius:10px;background:#f1f5f9;flex:none;"></div>';
+    var slidesHtml='';
+    if(canEditSlides){
+      displayNames.forEach(function(nm){
+        var u=urlByName[nm]; if(u==null) return;
+        var isCta=/cta/i.test(nm);
+        var isDropped=!!droppedSet[nm];
+        slidesHtml+='<div class="insta-slide" data-name="'+_instaEsc(nm)+'" data-dropped="'+(isDropped?'1':'0')+'" '
+          + 'style="flex:none;position:relative;text-align:center;'+(isDropped?'opacity:0.35;':'')+'">'
+          + '<img src="'+_instaEsc(u)+'" referrerpolicy="no-referrer" style="height:170px;width:auto;border-radius:8px;border:1px solid #e8e4dd;'+(isDropped?'filter:grayscale(1);':'')+'">'
+          + '<div style="font-size:10px;color:#94a3b8;margin-top:2px;">'+_instaEsc(nm)+(isCta?' (CTA·고정)':'')+'</div>'
+          + (isCta?'' :
+              '<button type="button" title="제거/복원" onclick="instaSlideDrop(this)" style="position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(220,38,38,.9);color:#fff;font-weight:700;cursor:pointer;">✕</button>'
+            + '<div style="position:absolute;bottom:22px;left:3px;display:flex;gap:2px;">'
+            + '<button type="button" title="앞으로" onclick="instaSlideMove(this,-1)" style="width:22px;height:22px;border:0;border-radius:5px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;">◀</button>'
+            + '<button type="button" title="뒤로" onclick="instaSlideMove(this,1)" style="width:22px;height:22px;border:0;border-radius:5px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;">▶</button>'
+            + '</div>')
+          + '</div>';
+      });
+    } else {
+      // 파일명 미동기화 — 편집 불가(읽기전용 썸네일). 로컬이 다시 push 하면 편집 가능해진다.
+      slideUrls.forEach(function(u){ slidesHtml+='<img src="'+_instaEsc(u)+'" referrerpolicy="no-referrer" style="height:170px;width:auto;border-radius:8px;border:1px solid #e8e4dd;flex:none;">'; });
+      if(!slideUrls.length && it.coverUrl) slidesHtml='<img src="'+_instaEsc(it.coverUrl)+'" referrerpolicy="no-referrer" style="height:170px;border-radius:8px;border:1px solid #e8e4dd;flex:none;">';
+    }
+    var isReel = /릴스/.test(String(it.type||''));
+    var capC=_instaEsc(it.caption||'');
+    var capR=_instaEsc(it.captionReel||'');
+    var keyJs=_instaJs(it.key);
     var btns = pending
-      ? '<button class="btn btn-primary btn-sm" onclick="approveInstaReview(\''+it.key+'\',true)">승인 · 게시</button> <button class="btn btn-outline btn-sm" onclick="approveInstaReview(\''+it.key+'\',false)">보류</button>'
+      ? '<button class="btn btn-primary btn-sm" onclick="approveInstaReview(\''+keyJs+'\',true)">승인 · 게시</button> <button class="btn btn-outline btn-sm" onclick="approveInstaReview(\''+keyJs+'\',false)">보류</button>'
       : '<span style="color:#7c3aed;font-weight:700;font-size:12px;">승인됨 — 게시 대기</span>';
-    return '<div style="border:1px solid #ece4d8;border-radius:14px;padding:14px;background:#fff;">'
-      + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;"><b style="font-size:15px;">'+String(it.name||'')+'</b> '+badge+' <span style="color:#94a3b8;font-size:12px;">'+String(it.type||'')+' · '+(it.slideCount||'')+'컷</span></div>'
-      + '<div style="display:flex;gap:10px;align-items:flex-start;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;">'+media+'</div>'
-      + '<div style="font-size:12px;color:#64748b;margin-bottom:8px;">슬롯: '+String(it.slot||'-')+'</div>'
-      + '<div style="font-size:13px;color:#334155;line-height:1.5;max-height:150px;overflow:auto;background:#fafaf8;border-radius:8px;padding:8px 10px;">'+cap+'</div>'
-      + '<div style="margin-top:10px;display:flex;gap:8px;">'+btns+'</div>'
+    var slideHint = canEditSlides
+      ? '슬라이드 (✕ 제거 · ◀▶ 순서 · CTA는 항상 마지막)'
+      : '슬라이드 (편집은 다음 동기화 후 가능 — 캡션·예정시각은 지금 수정 가능)';
+    return '<div class="insta-review-card" data-key="'+_instaEsc(it.key)+'" style="border:1px solid #ece4d8;border-radius:14px;padding:14px;background:#fff;">'
+      + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;"><b style="font-size:15px;">'+_instaEsc(it.name)+'</b> '+badge+' <span style="color:#94a3b8;font-size:12px;">'+_instaEsc(it.type)+' · '+_instaEsc(it.slideCount)+'컷</span></div>'
+      + (video?'<div style="display:flex;gap:10px;margin-bottom:10px;">'+video+'</div>':'')
+      + '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">'+slideHint+'</div>'
+      + '<div class="insta-slide-strip" style="display:flex;gap:8px;align-items:flex-start;overflow-x:auto;padding-bottom:8px;margin-bottom:10px;">'+slidesHtml+'</div>'
+      + '<label style="font-size:11px;color:#64748b;">캡션 (캐러셀)</label>'
+      + '<textarea class="insta-cap-carousel" rows="4" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical;margin-bottom:8px;">'+capC+'</textarea>'
+      + (isReel?('<label style="font-size:11px;color:#64748b;">캡션 (릴스)</label>'
+          + '<textarea class="insta-cap-reel" rows="4" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical;margin-bottom:8px;">'+capR+'</textarea>'):'')
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'
+      + '<span style="font-size:11px;color:#64748b;">게시 예정(첫 게시 기준):</span>'
+      + '<input type="date" class="insta-sched-date" value="'+_instaEsc(ej.scheduledDate||'')+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
+      + '<input type="time" class="insta-sched-time" value="'+_instaEsc(ej.scheduledTime||'')+'" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px;font:inherit;">'
+      + '<span style="font-size:11px;color:#94a3b8;">현재: '+_instaEsc(it.slot||'-')+'</span></div>'
+      + '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+      + '<button class="btn btn-outline btn-sm" style="border-color:#c4b5fd;color:#6d28d9;" onclick="saveInstaReviewEdit(\''+keyJs+'\',this)">💾 편집 저장</button>'
+      + btns + '</div>'
       + '</div>';
   }).join('');
 }
+// 슬라이드 제거 토글(멱등) — 목록에서만 제외 표시, 저장 시 dropped 로 전송
+function instaSlideDrop(btn){
+  var el=btn.closest('.insta-slide'); if(!el) return;
+  var on=el.getAttribute('data-dropped')==='1';
+  el.setAttribute('data-dropped', on?'0':'1');
+  el.style.opacity = on?'1':'0.35';
+  var img=el.querySelector('img'); if(img) img.style.filter = on?'none':'grayscale(1)';
+}
+// 슬라이드 순서 이동 (CTA 슬라이드 경계 밖으로는 못 나감)
+function instaSlideMove(btn,dir){
+  var el=btn.closest('.insta-slide'); if(!el) return;
+  var strip=el.parentNode;
+  var sib = dir<0 ? el.previousElementSibling : el.nextElementSibling;
+  if(!sib) return;
+  if(/cta/i.test(sib.getAttribute('data-name')||'')) return;   // CTA는 항상 마지막 — 넘어가지 않음
+  if(dir<0) strip.insertBefore(el,sib); else strip.insertBefore(sib,el);
+}
+function saveInstaReviewEdit(key, btn){
+  var card=document.querySelector('.insta-review-card[data-key="'+(window.CSS&&CSS.escape?CSS.escape(key):key)+'"]');
+  if(!card){ alert('카드를 찾지 못했습니다.'); return; }
+  var slides=[].slice.call(card.querySelectorAll('.insta-slide'));
+  var order=[], dropped=[];
+  slides.forEach(function(s){
+    var nm=s.getAttribute('data-name');
+    if(s.getAttribute('data-dropped')==='1') dropped.push(nm); else order.push(nm);
+  });
+  // 편집 가능한 슬라이드가 있을 때만 최소 1장 검증(읽기전용 카드는 캡션·예정시각만 저장 — order/dropped 빈값).
+  if(slides.length && !order.length){ alert('슬라이드를 최소 1장은 남겨야 합니다.'); return; }
+  var capCEl=card.querySelector('.insta-cap-carousel'), capREl=card.querySelector('.insta-cap-reel');
+  var edit={
+    captionCarousel: capCEl?capCEl.value:'',
+    captionReel: capREl?capREl.value:'',
+    slideOrder: order,
+    dropped: dropped,
+    scheduledDate: (card.querySelector('.insta-sched-date')||{}).value||'',
+    scheduledTime: (card.querySelector('.insta-sched-time')||{}).value||''
+  };
+  if(btn){ btn.disabled=true; btn.textContent='저장 중…'; }
+  google.script.run
+    .withSuccessHandler(function(){ if(typeof showToast==='function') showToast('편집을 저장했습니다.','ok'); loadInstaReview(); })
+    .withFailureHandler(function(e){ if(btn){btn.disabled=false;btn.textContent='💾 편집 저장';} handleApiError(e); })
+    .saveInstaReviewEditAdmin(adminToken, key, edit);
+}
 function approveInstaReview(key, approve){
-  if(approve && !confirm('이 콘텐츠를 승인하면 다음 슬롯에 자동 게시됩니다. 승인할까요?')) return;
+  if(approve && !confirm('이 콘텐츠를 승인하면 다음 슬롯에 자동 게시됩니다.\n(편집한 내용이 있으면 [편집 저장]을 먼저 눌렀는지 확인하세요.) 승인할까요?')) return;
   google.script.run.withSuccessHandler(function(){ loadInstaReview(); }).withFailureHandler(handleApiError).approveInstaReviewAdmin(adminToken, key, approve);
 }
 function loadMarketingSchedule(){
