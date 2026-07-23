@@ -1235,6 +1235,8 @@ function handlePublicApiRequest_(route,method,e){
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
+        if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token));
+        if(action==='morning-report-install-trigger') return jsonOk_(installMorningReportTriggerAdmin(token));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
@@ -2554,10 +2556,11 @@ function getOperationsLogAdmin(token, limit){
 }
 
 // dailyTasks()에 등록된 자동화 작업명. 순서는 실행 순서와 동일하게 유지.
+// P2 결제 일일검토 / D7 아침 브리핑은 08:50 통합 리포트(morningReportTrigger)로 이관 — dailyTasks에서 제외.
 const AUTOMATION_JOB_NAMES_=[
-  'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화','P2 결제 일일검토 메일',
+  'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D7 아침 브리핑 메일','D8 경비 인보이스 메일 수집'
+  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집'
 ];
 
 // 작업별 최신 실행 상태 보드 + 최근 실행 이력 원본. 운영 로그 탭에서 사용.
@@ -11617,8 +11620,9 @@ function _buildDailyBriefingData_(){
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
-function sendDailyBriefingEmail_(){
-  const b=_buildDailyBriefingData_();
+// D7 아침 브리핑 HTML 생성 — 데이터(b=_buildDailyBriefingData_())를 받아 본문 HTML만 반환.
+// 단독 발송(sendDailyBriefingEmail_)과 통합 리포트(sendCombinedMorningReport_) 양쪽에서 재사용.
+function buildDailyBriefingEmailHtml_(b){
   const esc=escapeHtml_;
   const money=function(v){return '€'+Number(v||0).toFixed(2);};
   const section=function(title,inner){return `<div style="margin:0 0 18px;"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin-bottom:8px;">${title}</div>${inner}</div>`;};
@@ -11682,7 +11686,7 @@ function sendDailyBriefingEmail_(){
     parts.push(section('📊 분기 마감 (ELSTER)',line(`<b>${esc(b.quarterClose.label)}</b> 신고 준비 시기입니다. 은행 CSV · SumUp Verkaufsbericht · MyRealTrip 정산 · 구매 영수증을 확보한 뒤 Claude에게 <b>“분기 감사팩 만들어줘”</b>라고 요청하세요. (기준: <b>스튜디오자료/2026년 kontoauszug</b>)`)));
   }
 
-  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
     <div style="background:#2D2A26;color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;">
       <div style="font-size:15px;font-weight:800;">Studio mean — 아침 브리핑</div>
       <div style="font-size:12px;color:#d6d3d1;margin-top:2px;">${b.date}</div>
@@ -11692,6 +11696,13 @@ function sendDailyBriefingEmail_(){
       <div style="font-size:11px;color:#94a3b8;margin-top:6px;">이 메일은 매일 자동 발송됩니다 (D7 아침 브리핑).</div>
     </div>
   </div>`;
+}
+
+// D7 아침 브리핑 단독 발송 — HTML 생성은 buildDailyBriefingEmailHtml_ 재사용(동작 동일).
+// 통합 리포트(sendCombinedMorningReport_) 도입 후 dailyTasks에서는 제외됐고, 온디맨드/폴백용으로 유지.
+function sendDailyBriefingEmail_(){
+  const b=_buildDailyBriefingData_();
+  const html=buildDailyBriefingEmailHtml_(b);
   const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
   const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
   sendTrackedEmail_({
@@ -19051,7 +19062,9 @@ function sendDailyPaymentReviewAdmin(token){
   return sendDailyPaymentReview_({source:'admin'});
 }
 
-function sendDailyPaymentReview_(){
+// P2 결제 일일검토 — 데이터 수집 + HTML 생성만. 단독 발송(sendDailyPaymentReview_)과
+// 통합 리포트(sendCombinedMorningReport_) 양쪽에서 재사용. {html, ...집계} 반환.
+function buildDailyPaymentReviewSection_(){
   const now=new Date();
   const today=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
   const yesterday=Utilities.formatDate(new Date(now.getTime()-86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
@@ -19059,21 +19072,127 @@ function sendDailyPaymentReview_(){
   const reviewItems=getSettlementReviewItems_(settlements);
   const expected=buildDailyPaymentReviewBookings_(yesterday,today);
   const summary=summarizeSettlementImport_(settlements,'all');
-  const subject='[Studio mean] 결제 일일검토 '+today;
   const html=buildDailyPaymentReviewHtml_(yesterday,today,summary,reviewItems,expected);
-  sendTrackedEmail_({
-    to:CONFIG.ADMIN_EMAIL,
-    subject:subject,
-    htmlBody:html
-  },{type:'결제검토',ref:today,meta:{startDate:yesterday,endDate:today}});
   return {
-    ok:true,
+    html:html,
+    today:today,
+    startDate:yesterday,
+    endDate:today,
     count:settlements.length+reviewItems.length+expected.totalCount,
     summary:'카드/은행 거래 '+settlements.length+'건, 검토 '+reviewItems.length+'건, 현장/계좌 확인 '+expected.totalCount+'건',
-    period:{startDate:yesterday,endDate:today},
     settlementSummary:summary,
     reviewItems:reviewItems,
     expected:expected
+  };
+}
+
+/* ===== 아침 통합 리포트 (결제 일일검토 + 오늘의 브리핑) — 08:50 트리거로 1통만 발송 =====
+   기존엔 dailyTasks(08:00 창)에서 두 통이 따로 나가 도착 시각이 08:00~09:00으로 들쭉날쭉했다.
+   섹션별 try/catch로 격리 — 한쪽이 실패해도 나머지는 발송되고 실패 섹션엔 에러 문구를 남긴다. */
+function sendCombinedMorningReport_(){
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const sections=[];
+  const errBox=function(title,err){
+    return `<div style="border:1px solid #fecaca;background:#fff5f5;border-radius:12px;padding:14px;margin:0 0 18px;color:#b91c1c;font-size:13px;line-height:1.6;">`
+      + `<b>${title} 생성 실패</b><br>${escapeHtml_(String((err&&err.message)||err))}<br>`
+      + `<span style="color:#94a3b8;font-size:11px;">이 섹션만 실패했고 나머지는 정상입니다. 어드민에서 개별 재실행할 수 있습니다.</span></div>`;
+  };
+  const divider='<div style="height:1px;background:#e2e8f0;margin:26px 0;"></div>';
+  const secTitle=function(emoji,txt){
+    return `<div style="font-size:16px;font-weight:800;color:#2D2A26;margin:0 0 12px;">${emoji} ${txt}</div>`;
+  };
+
+  // ① 결제 일일검토
+  let payHtml='', paySummary='';
+  try{
+    const pay=buildDailyPaymentReviewSection_();
+    payHtml=pay.html; paySummary=pay.summary;
+    sections.push({name:'결제검토',ok:true,summary:pay.summary});
+  }catch(e){
+    payHtml=errBox('결제 일일검토',e);
+    sections.push({name:'결제검토',ok:false,error:String((e&&e.message)||e)});
+  }
+  // ② 오늘의 브리핑
+  let briefHtml='', briefSummary='';
+  try{
+    const b=_buildDailyBriefingData_();
+    briefHtml=buildDailyBriefingEmailHtml_(b);
+    const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
+    const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
+    briefSummary=`오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건`;
+    sections.push({name:'브리핑',ok:true,summary:briefSummary});
+  }catch(e){
+    briefHtml=errBox('오늘의 브리핑',e);
+    sections.push({name:'브리핑',ok:false,error:String((e&&e.message)||e)});
+  }
+
+  const htmlBody=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:680px;margin:0 auto;color:#1e293b;">`
+    + `<div style="margin:0 0 18px;"><div style="font-size:18px;font-weight:800;">☀️ Studio mean 아침 리포트</div>`
+    + `<div style="font-size:12px;color:#94a3b8;margin-top:2px;">${today}</div></div>`
+    + secTitle('💳','① 결제 일일검토') + payHtml
+    + divider
+    + secTitle('📋','② 오늘의 브리핑') + briefHtml
+    + `<div style="font-size:11px;color:#94a3b8;margin-top:20px;">이 메일은 매일 아침 자동 발송됩니다 (결제검토 + 브리핑 통합).</div>`
+    + `</div>`;
+
+  sendTrackedEmail_({
+    to:CONFIG.ADMIN_EMAIL,
+    subject:`[Studio mean] 아침 리포트 ${today} — 브리핑+결제검토`,
+    htmlBody:htmlBody
+  },{type:'아침리포트',ref:today,meta:{sections:sections.map(function(s){return s.name+':'+(s.ok?'ok':'fail');}).join(',')}});
+
+  return {ok:true,sentTo:CONFIG.ADMIN_EMAIL,sections:sections};
+}
+
+// GAS 시간 트리거 핸들러는 언더스코어로 끝나는 private 함수를 지정할 수 없어 공개 래퍼 사용.
+function morningReportTrigger(){ return sendCombinedMorningReport_(); }
+
+// 08:50 전용 트리거 설치(1회 실행). 동일 핸들러의 기존 트리거는 제거 후 재생성 — 중복 방지.
+// 주의: GAS 시간 트리거는 nearMinute을 써도 ±15분 창(08:45~08:59)이라 분 단위 고정은 보장되지 않는다.
+function installMorningReportTrigger(){
+  const existing=ScriptApp.getProjectTriggers().filter(function(t){
+    return t.getHandlerFunction()==='morningReportTrigger';
+  });
+  existing.forEach(function(t){ ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('morningReportTrigger')
+    .timeBased().atHour(8).nearMinute(50).everyDays(1)
+    .inTimezone(CONFIG.TIMEZONE).create();
+  return {ok:true,removed:existing.length,installed:'morningReportTrigger 08:50 (±15분)'};
+}
+
+// 에이전트/어드민 온디맨드 발송 (morning-report-send)
+function sendCombinedMorningReportAdmin(token){
+  assertAdmin_(token);
+  return sendCombinedMorningReport_();
+}
+
+// 08:50 트리거 설치/재설치 + 현재 상태 반환 (morning-report-install-trigger).
+// clasp run 은 API 실행 배포가 아니라 못 쓰므로 에이전트로 노출 — 멱등(중복 트리거 제거 후 1개만 생성).
+function installMorningReportTriggerAdmin(token){
+  assertAdmin_(token);
+  const res=installMorningReportTrigger();
+  const triggers=ScriptApp.getProjectTriggers()
+    .filter(function(t){return t.getHandlerFunction()==='morningReportTrigger';})
+    .map(function(t){return {handler:t.getHandlerFunction(),eventType:String(t.getEventType()),id:t.getUniqueId()};});
+  return Object.assign({},res,{triggers:triggers,count:triggers.length});
+}
+
+// P2 결제 일일검토 단독 발송 — 통합 리포트 도입 후 dailyTasks에서는 제외, 온디맨드/폴백용 유지.
+function sendDailyPaymentReview_(){
+  const sec=buildDailyPaymentReviewSection_();
+  sendTrackedEmail_({
+    to:CONFIG.ADMIN_EMAIL,
+    subject:'[Studio mean] 결제 일일검토 '+sec.today,
+    htmlBody:sec.html
+  },{type:'결제검토',ref:sec.today,meta:{startDate:sec.startDate,endDate:sec.endDate}});
+  return {
+    ok:true,
+    count:sec.count,
+    summary:sec.summary,
+    period:{startDate:sec.startDate,endDate:sec.endDate},
+    settlementSummary:sec.settlementSummary,
+    reviewItems:sec.reviewItems,
+    expected:sec.expected
   };
 }
 
@@ -21669,7 +21788,8 @@ function dailyTasks(){
     ['D1 DB 백업',backupSpreadsheetDaily_],
     ['M1 마이리얼트립 예약 알림 가져오기',syncMyRealTripBookingEmails_],
     ['P1 SumUp 최근거래 동기화',syncRecentSumupTransactionsDaily_],
-    ['P2 결제 일일검토 메일',sendDailyPaymentReview_],
+    // P2 결제 일일검토 / D7 아침 브리핑은 08:50 통합 리포트(morningReportTrigger)로 이관 — 여기서 제외.
+    // (여기 남겨두면 하루 3통이 됨. P1 동기화는 08:00 그대로 두어 08:50 리포트가 최신 데이터를 쓰게 함.)
     ['B2 예약 24시간 리마인드',sendBookingReminders_],
     ['L2 계약금 지연 확인/자동취소',flagAndCancelOverdueDepositBookings_],
     ['C2 셀렉 자동 점검',autoSelectDailyCheck],
@@ -21680,7 +21800,6 @@ function dailyTasks(){
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
     ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],
-    ['D7 아침 브리핑 메일',sendDailyBriefingEmail_],
     ['D8 경비 인보이스 메일 수집',collectInvoiceEmailsDaily_]
   ];
   jobs.forEach(function(job){
