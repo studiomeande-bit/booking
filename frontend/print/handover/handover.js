@@ -1,8 +1,8 @@
 "use strict";
 /* 수령 확인 페이지 — print.studio-mean.com/handover/
-   인화앱과 같은 오리진이라 localStorage 의 최근주문 PIN(smphoto:printListPasscode)을 그대로 쓴다.
-   automation key 는 절대 클라이언트에 두지 않는다(통과 즉시 풀-어드민). 이 페이지가 쓰는 세 라우트는
-   모두 PIN 게이트: select-handover-list(GET) / select-handover-done(POST) / select-handover-undo(POST). */
+   인화앱과 같은 오리진이라 localStorage 의 스튜디오 PIN(smphoto:printListPasscode)을 그대로 쓴다.
+   이 PIN 은 어드민 빠른잠금과 같은 번호이므로 세 라우트 모두 POST 로 보낸다(쿼리스트링 노출 방지).
+   automation key 는 절대 클라이언트에 두지 않는다(통과 즉시 풀-어드민). */
 
 const ERP_BASE = "https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec";
 const PIN_KEY = "smphoto:printListPasscode";
@@ -32,24 +32,18 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-async function callApi(route, payload, method) {
+/* 세 라우트 모두 POST — PIN 이 어드민 빠른잠금과 같은 번호라 쿼리스트링(브라우저 기록·중간 로그)에
+   남기지 않는다. text/plain 은 CORS 프리플라이트 회피용(인화앱 _recordPrintDone 과 같은 방식). */
+async function callApi(route, payload) {
   const base = apiBase();
   if (!base) throw new Error("ERP 주소가 설정되지 않았습니다.");
   const sep = base.includes("?") ? "&" : "?";
-  if (method === "POST") {
-    // text/plain — CORS 프리플라이트를 피하려는 것(인화앱 _recordPrintDone 과 같은 방식).
-    const r = await fetch(base + sep + "api=" + route, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ data: Object.assign({ passcode: pin() }, payload || {}) })
-    });
-    return r.json();
-  }
-  const q = new URLSearchParams();
-  q.set("api", route);
-  q.set("passcode", pin());
-  Object.keys(payload || {}).forEach((k) => { if (payload[k] != null) q.set(k, String(payload[k])); });
-  const r = await fetch(base + sep + q.toString());
+  const r = await fetch(base + sep + "api=" + route, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ data: Object.assign({ passcode: pin() }, payload || {}) })
+  });
   return r.json();
 }
 
@@ -85,7 +79,7 @@ async function load(quiet) {
   if (!pin()) { showLock(""); return "unauthorized"; }
   if (!quiet) elSub.textContent = "불러오는 중…";
   let j;
-  try { j = await callApi("select-handover-list", { limit: 60 }, "GET"); }
+  try { j = await callApi("select-handover-list", { limit: 60 }); }
   catch (e) { elSub.textContent = "네트워크 오류"; toast("불러오지 못했습니다. 연결을 확인해 주세요."); return "error"; }
   // 잠금 처리는 load() 안에서 한다 — 새로고침 버튼과 undo() 는 반환값을 보지 않으므로,
   // 여기서 안 잠그면 PIN 이 바뀐 뒤 화면이 "불러오는 중…"에서 멈춘 것처럼 보인다.
@@ -178,7 +172,7 @@ async function markDone(sid, method, memo) {
   elList.querySelectorAll(".card").forEach((c) => { if (c.dataset.sid === sid) el = c; });
   if (el) { el.classList.add("gone"); el.querySelectorAll("button").forEach((b) => (b.disabled = true)); }
   let j;
-  try { j = await callApi("select-handover-done", { sessionId: sid, method: method, memo: memo || "" }, "POST"); }
+  try { j = await callApi("select-handover-done", { sessionId: sid, method: method, memo: memo || "" }); }
   catch (e) { j = null; }
   busy = false;
 
@@ -201,7 +195,7 @@ async function markDone(sid, method, memo) {
 async function undo(sid) {
   hideToast();
   let j;
-  try { j = await callApi("select-handover-undo", { sessionId: sid }, "POST"); }
+  try { j = await callApi("select-handover-undo", { sessionId: sid }); }
   catch (e) { j = null; }
   if (!j || !j.ok) { toast((j && j.error && j.error.message) || "되돌리지 못했습니다."); return; }
   const d = j.data || j;

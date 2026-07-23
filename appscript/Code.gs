@@ -326,6 +326,10 @@ function adminRpc(token, action, payload){
     case 'mergeDuplicateDbFiles':
       assertAdmin_(token);
       return mergeDuplicateDbFiles_();
+    case 'setStudioPin':
+      return setStudioPinAdmin(token, payload||{});
+    case 'getStudioPinStatus':
+      return getStudioPinStatusAdmin(token);
     case 'markSelectHandover':
       return markSelectHandoverAdmin(token, payload||{});
     case 'undoSelectHandover':
@@ -916,16 +920,13 @@ function handlePublicApiRequest_(route,method,e){
     }
     if(route==='select-print-list'){
       // 인화앱(print.studio-mean.com) 드롭다운용 — 세션ID 없이도 여러 고객이 보이므로 별도 암호로 게이트.
-      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-print-list');
+      // POST 우선(암호가 어드민 PIN 과 같은 값이라 쿼리스트링에 남기지 않는다). GET 은 구버전 캐시 호환.
+      if(method!=='get'&&method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-print-list');
       const p=(e&&e.parameter)||{};
-      const passcode=String(p.passcode||'').trim();
-      _printListThrottleDelay_();
-      if(!isValidPrintListPasscode_(passcode)){
-        _bumpPrintListThrottle_();
-        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
-      }
-      _resetPrintListThrottle_();
-      return jsonOk_(listRecentPrintReadySessions_(p.limit));
+      const bodyPayload=(method==='post')?((getPublicPayloadFromRequest_(e)||{}).payload||{}):{};
+      const gate=_printListAuthGate_(String(bodyPayload.passcode||p.passcode||'').trim());
+      if(!gate.ok) return jsonError_(gate.code,gate.message);
+      return jsonOk_(listRecentPrintReadySessions_(bodyPayload.limit||p.limit));
     }
     if(route==='select-print-done'){
       // 인화앱 자동출력 완료 기록 — 최근주문 passcode로 게이트(고객 아닌 스튜디오만).
@@ -933,13 +934,8 @@ function handlePublicApiRequest_(route,method,e){
       const p=(e&&e.parameter)||{};
       const request=getPublicPayloadFromRequest_(e);
       const payload=request.payload||{};
-      const passcode=String(payload.passcode||p.passcode||'').trim();
-      _printListThrottleDelay_();
-      if(!isValidPrintListPasscode_(passcode)){
-        _bumpPrintListThrottle_();
-        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
-      }
-      _resetPrintListThrottle_();
+      const gate=_printListAuthGate_(String(payload.passcode||p.passcode||'').trim());
+      if(!gate.ok) return jsonError_(gate.code,gate.message);
       const sid=String(payload.sessionId||payload.id||p.sessionId||p.id||'');
       const count=payload.count!=null?payload.count:p.count;
       const result=markSelectPrintDone_(sid,{count:count});
@@ -950,27 +946,22 @@ function handlePublicApiRequest_(route,method,e){
        그대로 재사용한다(스튜디오 기기 = 인증). 세션ID capability 는 위조 가능하고, automation key 는
        클라이언트에 절대 넣지 않는다. 참고: erp-agent 에도 같은 이름의 액션이 있으나 인증 체계가 다르다. */
     if(route==='select-handover-list'){
-      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-handover-list');
+      // POST 우선 — 스튜디오 PIN 이 어드민 빠른잠금과 같은 값이라 쿼리스트링(브라우저 기록·중간 로그)에
+      // 남기지 않는다. GET 은 구버전 클라이언트 호환으로만 남겨둔다.
+      if(method!=='get'&&method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-handover-list');
       const p=(e&&e.parameter)||{};
-      _printListThrottleDelay_();
-      if(!isValidPrintListPasscode_(String(p.passcode||'').trim())){
-        _bumpPrintListThrottle_();
-        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
-      }
-      _resetPrintListThrottle_();
-      return jsonOk_(listSelectHandoverPending_({limit:p.limit,includeFresh:true}));
+      const bodyPayload=(method==='post')?((getPublicPayloadFromRequest_(e)||{}).payload||{}):{};
+      const gate=_printListAuthGate_(String(bodyPayload.passcode||p.passcode||'').trim());
+      if(!gate.ok) return jsonError_(gate.code,gate.message);
+      return jsonOk_(listSelectHandoverPending_({limit:bodyPayload.limit||p.limit,includeFresh:true}));
     }
     if(route==='select-handover-done'||route==='select-handover-undo'){
       // POST 전용 — 링크 스캐너·메일 미리보기가 GET 을 날려 상태 변경 + 메일 발송을 일으키면 안 된다
       if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/'+route);
       const request=getPublicPayloadFromRequest_(e);
       const payload=request.payload||{};
-      _printListThrottleDelay_();
-      if(!isValidPrintListPasscode_(String(payload.passcode||'').trim())){
-        _bumpPrintListThrottle_();
-        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
-      }
-      _resetPrintListThrottle_();
+      const gate=_printListAuthGate_(String(payload.passcode||'').trim());
+      if(!gate.ok) return jsonError_(gate.code,gate.message);
       const sid=String(payload.sessionId||payload.id||'').trim();
       const res=route==='select-handover-done'
         ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,finalize:payload.finalize===true,notify:payload.notify!==false})
@@ -1200,6 +1191,13 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-handover-undo') return jsonOk_(undoSelectHandoverAdmin(token,payload));
         if(action==='select-pickup-reminder-run') return jsonOk_(runSelectPickupRemindersAdmin(token,payload));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
+        if(action==='studio-pin-status') return jsonOk_(getStudioPinStatusAdmin(token));
+        if(action==='studio-pin-set'){
+          // 에이전트 경로에는 브라우저 기기가 없다 — 아무도 안 쥔 기기토큰으로 8칸 중 하나를 낭비하지 않도록
+          // 기기 등록은 명시 요청(registerDevice:true)일 때만.
+          const pinPayload=Object.assign({},payload,{registerDevice:payload.registerDevice===true});
+          return jsonOk_(setStudioPinAdmin(token,pinPayload));
+        }
         if(action==='print-list-passcode-generate') return jsonOk_(generatePrintListPasscodeAdmin(token));
         if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
@@ -15760,12 +15758,83 @@ function generateSessionId_(){
    개별 셀렉 세션 상세(select-session)는 세션ID 자체가 열람권한이지만, "최근 주문 목록"은
    세션ID 없이도 여러 고객의 이름/촬영일/상품을 한 번에 볼 수 있어 노출 범위가 다르다.
    그래서 automation key(풀어드민)와 별개인 가벼운 암호로 문을 하나 더 둔다. */
+/* 인화앱·수령페이지 잠금해제 값은 두 가지를 받는다:
+   ① 스튜디오 PIN(STUDIO_PIN_HASH) — 어드민 빠른잠금 PIN과 같은 값. 사장님이 외우는 번호는 이거 하나.
+   ② 레거시 인화앱 암호(PRINT_LIST_PASSCODE_HASH) — 기존 기기에 캐시된 랜덤 6자. 전환 기간 병행 수용하고,
+      스튜디오 PIN 설정 시 revokeLegacy 로 폐기할 수 있다.
+   ⚠ 어드민 PIN 은 원래 기기토큰(176bit)이 있어야 쓸모있는 '2번째 요소'라 4자리도 안전했다. 같은 값을
+   여기서 단독 요소로 받는 순간 인터넷에서 바로 시도 가능해지므로, 스튜디오 PIN 은 6자리 이상을 강제하고
+   (setStudioPinAdmin) 이 라우트군에 하드 잠금을 건다(_printListAuthGate_). */
 function isValidPrintListPasscode_(code){
-  const stored=String(PropertiesService.getScriptProperties().getProperty('PRINT_LIST_PASSCODE_HASH')||'').trim();
-  if(!stored) return false; // 미설정 시 항상 거부(기본값 없음)
   const safe=String(code||'').trim();
   if(!safe) return false;
-  return hashText_(safe)===stored;
+  const p=PropertiesService.getScriptProperties();
+  const pin=String(p.getProperty('STUDIO_PIN_HASH')||'').trim();
+  if(pin && safeTokenEquals_(_hashAdminPin_(safe),pin)) return true;
+  const legacy=String(p.getProperty('PRINT_LIST_PASSCODE_HASH')||'').trim();
+  if(legacy && safeTokenEquals_(hashText_(safe),legacy)) return true;
+  return false; // 둘 다 미설정이면 항상 거부(기본값 없음)
+}
+
+/* 스튜디오 PIN — 어드민 빠른잠금 PIN + 인화앱/수령페이지 잠금해제를 하나로.
+   해시는 어드민 PIN 과 같은 솔트 스킴(_hashAdminPin_)을 쓴다. 6자리 미만 금지: 여기 값은
+   기기토큰 없이 단독으로 통하는 요소라 4자리(1만 가지)면 온라인 대입이 현실적으로 가능하다. */
+function _isWeakStudioPin_(pin){
+  if(/^(\d)\1+$/.test(pin)) return true;                       // 111111
+  const asc='0123456789012345', desc='9876543210987654';
+  if(asc.indexOf(pin)>-1||desc.indexOf(pin)>-1) return true;    // 123456 / 654321
+  return ['123456','654321','111111','000000','121212','112233'].indexOf(pin)>-1;
+}
+
+function setStudioPinAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const pin=String(payload.pin||'').trim();
+  if(!/^\d{6,8}$/.test(pin)) throw new Error('스튜디오 PIN은 숫자 6~8자리입니다. (인화앱에서도 쓰이므로 4자리는 허용하지 않습니다)');
+  if(_isWeakStudioPin_(pin)) throw new Error('너무 쉬운 PIN입니다. 연속·반복 번호가 아닌 다른 번호를 사용해 주세요.');
+  const p=PropertiesService.getScriptProperties();
+  p.setProperty('STUDIO_PIN_HASH',_hashAdminPin_(pin));
+  p.setProperty('STUDIO_PIN_SET_AT',Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
+  let legacyRevoked=false;
+  if(payload.revokeLegacy===true){
+    p.deleteProperty('PRINT_LIST_PASSCODE_HASH');
+    legacyRevoked=true;
+  }
+  _resetPrintListThrottle_();   // PIN 을 바꿨으니 이전 실패 카운터·잠금은 의미 없다
+  /* 이미 PIN 잠금이 걸린 기기들의 해시도 새 번호로 갱신한다. 안 하면 "번호는 하나"라는 전제가 깨져
+     그 기기들에서 옛 PIN 이 계속 통한다(폐기한 줄 알았던 번호가 살아있는 상태). */
+  const now=Math.floor(Date.now()/1000);
+  const newHash=_hashAdminPin_(pin);
+  let devices=_getAdminDevices_().filter(function(d){return d&&d.exp>now;});
+  let updated=0;
+  devices.forEach(function(d){ if(d.pin&&d.pin!==newHash){ d.pin=newHash; updated++; } });
+  // 호출한 기기가 이미 등록돼 있으면 새로 만들지 않는다 — 매번 새 기기를 밀어넣으면 ADMIN_DEVICE_MAX(8)
+  // 를 금세 채워 가장 오래된(=지금 쓰고 있을 수도 있는) 기기가 조용히 밀려난다.
+  const callerToken=String(payload.deviceToken||'').trim();
+  const caller=callerToken?devices.find(function(d){return d.id===callerToken;}):null;
+  if(caller&&!caller.pin){ caller.pin=newHash; updated++; }
+  _saveAdminDevices_(devices);
+  let device=null;
+  if(!caller&&payload.registerDevice!==false){
+    device=registerAdminDevice(token,{withPin:true,pin:pin,label:String(payload.label||'').slice(0,40)});
+  }
+  return {ok:true,
+    deviceToken:device?device.deviceToken:(caller?caller.id:''),
+    registeredDevice:!!device,
+    updatedDevices:updated,
+    legacyRevoked:legacyRevoked,
+    legacyStillActive:!legacyRevoked && !!String(p.getProperty('PRINT_LIST_PASSCODE_HASH')||'').trim()};
+}
+
+// 상태만 — 값이나 해시는 절대 반환하지 않는다.
+function getStudioPinStatusAdmin(token){
+  assertAdmin_(token);
+  const p=PropertiesService.getScriptProperties();
+  return {ok:true,
+    studioPinSet:!!String(p.getProperty('STUDIO_PIN_HASH')||'').trim(),
+    studioPinSetAt:String(p.getProperty('STUDIO_PIN_SET_AT')||''),
+    legacyPasscodeActive:!!String(p.getProperty('PRINT_LIST_PASSCODE_HASH')||'').trim(),
+    locked:_printListLocked_()};
 }
 function setPrintListPasscodeAdmin(token,newPasscode){
   assertAdmin_(token);
@@ -15783,21 +15852,45 @@ function generatePrintListPasscodeAdmin(token){
   return {ok:true,passcode:pc};
 }
 // 온라인 무차별 대입 완화용 지연 스로틀(어드민 로그인과 동일 패턴, 전역 카운터 — IP락은 DoS 악용 방지 위해 미사용)
+var PRINT_LOCK_FAIL_MAX_=12;   // 이 횟수를 넘기면 하드 잠금
+var PRINT_LOCK_SEC_=300;       // 5분 — 사장님이 카운터에서 오타로 잠기는 비용과 대입 방어의 절충
 function _printListThrottleDelay_(){
   try{
     const fails=parseInt(CacheService.getScriptCache().get('printlist_fails')||'0',10)||0;
     if(fails>=3) Utilities.sleep(Math.min(8000,(fails-2)*1500));
   }catch(e){}
 }
+/* 지연만으로는 부족하다: Utilities.sleep 은 동시 실행을 막지 못해 병렬 요청으로 우회된다.
+   스튜디오 PIN(숫자 6자리 = 100만 가지)이 단독 요소로 여기 들어오므로 하드 잠금이 필요하다.
+   임계값을 12로 높게 둔 이유는 전역 잠금이라 낮으면 그 자체가 영업 방해(DoS) 수단이 되기 때문. */
+function _printListLocked_(){
+  try{ return CacheService.getScriptCache().get('printlist_lock')==='1'; }catch(e){ return false; }
+}
 function _bumpPrintListThrottle_(){
   try{
     const c=CacheService.getScriptCache();
     const fails=(parseInt(c.get('printlist_fails')||'0',10)||0)+1;
     c.put('printlist_fails',String(fails),600);
+    if(fails>=PRINT_LOCK_FAIL_MAX_){
+      c.put('printlist_lock','1',PRINT_LOCK_SEC_);
+      Logger.log('printlist locked after '+fails+' failures');
+    }
   }catch(e){}
 }
 function _resetPrintListThrottle_(){
-  try{CacheService.getScriptCache().remove('printlist_fails');}catch(e){}
+  try{const c=CacheService.getScriptCache();c.remove('printlist_fails');c.remove('printlist_lock');}catch(e){}
+}
+/* 인화앱·수령페이지 라우트 공용 인증 게이트.
+   라우트마다 지연·잠금·검증·리셋을 복붙하면 새 라우트에서 한 단계를 빠뜨리기 쉬워 한곳으로 모은다. */
+function _printListAuthGate_(code){
+  _printListThrottleDelay_();
+  if(_printListLocked_()) return {ok:false,code:'LOCKED',message:'시도 횟수를 초과했습니다. 5분 후 다시 시도해 주세요.'};
+  if(!isValidPrintListPasscode_(code)){
+    _bumpPrintListThrottle_();
+    return {ok:false,code:'UNAUTHORIZED',message:'암호가 올바르지 않습니다.'};
+  }
+  _resetPrintListThrottle_();
+  return {ok:true};
 }
 // 로컬 RAW→Selects 자동복사 스크립트(automation/raw_select_sync.py)용 — 고객이 선택사진 번호를
 // 제출한 최근 세션 목록. 자동화키 인증(어드민 전용), "이미 처리함" 여부는 로컬 상태파일이 추적

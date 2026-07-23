@@ -792,11 +792,16 @@ async function loadPrintSessionList(promptIfMissing){
   }
   const btn=$("#ord_list_refresh"); if(btn){btn.disabled=true;btn.textContent="…";}
   try{
-    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list&passcode="+encodeURIComponent(pc)+"&_ts="+Date.now();
-    const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
+    // POST — 암호가 어드민 빠른잠금 PIN과 같은 값이라 쿼리스트링(브라우저 기록)에 남기지 않는다.
+    // text/plain 은 CORS 프리플라이트 회피용(_recordPrintDone 과 동일 방식).
+    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list";
+    const r=await fetch(url,{method:"POST",cache:"no-store",headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify({data:{passcode:pc}})}); const j=await r.json();
     if(!j||!j.ok){
-      localStorage.removeItem("smphoto:printListPasscode");
-      if(promptIfMissing) alert("암호가 올바르지 않습니다: "+((j&&j.error&&j.error.message)||"확인 실패"));
+      const code=(j&&j.error&&j.error.code)||"";
+      // LOCKED(시도 초과)는 암호 오류가 아니므로 캐시를 지우지 않는다
+      if(code!=="LOCKED") localStorage.removeItem("smphoto:printListPasscode");
+      if(promptIfMissing) alert((code==="LOCKED"?"":"암호가 올바르지 않습니다: ")+((j&&j.error&&j.error.message)||"확인 실패"));
       return;
     }
     localStorage.setItem("smphoto:printListPasscode",pc);
@@ -1592,10 +1597,15 @@ function _lockErpBase(){ return (localStorage.getItem("smphoto:erpBase")||ERP_BA
 async function _verifyAppPin(pin){
   const base=_lockErpBase(); if(!base) return false;
   try{
-    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list&limit=1&passcode="+encodeURIComponent(pin)+"&_ts="+Date.now();
-    const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
-    return !!(j&&j.ok);
-  }catch(e){ return false; }
+    // POST — PIN을 URL에 남기지 않는다(어드민 빠른잠금과 같은 번호이므로).
+    const url=base+(base.includes("?")?"&":"?")+"api=select-print-list";
+    const r=await fetch(url,{method:"POST",cache:"no-store",headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify({data:{passcode:pin,limit:1}})}); const j=await r.json();
+    if(j&&j.ok) return {ok:true};
+    // 잠금(LOCKED)은 PIN이 틀렸다는 뜻이 아니다 — 캐시를 지우면 안 된다
+    const code=(j&&j.error&&j.error.code)||"";
+    return {ok:false,locked:code==="LOCKED",message:(j&&j.error&&j.error.message)||""};
+  }catch(e){ return {ok:false,network:true}; }
 }
 function _showLock(msg){
   const ov=$("#lockOverlay"); if(ov) ov.style.display="flex";
@@ -1605,9 +1615,16 @@ function _showLock(msg){
 function _hideLock(){ const ov=$("#lockOverlay"); if(ov) ov.style.display="none"; }
 async function _attemptUnlock(pin,silent){
   if(!pin){ if(!silent)_showLock(""); return; }
-  const ok=await _verifyAppPin(pin);
-  if(ok){ try{localStorage.setItem("smphoto:printListPasscode",pin);}catch(e){} _hideLock(); initApp(); return; }
-  if(!silent){ try{localStorage.removeItem("smphoto:printListPasscode");}catch(e){} _showLock("PIN이 올바르지 않습니다."); }
+  const res=await _verifyAppPin(pin);
+  if(res&&res.ok){ try{localStorage.setItem("smphoto:printListPasscode",pin);}catch(e){} _hideLock(); initApp(); return; }
+  // 캐시 삭제는 '암호가 틀렸다'가 확실할 때만. 잠금·네트워크 오류로 지우면 사장님이 카운터에서
+  // 멀쩡한 PIN을 다시 입력해야 하고, 잠긴 동안엔 그 재입력도 실패해 원인이 더 헷갈린다.
+  const hardFail=res&&!res.locked&&!res.network;
+  if(hardFail){ try{localStorage.removeItem("smphoto:printListPasscode");}catch(e){} }
+  if(!silent||res.locked){
+    _showLock(res&&res.locked?(res.message||"시도 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+      :(res&&res.network?"연결에 실패했습니다. 다시 시도해 주세요.":"PIN이 올바르지 않습니다."));
+  }
 }
 if(location.protocol==="file:"){
   initApp();

@@ -608,7 +608,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="nav-group-label">시스템</div>
       <button type="button" class="nav-item" data-tab="product" onclick="switchTab('product')">상품 관리</button>
       <button type="button" class="nav-item" data-tab="logs" onclick="switchTab('logs');loadOperationsLogFull()">운영 로그</button>
-      <button type="button" class="nav-item" data-tab="settings" onclick="switchTab('settings');loadInvoiceSeqSetting()">설정</button>
+      <button type="button" class="nav-item" data-tab="settings" onclick="switchTab('settings');loadInvoiceSeqSetting();refreshStudioPinStatus()">설정</button>
     </div>
   </nav>
 
@@ -2076,8 +2076,14 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="card-title">📱 로그인 편의 · 기기 관리</div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">이 기기에 <b>PIN 빠른잠금</b>을 설정하면 다음부터 PIN만으로 로그인할 수 있습니다. 로그인 화면의 <b>“로그인 유지(30일)”</b>는 PIN 없이 자동 로그인입니다. 개인 기기에서만 사용하세요. 분실·기기 변경 시 <b>모든 기기 로그아웃</b>으로 즉시 폐기하세요. (비밀번호를 바꾸면 모든 기기가 자동으로 폐기됩니다.)</div>
       <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn btn-primary" onclick="setupPinUI()">이 기기에 PIN 설정</button>
+        <button type="button" class="btn btn-primary" onclick="setupStudioPinUI()">스튜디오 PIN 설정</button>
+        <button type="button" class="btn btn-outline" onclick="setupPinUI()">이 기기만 PIN 설정</button>
         <button type="button" class="btn btn-outline" style="color:#ef4444;" onclick="revokeAllDevicesUI()">모든 기기 로그아웃</button>
+      </div>
+      <div style="margin-top:12px;padding:11px 13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;font-size:12px;color:#475569;line-height:1.75;">
+        <b>스튜디오 PIN</b>은 어드민 빠른잠금과 <b>인화앱·수령확인 페이지</b>에서 함께 쓰는 하나의 번호입니다(숫자 6~8자리).
+        인화앱에서 쓰이는 값이라 <b>기기 없이도 통하는 번호</b>가 되므로 4자리는 허용하지 않고, 실패가 반복되면 5분간 잠깁니다.
+        <div id="studioPinStatus" style="margin-top:7px;color:#64748b;">상태 확인 중…</div>
       </div>
     </div>
     <div class="card">
@@ -3247,7 +3253,44 @@ function forceChangeDefaultPassword(){
   alert('⚠️ 보안 경고\n현재 관리자 비밀번호가 초기 기본값(1234)입니다.\n지금 반드시 새 비밀번호로 변경해 주세요.');
   if(typeof changeAdminPasswordUI==='function') changeAdminPasswordUI();
 }
-// 설정: PIN 빠른잠금 설정
+/* 설정: 스튜디오 PIN — 어드민 빠른잠금과 인화앱/수령확인 페이지를 하나의 번호로.
+   인화앱 쪽은 기기토큰 없이 이 번호만으로 열리므로 서버가 6자리 이상을 강제한다. */
+function refreshStudioPinStatus(){
+  const el=document.getElementById('studioPinStatus');
+  if(!el||!adminToken) return;
+  google.script.run.withSuccessHandler(r=>{
+    if(!r||!r.ok){ el.textContent=''; return; }
+    const parts=[];
+    parts.push(r.studioPinSet
+      ? '✅ 스튜디오 PIN 설정됨'+(r.studioPinSetAt?(' ('+r.studioPinSetAt+')'):'')
+      : '⚠️ 아직 설정되지 않음 — 인화앱은 기존 암호로만 열립니다');
+    if(r.legacyPasscodeActive) parts.push('기존 인화앱 암호도 아직 유효(PIN 설정 시 폐기 가능)');
+    if(r.locked) parts.push('🔒 현재 인화앱 잠금 상태(5분)');
+    el.textContent=parts.join(' · ');
+  }).withFailureHandler(()=>{ el.textContent=''; }).adminRpc(adminToken,'getStudioPinStatus',{});
+}
+function setupStudioPinUI(){
+  if(!adminToken){ showToast('로그인이 필요합니다.','warn'); return; }
+  const pin=prompt('스튜디오 PIN (숫자 6~8자리)\n어드민 빠른잠금 + 인화앱 + 수령확인 페이지에서 함께 사용합니다.');
+  if(pin===null) return;
+  const p1=String(pin).trim();
+  if(!/^\d{6,8}$/.test(p1)){ showToast('PIN은 숫자 6~8자리입니다.','warn'); return; }
+  const pin2=prompt('PIN을 한 번 더 입력해 주세요');
+  if(pin2===null) return;
+  if(p1!==String(pin2).trim()){ showToast('두 입력이 일치하지 않습니다.','err'); return; }
+  // 기존 랜덤 암호를 지금 폐기할지. 폐기하면 인화앱이 켜져 있는 기기들은 새 PIN을 한 번씩 입력해야 한다.
+  const revoke=confirm('기존 인화앱 암호(랜덤 6자)를 지금 폐기할까요?\n\n확인 = 앞으로 이 PIN만 사용 (인화앱 기기마다 PIN 한 번씩 재입력 필요)\n취소 = 당분간 둘 다 사용 가능 (나중에 다시 폐기 가능)');
+  google.script.run.withSuccessHandler(r=>{
+    if(!r||!r.ok){ showToast('설정 실패','err'); return; }
+    if(r.deviceToken) setDeviceToken(r.deviceToken);
+    showToast('스튜디오 PIN이 설정되었습니다.'+(r.legacyRevoked?' 기존 인화앱 암호는 폐기됐습니다.':''),'ok');
+    refreshStudioPinStatus();
+  }).withFailureHandler(e=>handleApiError(e))
+    .adminRpc(adminToken,'setStudioPin',{pin:p1,revokeLegacy:revoke,
+      deviceToken:getDeviceToken(),   // 이미 등록된 기기면 새로 만들지 않고 그 기기 PIN만 갱신
+      label:(navigator.userAgent||'').slice(0,40)});
+}
+// 설정: PIN 빠른잠금 설정 (이 기기에만 — 스튜디오 PIN과 다른 번호를 쓰고 싶을 때)
 function setupPinUI(){
   if(!adminToken){ showToast('로그인이 필요합니다.','warn'); return; }
   const pin=prompt('이 기기의 빠른잠금 PIN (숫자 4~8자리)');
@@ -4275,7 +4318,7 @@ function gotoOpsChecklistTarget(target){
   const t=String(target||'');
   if(!t) return;
   if(t==='booking'){switchTab('booking');return;}
-  if(t==='settings'){switchTab('settings');loadInvoiceSeqSetting();return;}
+  if(t==='settings'){switchTab('settings');loadInvoiceSeqSetting();refreshStudioPinStatus();return;}
   if(t==='logs'){switchTab('logs');loadOperationsLogFull();return;}
   if(t==='select'){switchTab('select');loadSelectHistory();return;}
   if(t==='consultation'){switchTab('consultation');loadConsultations();return;}
