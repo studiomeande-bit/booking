@@ -102,7 +102,7 @@
   /* ---------- Workspace ---------- */
   .workspace{flex:1;position:relative;overflow:auto;display:flex;align-items:center;justify-content:center;padding:40px;}
   .page-holder{position:relative;margin:auto;flex:0 0 auto;}
-  .page{position:relative;background:var(--pg-bg,#fff);transform-origin:top left;overflow:hidden;
+  .page{position:relative;background:var(--pg-bg,#fff);transform-origin:top left;overflow:hidden;isolation:isolate;
     box-shadow:0 6px 30px rgba(20,30,50,.18),0 1px 3px rgba(0,0,0,.12);
     -webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .safe{position:absolute;pointer-events:none;border:1px dashed rgba(0,102,204,.4);z-index:5;}
@@ -222,10 +222,11 @@
   .ostep .btn{flex:0 0 auto;width:46px;}
   body.pro .ord-ta{background:#2a2b2e;} body.pro .oq:hover{background:rgba(74,158,255,.12);} body.pro .oq.cur{background:rgba(74,158,255,.2);}
   .texture-ov{position:absolute;inset:0;pointer-events:none;z-index:-1;mix-blend-mode:multiply;background-repeat:repeat;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .deco{position:absolute;pointer-events:auto;cursor:move;z-index:4;touch-action:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .deco{position:absolute;pointer-events:none;cursor:move;z-index:4;touch-action:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .deco svg{width:100%;height:100%;display:block;overflow:visible;pointer-events:none;}
+  .deco svg *{pointer-events:visiblePainted;} /* 그려진 도형만 클릭 → 빈 여백은 아래 사진이 잡힘(루트 svg 가 아니라 자식 도형에 걸어야 동작) */
   .deco.sel{outline:1.5px dashed var(--accent);outline-offset:3px;}
-  .deco-h{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);z-index:9;cursor:pointer;}
+  .deco-h{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);z-index:9;cursor:pointer;pointer-events:auto;}
   .deco-h.rz{right:-8px;bottom:-8px;cursor:nwse-resize;}
   .deco-h.ro{left:50%;top:-24px;margin-left:-6.5px;cursor:grab;background:#fff;}
   .deco-h.ro::after{content:"";position:absolute;left:50%;top:11px;width:1px;height:13px;background:var(--accent);}

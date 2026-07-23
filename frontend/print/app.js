@@ -110,8 +110,9 @@ function renderDecos(){ state.decos.forEach(d=>{
 function decoEl(id){return page.querySelector('.deco[data-did="'+id+'"]');}
 function decoArv(d){return d.ar!=null?d.ar:decoAR(d.type);}
 function selectDeco(id){state.selDeco=id;state.sel=null;state.selText=null;render();}
+function refreshDecos(){page.querySelectorAll(".deco").forEach(n=>n.remove());renderDecos();renderProps();} // 선택 표시만 갱신(전체 render 로 이미지 재생성하지 않음)
 function startDecoMove(e,d){e.stopPropagation();
-  if(state.selDeco!==d.id){state.selDeco=d.id;state.sel=null;state.selText=null;render();}
+  if(state.selDeco!==d.id){state.selDeco=d.id;state.sel=null;state.selText=null;drawSelection();refreshDecos();}
   const st=ptMm(e),ix=d.x,iy=d.y;
   const mv=ev=>{const p=ptMm(ev);let nx=ix+p.x-st.x, ny=iy+p.y-st.y;
     if((d.rot||0)%360===0){const arv=decoArv(d);const sn=snapBox(nx,ny,d.size,d.size*arv,null);nx=sn.x;ny=sn.y;} else overlay.querySelectorAll(".snapline").forEach(n=>n.remove());
@@ -605,11 +606,12 @@ async function renderPageCanvas(dpi){
   const cvs=document.createElement("canvas");cvs.width=CW;cvs.height=CH;const ctx=cvs.getContext("2d");
   ctx.imageSmoothingQuality="high";ctx.fillStyle=state.bg;ctx.fillRect(0,0,CW,CH);
   const media=MEDIA[state.media]||"none", neutral={rGain:100,gGain:100,bGain:100,gamma:100,sharpen:0}, mm=v=>v*ppm, cache=new Map();
+  await drawTextureCanvas(ctx,CW,CH,ppm); // 종이 질감(사진 아래)
   const fw=state.frame.on?state.frame.w*ppm:0, fc=state.frame.color;
   const getEl=async(src,adj)=>{const k=src+"|"+JSON.stringify(adj)+"|"+media;if(cache.has(k))return cache.get(k);
     const need=!(isDefaultAdj(adj)&&media==="none");const durl=need?await bakeImage(src,adj,media,neutral):src;const el=await loadImage(durl);cache.set(k,el);return el;};
   const cut=(x,y,w,h)=>{ctx.strokeStyle="rgba(120,120,120,.85)";ctx.lineWidth=Math.max(1,0.2*ppm);ctx.setLineDash([2*ppm,1.5*ppm]);ctx.strokeRect(mm(x),mm(y),mm(w),mm(h));ctx.setLineDash([]);};
-  if(state.mode==="free"){for(const it of state.items){const im=imgById(it.src);if(!im)continue;const el=await getEl(im.src,it.adj);drawFittedCanvas(ctx,el,mm(it.x),mm(it.y),mm(it.w),mm(it.h),it.fit,0.5,0.5,it.rot,1,fw,fc,it.circle);}}
+  if(state.mode==="free"){for(const it of state.items){const im=imgById(it.src);if(!im)continue;const el=await getEl(im.src,it.adj);await drawItemFramed(ctx,el,it,mm,fw,fc);}}
   else if(state.mode==="fill"||(state.mode==="order"&&!state.order._card)){const im=imgById(state.fill.id);if(im){const el=await getEl(im.src,state.fill.adj);drawFittedCanvas(ctx,el,0,0,CW,CH,"cover",state.fill.ox/100,state.fill.oy/100,0,state.fill.zoom,fw,fc);}}
   else if(state.mode==="id"||(state.mode==="order"&&state.order._card)){const im=imgById(state.id.srcId);if(im){const el=await getEl(im.src,state.id.adj);const u=usableMm(),cw=state.id.cw,ch=state.id.ch,g=state.id.gap;
     const cols=Math.max(1,Math.floor((u.w+g)/(cw+g))),rows=Math.max(1,Math.floor((u.h+g)/(ch+g))),bw=cols*cw+(cols-1)*g,bh=rows*ch+(rows-1)*g,ox=u.x+(u.w-bw)/2,oy=u.y+(u.h-bh)/2;
@@ -618,6 +620,7 @@ async function renderPageCanvas(dpi){
     if(G.kind==="even"){cols=G.cols;rows=G.rows;cw=(u.w-(cols-1)*g)/cols;ch=(u.h-(rows-1)*g)/rows;ox=u.x;oy=u.y;}
     else{cw=G.cw;ch=G.ch;cols=Math.max(1,Math.floor((u.w+g)/(cw+g)));rows=Math.max(1,Math.floor((u.h+g)/(ch+g)));const bw=cols*cw+(cols-1)*g;ox=u.x+(u.w-bw)/2;oy=u.y+(u.h-(rows*ch+(rows-1)*g))/2;}
     let k=0;for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const im=state.library[k%Math.max(1,state.library.length)];k++;if(!im||!state.library.length)continue;const el=await getEl(im.src,G.adj);const x=ox+c*(cw+g),y=oy+r*(ch+g);drawFittedCanvas(ctx,el,mm(x),mm(y),mm(cw),mm(ch),G.fit,0.5,0.5,0,1,fw,fc);if(G.guides)cut(x,y,cw,ch);}}
+  await drawDecosCanvas(ctx,ppm); // 테이프·낙서(사진 위, 텍스트 아래)
   await ensureTextFonts(); drawTextsCanvas(ctx,ppm);
   await drawLogoCanvas(ctx,CW,CH,ppm);
   return cvs;
@@ -824,7 +827,7 @@ function stateSig(){return JSON.stringify({a:state.paper,b:state.cw,c:state.ch,d
 
 /* ============================================================ 여러 페이지 (라이브러리는 전역 공유) */
 let pages=[], curPage=0;
-function pageSnapshot(){return cloneState();}
+function pageSnapshot(){const s=cloneState();delete s.library;return s;} // library 는 전역 공유(loadPage 가 주입) → 페이지마다 복사본 두지 않음
 function loadPage(s){applyHist({...s,library:state.library});} // 스냅샷의 library 무시 → 전역 유지
 function initPages(){pages=[pageSnapshot()];curPage=0;renderPageStrip();}
 function renderPageStrip(){const el=$("#pageList");if(!el)return;
@@ -833,7 +836,8 @@ function renderPageStrip(){const el=$("#pageList");if(!el)return;
   const info=$("#pageInfo"); if(info)info.textContent=`${pages.length}페이지`;}
 function gotoPage(i){if(i===curPage||i<0||i>=pages.length)return;pages[curPage]=pageSnapshot();curPage=i;loadPage(pages[i]);render();fit();initHistory();renderPageStrip();}
 function addPage(dup){pages[curPage]=pageSnapshot();const s=pageSnapshot();
-  if(!dup){s.items=[];s.texts=[];s.decos=[];s.id={...s.id,srcId:null};s.fill={...s.fill,id:null};}
+  if(!dup){s.items=[];s.texts=[];s.decos=[];s.id={...s.id,srcId:null};s.fill={...s.fill,id:null};
+    s.order={...s.order,idx:0,_card:false}; if(s.mode==="order")s.mode="free";} // 빈 페이지가 이전 주문 항목을 그대로 물고 오지 않게
   pages.splice(curPage+1,0,s);curPage++;loadPage(pages[curPage]);render();fit();initHistory();renderPageStrip();}
 function delPage(i){if(pages.length<=1)return;
   // 페이지 삭제는 되돌릴 수 없다(아래 initHistory 가 undo 스택을 초기화) — 반드시 확인받는다.
@@ -844,6 +848,7 @@ function delPage(i){if(pages.length<=1)return;
 async function exportAllPagesPDF(){
   if(pages.length<1)return; pages[curPage]=pageSnapshot(); const saved=curPage;
   const btn=$("#pagesPdf"); if(btn){btn.disabled=true;btn.textContent="⏳ 생성 중…";}
+  const wasRestoring=restoring; restoring=true; clearTimeout(histTimer); // 페이지 순회 중 render()가 남의 페이지를 undo 히스토리에 커밋하는 것 방지
   try{ const out=[];
     // render() 가 첫 줄에서 applyPageSize() 를, renderPageCanvas 가 내부에서 ensureTextFonts() 를 이미 수행한다.
     for(let i=0;i<pages.length;i++){ loadPage(pages[i]); render();
@@ -852,7 +857,8 @@ async function exportAllPagesPDF(){
     downloadBlob(makePDFmultiPage(out),"studio-pages.pdf");
   }catch(e){alert("전체 PDF 실패: "+(e.message||e));}
   finally{ if(btn){btn.disabled=false;btn.textContent="🖨️ 전체 페이지 PDF";}
-    curPage=saved; loadPage(pages[saved]); render(); fit(); renderPageStrip(); }
+    curPage=saved; loadPage(pages[saved]); render(); fit(); renderPageStrip();
+    clearTimeout(histTimer); restoring=wasRestoring; lastSig=stateSig(); } // 복원된 현재 페이지를 기준선으로
 }
 function scheduleHistory(){if(restoring)return;clearTimeout(histTimer);histTimer=setTimeout(commitHistory,400);}
 function commitHistory(){const sig=stateSig();if(sig===lastSig)return;lastSig=sig;history=history.slice(0,hpos+1);history.push(cloneState());if(history.length>60)history.shift();hpos=history.length-1;updateUndoUI();}
@@ -916,6 +922,7 @@ function renderFill(){
   const wrap=document.createElement("div"); wrap.className="item"; wrap.style.inset="0"; wrap.style.width="100%"; wrap.style.height="100%";
   const img=document.createElement("img"); img.src=im.src; img.style.objectFit="cover";
   img.style.objectPosition=`${state.fill.ox}% ${state.fill.oy}%`; img.style.transform=`scale(${state.fill.zoom})`;
+  img.style.transformOrigin=`${state.fill.ox}% ${state.fill.oy}%`; // 줌 피벗=초점(캔버스 object-position 의미와 일치)
   img.style.filter=toneFilter(state.fill.adj,"fill");
   applyFrame(img); wrap.appendChild(img); wrap.addEventListener("pointerdown",e=>startPan(e,state.fill)); page.appendChild(wrap);
 }
@@ -943,7 +950,8 @@ function renderId(){
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const cell=document.createElement("div"); cell.className="cell";
     cell.style.left=(ox+c*(cw+g))+"mm";cell.style.top=(oy+r*(ch+g))+"mm";cell.style.width=cw+"mm";cell.style.height=ch+"mm";
-    if(im){const img=document.createElement("img");img.src=im.src;img.style.objectPosition=`${state.id.ox}% ${state.id.oy}%`;img.style.transform=`scale(${state.id.zoom||1})`;img.style.transformOrigin=`${state.id.ox}% ${state.id.oy}%`;img.style.filter=flt;applyFrame(img);cell.appendChild(img);}
+    if(state.frame.on){cell.style.boxSizing="border-box";cell.style.border=`${state.frame.w}mm solid ${state.frame.color}`;} // 테두리는 셀에(사진 줌에 안 딸려감)
+    if(im){const img=document.createElement("img");img.src=im.src;img.style.objectPosition=`${state.id.ox}% ${state.id.oy}%`;img.style.transform=`scale(${state.id.zoom||1})`;img.style.transformOrigin=`${state.id.ox}% ${state.id.oy}%`;img.style.filter=flt;cell.appendChild(img);}
     if(gd) cell.insertAdjacentHTML("beforeend", faceGuideSVG(cw,ch,gd));
     if(state.id.guides){const gl=document.createElement("div");gl.className="guide";
       gl.style.left=cell.style.left;gl.style.top=cell.style.top;gl.style.width=cell.style.width;gl.style.height=cell.style.height;page.appendChild(gl);}
@@ -1006,7 +1014,7 @@ function showSnap(vert,posMm){ // vert=true → vertical line at x=posMm
 function snapGuideLines(skipItemId){ // 용지 + 다른 사진의 좌/중앙/우 · 상/중앙/하 가이드
   const [pw,ph]=paperMm(), u=usableMm();
   const xLines=[u.x, u.x+u.w, pw/2, u.x+u.w/2], yLines=[u.y, u.y+u.h, ph/2, u.y+u.h/2];
-  state.items.forEach(o=>{ if(o.id===skipItemId)return; xLines.push(o.x,o.x+o.w/2,o.x+o.w); yLines.push(o.y,o.y+o.h/2,o.y+o.h); });
+  if(state.mode==="free") state.items.forEach(o=>{ if(o.id===skipItemId)return; xLines.push(o.x,o.x+o.w/2,o.x+o.w); yLines.push(o.y,o.y+o.h/2,o.y+o.h); }); // 다른 모드에선 화면에 없는 아이템에 스냅되지 않게
   return {xLines,yLines};
 }
 function snapBox(x,y,w,h,skipItemId){ // 상자의 좌/중앙/우 · 상/중앙/하를 가이드에 스냅 + 가이드선
@@ -1049,7 +1057,8 @@ function startPan(e,obj){
   const isId=(obj===state.id), [pw,ph]=paperMm();
   const fw=Math.max(1,(isId?state.id.cw:pw)*SPP()), fh=Math.max(1,(isId?state.id.ch:ph)*SPP()); // 프레임 화면크기 → 프레임 가로지르면 포커스 100% 이동(자연스러움)
   const st={x:e.clientX,y:e.clientY}, ox=obj.ox, oy=obj.oy;
-  const mv=ev=>{obj.ox=Math.min(100,Math.max(0,ox-(ev.clientX-st.x)/fw*100));obj.oy=Math.min(100,Math.max(0,oy-(ev.clientY-st.y)/fh*100));
+  const z=obj.zoom||1; // 줌이 클수록 같은 %가 화면상 더 크게 움직이므로 나눠서 1:1 체감 유지
+  const mv=ev=>{obj.ox=Math.min(100,Math.max(0,ox-(ev.clientX-st.x)/fw*100/z));obj.oy=Math.min(100,Math.max(0,oy-(ev.clientY-st.y)/fh*100/z));
     page.querySelectorAll(".cell img,.item img").forEach(im=>{im.style.objectPosition=`${obj.ox}% ${obj.oy}%`;if(obj.zoom!=null)im.style.transformOrigin=`${obj.ox}% ${obj.oy}%`;});};
   const up=()=>{window.removeEventListener("pointermove",mv);window.removeEventListener("pointerup",up);scheduleHistory();};
   window.addEventListener("pointermove",mv);window.addEventListener("pointerup",up);
@@ -1314,9 +1323,10 @@ function startTextMove(e,t){
   e.stopPropagation();
   if(state.selText!==t.id) selectText(t.id);
   const st=ptMm(e), ix=t.x, iy=t.y, el=page.querySelector(`.textbox[data-tid="${t.id}"]`);
+  let tb=null; if(el&&(t.rot||0)%360===0){const r=el.getBoundingClientRect(),s=SPP();tb={w:r.width/s,h:r.height/s};} // 드래그 중 크기 불변 → 시작할 때 1회만 측정(매 move 레이아웃 강제 방지)
   const mv=ev=>{const p=ptMm(ev);let nx=ix+p.x-st.x, ny=iy+p.y-st.y;
-    if((t.rot||0)%360===0 && el){const r=el.getBoundingClientRect(),w=r.width/SPP(),h=r.height/SPP(),al=t.align||"left",offL=al==="center"?w/2:al==="right"?w:0;
-      const sn=snapBox(nx-offL,ny,w,h,null);nx=sn.x+offL;ny=sn.y;} else overlay.querySelectorAll(".snapline").forEach(n=>n.remove());
+    if(tb){const al=t.align||"left",offL=al==="center"?tb.w/2:al==="right"?tb.w:0;
+      const sn=snapBox(nx-offL,ny,tb.w,tb.h,null);nx=sn.x+offL;ny=sn.y;} else overlay.querySelectorAll(".snapline").forEach(n=>n.remove());
     t.x=Math.round(nx*10)/10;t.y=Math.round(ny*10)/10;
     if(el){el.style.left=t.x+"mm";el.style.top=t.y+"mm";}};
   const up=()=>{window.removeEventListener("pointermove",mv);window.removeEventListener("pointerup",up);overlay.querySelectorAll(".snapline").forEach(n=>n.remove());syncTextInputs(t);scheduleHistory();};
@@ -1328,6 +1338,51 @@ function addTextBlock(){
   const t={id:uid++,x:Math.round(pw*0.3),y:Math.round(ph*0.45),text:"텍스트 입력",font:"pen",size:8,color:"#333333",bold:false,align:"left",rot:0,opacity:100};
   state.texts.push(t); state.selText=t.id; state.sel=null; render();
 }
+/* ---- 내보내기 캔버스: 질감·데코 합성(화면/DOM인쇄와 동일하게) ---- */
+async function svgImage(svg,wpx,hpx){ // SVG 문자열 → 지정 크기 이미지(내재크기 없는 SVG 대비 width/height 주입)
+  const sized=svg.replace(/^<svg /,`<svg width="${Math.max(1,Math.round(wpx))}" height="${Math.max(1,Math.round(hpx))}" `);
+  return loadImage("data:image/svg+xml;utf8,"+encodeURIComponent(sized));
+}
+async function drawTextureCanvas(ctx,CW,CH,ppm){ // .texture-ov 와 동일: 55mm 타일, multiply, 강도 op
+  if(!state.texture||state.texture==="none")return;
+  const c=TEXTURES[state.texture]; if(!c)return;
+  let img; try{ img=await loadImage(textureURI(state.texture)); }catch(e){ return; }
+  const pat=ctx.createPattern(img,"repeat"); if(!pat)return;
+  try{ const m=new DOMMatrix(), s=(55*ppm)/(img.naturalWidth||180); m.a=s; m.d=s; pat.setTransform(m); }catch(e){}
+  ctx.save(); ctx.globalAlpha=c.op; ctx.globalCompositeOperation="multiply";
+  ctx.fillStyle=pat; ctx.fillRect(0,0,CW,CH); ctx.restore();
+}
+async function drawDecosCanvas(ctx,ppm){ // 테이프·손그림 낙서 (renderDecos 와 동일 기하)
+  for(const d of state.decos){
+    const ar=d.ar!=null?d.ar:decoAR(d.type);
+    const W=Math.max(1,d.size*ppm), H=Math.max(1,d.size*ar*ppm);
+    const svg=d.type.indexOf("tape")===0?tapeSVG(d.type==="tape-gaffer"?"gaffer":"washi",d.color):doodleSVG(d.type,d.color||"#333");
+    let img; try{ img=await svgImage(svg,W,H); }catch(e){ continue; }
+    ctx.save(); ctx.globalAlpha=(d.opacity==null?100:d.opacity)/100;
+    ctx.translate(d.x*ppm+W/2, d.y*ppm+H/2); if(d.rot)ctx.rotate(d.rot*Math.PI/180);
+    ctx.drawImage(img,-W/2,-H/2,W,H); ctx.restore();
+  }
+}
+/* 사진별 프레임(폴라로이드/필름/스케치)을 아이템 중심 회전 안에서 합성 → 화면과 동일 */
+async function drawItemFramed(ctx,el,it,mm,fw,fc){
+  const fs=it.frameStyle||"plain";
+  const X=mm(it.x),Y=mm(it.y),W=mm(it.w),H=mm(it.h);
+  ctx.save(); ctx.translate(X+W/2,Y+H/2); if(it.rot)ctx.rotate(it.rot*Math.PI/180);
+  let ix=-W/2, iy=-H/2, iw=W, ih=H;
+  if(fs==="polaroid"){ const p=mm(it.w*0.045), pb=mm(it.w*0.15);
+    ctx.fillStyle=it.frameColor||"#ffffff"; ctx.fillRect(-W/2,-H/2,W,H);
+    ix=-W/2+p; iy=-H/2+p; iw=W-2*p; ih=H-p-pb;
+  } else if(fs==="film"){ const px=W*0.03, py=H*0.1, band=H*0.11, hw=W*0.04, pitch=W*0.09, off=W*0.025;
+    ctx.fillStyle="#141414"; ctx.fillRect(-W/2,-H/2,W,H);
+    ctx.fillStyle="#eae7df";
+    for(let x=off; x+hw<=W; x+=pitch){ ctx.fillRect(-W/2+x,-H/2,hw,band); ctx.fillRect(-W/2+x,H/2-band,hw,band); }
+    ix=-W/2+px; iy=-H/2+py; iw=W-2*px; ih=H-2*py;
+  }
+  drawFittedCanvas(ctx,el,ix,iy,iw,ih,it.fit,0.5,0.5,0,1,fs==="plain"?fw:0,fc,it.circle);
+  if(fs==="sketch"){ const ow=W*1.06, oh=H*1.06;
+    try{ const sk=await svgImage(sketchFrameSVG(it.frameColor||"#2a2a2a"),ow,oh); ctx.drawImage(sk,-ow/2,-oh/2,ow,oh); }catch(e){} }
+  ctx.restore();
+}
 /* 내보내기 전 사용 폰트 로드 보장(캔버스 fillText가 폴백으로 굽는 것 방지) */
 async function ensureTextFonts(){
   if(!document.fonts||!document.fonts.load)return;
@@ -1335,6 +1390,10 @@ async function ensureTextFonts(){
   state.texts.forEach(t=>{const m=(FONT_STACK[t.font]||"").match(/"([^"]+)"/);if(m){try{jobs.push(document.fonts.load(`${t.bold?"700":"400"} 40px "${m[1]}"`,String(t.text||"가")));}catch(e){}}});
   try{await Promise.all(jobs);}catch(e){}
 }
+/* 캔버스 letterSpacing 미지원 엔진 대비 — 미지원이면 글자 단위로 직접 자간 적용(내보내기에서 자간이 조용히 사라지지 않게) */
+const CANVAS_LS=(()=>{try{const c=document.createElement("canvas").getContext("2d");c.letterSpacing="3px";return c.letterSpacing==="3px";}catch(e){return false;}})();
+function lsMeasure(ctx,s,trk){ if(CANVAS_LS||!trk)return ctx.measureText(s).width; let w=0; for(const ch of s)w+=ctx.measureText(ch).width+trk; return w; }
+function lsFill(ctx,s,x,y,trk){ if(CANVAS_LS||!trk){ctx.fillText(s,x,y);return;} let cx=x; for(const ch of s){ctx.fillText(ch,cx,y);cx+=ctx.measureText(ch).width+trk;} }
 /* 내보내기(PNG/JPG/PDF) 캔버스에 텍스트 bake — DOM(line-height 1.28)과 동일 공식 */
 function drawTextsCanvas(ctx,ppm){
   state.texts.forEach(t=>{
@@ -1342,14 +1401,14 @@ function drawTextsCanvas(ctx,ppm){
     ctx.save();ctx.font=`${t.bold?"700":"400"} ${px}px ${stack}`;
     try{ctx.letterSpacing=((t.tracking||0)*px)+"px";}catch(e){}
     ctx.globalAlpha=(t.opacity==null?100:t.opacity)/100;ctx.fillStyle=t.color;ctx.textBaseline="alphabetic";
-    const lines=String(t.text).split("\n"), lh=px*1.28, al=t.align||"left";
-    const widths=lines.map(l=>ctx.measureText(l).width), maxW=Math.max(1,...widths), H=lines.length*lh;
+    const lines=String(t.text).split("\n"), lh=px*1.28, al=t.align||"left", trk=(t.tracking||0)*px;
+    const widths=lines.map(l=>lsMeasure(ctx,l,trk)), maxW=Math.max(1,...widths), H=lines.length*lh;
     // align = 앵커 모서리(DOM과 동일): left→x가 왼끝, center→중앙, right→오른끝
     const blockLeft=al==="center"?t.x*ppm-maxW/2:al==="right"?t.x*ppm-maxW:t.x*ppm;
     const cx=blockLeft+maxW/2, cy=t.y*ppm+H/2;
     ctx.translate(cx,cy); if(t.rot)ctx.rotate(t.rot*Math.PI/180);
     lines.forEach((l,i)=>{const ox=t.align==="center"?(maxW-widths[i])/2:t.align==="right"?(maxW-widths[i]):0;
-      ctx.fillText(l,-maxW/2+ox,-H/2+i*lh+px*0.86);});
+      lsFill(ctx,l,-maxW/2+ox,-H/2+i*lh+px*0.86,trk);});
     ctx.restore();
   });
 }
