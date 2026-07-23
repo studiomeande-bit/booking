@@ -75,6 +75,24 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **수령 완결 — 인화물 전달 기록 (2026-07-23, ✅ 배포 @650 · 커밋 `3cedf15`)** — 인화가 끝난 뒤 인화물이 실제로 고객에게
+  갔는지를 시스템이 전혀 모르던 구멍을 닫음. **상태값이 아니라 컬럼**으로 모델링(상태로 만들면 `최종작업완료`와 배타적이라
+  둘 중 클릭 적은 쪽만 쓰이고, `isSelectFinalLockedStatus_`에 들어가면 픽업 페이지가 죽음).
+  - 사진셀렉 +5컬럼(끝에 append): `수령완료일시`/`수령방법`/`수령메모`/`픽업리마인드발송일시`/`픽업리마인드횟수`
+  - **주 입력면 = `print.studio-mean.com/handover/`** — 카운터에서 한 손으로 쓰는 모바일 페이지, 인화앱 PIN
+    (`smphoto:printListPasscode`) 재사용. 어드민 셀렉탭 16열 중 버튼은 보조 경로. 전달 순간은 고객과 대화하는 60초라는 판단.
+  - 우편발송 기록 시 3개국어 발송 안내 메일(`_sendSelectShippedEmail_`) — 시스템이 이미 약속해 두고 안 보내던 메일
+  - `C4 픽업 미예약 리마인드`(dailyTasks): 안내 후 5~30일·**평생 1회**(카운터 게이트)·일요일 제외·실행당 8건·쿼터 프리플라이트
+  - 아침 리포트 `handoverPending` 섹션(픽업노쇼/미수령/발송대기), 어드민 `수령완료` 칩+경과일, 에이전트 액션 4종
+    (`select-handover-pending|done|undo`, `select-pickup-reminder-run`)
+  - **부수 수정(기존 결함)**: `ensureSelectSheet_`가 그리드 여유 없이 `getLastColumn()+1`에 헤더를 써서 컬럼 추가 시 throw →
+    인화앱·픽업페이지·어드민 셀렉탭·아침리포트 동시 사망 가능이었음. 고정폭 시트 읽기 5곳도 마이그레이션 창에서 throw
+    (특히 `verifySelectSubmissionSaved_`는 **고객 제출 경로**라 제출 셀을 다 쓴 뒤 터져 예약장부 동기화·추가금 인보이스·알림메일이
+    통째로 스킵될 수 있었음). `resendSelectLinkAdmin` 전체행 덮어쓰기에 수령 기록 이월. B5를 `AUTOMATION_JOB_NAMES_`에 등록.
+  - 배포 직후 `daily-briefing`으로 마이그레이션 강제 실행해 노출 창 폐쇄. 합성 세션 E2E(제출→기록→멱등→정정→우편전환→
+    발송메일→상태롤백) 통과. 첫 실데이터: **Tabea Krug 픽업 예약 2026-07-11 노쇼 12일 경과** — 사장님 확인 필요.
+  - 남은 것: 수령 후 픽업 재예약 차단 가드는 `출력완료일시`가 있어야 도달하는 경로라 코드 검증만 함(실인화 때 확인).
+
 - **기프트 바우처 상시 광고 (2026-07-18)** — 예약 사이트에 선물용 바우처 프로모 2곳: 페이지 하단 상시 스트립
   (`#voucherPromoStrip`) + 예약완료 패널 카드(`#voucherPromoSuccess`). 3개국어(booking.js COPY `voucherPromo*` +
   applyCopy setText), CTA=이메일 문의(자가구매 페이지 없음·바우처는 admin 발행). booking.min.js 재빌드+캐시버스트 u7a.
