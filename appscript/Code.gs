@@ -326,6 +326,10 @@ function adminRpc(token, action, payload){
     case 'mergeDuplicateDbFiles':
       assertAdmin_(token);
       return mergeDuplicateDbFiles_();
+    case 'markSelectHandover':
+      return markSelectHandoverAdmin(token, payload||{});
+    case 'undoSelectHandover':
+      return undoSelectHandoverAdmin(token, payload||{});
     case 'getStudioPresenceState':
       return getStudioPresenceAdmin(token);
     case 'openStudioPresence':
@@ -942,6 +946,38 @@ function handlePublicApiRequest_(route,method,e){
       if(!result||!result.ok) return jsonError_('PRINT_DONE_FAILED',(result&&result.message)||'기록 실패');
       return jsonOk_(result);
     }
+    /* 수령 확인 페이지(print.studio-mean.com/handover/) — 인화앱과 같은 오리진이라 최근주문 passcode를
+       그대로 재사용한다(스튜디오 기기 = 인증). 세션ID capability 는 위조 가능하고, automation key 는
+       클라이언트에 절대 넣지 않는다. 참고: erp-agent 에도 같은 이름의 액션이 있으나 인증 체계가 다르다. */
+    if(route==='select-handover-list'){
+      if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-handover-list');
+      const p=(e&&e.parameter)||{};
+      _printListThrottleDelay_();
+      if(!isValidPrintListPasscode_(String(p.passcode||'').trim())){
+        _bumpPrintListThrottle_();
+        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
+      }
+      _resetPrintListThrottle_();
+      return jsonOk_(listSelectHandoverPending_({limit:p.limit,includeFresh:true}));
+    }
+    if(route==='select-handover-done'||route==='select-handover-undo'){
+      // POST 전용 — 링크 스캐너·메일 미리보기가 GET 을 날려 상태 변경 + 메일 발송을 일으키면 안 된다
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/'+route);
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      _printListThrottleDelay_();
+      if(!isValidPrintListPasscode_(String(payload.passcode||'').trim())){
+        _bumpPrintListThrottle_();
+        return jsonError_('UNAUTHORIZED','암호가 올바르지 않습니다.');
+      }
+      _resetPrintListThrottle_();
+      const sid=String(payload.sessionId||payload.id||'').trim();
+      const res=route==='select-handover-done'
+        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,finalize:payload.finalize===true,notify:payload.notify!==false})
+        : undoSelectHandoverBySession_(sid);
+      if(!res||!res.ok) return jsonError_('HANDOVER_FAILED',(res&&res.message)||'기록 실패');
+      return jsonOk_(res);
+    }
     if(route==='select-pickup-calendar'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-pickup-calendar');
       const p=(e&&e.parameter)||{};
@@ -1159,6 +1195,10 @@ function handlePublicApiRequest_(route,method,e){
           payload.delivery||{method:payload.method,mailName:payload.mailName,mailAddress:payload.mailAddress}));
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
+        if(action==='select-handover-pending') return jsonOk_(listSelectHandoverPendingForAgent_(token,payload));
+        if(action==='select-handover-done') return jsonOk_(markSelectHandoverAdmin(token,payload));
+        if(action==='select-handover-undo') return jsonOk_(undoSelectHandoverAdmin(token,payload));
+        if(action==='select-pickup-reminder-run') return jsonOk_(runSelectPickupRemindersAdmin(token,payload));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='print-list-passcode-generate') return jsonOk_(generatePrintListPasscodeAdmin(token));
         if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
@@ -2564,7 +2604,8 @@ const MORNING_REPORT_JOB_NAME_='D7 아침 리포트(브리핑+결제검토)';
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집',
+  'B4 돌촬영 추천메일','B5 기념일 재촬영 추천메일','C3 보정 후 후속메일','C4 픽업 미예약 리마인드',
+  'T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집',
   MORNING_REPORT_JOB_NAME_
 ];
 
@@ -8900,7 +8941,7 @@ function findSelectSessionForBookingRow_(ss,bookingRowIndex){
   if(!ss||!bri||bri<2) return null;
   const sh=ss.getSheetByName(SELECT_SHEET_NAME);
   if(!sh||sh.getLastRow()<2) return null;
-  const rows=sh.getRange(2,1,sh.getLastRow()-1,SELECT_HEADERS.length).getValues();
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues(); // 폭은 시트 실측 — 상수가 시트보다 먼저 늘어난 마이그레이션 창에서 throw 방지
   for(let i=rows.length-1;i>=0;i--){
     const r=rows[i];
     if(parseInt(r[SELECT_COL['예약장부행']],10)!==bri) continue;
@@ -11419,6 +11460,7 @@ function updateSelectStatusByRowForAgent_(token,selectRowIndex,newStatus){
   const st=String(newStatus||'').trim();
   if(!st) throw new Error('변경할 상태를 지정해 주세요.');
   selSh.getRange(rIdx,SELECT_COL['상태']+1).setValue(st);
+  backfillSelectHandoverOnShipStatus_(selSh,rIdx,st);
   if(st!=='작업대기') selSh.getRange(rIdx,SELECT_COL['어드민알림']+1).setValue('');
   if(st==='최종작업완료'){
     const bRow=parseInt(selSh.getRange(rIdx,SELECT_COL['예약장부행']+1).getValue(),10);
@@ -11459,7 +11501,12 @@ function searchSelectSessionsForAgent_(token,query){
       retouchSentAt:parseDateSafe_(row[SELECT_COL['보정본발송일시']]).str.slice(0,16),
       revisionCount:parseInt(row[SELECT_COL['재수정요청횟수']],10)||0,
       revisionNote:String(row[SELECT_COL['재수정요청메모']]||'').slice(0,400),
-      driveLink:String(row[SELECT_COL['드라이브링크']]||'')
+      driveLink:String(row[SELECT_COL['드라이브링크']]||''),
+      deliveryMethod:String(row[SELECT_COL['수령방식']]||''),
+      pickupAt:parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16),
+      printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'',
+      handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16):'',
+      handoverMethod:SELECT_COL['수령방법']!=null?String(row[SELECT_COL['수령방법']]||''):''
     });
   }
   return {ok:true,count:out.length,sessions:out};
@@ -11621,7 +11668,16 @@ function _buildDailyBriefingData_(){
     if(endQ[mm]&&dd>=25){qtr.active=true;qtr.label=endQ[mm];}
     else if(startQ[mm]&&dd<=20){qtr.active=true;qtr.label=startQ[mm];}
   }catch(e){}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
+  // 수령 미완결 — 인화는 끝났는데 아직 고객에게 전달 안 된 건(픽업 노쇼 / 오래된 미수령 / 우편 발송대기).
+  // printPending 루프와 합치지 않는다 — 실패 도메인을 분리해 한쪽이 죽어도 다른 쪽 섹션은 나온다.
+  const handoverPending={count:0,items:[],counts:{noshow:0,unclaimed:0,toship:0,fresh:0}};
+  try{
+    const hp=listSelectHandoverPending_({limit:60});   // includeFresh:false — 정상 대기중인 건은 세기만
+    handoverPending.count=hp.count;
+    handoverPending.counts=hp.counts;
+    handoverPending.items=hp.items.slice(0,5);
+  }catch(e){Logger.log('briefing handover fail: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,handoverPending:handoverPending,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -11656,6 +11712,18 @@ function buildDailyBriefingEmailHtml_(b){
       actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`));
     });
     if(b.printPending.count>(b.printPending.items||[]).length) actions.push(line(`&nbsp;&nbsp;· 외 ${b.printPending.count-(b.printPending.items||[]).length}건`));
+  }
+  if(b.handoverPending&&b.handoverPending.count>0){
+    const hc=b.handoverPending.counts||{};
+    actions.push(line(`🤝 수령 미완결 <b>${b.handoverPending.count}건</b> — 전달 확인 필요`
+      +`${hc.noshow?' · 픽업노쇼 '+hc.noshow:''}${hc.unclaimed?' · 미수령 '+hc.unclaimed:''}${hc.toship?' · 발송대기 '+hc.toship:''}`));
+    (b.handoverPending.items||[]).forEach(function(h){
+      const tag=h.kind==='noshow'?'픽업노쇼':(h.kind==='toship'?'발송대기':'미수령');
+      const when=h.kind==='noshow'?('픽업 '+esc(String(h.pickupAt||'').slice(5,16))):('인화완료 '+esc(String(h.printDoneAt||'').slice(5,10)));
+      actions.push(line(`&nbsp;&nbsp;· [${tag}] <b>${esc(h.name)}</b>님 · ${when} (${h.days}일 경과)`));
+    });
+    actions.push(line(`&nbsp;&nbsp;· <a href="${SELECT_HANDOVER_PAGE_BASE}" style="color:#2563eb;">수령 확인 페이지 열기</a>`
+      +`${b.handoverPending.count>(b.handoverPending.items||[]).length?(' · 외 '+(b.handoverPending.count-(b.handoverPending.items||[]).length)+'건'):''}`));
   }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   if(b.consultations&&b.consultations.open>0){
@@ -11705,11 +11773,20 @@ function buildDailyBriefingEmailHtml_(b){
 
 // D7 아침 브리핑 단독 발송 — HTML 생성은 buildDailyBriefingEmailHtml_ 재사용(동작 동일).
 // 통합 리포트(sendCombinedMorningReport_) 도입 후 dailyTasks에서는 제외됐고, 온디맨드/폴백용으로 유지.
+// 브리핑 제목의 '액션 N건' — sendDailyBriefingEmail_ 과 sendCombinedMorningReport_ 두 곳이 쓴다.
+// 손으로 복제해 두면 섹션을 추가할 때 한쪽만 고치게 되고, 제목이 조용히 실제보다 적게 나온다.
+function briefingActionCount_(b){
+  return b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length
+    +b.quotes.expiringSoon.length+b.select.revisionRequested
+    +((b.printPending&&b.printPending.count)||0)
+    +((b.handoverPending&&b.handoverPending.count)||0);
+}
+
 function sendDailyBriefingEmail_(){
   const b=_buildDailyBriefingData_();
   const html=buildDailyBriefingEmailHtml_(b);
   const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
-  const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
+  const actionCount=briefingActionCount_(b);
   sendTrackedEmail_({
     to:CONFIG.ADMIN_EMAIL,
     subject:`[브리핑 ${b.date.slice(5)}] 오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건${b.unpaidBalances.length?` · 미수 ${b.unpaidBalances.length}건`:''}`,
@@ -15522,9 +15599,10 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
+// ⚠ SELECT_HEADERS 는 append-only. 중간 삽입은 SELECT_COL 이 상수에서 파생되므로 기존 전 행이 조용히 어긋난다.
 
 function normalizeSelectPageVersion_(value){
   return String(value||'').toLowerCase().trim()==='v2' ? 'v2' : 'classic';
@@ -15546,9 +15624,19 @@ function ensureSelectSheet_(ss){
     sh.setFrozenRows(1);
   } else {
     // 기존 시트에 신규 컬럼 추가 (마이그레이션)
-    const existing=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
-    SELECT_HEADERS.forEach((h,i)=>{
-      if(!existing.includes(h)) sh.getRange(1,sh.getLastColumn()+1).setValue(h);
+    // ① 그리드 폭이 모자라면 먼저 넓힌다. 안 넓히면 헤더 setValue 가 throw 하는데, 이 함수는
+    //    markSelectPrintDone_/scheduleSelectPickup_/getSelectDashboard/_buildDailyBriefingData_ 의
+    //    첫 줄이라 인화앱·픽업페이지·어드민 셀렉탭·아침리포트가 한꺼번에 죽는다.
+    const need=SELECT_HEADERS.length-sh.getMaxColumns();
+    if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
+    // ② 헤더 행 기준으로 append. getLastColumn() 은 전체 행의 최대라, 데이터 행 오른쪽에 값이
+    //    하나라도 삐져나와 있으면 헤더가 엉뚱한 물리 컬럼에 써지고 SELECT_COL 과 조용히 어긋난다.
+    const headerRow=sh.getRange(1,1,1,sh.getMaxColumns()).getValues()[0];
+    let headerLen=0;
+    for(let i=headerRow.length-1;i>=0;i--){ if(String(headerRow[i]||'').trim()!==''){ headerLen=i+1; break; } }
+    const existing=headerRow.slice(0,headerLen);
+    SELECT_HEADERS.forEach(function(h){
+      if(existing.indexOf(h)===-1){ headerLen++; sh.getRange(1,headerLen).setValue(h); existing.push(h); }
     });
     repairSelectRevisionNoteColumn_(sh);
     repairSelectRevisionHistoryColumn_(sh);
@@ -15723,7 +15811,7 @@ function listRecentRawSelectSessionsForAgent_(token,options){
   if(!sh) return {items:[]};
   const lastRow=sh.getLastRow();
   if(lastRow<2) return {items:[]};
-  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const rows=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues(); // 폭은 시트 실측 — 상수가 시트보다 먼저 늘어난 마이그레이션 창에서 throw 방지
   const out=[];
   for(let i=0;i<rows.length;i++){
     const row=rows[i];
@@ -15755,7 +15843,7 @@ function listRecentPrintReadySessions_(limit){
   if(!sh) return {sessions:[]};
   const lastRow=sh.getLastRow();
   if(lastRow<2) return {sessions:[]};
-  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const rows=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues(); // 폭은 시트 실측 — 상수가 시트보다 먼저 늘어난 마이그레이션 창에서 throw 방지
   const out=[];
   for(let i=rows.length-1;i>=0&&out.length<cap;i--){
     const row=rows[i];
@@ -16445,7 +16533,8 @@ function getSelectSession(sessionId){
       printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
       printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:'',
       printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str:'',
-      printDoneCount:SELECT_COL['출력완료매수']!=null?(parseInt(row[SELECT_COL['출력완료매수']],10)||0):0
+      printDoneCount:SELECT_COL['출력완료매수']!=null?(parseInt(row[SELECT_COL['출력완료매수']],10)||0):0,
+      handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16):''
     };
     _timing.build=Date.now()-_t0;
     base._timing=_timing;
@@ -17010,6 +17099,8 @@ function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
     if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') return{ok:false,message:'픽업 수령으로 신청된 세션이 아닙니다. 변경을 원하시면 스튜디오로 연락해 주세요.'};
     const printDone=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
     if(!printDone) return{ok:false,message:'아직 인화 준비 중입니다. 인화가 완료되면 예약 안내 메일을 보내드립니다.'};
+    // 이미 전달이 끝난 주문은 픽업 슬롯을 잡을 수 없다(빈 슬롯 낭비 + 사장님 혼선)
+    if(!isSelectHandoverOpen_(row)) return{ok:false,message:'이미 수령이 완료된 주문입니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
     // 시트가 "yyyy-MM-dd HH:mm" 문자열을 Date로 자동 변환하므로 정규화해서 비교(no-op 판정 정확성)
     const prevPickupAt=parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16);
     if(prevPickupAt===`${date} ${time}`) return{ok:true,pickupAt:prevPickupAt,rescheduled:false,unchanged:true}; // 동일 슬롯 재요청 no-op(메일/캘린더 재작업 방지)
@@ -17108,6 +17199,424 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
   return true;
 }
 
+/* ===== 수령 완결 (handover) — 인화물이 실제로 고객 손에 갔는지 기록 =====================
+   상태값이 아니라 컬럼(수령완료일시/수령방법/수령메모)으로 모델링한다:
+   ① 상태로 만들면 최종작업완료와 배타적이라 사장님이 둘 중 클릭 적은 쪽만 쓰게 되고
+   ② isSelectFinalLockedStatus_ 에 넣는 순간 getSelectSession 이 {ok:false} 를 내려 픽업 페이지가 죽는다.
+   주 입력면은 어드민이 아니라 스튜디오 휴대폰 페이지(SELECT_HANDOVER_PAGE_BASE) — 전달 순간은
+   카운터에서 고객과 대화하는 60초라 어드민 16열 테이블은 열리지 않는다. ===== */
+var HANDOVER_EPOCH_='2026-07-01';    // 이 앵커일 이전 행은 목록·브리핑·리마인드에서 영구 제외(과거행 홍수 방지)
+var HANDOVER_WINDOW_DAYS_=90;        // 롤링 윈도 — 끝내 안 찾아간 건도 결국 큐에서 빠져 브리핑이 무한 증식하지 않는다
+var HANDOVER_METHODS_=['방문수령','대리수령','우편발송','기타'];
+var SELECT_HANDOVER_PAGE_BASE='https://print.studio-mean.com/handover/';
+
+// 경과 기준일 — 출력완료/픽업/제출 중 가장 최근 (printPending 앵커와 동일 패턴)
+function selectHandoverAnchor_(row){
+  return [SELECT_COL['출력완료일시'],SELECT_COL['픽업일시'],SELECT_COL['제출일시']]
+    .map(function(c){return c!=null?parseDateSafe_(row[c]).str.slice(0,10):'';})
+    .filter(Boolean).sort().pop()||'';
+}
+
+// 아직 전달이 안 끝났나. 재인화 시 markSelectPrintDone_ 이 출력완료일시를 덮어쓰므로(멱등 아님)
+// 출력이 마지막 수령보다 새로우면 자동으로 다시 열린다 — markSelectPrintDone_ 을 건드릴 필요가 없다.
+function isSelectHandoverOpen_(row){
+  if(SELECT_COL['수령완료일시']==null) return true;
+  const handoverAt=parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16);
+  if(!handoverAt) return true;
+  const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
+  return !!(printAt&&printAt>handoverAt);
+}
+
+function selectHandoverDaysSince_(value,now){
+  if(!value) return 0;
+  const o=parseDateSafe_(value).obj;
+  return o?Math.max(0,Math.floor((now.getTime()-o.getTime())/86400000)):0;
+}
+
+// 수령 미완결 목록. 조회 전용(락 없음). 브리핑에서도 호출되므로 예약장부는 상태 1열만 통으로 읽고
+// 행별 조회는 하지 않는다. includeFresh=false 면 '아직 정상 대기중'인 건은 세기만 하고 목록에서 뺀다.
+function listSelectHandoverPending_(opts){
+  opts=opts||{};
+  const limit=Math.max(1,Math.min(100,parseInt(opts.limit,10)||50));
+  const includeFresh=!!opts.includeFresh;
+  const tz=CONFIG.TIMEZONE;
+  const now=new Date();
+  const nowStr=Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm');
+  const windowFloor=Utilities.formatDate(new Date(now.getTime()-HANDOVER_WINDOW_DAYS_*86400000),tz,'yyyy-MM-dd');
+  const floorDate=windowFloor>HANDOVER_EPOCH_?windowFloor:HANDOVER_EPOCH_;
+  const out={items:[],count:0,counts:{noshow:0,unclaimed:0,toship:0,fresh:0}};
+  if(SELECT_COL['수령완료일시']==null) return out; // 컬럼 마이그레이션 전
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rows=selSh.getDataRange().getValues();
+  if(rows.length<2) return out;
+  let bookStatus=[];
+  try{
+    const bSh=sheets.bookingSheet, bLast=bSh.getLastRow();
+    if(bLast>1) bookStatus=bSh.getRange(2,BOOKING_COL['상태']+1,bLast-1,1).getValues();
+  }catch(e){Logger.log('handover booking status fail: '+e.message);}
+  const picked=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    if(!row[0]) continue;
+    const method=String(row[SELECT_COL['수령방식']]||'').trim();
+    if(method!=='pickup'&&method!=='mail') continue;   // 디지털전용·여권 워크인은 여기서 걸러진다
+    if(!String(row[SELECT_COL['제출일시']]||'').trim()) continue;
+    if(!isSelectHandoverOpen_(row)) continue;
+    const anchor=selectHandoverAnchor_(row);
+    if(!anchor||anchor<floorDate) continue;
+    const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+    // 취소 예약은 셀렉 행이 그대로 남지만(cancelBookingAdmin 이 사진셀렉을 건드리지 않음) 전달할 것이 없다
+    if(bri>=2&&bookStatus[bri-2]&&String(bookStatus[bri-2][0]||'').trim()==='취소됨') continue;
+    const printDoneAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
+    const pickupAt=parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16);
+    const st=String(row[SELECT_COL['상태']]||'').trim();
+    let kind='fresh';
+    // daysSince 가 Math.max(0,…) 이라 미래 픽업은 0 → >=1 만으로 '지났고 하루 넘음'이 판정된다
+    if(method==='pickup'&&pickupAt&&selectHandoverDaysSince_(pickupAt,now)>=1) kind='noshow';
+    else if(method==='pickup'&&!pickupAt&&printDoneAt&&selectHandoverDaysSince_(printDoneAt,now)>=14) kind='unclaimed';
+    else if(method==='mail'&&printDoneAt&&selectHandoverDaysSince_(printDoneAt,now)>=3&&st!=='우편발송') kind='toship';
+    out.counts[kind]++;
+    if(kind==='fresh'&&!includeFresh) continue;
+    picked.push({
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      selectRowIndex:i+1,
+      bookingRowIndex:bri,
+      name:String(row[SELECT_COL['고객명']]||'').trim()||'(이름없음)',
+      method:method,
+      kind:kind,
+      status:st,
+      product:String(row[SELECT_COL['상품']]||''),
+      shootDate:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      printDoneAt:printDoneAt,
+      pickupAt:pickupAt,
+      inviteAt:SELECT_COL['픽업안내메일발송일시']!=null?parseDateSafe_(row[SELECT_COL['픽업안내메일발송일시']]).str.slice(0,16):'',
+      mailAddress:method==='mail'?String(row[SELECT_COL['우편주소']]||''):'',
+      totalExtra:Number(parseMoneyValue_(row[SELECT_COL['총추가금액']]))||0,
+      extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
+      anchor:anchor,
+      days:selectHandoverDaysSince_(anchor,now)
+    });
+  }
+  picked.sort(function(a,b){return a.anchor<b.anchor?-1:(a.anchor>b.anchor?1:0);}); // 오래된 것부터
+  out.count=picked.length;
+  out.items=picked.slice(0,limit);
+  return out;
+}
+
+/* 수령 기록 코어 — 호출자가 ScriptLock 을 잡고 있다고 가정한다(setSelectDeliveryMethodCore_ 와 동일 계약).
+   메일은 보내지 않고 스냅샷만 돌려준다 — 발송은 락 해제 후 호출자가 한다. */
+function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
+  info=info||{};
+  if(SELECT_COL['수령완료일시']==null) return{ok:false,message:'수령 컬럼이 아직 준비되지 않았습니다.'};
+  const existing=parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16);
+  if(!isSelectHandoverOpen_(row)){
+    return{ok:true,alreadyDone:true,handedOverAt:existing,
+           method:String(row[SELECT_COL['수령방법']]||''),sessionId:sessionId};
+  }
+  const method=HANDOVER_METHODS_.indexOf(String(info.method||'').trim())>=0?String(info.method).trim():'기타';
+  const deliveryMethod=String(row[SELECT_COL['수령방식']]||'').trim();
+  // '우편발송'만 방향을 검증한다 — 이 값은 상태를 바꾸고 고객에게 발송 안내 메일까지 보내므로,
+  // 목록을 띄워둔 사이 고객이 셀렉 수정으로 픽업으로 바꾼 낡은 화면에서 눌리면 거짓 발송 기록이 된다.
+  // (반대 방향은 막지 않는다: 우편 건을 사장님이 직접 건네주는 경우가 실제로 있다)
+  if(method==='우편발송'&&deliveryMethod!=='mail'){
+    return{ok:false,sessionId:sessionId,
+      message:`이 건은 '${deliveryMethod||'미정'}' 수령입니다. 우편발송으로 기록하려면 먼저 수령방식을 우편으로 전환해 주세요.`};
+  }
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  selSh.getRange(rowNum,SELECT_COL['수령완료일시']+1).setValue(now);
+  if(SELECT_COL['수령방법']!=null) selSh.getRange(rowNum,SELECT_COL['수령방법']+1).setValue(method);
+  if(SELECT_COL['수령메모']!=null) selSh.getRange(rowNum,SELECT_COL['수령메모']+1).setValue(String(info.memo||'').slice(0,120));
+  row[SELECT_COL['수령완료일시']]=now;
+  if(SELECT_COL['수령방법']!=null) row[SELECT_COL['수령방법']]=method;
+  const st=String(row[SELECT_COL['상태']]||'').trim();
+  let statusWritten='';
+  // finalize 가 있으면 그쪽이 이긴다 — 둘 다 쓰면 같은 셀에 두 번 쓰게 되고 두 번째가 낡은 st 로 판단한다
+  if(info.finalize!==true&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
+    selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('우편발송');
+    row[SELECT_COL['상태']]='우편발송'; statusWritten='우편발송';
+  }
+  if(info.finalize===true&&st!=='최종작업완료'){
+    selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('최종작업완료');
+    row[SELECT_COL['상태']]='최종작업완료'; statusWritten='최종작업완료';
+    // updateSelectStatusAdmin 이 하는 두 쓰기와 동일. 어드민 토큰 없는 passcode 경로에서도 써야 해서 중복 구현.
+    const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+    if(bri>=2){ try{ ensureSheets_().bookingSheet.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료'); }catch(e){Logger.log('handover booking done fail: '+e.message);} }
+  }
+  return{
+    ok:true,sessionId:sessionId,handedOverAt:now,method:method,statusWritten:statusWritten,
+    deliveryMethod:deliveryMethod,
+    name:String(row[SELECT_COL['고객명']]||''),
+    email:String(row[SELECT_COL['이메일']]||'').trim(),
+    lang:String(row[SELECT_COL['언어']]||'ko'),
+    bookingRowIndex:parseInt(row[SELECT_COL['예약장부행']],10)||0
+  };
+}
+
+// 세션ID 기준 수령 기록. 시트 작업은 락 안, 메일은 락 밖(scheduleSelectPickup_ 과 같은 규칙).
+function markSelectHandoverBySession_(sessionId,info){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  info=info||{};
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  let done;
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+    if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+    done=markSelectHandoverCore_(selSh,rows[idx+1],idx+2,sid,info);
+  } finally { try{lock.releaseLock();}catch(e){} }
+  if(!done||!done.ok) return done||{ok:false,message:'기록 실패'};
+  let mailSent=false;
+  if(done.method==='우편발송'&&!done.alreadyDone&&info.notify!==false){
+    // 메일 실패가 기록을 되돌리면 안 된다 — 로그만 남기고 mailSent:false 로 알린다.
+    // 반환값을 그대로 받는다: 메일주소가 없으면 _sendSelectShippedEmail_ 은 throw 없이 false 를 돌려주는데,
+    // 무조건 true 로 두면 UI 가 "발송 안내 메일을 보냈습니다"라고 거짓말한다.
+    try{ mailSent=(_sendSelectShippedEmail_(done)===true); }
+    catch(e){ Logger.log('shipped mail fail: '+e.message); }
+  }
+  done.mailSent=mailSent;
+  return done;
+}
+
+// 오기록 정정 — 3개 컬럼만 비운다. 상태는 되돌리지 않는다(사장님이 다시 진행).
+function undoSelectHandoverBySession_(sessionId){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+    if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+    const row=rows[idx+1], rowNum=idx+2;
+    const prev=parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16);
+    const prevMethod=String(row[SELECT_COL['수령방법']]||'');
+    ['수령완료일시','수령방법','수령메모'].forEach(function(h){
+      if(SELECT_COL[h]!=null) selSh.getRange(rowNum,SELECT_COL[h]+1).setValue('');
+    });
+    // 기록 시 markSelectHandoverCore_ 가 올린 상태도 되돌린다. 안 되돌리면 상태가 '우편발송'으로 남아
+    // listSelectHandoverPending_ 의 toship 조건(st!=='우편발송')에 영원히 걸리지 않아 큐에서 사라진다.
+    if(prevMethod==='우편발송'
+       && String(row[SELECT_COL['수령방식']]||'').trim()==='mail'
+       && String(row[SELECT_COL['상태']]||'').trim()==='우편발송'){
+      selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('출력');   // AdminV2 nextMap 상 '우편발송' 직전 단계
+    }
+    return{ok:true,sessionId:sid,cleared:prev,clearedMethod:prevMethod,
+           name:String(row[SELECT_COL['고객명']]||''),
+           mailAlreadySent:prevMethod==='우편발송'};
+  } finally { try{lock.releaseLock();}catch(e){} }
+}
+
+// 우편 발송 안내 — switchSelectDeliveryToMailPublic_ 의 어드민 안내문이 이미 약속한 메일.
+// 방문수령에는 메일을 보내지 않는다(고객이 눈앞에 서 있다).
+function _sendSelectShippedEmail_(done){
+  const email=String(done.email||'').trim();
+  if(!email||email.indexOf('@')<1) return false;
+  const L=(done.lang==='en'||done.lang==='de')?done.lang:'ko';
+  const name=String(done.name||'');
+  const day=String(done.handedOverAt||'').slice(0,10);
+  const subj={
+    ko:`[Studio mean] ✅ 인화물을 발송했습니다 — ${name}님`,
+    en:`[Studio mean] ✅ Your prints have been shipped`,
+    de:`[Studio mean] ✅ Ihre Abzüge wurden versandt`
+  };
+  const body={
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화물을 <b>${escapeHtml_(day)}</b>에 우편으로 발송했습니다. 📮<br>독일 국내 기준 보통 2–4 영업일 정도 걸립니다.<br><br>알려주신 주소로 보내드렸습니다.<br>혹시 일주일이 지나도 도착하지 않으면 이 메일에 답장으로 알려 주세요. 바로 확인해 드리겠습니다. 🙏<br><br>좋은 사진과 함께 좋은 하루 보내세요!`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints were sent by post on <b>${escapeHtml_(day)}</b>. 📮<br>Within Germany, delivery usually takes 2–4 working days.<br><br>They were sent to the address you provided.<br>If they haven't arrived after a week, just reply to this email and we'll look into it right away. 🙏<br><br>Enjoy your photos!`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge wurden am <b>${escapeHtml_(day)}</b> per Post versandt. 📮<br>Innerhalb Deutschlands dauert die Zustellung in der Regel 2–4 Werktage.<br><br>Der Versand erfolgte an die von Ihnen angegebene Adresse.<br>Sollte die Sendung nach einer Woche nicht angekommen sein, antworten Sie einfach auf diese E-Mail — wir kümmern uns sofort darum. 🙏<br><br>Viel Freude mit Ihren Fotos!`
+  };
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
+      <div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#fff;">Studio mean</div>
+    </div>
+    <div style="padding:26px 25px;font-size:14px;color:#334155;line-height:1.8;">${body[L]}</div>
+    <div style="background:#f8fafc;padding:14px 25px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">📍 Studio mean · ${STUDIO_ADDRESS} · studio.mean.de@gmail.com</div>
+  </div>`;
+  // meta 명시 — _inferMessageType_ 는 '수령/발송' 어휘를 몰라 유형을 '메일'로 남긴다.
+  sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html},
+    {type:'사진셀렉',ref:done.sessionId,customerName:name,email:email,bookingRowIndex:done.bookingRowIndex||0});
+  return true;
+}
+
+// 픽업 미예약 리마인드 본문 — 예약을 강요하지 않고 ①방문 ②예약 ③우편 세 갈래를 준다.
+// 오버루젤 동네 가게에선 '예약 없이 그냥 들르기'가 가장 흔한 실제 경로라, 이미 찾아간 고객이
+// 이 메일을 받아도 어색하지 않아야 한다.
+function _sendSelectPickupReminderEmail_(sessionId,name,email,lang,bookingRowIndex){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const url=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const subj={
+    ko:`[Studio mean] 🖼 인화물이 준비되어 있습니다 — ${name}님`,
+    en:`[Studio mean] 🖼 Your prints are waiting for you`,
+    de:`[Studio mean] 🖼 Ihre Abzüge liegen für Sie bereit`
+  };
+  const body={
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>지난번 안내드린 사진 인화물이 스튜디오에 준비되어 있습니다. 🖼<br>아직 픽업 시간을 정하지 않으셔서 한 번 더 안내드려요.<br><br><b>① 영업시간 중 편하게 들러 주셔도 됩니다.</b><br><i>월–금 09:30–18:30 · 토 09:00–16:30 (일/공휴일 휴무)</i><br><b>② 시간을 미리 정하고 싶으시면</b> 아래 버튼에서 예약해 주세요.<br><b>③ 우편 발송을 원하시면</b> 같은 페이지에서 주소를 남겨 주시면 보내드립니다.<br><br>이 메일에 그대로 답장하셔도 됩니다. 😊`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready and waiting at the studio. 🖼<br>Since no pickup time has been booked yet, here's a quick reminder.<br><br><b>① Just drop by during opening hours.</b><br><i>Mon–Fri 09:30–18:30 · Sat 09:00–16:30 (closed Sun/holidays)</i><br><b>② Prefer a fixed time?</b> Book one with the button below.<br><b>③ Prefer postal delivery?</b> Leave your address on the same page and we'll ship them.<br><br>Feel free to simply reply to this email. 😊`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge liegen im Studio für Sie bereit. 🖼<br>Da noch kein Abholtermin gebucht wurde, hier eine kurze Erinnerung.<br><br><b>① Kommen Sie einfach während der Öffnungszeiten vorbei.</b><br><i>Mo–Fr 09:30–18:30 · Sa 09:00–16:30 (So/Feiertage geschlossen)</i><br><b>② Lieber ein fester Termin?</b> Buchen Sie ihn über den Button unten.<br><b>③ Lieber Postversand?</b> Hinterlassen Sie Ihre Adresse auf derselben Seite.<br><br>Sie können auch einfach auf diese E-Mail antworten. 😊`
+  };
+  const btn={ko:'📅 픽업 예약 / 우편 전환',en:'📅 Book pickup / switch to post',de:'📅 Abholtermin / Postversand'};
+  const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
+      <div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#fff;">Studio mean</div>
+    </div>
+    <div style="padding:26px 25px;font-size:14px;color:#334155;line-height:1.8;">
+      ${body[L]}
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="${url}" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;padding:13px 34px;border-radius:999px;font-size:14px;font-weight:700;">${btn[L]}</a>
+      </div>
+      <div style="text-align:center;font-size:11px;color:#94a3b8;word-break:break-all;">${url}</div>
+    </div>
+    <div style="background:#f8fafc;padding:14px 25px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">📍 Studio mean · ${STUDIO_ADDRESS} · studio.mean.de@gmail.com</div>
+  </div>`;
+  sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html},
+    {type:'사진셀렉',ref:sessionId,customerName:name,email:email,bookingRowIndex:bookingRowIndex||0});
+  return true;
+}
+
+/* C4: 픽업 미예약 리마인드 — 인화 안내를 받고도 예약도 방문도 없는 고객에게 평생 딱 한 번.
+   멱등 게이트는 '픽업리마인드횟수'(카운터)다. '픽업리마인드발송일시'는 pickup→mail 전환 시 지워지고
+   고객이 그 전환을 6시간에 3번까지 스스로 할 수 있어서, 타임스탬프를 게이트로 쓰면 무한 재발송이 된다. */
+function sendSelectPickupReminders_(opts){
+  opts=opts||{};
+  const dryRun=opts.dryRun===true;
+  const cntCol=SELECT_COL['픽업리마인드횟수'];
+  if(cntCol==null) return{count:0,summary:'컬럼 미마이그레이션',targets:[]};
+  const now=new Date();
+  if(!dryRun&&now.getDay()===0) return{count:0,summary:'일요일 건너뜀',targets:[]};   // 휴무일 안내 방지
+  if(!dryRun&&MailApp.getRemainingDailyQuota()<30) return{count:0,summary:'메일 쿼터 부족',targets:[]};
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rows=selSh.getDataRange().getValues();
+  let bookStatus=[];
+  try{
+    const bSh=sheets.bookingSheet,bLast=bSh.getLastRow();
+    if(bLast>1) bookStatus=bSh.getRange(2,BOOKING_COL['상태']+1,bLast-1,1).getValues();
+  }catch(e){Logger.log('reminder booking status fail: '+e.message);}
+  const targets=[]; let sent=0;
+  for(let i=1;i<rows.length&&sent<8;i++){                            // 실행당 하드캡
+    const row=rows[i], rowNum=i+1;
+    if(!row[0]) continue;
+    if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') continue;
+    if(!isSelectHandoverOpen_(row)) continue;                        // 1순위 — 이미 수령했으면 절대 발송 금지
+    if(String(row[SELECT_COL['픽업일시']]||'').trim()) continue;       // 이미 예약함
+    const st=String(row[SELECT_COL['상태']]||'').trim();
+    if(isSelectFinalLockedStatus_(st)||st==='우편발송') continue;      // 사장님이 전달 후 상태만 올린 경우까지 차단
+    const inviteAt=SELECT_COL['픽업안내메일발송일시']!=null?parseDateSafe_(row[SELECT_COL['픽업안내메일발송일시']]).str.slice(0,16):'';
+    if(!inviteAt) continue;                                          // 안내를 안 보냈으면 재촉할 것도 없다
+    if((parseInt(row[cntCol],10)||0)>=1) continue;                   // 평생 1회
+    const anchor=selectHandoverAnchor_(row);
+    if(!anchor||anchor<HANDOVER_EPOCH_) continue;
+    const d=selectHandoverDaysSince_(inviteAt,now);
+    if(d<5||d>30) continue;                                          // 양방향 창 — 첫 실행 대량발송 차단
+    const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+    if(bri>=2&&bookStatus[bri-2]&&String(bookStatus[bri-2][0]||'').trim()==='취소됨') continue;
+    const email=String(row[SELECT_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')<1||email.indexOf('수기')>-1) continue;
+    const sid=String(row[SELECT_COL['세션ID']]||'');
+    const name=String(row[SELECT_COL['고객명']]||'');
+    targets.push({sessionId:sid,name:name,email:email,inviteAt:inviteAt,days:d,selectRowIndex:rowNum});
+    if(dryRun) continue;
+    // 레이스 가드 — 발송 직전 두 셀만 재조회(그 사이 고객이 예약했거나 사장님이 전달을 기록했을 수 있다)
+    if(String(selSh.getRange(rowNum,SELECT_COL['픽업일시']+1).getValue()||'').trim()) continue;
+    if(String(selSh.getRange(rowNum,SELECT_COL['수령완료일시']+1).getValue()||'').trim()) continue;
+    try{ _sendSelectPickupReminderEmail_(sid,name,email,String(row[SELECT_COL['언어']]||'ko'),bri); }
+    catch(e){ Logger.log('pickup reminder mail fail '+sid+': '+e.message); continue; }
+    if(SELECT_COL['픽업리마인드발송일시']!=null)
+      selSh.getRange(rowNum,SELECT_COL['픽업리마인드발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
+    selSh.getRange(rowNum,cntCol+1).setValue((parseInt(row[cntCol],10)||0)+1);
+    sent++;
+  }
+  return dryRun
+    ? {count:0,summary:'dryRun — 대상 '+targets.length+'건',targets:targets,dryRun:true}
+    : {count:sent,summary:sent?(sent+'건 발송'):'대상 없음',targets:targets};
+}
+
+/* 상태를 '우편발송'으로 올리는 기존 습관을 수령 기록으로 백필.
+   수령방식==='mail' 게이트가 핵심 — AdminV2 의 nextMap 은 픽업 건도 '우편발송'을 거치게 하므로
+   게이트가 없으면 방문수령 건에 거짓 우편 발송 기록이 생긴다. 이 경로에선 메일을 보내지 않는다
+   (사장님이 몇 주 뒤 뒤늦게 상태만 정리하는 경우가 있어, 그때 고객에게 발송 안내가 가면 안 된다). */
+function backfillSelectHandoverOnShipStatus_(selSh,rowIndex,newStatus){
+  if(String(newStatus||'').trim()!=='우편발송') return false;
+  if(SELECT_COL['수령완료일시']==null) return false;
+  try{
+    const row=selSh.getRange(rowIndex,1,1,selSh.getLastColumn()).getValues()[0];
+    if(String(row[SELECT_COL['수령방식']]||'').trim()!=='mail') return false;
+    if(parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16)) return false;
+    selSh.getRange(rowIndex,SELECT_COL['수령완료일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
+    if(SELECT_COL['수령방법']!=null) selSh.getRange(rowIndex,SELECT_COL['수령방법']+1).setValue('우편발송');
+    return true;
+  }catch(e){ Logger.log('handover backfill fail: '+e.message); return false; }
+}
+
+/* ===== 수령 완결 — 어드민/에이전트 진입점 ===== */
+function listSelectHandoverPendingForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  return Object.assign({ok:true},listSelectHandoverPending_({limit:payload.limit,includeFresh:payload.all===true||payload.includeFresh===true}));
+}
+
+// ref = {sessionId} | {selectRowIndex} | {bookingRowIndex}. 여러 셀렉 행이 붙은 예약은
+// updateSelectDeliveryAdmin 과 같은 getActiveSelectRowForBooking_ 로 고른다(두 버튼이 어긋나지 않게).
+function resolveSelectSessionIdForRef_(selSh,ref){
+  ref=ref||{};
+  if(ref.sessionId) return String(ref.sessionId).trim();
+  if(ref.selectRowIndex){
+    const idx=parseInt(ref.selectRowIndex,10)||0;
+    if(idx<2) return '';
+    const v=selSh.getRange(idx,1).getValue();
+    return String(v||'').trim();
+  }
+  const bri=parseInt(ref.bookingRowIndex||ref.rowIndex,10)||0;
+  if(bri>=2){
+    const found=getActiveSelectRowForBooking_(selSh,bri);
+    if(found) return String(found.row[SELECT_COL['세션ID']]||'').trim();
+  }
+  return '';
+}
+
+function markSelectHandoverAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const sid=resolveSelectSessionIdForRef_(selSh,payload);
+  if(!sid) throw new Error('셀렉 세션을 찾을 수 없습니다.');
+  const res=markSelectHandoverBySession_(sid,{
+    method:payload.method,memo:payload.memo,
+    finalize:payload.finalize===true,notify:payload.notify!==false
+  });
+  if(!res||!res.ok) throw new Error((res&&res.message)||'수령 기록 실패');
+  return res;
+}
+
+function undoSelectHandoverAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const sid=resolveSelectSessionIdForRef_(selSh,payload);
+  if(!sid) throw new Error('셀렉 세션을 찾을 수 없습니다.');
+  const expect=String(payload.expectName||'').trim();
+  if(!expect) throw new Error('안전을 위해 expectName(고객명)을 함께 보내 주세요.');
+  const rows=selSh.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+  if(idx===-1) throw new Error('유효하지 않은 세션입니다.');
+  const actual=String(rows[idx+1][SELECT_COL['고객명']]||'').trim();
+  if(actual!==expect) throw new Error(`고객명이 일치하지 않습니다(시트: ${actual}).`);
+  const res=undoSelectHandoverBySession_(sid);
+  if(!res||!res.ok) throw new Error((res&&res.message)||'수령 기록 취소 실패');
+  return res;
+}
+
+function runSelectPickupRemindersAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const res=sendSelectPickupReminders_({dryRun:payload.dryRun===true});
+  return Object.assign({ok:true},res);
+}
+
 /* ===== 수령방식 전환 (픽업↔우편) — 어드민 원클릭·픽업페이지 셀프전환·에이전트 공용 코어.
    픽업→우편: 캘린더 이벤트 삭제 + 예약 클리어 + 주소 저장. 우편/미정→픽업: 일정은 연기
    (출력 후 예약 흐름), 이미 인화 완료면 예약 안내 메일 즉시 발송. ===== */
@@ -17145,6 +17654,12 @@ function setSelectDeliveryMethodCore_(selSh,row,rowNum,sessionId,delivery){
     if(SELECT_COL['픽업안내메일발송일시']!=null){
       selSh.getRange(rowNum,SELECT_COL['픽업안내메일발송일시']+1).setValue('');
       row[SELECT_COL['픽업안내메일발송일시']]='';
+    }
+    // 리마인드 타임스탬프도 함께 해제(쫓아갈 안내가 사라졌으므로). 단 '픽업리마인드횟수'는 남긴다 —
+    // 카운터가 리마인드의 진짜 멱등 게이트라, 이걸 지우면 픽업↔우편을 오가며 무한 재발송이 가능해진다.
+    if(SELECT_COL['픽업리마인드발송일시']!=null){
+      selSh.getRange(rowNum,SELECT_COL['픽업리마인드발송일시']+1).setValue('');
+      row[SELECT_COL['픽업리마인드발송일시']]='';
     }
     if(eventId) bumpCalCacheVer_();
     row[SELECT_COL['수령방식']]='mail'; row[SELECT_COL['픽업일시']]=''; row[SELECT_COL['우편주소']]=mailAddressText; row[SELECT_COL['픽업캘린더ID']]='';
@@ -17191,6 +17706,10 @@ function updateSelectDeliveryAdmin(token,ref,delivery){
     if(!(delivery&&delivery.force)&&(isSelectFinalLockedStatus_(st)||st==='우편발송')){
       return{ok:false,message:`'${st}' 상태의 세션입니다. 정말 전환하려면 force 옵션을 사용하세요.`};
     }
+    // 이미 전달 완료로 기록된 건 — 메시지에 'force' 문자열이 있어야 AdminV2 의 재시도 확인창이 뜬다
+    if(!(delivery&&delivery.force)&&!isSelectHandoverOpen_(row)){
+      return{ok:false,message:'이미 수령 완료로 기록된 세션입니다. 정말 전환하려면 force 옵션을 사용하세요.'};
+    }
     return setSelectDeliveryMethodCore_(selSh,row,rowNum,sid,delivery||{});
   }finally{
     lock.releaseLock();
@@ -17224,6 +17743,7 @@ function switchSelectDeliveryToMailPublic_(sessionId,mail){
     const st=String(row[SELECT_COL['상태']]||'').trim();
     if(isSelectFinalLockedStatus_(st)) return{ok:false,message:'이미 완료된 세션입니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
     if(st==='우편발송') return{ok:false,message:'이미 인화물이 발송되었습니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
+    if(!isSelectHandoverOpen_(row)) return{ok:false,message:'이미 수령이 완료된 주문입니다. 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.'};
     const currentMethod=String(row[SELECT_COL['수령방식']]||'').trim();
     if(currentMethod!=='pickup'&&currentMethod!=='mail') return{ok:false,message:'수령 방식 선택이 필요한 세션이 아닙니다. 문의는 스튜디오로 연락해 주세요.'};
     const result=setSelectDeliveryMethodCore_(selSh,row,rowNum,sid,{method:'mail',mailName:mail&&mail.mailName,mailAddress:mail&&mail.mailAddress});
@@ -17361,7 +17881,7 @@ function listCustomerPrintOrdersForAgent_(token,options){
   if(!sh||SELECT_COL['고객출력주문JSON']==null) return {orders:[]};
   const lastRow=sh.getLastRow();
   if(lastRow<2) return {orders:[]};
-  const rows=sh.getRange(2,1,lastRow-1,SELECT_HEADERS.length).getValues();
+  const rows=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues(); // 폭은 시트 실측 — 상수가 시트보다 먼저 늘어난 마이그레이션 창에서 throw 방지
   const out=[];
   for(let i=rows.length-1;i>=0;i--){
     const row=rows[i];
@@ -17875,6 +18395,10 @@ function getSelectDashboard(token){
               pickupAt:parseDateSafe_(sr[SELECT_COL['픽업일시']]).str.slice(0,16),
               mailAddress:String(sr[SELECT_COL['우편주소']]||''),
               printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(sr[SELECT_COL['출력완료일시']]).str:'',
+              pickupInviteAt:SELECT_COL['픽업안내메일발송일시']!=null?parseDateSafe_(sr[SELECT_COL['픽업안내메일발송일시']]).str.slice(0,16):'',
+              handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(sr[SELECT_COL['수령완료일시']]).str.slice(0,16):'',
+              handoverMethod:SELECT_COL['수령방법']!=null?String(sr[SELECT_COL['수령방법']]||''):'',
+              handoverMemo:SELECT_COL['수령메모']!=null?String(sr[SELECT_COL['수령메모']]||''):'',
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')
             };
@@ -18061,7 +18585,11 @@ function countSelectJsonArrayItems_(raw){
 
 function verifySelectSubmissionSaved_(selSh,rowNum,expectedPhotoCount){
   SpreadsheetApp.flush();
-  const saved=selSh.getRange(rowNum,1,1,SELECT_HEADERS.length).getValues()[0];
+  // 폭은 시트 실측. 호출자(submitPhotoSelection/updatePhotoSelection)는 getSheetByName 으로 시트를 잡아
+  // ensureSelectSheet_ 를 거치지 않으므로, SELECT_HEADERS 가 시트보다 넓은 마이그레이션 창에서 상수 폭으로
+  // 읽으면 범위 초과로 throw 한다 — 그것도 제출 셀을 이미 다 쓴 뒤라 고객만 실패로 보고 후속(예약장부
+  // 동기화·추가금 인보이스·알림메일)이 전부 건너뛰어진다. 읽는 필드는 전부 좌측 22열 안쪽이라 안전.
+  const saved=selSh.getRange(rowNum,1,1,selSh.getLastColumn()).getValues()[0];
   const submittedAt=parseDateSafe_(saved[SELECT_COL['제출일시']]).str.slice(0,16);
   const selectedPhotoCount=countSelectJsonArrayItems_(saved[SELECT_COL['선택사진']]);
   const status=String(saved[SELECT_COL['상태']]||'').trim();
@@ -18331,6 +18859,12 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
 
 	    if(existingRow){
 	      built.row[SELECT_COL['페이지버전']]=existingPageVersion;
+	      // 이 setValues 는 행 전체를 새 행으로 덮어쓴다 — 물리적 전달 사실(수령 기록)은 링크 재발송으로
+	      // 지워지면 안 되므로 명시적으로 이월한다. (수령방식/픽업일시/출력완료일시 등이 함께 날아가는 것은
+	      // 이 함수의 기존 버그로, 별건 — docs/handover-followups 참조)
+	      ['수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수'].forEach(function(h){
+	        if(SELECT_COL[h]!=null) built.row[SELECT_COL[h]]=existingSelectRow?(existingSelectRow[SELECT_COL[h]]||''):'';
+	      });
 	      selSh.getRange(existingRow,1,1,SELECT_HEADERS.length).setValues([built.row]);
 	    } else {
       // Drive 폴더 찾기 시도
@@ -18522,6 +19056,7 @@ function updateSelectStatusAdmin(token,bookingRowIndex,newStatus){
     const found=getActiveSelectRowForBooking_(selSh,bookingRowIndex);
     if(found){
       selSh.getRange(found.rowIndex,SELECT_COL['상태']+1).setValue(newStatus);
+      backfillSelectHandoverOnShipStatus_(selSh,found.rowIndex,newStatus);
       if(String(newStatus||'').trim()!=='작업대기'){
         selSh.getRange(found.rowIndex,SELECT_COL['어드민알림']+1).setValue('');
       }
@@ -19123,7 +19658,7 @@ function sendCombinedMorningReport_(){
     const b=_buildDailyBriefingData_();
     briefHtml=buildDailyBriefingEmailHtml_(b);
     const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
-    const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
+    const actionCount=briefingActionCount_(b);
     sections.push({name:'브리핑',ok:true,summary:`오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건`});
   }catch(e){
     briefHtml=errBox('오늘의 브리핑',e);
@@ -21819,6 +22354,7 @@ function dailyTasks(){
     ['B4 돌촬영 추천메일',sendDolRecommendationEmails_],
     ['B5 기념일 재촬영 추천메일',sendAnniversaryRecommendationEmails_],
     ['C3 보정 후 후속메일',sendPostRetouchFollowupEmails_],
+    ['C4 픽업 미예약 리마인드',sendSelectPickupReminders_],
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
     ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],

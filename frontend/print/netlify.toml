@@ -23,3 +23,9 @@
   for = "/app.js"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# /handover/ — 수령 확인 페이지(같은 오리진이라 인화앱의 PIN을 그대로 재사용). 항상 최신본을 받아야 한다.
+[[headers]]
+  for = "/handover/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

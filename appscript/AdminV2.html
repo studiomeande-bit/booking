@@ -9289,16 +9289,31 @@ function escHtml(v){
   });
 }
 
+function selDaysSince(v){
+  const t=Date.parse(String(v||'').replace(' ','T'));
+  return isFinite(t)?Math.max(0,Math.floor((Date.now()-t)/86400000)):0;
+}
 function selectDeliveryInfo(sel){
   const method=String((sel&&sel.deliveryMethod)||'').trim();
+  // 전달이 끝난 건은 방식보다 '수령완료'가 먼저다 — 이 행은 더 이상 액션 대상이 아니다
+  const handoverAt=String((sel&&sel.handoverAt)||'').trim();
+  if(handoverAt){
+    return {
+      label:'수령완료',
+      detail:handoverAt+(sel.handoverMethod?(' · '+sel.handoverMethod):''),
+      tone:'background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;'
+    };
+  }
   if(method==='pickup'){
     const pickupAt=String(sel.pickupAt||'').trim();
     if(!pickupAt){
       // 출력 후 픽업예약 흐름: 일정 미정 — 인화 완료 여부에 따라 대기 단계 구분
       const printed=String(sel.printDoneAt||'').trim();
+      const waited=printed?selDaysSince(printed):0;
       return {
         label:printed?'픽업·예약대기':'픽업·인화대기',
-        detail:printed?('인화완료 '+printed+' · 고객 예약 대기'):'인화 완료 시 예약 안내 자동발송',
+        // 경과일이 곧 긴급도 — 인화만 끝나고 몇 주째 방치된 건을 여기서 바로 알아볼 수 있어야 한다
+        detail:printed?('인화완료 '+printed+' · 고객 예약 대기 ('+waited+'일)'):'인화 완료 시 예약 안내 자동발송',
         tone:'background:#fffbeb;color:#b45309;border:1px solid #fde68a;'
       };
     }
@@ -9334,10 +9349,16 @@ function renderSelectDeliveryCell(sel,rowIndex){
   const switchBtn=(sel&&sel.submittedAt&&rowIndex)
     ? `<button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#92400e;border-color:#fde68a;" onclick="switchSelDelivery(${rowIndex})" title="픽업↔우편 수령 전환">전환</button>`
     : '';
+  // 수령완료 기록(보조 경로). 주 경로는 스튜디오 휴대폰 페이지 print.studio-mean.com/handover/ —
+  // 여기 버튼은 뒤늦은 정정·데스크 작업용이다. sel 은 셀렉 없는 예약에선 빈 객체라 실제 필드로 게이트.
+  const dm=String((sel&&sel.deliveryMethod)||'').trim();
+  const handoverBtn=(sel&&sel.submittedAt&&rowIndex&&(dm==='pickup'||dm==='mail')&&!String((sel&&sel.handoverAt)||'').trim())
+    ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#065f46;border-color:#a7f3d0;" onclick="markSelHandover(${rowIndex})" title="${dm==='mail'?'우편 발송 완료 기록':'방문 수령 완료 기록'}">${dm==='mail'?'발송완료':'수령완료'}</button>`
+    : '';
   return `<div title="${escHtml(detailPlain)}" style="max-width:220px;">
     <span style="display:inline-block;${info.tone}padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;">${info.label}</span>
     <div style="margin-top:4px;font-size:10px;line-height:1.4;color:#64748b;max-width:220px;white-space:normal;overflow:visible;">${formatSelectDeliveryDetailHtml(detail)}</div>
-    ${switchBtn}
+    ${switchBtn}${handoverBtn}
   </div>`;
 }
 
@@ -9386,6 +9407,37 @@ function switchSelDelivery(rowIndex){
   const nm=prompt('받으실 분 성함:',custName); if(nm===null)return;
   const ad=prompt('우편 주소 (우편번호+도시 포함):',plainMailAddrForEdit(sel.mailAddress)); if(ad===null)return;
   runSwitch({method:'mail',mailName:nm,mailAddress:ad},'우편 수령으로 전환했습니다.');
+}
+
+/* 수령/발송 완료 기록 — 인화물이 실제로 고객에게 갔다는 사실을 남긴다.
+   방문수령은 고객이 눈앞에 있으므로 메일 없음. 우편발송은 고객에게 발송 안내 메일이 나간다. */
+function markSelHandover(rowIndex){
+  const r=allSelectDashboard.find(x=>Number(x.rowIndex)===Number(rowIndex));
+  const sel=r&&r.sel;
+  if(!sel){showToast('셀렉 세션이 없습니다.','warn');return;}
+  const isMail=String(sel.deliveryMethod||'').trim()==='mail';
+  const custName=(r&&r.name)||'';
+  const msg=isMail
+    ? `${custName}님 · 우편 발송 완료로 기록합니다.\n고객에게 발송 안내 메일이 나가고, 상태도 '우편발송'으로 바뀝니다.\n계속할까요?`
+    : `${custName}님 · 방문 수령 완료로 기록합니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
+  if(!confirm(msg))return;
+  const memo=prompt('내부 메모 (선택, 120자) — 고객·제3자 개인정보는 입력하지 마세요.','');
+  if(memo===null)return;
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      // 우편발송인데 mailSent 가 false면 메일주소가 없어 못 보낸 것 — 확인창에서 약속했으니 알린다
+      const mailNote=!isMail?'':(res.mailSent?' (발송 안내 메일 발송됨)':' ⚠ 메일주소가 없어 안내 미발송');
+      showToast(res.alreadyDone
+        ? '이미 수령 완료로 기록된 건입니다.'
+        : ('수령 완료로 기록했습니다.'+mailNote),res.alreadyDone||!isMail||res.mailSent?'ok':'warn');
+      loadSelectHistory();   // 상태 부수효과를 클라이언트가 예측할 수 없어 서버 재조회
+    } else alert('기록 실패: '+((res&&res.message)||'오류'));
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .adminRpc(adminToken,'markSelectHandover',{
+    bookingRowIndex:rowIndex,
+    method:isMail?'우편발송':'방문수령',
+    memo:String(memo||'').slice(0,120)
+  });
 }
 
 function copySelectUrl(rowIndex){
