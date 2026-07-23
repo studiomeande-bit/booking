@@ -5,6 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Studio mean · Photo Print</title>
 <style>
+  /* 번들 무료 폰트(OFL) — self-host, CSP font-src 'self' 안전. 한글은 현대한글+라틴 서브셋 woff2 */
+  @font-face{font-family:"sm-pen";src:url("fonts/pen.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-gaegu";src:url("fonts/gaegu.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-caveat";src:url("fonts/caveat.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-amatic";src:url("fonts/amatic.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-sacramento";src:url("fonts/sacramento.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-myeongjo";src:url("fonts/myeongjo.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-songmyung";src:url("fonts/songmyung.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-playfair";src:url("fonts/playfair.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-dodum";src:url("fonts/dodum.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-jua";src:url("fonts/jua.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-bebas";src:url("fonts/bebas.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-elite";src:url("fonts/elite.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-bodoni";src:url("fonts/bodoni.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-fraunces";src:url("fonts/fraunces.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-abril";src:url("fonts/abril.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-dmserif";src:url("fonts/dmserif.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-archivo";src:url("fonts/archivo.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-jost";src:url("fonts/jost.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-gowun";src:url("fonts/gowun.woff2") format("woff2");font-display:swap;}
+  @font-face{font-family:"sm-blackhan";src:url("fonts/blackhan.woff2") format("woff2");font-display:swap;}
   /* =========================================================================
      Studio mean — Photo Print   (WYSIWYG 인화 앱)
      화면에 mm 실측으로 배치 → @page size + margin:0 로 100% 실측 인쇄
@@ -200,6 +221,33 @@
   .ostep .olvl{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:56px;text-align:center;}
   .ostep .btn{flex:0 0 auto;width:46px;}
   body.pro .ord-ta{background:#2a2b2e;} body.pro .oq:hover{background:rgba(74,158,255,.12);} body.pro .oq.cur{background:rgba(74,158,255,.2);}
+  .texture-ov{position:absolute;inset:0;pointer-events:none;z-index:-1;mix-blend-mode:multiply;background-repeat:repeat;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .deco{position:absolute;pointer-events:auto;cursor:move;z-index:4;touch-action:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .deco svg{width:100%;height:100%;display:block;overflow:visible;pointer-events:none;}
+  .deco.sel{outline:1.5px dashed var(--accent);outline-offset:3px;}
+  .deco-h{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);z-index:9;cursor:pointer;}
+  .deco-h.rz{right:-8px;bottom:-8px;cursor:nwse-resize;}
+  .deco-h.ro{left:50%;top:-24px;margin-left:-6.5px;cursor:grab;background:#fff;}
+  .deco-h.ro::after{content:"";position:absolute;left:50%;top:11px;width:1px;height:13px;background:var(--accent);}
+  .item.fr-polaroid{background:#fff;box-shadow:0 2px 9px rgba(0,0,0,.16);box-sizing:border-box;}
+  .item .sketch-fr{position:absolute;inset:-3%;pointer-events:none;overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .item.fr-film{background:#141414;box-sizing:border-box;}
+  .item.fr-film .film-hole{position:absolute;left:0;right:0;height:11%;background-repeat:repeat-x;background-size:9% 100%;background-image:repeating-linear-gradient(90deg,transparent 0 2.5%,#eae7df 2.5% 6.5%,transparent 6.5% 9%);}
+  .textbox{position:absolute;line-height:1.28;white-space:pre;cursor:move;user-select:none;-webkit-user-select:none;touch-action:none;z-index:5;}
+  .textbox.sel{outline:1.5px dashed var(--accent);outline-offset:2px;}
+  .page-list{display:flex;flex-wrap:wrap;gap:5px;}
+  .pchip{position:relative;min-width:34px;height:32px;border:1px solid var(--line);background:var(--panel);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;color:var(--ink);}
+  .pchip.on{border-color:var(--accent);background:rgba(74,158,255,.14);color:var(--accent);}
+  .pchip .px{position:absolute;top:-6px;right:-6px;width:15px;height:15px;line-height:12px;border-radius:50%;background:#c0392b;color:#fff;font-size:10px;font-weight:700;display:none;border:1px solid #fff;}
+  .pchip:hover .px{display:block;}
+  body.pro .pchip{background:#26272a;}
+  .seg.wrap4{flex-wrap:wrap;}
+  .seg.wrap4 button{flex:1 0 40%;}
+  .doodle-pal{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:5px;}
+  .dgl{aspect-ratio:1;border:1px solid var(--line);background:var(--panel);border-radius:7px;cursor:pointer;padding:5px;display:flex;align-items:center;justify-content:center;transition:.1s;}
+  .dgl:hover{border-color:var(--accent);background:rgba(74,158,255,.1);}
+  .dgl svg{width:100%;height:100%;}
+  body.pro .dgl{background:#26272a;}
   .media-note{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:6px;}
   .media-note b{color:var(--ink);}
   body.pro .media-note{background:#203049;color:#cad7ea;padding:7px 9px;border-radius:7px;}
@@ -236,6 +284,8 @@
     .page{transform:var(--print-tf,none) !important;transform-origin:center center !important;box-shadow:none !important;position:absolute;left:0;top:0;}
     body.calmode .page-holder{display:none !important;}
     body.calmode #calPage{display:block !important;position:absolute;left:0;top:0;transform:var(--print-tf,none);transform-origin:center center;}
+    .textbox{cursor:default;}
+    .textbox.sel{outline:none !important;}
   }
 </style>
 <style id="pageStyle">@page{size:210mm 297mm;margin:0;}</style>
@@ -271,6 +321,17 @@
         <button data-mode="grid"><span class="ico">▦</span>분할·콜라주</button>
         <button data-mode="order"><span class="ico">📋</span>주문 인화</button>
       </div>
+      <label class="f">🎞 콜라주 프리셋</label>
+      <div class="row"><select id="collage" style="flex:2"></select><button class="btn sm" id="collageApply" style="flex:1">적용</button></div>
+      <div class="hint" style="padding:4px 0 0">사진을 넣은 뒤 적용 → 자유배치로 채워집니다(이후 편집 가능).</div>
+    </div>
+
+    <div class="grp">
+      <h2>페이지 <span id="pageInfo" style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">1페이지</span></h2>
+      <div id="pageList" class="page-list"></div>
+      <div class="row" style="margin-top:6px"><button class="btn sm" id="pageAdd" style="flex:1">＋ 새 페이지</button><button class="btn sm" id="pageDup" style="flex:1">⧉ 복제</button></div>
+      <button class="btn sm" id="pagesPdf" style="width:100%;margin-top:6px">🖨️ 전체 페이지 PDF</button>
+      <div class="hint" style="padding:4px 0 0">여러 장을 각 페이지로 구성 → 전체 PDF로 한 번에 인쇄.</div>
     </div>
 
     <div class="grp">
@@ -301,7 +362,7 @@
       <label class="check"><input type="checkbox" id="v_ruler"> mm 눈금자</label>
       <label class="check"><input type="checkbox" id="v_grid"> 격자 표시</label>
       <div id="gridStepWrap" style="display:none"><label class="f">격자 간격 mm</label><input type="number" id="v_step" value="10" min="1" max="50" step="1"></div>
-      <label class="check"><input type="checkbox" id="v_snap" checked> 스냅(가장자리·중앙에 붙기)</label>
+      <label class="check"><input type="checkbox" id="v_snap" checked> 스마트 정렬(사진끼리·중앙 자동 맞춤 + 가이드선)</label>
     </div>
 
     <div class="grp">
@@ -312,6 +373,23 @@
         <label class="f">색</label>
         <input type="color" id="fr_c" value="#ffffff" style="width:100%;height:34px;padding:2px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer">
       </div>
+    </div>
+
+    <div class="grp">
+      <h2>텍스트 · 캡션</h2>
+      <button class="btn sm" id="txAdd" style="width:100%">＋ 텍스트 추가</button>
+      <div class="hint" style="padding:4px 0 0">드래그로 이동 · 클릭해 편집. 손글씨·세리프·산세리프·타자기.</div>
+    </div>
+
+    <div class="grp">
+      <h2>꾸미기 · 데코</h2>
+      <label class="f">종이 질감</label>
+      <select id="texSel"><option value="none">없음</option><option value="paper">종이</option><option value="kraft">크래프트</option><option value="grain">그레인</option><option value="linen">린넨</option></select>
+      <label class="f" style="margin-top:8px">테이프</label>
+      <div class="row"><button class="btn sm dadd" data-deco="tape-washi" style="flex:1">워시 테이프</button><button class="btn sm dadd" data-deco="tape-gaffer" style="flex:1">검정 테이프</button></div>
+      <label class="f" style="margin-top:8px">손그림 낙서</label>
+      <div id="doodlePal" class="doodle-pal"></div>
+      <div class="hint" style="padding:5px 0 0">추가 후 캔버스에서 드래그·모서리로 크기·위 손잡이로 회전.</div>
     </div>
 
     <div class="grp">

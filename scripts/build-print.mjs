@@ -19,15 +19,19 @@
  *   node scripts/build-print.mjs           # 빌드(배포본 재생성)
  *   node scripts/build-print.mjs --check    # 재생성 결과가 현재 커밋본과 동일한지 검증만(쓰기 X)
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, copyFileSync, existsSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));               // reservation/scripts
 const SRC = join(HERE, '..', '..', 'photo-print', 'index.html');    // website/photo-print/index.html
+const SRC_FONTS = join(HERE, '..', '..', 'photo-print', 'fonts');   // website/photo-print/fonts
+const SRC_SAMPLES = join(HERE, '..', '..', 'photo-print', 'samples'); // website/photo-print/samples
 const OUT_DIR = join(HERE, '..', 'frontend', 'print');              // reservation/frontend/print
 const OUT_HTML = join(OUT_DIR, 'index.html');
 const OUT_JS = join(OUT_DIR, 'app.js');
+const OUT_FONTS = join(OUT_DIR, 'fonts');
+const OUT_SAMPLES = join(OUT_DIR, 'samples');
 
 const checkOnly = process.argv.includes('--check');
 
@@ -63,19 +67,59 @@ if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(erp[1])) {
 if (/<script>\n/.test(outHtml)) fail('치환 후에도 인라인 <script> 가 남아있습니다.');
 if (!outHtml.includes('<script src="app.js"></script>')) fail('외부 스크립트 참조 주입 실패.');
 
+// 번들 폰트(woff2) 목록 — @font-face url("fonts/<key>.woff2") 이 참조. 원본↔배포본 동기화 대상.
+const fontFiles = existsSync(SRC_FONTS) ? readdirSync(SRC_FONTS).filter(f => f.endsWith('.woff2')).sort() : [];
+// index.html 의 @font-face 가 참조하는 파일이 fonts/ 에 실제로 있는지 교차검증.
+const referenced = [...src.matchAll(/url\("fonts\/([^"]+\.woff2)"\)/g)].map(m => m[1]).sort();
+for (const ref of referenced) if (!fontFiles.includes(ref)) fail(`@font-face 가 fonts/${ref} 를 참조하지만 원본 fonts/ 에 없습니다.`);
+
+function fontsSynced() {
+  if (!existsSync(OUT_FONTS)) return fontFiles.length === 0;
+  const out = readdirSync(OUT_FONTS).filter(f => f.endsWith('.woff2')).sort();
+  if (out.join(',') !== fontFiles.join(',')) return false;
+  return fontFiles.every(f => readFileSync(join(SRC_FONTS, f)).equals(readFileSync(join(OUT_FONTS, f))));
+}
+
+// 예시 이미지(samples/*.jpg) — 프리셋 미리보기용, 앱 SAMPLES 가 참조.
+const sampleFiles = existsSync(SRC_SAMPLES) ? readdirSync(SRC_SAMPLES).filter(f => f.endsWith('.jpg')).sort() : [];
+function samplesSynced() {
+  if (!existsSync(OUT_SAMPLES)) return sampleFiles.length === 0;
+  const out = readdirSync(OUT_SAMPLES).filter(f => f.endsWith('.jpg')).sort();
+  if (out.join(',') !== sampleFiles.join(',')) return false;
+  return sampleFiles.every(f => readFileSync(join(SRC_SAMPLES, f)).equals(readFileSync(join(OUT_SAMPLES, f))));
+}
+
 if (checkOnly) {
   const curHtml = readFileSync(OUT_HTML, 'utf8');
   const curJs = readFileSync(OUT_JS, 'utf8');
   const htmlSame = curHtml === outHtml;
   const jsSame = curJs === appJs;
+  const fontsSame = fontsSynced();
+  const samplesSame = samplesSynced();
   console.log(`app.js  : ${jsSame ? '✅ 일치' : '⚠️ 다름(원본이 커밋본보다 최신 — 빌드 필요)'}`);
   console.log(`index   : ${htmlSame ? '✅ 일치' : '⚠️ 다름(빌드 필요)'}`);
-  process.exit(htmlSame && jsSame ? 0 : 2);
+  console.log(`fonts   : ${fontsSame ? `✅ 일치(${fontFiles.length}개)` : '⚠️ 다름(빌드 필요)'}`);
+  console.log(`samples : ${samplesSame ? `✅ 일치(${sampleFiles.length}개)` : '⚠️ 다름(빌드 필요)'}`);
+  process.exit(htmlSame && jsSame && fontsSame && samplesSame ? 0 : 2);
 }
+
+// 폰트·예시이미지 동기화(원본 → 배포본). 원본에서 지운 파일은 배포본에서도 제거해야
+// 배포에 유령 파일이 남지 않고 --check 가 빌드 직후 통과한다(목록 전체를 비교하므로).
+function syncDir(srcDir, outDir, files, ext) {
+  mkdirSync(outDir, { recursive: true });
+  for (const stale of readdirSync(outDir).filter(f => f.endsWith(ext) && !files.includes(f))) {
+    unlinkSync(join(outDir, stale));
+  }
+  for (const f of files) copyFileSync(join(srcDir, f), join(outDir, f));
+}
+syncDir(SRC_FONTS, OUT_FONTS, fontFiles, '.woff2');
+syncDir(SRC_SAMPLES, OUT_SAMPLES, sampleFiles, '.jpg');
 
 writeFileSync(OUT_JS, appJs);
 writeFileSync(OUT_HTML, outHtml);
 console.log(`✅ 빌드 완료 → frontend/print/`);
+console.log(`   fonts    : ${fontFiles.length}개 woff2 복사`);
+console.log(`   samples  : ${sampleFiles.length}개 jpg 복사`);
 console.log(`   app.js   : ${appJs.split('\n').length} 줄`);
 console.log(`   index.html: ${outHtml.split('\n').length} 줄`);
 console.log(`   ERP_BASE : ${erp[1]}`);

@@ -1237,6 +1237,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
         if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token));
         if(action==='morning-report-install-trigger') return jsonOk_(installMorningReportTriggerAdmin(token));
+        if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
@@ -2555,12 +2556,16 @@ function getOperationsLogAdmin(token, limit){
   };
 }
 
-// dailyTasks()에 등록된 자동화 작업명. 순서는 실행 순서와 동일하게 유지.
-// P2 결제 일일검토 / D7 아침 브리핑은 08:50 통합 리포트(morningReportTrigger)로 이관 — dailyTasks에서 제외.
+// 08:50 통합 아침 리포트 작업명 — morningReportTrigger 가 runLoggedAutomation_ 에 넘기고, 운영 보드도 이 이름으로 조회.
+const MORNING_REPORT_JOB_NAME_='D7 아침 리포트(브리핑+결제검토)';
+
+// 자동화 작업명(운영 보드 표시용). dailyTasks 순서 + 별도 트리거 작업까지 포함.
+// P2 결제 일일검토 / D7 아침 브리핑은 08:50 통합 리포트로 이관 — dailyTasks 배열에선 제외되고 통합 작업명으로 표시된다.
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집'
+  'B4 돌촬영 추천메일','C3 보정 후 후속메일','T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집',
+  MORNING_REPORT_JOB_NAME_
 ];
 
 // 작업별 최신 실행 상태 보드 + 최근 실행 이력 원본. 운영 로그 탭에서 사용.
@@ -19103,24 +19108,23 @@ function sendCombinedMorningReport_(){
   };
 
   // ① 결제 일일검토
-  let payHtml='', paySummary='';
+  let payHtml='';
   try{
     const pay=buildDailyPaymentReviewSection_();
-    payHtml=pay.html; paySummary=pay.summary;
+    payHtml=pay.html;
     sections.push({name:'결제검토',ok:true,summary:pay.summary});
   }catch(e){
     payHtml=errBox('결제 일일검토',e);
     sections.push({name:'결제검토',ok:false,error:String((e&&e.message)||e)});
   }
   // ② 오늘의 브리핑
-  let briefHtml='', briefSummary='';
+  let briefHtml='';
   try{
     const b=_buildDailyBriefingData_();
     briefHtml=buildDailyBriefingEmailHtml_(b);
     const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
     const actionCount=b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length+b.quotes.expiringSoon.length+b.select.revisionRequested+((b.printPending&&b.printPending.count)||0);
-    briefSummary=`오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건`;
-    sections.push({name:'브리핑',ok:true,summary:briefSummary});
+    sections.push({name:'브리핑',ok:true,summary:`오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건`});
   }catch(e){
     briefHtml=errBox('오늘의 브리핑',e);
     sections.push({name:'브리핑',ok:false,error:String((e&&e.message)||e)});
@@ -19145,7 +19149,10 @@ function sendCombinedMorningReport_(){
 }
 
 // GAS 시간 트리거 핸들러는 언더스코어로 끝나는 private 함수를 지정할 수 없어 공개 래퍼 사용.
-function morningReportTrigger(){ return sendCombinedMorningReport_(); }
+// runLoggedAutomation_ 로 감싸 성공/실패가 자동화 로그·운영 보드에 남게 한다(dailyTasks 시절과 동일한 관측성).
+function morningReportTrigger(){
+  return runLoggedAutomation_(MORNING_REPORT_JOB_NAME_,sendCombinedMorningReport_,{source:'morningReportTrigger'});
+}
 
 // 08:50 전용 트리거 설치(1회 실행). 동일 핸들러의 기존 트리거는 제거 후 재생성 — 중복 방지.
 // 주의: GAS 시간 트리거는 nearMinute을 써도 ±15분 창(08:45~08:59)이라 분 단위 고정은 보장되지 않는다.
@@ -19177,14 +19184,25 @@ function installMorningReportTriggerAdmin(token){
   return Object.assign({},res,{triggers:triggers,count:triggers.length});
 }
 
+// 일일 트리거 전체 재설치(dailyTasks 08:00 정각창 + 아침 리포트 08:50). triggers-install 액션.
+function installDailyTriggerAdmin(token){
+  assertAdmin_(token);
+  const res=installDailyTrigger();
+  const triggers=ScriptApp.getProjectTriggers().map(function(t){
+    return {handler:t.getHandlerFunction(),eventType:String(t.getEventType())};
+  });
+  return Object.assign({},res,{triggers:triggers});
+}
+
 // P2 결제 일일검토 단독 발송 — 통합 리포트 도입 후 dailyTasks에서는 제외, 온디맨드/폴백용 유지.
-function sendDailyPaymentReview_(){
+function sendDailyPaymentReview_(opts){
   const sec=buildDailyPaymentReviewSection_();
+  const source=String((opts&&opts.source)||'auto');   // 어드민 수동 발송과 자동 발송을 로그에서 구분
   sendTrackedEmail_({
     to:CONFIG.ADMIN_EMAIL,
     subject:'[Studio mean] 결제 일일검토 '+sec.today,
     htmlBody:sec.html
-  },{type:'결제검토',ref:sec.today,meta:{startDate:sec.startDate,endDate:sec.endDate}});
+  },{type:'결제검토',ref:sec.today,meta:{startDate:sec.startDate,endDate:sec.endDate,source:source}});
   return {
     ok:true,
     count:sec.count,
@@ -21734,14 +21752,18 @@ function syncBookingLexwarePaymentInternal_(bookingRowIndex){
 
 
 /* ====== B2: 자동 리마인더 트리거 ====== */
+// 일일 트리거 설치 — dailyTasks(08:00) + 아침 통합 리포트(08:50)를 한 진입점에서 함께 설치한다.
+// nearMinute(0) 필수: atHour(8) 만 주면 GAS 가 08:00~09:00 임의 분에 실행해 P1 SumUp 동기화가
+// 08:50 리포트보다 늦게 돌 수 있다(리포트가 동기화 전 데이터를 읽음). 0분 고정 시 07:45~08:15 창.
 function installDailyTrigger(){
   ScriptApp.getProjectTriggers()
     .filter(t=>t.getHandlerFunction()==='dailyTasks')
     .forEach(t=>ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('dailyTasks')
-    .timeBased().atHour(8).everyDays(1)
+    .timeBased().atHour(8).nearMinute(0).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
-  return 'Daily trigger installed (08:00 Berlin)';
+  const morning=installMorningReportTrigger();
+  return {ok:true,daily:'dailyTasks 08:00 (±15분 — 07:45~08:15)',morning:morning.installed,morningRemoved:morning.removed};
 }
 
 /* ====== B2A: 캘린더 캐시 웜업 트리거 ====== */
