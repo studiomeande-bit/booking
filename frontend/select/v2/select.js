@@ -17,6 +17,7 @@ import {
 } from '../../shared/product-delivery.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../shared/utils.js';
 
+// ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
 const PRINT_OPTIONS = [
   { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
   { id: 'basic_10x15', label: '기본 10×15cm / 6×4 inch', retouched: 5, additional: 5 },

@@ -1,5 +1,6 @@
 import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
+import { PRINT_CATALOG, printCatalogName } from '../shared/print-catalog.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const LANG_STORAGE_KEY = 'studio-mean-lang';
@@ -5257,6 +5258,39 @@ function removePassportConfig(configIndex) {
   handleQuoteInputChange().then(() => refreshStepLocks());
 }
 
+// 예약 때 인화(출력) 안내 — 사진촬영 계열(프로필/스튜디오/스냅/웨딩)만. 사이즈(cm)·추가 단가·수령방식을
+// 촬영 전에 미리 보여준다. 실제 주문은 촬영 후 셀렉 단계에서. (여권/기업/견적형은 별도 흐름이라 제외)
+const PRINT_INFO_GROUPS = new Set(['prof', 'stud', 'snap', 'wed']);
+function renderPrintInfoSection(product) {
+  if (!product || !PRINT_INFO_GROUPS.has(product.g)) return '';
+  const lang = state.lang;
+  const t = (ko, en, de) => (lang === 'en' ? en : lang === 'de' ? de : ko);
+  const rows = PRINT_CATALOG.map((item) => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid rgba(15,23,42,0.06);font-size:13px;">
+        <span>${escapeHtml(printCatalogName(item, lang))} <span style="color:#94a3b8;">· ${escapeHtml(item.cm)}</span></span>
+        <strong style="white-space:nowrap;">€${item.additional}</strong>
+      </div>`).join('');
+  return `
+    <details class="print-info-box" style="margin:12px 0;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;overflow:hidden;">
+      <summary style="cursor:pointer;padding:12px 15px;font-weight:700;font-size:14px;">📷 ${t('인화(출력) 사이즈·가격 안내', 'Print sizes & prices', 'Abzüge – Größen & Preise')}</summary>
+      <div style="padding:2px 15px 15px;">
+        <p style="margin:0 0 10px;font-size:13px;color:#475569;line-height:1.7;">${t(
+          '기본 포함 인화 외에 원하시면 아래 사이즈로 추가 인화하실 수 있어요. 사이즈·수량은 <b>촬영 후 사진 선택 단계</b>에서 정하시면 됩니다.',
+          'Beyond the prints included in your package, you can order extra prints in the sizes below. You choose sizes and quantities <b>after the shoot, at the photo-selection step</b>.',
+          'Zusätzlich zu den enthaltenen Abzügen können Sie weitere Abzüge in den Größen unten bestellen. Größe und Menge wählen Sie <b>nach dem Shooting im Auswahlschritt</b>.'
+        )}</p>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:2px 12px;">
+          ${rows}
+        </div>
+        <p style="margin:10px 0 0;font-size:12px;color:#64748b;line-height:1.7;">${t(
+          '가격은 추가 인화 1장 기준이에요. 수령은 <b>스튜디오 픽업</b> 또는 <b>우편</b> 중 선택 — 인화가 완료되면 안내 링크를 보내드려요.',
+          'Prices are per extra print. Delivery: choose <b>studio pickup</b> or <b>post</b> — we email you a link once printing is done.',
+          'Preise gelten pro zusätzlichem Abzug. Zustellung: <b>Abholung im Studio</b> oder <b>Post</b> — nach dem Druck senden wir Ihnen einen Link.'
+        )}</p>
+      </div>
+    </details>`;
+}
+
 function renderProductDetail() {
   if (!state.selectedProduct) {
     els.productDetail.className = 'detail-box empty-state';
@@ -5339,6 +5373,7 @@ function renderProductDetail() {
     ${getSnapRetouchScopeNote(state.selectedProduct) ? `<div class="detail-copy snap-scope-note">${escapeHtml(getSnapRetouchScopeNote(state.selectedProduct))}</div>` : ''}
     ${businessSummary}
     ${compositionHtml}
+    ${renderPrintInfoSection(state.selectedProduct)}
     ${eventBadge}
     ${quoteOnly ? `
       <div class="price-hero">
@@ -6364,6 +6399,9 @@ function buildGermanSuccessGuideHtml(product) {
     bullets.push('Outfit-Tipps und Hinweise zur Vorbereitung finden Sie ebenfalls in der Bestätigung — bei Kindern planen wir gern rund um Schlaf- und Essenszeiten.');
     bullets.push('Originale innerhalb ca. 1 Woche, finale retuschierte Bilder 2–3 Wochen nach Ihrer Auswahl.');
   }
+  if (PRINT_INFO_GROUPS.has(g)) {
+    bullets.push('Abzüge: Zusätzlich zu den enthaltenen Abzügen können Sie im Auswahlschritt weitere Größen bestellen (10×15cm, A4, A3, A3+ …) — Preise pro Abzug sehen Sie auf der Buchungsseite unter „Abzüge – Größen & Preise". Zustellung per Abholung im Studio oder per Post.');
+  }
   bullets.push('Änderungen oder Fragen? Antworten Sie einfach auf unsere E-Mail oder schreiben Sie an studio.mean.de@gmail.com.');
   return `
     <section class="result-guide-box">
@@ -6559,6 +6597,33 @@ function getSuccessGuideHtml(payload) {
             </ul>
           ` : `
             <p>A simple birthday setup is included for baby / birthday sessions. Please share reference images in advance if you have a specific theme in mind.</p>
+          `}
+        </div>
+      </section>
+    `);
+  }
+
+  if (PRINT_INFO_GROUPS.has(product.g)) {
+    sections.push(`
+      <section class="result-guide-box">
+        <h4 class="result-guide-title">${isKo ? '📷 사진 · 인화 진행 안내' : '📷 Photos & Prints — what happens next'}</h4>
+        <div class="result-guide-body">
+          ${isKo ? `
+            <p>촬영 이후는 이렇게 진행됩니다:</p>
+            <ul>
+              <li><b>사진 선택(셀렉)</b> — 촬영본 링크를 보내드리면 보정 받으실 사진을 고르세요.</li>
+              <li><b>보정본 전달</b> — 선택하신 사진을 보정해 전달드립니다.</li>
+              <li><b>인화</b> — 기본 포함분 외 추가 인화는 셀렉 때 사이즈(10×15cm · A4 · A3 · A3+ 등)와 수량을 정하시면 됩니다. 추가 단가는 예약 화면의 <b>인화 안내</b>에서 미리 확인하실 수 있어요.</li>
+              <li><b>수령</b> — 스튜디오 픽업 또는 우편 중 선택. 인화가 완료되면 예약/발송 안내 링크를 보내드려요.</li>
+            </ul>
+          ` : `
+            <p>After the shoot, the flow is:</p>
+            <ul>
+              <li><b>Photo selection</b> — we send your gallery link; pick the photos to retouch.</li>
+              <li><b>Retouched finals</b> — we retouch your chosen photos and deliver them.</li>
+              <li><b>Prints</b> — beyond the included prints, order extras at the selection step (10×15cm, A4, A3, A3+ …). Per-print prices are shown on the booking screen under <b>Print sizes &amp; prices</b>.</li>
+              <li><b>Delivery</b> — studio pickup or post; we email a link once printing is finished.</li>
+            </ul>
           `}
         </div>
       </section>
