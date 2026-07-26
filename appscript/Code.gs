@@ -16662,6 +16662,14 @@ const PRINT_LABELS={
   'premium_a3':{label:'파인아트 A3 (Hahnemühle)',summaryLabel:'파인아트 A3',price:50,retouchedPrice:35},
   'premium_a3plus':{label:'파인아트 A3+ (Hahnemühle)',summaryLabel:'파인아트 A3+',price:60,retouchedPrice:45}
 };
+/* 포함 쿼터 1장이 상쇄해 주는 금액. 비교 맥락을 맞춰야 하므로, 그 행이 보정본이면 쿼터 SKU 의
+   보정본가를, 추가 인화면 추가 인화가를 크레딧으로 쓴다.
+   ⚠ 클라이언트(select/select.js · select/v2/select.js 의 computePrintAnnotations)와 규칙이 같아야 한다. */
+function selectQuotaCredit_(quotaId,isRetouched){
+  const info=getPrintInfo_(quotaId);
+  return isRetouched?Number(info.retouchedPrice||info.price||0):Number(info.price||0);
+}
+
 function getPrintInfo_(printId){
   const key=String(printId||'').replace(/_(r|e)$/,'').trim();
   return PRINT_LABELS[key]||{label:key||'인화',price:0};
@@ -16805,10 +16813,32 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       : !!(p&&p.isRetouched);
     const unit=isRet?Number(info.retouchedPrice||info.price||0):Number(info.price||0);
     for(let k=0;k<qty;k+=1){
-      const match=quota.find(function(item){return item.id===printId&&item.qty>0;});
+      /* 포함 쿼터 소진 — 사장님 확정 규칙(2026-07-26): 쿼터와 다른 인화를 골라도 **차액만** 청구한다.
+         ① 정확히 같은 SKU 쿼터가 있으면 그것부터 소진(=무료). 다른 쿼터를 아껴 고객에게 유리하다.
+         ② 없으면 남은 쿼터 중 **크레딧이 가장 큰 것**을 소진해 차액을 최소화한다(고객 유리).
+         크레딧은 그 행과 같은 맥락의 단가(보정본이면 보정본가, 아니면 추가인화가)로 계산한다.
+         ⚠ 이전에는 SKU 완전일치만 무료였고 나머지는 전액이었다 — 의도와 달랐던 과금 버그. */
+      let match=quota.find(function(item){return item.id===printId&&item.qty>0;});
+      let credit=0;
+      if(match){
+        credit=unit;                                  // 완전 일치 → 전액 상쇄(무료)
+      }else{
+        let best=null,bestCredit=-1;
+        quota.forEach(function(item){
+          if(!item||!(item.qty>0)) return;
+          const c=selectQuotaCredit_(item.id,isRet);
+          if(c>bestCredit){bestCredit=c;best=item;}
+        });
+        if(best){match=best;credit=Math.max(0,bestCredit);}
+      }
       if(match){
         match.qty-=1;
-        included.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:0,isRetouched:isRet,included:true,source:'included_print',finish:finish});
+        const charge=Math.max(0,roundCurrency_(unit-credit));
+        if(charge<=0){
+          included.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:0,isRetouched:isRet,included:true,source:'included_print',finish:finish});
+        }else{
+          chargeable.push({photoNum:photoNum,printId:printId,label:label+' (포함 차액)',qty:1,price:charge,isRetouched:isRet,source:'quota_upgrade',quotaCredit:credit,finish:finish});
+        }
       }else{
         chargeable.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:unit,isRetouched:isRet,source:isRet?'retouch_print':'extra_print',finish:finish});
       }

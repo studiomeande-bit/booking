@@ -791,9 +791,13 @@ function getRetouchExtraCount() {
   return Math.max(0, getRegularPhotos().length - included);
 }
 
-function isPrintFreeByQuota(index, printTypeId) {
+/* 이 인화 1장에 적용되는 포함 쿼터 크레딧(€)을 돌려준다. 0 = 쿼터 미적용(전액 청구).
+   서버 computeSelectDecoupledPrints_ 와 **동일 규칙**(사장님 확정 2026-07-26):
+   ① 정확히 같은 SKU 쿼터 우선(=전액 상쇄, 무료) ② 없으면 남은 쿼터 중 크레딧이 가장 큰 것을 소진해 차액만 청구.
+   v1 의 이 경로는 보정 사진 인화라 단가·크레딧 모두 retouched 기준으로 비교한다. */
+function getPrintQuotaCredit(index, printTypeId) {
   const targetTypeId = normalizePrintTypeId(printTypeId);
-  if (targetTypeId === PRINT_NONE_ID) return false;
+  if (targetTypeId === PRINT_NONE_ID) return 0;
   const quota = getQuotaMap();
   for (let i = 0; i <= index; i += 1) {
     const photo = state.photos[i];
@@ -801,13 +805,33 @@ function isPrintFreeByQuota(index, printTypeId) {
     const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId);
     if (!option || option.retouched === 0) continue;
-    const match = quota.find((item) => item.id === typeId && item.qty > 0);
+    let match = quota.find((item) => item.id === typeId && item.qty > 0);
+    let credit = 0;
     if (match) {
-      if (i === index && typeId === targetTypeId) return true;
-      match.qty -= 1;
+      credit = Number(option.retouched) || 0;
+    } else {
+      let best = null;
+      let bestCredit = -1;
+      quota.forEach((q) => {
+        if (!(q.qty > 0)) return;
+        const c = Number((PRINT_OPTIONS.find((o) => o.id === q.id) || {}).retouched) || 0;
+        if (c > bestCredit) { bestCredit = c; best = q; }
+      });
+      if (best) { match = best; credit = Math.max(0, bestCredit); }
     }
+    if (match) match.qty -= 1;
+    if (i === index) return match ? credit : 0;
   }
-  return false;
+  return 0;
+}
+
+// 완전 무료(전액 상쇄)인지 — 기존 호출부 호환용.
+function isPrintFreeByQuota(index, printTypeId) {
+  const targetTypeId = normalizePrintTypeId(printTypeId);
+  const option = PRINT_OPTIONS.find((item) => item.id === targetTypeId);
+  const unit = Number(option?.retouched) || 0;
+  if (unit <= 0) return false;
+  return getPrintQuotaCredit(index, printTypeId) >= unit;
 }
 
 function calcTotal() {
@@ -817,7 +841,8 @@ function calcTotal() {
     const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
     if (option.retouched === 0) return sum;
-    return sum + (isPrintFreeByQuota(index, typeId) ? 0 : option.retouched);
+    // 쿼터가 있으면 그 크레딧만큼 상쇄하고 차액만 더한다(정확일치면 크레딧=단가 → 0원).
+    return sum + Math.max(0, (Number(option.retouched) || 0) - getPrintQuotaCredit(index, typeId));
   }, 0);
   const extraPrints = state.prints.reduce((sum, print) => {
     const option = getSelectablePrintOptions().find((item) => item.id === print.printId) || getSelectablePrintOptions()[0];
@@ -862,10 +887,20 @@ function renderPhotos() {
     const photoTierCopy = getPrintTierCopy(option.id);
     const extra = !photo.isBonus && index >= includedCount ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isService ? '<span class="service-badge">서비스 컷</span>' : photo.isBonus ? '<span class="bonus-badge">보너스</span>' : '';
-    const includedPrint = !photo.isBonus && isPrintFreeByQuota(index, typeId);
+    // 쿼터는 전액 상쇄(무료)일 수도, 일부만 상쇄(차액)일 수도 있다 — 배지에서 구분해 준다.
+    const unitPrice = Number(option.retouched) || 0;
+    const quotaCredit = photo.isBonus ? 0 : getPrintQuotaCredit(index, typeId);
+    const includedPrint = !photo.isBonus && unitPrice > 0 && quotaCredit >= unitPrice;
+    const quotaDiff = !photo.isBonus && quotaCredit > 0 && quotaCredit < unitPrice
+      ? Math.max(0, unitPrice - quotaCredit)
+      : 0;
     const bonusUpcharge = photo.isBonus ? getBonusPrintUpcharge(photo) : 0;
     const free = photo.isBonus ? bonusUpcharge === 0 : (option.retouched === 0 || includedPrint);
-    const includedPrintBadge = includedPrint ? '<span class="included-print-badge">기본 제공</span>' : '';
+    const includedPrintBadge = includedPrint
+      ? '<span class="included-print-badge">기본 제공</span>'
+      : quotaDiff > 0
+        ? `<span class="included-print-badge">기본 제공분 차액 +€${quotaDiff}</span>`
+        : '';
     return `
       <div class="entry-card${photo.isService ? ' service' : photo.isBonus ? ' bonus' : ''}">
         <div class="entry-head">

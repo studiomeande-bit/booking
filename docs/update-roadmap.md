@@ -75,7 +75,7 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
-- **셀렉 페이지 3개국어화 — 1차 (정적 표면 완료 / 동적 패널 미완, 2026-07-26, ⚠️ 미배포)** —
+- **셀렉 페이지 3개국어화 — 2차 진행중 (정적 100% + 동적 일부, 2026-07-26, ⚠️ 미배포)** —
   독일어로 예약한 고객이 셀렉 단계에서 한국어 벽을 만나던 문제. **백엔드 변경 불필요**:
   `getSelectSession`이 이미 `lang`(셀렉 시트 `언어` 컬럼)을 내려주고 있었고 프론트만 무시하던 상태였음.
   - 신규 `frontend/select/v2/i18n.js` — ko/en/de 사전. 마크업 규약:
@@ -91,12 +91,23 @@ Updated: 2026-07-16 Europe/Berlin
   - 언어 전환 UI 신설(`.lang-panel`) — 탭 타깃 44px, active 색 대비 통과
   - **완료 범위**: HTML 정적 표면 126개 마커(스텝 0~4 제목·안내문·가이드·예시·내비·수령방식·픽업·주소·
     성공 패널·라이트박스 라벨·속성) × 3개 언어
-  - 🔴 **남은 범위 (2차)**: `select.js`의 JS 템플릿 문자열 **197개**가 한국어. 대부분 동적 패널을
-    HTML 문자열로 렌더하는 곳 — 포토카드 박스, 보정 범위 안내, 엔트리 카드, 패키지/선택 요약,
-    가격 가이드, 리뷰 라인, 스텝 경고, 상태 배너. 따라서 **지금 상태로 배포하면 독일 고객이
-    독일어 화면에 한국어 조각이 섞인 것을 봄** → 2차 완료 후 배포 권장
-  - ⚠️ **독일어 문구는 고객 대상 상거래 텍스트** — 배포 전 오너 1회 검토 필요.
-    특히 마케팅 동의(`marketingCopyHtml`, `marketingYes/No`)는 GDPR 성격
+  - 2차에서 마이그레이션 완료: 헤더/인사말, 세션 요약, 패키지 안내, 마케팅 동의(보너스 수량 분기 포함),
+    보정 카운터, **스텝 경고 전체**(마케팅 미선택·별점 없음·번호 누락·수령방식·우편 성함/주소/PLZ),
+    수령 방식 리뷰 문구, 성공 화면 전체, 제출 안내(수령 유무 분기). 사전 키 ko/en/de **199개 파리티 일치**
+  - 공유 모듈에 언어 미전달이던 8곳 수정 — `getProductDeliveryLines(input, 'ko')`,
+    `getPrintTierCopy/getPrintTierName/getPrintMicrocopy/getProductIncludedPrintSummary`.
+    두 모듈 모두 ko/en/de를 이미 지원하는데 셀렉만 'ko'를 하드코딩하고 있었음
+    (`print-tier-copy.js:225`의 "셀렉은 KO 전용" 주석은 이제 사실이 아님 — 정리 대상)
+  - 🔴 **남은 범위**: JS 렌더 함수의 한국어 **139개**. 정적 마크업 누출은 **0** (실측 확인).
+    EN 모드에서 패널별 잔여 한국어 텍스트 노드: step0 **0** · step1 40 · step2 25 · step3 19 · step4 7 · success **0**
+    — 전부 JS가 그리는 영역(갤러리 셀/상태, 엔트리 카드, 인화 항목·마감, 포토카드 박스, 보정범위 안내, 리뷰 라인)
+  - 🔴 **작업 중 발견한 기존 버그 (제 변경 아님, 커밋된 코드에도 존재)**: `boot()`이 384행에서
+    호출되는데 `RETOUCH_SCOPE_LIMITED_GROUPS`는 975행 선언 → 모듈 평가 중 boot이 돌아 상수가 미초기화.
+    고객 경로는 `await fetchSelectSession`이 먼저 양보해 우연히 살아있었고 **`?preview=1`은 await가 없어
+    항상 터지고 있었음**(`Cannot read properties of undefined (reading 'some')`).
+    `queueMicrotask(boot)`으로 수정 — 이제 preview도 정상 부팅
+  - 독일어는 오너 검토 대기 대신 직접 재작성(2026-07-26 지시): 관청식 어휘·어색한 직역 16곳 교체
+    (`Einwilligung zur Veröffentlichung`, `Schriftzüge`, `Erhalt der Abzüge`, 장문 분할 등)
   - v1(`select/select.js`)은 i18n 미적용 — 삭제/리다이렉트 대상이라 의도적으로 제외
 
 - **프론트엔드 디자인·접근성 점검 패스 (2026-07-26, ⚠️ 미배포 · 커밋 전)** —

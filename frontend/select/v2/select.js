@@ -77,6 +77,13 @@ function isRetouchedPhotoNum(num) {
 }
 // 출력 리스트를 순회하며 포함 쿼터를 사이즈별로 무료 소진하고, 각 행의 무료/과금 수량과 단가를 계산.
 // 백엔드 computeSelectDecoupledPrints_ 와 동일한 규칙 (서버가 최종 판정).
+/* 포함 쿼터 1장이 상쇄해 주는 금액 — 서버 selectQuotaCredit_ 와 동일 규칙.
+   비교 맥락을 맞추려고, 그 행이 보정본이면 쿼터 SKU 의 보정본가를, 추가 인화면 추가 인화가를 쓴다. */
+function getQuotaCreditValue(quotaId, isRetouched) {
+  const opt = getPrintOption(quotaId);
+  return isRetouched ? Number(opt.retouched) || 0 : Number(opt.additional) || 0;
+}
+
 function computePrintAnnotations() {
   const quota = getSessionIncludedPrintQuota().map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
   // 서비스 컷: 서비스 슬롯 번호마다 인화 1건(1장)에 €3(시그니처 10×15 보정본가) 크레딧. 총 크레딧은 serviceCutCount로 상한.
@@ -95,24 +102,41 @@ function computePrintAnnotations() {
     const qty = Math.max(1, Number(print.qty) || 1);
     const isRetouched = isRetouchedPhotoNum(print.photoNum);
     const unit = isRetouched ? Number(option.retouched) || 0 : Number(option.additional) || 0;
-    let includedQty = 0;
-    for (let k = 0; k < qty; k += 1) {
-      const match = quota.find((q) => q.id === typeId && q.qty > 0);
-      if (!match) break;
-      match.qty -= 1;
-      includedQty += 1;
-    }
-    const chargedQty = qty - includedQty;
     const numKey = printNumKey(print.photoNum);
+    let includedQty = 0;      // 전액 상쇄되어 무료인 장수
+    let quotaDiffQty = 0;     // 쿼터를 썼지만 차액이 남은 장수
+    let quotaCredit = 0;      // 쿼터로 상쇄된 총액
     let amount = 0;
     let serviceDiscount = 0;
     let serviceCreditUnits = 0;
-    for (let u = 0; u < chargedQty; u += 1) {
+    for (let k = 0; k < qty; k += 1) {
+      /* 포함 쿼터 소진 — 서버 computeSelectDecoupledPrints_ 와 **동일 규칙**(사장님 확정 2026-07-26).
+         ① 정확히 같은 SKU 쿼터 우선(=무료) ② 없으면 남은 쿼터 중 크레딧이 가장 큰 것을 소진해 차액만 청구. */
+      let match = quota.find((q) => q.id === typeId && q.qty > 0);
+      let credit = 0;
+      if (match) {
+        credit = unit;
+      } else {
+        let best = null;
+        let bestCredit = -1;
+        quota.forEach((q) => {
+          if (!(q.qty > 0)) return;
+          const c = getQuotaCreditValue(q.id, isRetouched);
+          if (c > bestCredit) { bestCredit = c; best = q; }
+        });
+        if (best) { match = best; credit = Math.max(0, bestCredit); }
+      }
       let unitCharge = unit;
-      if (numKey && serviceCredit[numKey] > 0 && serviceCreditsRemaining > 0 && unit > 0) {
-        const disc = Math.min(unit, basicPrintCredit);
+      if (match) {
+        match.qty -= 1;
+        unitCharge = Math.max(0, unit - credit);
+        if (unitCharge <= 0) includedQty += 1;
+        else { quotaDiffQty += 1; quotaCredit += credit; }
+      }
+      if (unitCharge > 0 && numKey && serviceCredit[numKey] > 0 && serviceCreditsRemaining > 0) {
+        const disc = Math.min(unitCharge, basicPrintCredit);
         if (disc > 0) {
-          unitCharge = Math.max(0, unit - disc);
+          unitCharge = Math.max(0, unitCharge - disc);
           serviceDiscount += disc;
           serviceCreditUnits += 1;
           serviceCredit[numKey] -= 1;
@@ -121,7 +145,8 @@ function computePrintAnnotations() {
       }
       amount += unitCharge;
     }
-    return { option, qty, isRetouched, unit, includedQty, chargedQty, amount, serviceDiscount, serviceCreditUnits };
+    const chargedQty = qty - includedQty;
+    return { option, qty, isRetouched, unit, includedQty, chargedQty, quotaDiffQty, quotaCredit, amount, serviceDiscount, serviceCreditUnits };
   });
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
@@ -309,22 +334,22 @@ function copy() {
 }
 
 function applyCopy() {
-  const copy = getCopy(state.lang);
+  const c = copy();
   document.documentElement.lang = state.lang;
-  document.title = copy.docTitle;
+  document.title = c.docTitle;
 
   document.querySelectorAll('[data-i18n]').forEach((el) => {
-    const value = copy[el.dataset.i18n];
+    const value = c[el.dataset.i18n];
     if (typeof value === 'string') el.textContent = value;
   });
   document.querySelectorAll('[data-i18n-html]').forEach((el) => {
-    const value = copy[el.dataset.i18nHtml];
+    const value = c[el.dataset.i18nHtml];
     if (typeof value === 'string') el.innerHTML = value;
   });
   document.querySelectorAll('[data-i18n-attr]').forEach((el) => {
     el.dataset.i18nAttr.split(',').forEach((pair) => {
       const [attr, key] = pair.split(':').map((part) => part.trim());
-      const value = copy[key];
+      const value = c[key];
       if (attr && typeof value === 'string') el.setAttribute(attr, value);
     });
   });
@@ -332,7 +357,7 @@ function applyCopy() {
   const weekdays = document.getElementById('pickupWeekdays');
   if (weekdays) {
     weekdays.querySelectorAll('span').forEach((cell, index) => {
-      if (copy.weekdays[index]) cell.textContent = copy.weekdays[index];
+      if (c.weekdays[index]) cell.textContent = c.weekdays[index];
     });
   }
 
@@ -371,6 +396,8 @@ function rerenderForLang() {
   updatePhotoCounter();
   updateReview();
   updateSubmitState();
+  syncDeliveryUi();
+  renderStepWarnings();
 }
 
 function wireLanguageSwitcher() {
@@ -379,7 +406,11 @@ function wireLanguageSwitcher() {
   });
 }
 
-boot();
+/* Deferred so the whole module body finishes evaluating first: boot() runs
+   before the module-level consts below are initialised otherwise, which
+   broke ?preview=1 (the customer path only survived because
+   `await fetchSelectSession` happened to yield first). */
+queueMicrotask(boot);
 
 async function boot() {
   wireEvents();
@@ -874,24 +905,25 @@ function renderPackageSummary() {
       .filter(Boolean);
     return names.length ? ` (${names.join(' · ')})` : '';
   })();
+  const c = copy();
   const includedLine = includedSummary
-    ? `<div class="guide-copy">기본 제공 출력물: <b>${escapeHtml(includedSummary)}</b>${includedTierSuffix}</div>`
+    ? `<div class="guide-copy">${c.pkgIncludedHtml(escapeHtml(includedSummary), includedTierSuffix)}</div>`
     : hasFixedSpec
-      ? '<div class="guide-copy">기본 제공 출력물: <b>포함 없음</b></div>'
+      ? `<div class="guide-copy">${c.pkgIncludedNoneHtml}</div>`
       : '';
   const deliveryLines = getProductDeliveryLines(input, state.lang, { includeNoPrintLine: false })
     .filter((line) => !/보정본|retouched|retusch/i.test(line));
   const autoPrintNotice = includedSummary
-    ? '<div class="guide-copy">상품에 포함된 출력 사이즈는 보정 사진 목록에 미리 적용되어 있습니다. 포함 수량 외 출력은 아래 <b>추가 인화</b>에서 입력해 주세요.</div>'
+    ? `<div class="guide-copy">${c.pkgAutoPrintHtml}</div>`
     : '';
   els.packageSummary.innerHTML = `
-    <div class="detail-title">보정 패키지 안내</div>
-    <div class="guide-copy">기본 보정 <b>${escapeHtml(s.baseRetouchCount || 0)}장</b> 포함 · 추가 보정 <b>€${escapeHtml(s.retouchPrice || 0)}/장</b></div>
-    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">🎁 스튜디오 <b>서비스 컷 ${getServiceCutCount()}장</b> 추가 증정 — 보정 무료 + 시그니처 10×15cm 인화 1장씩 포함 (보정 단계에서 사진 번호만 넣어 주세요)</div>` : ''}
+    <div class="detail-title">${escapeHtml(c.pkgTitle)}</div>
+    <div class="guide-copy">${c.pkgBaseHtml(escapeHtml(s.baseRetouchCount || 0), escapeHtml(s.retouchPrice || 0))}</div>
+    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">${c.pkgServiceCutHtml(getServiceCutCount())}</div>` : ''}
     ${includedLine}
     ${autoPrintNotice}
     ${deliveryLines.length ? `<div class="guide-copy">${deliveryLines.map(escapeHtml).join(' · ')}</div>` : ''}
-    ${s.deadline ? `<div class="guide-copy">셀렉 마감일: ${escapeHtml(String(s.deadline).slice(0, 10))}</div>` : ''}
+    ${s.deadline ? `<div class="guide-copy">${escapeHtml(c.pkgDeadline(String(s.deadline).slice(0, 10)))}</div>` : ''}
     ${s.revisionCount ? `<div class="guide-copy">재수정 요청 횟수: ${escapeHtml(s.revisionCount)}회</div>` : ''}
   `;
   if (s.driveLink) {
@@ -904,13 +936,13 @@ function renderPackageSummary() {
 function printTierCardsHtml() {
   const cards = ['signature', 'fineart'].map((tier) => {
     const tierCard = getPrintTierCopy(PRINT_TIER_SAMPLE_ID[tier], state.lang);
-    if (!copy) return '';
+    if (!tierCard) return '';
     return `
       <div class="tier-card">
-        <div class="tier-card-name">${copy.tierName}</div>
-        <div class="tier-card-line">${copy.paperSpec}</div>
-        <div class="tier-card-line">${copy.character}</div>
-        <div class="tier-card-line">${copy.bestFor}</div>
+        <div class="tier-card-name">${tierCard.tierName}</div>
+        <div class="tier-card-line">${tierCard.paperSpec}</div>
+        <div class="tier-card-line">${tierCard.character}</div>
+        <div class="tier-card-line">${tierCard.bestFor}</div>
       </div>`;
   }).join('');
   return cards ? `<div class="paper-tiers">${cards}</div>` : '';
@@ -1161,15 +1193,14 @@ function syncDeliveryUi() {
   if (els.pickupExistingLine) {
     const hasExisting = method === 'pickup' && state.pickupDate && state.pickupTime;
     els.pickupExistingLine.classList.toggle('hidden', !hasExisting);
-    els.pickupExistingLine.textContent = hasExisting ? `현재 예약된 픽업: ${state.pickupDate} ${state.pickupTime}` : '';
+    els.pickupExistingLine.textContent = hasExisting ? copy().pickupExisting(state.pickupDate, state.pickupTime) : '';
   }
   els.mailAddressBox?.classList.toggle('hidden', !deliveryRequired || method !== 'mail');
   if (els.mailNameInput) els.mailNameInput.value = state.mailName || '';
   if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
   if (els.submitHint) {
-    els.submitHint.textContent = deliveryRequired
-      ? '선택 내용을 확인하고 수령 방식을 선택한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.'
-      : '출력물 수령이 없는 상품입니다. 선택 내용을 확인한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.';
+    const c = copy();
+    els.submitHint.textContent = deliveryRequired ? c.submitHintDelivery : c.submitHintNoDelivery;
   }
 }
 
@@ -2317,10 +2348,7 @@ function renderPrintQuotaBanner() {
     return `<span class="quota-chip${done ? ' used' : ''}">${escapeHtml(q.label)} <b>${q.used}/${q.total}</b></span>`;
   }).join('');
   // 포함/추가(차액) 관계를 말하는 유일한 자리 — 등급 라벨이나 옵션 텍스트에는 넣지 않는다.
-  // ⚠ '파인아트로 바꾸면 차액만 청구' 안내를 여기 넣지 말 것 — 사실이 아니다.
-  //    쿼터 매칭은 클라이언트(computePrintAnnotations)·서버(computeSelectDecoupledPrints_) 모두
-  //    SKU id 완전일치라, basic_10x15 쿼터 보유자가 premium_10x15 를 고르면 쿼터가 안 붙고 전액 청구된다.
-  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
+  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><span>${getPrintMicrocopy('quotaUpgradeNote')}</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
 function renderPrints() {
@@ -2342,15 +2370,15 @@ function renderPrints() {
     const serviceLine = ann.serviceDiscount > 0
       ? `<div class="review-note">🎁 서비스 컷 인화 −€${ann.serviceDiscount}${ann.amount > 0 ? ' (차액만 청구)' : ' (무료)'}</div>`
       : '';
-    /* ⚠ '파인아트로 바꾸면 +€N' 힌트를 넣지 말 것 — 정확한 금액을 만들 수 없다.
-       ① 그 행 단가는 보정본이면 retouched, 아니면 additional 이라 additional 차이는 틀린 값이다.
-       ② includedQty>0 인 행을 파인아트로 바꾸면 SKU 불일치로 무료 쿼터가 통째로 사라져 차액이 훨씬 커진다.
-       등급 전환 안내는 드롭다운 아래 용지 캡션과 Step4 reviewBackNote 가 이미 담당한다. */
-    const breakdown = (ann.includedQty > 0 && ann.chargedQty > 0
-      ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
-      : ann.includedQty > 0
-        ? '<div class="review-note">기본 제공 (무료)</div>'
-        : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`) + serviceLine;
+    /* 쿼터 차액이 섞인 행은 '추가 N × €단가'가 성립하지 않는다(장마다 상쇄액이 다를 수 있다).
+       그럴 땐 장수와 실제 합계만 말한다. */
+    const breakdown = (ann.quotaDiffQty > 0
+      ? `<div class="review-note">${ann.includedQty > 0 ? `기본 제공 ${ann.includedQty}장 · ` : ''}기본 제공분 차액 ${ann.quotaDiffQty}장${ann.chargedQty > ann.quotaDiffQty ? ` · 추가 ${ann.chargedQty - ann.quotaDiffQty}장` : ''} — €${ann.amount}</div>`
+      : ann.includedQty > 0 && ann.chargedQty > 0
+        ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
+        : ann.includedQty > 0
+          ? '<div class="review-note">기본 제공 (무료)</div>'
+          : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`) + serviceLine;
     return `
       <div class="entry-card">
         <div class="entry-head">
@@ -2568,20 +2596,21 @@ function renderPickupSlots(slots) {
 }
 
 function getDeliveryReviewText() {
-  if (!requiresDeliverySelection()) return '출력물 수령 없음';
+  const c = copy();
+  if (!requiresDeliverySelection()) return c.deliveryNone;
   if (state.deliveryMethod === 'pickup') {
-    if (state.pickupDate && state.pickupTime) return `스튜디오 픽업 · ${state.pickupDate} ${state.pickupTime}`;
-    return '스튜디오 픽업 · 인화 완료 후 예약 링크를 이메일로 보내드립니다.';
+    if (state.pickupDate && state.pickupTime) return c.deliveryPickupAt(state.pickupDate, state.pickupTime);
+    return c.deliveryPickupLater;
   }
   if (state.deliveryMethod === 'mail') {
     const mailName = getMailNameForSubmission();
     const mailAddress = getMailAddressForSubmission();
-    if (!mailName && !mailAddress) return '우편 수령 · 성함과 주소를 입력해 주세요.';
-    if (!mailName) return '우편 수령 · 받으실 분 성함을 입력해 주세요.';
-    if (!mailAddress) return '우편 수령 · 주소를 입력해 주세요.';
-    return `우편 수령 · ${mailName} · ${formatMailAddressForReview(mailAddress)}`;
+    if (!mailName && !mailAddress) return c.deliveryMailNeedBoth;
+    if (!mailName) return c.deliveryMailNeedName;
+    if (!mailAddress) return c.deliveryMailNeedAddress;
+    return c.deliveryMailFull(mailName, formatMailAddressForReview(mailAddress));
   }
-  return '아직 수령 방식을 선택하지 않았습니다.';
+  return c.deliveryNotChosen;
 }
 
 function validateDeliverySelection() {
@@ -2936,23 +2965,22 @@ function renderSuccess(result) {
   els.progressRow.classList.add('hidden');
   els.stepPanels.forEach((panel) => panel.classList.add('hidden'));
   els.successPanel.classList.remove('hidden');
-  els.successTitle.textContent = state.editMode ? '셀렉 수정이 완료되었습니다.' : '셀렉 제출이 완료되었습니다.';
-  els.successCopy.textContent = calcTotal() > 0
-    ? '추가 비용이 포함된 선택 내용이 저장되었습니다. 인보이스와 함께 후속 안내를 보내드립니다.'
-    : '선택 내용이 정상적으로 저장되었습니다. 담당자가 순서대로 확인한 뒤 안내를 보내드립니다.';
+  const c = copy();
+  els.successTitle.textContent = state.editMode ? c.successTitleEdit : c.successTitle;
+  els.successCopy.textContent = calcTotal() > 0 ? c.successCopyPaid : c.successCopyFree;
   els.successName.textContent = state.session?.name || '-';
   els.successProduct.textContent = state.session?.product || '-';
-  els.successPhotoCount.textContent = `${state.photos.length}장`;
+  els.successPhotoCount.textContent = c.photosUnit(state.photos.length);
   const finalTotal = Number(result?.totalExtra ?? calcTotal());
-  els.successTotal.textContent = finalTotal === 0 ? '무료' : `€${finalTotal}`;
+  els.successTotal.textContent = finalTotal === 0 ? c.successFree : `€${finalTotal}`;
   const deliverySummaryLine = requiresDeliverySelection()
-    ? `<div class="guide-copy">수령 방식: ${escapeHtml(getDeliveryReviewText())}</div>`
+    ? `<div class="guide-copy">${escapeHtml(c.successDeliveryLine(getDeliveryReviewText()))}</div>`
     : '';
   els.successGuide.innerHTML = `
-    <div class="detail-title">선택 요약</div>
-    <div class="guide-copy">보정 선택 ${state.photos.length}장 · 추가 인화 ${state.prints.length}건 · 마케팅 동의 ${state.marketing === 'Y' ? '동의' : '미동의'}</div>
+    <div class="detail-title">${escapeHtml(c.successSummaryTitle)}</div>
+    <div class="guide-copy">${escapeHtml(c.successSummaryLine(state.photos.length, state.prints.length, state.marketing === 'Y' ? c.consentYes : c.consentNo))}</div>
     ${deliverySummaryLine}
-    ${result?.invoiceNumber ? `<div class="guide-copy">추가 비용 인보이스: <b>${escapeHtml(result.invoiceNumber)}</b></div>` : ''}
+    ${result?.invoiceNumber ? `<div class="guide-copy">${c.successInvoiceHtml(escapeHtml(result.invoiceNumber))}</div>` : ''}
   `;
   if (state.session?.driveLink) {
     els.successDriveLink.href = state.session.driveLink;

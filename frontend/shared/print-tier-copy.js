@@ -203,13 +203,16 @@ export const PRINT_MICROCOPY = {
     en: 'Prints are available in two grades: Signature and Fine Art.',
     de: 'Abzüge gibt es in zwei Qualitäten: Signature und FineArt.'
   },
-  /* ⛔ 제거됨 — quotaUpgradeNote ('같은 사진을 파인아트로 바꾸시면 차액만 청구돼요.')
-     기획 문서에는 "computePrintAnnotations 규칙상 사실"로 적혀 있었으나 **사실이 아니다.**
-     포함 쿼터 매칭은 클라이언트(computePrintAnnotations)·서버(computeSelectDecoupledPrints_) 모두
-     SKU id 완전일치(`item.id === printId`)라, basic_10x15 쿼터 보유자가 premium_10x15 를 고르면
-     쿼터가 붙지 않고 **전액**이 청구된다(차액 아님). 차액 크레딧은 서비스 컷 경로에만 존재한다.
-     → UWG §5 오인유발 + §434 BGB 청구 근거가 되므로 다시 넣지 말 것.
-     정말 차액 과금을 약속하려면 카피가 아니라 양쪽 계산에 업그레이드 차액 규칙을 먼저 구현해야 한다. */
+  /* 셀렉: 쿼터 배너 뒤 차액 안내.
+     ⚠ 이 문장은 **차액 과금이 실제로 구현된 뒤에만** 사실이다(2026-07-26 구현 완료).
+     근거: 서버 computeSelectDecoupledPrints_ + 클라이언트 computePrintAnnotations(v2) /
+     getPrintQuotaCredit(v1) 이 "정확일치 쿼터 우선 → 없으면 가장 비싼 쿼터를 소진해 차액만 청구"로 동작한다.
+     쿼터 규칙을 되돌리면 이 문장도 함께 내려야 한다(UWG §5 오인유발). */
+  quotaUpgradeNote: {
+    ko: '포함된 인화를 다른 사이즈·등급으로 바꾸시면 차액만 청구돼요.',
+    en: 'Swapping an included print for another size or grade costs only the difference.',
+    de: 'Tauschen Sie einen enthaltenen Abzug gegen eine andere Größe oder Qualität, wird nur die Differenz berechnet.'
+  },
   // 셀렉 Step 4: 되돌아가기 안내
   reviewBackNote: {
     ko: '파인아트로 바꾸고 싶은 사진이 있으면 ‘← 출력 선택’에서 언제든 변경할 수 있어요.',
