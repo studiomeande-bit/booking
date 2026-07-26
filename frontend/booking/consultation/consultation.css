@@ -1,12 +1,15 @@
+@import "../../shared/tokens.css";
+
 :root {
   color-scheme: light;
-  --ink: #1f2933;
-  --muted: #667085;
-  --line: #e3e0da;
+  --ink: var(--sm-text-soft);
+  --muted: var(--sm-text-muted);
+  --line: var(--sm-line);
   --paper: #fbfaf7;
-  --panel: #ffffff;
-  --accent: #2d2a26;
-  --gold: #a8762b;
+  --panel: var(--sm-surface);
+  --accent: var(--sm-brand-ink);
+  /* was #a8762b — 3.8:1 on the rail surface (#f4efe7) */
+  --gold: #8c6224;
   --blue: #1f6feb;
   --green: #0f766e;
   --danger: #b42318;
@@ -21,7 +24,10 @@ body {
   color: var(--ink);
 }
 
+/* `font: inherit` also resets font-size, which pulled controls down to the
+   13px label size and re-triggered the iOS focus zoom. Restore the floor. */
 button, input, select, textarea { font: inherit; }
+input, select, textarea { font-size: 16px; }
 
 .page-shell {
   min-height: 100vh;
@@ -256,6 +262,10 @@ input, select, textarea {
   outline: none;
 }
 
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(45,42,38,.1);

@@ -4,6 +4,29 @@
 
 ---
 
+## 🔴 2026-07-26 추가 — 카피 적용 중 발견한 **기획 문서의 사실오류** (반드시 읽을 것)
+
+`인화지_설명_예약셀렉_적용안.md` **B-4** 는 쿼터 배너에 넣을 문구로
+**"같은 사진을 파인아트로 바꾸시면 차액만 청구돼요."** 를 지정하며 *"(`computePrintAnnotations` 규칙상 사실)"* 이라고 적었다.
+**사실이 아니다.** 포함 쿼터 매칭은 클라이언트·서버 **양쪽 모두 SKU id 완전일치**다:
+
+- `select/v2/select.js` `computePrintAnnotations` → `quota.find((q) => q.id === typeId && q.qty > 0)`
+- `appscript/Code.gs` `computeSelectDecoupledPrints_` → `quota.find(function(item){return item.id===printId&&item.qty>0;})`
+
+따라서 `basic_10x15` 쿼터 보유자가 그 행을 `premium_10x15` 로 바꾸면 쿼터가 **안 붙고 전액**이 청구된다(차액 아님).
+차액 크레딧이 존재하는 경로는 **서비스 컷뿐**이다. UWG §5 오인유발 + §434 BGB 청구 근거가 되므로:
+
+- `shared/print-tier-copy.js` 에서 `quotaUpgradeNote` 를 **삭제**하고 자리에 경고 주석을 남겼다. 다시 넣지 말 것.
+- 같은 이유로 **B-5 의 "파인아트로 바꾸면 +€N" 행별 힌트도 넣지 않았다.** 정확한 금액을 만들 수 없다:
+  ① 그 행 단가는 보정본이면 `retouched`, 아니면 `additional` 이라 additional 차이는 틀린 값이고
+  ② `includedQty>0` 인 행을 바꾸면 무료 쿼터가 통째로 사라져 실제 차액이 훨씬 커진다.
+- 차액 과금을 **정말** 약속하려면 카피가 아니라 `computePrintAnnotations` + `computeSelectDecoupledPrints_` 양쪽에
+  업그레이드 차액 규칙을 먼저 구현해야 한다. (미구현 = 향후 과제)
+
+**교훈:** 가격을 서술하는 카피는 계산 코드로 검증한 뒤에만 넣는다.
+
+---
+
 ## 1. 지금까지 (✅ 배포 완료 — 손댈 것 없음)
 
 **인화 등급 리네이밍 + 10×15 가격 확정** — GAS `@657`, 커밋 `4e562c8` → `4b7255d` → `8201947`

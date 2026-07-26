@@ -1,12 +1,16 @@
+@import "../../shared/tokens.css";
+
 :root {
-  --bg: #f7f1e7;
+  color-scheme: light;
+  --bg: var(--sm-surface-warm);
   --panel: rgba(255, 252, 246, 0.96);
   --panel-strong: #fffaf1;
-  --line: #e4d7c4;
+  --line: var(--sm-line-warm);
   --line-strong: #cdbba0;
-  --ink: #2e2924;
-  --muted: #786f64;
-  --accent: #312b25;
+  --ink: var(--sm-text-soft);
+  /* was #786f64 — 4.39:1 on this warm background */
+  --muted: var(--sm-text-muted);
+  --accent: var(--sm-brand-ink);
   --accent-soft: #efe3cd;
   --active-bg: #eff7f2;
   --active-line: #cadecf;

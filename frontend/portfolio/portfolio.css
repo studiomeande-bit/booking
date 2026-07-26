@@ -1,15 +1,18 @@
+@import "../shared/tokens.css";
+
 :root {
-  --bg: #090909;
-  --bg-soft: #11120f;
-  --panel: rgba(246, 242, 234, 0.055);
-  --panel-strong: rgba(246, 242, 234, 0.09);
-  --line: rgba(246, 242, 234, 0.14);
-  --text: #f7f2ea;
-  --muted: #aaa196;
-  --accent: #e4dbcf;
-  --sage: #b7cdbc;
-  --copper: #c58d66;
-  --ink: #11110f;
+  color-scheme: dark;
+  --bg: var(--sm-dark-bg);
+  --bg-soft: var(--sm-dark-bg-soft);
+  --panel: var(--sm-dark-panel);
+  --panel-strong: var(--sm-dark-panel-strong);
+  --line: var(--sm-dark-line);
+  --text: var(--sm-dark-text);
+  --muted: var(--sm-dark-muted);
+  --accent: var(--sm-dark-accent);
+  --sage: var(--sm-dark-sage);
+  --copper: var(--sm-dark-copper);
+  --ink: var(--sm-dark-bg-soft);
   --radius: 8px;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;

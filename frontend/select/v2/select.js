@@ -15,7 +15,14 @@ import {
   productHasFixedDeliverySpec,
   productHasIncludedPrints
 } from '../../shared/product-delivery.js';
+import {
+  getPrintMicrocopy,
+  getPrintTier,
+  getPrintTierCopy,
+  getPrintTierName
+} from '../../shared/print-tier-copy.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../shared/utils.js';
+import { getCopy, normalizeLang } from './i18n.js';
 
 // ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
 const PRINT_OPTIONS = [
@@ -29,6 +36,10 @@ const PRINT_OPTIONS = [
   { id: 'premium_a3', label: '파인아트 A3', retouched: 35, additional: 50 },
   { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 45, additional: 60 }
 ];
+
+// 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
+const PRINT_TIER_SAMPLE_ID = { signature: 'basic_10x15', fineart: 'premium_10x15' };
+// 같은 사이즈의 시그니처 ↔ 파인아트 대응 SKU. 차액 표시(표시 전용)에만 쓰고 계산에는 관여하지 않는다.
 
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
 const PRINT_SIZE_MM_V2 = {
@@ -138,8 +149,22 @@ const GALLERY_BATCH_DELAY_MS = 120;
 const GALLERY_CACHE_VERSION = 'batch-300-v1';
 const MAIL_POSTAL_CITY_PATTERN = /(?:^|[\s,])(?:[A-Z]{1,3}-)?\d{4,5}\s+[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F0-9 .'\-()/]{1,}/i;
 
+const LANG_STORAGE_KEY = 'studio-mean-lang';
+
+function readStoredLang() {
+  try {
+    return normalizeLang(globalThis.localStorage?.getItem(LANG_STORAGE_KEY));
+  } catch {
+    return '';
+  }
+}
+
 const state = {
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
+  lang: normalizeLang(new URLSearchParams(globalThis.location.search).get('lang')) || readStoredLang() || 'ko',
+  /* true once the customer picks a language by hand — stops the session's
+     booking language from overriding their choice on a later render. */
+  langChosen: !!normalizeLang(new URLSearchParams(globalThis.location.search).get('lang')) || !!readStoredLang(),
   testMode: new URLSearchParams(globalThis.location.search).get('test') === '1',
   previewMode: new URLSearchParams(globalThis.location.search).get('preview') === '1',
   previewFolder: new URLSearchParams(globalThis.location.search).get('folder') || '',
@@ -186,6 +211,7 @@ const state = {
 };
 
 const els = {
+  langButtons: Array.from(document.querySelectorAll('.lang-btn')),
   loadingScreen: document.getElementById('loadingScreen'),
   banner: document.getElementById('statusBanner'),
   errorPanel: document.getElementById('errorPanel'),
@@ -272,10 +298,93 @@ const els = {
   hpCaption: document.getElementById('hp-caption')
 };
 
+/* ---------------------------------------------------------------- i18n ----
+ * Static copy is marked up in index.html and swapped here:
+ *   data-i18n="key"                    -> textContent
+ *   data-i18n-html="key"               -> innerHTML (constants in i18n.js only)
+ *   data-i18n-attr="attr:key,attr:key" -> attributes (placeholder, aria-label, title)
+ */
+function copy() {
+  return getCopy(state.lang);
+}
+
+function applyCopy() {
+  const copy = getCopy(state.lang);
+  document.documentElement.lang = state.lang;
+  document.title = copy.docTitle;
+
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const value = copy[el.dataset.i18n];
+    if (typeof value === 'string') el.textContent = value;
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach((el) => {
+    const value = copy[el.dataset.i18nHtml];
+    if (typeof value === 'string') el.innerHTML = value;
+  });
+  document.querySelectorAll('[data-i18n-attr]').forEach((el) => {
+    el.dataset.i18nAttr.split(',').forEach((pair) => {
+      const [attr, key] = pair.split(':').map((part) => part.trim());
+      const value = copy[key];
+      if (attr && typeof value === 'string') el.setAttribute(attr, value);
+    });
+  });
+
+  const weekdays = document.getElementById('pickupWeekdays');
+  if (weekdays) {
+    weekdays.querySelectorAll('span').forEach((cell, index) => {
+      if (copy.weekdays[index]) cell.textContent = copy.weekdays[index];
+    });
+  }
+
+  els.langButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.lang === state.lang);
+  });
+}
+
+function setLang(lang) {
+  const next = normalizeLang(lang);
+  if (!next || next === state.lang) return;
+  state.lang = next;
+  state.langChosen = true;
+  try {
+    globalThis.localStorage?.setItem(LANG_STORAGE_KEY, next);
+  } catch {
+    // Ignore storage errors and keep the runtime language in memory.
+  }
+  applyCopy();
+  rerenderForLang();
+}
+
+/* Re-runs the renderers that emit copy. Dynamic strings inside these
+   still come from Korean literals in this file — migrating those is the
+   next batch — but the static surface and anything already keyed updates. */
+function rerenderForLang() {
+  if (!state.session) return;
+  renderHeader();
+  renderSessionSummary();
+  renderPackageSummary();
+  updateMarketingCopy();
+  renderPriceGuide();
+  renderPhotos();
+  renderPhotocardBox();
+  renderPrints();
+  updatePhotoCounter();
+  updateReview();
+  updateSubmitState();
+}
+
+function wireLanguageSwitcher() {
+  els.langButtons.forEach((button) => {
+    button.addEventListener('click', () => setLang(button.dataset.lang));
+  });
+}
+
 boot();
 
 async function boot() {
   wireEvents();
+  wireLanguageSwitcher();
+  applyCopy();
   if (state.previewMode) {
     try {
       const mock = buildMockSession();
@@ -400,6 +509,15 @@ function hideLoading() {
 
 function hydrateSession(session) {
   state.session = session;
+  /* The customer booked in some language; open the page in it. An explicit
+     ?lang= or a stored manual choice takes precedence. */
+  if (!state.langChosen) {
+    const sessionLang = normalizeLang(session.lang);
+    if (sessionLang && sessionLang !== state.lang) {
+      state.lang = sessionLang;
+      applyCopy();
+    }
+  }
   state.editMode = !!session.canEdit;
   state.marketing = session.bookingMarketing || session.existingMarketing || '';
   state.deliveryMethod = session.existingDeliveryMethod || '';
@@ -471,7 +589,7 @@ function getIncludedPrintPresetTypes(session, count) {
 }
 
 function getIncludedPrintSummary(session = state.session) {
-  return getProductIncludedPrintSummary(getSessionProductInput(session), 'ko');
+  return getProductIncludedPrintSummary(getSessionProductInput(session), state.lang);
 }
 
 function normalizePhoto(photo) {
@@ -719,32 +837,28 @@ function formatMailAddressForReview(value) {
 }
 
 function renderHeader() {
+  const c = copy();
   const name = state.session?.name || '';
-  els.welcomeTitle.textContent = name ? `안녕하세요, ${name}님!` : '사진 셀렉';
-  els.welcomeSub.textContent = state.editMode
-    ? '이미 제출한 내용을 불러왔어요. 단계별로 다시 살펴보고 수정한 뒤 제출해 주세요.'
-    : '아래 단계별 안내를 확인한 뒤 편하게 진행하시면 됩니다.';
+  els.welcomeTitle.textContent = name ? c.greeting(name) : c.heroTitle;
+  els.welcomeSub.textContent = state.editMode ? c.welcomeSubEdit : c.welcomeSubNew;
   if (state.testMode) {
-    els.submitHint.textContent = state.editMode
-      ? '테스트 모드입니다. 고객 메일은 발송되지 않고 수정 제출만 검증합니다.'
-      : '테스트 모드입니다. 고객 메일은 발송되지 않고 제출 흐름만 검증합니다.';
+    els.submitHint.textContent = state.editMode ? c.submitHintTestEdit : c.submitHintTestNew;
     return;
   }
-  els.submitHint.textContent = state.editMode
-    ? '수정 제출 모드입니다. 변경 내용을 확인한 뒤 다시 제출해 주세요.'
-    : '모든 확인이 끝나면 제출해 주세요. 제출 이후에도 마감일 전까지는 수정이 가능합니다.';
+  els.submitHint.textContent = state.editMode ? c.submitHintEdit : c.submitHintNew;
 }
 
 function renderSessionSummary() {
   const s = state.session;
+  const c = copy();
   els.sessionSummary.innerHTML = `
-    <div class="summary-item"><div class="summary-label">고객명</div><div class="summary-value">${escapeHtml(s.name || '')}</div></div>
-    <div class="summary-item"><div class="summary-label">상품</div><div class="summary-value">${escapeHtml(s.product || '')}</div></div>
-    <div class="summary-item"><div class="summary-label">촬영일</div><div class="summary-value">${escapeHtml(s.date || '')}</div></div>
-    <div class="summary-item"><div class="summary-label">기본 보정</div><div class="summary-value">${escapeHtml(s.baseRetouchCount || 0)}장</div></div>
-    ${getServiceCutCount() > 0 ? `<div class="summary-item service"><div class="summary-label">서비스 컷</div><div class="summary-value">🎁 ${getServiceCutCount()}장 무료</div></div>` : ''}
-    <div class="summary-item"><div class="summary-label">추가 보정 단가</div><div class="summary-value">€${escapeHtml(s.retouchPrice || 0)}</div></div>
-    <div class="summary-item"><div class="summary-label">추가 인보이스</div><div class="summary-value">${escapeHtml(s.extraInvoiceNumber || '-')}</div></div>
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumName)}</div><div class="summary-value">${escapeHtml(s.name || '')}</div></div>
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumProduct)}</div><div class="summary-value">${escapeHtml(s.product || '')}</div></div>
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumDate)}</div><div class="summary-value">${escapeHtml(s.date || '')}</div></div>
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumBaseRetouch)}</div><div class="summary-value">${escapeHtml(c.photosUnit(s.baseRetouchCount || 0))}</div></div>
+    ${getServiceCutCount() > 0 ? `<div class="summary-item service"><div class="summary-label">${escapeHtml(c.sumServiceCut)}</div><div class="summary-value">${escapeHtml(c.sumServiceCutValue(getServiceCutCount()))}</div></div>` : ''}
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumRetouchPrice)}</div><div class="summary-value">€${escapeHtml(s.retouchPrice || 0)}</div></div>
+    <div class="summary-item"><div class="summary-label">${escapeHtml(c.sumExtraInvoice)}</div><div class="summary-value">${escapeHtml(s.extraInvoiceNumber || '-')}</div></div>
   `;
 }
 
@@ -753,12 +867,19 @@ function renderPackageSummary() {
   const input = getSessionProductInput(s);
   const includedSummary = getIncludedPrintSummary(s);
   const hasFixedSpec = productHasFixedDeliverySpec(input);
+  // 포함 인화의 등급명만 병기(설명 문장은 붙이지 않는다 — Step 3에서 안내한다).
+  const includedTierSuffix = (() => {
+    const names = [...new Set(getSessionIncludedPrintQuota(s).map((q) => getPrintTier(q.id)).filter(Boolean))]
+      .map((tier) => getPrintTierName(tier, state.lang))
+      .filter(Boolean);
+    return names.length ? ` (${names.join(' · ')})` : '';
+  })();
   const includedLine = includedSummary
-    ? `<div class="guide-copy">기본 제공 출력물: <b>${escapeHtml(includedSummary)}</b></div>`
+    ? `<div class="guide-copy">기본 제공 출력물: <b>${escapeHtml(includedSummary)}</b>${includedTierSuffix}</div>`
     : hasFixedSpec
       ? '<div class="guide-copy">기본 제공 출력물: <b>포함 없음</b></div>'
       : '';
-  const deliveryLines = getProductDeliveryLines(input, 'ko', { includeNoPrintLine: false })
+  const deliveryLines = getProductDeliveryLines(input, state.lang, { includeNoPrintLine: false })
     .filter((line) => !/보정본|retouched|retusch/i.test(line));
   const autoPrintNotice = includedSummary
     ? '<div class="guide-copy">상품에 포함된 출력 사이즈는 보정 사진 목록에 미리 적용되어 있습니다. 포함 수량 외 출력은 아래 <b>추가 인화</b>에서 입력해 주세요.</div>'
@@ -779,13 +900,33 @@ function renderPackageSummary() {
   }
 }
 
+// 등급 비교 카드 — 두 등급은 시각적으로 대등해야 한다(우열 표현 금지). 카피는 전부 print-tier-copy.js 원문.
+function printTierCardsHtml() {
+  const cards = ['signature', 'fineart'].map((tier) => {
+    const tierCard = getPrintTierCopy(PRINT_TIER_SAMPLE_ID[tier], state.lang);
+    if (!copy) return '';
+    return `
+      <div class="tier-card">
+        <div class="tier-card-name">${copy.tierName}</div>
+        <div class="tier-card-line">${copy.paperSpec}</div>
+        <div class="tier-card-line">${copy.character}</div>
+        <div class="tier-card-line">${copy.bestFor}</div>
+      </div>`;
+  }).join('');
+  return cards ? `<div class="paper-tiers">${cards}</div>` : '';
+}
+
 function renderPriceGuide() {
-  els.printPriceGuide.innerHTML = getSelectablePrintOptions().map((opt) => `
+  const priceRows = getSelectablePrintOptions().map((opt) => `
     <div class="review-item">
       <span>${escapeHtml(opt.label)}</span>
       <strong>€${opt.additional}</strong>
     </div>
   `).join('');
+  els.printPriceGuide.innerHTML = printTierCardsHtml() + priceRows;
+  // Step 3 안내 문장은 정적 HTML 에 박지 않고 모듈에서 주입한다 — 카피가 개정되면 여기 한 곳만 바뀐다.
+  const tierNote = document.getElementById('printStepTierNote');
+  if (tierNote) tierNote.textContent = getPrintMicrocopy('selectStepNote', state.lang);
 }
 
 function getMarketingBonusCount() {
@@ -939,24 +1080,21 @@ function renderServiceCutNotice() {
 }
 
 function updateMarketingCopy() {
+  const c = copy();
   const count = getMarketingBonusCount();
-  const countLabel = count > 0 ? `${count}장` : '없음';
+  const countLabel = c.photosUnit(count);
   if (els.marketingBonusTag) {
-    els.marketingBonusTag.textContent = count > 0 ? `+ 보정 ${countLabel} 무료 추가` : '보너스 없음';
+    els.marketingBonusTag.textContent = count > 0 ? c.marketingBonusTagOn(countLabel) : c.marketingBonusTagOff;
   }
   if (els.marketingYesBonusLabel) {
-    els.marketingYesBonusLabel.textContent = count > 0 ? `(＋ 보너스 보정 ${countLabel} 무료)` : '(추가 보너스 없음)';
+    els.marketingYesBonusLabel.textContent = count > 0 ? c.marketingYesBonusOn(countLabel) : c.marketingYesBonusOff;
   }
   if (!els.marketingCopy) return;
   if (state.session?.bookingMarketing === 'Y') {
-    els.marketingCopy.textContent = count > 0
-      ? `예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 보너스 보정 ${countLabel}이 무료로 추가됩니다.`
-      : '예약 단계에서 이미 포트폴리오 및 SNS 활용에 동의해 주셨어요. 아래에서 다시 한 번 확인만 해주시면 됩니다.';
+    els.marketingCopy.textContent = count > 0 ? c.marketingAlreadyOn(countLabel) : c.marketingAlreadyOff;
     return;
   }
-  els.marketingCopy.innerHTML = count > 0
-    ? `선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. <b>동의해 주시면 보너스 보정 ${countLabel}이 무료로 추가</b>됩니다. 원치 않으시면 미동의를 선택하시면 됩니다.`
-    : '선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. 원치 않으시면 미동의를 선택하시면 됩니다.';
+  els.marketingCopy.innerHTML = count > 0 ? c.marketingCopyOnHtml(countLabel) : c.marketingCopyOffHtml;
 }
 
 function setMarketing(value) {
@@ -1905,6 +2043,11 @@ function thumbHtmlForNum(num) {
 function printFinishHtml(index, print) {
   const finish = print.finish === 'border' ? 'border' : 'full';
   const asp = printAspect(print.printId);
+  // 저장된 값에 _r/_e 접미어가 붙어 있을 수 있어 등급 조회 전에 정규화한다.
+  const tierId = normalizePrintTypeId(print.printId);
+  const tier = getPrintTier(tierId);
+  const tierClass = tier === 'signature' || tier === 'fineart' ? ` is-${tier}` : '';
+  const tierCopy = getPrintTierCopy(tierId, state.lang);
   const key = stripExt(print.photoNum || '');
   const g = key ? state.gallery.byKey.get(key) : null;
   const src = g ? (g.thumb || g.full) : '';
@@ -1919,11 +2062,12 @@ function printFinishHtml(index, print) {
         <button type="button" class="finish-opt${finish === 'border' ? ' active' : ''}" data-finish-idx="${index}" data-finish="border">흰 테두리</button>
       </div>
       <div class="finish-preview finish-${finish}">
-        <div class="finish-paper" style="aspect-ratio:${asp.toFixed(4)}">${inner}</div>
+        <div class="finish-paper${tierClass}" style="aspect-ratio:${asp.toFixed(4)}">${inner}</div>
       </div>
       <div class="finish-help">${finish === 'border'
         ? '사진 둘레에 흰 여백을 남겨 인화합니다.'
         : '용지 끝까지 사진으로 꽉 채웁니다 (가장자리가 약간 잘릴 수 있어요).'}</div>
+      ${tierCopy?.texture ? `<div class="finish-help">${tierCopy.texture}</div>` : ''}
     </div>`;
 }
 
@@ -2124,15 +2268,19 @@ function updatePhotoCounter() {
   const manualCount = state.photos.filter((p) => (p.source || 'manual') === 'manual' && !p.isBonus).length;
   const bonusCount = state.photos.filter((p) => p.isBonus && !p.isService).length;
   const serviceCount = state.photos.filter((p) => p.isService).length;
-  els.photoCounter.textContent = `${selected}장 선택됨 / 기본 ${base}장 포함${serviceCount > 0 ? ` + 서비스 ${serviceCount}장` : ''}`;
+  const c = copy();
+  els.photoCounter.textContent = c.counterMain(selected, base, serviceCount);
   const parts = [];
-  if (galleryCount) parts.push(`갤러리 ${galleryCount}장`);
-  if (manualCount) parts.push(`직접 추가 ${manualCount}장`);
-  if (bonusCount) parts.push(`마케팅 보너스 ${bonusCount}장(무료)`);  if (serviceCount) parts.push(`서비스 컷 ${serviceCount}장(무료)`);
+  if (galleryCount) parts.push(c.counterGallery(galleryCount));
+  if (manualCount) parts.push(c.counterManual(manualCount));
+  if (bonusCount) parts.push(c.counterBonus(bonusCount));
+  if (serviceCount) parts.push(c.counterService(serviceCount));
   els.photoCounterSub.textContent = parts.length
-    ? parts.join(' · ') + (extra > 0 ? ` · 기본 ${base}장 초과분이 유료로 계산됩니다.` : ' · 추가 보정 비용 없음')
-    : '별점을 주거나 직접 항목을 추가하면 여기에 구성이 표시됩니다.';
-  els.extraCost.textContent = extra > 0 ? `추가 ${extra}장 × €${retouchPrice} = €${extra * retouchPrice}` : '추가 보정 비용 없음';
+    ? parts.join(' · ') + (extra > 0 ? c.counterOverBase(base) : c.counterNoExtra)
+    : c.counterEmpty;
+  els.extraCost.textContent = extra > 0
+    ? c.extraCostLine(extra, retouchPrice, extra * retouchPrice)
+    : c.extraCostNone;
 }
 
 /* ========================================================================
@@ -2168,6 +2316,10 @@ function renderPrintQuotaBanner() {
     const done = q.remaining === 0;
     return `<span class="quota-chip${done ? ' used' : ''}">${escapeHtml(q.label)} <b>${q.used}/${q.total}</b></span>`;
   }).join('');
+  // 포함/추가(차액) 관계를 말하는 유일한 자리 — 등급 라벨이나 옵션 텍스트에는 넣지 않는다.
+  // ⚠ '파인아트로 바꾸면 차액만 청구' 안내를 여기 넣지 말 것 — 사실이 아니다.
+  //    쿼터 매칭은 클라이언트(computePrintAnnotations)·서버(computeSelectDecoupledPrints_) 모두
+  //    SKU id 완전일치라, basic_10x15 쿼터 보유자가 premium_10x15 를 고르면 쿼터가 안 붙고 전액 청구된다.
   return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
@@ -2190,6 +2342,10 @@ function renderPrints() {
     const serviceLine = ann.serviceDiscount > 0
       ? `<div class="review-note">🎁 서비스 컷 인화 −€${ann.serviceDiscount}${ann.amount > 0 ? ' (차액만 청구)' : ' (무료)'}</div>`
       : '';
+    /* ⚠ '파인아트로 바꾸면 +€N' 힌트를 넣지 말 것 — 정확한 금액을 만들 수 없다.
+       ① 그 행 단가는 보정본이면 retouched, 아니면 additional 이라 additional 차이는 틀린 값이다.
+       ② includedQty>0 인 행을 파인아트로 바꾸면 SKU 불일치로 무료 쿼터가 통째로 사라져 차액이 훨씬 커진다.
+       등급 전환 안내는 드롭다운 아래 용지 캡션과 Step4 reviewBackNote 가 이미 담당한다. */
     const breakdown = (ann.includedQty > 0 && ann.chargedQty > 0
       ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
       : ann.includedQty > 0
@@ -2216,6 +2372,7 @@ function renderPrints() {
             <select data-print-type="${index}">
               ${getSelectablePrintOptions().map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}
             </select>
+            ${getPrintTierCopy(printTypeId, state.lang)?.paper ? `<div class="finish-help print-paper-note">${getPrintTierCopy(printTypeId, state.lang).paper}</div>` : ''}
           </div>
         </div>
         ${printFinishHtml(index, print)}
@@ -2499,6 +2656,10 @@ function updateReview() {
         `;
       }).join('')
     : '<div class="empty-state">출력 선택 없음</div>';
+  // 출력이 전부 시그니처일 때만 되돌아가는 방법을 한 줄로 안내(버튼·강조 없음).
+  if (state.prints.length && state.prints.every((print) => getPrintTier(normalizePrintTypeId(print.printId)) === 'signature')) {
+    els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-note">${getPrintMicrocopy('reviewBackNote', state.lang)}</div>`);
+  }
 
   if (els.reviewPhotocardBlock && els.reviewPhotocard) {
     const visible = hasIncludedPhotocard();
@@ -2608,33 +2769,34 @@ function canProceedStep3() {
 }
 
 function renderStepWarnings() {
+  const c = copy();
   const bonusCount = getMarketingBonusCount();
   const step1Message = canProceedStep1()
     ? ''
     : !state.marketing
-      ? `마케팅 동의 여부(동의 / 미동의)를 먼저 선택해 주세요.${bonusCount > 0 ? ` 동의 시 보너스 보정 ${bonusCount}장이 무료로 추가됩니다.` : ''}`
-      : '1차 셀렉에서 별점을 준 사진이 아직 없어요. 마음에 드는 사진에 별을 부여해 주세요.';
+      ? c.warnMarketing(bonusCount)
+      : c.warnNoStars;
   const step2Message = canProceedStep2()
     ? ''
     : !state.photos.length
-      ? '보정 사진을 최소 1장 추가해야 다음 단계로 이동할 수 있습니다.'
+      ? c.warnNoRetouch
       : getPhotocardWarning()
         ? getPhotocardWarning()
-        : '모든 사진의 번호와 보정 요청사항(구체적으로)을 입력해야 다음 버튼이 활성화됩니다.';
-  const step3Message = canProceedStep3() ? '' : '추가 인화의 사진 번호를 모두 입력해야 다음 단계로 이동할 수 있습니다.';
+        : c.warnRetouchIncomplete;
+  const step3Message = canProceedStep3() ? '' : c.warnPrintNumbers;
   const step4Message = canSubmit()
     ? ''
     : !requiresDeliverySelection()
-      ? '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.'
+      ? c.warnReviewAgain
       : !state.deliveryMethod
-      ? '수령 방식을 선택해야 제출할 수 있습니다.'
+      ? c.warnDeliveryMethod
       : state.deliveryMethod === 'mail' && !getMailNameForSubmission()
-        ? '우편 수령 받으실 분 성함을 입력해야 제출할 수 있습니다.'
+        ? c.warnMailName
       : state.deliveryMethod === 'mail' && !getMailAddressForSubmission()
-        ? '우편 수령 주소를 입력해야 제출할 수 있습니다.'
+        ? c.warnMailAddress
         : state.deliveryMethod === 'mail' && !hasMailAddressPostalCity(getMailAddressForSubmission())
-          ? '우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel'
-          : '제출 전 보정 선택, 추가 인화, 마케팅 동의 상태를 다시 확인해 주세요.';
+          ? c.warnMailPostal
+          : c.warnReviewAgain;
 
   if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
   if (els.stepWarnings.step2) els.stepWarnings.step2.textContent = step2Message;

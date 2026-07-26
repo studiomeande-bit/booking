@@ -1,0 +1,106 @@
+/* ============================================================
+   Studio mean — design tokens (single source of truth)
+
+   Every site imports this and aliases its own local names to it,
+   so a value is defined here exactly once. Do not hardcode a hex
+   in a site stylesheet when a token below already means it.
+
+   Consumed via `@import "../shared/tokens.css";` at the top of a
+   site's entry stylesheet. esbuild inlines it at build time
+   (the CSS build scripts pass --bundle), so `shared/` never has
+   to be inside a site's Netlify publish root.
+
+   Contrast: every --sm-text-* value is verified against every
+   --sm-surface-* value it is used on. The floor is 4.5:1.
+   --sm-text-muted measures 4.64:1 on the darkest soft surface
+   (#efe5db) and 5.77:1 on white. If you add a surface darker
+   than #efe5db, re-verify before using muted text on it.
+   ============================================================ */
+
+:root {
+  /* ---------- Typography ----------
+     Cormorant Garamond + Noto Sans KR are the studio's documented
+     brand faces (see 스튜디오자료/CLAUDE.md). Cormorant carries no
+     Hangul, so Noto Sans KR follows it in the display stack and
+     picks up Korean headings automatically. */
+  --sm-font-sans: "Noto Sans KR", "Avenir Next", sans-serif;
+  --sm-font-display: "Cormorant Garamond", "Noto Sans KR", Georgia, serif;
+
+  /* ---------- Space ---------- */
+  --sm-space-1: 8px;
+  --sm-space-2: 12px;
+  --sm-space-3: 16px;
+  --sm-space-4: 24px;
+  --sm-space-5: 32px;
+
+  /* ---------- Brand ---------- */
+  --sm-accent: #b54c2d;          /* terracotta — primary brand accent */
+  --sm-accent-deep: #a8462a;     /* 4.7:1 on warm soft surfaces */
+  --sm-brand-ink: #2d2a26;       /* near-black brown used for solid CTAs */
+
+  /* ---------- Light surfaces (warm paper) ---------- */
+  --sm-surface: #ffffff;
+  --sm-surface-raised: #fffdf8;
+  --sm-surface-soft: #f5f2ec;
+  --sm-surface-warm: #f7f1e7;    /* was #f7f1e7 / #f7f1e6 in two files */
+  --sm-surface-sunken: #f1ede7;
+  --sm-surface-shade: #efe5db;   /* darkest soft surface in use */
+
+  /* ---------- Text on light ---------- */
+  --sm-text: #171513;
+  --sm-text-soft: #3b3129;
+  --sm-text-muted: #6a655f;      /* >=4.64:1 on every surface above */
+  --sm-text-disabled: #897d6b;   /* 3.3:1 — reads as disabled, still legible */
+
+  /* ---------- Lines ---------- */
+  --sm-line: #e8e4dd;
+  --sm-line-warm: #e4d7c4;
+  --sm-line-strong: #c9c2b8;
+
+  /* ---------- Status ---------- */
+  --sm-ok: #0f6d53;
+  --sm-ok-bg: #edf8f3;
+  --sm-warn: #a4671b;
+  --sm-warn-bg: #fbf1e2;
+  --sm-error: #97283e;
+  --sm-error-bg: #fdf1f4;
+  --sm-info: #336967;
+  --sm-info-bg: #e6f4f3;
+
+  /* ---------- Dark surfaces (portfolio) ---------- */
+  --sm-dark-bg: #090909;
+  --sm-dark-bg-soft: #11120f;
+  --sm-dark-text: #f7f2ea;
+  --sm-dark-muted: #aaa196;      /* 8.6:1 on --sm-dark-bg */
+  --sm-dark-accent: #e4dbcf;
+  --sm-dark-copper: #c58d66;
+  --sm-dark-sage: #b7cdbc;
+  --sm-dark-line: rgba(246, 242, 234, 0.14);
+  --sm-dark-panel: rgba(246, 242, 234, 0.055);
+  --sm-dark-panel-strong: rgba(246, 242, 234, 0.09);
+
+  /* ---------- Safe areas ---------- */
+  --sm-safe-top: env(safe-area-inset-top, 0px);
+  --sm-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* iOS Safari zooms the page on focus when a form control is under
+   16px. This is a floor, not a design choice — components may go
+   larger, never smaller. */
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

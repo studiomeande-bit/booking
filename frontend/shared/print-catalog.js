@@ -8,6 +8,8 @@
 // 포토카드 실측: 지갑 카드(ID-1) 크기 = 8.6 × 5.4 cm (사장님 확인, 2026-07-26).
 // A4=21×29.7 · A3=29.7×42 · A3+=32.9×48.3 cm (표준 규격).
 
+import { getPrintTier, getPrintTierName } from './print-tier-copy.js';
+
 export const PRINT_CATALOG = [
   { id: 'basic_10x15',     cm: '10 × 15 cm',    additional: 4,  name: { ko: '시그니처 10×15cm', en: 'Signature 10×15cm',      de: 'Signature-Abzug 10×15cm' } },
   { id: 'premium_10x15',   cm: '10 × 15 cm',    additional: 8,  name: { ko: '파인아트 10×15cm', en: 'Fine Art 10×15cm',        de: 'FineArt-Druck 10×15cm' } },
@@ -22,4 +24,24 @@ export const PRINT_CATALOG = [
 // 카탈로그 항목의 현지화된 이름.
 export function printCatalogName(item, lang) {
   return (item && item.name && (item.name[lang] || item.name.ko)) || '';
+}
+
+/* 등급(grade)은 여기에 리터럴로 복제하지 않고 print-tier-copy.js 의 PRINT_ID_TIER 에서 파생시킨다.
+   이 도메인은 이미 가격 정의처가 5곳이라 드리프트로 여러 번 깨졌다 — 등급 매핑까지 2벌이 되면
+   리네이밍 때 또 어긋난다. 단일 소스는 print-tier-copy.js. */
+export function printCatalogGrade(item) {
+  return getPrintTier(item && item.id);
+}
+
+// 등급 라벨('시그니처 인화' 등) — 예약 아코디언의 섹션 헤더용.
+export function printCatalogGradeLabel(grade, lang) {
+  return getPrintTierName(grade, lang);
+}
+
+// 등급별로 묶은 카탈로그. 품목이 늘어도 템플릿을 건드리지 않도록 데이터 주도로 그룹핑한다.
+export function groupPrintCatalogByGrade() {
+  const order = ['signature', 'fineart', 'photocard'];
+  return order
+    .map((grade) => ({ grade, items: PRINT_CATALOG.filter((item) => printCatalogGrade(item) === grade) }))
+    .filter((group) => group.items.length > 0);
 }

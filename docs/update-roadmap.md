@@ -75,6 +75,60 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **셀렉 페이지 3개국어화 — 1차 (정적 표면 완료 / 동적 패널 미완, 2026-07-26, ⚠️ 미배포)** —
+  독일어로 예약한 고객이 셀렉 단계에서 한국어 벽을 만나던 문제. **백엔드 변경 불필요**:
+  `getSelectSession`이 이미 `lang`(셀렉 시트 `언어` 컬럼)을 내려주고 있었고 프론트만 무시하던 상태였음.
+  - 신규 `frontend/select/v2/i18n.js` — ko/en/de 사전. 마크업 규약:
+    `data-i18n`(textContent) / `data-i18n-html`(innerHTML, **i18n.js 상수 전용** — 사용자 입력 금지) /
+    `data-i18n-attr="placeholder:key,aria-label:key"`(속성)
+  - ⚠️ `<b>` 강조가 문장을 쪼개던 곳이 다수 — 어순이 다른 독/영에서는 조각 번역이 불가능하므로
+    번역값이 인라인 태그를 포함하는 방식(`*Html` 키)으로 처리. 마크업 재구성 없이 해결
+  - 언어 결정 우선순위: `?lang=` → 수동 선택(localStorage) → **세션의 예약 언어** → ko.
+    `state.langChosen` 플래그가 있어 고객이 직접 고른 언어를 세션 언어가 덮지 않음
+  - 검증(브라우저 실측): 3개 언어 전환 시 textContent·innerHTML·속성·요일·`<html lang>`·`document.title`
+    전부 정상, **URL/저장값 없이 세션 언어만으로 독일어로 열림 확인**(목 세션 lang을 임시로 de로 바꿔 실제 경로 통과),
+    5회 반복 전환 후 `<b>`/`<kbd>` 마크업 무손실, 대비 위반 0 / iOS 확대 0 / 가로스크롤 0
+  - 언어 전환 UI 신설(`.lang-panel`) — 탭 타깃 44px, active 색 대비 통과
+  - **완료 범위**: HTML 정적 표면 126개 마커(스텝 0~4 제목·안내문·가이드·예시·내비·수령방식·픽업·주소·
+    성공 패널·라이트박스 라벨·속성) × 3개 언어
+  - 🔴 **남은 범위 (2차)**: `select.js`의 JS 템플릿 문자열 **197개**가 한국어. 대부분 동적 패널을
+    HTML 문자열로 렌더하는 곳 — 포토카드 박스, 보정 범위 안내, 엔트리 카드, 패키지/선택 요약,
+    가격 가이드, 리뷰 라인, 스텝 경고, 상태 배너. 따라서 **지금 상태로 배포하면 독일 고객이
+    독일어 화면에 한국어 조각이 섞인 것을 봄** → 2차 완료 후 배포 권장
+  - ⚠️ **독일어 문구는 고객 대상 상거래 텍스트** — 배포 전 오너 1회 검토 필요.
+    특히 마케팅 동의(`marketingCopyHtml`, `marketingYes/No`)는 GDPR 성격
+  - v1(`select/select.js`)은 i18n 미적용 — 삭제/리다이렉트 대상이라 의도적으로 제외
+
+- **프론트엔드 디자인·접근성 점검 패스 (2026-07-26, ⚠️ 미배포 · 커밋 전)** —
+  포트폴리오 / 예약 / 셀렉 9개 페이지를 브라우저 실측(대비비·탭타깃·오버플로)으로 점검 후 수정.
+  - 🔴 **`alt`에 원본 파일명이 들어가 고객 실명이 공개 노출** (`250502_임예지_무용프로필0379.jpg` 등, 61장 중 58장).
+    스크린리더·Google Images·페이지 소스에 그대로 나감 → GDPR 이슈. `copy.photoAlt(label)` 3개국어 문구로 교체
+  - **iOS 포커스 확대**: `font-size < 16px`인 폼 컨트롤 31개(예약 11·셀렉 6·상담 16 등) → 0.
+    `.gallery-search`는 `@media (max-width:820px)`에서만 14px이라 데스크톱 점검으로는 안 잡히던 유형.
+    `consultation.css`의 `button,input,select,textarea{font:inherit}`가 font-size까지 리셋해 라벨 13px을 물려받고 있었음
+  - **대비 위반 24건 → 0건** (비활성 버튼 예외 2건은 2.09→3.3으로 상향).
+    `.calendar-weekday` `.empty-state` `.muted-copy` 등 갈색 4종이 같은 역할이라 `--muted` 하나로 수렴.
+    ⚠️ 알파 합성(`rgba()` 전경) 미검사 시 놓치는 위반이 많음 — `.lang-btn` 3.23 / `.site-footer-eyebrow` 2.58 등 7건이 그 유형
+  - **`<html lang>`이 언어 전환을 안 따라감** (항상 `ko`) → `syncLanguageControls()`에서 갱신
+  - **Space Grotesk 제거** — `스튜디오자료/CLAUDE.md`의 브랜드 정식 토큰은 Cormorant Garamond + Noto Sans KR.
+    booking / promo / select v2 / 법적고지 4p 전부 통일 (한글 제목은 Noto Sans KR로 폴백되므로 실제 변화는 가격·숫자·영문)
+  - **`frontend/shared/tokens.css` 신설** — 색·간격·폰트 단일 정의. 9개 스타일시트의 `:root`는 별칭만 유지해
+    기존 `var()` 호출부를 건드리지 않음. CSS 빌드 스크립트에 `--bundle` 추가(→ `@import` 인라인, `url()` 0건이라 안전).
+    수렴 과정에서 잠재 위반 2건 발견: status `--mute` 3.85, gutschein `--muted` 4.39.
+    walkin `#f7f1e6` vs gutschein `#f7f1e7`(1 hex 차이)도 `--sm-surface-warm`으로 통합
+  - **캐시버스팅 자동화** `scripts/stamp-assets.mjs` — 콘텐츠 sha256으로 `?v=` 스탬프, 3개 빌드 체인 말미에 연결.
+    `--check`는 CI용. 🔴 이게 필요한 이유: Netlify가 css/js를 `immutable`로 주므로 `?v=`를 수동으로 안 올리면
+    **배포해도 기존 방문자에게 영구히 반영 안 됨**. 작업 중 실제로 이 함정에 빠져 확인이 지연됨
+  - `status.css`가 유일하게 미니파이 없이 원본 서빙되던 것 → `build:css:status` 신설, `status.min.css`로 전환
+  - 부수 수정: walkin `.lang-panel` 246px가 375px 뷰포트를 넘겨 가로스크롤 유발(기존 버그) → `flex-wrap`,
+    `outline:none` 3곳에 `:focus-visible` 대체 추가, `color-scheme` 9/9, `prefers-reduced-motion` 전역화,
+    팔레트 밖 `#94a3b8`(Tailwind slate) 인라인 4곳 제거
+  - **남은 것**: 셀렉 3개국어화(한글 문자열 134개 하드코딩 + `lang:'ko'`), 포트폴리오 모바일 햄버거
+    (sticky 헤더 164px = 화면 20%, nav 9개 2줄 랩), 포트폴리오 스크롤 리빌 모션(transition 4개뿐)·이미지 38장
+    `width`/`height` 누락(CLS), select v1 삭제 또는 `/v2/` 리다이렉트, 컴포넌트 내부 하드코딩 hex 토큰화
+  - ⚠️ **커밋 시 주의**: 작업 트리에 병행 중인 print-tier 작업(`booking.js` 신규 import, `select*.js`,
+    `shared/print-catalog.js`, `shared/print-tier-copy.js`)이 섞여 있음. 이 패스의 변경만 분리 필요
+
 - **인화 등급 리네이밍 시그니처/파인아트 + 10×15 가격 확정 (2026-07-26, ✅ 배포 @657 · 커밋 `4e562c8`,`4b7255d`)** —
   '기본/프리미엄'이 실제 용지(Epson Premium Semigloss 251g / Hahnemühle Photo Matt Fibre 200g)를 저평가하던 문제와,
   10×15에서 **파인아트(€3)가 시그니처(€5)보다 싸던 가격 역전**을 함께 해소.

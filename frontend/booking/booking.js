@@ -1,6 +1,7 @@
 import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
-import { getProductDeliveryLines, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
-import { PRINT_CATALOG, printCatalogName } from '../shared/print-catalog.js';
+import { getProductDeliveryLines, getProductIncludedPrintQuota, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
+import { groupPrintCatalogByGrade, printCatalogGradeLabel, printCatalogName } from '../shared/print-catalog.js';
+import { PRINT_METHOD_POINTS, PRINT_TIERS, getPrintMicrocopy, getPrintTier } from '../shared/print-tier-copy.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 const LANG_STORAGE_KEY = 'studio-mean-lang';
@@ -64,6 +65,12 @@ function readUrlLang() {
 function normalizeLang(value) {
   const lang = String(value || '').trim().toLowerCase().slice(0, 2);
   return SUPPORTED_LANGS.has(lang) ? lang : '';
+}
+
+/* Keeps <html lang> in sync so screen readers pick the right voice and
+   Chrome does not offer to translate a page that is already in the user's language. */
+function syncDocumentLang(lang) {
+  document.documentElement.lang = lang;
 }
 
 function persistLang(lang) {
@@ -1997,6 +2004,7 @@ function syncConsultationLinks() {
 
 function syncLanguageControls() {
   els.langButtons.forEach((item) => item.classList.toggle('active', item.dataset.lang === state.lang));
+  syncDocumentLang(state.lang);
 }
 
 function setLang(lang) {
@@ -3631,7 +3639,9 @@ function getCompositionCopy() {
       notes: 'Options / conditions',
       price: 'Price',
       shootTime: 'Shoot time',
-      studioA4: '1 A4 print included'
+      studioA4: '1 A4 print included',
+      printGradeNote: getPrintMicrocopy('bookingGradeNote', 'en'),
+      printGradeNoteMixed: getPrintMicrocopy('bookingGradeNoteMixed', 'en')
     };
   }
   if (state.lang === 'de') {
@@ -3641,7 +3651,9 @@ function getCompositionCopy() {
       notes: 'Optionen / Bedingungen',
       price: 'Preis',
       shootTime: 'Shootingzeit',
-      studioA4: '1 A4-Abzug inklusive'
+      studioA4: '1 A4-Abzug inklusive',
+      printGradeNote: getPrintMicrocopy('bookingGradeNote', 'de'),
+      printGradeNoteMixed: getPrintMicrocopy('bookingGradeNoteMixed', 'de')
     };
   }
   return {
@@ -3650,8 +3662,26 @@ function getCompositionCopy() {
     notes: '추가 / 조건',
     price: '금액',
     shootTime: '촬영 시간',
-    studioA4: '시그니처 A4 1장 포함'
+    studioA4: '시그니처 A4 1장 포함',
+    printGradeNote: getPrintMicrocopy('bookingGradeNote', 'ko'),
+    printGradeNoteMixed: getPrintMicrocopy('bookingGradeNoteMixed', 'ko')
   };
+}
+
+// 포함 인화 등급 캡션. 상품 id 하드코딩 대신 product-delivery 스펙의 prints[] → 등급 매핑으로 판정한다.
+// 포함 인화가 없거나(op·oprm) 등급 체계 밖 규격(여권 pass)이면 캡션을 붙이지 않는다 — 사실오류 방지.
+function getCompositionPrintGradeNote(product, copy) {
+  const quota = getProductIncludedPrintQuota(product);
+  if (!quota.length) return '';
+  const tiers = quota.map((item) => getPrintTier(item.id));
+  if (tiers.some((tier) => !tier || tier === 'photocard')) return '';
+  const fineart = quota.filter((item) => getPrintTier(item.id) === 'fineart');
+  if (!fineart.length) return copy.printGradeNote;
+  /* Mixed 문구는 "A3 1장은 파인아트"라고 **문자 그대로** 말한다(print-tier-copy.js bookingGradeNoteMixed).
+     조건을 'fineart 가 하나라도 있으면'으로 두면, product-delivery.js 에 premium_a4 나 A3 2장을 추가하는 순간
+     코드 변경 없이 예약 페이지가 거짓말을 한다. 카피가 서술하는 구성(premium_a3 정확히 1장)일 때만 쓴다. */
+  const isSingleA3 = fineart.length === 1 && fineart[0].id === 'premium_a3' && Number(fineart[0].qty) === 1;
+  return isSingleA3 ? copy.printGradeNoteMixed : '';
 }
 
 function normalizeCompositionPart(value) {
@@ -3820,6 +3850,10 @@ function renderProductCompositionPanel(product) {
         [copy.shootTime, getProductDurationLabel(shootDuration)]
       ];
   if (!detailIncluded.length && !detailNotes.length) return '';
+  const printGradeNote = getCompositionPrintGradeNote(product, copy);
+  const printGradeNoteHtml = printGradeNote
+    ? `<div class="package-composition-note">${printGradeNote}</div>`
+    : '';
   return `
     <section class="package-composition-panel">
       <div class="package-composition-title">${escapeHtml(copy.title)}</div>
@@ -3837,8 +3871,9 @@ function renderProductCompositionPanel(product) {
           <ul class="package-composition-list">
             ${detailIncluded.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
           </ul>
+          ${printGradeNoteHtml}
         </div>
-      ` : ''}
+      ` : printGradeNoteHtml}
       ${detailNotes.length ? `
         <div class="package-composition-section muted">
           <div class="package-composition-label">${escapeHtml(copy.notes)}</div>
@@ -5265,28 +5300,67 @@ function renderPrintInfoSection(product) {
   if (!product || !PRINT_INFO_GROUPS.has(product.g)) return '';
   const lang = state.lang;
   const t = (ko, en, de) => (lang === 'en' ? en : lang === 'de' ? de : ko);
-  const rows = PRINT_CATALOG.map((item) => `
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid rgba(15,23,42,0.06);font-size:13px;">
-        <span>${escapeHtml(printCatalogName(item, lang))} <span style="color:#94a3b8;">· ${escapeHtml(item.cm)}</span></span>
-        <strong style="white-space:nowrap;">€${item.additional}</strong>
-      </div>`).join('');
+  // print-tier-copy.js 의 고정 카피는 법률 검수를 통과한 원문이라 그대로 raw 보간한다
+  // (PRINT_METHOD_POINTS.body 에는 의도된 <br> 이 들어있어 escapeHtml 하면 태그가 노출된다).
+  const pick = (field) => (field && (field[lang] || field.ko)) || '';
+  const tierCompare = ['signature', 'fineart'].map((grade) => {
+    const tier = PRINT_TIERS[grade];
+    if (!tier) return '';
+    return `
+        <div class="print-tier-compare-item">
+          <div class="print-tier-compare-name">${printCatalogGradeLabel(grade, lang)}</div>
+          <p class="print-tier-compare-line">${pick(tier.character)}</p>
+          <p class="print-tier-compare-line print-tier-compare-best">${pick(tier.bestFor)}</p>
+        </div>`;
+  }).join('');
+  // 등급별 섹션. 포토카드처럼 paperSpec 이 없는 등급은 용지 줄을 생략한다.
+  const groups = groupPrintCatalogByGrade().map((group) => {
+    const paperSpec = pick(PRINT_TIERS[group.grade]?.paperSpec);
+    const rows = group.items.map((item) => `
+            <div class="print-info-row">
+              <span>${escapeHtml(printCatalogName(item, lang))} <span class="print-info-row-cm">· ${escapeHtml(item.cm)}</span></span>
+              <strong>€${item.additional}</strong>
+            </div>`).join('');
+    return `
+          <div class="print-info-group">
+            <div class="print-info-group-head">
+              <span class="print-info-group-name">${escapeHtml(printCatalogGradeLabel(group.grade, lang))}</span>
+              ${paperSpec ? `<span class="print-info-group-paper">${paperSpec}</span>` : ''}
+            </div>
+            ${rows}
+          </div>`;
+  }).join('');
+  const method = PRINT_METHOD_POINTS[lang] || PRINT_METHOD_POINTS.ko;
+  const methodHtml = `
+        <div class="print-method">
+          <div class="print-method-title">${method.title}</div>
+          ${method.points.map((point) => `
+            <div class="print-method-point">
+              <div class="print-method-head">${point.head}</div>
+              <p class="print-method-body">${point.body}</p>
+            </div>`).join('')}
+        </div>`;
   return `
-    <details class="print-info-box" style="margin:12px 0;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;overflow:hidden;">
-      <summary style="cursor:pointer;padding:12px 15px;font-weight:700;font-size:14px;">📷 ${t('인화(출력) 사이즈·가격 안내', 'Print sizes & prices', 'Abzüge – Größen & Preise')}</summary>
-      <div style="padding:2px 15px 15px;">
-        <p style="margin:0 0 10px;font-size:13px;color:#475569;line-height:1.7;">${t(
+    <details class="print-info-box">
+      <summary class="print-info-summary">📷 ${t('인화(출력) 사이즈·가격 안내', 'Print sizes & prices', 'Abzüge – Größen & Preise')}</summary>
+      <div class="print-info-body">
+        <p class="print-info-lead">${t(
           '기본 포함 인화 외에 원하시면 아래 사이즈로 추가 인화하실 수 있어요. 사이즈·수량은 <b>촬영 후 사진 선택 단계</b>에서 정하시면 됩니다.',
           'Beyond the prints included in your package, you can order extra prints in the sizes below. You choose sizes and quantities <b>after the shoot, at the photo-selection step</b>.',
           'Zusätzlich zu den enthaltenen Abzügen können Sie weitere Abzüge in den Größen unten bestellen. Größe und Menge wählen Sie <b>nach dem Shooting im Auswahlschritt</b>.'
         )}</p>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:2px 12px;">
-          ${rows}
+        <div class="print-tier-compare">
+          ${tierCompare}
         </div>
-        <p style="margin:10px 0 0;font-size:12px;color:#64748b;line-height:1.7;">${t(
+        <div class="print-info-table">
+          ${groups}
+        </div>
+        <p class="print-info-foot">${t(
           '가격은 추가 인화 1장 기준이에요. 수령은 <b>스튜디오 픽업</b> 또는 <b>우편</b> 중 선택 — 인화가 완료되면 안내 링크를 보내드려요.',
           'Prices are per extra print. Delivery: choose <b>studio pickup</b> or <b>post</b> — we email you a link once printing is done.',
           'Preise gelten pro zusätzlichem Abzug. Zustellung: <b>Abholung im Studio</b> oder <b>Post</b> — nach dem Druck senden wir Ihnen einen Link.'
         )}</p>
+        ${methodHtml}
       </div>
     </details>`;
 }

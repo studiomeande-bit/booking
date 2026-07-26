@@ -1,17 +1,20 @@
+@import "../../shared/tokens.css";
+
 :root {
-  --font-sans: "Noto Sans KR", "Avenir Next", sans-serif;
-  --font-display: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
-  --space-1: 8px;
-  --space-2: 12px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 32px;
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --panel-soft: #f5f2ec;
-  --ink: #312d28;
-  --muted: #7b7164;
-  --line: #e6dccd;
+  color-scheme: light;
+  --font-sans: var(--sm-font-sans);
+  --font-display: var(--sm-font-display);
+  --space-1: var(--sm-space-1);
+  --space-2: var(--sm-space-2);
+  --space-3: var(--sm-space-3);
+  --space-4: var(--sm-space-4);
+  --space-5: var(--sm-space-5);
+  --bg: var(--sm-surface);
+  --panel: var(--sm-surface);
+  --panel-soft: var(--sm-surface-soft);
+  --ink: var(--sm-text-soft);
+  --muted: var(--sm-text-muted);
+  --line: var(--sm-line-warm);
   --accent: #6c5a43;
   --accent-soft: #efe6d7;
   --ok-bg: #eff8f4;
@@ -94,7 +97,7 @@ body {
 h1 { margin:0; font-size:clamp(34px, 6vw, 54px); line-height:1; font-weight:700; font-family: var(--font-display); letter-spacing:-.03em; }
 .hero-lead { margin:14px 0 0; max-width:760px; color:#4f4740; font-size:18px; line-height:1.82; }
 .status-banner { margin-top:18px; padding:14px 18px; border-radius:8px; border:1px solid var(--ok-line); background:var(--ok-bg); color:var(--ok-ink); }
-.status-banner.loading { background:#f7f5ef; border-color:#ddd3c4; color:#786f62; }
+.status-banner.loading { background:#f7f5ef; border-color:#ddd3c4; color:#756c60; }
 .status-banner.error { background:var(--err-bg); border-color:var(--err-line); color:var(--err-ink); }
 
 @media (min-width: 961px) {
@@ -313,7 +316,7 @@ textarea { resize:vertical; min-height:120px; }
   display:grid;
   place-items:center;
   text-align:center;
-  color:#8c8173;
+  color:var(--muted);
   background:rgba(250,246,239,.78);
   padding:18px;
 }
@@ -704,7 +707,8 @@ textarea,
 
 .site-footer-label,
 .site-footer-eyebrow {
-  color: rgba(23, 21, 19, 0.4);
+  /* 0.4 composited to 2.58:1 */
+  color: rgba(23, 21, 19, 0.62);
 }
 
 /* ===== Editorial finish ===== */

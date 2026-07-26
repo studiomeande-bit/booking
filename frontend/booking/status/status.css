@@ -1,7 +1,10 @@
-:root{
-  --brand:#2D2A26;--brand-strong:#1a1816;
-  --bg:#fdfdfd;--surface:#fff;--line:#e7e2d9;--soft:#f7f4ee;
-  --ink:#2a2622;--mute:#8a7f72;--faint:#b6ada0;
+@import "../../shared/tokens.css";
+
+:root{color-scheme:light;
+  --brand:var(--sm-brand-ink);--brand-strong:#1a1816;
+  --bg:#fdfdfd;--surface:var(--sm-surface);--line:var(--sm-line);--soft:#f7f4ee;
+  /* --mute was #8a7f72 — 3.85:1 on this background */
+  --ink:var(--sm-text-soft);--mute:var(--sm-text-muted);--faint:#7c7160;
   --ok:#0f6d53;--ok-bg:#e8f4ef;--warn:#a4671b;--warn-bg:#fbf1e2;--muted-bg:#eee9e1;--muted-ink:#6b6459;
   --radius:16px;
 }
@@ -15,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 8px;}
 .brand-logo{height:40px;width:auto;}
 .lang-panel{display:inline-flex;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:3px;}
-.lang-btn{border:none;background:none;font:inherit;font-size:12px;font-weight:700;color:var(--mute);padding:5px 11px;border-radius:999px;cursor:pointer;}
+.lang-btn{border:none;background:none;font:inherit;font-size:16px;font-weight:700;color:var(--mute);padding:5px 11px;border-radius:999px;cursor:pointer;}
 .lang-btn.active{background:var(--brand);color:#fff;}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:0 1px 3px rgba(45,42,38,.04);}
@@ -79,7 +82,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .thread-msg.mine .thread-meta{color:rgba(255,255,255,.6);}
 .thread-empty{font-size:12.5px;color:var(--faint);border:1px dashed var(--line);border-radius:10px;padding:12px;text-align:center;}
 .thread-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;}
-.thread-composer textarea{width:100%;resize:vertical;min-height:46px;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;font-family:inherit;color:var(--ink);outline:none;background:#fff;}
+/* 16px floor: 13.5px made iOS zoom the page when the customer taps to reply. */
+.thread-composer textarea{width:100%;resize:vertical;min-height:46px;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit;color:var(--ink);background:#fff;}
+.thread-composer textarea:focus-visible{outline:2px solid var(--brand);outline-offset:1px;}
 .thread-composer textarea:focus{border-color:var(--brand);}
 .directions{font-size:13.5px;line-height:1.75;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px;word-break:break-word;}
 .directions a{color:#2563eb;font-weight:700;text-decoration:none;}

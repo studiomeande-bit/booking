@@ -14,6 +14,7 @@ import {
   productHasFixedDeliverySpec,
   productHasIncludedPrints
 } from '../shared/product-delivery.js';
+import { PRINT_TIERS, getPrintMicrocopy, getPrintTierCopy } from '../shared/print-tier-copy.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/utils.js';
 
 // ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
@@ -587,13 +588,40 @@ function renderPackageSummary() {
   }
 }
 
+// 인화 등급 비교 카드. 카피는 shared/print-tier-copy.js 원문 그대로 쓴다(임의 수정 금지).
+function renderPrintTierCards() {
+  return `
+    <div class="tier-compare">
+      ${['signature', 'fineart'].map((tier) => {
+        const spec = PRINT_TIERS[tier];
+        return `
+          <div class="tier-card">
+            <div class="tier-card-name">${spec.name.ko}</div>
+            <div class="tier-card-line">${spec.oneLine.ko}</div>
+            <dl class="tier-card-rows">
+              <div class="tier-row"><dt>용지</dt><dd>${spec.paperSpec.ko}</dd></div>
+              <div class="tier-row"><dt>질감</dt><dd>${spec.character.ko}</dd></div>
+              <div class="tier-row"><dt>용도</dt><dd>${spec.bestFor.ko}</dd></div>
+            </dl>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderPriceGuide() {
-  els.printPriceGuide.innerHTML = getSelectablePrintOptions().map((opt) => `
+  const priceRows = getSelectablePrintOptions().map((opt) => `
     <div class="review-item">
       <span>${escapeHtml(opt.label)}</span>
       <strong>€${opt.additional}</strong>
     </div>
   `).join('');
+  els.printPriceGuide.innerHTML = `
+    <div class="tier-compare-lead">${getPrintMicrocopy('selectStepNote')}</div>
+    ${renderPrintTierCards()}
+    <div class="price-guide-list">${priceRows}</div>
+  `;
 }
 
 function getMarketingBonusCount() {
@@ -831,6 +859,7 @@ function renderPhotos() {
   els.photoList.innerHTML = includedPrintNotice + state.photos.map((photo, index) => {
     const typeId = normalizePrintTypeId(photo.printType);
     const option = PRINT_OPTIONS.find((item) => item.id === typeId) || PRINT_OPTIONS[0];
+    const photoTierCopy = getPrintTierCopy(option.id);
     const extra = !photo.isBonus && index >= includedCount ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isService ? '<span class="service-badge">서비스 컷</span>' : photo.isBonus ? '<span class="bonus-badge">보너스</span>' : '';
     const includedPrint = !photo.isBonus && isPrintFreeByQuota(index, typeId);
@@ -875,6 +904,7 @@ function renderPhotos() {
                 return `<option value="${item.id}"${item.id === typeId ? ' selected' : ''}>${escapeHtml(item.label)} — ${priceLabel}</option>`;
               }).join('')}
             </select>
+            ${photoTierCopy ? `<div class="print-tier-help">${photoTierCopy.paper}</div>` : ''}
           </div>
         </div>
         <div class="price-line">
@@ -1006,6 +1036,7 @@ function renderPrints() {
   }
   els.printList.innerHTML = state.prints.map((print, index) => {
     const option = getSelectablePrintOptions().find((item) => item.id === print.printId) || getSelectablePrintOptions()[0];
+    const printTierCopy = getPrintTierCopy(option.id);
     const total = option.additional * (Number(print.qty) || 1);
     return `
       <div class="entry-card">
@@ -1027,6 +1058,7 @@ function renderPrints() {
             <select data-print-type="${index}">
               ${getSelectablePrintOptions().map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)} — €${item.additional}</option>`).join('')}
             </select>
+            ${printTierCopy ? `<div class="print-tier-help">${printTierCopy.paper}</div>` : ''}
           </div>
         </div>
         <div class="price-line">

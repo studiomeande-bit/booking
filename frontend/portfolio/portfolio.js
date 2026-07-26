@@ -39,6 +39,7 @@ const copy = {
     lightboxClose: 'Schließen',
     heroSelected: 'Ausgewählt',
     heroOpen: 'Ansehen',
+    photoAlt: (label) => `${label} — Fotoarbeit von Studio mean`,
     labels: {
       portrait: 'Portrait',
       family: 'Familie',
@@ -59,6 +60,7 @@ const copy = {
     lightboxClose: 'Close',
     heroSelected: 'Selected',
     heroOpen: 'View',
+    photoAlt: (label) => `${label} photography by Studio mean`,
     labels: {
       portrait: 'Portrait',
       family: 'Family',
@@ -79,6 +81,7 @@ const copy = {
     lightboxClose: '닫기',
     heroSelected: '선택',
     heroOpen: '보기',
+    photoAlt: (label) => `${label} — Studio mean 촬영 작업`,
     labels: {
       portrait: '프로필',
       family: '가족사진',
@@ -238,7 +241,7 @@ function renderGrid() {
         sizes="(max-width: 480px) 50vw, (max-width: 760px) 66vw, (max-width: 1100px) 50vw, (max-width: 1440px) 33vw, 28vw"
         data-full="${escapeAttr(photo.full)}"
         data-fallback="${escapeAttr(photo.fallback)}"
-        alt="${escapeAttr(photo.name)}"
+        alt="${escapeAttr(copy.photoAlt(photo.label))}"
         loading="${index < 12 ? 'eager' : 'lazy'}"
         decoding="async"
       >
@@ -345,7 +348,7 @@ function renderHeroVisual() {
           sizes="(max-width: 760px) 100vw, 58vw"
           data-full="${escapeAttr(lead.full)}"
           data-fallback="${escapeAttr(lead.fallback)}"
-          alt="${escapeAttr(lead.name)}"
+          alt="${escapeAttr(copy.photoAlt(lead.label))}"
           loading="eager"
           decoding="async"
         >
@@ -360,7 +363,7 @@ function renderHeroVisual() {
               sizes="(max-width: 760px) 50vw, 24vw"
               data-full="${escapeAttr(photo.full)}"
               data-fallback="${escapeAttr(photo.fallback)}"
-              alt="${escapeAttr(photo.name)}"
+              alt="${escapeAttr(copy.photoAlt(photo.label))}"
               loading="eager"
               decoding="async"
             >
@@ -433,7 +436,7 @@ function renderFeaturedStage() {
         sizes="(max-width: 900px) 100vw, 64vw"
         data-full="${escapeAttr(lead.full)}"
         data-fallback="${escapeAttr(lead.fallback)}"
-        alt="${escapeAttr(lead.name)}"
+        alt="${escapeAttr(copy.photoAlt(lead.label))}"
         loading="eager"
         decoding="async"
       >
@@ -450,7 +453,7 @@ function renderFeaturedStage() {
             sizes="(max-width: 900px) 100vw, 28vw"
             data-full="${escapeAttr(photo.full)}"
             data-fallback="${escapeAttr(photo.fallback)}"
-            alt="${escapeAttr(photo.name)}"
+            alt="${escapeAttr(copy.photoAlt(photo.label))}"
             loading="eager"
             decoding="async"
           >
@@ -573,7 +576,7 @@ function renderLightbox() {
   const photo = state.filtered[state.lightboxIndex];
   if (!photo) return;
   els.lightboxImage.src = photo.full;
-  els.lightboxImage.alt = photo.name;
+  els.lightboxImage.alt = copy.photoAlt(photo.label);
   els.lightboxImage.onerror = () => {
     els.lightboxImage.src = photo.fallback;
   };

@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
   <title>Studio mean - Photo Select</title>
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=20260726-print1" as="style">
+  <link rel="preload" href="./select.min.css?v=3fab4223ba" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=20260726-print1">
-  <script src="/site-analytics.js?v=20260430-consent6"></script>
+  <link rel="stylesheet" href="./select.min.css?v=3fab4223ba">
+  <script src="/site-analytics.js?v=fa1a2eacd7"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
 <body>
@@ -27,74 +27,79 @@
     <div id="loadingScreen" class="loading-screen">
       <div class="loading-card">
       <img src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean" class="loading-logo" width="160" height="48">
-        <p class="loading-copy">셀렉 정보를 불러오는 중입니다.</p>
+        <p class="loading-copy" data-i18n="loadingCopy">셀렉 정보를 불러오는 중입니다.</p>
       </div>
     </div>
     <section class="hero">
         <img src="../studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean" class="brand-logo" width="160" height="48">
-      <h1>사진 셀렉</h1>
-      <p class="lede">촬영하신 사진을 살펴보며 별점으로 1차 셀렉을 하고, 보정할 사진과 상품에 포함된 출력물, 필요한 추가 인화를 차례로 확인해 주세요.</p>
-      <div id="statusBanner" class="banner loading">세션 정보를 불러오는 중입니다.</div>
+      <div class="lang-panel" id="langPanel" data-i18n-attr="aria-label:langLabel" aria-label="언어 선택">
+        <button type="button" class="lang-btn" data-lang="ko">한국어</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="de">DE</button>
+      </div>
+      <h1 data-i18n="heroTitle">사진 셀렉</h1>
+      <p class="lede" data-i18n="heroLede">촬영하신 사진을 살펴보며 별점으로 1차 셀렉을 하고, 보정할 사진과 상품에 포함된 출력물, 필요한 추가 인화를 차례로 확인해 주세요.</p>
+      <div id="statusBanner" class="banner loading" data-i18n="bannerLoading">세션 정보를 불러오는 중입니다.</div>
     </section>
 
     <section id="errorPanel" class="panel hidden">
       <div class="panel-head">
-        <h2>오류</h2>
+        <h2 data-i18n="errorTitle">오류</h2>
       </div>
       <div id="errorMessage" class="empty-state"></div>
     </section>
 
     <section id="appPanel" class="hidden">
       <div class="progress-row">
-        <div class="step-dot active" id="dot0" title="시작 안내"></div>
-        <div class="step-dot" id="dot1" title="1차 셀렉(별점)"></div>
-        <div class="step-dot" id="dot2" title="보정 사진 선택"></div>
-        <div class="step-dot" id="dot3" title="출력 선택"></div>
-        <div class="step-dot" id="dot4" title="최종 확인"></div>
+        <div class="step-dot active" id="dot0" data-i18n-attr="title:dot0" title="시작 안내"></div>
+        <div class="step-dot" id="dot1" data-i18n-attr="title:dot1" title="1차 셀렉(별점)"></div>
+        <div class="step-dot" id="dot2" data-i18n-attr="title:dot2" title="보정 사진 선택"></div>
+        <div class="step-dot" id="dot3" data-i18n-attr="title:dot3" title="출력 선택"></div>
+        <div class="step-dot" id="dot4" data-i18n-attr="title:dot4" title="최종 확인"></div>
       </div>
 
       <!-- ========================= STEP 0: 시작 안내 ========================= -->
       <section class="panel step-panel active" data-step="0">
         <div class="panel-head">
-          <h2 id="welcomeTitle">안녕하세요!</h2>
-          <p id="welcomeSub">셀렉 안내를 확인한 뒤 다음 단계로 진행해 주세요.</p>
+          <h2 id="welcomeTitle" data-i18n="welcomeTitle">안녕하세요!</h2>
+          <p id="welcomeSub" data-i18n="welcomeSub">셀렉 안내를 확인한 뒤 다음 단계로 진행해 주세요.</p>
         </div>
         <div id="sessionSummary" class="summary-grid"></div>
         <div id="packageSummary" class="detail-box"></div>
-        <a id="driveLink" class="drive-btn hidden" target="_blank" rel="noopener noreferrer">촬영 사진 보기 (Google Drive)</a>
+        <a id="driveLink" class="drive-btn hidden" target="_blank" rel="noopener noreferrer" data-i18n="driveLink">촬영 사진 보기 (Google Drive)</a>
 
         <div class="detail-box process-guide">
-          <div class="detail-title">셀렉 진행 순서 안내</div>
+          <div class="detail-title" data-i18n="processGuideTitle">셀렉 진행 순서 안내</div>
           <ol class="process-steps">
-            <li><b>1차 셀렉 (별점 분류)</b> — 드라이브에 업로드된 모든 사진을 둘러보며 <b>별 1개~5개</b>로 분류해 주세요. 마우스를 올리면 큰 화면으로 미리볼 수 있고, 키보드 숫자키(1~5)로 빠르게 별점을 줄 수 있습니다.</li>
-            <li><b>보정 사진 선택</b> — 별점을 준 사진들이 보정 목록에 자동으로 채워집니다. 기본 포함 장수까지는 무료, <b>기본 장수 이후</b>는 추가 보정 비용이 자동 계산됩니다. 사진별 <b>보정 요청사항</b>을 적어 주세요.</li>
-            <li><b>출력 선택</b> — 출력할 사진을 고릅니다. <b>보정과 다른 사진</b>도 출력할 수 있고, 상품 기본 제공 출력물 수량까지는 무료, 넘는 만큼만 요금이 붙습니다.</li>
-            <li><b>최종 확인 &amp; 수령 방식</b> — 지금까지 고른 내용을 마지막으로 확인하고, <b>스튜디오 픽업</b> 또는 <b>우편 수령</b>을 선택한 후 제출하시면 끝입니다.</li>
+            <li data-i18n-html="process1Html"><b>1차 셀렉 (별점 분류)</b> — 드라이브에 업로드된 모든 사진을 둘러보며 <b>별 1개~5개</b>로 분류해 주세요. 마우스를 올리면 큰 화면으로 미리볼 수 있고, 키보드 숫자키(1~5)로 빠르게 별점을 줄 수 있습니다.</li>
+            <li data-i18n-html="process2Html"><b>보정 사진 선택</b> — 별점을 준 사진들이 보정 목록에 자동으로 채워집니다. 기본 포함 장수까지는 무료, <b>기본 장수 이후</b>는 추가 보정 비용이 자동 계산됩니다. 사진별 <b>보정 요청사항</b>을 적어 주세요.</li>
+            <li data-i18n-html="process3Html"><b>출력 선택</b> — 출력할 사진을 고릅니다. <b>보정과 다른 사진</b>도 출력할 수 있고, 상품 기본 제공 출력물 수량까지는 무료, 넘는 만큼만 요금이 붙습니다.</li>
+            <li data-i18n-html="process4Html"><b>최종 확인 &amp; 수령 방식</b> — 지금까지 고른 내용을 마지막으로 확인하고, <b>스튜디오 픽업</b> 또는 <b>우편 수령</b>을 선택한 후 제출하시면 끝입니다.</li>
           </ol>
-          <div class="guide-copy soft-note">모든 단계는 <b>언제든 이전으로 돌아가 수정</b>할 수 있으니 편하게 진행하셔도 됩니다. 제출 이후에도 마감일 전까지는 수정이 가능합니다.</div>
+          <div class="guide-copy soft-note" data-i18n-html="processNoteHtml">모든 단계는 <b>언제든 이전으로 돌아가 수정</b>할 수 있으니 편하게 진행하셔도 됩니다. 제출 이후에도 마감일 전까지는 수정이 가능합니다.</div>
         </div>
 
         <div class="detail-box guide-correction">
-          <div class="detail-title">보정 요청 작성 방법</div>
-          <div class="guide-copy">보다 정확한 보정을 위해, 요청은 <b>가능한 한 구체적으로</b> 작성해 주세요. 아래 예시를 참고하시면 좋습니다.</div>
+          <div class="detail-title" data-i18n="guideCorrTitle">보정 요청 작성 방법</div>
+          <div class="guide-copy" data-i18n-html="guideCorrLeadHtml">보다 정확한 보정을 위해, 요청은 <b>가능한 한 구체적으로</b> 작성해 주세요. 아래 예시를 참고하시면 좋습니다.</div>
           <div class="guide-examples">
             <div class="guide-ex bad">
-              <div class="guide-ex-head">방향을 잡기 어려운 요청</div>
+              <div class="guide-ex-head" data-i18n="guideBadHead">방향을 잡기 어려운 요청</div>
               <ul>
-                <li>“0001번: 자연스럽게 해주세요”</li>
-                <li>“0002번: 눈/입 수정해주세요”</li>
+                <li data-i18n="guideBad1">“0001번: 자연스럽게 해주세요”</li>
+                <li data-i18n="guideBad2">“0002번: 눈/입 수정해주세요”</li>
               </ul>
             </div>
             <div class="guide-ex good">
-              <div class="guide-ex-head">정확도가 높아지는 요청</div>
+              <div class="guide-ex-head" data-i18n="guideGoodHead">정확도가 높아지는 요청</div>
               <ul>
-                <li>“0003번: 턱선을 살짝만 갸름하게 정리하고, 원래 얼굴형과 광대 볼륨은 그대로 유지해 주세요.”</li>
-                <li>“0012번: 이마·콧등 번들거림을 줄이고 피부 톤을 고르게 맞춰 주세요. 점·주근깨는 지우지 말고 살려 주세요.”</li>
-                <li class="ex-good-wrinkle">“0031번: 어깨와 가슴 쪽 옷 주름만 펴 주시고, 옷의 실루엣과 재질감은 그대로 두세요.”</li>
+                <li data-i18n="guideGood1">“0003번: 턱선을 살짝만 갸름하게 정리하고, 원래 얼굴형과 광대 볼륨은 그대로 유지해 주세요.”</li>
+                <li data-i18n="guideGood2">“0012번: 이마·콧등 번들거림을 줄이고 피부 톤을 고르게 맞춰 주세요. 점·주근깨는 지우지 말고 살려 주세요.”</li>
+                <li class="ex-good-wrinkle" data-i18n="guideGood3">“0031번: 어깨와 가슴 쪽 옷 주름만 펴 주시고, 옷의 실루엣과 재질감은 그대로 두세요.”</li>
               </ul>
             </div>
           </div>
-          <div class="guide-copy lettering-note">
+          <div class="guide-copy lettering-note" data-i18n-html="letteringNoteHtml">
             또한 <b>이름 · 날짜 · 짧은 문구</b> 등의 레터링 및 텍스트 디자인은 <b>무료로 제공</b>됩니다.<br>
             원하시는 문구가 있으시면, 보정 요청과 함께 <b>정확한 표기(한글/영문/대소문자 포함)</b>로 보내주세요.
           </div>
@@ -103,74 +108,74 @@
         <div id="retouchScopeBox" class="detail-box guide-correction hidden"></div>
 
         <div class="nav-row single">
-          <button id="startBtn" class="primary-btn" type="button">셀렉 시작하기 →</button>
+          <button id="startBtn" class="primary-btn" type="button" data-i18n="startBtn">셀렉 시작하기 →</button>
         </div>
       </section>
 
       <!-- ========================= STEP 1: 갤러리 1차 셀렉 ========================= -->
       <section class="panel step-panel" data-step="1">
         <div class="panel-head">
-          <h2>1차 셀렉 — 별점으로 사진 분류</h2>
-          <p>사진 위에 마우스를 올리면 <b>큰 화면으로 미리보기</b>가 나타납니다. 사진을 클릭하거나 키보드 숫자키(<b>1~5</b>)로 별점을 주세요. <b>0</b>을 누르면 별점이 해제됩니다. 별점을 준 사진은 다음 단계에서 자동으로 보정 목록에 담깁니다.</p>
+          <h2 data-i18n="s1Title">1차 셀렉 — 별점으로 사진 분류</h2>
+          <p data-i18n-html="s1CopyHtml">사진 위에 마우스를 올리면 <b>큰 화면으로 미리보기</b>가 나타납니다. 사진을 클릭하거나 키보드 숫자키(<b>1~5</b>)로 별점을 주세요. <b>0</b>을 누르면 별점이 해제됩니다. 별점을 준 사진은 다음 단계에서 자동으로 보정 목록에 담깁니다.</p>
         </div>
 
         <div id="marketingBox" class="detail-box marketing-box">
-          <div class="detail-title">마케팅 동의 &nbsp;<span id="marketingBonusTag" class="tag-bonus">+ 보정 2장 무료 추가</span></div>
-          <p id="marketingCopy" class="detail-copy">선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. <b>동의해 주시면 보너스 보정 2장이 무료로 추가</b>됩니다. 원치 않으시면 미동의를 선택하시면 됩니다.</p>
+          <div class="detail-title"><span data-i18n="marketingTitle">마케팅 동의</span> &nbsp;<span id="marketingBonusTag" class="tag-bonus" data-i18n="marketingBonusTag">+ 보정 2장 무료 추가</span></div>
+          <p id="marketingCopy" class="detail-copy" data-i18n-html="marketingCopyHtml">선택해 주신 사진이 Studio mean의 포트폴리오·SNS 예시 이미지로 소개되어도 괜찮은지 편하게 선택해 주세요. <b>동의해 주시면 보너스 보정 2장이 무료로 추가</b>됩니다. 원치 않으시면 미동의를 선택하시면 됩니다.</p>
           <div class="radio-grid">
             <label class="radio-card" id="marketingYesCard">
               <input type="radio" name="marketing" value="Y">
-              <span>동의 <small id="marketingYesBonusLabel">(＋ 보너스 보정 2장 무료)</small></span>
+              <span><span data-i18n="marketingYes">동의</span> <small id="marketingYesBonusLabel" data-i18n="marketingYesBonus">(＋ 보너스 보정 2장 무료)</small></span>
             </label>
             <label class="radio-card" id="marketingNoCard">
               <input type="radio" name="marketing" value="N">
-              <span>미동의</span>
+              <span data-i18n="marketingNo">미동의</span>
             </label>
           </div>
         </div>
 
         <div class="detail-box gallery-tips">
-          <div class="detail-title">평점 기준 안내</div>
+          <div class="detail-title" data-i18n="starTipsTitle">평점 기준 안내</div>
           <ul class="star-legend">
-            <li><span class="star-chip">5점</span> 꼭 보정받고 싶은 사진 (베스트 컷)</li>
-            <li><span class="star-chip">4점</span> 마음에 드는 사진 (보정 우선순위 높음)</li>
-            <li><span class="star-chip">3점</span> 괜찮은 사진 (추가 인화 후보)</li>
-            <li><span class="star-chip">2점</span> 다시 한번 고민할 사진</li>
-            <li><span class="star-chip">1점</span> 가볍게 표시만 해둔 사진</li>
+            <li><span class="star-chip" data-i18n="star5">5점</span> <span data-i18n="star5Desc">꼭 보정받고 싶은 사진 (베스트 컷)</span></li>
+            <li><span class="star-chip" data-i18n="star4">4점</span> <span data-i18n="star4Desc">마음에 드는 사진 (보정 우선순위 높음)</span></li>
+            <li><span class="star-chip" data-i18n="star3">3점</span> <span data-i18n="star3Desc">괜찮은 사진 (추가 인화 후보)</span></li>
+            <li><span class="star-chip" data-i18n="star2">2점</span> <span data-i18n="star2Desc">다시 한번 고민할 사진</span></li>
+            <li><span class="star-chip" data-i18n="star1">1점</span> <span data-i18n="star1Desc">가볍게 표시만 해둔 사진</span></li>
           </ul>
-          <div class="guide-copy soft-note">
+          <div class="guide-copy soft-note" data-i18n-html="shortcutNoteHtml">
             <b>키보드 단축키:</b> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> <kbd>5</kbd> 평점 부여 · <kbd>0</kbd> 평점 해제 · <kbd>←</kbd> <kbd>→</kbd> 이전/다음 사진 이동 · <kbd>Space</kbd> 크게 보기
           </div>
         </div>
 
         <div class="gallery-stage-toolbar">
-          <button type="button" id="gallerySelectDownloadAllBtn" class="ghost-btn">전체 다운로드 (Drive ZIP)</button>
-          <input type="search" id="gallerySearch" placeholder="파일명 검색 (예: 0023)" class="gallery-search">
+          <button type="button" id="gallerySelectDownloadAllBtn" class="ghost-btn" data-i18n="downloadAllBtn">전체 다운로드 (Drive ZIP)</button>
+          <input type="search" id="gallerySearch" placeholder="파일명 검색 (예: 0023)" class="gallery-search" data-i18n-attr="placeholder:searchPlaceholder">
           <span id="galleryStatus" class="gallery-status"></span>
           <span id="galleryCount" class="gallery-count"></span>
         </div>
 
-        <div class="star-filter-bar" role="tablist" aria-label="별점 필터">
-          <button type="button" class="star-filter active" data-star-filter="all">전체</button>
-          <button type="button" class="star-filter" data-star-filter="rated">평점 선택</button>
-          <button type="button" class="star-filter" data-star-filter="5">5점</button>
-          <button type="button" class="star-filter" data-star-filter="4">4점</button>
-          <button type="button" class="star-filter" data-star-filter="3">3점</button>
-          <button type="button" class="star-filter" data-star-filter="2">2점</button>
-          <button type="button" class="star-filter" data-star-filter="1">1점</button>
-          <button type="button" class="star-filter" data-star-filter="unrated">미분류</button>
+        <div class="star-filter-bar" role="tablist" data-i18n-attr="aria-label:starFilterAria" aria-label="별점 필터">
+          <button type="button" class="star-filter active" data-star-filter="all" data-i18n="filterAll">전체</button>
+          <button type="button" class="star-filter" data-star-filter="rated" data-i18n="filterRated">평점 선택</button>
+          <button type="button" class="star-filter" data-star-filter="5" data-i18n="star5">5점</button>
+          <button type="button" class="star-filter" data-star-filter="4" data-i18n="star4">4점</button>
+          <button type="button" class="star-filter" data-star-filter="3" data-i18n="star3">3점</button>
+          <button type="button" class="star-filter" data-star-filter="2" data-i18n="star2">2점</button>
+          <button type="button" class="star-filter" data-star-filter="1" data-i18n="star1">1점</button>
+          <button type="button" class="star-filter" data-star-filter="unrated" data-i18n="filterUnrated">미분류</button>
         </div>
 
-        <div id="galleryLoadingHint" class="empty-state">갤러리를 불러오는 중입니다... 잠시만 기다려 주세요.</div>
-        <div id="galleryGrid" class="gallery-grid" tabindex="0" aria-label="사진 갤러리 (키보드 방향키로 이동, 숫자키로 별점)"></div>
+        <div id="galleryLoadingHint" class="empty-state" data-i18n="galleryLoadingHint">갤러리를 불러오는 중입니다... 잠시만 기다려 주세요.</div>
+        <div id="galleryGrid" class="gallery-grid" tabindex="0" data-i18n-attr="aria-label:galleryAria" aria-label="사진 갤러리 (키보드 방향키로 이동, 숫자키로 별점)"></div>
 
         <div class="gallery-stage-summary">
           <div id="gallerySelectedSummary" class="guide-copy"></div>
         </div>
 
         <div class="nav-row">
-          <button class="ghost-btn" type="button" data-go="0">← 이전</button>
-          <button id="step1NextBtn" class="primary-btn" type="button" data-go="2">보정 선택으로 →</button>
+          <button class="ghost-btn" type="button" data-go="0" data-i18n="navPrev">← 이전</button>
+          <button id="step1NextBtn" class="primary-btn" type="button" data-go="2" data-i18n="step1Next">보정 선택으로 →</button>
         </div>
         <div id="step1Warning" class="step-warning"></div>
       </section>
@@ -178,8 +183,8 @@
       <!-- ========================= STEP 2: 보정 사진 선택 ========================= -->
       <section class="panel step-panel" data-step="2">
         <div class="panel-head">
-          <h2>보정 사진 선택</h2>
-          <p>1차 셀렉에서 별점을 준 사진은 보정 목록에 담깁니다. 사진별로 <b>보정 요청사항</b>을 가능한 구체적으로 적어 주세요. 기본 보정 장수를 초과한 사진은 추가 보정 비용이 계산됩니다. <b>출력물은 다음 단계에서 따로 선택</b>하며, 보정과 다른 사진도 출력할 수 있습니다.</p>
+          <h2 data-i18n="s2Title">보정 사진 선택</h2>
+          <p data-i18n-html="s2CopyHtml">1차 셀렉에서 별점을 준 사진은 보정 목록에 담깁니다. 사진별로 <b>보정 요청사항</b>을 가능한 구체적으로 적어 주세요. 기본 보정 장수를 초과한 사진은 추가 보정 비용이 계산됩니다. <b>출력물은 다음 단계에서 따로 선택</b>하며, 보정과 다른 사진도 출력할 수 있습니다.</p>
         </div>
         <div class="counter-box">
           <div>
@@ -190,25 +195,25 @@
         </div>
 
         <div class="detail-box guide-correction">
-          <div class="detail-title">보정 요청 작성 예시 (다시 확인)</div>
+          <div class="detail-title" data-i18n="guideEx2Title">보정 요청 작성 예시 (다시 확인)</div>
           <div class="guide-examples">
             <div class="guide-ex bad">
-              <div class="guide-ex-head">모호한 예시</div>
+              <div class="guide-ex-head" data-i18n="guideBad2Head">모호한 예시</div>
               <ul>
-                <li>“자연스럽게 해주세요”</li>
-                <li>“눈/입 수정해주세요”</li>
+                <li data-i18n="guideBad2a">“자연스럽게 해주세요”</li>
+                <li data-i18n="guideBad2b">“눈/입 수정해주세요”</li>
               </ul>
             </div>
             <div class="guide-ex good">
-              <div class="guide-ex-head">구체적인 예시</div>
+              <div class="guide-ex-head" data-i18n="guideGood2Head">구체적인 예시</div>
               <ul>
-                <li>“턱선을 살짝만 갸름하게 정리하고, 원래 얼굴형은 그대로 유지해 주세요.”</li>
-                <li>“이마 번들거림을 줄이고 피부 톤을 고르게 맞춰 주세요. 점·주근깨는 살려 주세요.”</li>
-                <li class="ex-good-wrinkle">“어깨와 가슴 쪽 옷 주름만 펴 주시고, 옷 실루엣은 그대로 두세요.”</li>
+                <li data-i18n="guideGood2a">“턱선을 살짝만 갸름하게 정리하고, 원래 얼굴형은 그대로 유지해 주세요.”</li>
+                <li data-i18n="guideGood2b">“이마 번들거림을 줄이고 피부 톤을 고르게 맞춰 주세요. 점·주근깨는 살려 주세요.”</li>
+                <li class="ex-good-wrinkle" data-i18n="guideGood2c">“어깨와 가슴 쪽 옷 주름만 펴 주시고, 옷 실루엣은 그대로 두세요.”</li>
               </ul>
             </div>
           </div>
-          <div class="guide-copy lettering-note">
+          <div class="guide-copy lettering-note" data-i18n-html="letteringNote2Html">
             이름 · 날짜 · 짧은 문구 등의 <b>레터링 / 텍스트 디자인은 무료로 제공</b>됩니다. 원하시는 문구가 있으시면 <b>정확한 표기(한글/영문/대소문자 포함)</b>로 함께 적어주세요.
           </div>
         </div>
@@ -217,10 +222,10 @@
         <div id="retouchScopeBox2" class="retouch-scope-box hidden"></div>
         <div id="photoList" class="list-wrap"></div>
         <div id="photocardBox" class="detail-box photocard-select-box hidden"></div>
-        <button id="addPhotoBtn" type="button" class="ghost-btn">＋ 사진 항목 직접 추가 <small style="font-weight:400;">(기본 장수 초과 시 유료)</small></button>
+        <button id="addPhotoBtn" type="button" class="ghost-btn"><span data-i18n="addPhotoBtn">＋ 사진 항목 직접 추가</span> <small style="font-weight:400;" data-i18n="addPhotoBtnNote">(기본 장수 초과 시 유료)</small></button>
         <div class="nav-row">
-          <button class="ghost-btn" type="button" data-go="1">← 갤러리로</button>
-          <button id="step2NextBtn" class="primary-btn" type="button" data-go="3">출력 선택으로 →</button>
+          <button class="ghost-btn" type="button" data-go="1" data-i18n="navBackGallery">← 갤러리로</button>
+          <button id="step2NextBtn" class="primary-btn" type="button" data-go="3" data-i18n="step2Next">출력 선택으로 →</button>
         </div>
         <div id="step2Warning" class="step-warning"></div>
       </section>
@@ -228,15 +233,15 @@
       <!-- ========================= STEP 3: 출력 선택 ========================= -->
       <section class="panel step-panel" data-step="3">
         <div class="panel-head">
-          <h2>출력 선택</h2>
-          <p>출력할 사진을 선택하세요. <b>보정과 다른 사진</b>도 출력할 수 있습니다. 상품에 <b>기본 제공 출력물</b>이 있으면 그 수량까지는 무료이고, 넘는 만큼만 요금이 붙습니다. 사진 번호를 입력하면 아래에 썸네일이 표시됩니다.</p>
+          <h2 data-i18n="s3Title">출력 선택</h2>
+          <p><span data-i18n-html="s3CopyHtml">출력할 사진을 선택하세요. <b>보정과 다른 사진</b>도 출력할 수 있습니다. 상품에 <b>기본 제공 출력물</b>이 있으면 그 수량까지는 무료이고, 넘는 만큼만 요금이 붙습니다. 사진 번호를 입력하면 아래에 썸네일이 표시됩니다.</span> <span id="printStepTierNote"></span></p>
         </div>
         <div id="printPriceGuide" class="price-guide"></div>
         <div id="printList" class="list-wrap"></div>
-        <button id="addPrintBtn" type="button" class="ghost-btn">＋ 출력할 사진 추가</button>
+        <button id="addPrintBtn" type="button" class="ghost-btn" data-i18n="addPrintBtn">＋ 출력할 사진 추가</button>
         <div class="nav-row">
-          <button class="ghost-btn" type="button" data-go="2">← 보정 선택</button>
-          <button id="step3NextBtn" class="primary-btn" type="button" data-go="4">최종 확인 →</button>
+          <button class="ghost-btn" type="button" data-go="2" data-i18n="navBackRetouch">← 보정 선택</button>
+          <button id="step3NextBtn" class="primary-btn" type="button" data-go="4" data-i18n="step3Next">최종 확인 →</button>
         </div>
         <div id="step3Warning" class="step-warning"></div>
       </section>
@@ -244,59 +249,59 @@
       <!-- ========================= STEP 4: 최종 확인 ========================= -->
       <section class="panel step-panel" data-step="4">
         <div class="panel-head">
-          <h2>최종 확인</h2>
-          <p id="submitHint">선택 내용을 확인하고 수령 방식을 선택한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.</p>
+          <h2 data-i18n="s4Title">최종 확인</h2>
+          <p id="submitHint" data-i18n="submitHint">선택 내용을 확인하고 수령 방식을 선택한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.</p>
         </div>
         <div class="review-block">
-          <div class="review-title">보정 선택</div>
+          <div class="review-title" data-i18n="reviewRetouch">보정 선택</div>
           <div id="reviewPhotos" class="review-list"></div>
         </div>
         <div id="reviewPhotocardBlock" class="review-block hidden">
-          <div class="review-title">포토카드</div>
+          <div class="review-title" data-i18n="reviewPhotocard">포토카드</div>
           <div id="reviewPhotocard" class="review-line"></div>
         </div>
         <div class="review-block">
-          <div class="review-title">출력 선택</div>
+          <div class="review-title" data-i18n="reviewPrints">출력 선택</div>
           <div id="reviewPrints" class="review-list"></div>
         </div>
         <div class="review-block">
-          <div class="review-title">마케팅 동의</div>
+          <div class="review-title" data-i18n="reviewMarketing">마케팅 동의</div>
           <div id="reviewMarketing" class="review-line"></div>
         </div>
         <div id="deliveryReviewBlock" class="review-block">
-          <div class="review-title">수령 방식</div>
+          <div class="review-title" data-i18n="reviewDelivery">수령 방식</div>
           <div id="deliveryChoiceBox" class="detail-box delivery-choice-box">
-            <div class="detail-title">인화 수령 방식 선택</div>
-            <div class="guide-copy">원하시는 수령 방식을 선택해 주세요. 우편 수령은 배송비가 별도 청구됩니다.</div>
+            <div class="detail-title" data-i18n="deliveryChoiceTitle">인화 수령 방식 선택</div>
+            <div class="guide-copy" data-i18n="deliveryChoiceCopy">원하시는 수령 방식을 선택해 주세요. 우편 수령은 배송비가 별도 청구됩니다.</div>
             <div class="radio-grid delivery-grid">
               <label class="radio-card" id="deliveryPickupCard">
                 <input type="radio" name="deliveryMethod" value="pickup">
-                <span>스튜디오 픽업</span>
+                <span data-i18n="deliveryPickup">스튜디오 픽업</span>
               </label>
               <label class="radio-card" id="deliveryMailCard">
                 <input type="radio" name="deliveryMethod" value="mail">
-                <span>우편 수령</span>
+                <span data-i18n="deliveryMail">우편 수령</span>
               </label>
             </div>
           </div>
 
           <div id="pickupDeferredNote" class="detail-box delivery-panel hidden">
-            <div class="detail-title">픽업 시간 예약 안내</div>
-            <div class="guide-copy">픽업 시간은 지금 정하지 않으셔도 됩니다. <b>인화가 완료되면</b> 픽업 시간을 예약할 수 있는 링크를 이메일로 보내드립니다.<br><span style="color:#94a3b8;">Once your prints are ready, we will email you a link to book your pickup time.</span></div>
+            <div class="detail-title" data-i18n="pickupDeferredTitle">픽업 시간 예약 안내</div>
+            <div class="guide-copy" data-i18n-html="pickupDeferredCopyHtml">픽업 시간은 지금 정하지 않으셔도 됩니다. <b>인화가 완료되면</b> 픽업 시간을 예약할 수 있는 링크를 이메일로 보내드립니다.</div>
             <div id="pickupExistingLine" class="detail-copy hidden"></div>
           </div>
 
           <div id="pickupScheduler" class="detail-box delivery-panel hidden">
-            <div class="detail-title">픽업 시간 예약</div>
-            <div class="guide-copy">외부 일정 때문에 스튜디오에 있는 시간에만 픽업이 가능합니다. 여권, 프로필, 스튜디오 촬영 일정이 있는 날만 열리며, 같은 날 스튜디오 일정이 여러 건이면 그 사이 가능한 시간도 함께 표시됩니다.</div>
-            <div id="pickupCalendarStatus" class="pickup-status">픽업 가능 날짜를 불러오는 중입니다.</div>
+            <div class="detail-title" data-i18n="pickupSchedulerTitle">픽업 시간 예약</div>
+            <div class="guide-copy" data-i18n="pickupSchedulerCopy">외부 일정 때문에 스튜디오에 있는 시간에만 픽업이 가능합니다. 여권, 프로필, 스튜디오 촬영 일정이 있는 날만 열리며, 같은 날 스튜디오 일정이 여러 건이면 그 사이 가능한 시간도 함께 표시됩니다.</div>
+            <div id="pickupCalendarStatus" class="pickup-status" data-i18n="pickupCalendarStatus">픽업 가능 날짜를 불러오는 중입니다.</div>
             <div class="pickup-calendar-shell">
               <div class="pickup-calendar-toolbar">
-                <button id="pickupPrevMonthBtn" type="button" class="ghost-btn compact-btn">이전 달</button>
+                <button id="pickupPrevMonthBtn" type="button" class="ghost-btn compact-btn" data-i18n="pickupPrevMonth">이전 달</button>
                 <strong id="pickupMonthLabel">-</strong>
-                <button id="pickupNextMonthBtn" type="button" class="ghost-btn compact-btn">다음 달</button>
+                <button id="pickupNextMonthBtn" type="button" class="ghost-btn compact-btn" data-i18n="pickupNextMonth">다음 달</button>
               </div>
-              <div class="pickup-weekdays">
+              <div class="pickup-weekdays" id="pickupWeekdays">
                 <span>일</span>
                 <span>월</span>
                 <span>화</span>
@@ -307,30 +312,30 @@
               </div>
               <div id="pickupCalendarGrid" class="pickup-calendar-grid"></div>
             </div>
-            <div id="pickupSlotHint" class="detail-copy">날짜를 선택하면 픽업 가능한 시간이 표시됩니다.</div>
+            <div id="pickupSlotHint" class="detail-copy" data-i18n="pickupSlotHint">날짜를 선택하면 픽업 가능한 시간이 표시됩니다.</div>
             <div id="pickupSlotGrid" class="pickup-slot-grid">
-              <div class="empty-state">아직 선택한 날짜가 없습니다.</div>
+              <div class="empty-state" data-i18n="pickupNoDate">아직 선택한 날짜가 없습니다.</div>
             </div>
           </div>
 
           <div id="mailAddressBox" class="detail-box delivery-panel hidden">
-            <div class="detail-title">우편 수령 주소</div>
-            <div class="guide-copy">인화물을 받아보실 주소를 정확히 입력해 주세요. (도로명/상세 주소 + 우편번호 + 도시)</div>
-            <label class="delivery-field" for="mailNameInput">받으실 분 성함</label>
-            <input id="mailNameInput" type="text" autocomplete="name" placeholder="예: Anna Matsuura">
-            <label class="delivery-field" for="mailAddressInput">배송 주소</label>
-            <textarea id="mailAddressInput" rows="4" placeholder="예: Holzweg-Passage 3&#10;61440 Oberursel"></textarea>
+            <div class="detail-title" data-i18n="mailAddressTitle">우편 수령 주소</div>
+            <div class="guide-copy" data-i18n="mailAddressCopy">인화물을 받아보실 주소를 정확히 입력해 주세요. (도로명/상세 주소 + 우편번호 + 도시)</div>
+            <label class="delivery-field" for="mailNameInput" data-i18n="mailNameLabel">받으실 분 성함</label>
+            <input id="mailNameInput" type="text" autocomplete="name" placeholder="예: Anna Matsuura" data-i18n-attr="placeholder:mailNamePlaceholder">
+            <label class="delivery-field" for="mailAddressInput" data-i18n="mailAddressLabel">배송 주소</label>
+            <textarea id="mailAddressInput" rows="4" placeholder="예: Holzweg-Passage 3&#10;61440 Oberursel" data-i18n-attr="placeholder:mailAddressPlaceholder"></textarea>
           </div>
 
           <div id="reviewDelivery" class="review-line"></div>
         </div>
         <div class="total-box">
-          <span>추가 비용 합계</span>
+          <span data-i18n="totalLabel">추가 비용 합계</span>
           <strong id="reviewTotal">€0</strong>
         </div>
-        <button id="submitBtn" type="button" class="primary-btn">제출하기</button>
+        <button id="submitBtn" type="button" class="primary-btn" data-i18n="submitBtn">제출하기</button>
         <div class="nav-row">
-          <button class="ghost-btn" type="button" data-go="3">← 이전</button>
+          <button class="ghost-btn" type="button" data-go="3" data-i18n="navPrev">← 이전</button>
         </div>
         <div id="step4Warning" class="step-warning"></div>
       </section>
@@ -338,33 +343,33 @@
       <section id="successPanel" class="panel success-panel hidden">
         <div class="success-header">
           <div class="success-badge">Selection complete</div>
-          <h2 id="successTitle">셀렉 제출이 완료되었습니다.</h2>
-          <p id="successCopy">담당자가 순서대로 확인한 뒤 추가 비용과 후속 안내를 보내드립니다.</p>
+          <h2 id="successTitle" data-i18n="successTitle">셀렉 제출이 완료되었습니다.</h2>
+          <p id="successCopy" data-i18n="successCopy">담당자가 순서대로 확인한 뒤 추가 비용과 후속 안내를 보내드립니다.</p>
         </div>
         <div class="summary-grid">
           <div class="summary-item">
-            <div class="summary-label">고객명</div>
+            <div class="summary-label" data-i18n="sumName">고객명</div>
             <div id="successName" class="summary-value"></div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">상품</div>
+            <div class="summary-label" data-i18n="sumProduct">상품</div>
             <div id="successProduct" class="summary-value"></div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">보정 선택</div>
+            <div class="summary-label" data-i18n="sumRetouch">보정 선택</div>
             <div id="successPhotoCount" class="summary-value"></div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">추가 비용</div>
+            <div class="summary-label" data-i18n="sumExtra">추가 비용</div>
             <div id="successTotal" class="summary-value"></div>
           </div>
         </div>
         <div id="successGuide" class="detail-box"></div>
         <div class="detail-box">
-          <div class="detail-title">다음 안내</div>
-          <div class="guide-copy">선택하신 내용은 저장되었습니다. 추가 비용이 있는 경우 별도 안내를 보내드리며, 인보이스는 요청된 경우에만 발행됩니다.</div>
+          <div class="detail-title" data-i18n="nextGuideTitle">다음 안내</div>
+          <div class="guide-copy" data-i18n="nextGuideCopy">선택하신 내용은 저장되었습니다. 추가 비용이 있는 경우 별도 안내를 보내드리며, 인보이스는 요청된 경우에만 발행됩니다.</div>
         </div>
-        <a id="successDriveLink" class="drive-btn hidden" target="_blank" rel="noopener noreferrer">촬영 사진 다시 보기</a>
+        <a id="successDriveLink" class="drive-btn hidden" target="_blank" rel="noopener noreferrer" data-i18n="successDriveLink">촬영 사진 다시 보기</a>
       </section>
     </section>
   </main>
@@ -415,19 +420,19 @@
       <div class="lightbox-name" id="lb-name"></div>
       <div class="lightbox-actions">
         <div class="lightbox-stars" id="lb-stars">
-          <button type="button" class="lb-star" data-lb-star="1" aria-label="별 1">★</button>
-          <button type="button" class="lb-star" data-lb-star="2" aria-label="별 2">★</button>
-          <button type="button" class="lb-star" data-lb-star="3" aria-label="별 3">★</button>
-          <button type="button" class="lb-star" data-lb-star="4" aria-label="별 4">★</button>
-          <button type="button" class="lb-star" data-lb-star="5" aria-label="별 5">★</button>
+          <button type="button" class="lb-star" data-lb-star="1" data-i18n-attr="aria-label:lbStar1" aria-label="별 1">★</button>
+          <button type="button" class="lb-star" data-lb-star="2" data-i18n-attr="aria-label:lbStar2" aria-label="별 2">★</button>
+          <button type="button" class="lb-star" data-lb-star="3" data-i18n-attr="aria-label:lbStar3" aria-label="별 3">★</button>
+          <button type="button" class="lb-star" data-lb-star="4" data-i18n-attr="aria-label:lbStar4" aria-label="별 4">★</button>
+          <button type="button" class="lb-star" data-lb-star="5" data-i18n-attr="aria-label:lbStar5" aria-label="별 5">★</button>
         </div>
-        <button type="button" class="lightbox-btn lightbox-btn-close" id="lb-close" aria-label="닫기">✕</button>
+        <button type="button" class="lightbox-btn lightbox-btn-close" id="lb-close" data-i18n-attr="aria-label:lbClose" aria-label="닫기">✕</button>
       </div>
     </div>
-    <button type="button" class="lightbox-nav lightbox-prev" id="lb-prev" aria-label="이전">‹</button>
+    <button type="button" class="lightbox-nav lightbox-prev" id="lb-prev" data-i18n-attr="aria-label:lbPrev" aria-label="이전">‹</button>
     <img class="lightbox-img" id="lb-img" src="" alt="">
-    <button type="button" class="lightbox-nav lightbox-next" id="lb-next" aria-label="다음">›</button>
+    <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=20260726-print1"></script>
+  <script src="./select.min.js?v=b166c180bf"></script>
 </body>
 </html>

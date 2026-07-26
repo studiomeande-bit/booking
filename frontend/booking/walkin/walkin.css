@@ -1,13 +1,16 @@
+@import "../../shared/tokens.css";
+
 :root {
   color-scheme: light;
-  --bg: #f7f1e6;
+  /* was #f7f1e6, one hex off from the gutschein surface */
+  --bg: var(--sm-surface-warm);
   --panel: rgba(255, 253, 249, 0.96);
   --panel-strong: #fffdf9;
-  --text: #2f2a24;
-  --muted: #6f6559;
+  --text: var(--sm-text-soft);
+  --muted: var(--sm-text-muted);
   --line: #dfcfb9;
   --line-strong: #cbb89e;
-  --accent: #2d2a26;
+  --accent: var(--sm-brand-ink);
   --accent-soft: #ede4d4;
   --success: #dff3e8;
   --success-text: #21543a;
@@ -62,6 +65,9 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  /* the logo plus a 246px language panel exceeds a 375px viewport;
+     without wrapping the panel pushed the whole page into h-scroll */
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 18px;
 }

@@ -1,26 +1,30 @@
+@import "../shared/tokens.css";
+
+/* Local names alias the shared tokens — values live in tokens.css only. */
 :root {
-  --font-sans: "Noto Sans KR", "Avenir Next", sans-serif;
-  --font-display: "Space Grotesk", "Avenir Next", "Noto Sans KR", sans-serif;
-  --space-1: 8px;
-  --space-2: 12px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 32px;
-  --bg: #ffffff;
-  --paper: #ffffff;
-  --paper-strong: #ffffff;
-  --line: #e8e4dd;
-  --line-strong: #c9c2b8;
-  --text: #171513;
-  --muted: #6f6a63;
-  --accent: #2b2924;
+  color-scheme: light;
+  --font-sans: var(--sm-font-sans);
+  --font-display: var(--sm-font-display);
+  --space-1: var(--sm-space-1);
+  --space-2: var(--sm-space-2);
+  --space-3: var(--sm-space-3);
+  --space-4: var(--sm-space-4);
+  --space-5: var(--sm-space-5);
+  --bg: var(--sm-surface);
+  --paper: var(--sm-surface);
+  --paper-strong: var(--sm-surface);
+  --line: var(--sm-line);
+  --line-strong: var(--sm-line-strong);
+  --text: var(--sm-text);
+  --muted: var(--sm-text-muted);
+  --accent: var(--sm-brand-ink);
   --accent-soft: #f4f0e8;
   --brand-blue: #1e1d1a;
-  --brand-olive: #b54c2d;
-  --brand-accent: #b54c2d;
-  --surface-soft: #f5f2ec;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --brand-olive: var(--sm-accent);
+  --brand-accent: var(--sm-accent);
+  --surface-soft: var(--sm-surface-soft);
+  --safe-top: var(--sm-safe-top);
+  --safe-bottom: var(--sm-safe-bottom);
 }
 * { box-sizing: border-box; }
 body {
@@ -142,10 +146,12 @@ body {
   gap: 12px;
 }
 .lang-btn {
+  position: relative;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(23, 21, 19, 0.48);
+  /* 0.48 composited to 3.23:1 on white — below the 4.5:1 floor at this size */
+  color: rgba(23, 21, 19, 0.6);
   min-height: 0;
   padding: 6px 0;
   font: inherit;
@@ -154,6 +160,17 @@ body {
   letter-spacing: .12em;
   text-transform: uppercase;
   cursor: pointer;
+}
+/* Grows the touch target to 44px without changing the header's layout. */
+.lang-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  min-width: 44px;
+  width: 100%;
+  height: 44px;
 }
 .lang-btn.active {
   background: transparent;
@@ -234,7 +251,7 @@ h1 {
 .consultation-cta-meta {
   font-size: 12px;
   line-height: 1.5;
-  color: #8a7e72;
+  color: var(--muted);
   font-weight: 700;
 }
 .consultation-cta-button,
@@ -989,7 +1006,7 @@ h1 {
   background: rgba(255,255,255,.82);
   padding: 14px 12px;
   font: inherit;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text);
 }
 .contact-helper-address {
@@ -1027,7 +1044,7 @@ h1 {
 }
 .muted-copy {
   margin-top: 10px;
-  color: #85786a;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -1128,7 +1145,7 @@ h1 {
   text-align: center;
   font-size: 12px;
   font-weight: 650;
-  color: #8a7f72;
+  color: var(--muted);
   letter-spacing: .04em;
 }
 .calendar-grid {
@@ -1348,7 +1365,7 @@ h1 {
 .empty-state {
   display: block;
   padding: 18px;
-  color: #847b72;
+  color: var(--muted);
   background: #f8f3ea;
   border-radius: 8px;
   border: 1px dashed var(--line);
@@ -2569,11 +2586,18 @@ body {
 .site-footer-text a,
 .site-footer-links a {
   color: rgba(23, 21, 19, 0.62);
+  /* 22px tall missed the 24px minimum target size; row-gap grows to match */
+  display: inline-block;
+  padding-block: 6px;
+}
+.site-footer-links {
+  row-gap: 12px;
 }
 
 .site-footer-label,
 .site-footer-eyebrow {
-  color: rgba(23, 21, 19, 0.4);
+  /* 0.4 composited to 2.58:1 on the footer surface */
+  color: rgba(23, 21, 19, 0.62);
 }
 
 @media (max-width: 768px) {
@@ -2697,7 +2721,8 @@ body {
 .primary-btn:disabled {
   border: 0;
   background: #ece8e1;
-  color: #aaa193;
+  /* 3.3:1 — still reads as disabled, but legible instead of looking broken */
+  color: #897d6b;
 }
 
 .site-footer-block {
@@ -3088,8 +3113,9 @@ h1 {
 }
 
 .group-card-meta-label {
-  color: rgba(23, 21, 19, 0.46);
-  font-size: 10px;
+  /* 0.46 composited to 2.99:1; 10px was also below the smallest size used elsewhere */
+  color: rgba(23, 21, 19, 0.64);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -3713,7 +3739,7 @@ h1 {
 
 /* ===== Calendar weekday color refinement ===== */
 .calendar-weekday {
-  color: #8a7f72 !important;
+  color: var(--muted) !important;
 }
 
 .calendar-weekday:nth-child(n+2):nth-child(-n+6) {
@@ -3721,7 +3747,7 @@ h1 {
 }
 
 .calendar-weekday:nth-child(7) {
-  color: #3b6fbe !important;
+  color: #3a6cba !important;
 }
 
 /* ===== Calendar flow refinement ===== */
@@ -4488,6 +4514,171 @@ h1 {
   font-weight: 600;
 }
 
+/* 포함 인화 등급 캡션 (상품 기본 구성 패널) */
+.package-composition-note {
+  margin-top: 2px;
+  color: #6a5d50;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ===== 인화(출력) 안내 아코디언 ===== */
+.print-info-box {
+  margin: 12px 0;
+  background: #fffdf8;
+  border: 1px solid rgba(181, 76, 45, .18);
+  overflow: hidden;
+}
+
+.print-info-summary {
+  cursor: pointer;
+  padding: 12px 15px;
+  color: #2f2924;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.print-info-body {
+  padding: 2px 15px 16px;
+}
+
+.print-info-lead {
+  margin: 0 0 12px;
+  color: #4a4038;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.print-tier-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.print-tier-compare-item {
+  padding: 12px 14px;
+  background: #f6f3ed;
+}
+
+.print-tier-compare-name {
+  margin-bottom: 5px;
+  color: var(--brand-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.print-tier-compare-line {
+  margin: 0;
+  color: #3c332b;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.print-tier-compare-best {
+  margin-top: 4px;
+  color: #6a5d50;
+}
+
+.print-info-table {
+  background: #fff;
+  border: 1px solid rgba(181, 76, 45, .18);
+  padding: 4px 12px 8px;
+}
+
+.print-info-group + .print-info-group {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(181, 76, 45, .14);
+}
+
+.print-info-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 9px 0 5px;
+}
+
+.print-info-group-name {
+  color: var(--brand-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.print-info-group-paper {
+  color: #6a5d50;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.print-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(181, 76, 45, .1);
+  color: #3c332b;
+  font-size: 13px;
+}
+
+.print-info-group .print-info-row:last-child {
+  border-bottom: 0;
+}
+
+.print-info-row-cm {
+  /* was #8d8072 — 3.47:1 on the soft surface */
+  color: var(--muted);
+}
+
+.print-info-row strong {
+  white-space: nowrap;
+  color: #171513;
+}
+
+.print-info-foot {
+  margin: 10px 0 0;
+  color: #6a5d50;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.print-method {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(181, 76, 45, .18);
+}
+
+.print-method-title {
+  margin-bottom: 8px;
+  color: #2f2924;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+
+.print-method-point + .print-method-point {
+  margin-top: 10px;
+}
+
+.print-method-head {
+  color: #2f2924;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.print-method-body {
+  margin: 3px 0 0;
+  color: #4a4038;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
 @media (max-width: 640px) {
   .product-card-head {
     display: grid;
@@ -4534,7 +4725,7 @@ h1 {
 .gutschein-copy {
   margin: 0 0 10px;
   font-size: 12.5px;
-  color: #8a7440;
+  color: #836e3d;
   line-height: 1.6;
 }
 .gutschein-input-row {
@@ -4548,7 +4739,7 @@ h1 {
   border-radius: 10px;
   padding: 11px 13px;
   font: inherit;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: .06em;
   text-transform: uppercase;
   background: #fff;
@@ -4600,6 +4791,7 @@ h1 {
   100% { background-position: -80% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* the global reduce block lives in shared/tokens.css */
   .calendar-cell.skeleton { animation: none; }
 }
 
