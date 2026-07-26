@@ -18951,14 +18951,30 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
     let sendDriveLink=driveLink||'';
 
 	    if(existingRow){
-	      built.row[SELECT_COL['페이지버전']]=existingPageVersion;
-	      // 이 setValues 는 행 전체를 새 행으로 덮어쓴다 — 물리적 전달 사실(수령 기록)은 링크 재발송으로
-	      // 지워지면 안 되므로 명시적으로 이월한다. (수령방식/픽업일시/출력완료일시 등이 함께 날아가는 것은
-	      // 이 함수의 기존 버그로, 별건 — docs/handover-followups 참조)
-	      ['수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수'].forEach(function(h){
-	        if(SELECT_COL[h]!=null) built.row[SELECT_COL[h]]=existingSelectRow?(existingSelectRow[SELECT_COL[h]]||''):'';
-	      });
-	      selSh.getRange(existingRow,1,1,SELECT_HEADERS.length).setValues([built.row]);
+	      const _exSid=String(existingSelectRow[SELECT_COL['세션ID']]||'').trim();
+	      // 진행된 세션(제출·수령·인화·픽업·출력주문)에 링크를 다시 보낼 땐 행을 재구성하지 않는다.
+	      // 예전엔 setValues 로 행 전체를 새 행으로 덮어써 선택사진·추가금·인보이스번호·수령방식·픽업예약·
+	      // 출력완료·상태·세션ID가 통째로 사라졌다(이미 보낸 픽업 링크까지 죽음). 같은 링크를 그대로 재발송한다.
+	      const _hasState = hasSelectSubmittedContent_(existingSelectRow)
+	        || String(existingSelectRow[SELECT_COL['수령방식']]||'').trim()!==''
+	        || String(existingSelectRow[SELECT_COL['픽업일시']]||'').trim()!==''
+	        || (SELECT_COL['출력완료일시']!=null && String(existingSelectRow[SELECT_COL['출력완료일시']]||'').trim()!=='')
+	        || (SELECT_COL['수령완료일시']!=null && String(existingSelectRow[SELECT_COL['수령완료일시']]||'').trim()!=='')
+	        || (SELECT_COL['고객출력주문상태']!=null && String(existingSelectRow[SELECT_COL['고객출력주문상태']]||'').trim()!=='');
+	      if(_hasState && _exSid){
+	        const _newCount=(parseInt(existingSelectRow[SELECT_COL['재발송횟수']],10)||0)+1;
+	        selSh.getRange(existingRow,SELECT_COL['재발송횟수']+1).setValue(_newCount);
+	        selSh.getRange(existingRow,SELECT_COL['재발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'));
+	        url=buildSelectSessionUrl_(_exSid,existingPageVersion);   // 같은 세션ID = 같은 링크(픽업 링크 보존)
+	      } else {
+	        // 미제출 세션: 기존 넛지 동작 유지(새 마감일·새 링크). 수령 기록은 이월(대개 비어있음).
+	        built.row[SELECT_COL['페이지버전']]=existingPageVersion;
+	        ['수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수'].forEach(function(h){
+	          if(SELECT_COL[h]!=null) built.row[SELECT_COL[h]]=existingSelectRow?(existingSelectRow[SELECT_COL[h]]||''):'';
+	        });
+	        selSh.getRange(existingRow,1,1,SELECT_HEADERS.length).setValues([built.row]);
+	        url=buildSelectSessionUrl_(built.sessionId,existingPageVersion);
+	      }
 	    } else {
       // Drive 폴더 찾기 시도
       let dLink='';
