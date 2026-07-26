@@ -16655,12 +16655,12 @@ const PRINT_LABELS={
   'print_none':{label:'출력 없음',summaryLabel:'출력 없음',price:0,retouchedPrice:0},
   'photocard_single':{label:'포토카드 프린트 (단면)',summaryLabel:'포토카드 단면',price:5,retouchedPrice:5},
   'photocard_double':{label:'포토카드 프린트 (양면)',summaryLabel:'포토카드 양면',price:8,retouchedPrice:8},
-  'basic_10x15':{label:'시그니처 10×15cm (세미글로스)',summaryLabel:'시그니처 10×15',price:4,retouchedPrice:3},
-  'premium_10x15':{label:'파인아트 10×15cm (Hahnemühle)',summaryLabel:'파인아트 10×15',price:8,retouchedPrice:6},
-  'basic_a4':{label:'시그니처 A4 (세미글로스)',summaryLabel:'시그니처 A4',price:15,retouchedPrice:10},
-  'premium_a4':{label:'파인아트 A4 (Hahnemühle)',summaryLabel:'파인아트 A4',price:20,retouchedPrice:15},
-  'premium_a3':{label:'파인아트 A3 (Hahnemühle)',summaryLabel:'파인아트 A3',price:50,retouchedPrice:35},
-  'premium_a3plus':{label:'파인아트 A3+ (Hahnemühle)',summaryLabel:'파인아트 A3+',price:60,retouchedPrice:45}
+  'basic_10x15':{label:'시그니처 10×15cm',summaryLabel:'시그니처 10×15',price:4,retouchedPrice:3},
+  'premium_10x15':{label:'파인아트 10×15cm',summaryLabel:'파인아트 10×15',price:8,retouchedPrice:6},
+  'basic_a4':{label:'시그니처 A4',summaryLabel:'시그니처 A4',price:15,retouchedPrice:10},
+  'premium_a4':{label:'파인아트 A4',summaryLabel:'파인아트 A4',price:20,retouchedPrice:15},
+  'premium_a3':{label:'파인아트 A3',summaryLabel:'파인아트 A3',price:50,retouchedPrice:35},
+  'premium_a3plus':{label:'파인아트 A3+',summaryLabel:'파인아트 A3+',price:60,retouchedPrice:45}
 };
 /* 포함 쿼터 1장이 상쇄해 주는 금액. 비교 맥락을 맞춰야 하므로, 그 행이 보정본이면 쿼터 SKU 의
    보정본가를, 추가 인화면 추가 인화가를 크레딧으로 쓴다.

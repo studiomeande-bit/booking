@@ -34,9 +34,9 @@ export const PRINT_TIERS = {
       de: 'Die Standardqualität, gedruckt auf professionellem Fotopapier.'
     },
     paperSpec: {
-      ko: 'Epson Premium Semigloss 251g/m² (10×15 · A4 동일 용지)',
-      en: 'Epson Premium Semigloss 251gsm (same paper in 10×15 and A4)',
-      de: 'Epson Premium Semigloss 251 g/m² (gleiches Papier in 10×15 und A4)'
+      ko: '은은한 반광의 프로 사진용지 (10×15 · A4 동일 용지)',
+      en: 'Professional semi-gloss photo paper (same paper in 10×15 and A4)',
+      de: 'Professionelles Fotopapier mit feinem Seidenglanz (gleiches Papier in 10×15 und A4)'
     },
     character: {
       ko: '은은한 반광. 윤곽이 또렷하고 색이 생생하게 올라옵니다.',
@@ -50,9 +50,9 @@ export const PRINT_TIERS = {
     },
     // 셀렉 드롭다운 아래 한 줄
     paper: {
-      ko: 'Epson Premium Semigloss 251g · 발색과 선예도가 좋은 프로 사진용지',
-      en: 'Epson Premium Semigloss 251gsm · professional photo paper',
-      de: 'Epson Premium Semigloss 251 g/m² · professionelles Fotopapier'
+      ko: '발색과 선예도가 좋은 프로 사진용지 · 은은한 반광',
+      en: 'Professional photo paper · soft semi-gloss',
+      de: 'Professionelles Fotopapier · feiner Seidenglanz'
     },
     texture: {
       ko: '선명하고 생생한 기본 인화지',
@@ -68,9 +68,9 @@ export const PRINT_TIERS = {
       de: 'Der Druck für die Wand.'
     },
     paperSpec: {
-      ko: 'Hahnemühle Photo Matt Fibre 200g/m² (10×15 naturweiß · A4/A3/A3+ warmweiß)',
-      en: 'Hahnemühle Photo Matt Fibre 200gsm (10×15 natural white · A4/A3/A3+ warm white)',
-      de: 'Hahnemühle Photo Matt Fibre 200 g/m² (10×15 naturweiß · A4/A3/A3+ warmweiß)'
+      ko: '매트한 파이버 질감의 파인아트지 (10×15 내추럴 화이트 · A4/A3/A3+ 웜 화이트)',
+      en: 'Matte fibre art paper (10×15 natural white · A4/A3/A3+ warm white)',
+      de: 'Mattes FineArt-Papier (10×15 naturweiß · A4/A3/A3+ warmweiß)'
     },
     character: {
       ko: '매트한 파이버 질감. 빛 반사가 적고, 색이 종이 안쪽으로 가라앉듯 깊어집니다. 표백한 흰색이 아니라 종이 본래의 내추럴 화이트·웜 화이트 톤이라, 색이 차분하게 앉습니다.',
@@ -83,9 +83,9 @@ export const PRINT_TIERS = {
       de: 'Wandbilder, große Porträts, Geschenke. Das eine Bild, das lange an der Wand bleibt.'
     },
     paper: {
-      ko: 'Hahnemühle Photo Matt Fibre 200g · 매트 파이버 질감의 파인아트지',
-      en: 'Hahnemühle Photo Matt Fibre 200gsm · matte fibre art paper',
-      de: 'Hahnemühle Photo Matt Fibre 200 g/m² · mattes FineArt-Papier'
+      ko: '매트 파이버 질감의 파인아트지 · 빛 반사가 적음',
+      en: 'Matte fibre art paper · very little reflection',
+      de: 'Mattes FineArt-Papier · kaum Reflexionen'
     },
     texture: {
       ko: '매트한 파이버 질감, 오래 두고 보는 종이',
@@ -125,7 +125,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: '종이',
-        body: '시그니처는 프로 사진용 세미글로스 인화지(Epson Premium Semigloss 251g/m², 10×15와 A4 모두 같은 용지), 파인아트는 매트 파이버 계열 파인아트지(Hahnemühle Photo Matt Fibre 200g/m²)를 씁니다. 두 등급 모두 보존을 염두에 두고 고른 종이입니다.'
+        body: '시그니처는 프로 사진용 세미글로스 인화지(10×15와 A4 모두 같은 용지), 파인아트는 매트 파이버 계열 파인아트지를 씁니다. 두 등급 모두 보존을 염두에 두고 고른 종이입니다.'
       },
       {
         head: '한 장씩 확인하고 보냅니다',
@@ -146,7 +146,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: 'The paper',
-        body: 'Signature uses professional semi-gloss photo paper (Epson Premium Semigloss 251gsm — the same paper in both 10×15 and A4). Fine Art uses a matte fibre art paper (Hahnemühle Photo Matt Fibre 200gsm). Both grades were chosen with longevity in mind.'
+        body: 'Signature uses professional semi-gloss photo paper — the same paper in both 10×15 and A4. Fine Art uses a matte fibre art paper. Both grades were chosen with longevity in mind.'
       },
       {
         head: 'Checked by hand, one print at a time',
@@ -167,7 +167,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: 'Das Papier',
-        body: 'Signature drucken wir auf professionellem Semigloss-Fotopapier (Epson Premium Semigloss 251 g/m² — dasselbe Papier in 10×15 und A4). FineArt drucken wir auf mattem FineArt-Papier auf Alphazellulose-Basis (Hahnemühle Photo Matt Fibre 200 g/m²). Beide Qualitäten haben wir mit Blick auf Haltbarkeit ausgewählt.'
+        body: 'Signature drucken wir auf professionellem Semigloss-Fotopapier — dasselbe Papier in 10×15 und A4. FineArt drucken wir auf mattem FineArt-Papier. Beide Qualitäten haben wir mit Blick auf Haltbarkeit ausgewählt.'
       },
       {
         head: 'Jedes Bild geht durch unsere Hände',

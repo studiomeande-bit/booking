@@ -25,6 +25,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+/* 선택적 정의처 — 삭제될 수 있는 파일(예: 셀렉 v1)은 없으면 건너뛴다.
+   파일이 사라졌다고 검사기 자체가 죽으면, 정작 드리프트를 못 잡는다. */
+const readOptional = (p) => { try { return read(p); } catch { return null; } };
 
 /* 의도된 예외를 여기 등록한다(빈 객체 = 예외 없음).
    예: { basic_10x15: { admin: { retouched: 0 } } } → 어드민만 0 인 것을 허용 */
@@ -74,7 +77,8 @@ const adminSrc = read('appscript/AdminV2.html');
 
 const server = parseServerPrices(gs);
 const admin = parseAdminPrices(adminSrc);
-const v1 = parseSelectOptions(read('frontend/select/select.js'));
+const v1src = readOptional('frontend/select/select.js');   // v1(classic)은 2026-07-26 삭제됨 — 있으면 검사
+const v1 = v1src ? parseSelectOptions(v1src) : null;
 const v2 = parseSelectOptions(read('frontend/select/v2/select.js'));
 const catalog = parseCatalog(read('frontend/shared/print-catalog.js'));
 const invServer = parseI18nLabels(gs, 'function getInvoicePrintLabelCatalog_');
@@ -100,7 +104,7 @@ for (const id of skus) {
     }
   };
   check('admin', admin[id]);
-  check('v1', v1[id]);
+  if (v1) check('v1', v1[id]);
   check('v2', v2[id]);
   check('catalog', catalog[id]);
   if (!tierIds.includes(id)) problems.push(`${id}: print-tier-copy.js PRINT_ID_TIER 에 등급 매핑이 없습니다`);
@@ -123,7 +127,7 @@ for (const [label, src] of [['Code.gs', gs], ['AdminV2.html', adminSrc]]) {
 }
 
 const count = (o) => Object.keys(o).length;
-console.log(`정의처 파싱: server=${count(server)} admin=${count(admin)} v1=${count(v1)} v2=${count(v2)} catalog=${count(catalog)} invServer=${count(invServer)} invAdmin=${count(invAdmin)} tier=${tierIds.length}`);
+console.log(`정의처 파싱: server=${count(server)} admin=${count(admin)} v1=${v1 ? count(v1) : '없음(삭제됨)'} v2=${count(v2)} catalog=${count(catalog)} invServer=${count(invServer)} invAdmin=${count(invAdmin)} tier=${tierIds.length}`);
 
 if (problems.length) {
   console.error(`\n❌ 인화 SKU 드리프트 ${problems.length}건\n`);
