@@ -16453,8 +16453,15 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
   const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — Dear ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
-  if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
-  const resendNotice=data.isResend?({
+  if(data.isReshoot){subj.ko='[재촬영본 추가] '+subj.ko;subj.en='[Re-shoot added] '+subj.en;subj.de='[Neue Aufnahmen] '+subj.de;}
+  else if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
+  // 재촬영 안내가 일반 재발송 문구보다 우선 — "빠른 제출" 대신 "재촬영본이 합쳐졌으니 함께 골라주세요"
+  const reshootNotice=data.isReshoot?({
+    ko:`<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#3730a3;line-height:1.7;"><b>📸 재촬영본이 추가되었습니다</b><br>이전 촬영본과 이번에 재촬영한 사진을 <b>한 화면에서 함께</b> 확인하실 수 있도록 셀렉 링크를 보내드립니다. 두 촬영을 합쳐 보정 받으실 사진 <b>${baseCount}장</b>을 골라주세요. 궁금한 점은 이 메일에 바로 회신해 주세요.${data.deadline?`<br>셀렉 마감일: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    en:`<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#3730a3;line-height:1.7;"><b>📸 Re-shoot photos added</b><br>Your re-shoot photos are now shown together with the original session on one page. Please choose your <b>${baseCount}</b> photos for retouching from both sets combined. Reply to this email with any questions.${data.deadline?`<br>Selection deadline: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    de:`<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#3730a3;line-height:1.7;"><b>📸 Neue Aufnahmen hinzugefügt</b><br>Ihre neuen Aufnahmen werden nun zusammen mit dem ursprünglichen Shooting auf einer Seite angezeigt. Bitte wählen Sie Ihre <b>${baseCount}</b> Fotos zur Bearbeitung aus beiden Sets. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
+  })[L]:'';
+  const resendNotice=(!data.isReshoot&&data.isResend)?({
     ko:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 재발송 안내</b><br>이전에 보내드린 사진 셀렉 안내를 다시 보내드립니다. 보정·인화 일정 조율을 위해 <b>확인하시고 빠른 제출 부탁드립니다.</b> 진행이 어렵거나 궁금한 점이 있으면 이 메일에 바로 회신해 주세요.${data.deadline?`<br>셀렉 마감일: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
     en:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Resent reminder</b><br>We are resending your photo selection link. <b>Please review and submit at your earliest convenience</b> so we can schedule retouching and printing. If anything is unclear, just reply to this email.${data.deadline?`<br>Selection deadline: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
     de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir Retusche und Druck einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
@@ -17760,46 +17767,50 @@ function addSelectReshootForAgent_(token,payload){
   const itemGroup=String(bookRow[BOOKING_COL['촬영종류']]||selRow[SELECT_COL['촬영종류']]||'');
   const product=String(bookRow[BOOKING_COL['상품']]||selRow[SELECT_COL['상품']]||'');
 
-  // 중복 방지: 같은 원건·같은 날 재촬영 매출행이 이미 있으면 거부(재시도 이중청구 방지)
+  // 멱등: 같은 원건·같은 날 재촬영 매출행이 이미 있으면 새로 만들지 않고 넘어간다(재실행 시 이중청구 방지).
+  // 이렇게 두면 "매출행은 그대로 두고 재촬영 안내만 다시 보내기"가 가능하다.
   const reTag='[재촬영] 원건행'+bookingRowIndex;
   const bLast=bookSh.getLastRow();
-  const scanFrom=Math.max(2,bLast-40);
+  const scanFrom=Math.max(2,bLast-60);
+  let existingFeeRow=0;
   if(bLast>=scanFrom){
     const memoCol=BOOKING_COL['요청사항'];
     const scan=bookSh.getRange(scanFrom,1,bLast-scanFrom+1,bookSh.getLastColumn()).getValues();
     for(let i=0;i<scan.length;i++){
       const m=String(scan[i][memoCol]||'');
       const d=parseDateSafe_(scan[i][BOOKING_COL['예약일시']]).str.slice(0,10);
-      if(m.indexOf(reTag)>-1 && d===reshootDate){
-        throw new Error(`이미 ${reshootDate} 재촬영 매출행이 있습니다(예약행 ${scanFrom+i}). 중복 청구 방지로 중단합니다.`);
-      }
+      if(m.indexOf(reTag)>-1 && d===reshootDate){ existingFeeRow=scanFrom+i; break; }
     }
   }
 
-  // ① 재촬영비 별도 수기 매출행 (완납 처리)
-  // addManualBookingAdmin 은 입금 여부를 depositPayMethod 로 판정한다(계약금=전액·수단=카드 → 완납으로 기록).
-  // 이걸 안 넘기면 '입금전'으로 찍혀 미수로 잡힌다. 상태는 항상 '확정됨'으로 저장되므로 아래서 작업완료로 전환.
-  const feeResult=addManualBookingAdmin(token,{
-    name:custName||String(bookRow[BOOKING_COL['고객명']]||''),
-    phone:String(bookRow[BOOKING_COL['연락처']]||''),
-    email:String(bookRow[BOOKING_COL['이메일']]||''),
-    lang:String(bookRow[BOOKING_COL['언어']]||'ko'),
-    itemGroup:itemGroup,
-    product:(product||'촬영')+' 재촬영',
-    date:reshootDate,
-    time:String(fee.time||'00:00'),
-    people:1,
-    price:feeAmount,
-    deposit:feeAmount,          // 전액을 계약금으로 = 완납
-    balance:0,
-    payMethod:payMethod,
-    depositPayMethod:payMethod, // 입금 완료 판정용(카드 등) — 없으면 '입금전'으로 미수 처리됨
-    memo:`${reTag} · 원 촬영 ${origDate} · 30% 재촬영비 · 사진은 원 셀렉(${sessionId})에 합쳐 발송`
-  });
-  if(!feeResult||!feeResult.ok) throw new Error('재촬영비 매출행 생성 실패: '+((feeResult&&feeResult.message)||''));
-  // 완료된 거래 → 작업완료(확정됨으로 남으면 파이프라인에 미완 촬영처럼 보임)
-  try{ updateBookingStatusForAgent_(token,feeResult.bookingRowIndex,'작업완료'); }
-  catch(e){ Logger.log('reshoot fee status set fail: '+e.message); }
+  let feeRowIndex=existingFeeRow, feeCreated=false;
+  if(!existingFeeRow){
+    // ① 재촬영비 별도 수기 매출행 (완납 처리)
+    // addManualBookingAdmin 은 입금 여부를 depositPayMethod 로 판정한다(계약금=전액·수단=카드 → 완납으로 기록).
+    // 이걸 안 넘기면 '입금전'으로 찍혀 미수로 잡힌다. 상태는 항상 '확정됨'으로 저장되므로 아래서 작업완료로 전환.
+    const feeResult=addManualBookingAdmin(token,{
+      name:custName||String(bookRow[BOOKING_COL['고객명']]||''),
+      phone:String(bookRow[BOOKING_COL['연락처']]||''),
+      email:String(bookRow[BOOKING_COL['이메일']]||''),
+      lang:String(bookRow[BOOKING_COL['언어']]||'ko'),
+      itemGroup:itemGroup,
+      product:(product||'촬영')+' 재촬영',
+      date:reshootDate,
+      time:String(fee.time||'00:00'),
+      people:1,
+      price:feeAmount,
+      deposit:feeAmount,          // 전액을 계약금으로 = 완납
+      balance:0,
+      payMethod:payMethod,
+      depositPayMethod:payMethod, // 입금 완료 판정용(카드 등) — 없으면 '입금전'으로 미수 처리됨
+      memo:`${reTag} · 원 촬영 ${origDate} · 30% 재촬영비 · 사진은 원 셀렉(${sessionId})에 합쳐 발송`
+    });
+    if(!feeResult||!feeResult.ok) throw new Error('재촬영비 매출행 생성 실패: '+((feeResult&&feeResult.message)||''));
+    feeRowIndex=feeResult.bookingRowIndex; feeCreated=true;
+    // 완료된 거래 → 작업완료(확정됨으로 남으면 파이프라인에 미완 촬영처럼 보임)
+    try{ updateBookingStatusForAgent_(token,feeRowIndex,'작업완료'); }
+    catch(e){ Logger.log('reshoot fee status set fail: '+e.message); }
+  }
 
   // ④ 옵션: 무료 보정 추가 (기본 0 = 유지)
   const extraRetouch=Math.max(0,parseInt(payload.extraRetouch,10)||0);
@@ -17809,29 +17820,31 @@ function addSelectReshootForAgent_(token,payload){
     selSh.getRange(selRowIdx,SELECT_COL['기본보정수']+1).setValue(newBaseCount);
   }
 
-  // ② 갤러리 갱신 + ③ 옵션 재발송
+  // ② 갤러리 갱신 + ③ 옵션 재발송 (재촬영은 세션ID를 유지한다 — updateSelectDriveLinkAdmin 경유로
+  //    같은 폴더를 재검증/캐시버스트하고, resend 시 재촬영 배너로 발송. resendSelectLinkAdmin 은
+  //    미제출 세션에서 새 세션ID를 발급해 링크가 churn 되므로 여기선 쓰지 않는다)
   const resend=payload.resend===true;
   const driveFolderId=String(payload.driveFolderId||payload.driveLink||'').trim();
-  let driveRelinked=false, resent=false, selectUrl='', mailMsg='';
-  if(driveFolderId){
-    const dr=updateSelectDriveLinkAdmin(token,bookingRowIndex,{driveFolderId:driveFolderId,sendEmail:resend});
-    if(!dr||!dr.ok) throw new Error('Drive 재연결 실패: '+((dr&&dr.message)||''));
-    driveRelinked=true; resent=!!dr.emailSent; selectUrl=dr.selectUrl||''; mailMsg=dr.message||'';
+  const existingLink=String(selRow[SELECT_COL['드라이브링크']]||'').trim();
+  const folderRef=driveFolderId||existingLink;
+  let driveRelinked=false, resent=false, mailMsg='';
+  let selectUrl=buildSelectSessionUrl_(sessionId,normalizeSelectPageVersion_(selRow[SELECT_COL['페이지버전']]));
+  if(folderRef){
+    const dr=updateSelectDriveLinkAdmin(token,bookingRowIndex,{driveFolderId:folderRef,sendEmail:resend,reshoot:true});
+    if(!dr||!dr.ok) throw new Error('갤러리 갱신 실패: '+((dr&&dr.message)||''));
+    driveRelinked=!!driveFolderId; resent=!!dr.emailSent; if(dr.selectUrl) selectUrl=dr.selectUrl; mailMsg=dr.message||'';
   }else{
-    // 같은 폴더에 사진을 추가한 경우 — 캐시만 버스트
+    // Drive 폴더가 없는 세션(예외) — 캐시만 버스트, 발송은 못 함
     clearSelectPhotoCache_(sessionId);
-    selectUrl=buildSelectSessionUrl_(sessionId,normalizeSelectPageVersion_(selRow[SELECT_COL['페이지버전']]));
-    if(resend){
-      const rr=resendSelectLinkAdmin(token,bookingRowIndex);
-      if(rr&&rr.ok){ resent=!!rr.emailSent; if(rr.selectUrl) selectUrl=rr.selectUrl; }
-      else mailMsg=(rr&&rr.message)||'링크 재발송 실패';
-    }
+    if(resend) mailMsg='Drive 폴더가 없어 재발송하지 못했습니다.';
   }
 
   return {ok:true,
     sessionId:sessionId,
     bookingRowIndex:bookingRowIndex,
-    feeRowIndex:feeResult.bookingRowIndex,
+    feeRowIndex:feeRowIndex,
+    feeCreated:feeCreated,
+    feeAlreadyRecorded:!feeCreated,
     feeAmount:feeAmount,
     reshootDate:reshootDate,
     payMethod:payMethod,
@@ -17841,7 +17854,7 @@ function addSelectReshootForAgent_(token,payload){
     cacheBusted:true,
     selectUrl:selectUrl,
     resent:resent,
-    note:mailMsg||(resend?'':'resend:false — 갤러리만 갱신, 링크는 발송하지 않음(selectUrl로 확인 후 발송)')
+    note:mailMsg||(resend?'재촬영 안내 발송 완료':'resend:false — 갤러리만 갱신, 링크는 발송하지 않음(selectUrl로 확인 후 resend:true)')
   };
 }
 
@@ -19009,7 +19022,10 @@ function updateSelectDriveLinkAdmin(token,bookingRowIndex,data){
         product:product,
         payMethod:payMethod,
         dateStr:String(row[SELECT_COL['촬영일']]||parseDateSafe_(bookRow[BOOKING_COL['예약일시']]).str.slice(0,10)),
-        bookingRowIndex:String(bookingRowIndex)
+        bookingRowIndex:String(bookingRowIndex),
+        // isReshoot 만으로 재촬영 제목·배너가 트리거된다(비재촬영 Drive 재연결 발송의 기존 동작은 불변)
+        isReshoot:payload.reshoot===true,
+        deadline:String(row[SELECT_COL['셀렉마감일']]||'')
       };
       if(!mailData.email||mailData.email.indexOf('@')<0) return{ok:true,driveLink:driveLink,folderName:folderName,selectUrl:selectUrl,emailSent:false,message:'고객 이메일이 없어 안내 메일은 재발송하지 않았습니다.'};
       const baseCount=normalizeSelectBaseRetouchCount_(row[SELECT_COL['기본보정수']],retouchInfo.count);
