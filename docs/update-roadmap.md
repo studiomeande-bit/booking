@@ -75,6 +75,23 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
+- **인화 등급 리네이밍 시그니처/파인아트 + 10×15 가격 확정 (2026-07-26, ✅ 배포 @657 · 커밋 `4e562c8`,`4b7255d`)** —
+  '기본/프리미엄'이 실제 용지(Epson Premium Semigloss 251g / Hahnemühle Photo Matt Fibre 200g)를 저평가하던 문제와,
+  10×15에서 **파인아트(€3)가 시그니처(€5)보다 싸던 가격 역전**을 함께 해소.
+  - 가격: `basic_10x15` 보정본 5→3·원본 5→4, `premium_10x15` 보정본 3→6 (그 외 사이즈 불변, **SKU id 전부 불변**)
+  - **가격 정의가 5곳에 중복** — Code.gs `PRINT_LABELS` · AdminV2 `PRINT_PRICES` · select.js · v2/select.js ·
+    shared/print-catalog.js. 하나만 고치면 화면가와 청구가가 어긋난다 (ops-checklist §46은 3곳으로 기재 → 5곳으로 갱신 필요)
+  - 🔴 **리네이밍이 깨뜨리는 2곳을 함께 수정** (이게 이 작업의 핵심 리스크였음)
+    - `print/app.js normPrintId()`: `/prem|프리미엄/`으로 라벨→SKU를 역추론 → '파인아트 A4'가 `basic_a4`로 오인식되어
+      **잘못된 용지로 자동 출력**될 뻔함. `PREMIUM_LABEL_RE`(`파인아트|fine art|fineart` 포함)로 분리
+    - `select.js resolvePrintTypeId()`: 라벨 포함매칭이라 진행 중 세션의 구 라벨('프리미엄 A4')이 `basic_10x15`로 폴백 →
+      `LEGACY_PRINT_LABEL_IDS` 별칭맵 추가
+  - 부수: `getInvoicePrintLabelCatalog_`에 누락돼 있던 `premium_a3plus` 추가 / 고객 노출 서비스컷 문구 4곳 /
+    서비스컷 크레딧 주석 €5→€3 / 캐시버스트 `?v=20260726-print1`
+  - ⚠️ **미검증**: 실제 셀렉→인화 주문 E2E(포함 €0 / 보정본 / 원본 3경로)는 실고객 세션이 필요해 미확인.
+    **파인아트 A4 실물 1장 출력 테스트 권장** (정규식 수정이 실제 용지까지 맞는지)
+  - ⚠️ AdminV2 `basic_10x15.priceRetouched=0`은 select(3)와 불일치하나 **기존 값 그대로 유지**(수동주문 의미 보존) — 판단 필요
+
 - **수령 완결 — 인화물 전달 기록 (2026-07-23, ✅ 배포 @650 · 커밋 `3cedf15`)** — 인화가 끝난 뒤 인화물이 실제로 고객에게
   갔는지를 시스템이 전혀 모르던 구멍을 닫음. **상태값이 아니라 컬럼**으로 모델링(상태로 만들면 `최종작업완료`와 배타적이라
   둘 중 클릭 적은 쪽만 쓰이고, `isSelectFinalLockedStatus_`에 들어가면 픽업 페이지가 죽음).
