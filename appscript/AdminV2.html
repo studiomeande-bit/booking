@@ -3114,7 +3114,7 @@ let editPricingDirty=false;
 const PRINT_PRICES={
   'photocard_single':{label:'포토카드 프린트 (단면)',price:5,priceRetouched:5},
   'photocard_double':{label:'포토카드 프린트 (양면)',price:8,priceRetouched:8},
-  'basic_10x15':{label:'시그니처 10×15cm',price:4,priceRetouched:0},
+  'basic_10x15':{label:'시그니처 10×15cm',price:4,priceRetouched:3},
   'premium_10x15':{label:'파인아트 10×15cm',price:8,priceRetouched:6},
   'basic_a4':{label:'시그니처 A4',price:15,priceRetouched:10},
   'premium_a4':{label:'파인아트 A4',price:20,priceRetouched:15},
@@ -10228,7 +10228,7 @@ function viewSubmission(rowIndex){
   const getPhotoPrintLabel=function(photo){
     if(photo&&photo.printTypeLabel) return photo.printTypeLabel;
     const key=String((photo&&photo.printType)||'basic_10x15').replace(/_(r|e)$/,'');
-    return (PRINT_PRICES[key]&&PRINT_PRICES[key].label)||key||'기본 10×15cm';
+    return (PRINT_PRICES[key]&&PRINT_PRICES[key].label)||key||'시그니처 10×15cm';
   };
   const deliveryInfo=selectDeliveryInfo(sel);
   const deliveryDetail=deliveryInfo.detail;
@@ -11083,11 +11083,12 @@ function buildInvoiceBookingUpdatePayload(){
 const INVOICE_PRINT_LABELS={
   photocard_single:{ko:'포토카드 프린트 (단면)',en:'Photo card print (single-sided)',de:'Fotokarten-Druck (einseitig)'},
   photocard_double:{ko:'포토카드 프린트 (양면)',en:'Photo card print (double-sided)',de:'Fotokarten-Druck (doppelseitig)'},
-  basic_10x15:{ko:'기본 10×15cm',en:'Basic 10×15cm',de:'Basic 10×15cm'},
-  premium_10x15:{ko:'프리미엄 10×15cm',en:'Premium 10×15cm',de:'Premium 10×15cm'},
-  basic_a4:{ko:'기본 A4',en:'Basic A4',de:'Basic A4'},
-  premium_a4:{ko:'프리미엄 A4',en:'Premium A4',de:'Premium A4'},
-  premium_a3:{ko:'프리미엄 A3',en:'Premium A3',de:'Premium A3'}
+  basic_10x15:{ko:'시그니처 10×15cm',en:'Signature 10×15cm',de:'Signature-Abzug 10×15cm'},
+  premium_10x15:{ko:'파인아트 10×15cm',en:'Fine Art 10×15cm',de:'FineArt-Druck 10×15cm'},
+  basic_a4:{ko:'시그니처 A4',en:'Signature A4',de:'Signature-Abzug A4'},
+  premium_a4:{ko:'파인아트 A4',en:'Fine Art A4',de:'FineArt-Druck A4'},
+  premium_a3:{ko:'파인아트 A3',en:'Fine Art A3',de:'FineArt-Druck A3'},
+  premium_a3plus:{ko:'파인아트 A3+',en:'Fine Art A3+',de:'FineArt-Druck A3+'}
 };
 const INVOICE_PRINT_SUFFIXES={
   retouched:{ko:'보정본포함',en:'retouched file included',de:'inkl. Retusche'},
