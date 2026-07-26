@@ -82,7 +82,7 @@ body {
   font-style: italic;
   font-weight: 400;
   letter-spacing: -.03em;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .brand-logo-image {
   display: block;
@@ -198,7 +198,7 @@ h1 {
   padding: 18px 22px;
   border-radius: 0;
   border: 0;
-  background: #f7f4ee;
+  background: var(--sm-surface-tint);
   font-size: 13px;
   position: relative;
   width: 100%;
@@ -221,7 +221,7 @@ h1 {
   align-items: center;
   margin-top: 22px;
   padding: 18px 22px;
-  background: #fffdf8;
+  background: var(--sm-surface-raised);
   border: 1px solid #e8dfd2;
   box-shadow: 0 16px 40px rgba(47, 42, 37, .07);
 }
@@ -261,8 +261,8 @@ h1 {
   justify-content: center;
   min-height: 44px;
   padding: 11px 18px;
-  border: 1px solid #2D2A26;
-  background: #2D2A26;
+  border: 1px solid var(--sm-brand-ink);
+  background: var(--sm-brand-ink);
   color: #fff;
   font-size: 13px;
   font-weight: 800;
@@ -272,8 +272,8 @@ h1 {
 }
 .consultation-cta-button:hover,
 .consultation-inline-link:hover {
-  background: #171513;
-  border-color: #171513;
+  background: var(--sm-text);
+  border-color: var(--sm-text);
   transform: translateY(-1px);
 }
 .consultation-inline-card {
@@ -282,7 +282,7 @@ h1 {
   margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid #e8dfd2;
-  background: #fffdf8;
+  background: var(--sm-surface-raised);
 }
 .consultation-inline-copy {
   margin: 0;
@@ -295,7 +295,7 @@ h1 {
   padding: 18px 22px;
   border-radius: 0;
   border: 0;
-  background: #f7f4ee;
+  background: var(--sm-surface-tint);
   box-shadow: none;
   width: 100%;
 }
@@ -329,7 +329,7 @@ h1 {
   padding: 30px 32px;
   border-radius: 0;
   border: 0;
-  background: #f7f4ee;
+  background: var(--sm-surface-tint);
   box-shadow: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
@@ -426,7 +426,7 @@ h1 {
   padding: 18px 20px;
   border-radius: 0;
   border: 0;
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
   text-decoration: none;
   box-shadow: none;
@@ -578,7 +578,7 @@ h1 {
   row-gap: 8px;
   border: 0;
   border-radius: 0;
-  background: #f7f4ee;
+  background: var(--sm-surface-tint);
   padding: 24px;
   min-height: 136px;
   text-align: left;
@@ -591,7 +591,7 @@ h1 {
   box-shadow: 0 18px 28px rgba(23, 21, 19, 0.04);
 }
 .group-card.selected {
-  background: #2f2924;
+  background: var(--sm-brand-ink);
   color: #fff;
   box-shadow: none;
 }
@@ -647,7 +647,7 @@ h1 {
   box-shadow: 0 20px 30px rgba(23, 21, 19, 0.05);
 }
 .product-card.selected {
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
   box-shadow: none;
 }
@@ -660,8 +660,8 @@ h1 {
 }
 .product-card h3,
 .group-card-title {
-  color: #171513;
-  -webkit-text-fill-color: #171513;
+  color: var(--sm-text);
+  -webkit-text-fill-color: var(--sm-text);
 }
 .product-card.selected h3,
 .group-card.selected .group-card-title {
@@ -708,7 +708,7 @@ h1 {
 .event-type-panel {
   margin-top: 20px;
   padding: 18px 20px;
-  background: #f6f3ed;
+  background: var(--sm-surface-tint);
   border-left: 3px solid var(--brand-accent);
 }
 .event-type-field {
@@ -718,7 +718,7 @@ h1 {
   gap: 14px;
 }
 .event-type-field span {
-  color: #171513;
+  color: var(--sm-text);
   font-size: 13px;
   font-weight: 800;
 }
@@ -728,7 +728,7 @@ h1 {
   border: 1px solid rgba(23, 21, 19, 0.16);
   border-radius: 0;
   background: #fff;
-  color: #171513;
+  color: var(--sm-text);
   padding: 0 14px;
   font: inherit;
   font-size: 14px;
@@ -759,7 +759,7 @@ h1 {
   font-size: 15px;
   line-height: 1.35;
   font-weight: 800;
-  color: #171513;
+  color: var(--sm-text);
 }
 .event-product-section-head p {
   margin: 4px 0 0;
@@ -805,7 +805,7 @@ h1 {
   flex: 0 0 auto;
   padding: 4px 8px;
   border: 1px solid rgba(23, 21, 19, 0.16);
-  color: #171513;
+  color: var(--sm-text);
   font-size: 11px;
   line-height: 1;
   font-weight: 800;
@@ -825,7 +825,7 @@ h1 {
   line-height: 1.4;
 }
 .event-product-meta strong {
-  color: #171513;
+  color: var(--sm-text);
   font-size: 13px;
   font-weight: 800;
 }
@@ -987,7 +987,7 @@ h1 {
 .booking-form textarea.field-attention,
 .form-block.field-attention {
   outline: 2px solid rgba(154, 79, 47, .28);
-  background: #fffaf6;
+  background: var(--sm-surface-raised);
 }
 .contact-helper-control {
   display: grid;
@@ -1157,7 +1157,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper-strong);
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .calendar-cell {
   display: grid;
@@ -1202,7 +1202,7 @@ h1 {
 .calendar-cell.full.selected::after { color: #fff; }
 .calendar-cell.closed {
   color: #a8a29a;
-  background: #f0ece5;
+  background: var(--sm-surface-sunken);
   border-color: #e3ddd1;
   position: relative;
   cursor: not-allowed;
@@ -1239,12 +1239,12 @@ h1 {
   border: 1px solid transparent;
 }
 .calendar-legend i.full { background: #fdf4ec; border-color: #e9d3bf; }
-.calendar-legend i.closed { background: #f0ece5; border-color: #e3ddd1; }
+.calendar-legend i.closed { background: var(--sm-surface-sunken); border-color: #e3ddd1; }
 .calendar-cell.selected,
 .slot-btn.selected {
-  background: #2d2a26;
+  background: var(--sm-brand-ink);
   color: #fff;
-  border-color: #2d2a26;
+  border-color: var(--sm-brand-ink);
 }
 .slot-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1366,7 +1366,7 @@ h1 {
   display: block;
   padding: 18px;
   color: var(--muted);
-  background: #f8f3ea;
+  background: var(--sm-surface-tint);
   border-radius: 8px;
   border: 1px dashed var(--line);
   font-size: 14px;
@@ -1482,7 +1482,7 @@ h1 {
 .survey-chip:disabled {
   cursor: not-allowed;
   opacity: .5;
-  background: #f1ede7;
+  background: var(--sm-surface-sunken);
   border-color: #dfd6c9;
   color: #8a8074;
 }
@@ -1590,7 +1590,7 @@ h1 {
   padding: 18px;
   border-radius: 10px;
   border: 1px solid rgba(220, 206, 189, 0.95);
-  background: linear-gradient(180deg, #fffaf2 0%, #fffdf9 100%);
+  background: linear-gradient(180deg, #fffaf2 0%, var(--sm-surface-raised) 100%);
   box-shadow: none;
 }
 .wedding-benefit-eyebrow {
@@ -1606,7 +1606,7 @@ h1 {
   font-weight: 750;
   line-height: 1.3;
   letter-spacing: -0.03em;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .wedding-benefit-body {
   margin-top: 8px;
@@ -1649,7 +1649,7 @@ h1 {
 .wedding-benefit-card-title {
   font-size: 15px;
   font-weight: 700;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .wedding-benefit-card-body {
   margin-top: 8px;
@@ -1712,7 +1712,7 @@ h1 {
   padding: 22px;
   border: 0;
   border-radius: 0;
-  background: #f7f4ee;
+  background: var(--sm-surface-tint);
 }
 .consent-title {
   font-size: 15px;
@@ -1737,7 +1737,7 @@ h1 {
   gap: 4px;
   padding: 14px 16px;
   cursor: pointer;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
   list-style: none;
 }
 .contract-terms-summary::-webkit-details-marker {
@@ -1790,7 +1790,7 @@ h1 {
 .contract-terms-list li > span {
   display: block;
   margin-bottom: 4px;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
   font-weight: 400;
 }
 .contract-terms-list li p + p {
@@ -1914,7 +1914,7 @@ h1 {
   padding: 14px 16px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: #fffdfa;
+  background: var(--sm-surface-raised);
 }
 .guide-title {
   font-size: 13px;
@@ -1977,13 +1977,13 @@ h1 {
   padding: 16px 18px;
   border-radius: 18px;
   border: 1px solid #ddd9d0;
-  background: #fffdfa;
+  background: var(--sm-surface-raised);
 }
 .result-guide-title {
   margin: 0 0 10px;
   font-size: 16px;
   font-weight: 800;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .result-guide-body {
   color: #5d564f;
@@ -1993,7 +1993,7 @@ h1 {
 .result-guide-body h5 {
   margin: 14px 0 6px;
   font-size: 14px;
-  color: #2d2a26;
+  color: var(--sm-brand-ink);
 }
 .result-guide-body p {
   margin: 0 0 8px;
@@ -2039,7 +2039,7 @@ h1 {
   .shell { width: calc(100% - 32px); max-width: 100%; padding-top: calc(16px + var(--safe-top)); padding-bottom: calc(112px + var(--safe-bottom)); }
   .hero { padding: 4px 0 12px; }
   .panel { padding: 0; border-radius: 0; }
-  .notice-panel { padding: 16px; border-radius: 0; background: #f6f4ef; }
+  .notice-panel { padding: 16px; border-radius: 0; background: var(--sm-surface-tint); }
   .lang-panel {
     width: 100%;
     margin-top: 16px;
@@ -2095,7 +2095,7 @@ h1 {
   .header-logo { width: min(220px, 62vw); }
   h1 { font-size: 26px; }
   .lede { font-size: 14px; line-height: 1.55; }
-  .banner { margin-top: 14px; padding: 14px 16px 0; border-radius: 0; background: #f6f4ef; }
+  .banner { margin-top: 14px; padding: 14px 16px 0; border-radius: 0; background: var(--sm-surface-tint); }
   .banner::before { left: 16px; }
   .product-grid { grid-template-columns: 1fr; gap: 12px; }
   .group-grid { grid-template-columns: 1fr; gap: 12px; }
@@ -2527,7 +2527,7 @@ body {
 .wedding-benefit-box,
 .wedding-benefit-card,
 .wedding-refund-box {
-  background: #f6f4ef;
+  background: var(--sm-surface-tint);
 }
 
 .group-card,
@@ -2560,7 +2560,7 @@ body {
 }
 
 .submit-btn {
-  background: #171513;
+  background: var(--sm-text);
 }
 
 .wizard-nav {
@@ -2660,7 +2660,7 @@ body {
 .success-guide,
 .result-box {
   border: 0;
-  background: #f6f4ef;
+  background: var(--sm-surface-tint);
   box-shadow: none;
 }
 
@@ -2681,13 +2681,13 @@ body {
 .survey-chip.subtle-selected,
 .chip-btn.selected,
 .chip-btn.toggle-chip.selected {
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
   border: 0;
 }
 
 .price-hero {
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
 }
 
@@ -2706,7 +2706,7 @@ body {
 
 .submit-btn,
 .primary-btn {
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
 }
 
@@ -2745,7 +2745,7 @@ body {
   .notice-panel {
     padding: 18px 16px 0;
     border-radius: 0;
-    background: #f6f4ef;
+    background: var(--sm-surface-tint);
   }
 }
 
@@ -2796,7 +2796,7 @@ body {
 .empty-state,
 .consent-group,
 .consent-row-highlight {
-  background: #f6f3ed !important;
+  background: var(--sm-surface-tint) !important;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -2822,7 +2822,7 @@ body {
 
 .group-card,
 .product-card {
-  background: #f6f3ed;
+  background: var(--sm-surface-tint);
   box-shadow: none !important;
 }
 
@@ -2968,7 +2968,7 @@ h1 {
 .banner,
 .notice-panel,
 .promo-highlight {
-  background: #f6f3ed !important;
+  background: var(--sm-surface-tint) !important;
 }
 
 .banner {
@@ -3122,7 +3122,7 @@ h1 {
 }
 
 .group-card-meta-item strong {
-  color: #171513;
+  color: var(--sm-text);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
@@ -3273,7 +3273,7 @@ h1 {
 .consent-row-highlight,
 .discount-note-item,
 .success-guide {
-  background: #f6f3ed !important;
+  background: var(--sm-surface-tint) !important;
   border: 0 !important;
   box-shadow: none !important;
 }
@@ -3292,7 +3292,7 @@ h1 {
 .survey-chip,
 .calendar-cell,
 .slot-btn {
-  background: #f1ede7 !important;
+  background: var(--sm-surface-sunken) !important;
   border: 0 !important;
   box-shadow: none !important;
 }
@@ -3317,7 +3317,7 @@ h1 {
 .bg-rec-outfits,
 .result-guide-title,
 .consent-title {
-  color: #171513;
+  color: var(--sm-text);
 }
 
 .bg-rec-title,
@@ -3345,20 +3345,20 @@ h1 {
 .survey-chip {
   min-height: 52px;
   padding: 14px 16px;
-  color: #3c3129;
+  color: var(--sm-text-soft);
 }
 
 .chip-btn.selected,
 .chip-btn.toggle-chip.selected,
 .survey-chip.selected,
 .survey-chip.subtle-selected {
-  background: #171513 !important;
+  background: var(--sm-text) !important;
   color: #fff !important;
 }
 
 .ghost-btn {
-  background: #f1ede7;
-  color: #3b3129;
+  background: var(--sm-surface-sunken);
+  color: var(--sm-text-soft);
 }
 
 .ghost-btn:hover {
@@ -3367,11 +3367,11 @@ h1 {
 
 .primary-btn,
 .submit-btn {
-  background: #171513;
+  background: var(--sm-text);
 }
 
 .price-hero {
-  background: #171513;
+  background: var(--sm-text);
 }
 
 .price-hero-label,
@@ -3486,7 +3486,7 @@ h1 {
 .consent-row b {
   font-size: 15px;
   line-height: 1.42;
-  color: #171513;
+  color: var(--sm-text);
 }
 
 .consent-sub {
@@ -3519,7 +3519,7 @@ h1 {
 
 .result-item {
   padding: 14px 16px;
-  background: #f1ede7 !important;
+  background: var(--sm-surface-sunken) !important;
 }
 
 .result-item span {
@@ -3550,8 +3550,8 @@ h1 {
 
 .result-action-btn {
   border: 0;
-  background: #f1ede7;
-  color: #3b3129;
+  background: var(--sm-surface-sunken);
+  color: var(--sm-text-soft);
   padding: 12px 16px;
 }
 
@@ -3637,7 +3637,7 @@ h1 {
 }
 
 .quick-slot-value {
-  color: #171513;
+  color: var(--sm-text);
   font-size: clamp(18px, 2vw, 24px);
   font-weight: 700;
   line-height: 1.2;
@@ -3668,7 +3668,7 @@ h1 {
 .invoice-fields-grid input,
 .invoice-fields-grid textarea,
 .booking-form textarea {
-  background: #f3efe8 !important;
+  background: var(--sm-surface-sunken) !important;
 }
 
 .booking-form textarea {
@@ -3743,7 +3743,7 @@ h1 {
 }
 
 .calendar-weekday:nth-child(n+2):nth-child(-n+6) {
-  color: #171513 !important;
+  color: var(--sm-text) !important;
 }
 
 .calendar-weekday:nth-child(7) {
@@ -3761,7 +3761,7 @@ h1 {
   display: grid;
   gap: 16px;
   padding: 24px;
-  background: #f6f3ed;
+  background: var(--sm-surface-tint);
 }
 
 .calendar-toolbar {
@@ -3785,7 +3785,7 @@ h1 {
   gap: 14px;
   align-content: start;
   padding: 24px !important;
-  background: #f6f3ed !important;
+  background: var(--sm-surface-tint) !important;
 }
 
 .slot-panel-head {
@@ -3829,7 +3829,7 @@ h1 {
 #reviewBox.detail-box {
   padding: 0 !important;
   overflow: hidden;
-  background: #f6f3ed !important;
+  background: var(--sm-surface-tint) !important;
 }
 
 .summary-item {
@@ -4429,14 +4429,14 @@ h1 {
   gap: 18px;
   margin-top: 16px;
   padding: 20px;
-  background: #fffdf8;
+  background: var(--sm-surface-raised);
   border: 1px solid rgba(181, 76, 45, .18);
 }
 
 .package-composition-title {
   font-size: 17px;
   font-weight: 800;
-  color: #2f2924;
+  color: var(--sm-brand-ink);
   letter-spacing: -.01em;
 }
 
@@ -4450,7 +4450,7 @@ h1 {
   display: grid;
   gap: 4px;
   padding: 14px 15px;
-  background: #f3eee6;
+  background: var(--sm-surface-sunken);
 }
 
 .package-composition-meta-item span,
@@ -4463,7 +4463,7 @@ h1 {
 }
 
 .package-composition-meta-item strong {
-  color: #171513;
+  color: var(--sm-text);
   font-size: 14px;
   line-height: 1.35;
 }
@@ -4491,8 +4491,8 @@ h1 {
   position: relative;
   min-height: 38px;
   padding: 9px 12px 9px 28px;
-  background: #f6f3ed;
-  color: #3c332b;
+  background: var(--sm-surface-tint);
+  color: var(--sm-text-soft);
   font-size: 13px;
   font-weight: 650;
   line-height: 1.45;
@@ -4510,7 +4510,7 @@ h1 {
 
 .package-composition-section.muted .package-composition-list li {
   color: #6a5d50;
-  background: #f1ede7;
+  background: var(--sm-surface-sunken);
   font-weight: 600;
 }
 
@@ -4525,7 +4525,7 @@ h1 {
 /* ===== 인화(출력) 안내 아코디언 ===== */
 .print-info-box {
   margin: 12px 0;
-  background: #fffdf8;
+  background: var(--sm-surface-raised);
   border: 1px solid rgba(181, 76, 45, .18);
   overflow: hidden;
 }
@@ -4533,7 +4533,7 @@ h1 {
 .print-info-summary {
   cursor: pointer;
   padding: 12px 15px;
-  color: #2f2924;
+  color: var(--sm-brand-ink);
   font-size: 14px;
   font-weight: 700;
 }
@@ -4558,7 +4558,7 @@ h1 {
 
 .print-tier-compare-item {
   padding: 12px 14px;
-  background: #f6f3ed;
+  background: var(--sm-surface-tint);
 }
 
 .print-tier-compare-name {
@@ -4572,7 +4572,7 @@ h1 {
 
 .print-tier-compare-line {
   margin: 0;
-  color: #3c332b;
+  color: var(--sm-text-soft);
   font-size: 12.5px;
   line-height: 1.65;
 }
@@ -4623,7 +4623,7 @@ h1 {
   gap: 12px;
   padding: 7px 0;
   border-bottom: 1px solid rgba(181, 76, 45, .1);
-  color: #3c332b;
+  color: var(--sm-text-soft);
   font-size: 13px;
 }
 
@@ -4638,7 +4638,7 @@ h1 {
 
 .print-info-row strong {
   white-space: nowrap;
-  color: #171513;
+  color: var(--sm-text);
 }
 
 .print-info-foot {
@@ -4656,7 +4656,7 @@ h1 {
 
 .print-method-title {
   margin-bottom: 8px;
-  color: #2f2924;
+  color: var(--sm-brand-ink);
   font-size: 13.5px;
   font-weight: 800;
   letter-spacing: -.01em;
@@ -4667,7 +4667,7 @@ h1 {
 }
 
 .print-method-head {
-  color: #2f2924;
+  color: var(--sm-brand-ink);
   font-size: 12.5px;
   font-weight: 700;
 }
@@ -4747,7 +4747,7 @@ h1 {
 .gutschein-input-row button {
   border: none;
   border-radius: 10px;
-  background: #2D2A26;
+  background: var(--sm-brand-ink);
   color: #fff;
   font-weight: 700;
   font-size: 13px;

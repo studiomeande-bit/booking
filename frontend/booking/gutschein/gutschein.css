@@ -495,7 +495,7 @@ h1 {
 
 /* ===== Ticket polish ===== */
 body {
-  background: linear-gradient(180deg, #faf8f4 0%, #f3eee6 100%);
+  background: linear-gradient(180deg, #faf8f4 0%, var(--sm-surface-sunken) 100%);
 }
 
 .loading-card,
@@ -512,7 +512,7 @@ body {
 
 .panel,
 .ticket-card {
-  background: #f6f3ed;
+  background: var(--sm-surface-tint);
 }
 
 .ticket-card {
@@ -535,13 +535,13 @@ body {
 
 .state-badge {
   padding: 8px 12px;
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
   border: 0;
 }
 
 .state-badge[data-state="active"] {
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
 }
 
@@ -578,13 +578,13 @@ body {
 .copy-btn {
   min-height: 42px;
   padding: 0 14px;
-  background: #171513;
+  background: var(--sm-text);
   color: #fff;
 }
 
 .panel-title,
 .ticket-value {
-  color: #171513;
+  color: var(--sm-text);
 }
 
 .meta-label,

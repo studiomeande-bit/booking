@@ -86,12 +86,101 @@ img {
   color: var(--muted);
 }
 
+.site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  min-width: 44px;
+  justify-content: center;
+}
+
+/* The language codes are only two characters wide; give them a real target. */
+.nav-langs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-langs a {
+  min-width: 32px;
+  justify-content: center;
+}
+
 .site-nav a[aria-current="page"] {
   color: var(--text);
 }
 
 .site-nav a:hover {
   color: var(--text);
+}
+
+/* ===== Entrance motion =====
+   The site had no entrance motion at all: 52 photographs arrived in one block.
+
+   Deliberately transform-only — opacity is never animated. Any reveal that
+   fades in from opacity: 0 leaves the content invisible wherever the animation
+   engine does not run (suspended/background rendering, a browser without the
+   feature, an animation that never gets a frame). Verified during this work:
+   with a fade-based reveal the headline and all 52 cards sat at opacity 0.
+   Animating only `transform` means the worst case is "it did not move",
+   never "it is not there".
+
+   prefers-reduced-motion is neutralised globally in shared/tokens.css. */
+@keyframes sm-rise {
+  from { transform: translateY(18px); }
+  to { transform: none; }
+}
+
+/* 1. Page load: one staggered settle. @starting-style supplies the state to
+      transition from; browsers without it simply render the final position. */
+.hero-copy > *,
+.hero-visual,
+.hero-meta,
+.services-section > *,
+.seo-section > *,
+.about-section > *,
+.lp-hero > *,
+.lp-hero-visual,
+.page-header > * {
+  transform: none;
+  transition: transform 0.9s cubic-bezier(0.22, 0.68, 0.24, 1);
+}
+
+@starting-style {
+  .hero-copy > *,
+  .hero-visual,
+  .hero-meta,
+  .services-section > *,
+  .seo-section > *,
+  .about-section > *,
+  .lp-hero > *,
+  .lp-hero-visual,
+  .page-header > * {
+    transform: translateY(18px);
+  }
+}
+
+.hero-copy .eyebrow { transition-delay: 0.05s; }
+.hero-copy h1 { transition-delay: 0.14s; }
+.hero-copy .hero-text { transition-delay: 0.26s; }
+.hero-copy .hero-actions { transition-delay: 0.36s; }
+.hero-visual { transition-delay: 0.2s; }
+.hero-meta { transition-delay: 0.46s; }
+
+/* 2. Gallery cards settle upward as they scroll in — scroll-driven, no JS.
+      Not an IntersectionObserver: that would make 52 photographs depend on a
+      script running to be visible. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .portfolio-card {
+      animation: sm-rise 1s linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 42%;
+    }
+  }
 }
 
 .hero {
@@ -1274,12 +1363,41 @@ html[lang="ko"] .success-card h1 {
   .site-header {
     align-items: flex-start;
     flex-direction: column;
+    /* Not sticky here: the nav wraps to two rows on a phone, so keeping it
+       pinned costs ~20% of the viewport for the whole scroll. It stays
+       reachable at the top of the page and in the footer. */
+    position: static;
+    padding: 12px 0 8px;
   }
 
   .site-nav {
-    gap: 14px;
+    /* no row gap: the 44px targets already separate the rows visually,
+       and the header only has to earn its height once now */
+    gap: 0 14px;
     font-size: 11px;
     justify-content: flex-start;
+  }
+
+  /* Photographs are the product — show one before the copy on a phone.
+     The heading still comes first in the DOM, so reading order is unchanged
+     for screen readers and search engines. */
+  .hero {
+    grid-template-areas:
+      "visual"
+      "copy"
+      "meta";
+    min-height: 0;
+    padding-top: 8px;
+  }
+
+
+  /* touch targets */
+  .site-nav a {
+    min-height: 44px;
+  }
+
+  .nav-langs a {
+    min-width: 44px;
   }
 
   .page-main,
@@ -1336,8 +1454,16 @@ html[lang="ko"] .success-card h1 {
   }
 
   .hero-photo-lead {
-    height: 460px;
+    /* was 460px + a 452px support stack below it, which pushed the headline
+       past 1100px on a 812px screen */
+    height: clamp(300px, 44vh, 380px);
     min-height: 0;
+  }
+
+  /* One photograph is enough here. The two support thumbnails repeat
+     categories that the gallery further down already shows. */
+  .hero-photo-stack {
+    display: none;
   }
 
   .hero-photo-stack {

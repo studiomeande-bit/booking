@@ -26,8 +26,12 @@
     });
   }
 
-  const lang = (document.documentElement.lang || "de").slice(0, 2).toLowerCase();
-  const copy = {
+  /* Resolved on every read: pages that switch language client-side update
+     <html lang> after this script has already run. */
+  function currentLang() {
+    return (document.documentElement.lang || "de").slice(0, 2).toLowerCase();
+  }
+  const CONSENT_COPY = {
     de: {
       text: "Wir verwenden Google Analytics nur mit Ihrer Zustimmung, um die Website zu verbessern.",
       accept: "Akzeptieren",
@@ -46,14 +50,11 @@
       decline: "거부",
       privacy: "개인정보"
     }
-  }[lang] || null;
-
-  const t = copy || {
-    text: "Wir verwenden Google Analytics nur mit Ihrer Zustimmung, um die Website zu verbessern.",
-    accept: "Akzeptieren",
-    decline: "Ablehnen",
-    privacy: "Datenschutz"
   };
+
+  function texts() {
+    return CONSENT_COPY[currentLang()] || CONSENT_COPY.de;
+  }
 
   function readConsent(key) {
     try {
@@ -138,6 +139,7 @@
     banner.className = "studio-consent-banner";
     banner.setAttribute("role", "dialog");
     banner.setAttribute("aria-label", "Google Analytics consent");
+    const t = texts();
     banner.innerHTML = `
       <p>${t.text}</p>
       <div class="studio-consent-actions">
@@ -162,6 +164,17 @@
       banner.remove();
     });
     document.body.appendChild(banner);
+
+    /* Pages that switch language client-side (booking, select) dispatch this
+       so an already-visible consent prompt follows the chosen language. */
+    document.addEventListener('studiomean:langchange', () => {
+      if (!banner.isConnected) return;
+      const next = texts();
+      banner.querySelector('p').textContent = next.text;
+      banner.querySelector('[data-consent-accept]').textContent = next.accept;
+      banner.querySelector('[data-consent-decline]').textContent = next.decline;
+      banner.querySelector('.studio-consent-actions a').textContent = next.privacy;
+    });
   }
 
   function initMaps() {

@@ -104,7 +104,7 @@ input, select, textarea { font-size: 16px; }
   min-height: 420px;
   padding: 28px;
   border: 1px solid var(--line);
-  background: #f4efe7;
+  background: var(--sm-surface-sunken);
   border-radius: 8px;
 }
 
@@ -184,7 +184,7 @@ h1 {
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: #f4efe7;
+  background: var(--sm-surface-sunken);
   color: var(--gold);
   font-size: 12px;
   font-weight: 900;
@@ -233,7 +233,7 @@ h1 {
 .type-card.active,
 .choice-pill.active {
   border-color: var(--accent);
-  background: #f8f5ef;
+  background: var(--sm-surface-tint);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 

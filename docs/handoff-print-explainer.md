@@ -103,4 +103,4 @@ cd frontend && npm run build:select-site && npm run build:booking
 ## 5. 손대지 말 것
 - `frontend/print/app.js` `MEDIA` 프리셋("프리미엄 인화지" 등) — SKU 등급이 아니라 **물리 용지별 색보정 프리셋**. 별개 개념.
   (참고: Hahnemühle 전용 프리셋이 없음. 추가하려면 실제 출력 색을 보고 값을 정해야 함 — 사장님 판단 영역)
-- select v1 — 아직 삭제 불가(`ops-checklist` §47 참조)
+- ~~select v1 — 아직 삭제 불가~~ → **2026-07-26 삭제 완료**(루트 → `/v2/` 301 리다이렉트, `ops-checklist` §48 참조)

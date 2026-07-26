@@ -23,7 +23,6 @@ Updated: 2026-05-08 Europe/Berlin
   - `frontend/booking/studio-mean-logo.png`
 - Frontend select:
   - `frontend/select/index.html`
-  - `frontend/select/select.js`
   - `frontend/select/select.css`
   - `frontend/select/studio-mean-logo.png`
 - Apps Script backend/admin:

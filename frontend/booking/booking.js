@@ -71,6 +71,8 @@ function normalizeLang(value) {
    Chrome does not offer to translate a page that is already in the user's language. */
 function syncDocumentLang(lang) {
   document.documentElement.lang = lang;
+  /* site-analytics.js captured the language before the switch; let it re-apply. */
+  document.dispatchEvent(new CustomEvent('studiomean:langchange'));
 }
 
 function persistLang(lang) {

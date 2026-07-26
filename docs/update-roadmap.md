@@ -75,7 +75,96 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
-- **셀렉 페이지 3개국어화 — 2차 진행중 (정적 100% + 동적 일부, 2026-07-26, ⚠️ 미배포)** —
+- **색상 드리프트 정리 — 지각적 중복 병합 (2026-07-26, ⚠️ 미배포·미커밋)** —
+  "~~컴포넌트 내부 하드코딩 hex 토큰화~~ → **2026-07-26 재정의 후 완료**(지각적 중복 병합)" 항목을 착수했는데, 측정해 보니 **전제가 틀렸다**:
+  hex 584개 중 토큰 값과 정확히 일치하는 건 46개뿐이고 나머지는 일회성 색이었다
+  (booking.css만 distinct 140개). 전부 토큰화하면 "한 번만 쓰는 토큰 140개"가 되어 드리프트가 줄지 않는다.
+  - 대신 **CIELAB ΔE < 1.6(육안 식별 한계 ~2.3 아래) 군집**을 찾았다 → distinct 332개 중 **62개 군집**.
+    최대 군집은 오프화이트 7종(`#f4f1ea`…`#f8f5ef`)이 4개 스타일시트에서 **54회**. 구분이 불가능한데
+    각각 따로 관리되고 있었다 — 앞서 발견한 `#f7f1e7` vs `#f7f1e6` 와 같은 종류의 누적 드리프트
+  - **기존 토큰 값이 이미 멤버인 군집만** 그 토큰으로 수렴(값을 새로 발명하지 않음) +
+    최대 군집에만 `--sm-surface-tint: #f6f3ed` 신설. **189곳 치환 / 6파일**, distinct hex **332 → 304**
+  - 🔴 **회귀 검증**: 색을 미세하게 움직였으므로 대비가 4.5 아래로 떨어질 수 있다.
+    전 페이지 재감사 결과 booking 6p·portfolio 실질 위반 **0**.
+    select v2 에서 4건이 잡혔으나 **각 요소를 병합 전 이웃값들에 대해 계산해 전부 `bestPreMerge < 기준`
+    임을 확인 → 병합이 원인이 아닌 기존 문제**(오히려 병합 후 수치가 조금 개선됨)
+  - 그 4건은 **갤러리가 렌더된 상태에서만 보이던 것**으로 이전 감사가 놓친 것 — 함께 수정:
+    ① select v2 비활성 버튼 1.91 → 3.32(booking 과 동일 기준) ② `<small>` 중첩으로 **8.33px**까지
+    줄던 것 → 절대 하한 11px ③ `.review-note` 4.16 → 4.8 ④ 보정요청 힌트 `#9a6a3a` 4.22 → 4.8
+    ⑤ preview 배너의 팔레트 밖 `#f59e0b`(Tailwind amber) 흰 글자 2.15 → `--sm-warn-bg`+`--sm-text`
+  - `.cell-star`(사진 위 별 아이콘)는 배경이 이미지라 이 방식으로 대비 측정 불가 — **오탐으로 분류**.
+    다만 34% 흰색이라 밝은 사진에서 안 보일 수 있다(라이트박스 별은 앞서 0.3→0.46 로 올림) → 후속 검토 대상
+  - 남은 60개 군집은 자동 병합하지 않았다 — 정식 값 선택이 판단을 요하고 픽셀이 바뀐다. 목록은 재현 가능:
+    ΔE<1.6 군집 스크립트로 언제든 다시 뽑을 수 있다
+
+- **select v1 삭제 (2026-07-26, ⚠️ 미배포·미커밋)** —
+  `select/{index.html,select.js,select.css,select.min.js,select.min.css,test.html,gallery-demo.html}` 제거
+  (`git rm` 사용 — 히스토리에서 복구 가능). 빈 `select/shared/` 디렉토리도 제거.
+  - 🔴 **`ops-checklist` §48이 "v1 삭제 불가"로 막아둔 항목이었다.** 이유: `normalizeSelectPageVersion_`이
+    `'v2'`가 아닌 **모든 값(빈 셀 포함)을 `classic`으로** 판정하고, `buildSelectSessionUrl_`이 classic 을
+    루트 `/?id=`로 링크한다(10곳). `페이지버전` 컬럼 생성 이전 세션은 전부 빈 값 → **파일만 지우면
+    고객 메일의 기존 링크가 404**
+  - **해결: 마이그레이션 대신 리다이렉트.** `select/netlify.toml` 에 `/`·`/index.html` → `/v2/`
+    (301, `force=true`). Netlify 가 쿼리스트링을 전달하므로 `?id=` 가 살아서 v2 로 착지한다.
+    → **Apps Script 수정 불필요** (CLAUDE.md 의 200 버전 한계를 건드리지 않음)
+  - 체크리스트가 전제로 걸었던 "여권발송 v2 전환"은 불필요함을 확인:
+    `sendPassportPhotosAdmin`의 `pageVersion:'classic'` 행은 `상태='최종작업완료'` **기록용**이고
+    셀렉 링크를 발송하지 않는다(코드 주석 "셀렉 생략") → 고객에게 v1 링크가 나간 적 없음
+  - 헬스체크 `select-frontend`(Code.gs~2799)는 `followRedirects:true` 이고 v2 본문이 판정 조건
+    (`select.min.js` / `Studio mean` / `셀렉`)을 모두 만족 → 통과
+  - `package.json` 의 죽은 타깃 `build:select`·`build:css:select` 제거,
+    `build:select-site` = `build:select:v2 && build:css:select:v2 && stamp`.
+    스탬프 대상 81참조/40페이지 → **75참조/37페이지**, 잔여 참조 0
+  - 문서 갱신: `ops-checklist` §48(삭제 불가 → 삭제 완료) · §47(가격 정의처 **5곳 → 4곳**,
+    라벨→SKU 역추론 2곳 → 1곳) · `handoff-print-explainer` · `current-status`
+  - ⚠️ **배포 후 확인 필요**: 리다이렉트는 Netlify 기능이라 로컬에서 검증 불가.
+    배포 직후 `select.studio-mean.com/?id=<실제세션ID>` 가 `/v2/?id=...` 로 301 되는지 1회 확인
+  - 선택 정리(불필요, 미실행): `normalizeSelectPageVersion_` 기본값을 `v2` 로 뒤집으면
+    루트 링크 자체가 더는 생성되지 않는다. 리다이렉트가 있으므로 기능상 차이는 없다
+
+- **포트폴리오 진입 모션 (2026-07-26, ⚠️ 미배포·미커밋)** —
+  CSS transition 4개(전부 hover)·JS 진입 애니메이션 0으로, 사진 52장이 한 블록으로 들어오고 있었다.
+  - **JS를 쓰지 않았다.** IntersectionObserver 방식을 만들었다가 폐기 —
+    가시성을 스크립트에 의존시키면 옵저버가 한 프레임도 못 받는 상황에서 **사진 52장이 아예 안 보인다.**
+    갤러리는 `animation-timeline: view()`(`@supports` 게이트, 스크롤 구동, JS 0),
+    페이지 로드는 `@starting-style` + transition. 기능 미지원 브라우저는 최종 상태로 그냥 렌더된다
+  - 🔴 **`opacity`는 애니메이션하지 않는다 — 작업 중 실측으로 확인한 실패 모드**:
+    `animation-fill-mode: both` + `from{opacity:0}` 로 만들었을 때 렌더링이 정지된 환경에서
+    **h1과 카드 52장이 opacity 0에 영구 고정**됐다. `@starting-style` + opacity 전환도 동일.
+    그래서 **transform만** 애니메이션한다 → 최악의 경우 "18px 아래에 머문다"이고 "안 보인다"는 없다
+  - 검증(모션이 정지된 환경에서 의도적으로 측정): 검사 요소 **65개 중 안 보이는 것 0개**,
+    index(데스크톱/모바일)·랜딩·법적고지·about·en 랜딩 전 유형에서 invisible 0 / 가로스크롤 0.
+    적용 대상 100%에 모션 붙음
+  - 히어로 스태거: eyebrow 0.05s → h1 0.14s → visual 0.2s → text 0.26s → actions 0.36s → meta 0.46s.
+    `.lp-hero`·`.page-header`까지 확장해 JS 없는 랜딩 8개 페이지도 동일하게 적용
+  - ⚠️ **이 환경의 한계**: 브라우저 패널이 실제로 합성(composite)되지 않아 IntersectionObserver도
+    CSS transition도 발화하지 않는다. 화면 밖 iframe(`left:-9999px`)은 렌더링이 중단돼 측정 자체가 무효였다.
+    → 애니메이션이 "실제로 재생되는지"는 여기서 검증할 수 없다. 대신 **재생되지 않아도 안전한지**를 검증했다.
+    실제 브라우저에서 모션이 의도대로 보이는지는 오너 확인 필요
+
+- **포트폴리오 모바일 내비·히어로 개선 (2026-07-26, ⚠️ 미배포·미커밋)** —
+  375×812 실측 기준 sticky 헤더가 **164px = 화면의 20.2%를 스크롤 내내 점유**하고 있었고,
+  내비 링크 9개 전부가 44px 미달(언어 코드는 15×18px)이었다.
+  - **햄버거를 넣지 않았다 — 이유**: 헤더를 공유하는 20개 페이지 중 **8개(frankfurt-snap /
+    germany-wedding / passport-photo × de·en·ko)가 JS를 전혀 로드하지 않는다.** 햄버거는
+    (a) 그 페이지들에 스크립트를 새로 넣거나 (b) `<details>` 기반 취약한 CSS 디스클로저를 써야 하는데,
+    둘 다 얻는 것보다 비용이 크다. 대신 **모바일에서 sticky 해제** → 영구 점유 **20.2% → 0%**
+    (스크롤하면 사라지고, 상단과 푸터에서 접근 가능)
+  - 탭 타깃: `.site-nav a { min-height/min-width }` — 모바일 44px, 데스크톱 32px.
+    언어 링크 3개는 `<span class="nav-langs">`로 묶고 구분선 추가(20개 중 18개 파일; 법적고지 2개는
+    언어 링크가 없는 축약 내비라 대상 아님). 겹침 0, 가로스크롤 0
+  - **모바일 히어로**: 첫 사진이 **711px** 지점에 있어 812px 화면에서 사진이 접힘 아래였다.
+    `grid-template-areas`를 visual→copy로 재배치(**DOM 순서는 유지** → 스크린리더·SEO 읽기 순서 불변),
+    히어로 서포트 썸네일 2장은 모바일에서 숨김(아래 갤러리에 같은 카테고리가 있다).
+    결과: 사진 242px·제목 661px 모두 첫 화면, CTA 1426px → 962px
+  - 데스크톱 회귀 없음(1280px iframe 실측): 헤더 108px sticky·내비 1행·24px 미달 0.
+    랜딩/법적고지/about/ko 페이지도 정상
+  - ⚠️ **이전 보고 정정 — 포트폴리오 이미지 `width`/`height` 누락은 CLS 문제가 아니었다.**
+    갤러리가 `grid-auto-rows: 127.5px` + `grid-row: span N`으로 카드 높이를 고정하므로 이미지가
+    레이아웃을 밀지 못한다. PerformanceObserver로 실측한 **CLS = 0** (시프트 이벤트 0건,
+    이미지 61장 중 59장에 dims 없음). 해당 항목은 로드맵에서 제거
+
+- **셀렉 페이지 3개국어화 — 완료 (2026-07-26, ⚠️ 미배포·미커밋)** —
   독일어로 예약한 고객이 셀렉 단계에서 한국어 벽을 만나던 문제. **백엔드 변경 불필요**:
   `getSelectSession`이 이미 `lang`(셀렉 시트 `언어` 컬럼)을 내려주고 있었고 프론트만 무시하던 상태였음.
   - 신규 `frontend/select/v2/i18n.js` — ko/en/de 사전. 마크업 규약:
@@ -98,16 +187,31 @@ Updated: 2026-07-16 Europe/Berlin
     `getPrintTierCopy/getPrintTierName/getPrintMicrocopy/getProductIncludedPrintSummary`.
     두 모듈 모두 ko/en/de를 이미 지원하는데 셀렉만 'ko'를 하드코딩하고 있었음
     (`print-tier-copy.js:225`의 "셀렉은 KO 전용" 주석은 이제 사실이 아님 — 정리 대상)
-  - 🔴 **남은 범위**: JS 렌더 함수의 한국어 **139개**. 정적 마크업 누출은 **0** (실측 확인).
-    EN 모드에서 패널별 잔여 한국어 텍스트 노드: step0 **0** · step1 40 · step2 25 · step3 19 · step4 7 · success **0**
-    — 전부 JS가 그리는 영역(갤러리 셀/상태, 엔트리 카드, 인화 항목·마감, 포토카드 박스, 보정범위 안내, 리뷰 라인)
+  - **JS 렌더 함수까지 전부 마이그레이션 완료** — 사전 키 ko/en/de **329개 파리티 일치**.
+    갤러리(셀·상태·필터·페이징·실패/재시도), 보정 엔트리 카드, 인화 항목·용지·가장자리 마감,
+    포토카드 박스(모드 3종+메모), 스냅 보정범위 안내, 리뷰 라인, 배너·검증 메시지, 제출 상태 전부
+  - **실측 검증**: DE·EN 모드에서 `document.body` 전체 텍스트 노드 스캔 결과 **한국어 0건**, JS 에러 0건,
+    한국어 모드 정상. select.js에 남은 한글 13개는 전부 내부 데이터(`마이리얼트립` 매처, 목 세션,
+    `PRINT_OPTIONS`의 ko 폴백 라벨)로 화면에 나오지 않음
+  - ⚠️ **처음 "0건"으로 보고했던 것은 목 세션 기본 경로만 본 결과였음** — 포토카드 박스·스냅 안내·
+    픽업 슬롯·검증 알림은 조건부 렌더라 스캔에 안 잡혔다. 숨은 패널까지 포함해 재측정 후 마무리
+  - `PRINT_OPTIONS` 라벨을 `shared/print-catalog.js`(이미 ko/en/de 보유)에서 가져오도록 변경 —
+    **가격(billed value)은 select.js에 그대로 두고 이름만** 공유 소스로. `PHOTOCARD_MODE_LABELS`도
+    wire 값(`retouched`/`mixed`/`original`)과 표시 라벨을 분리
+  - 🔴 **쿠키 동의 배너가 3개 사이트 전부 한국어로 고정돼 있었음** (기존 버그).
+    `site-analytics.js`는 de/en/ko를 이미 갖고 있었지만 **스크립트 로드 시점의 `<html lang>`(정적 `ko`)을
+    한 번만 캡처**했다. 언어를 지연 조회하도록 바꾸고 `studiomean:langchange` 이벤트로 재적용 —
+    booking·select 양쪽에서 dispatch. **독일 방문자가 한국어 쿠키 동의를 받던 GDPR 이슈 해소**
   - 🔴 **작업 중 발견한 기존 버그 (제 변경 아님, 커밋된 코드에도 존재)**: `boot()`이 384행에서
     호출되는데 `RETOUCH_SCOPE_LIMITED_GROUPS`는 975행 선언 → 모듈 평가 중 boot이 돌아 상수가 미초기화.
     고객 경로는 `await fetchSelectSession`이 먼저 양보해 우연히 살아있었고 **`?preview=1`은 await가 없어
     항상 터지고 있었음**(`Cannot read properties of undefined (reading 'some')`).
     `queueMicrotask(boot)`으로 수정 — 이제 preview도 정상 부팅
   - 독일어는 오너 검토 대기 대신 직접 재작성(2026-07-26 지시): 관청식 어휘·어색한 직역 16곳 교체
-    (`Einwilligung zur Veröffentlichung`, `Schriftzüge`, `Erhalt der Abzüge`, 장문 분할 등)
+    (`Einwilligung zur Veröffentlichung`, `Schriftzüge`, `Erhalt der Abzüge`, `etwaig`→평문, 장문 분할).
+    Sie-형 유지, 명사화 과다 표현 정리
+  - **오너 확인 권장**: 실제 세션 링크(`?id=`)를 독일어 예약 건으로 한 번 열어 확인.
+    preview 모드는 목 데이터라 포토카드/스냅 분기가 기본값으로만 렌더된다
   - v1(`select/select.js`)은 i18n 미적용 — 삭제/리다이렉트 대상이라 의도적으로 제외
 
 - **프론트엔드 디자인·접근성 점검 패스 (2026-07-26, ⚠️ 미배포 · 커밋 전)** —
@@ -135,8 +239,9 @@ Updated: 2026-07-16 Europe/Berlin
     `outline:none` 3곳에 `:focus-visible` 대체 추가, `color-scheme` 9/9, `prefers-reduced-motion` 전역화,
     팔레트 밖 `#94a3b8`(Tailwind slate) 인라인 4곳 제거
   - **남은 것**: 셀렉 3개국어화(한글 문자열 134개 하드코딩 + `lang:'ko'`), 포트폴리오 모바일 햄버거
-    (sticky 헤더 164px = 화면 20%, nav 9개 2줄 랩), 포트폴리오 스크롤 리빌 모션(transition 4개뿐)·이미지 38장
-    `width`/`height` 누락(CLS), select v1 삭제 또는 `/v2/` 리다이렉트, 컴포넌트 내부 하드코딩 hex 토큰화
+    (sticky 헤더 164px = 화면 20%, nav 9개 2줄 랩 → **2026-07-26 해결**), ~~포트폴리오 스크롤 리빌 모션~~
+    → **2026-07-26 해결**, ~~이미지 width/height 누락(CLS)~~ → **오측정, CLS=0 확인**,
+    ~~select v1 삭제 또는 `/v2/` 리다이렉트~~ → **2026-07-26 완료**, ~~컴포넌트 내부 하드코딩 hex 토큰화~~ → **2026-07-26 재정의 후 완료**(지각적 중복 병합)
   - ⚠️ **커밋 시 주의**: 작업 트리에 병행 중인 print-tier 작업(`booking.js` 신규 import, `select*.js`,
     `shared/print-catalog.js`, `shared/print-tier-copy.js`)이 섞여 있음. 이 패스의 변경만 분리 필요
 

@@ -22,6 +22,7 @@ import {
   getPrintTierName
 } from '../../shared/print-tier-copy.js';
 import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../shared/utils.js';
+import { PRINT_CATALOG, printCatalogName } from '../../shared/print-catalog.js';
 import { getCopy, normalizeLang } from './i18n.js';
 
 // ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
@@ -53,11 +54,19 @@ function printAspect(printId) {
   return s[0] / s[1]; // 세로 기준 w/h
 }
 
-const PHOTOCARD_MODE_LABELS = {
-  retouched: '양면 · 보정본 2장',
-  mixed: '양면 · 보정본 1장 + 원본 1장',
-  original: '양면 · 원본 2장'
-};
+/* Keys are the wire values sent to the server; the visible label and help text
+   are looked up per language in i18n.js. */
+const PHOTOCARD_MODES = ['retouched', 'mixed', 'original'];
+
+function photocardModeLabel(mode) {
+  const c = copy();
+  return mode === 'mixed' ? c.pcModeMixed : mode === 'original' ? c.pcModeOriginal : c.pcModeRetouched;
+}
+
+function photocardModeHelp(mode) {
+  const c = copy();
+  return mode === 'mixed' ? c.pcHintMixed : mode === 'original' ? c.pcHintOriginal : c.pcHintRetouched;
+}
 
 // 보정 선택과 출력 선택을 분리한 모델. 서버에 이 플래그를 함께 보낸다.
 const SELECT_PRINT_MODEL = 'decoupled';
@@ -159,7 +168,7 @@ function getPrintQuotaSummary() {
   });
   return quota.map((q) => ({
     id: q.id,
-    label: getPrintOption(q.id).label,
+    label: printOptionLabel(getPrintOption(q.id)),
     total: Number(q.qty) || 0,
     used: used[q.id] || 0,
     remaining: Math.max(0, (Number(q.qty) || 0) - (used[q.id] || 0))
@@ -337,6 +346,9 @@ function applyCopy() {
   const c = copy();
   document.documentElement.lang = state.lang;
   document.title = c.docTitle;
+  /* site-analytics.js renders the cookie prompt before the session language is
+     known, so tell it to re-apply its copy. */
+  document.dispatchEvent(new CustomEvent('studiomean:langchange'));
 
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const value = c[el.dataset.i18n];
@@ -398,6 +410,20 @@ function rerenderForLang() {
   updateSubmitState();
   syncDeliveryUi();
   renderStepWarnings();
+  renderServiceCutNotice();
+  renderRetouchScopeNotice();
+  /* The gallery grid and its status line are built once when photos arrive,
+     so they need an explicit redraw on a language change. */
+  if (state.gallery.photos.length) {
+    renderGallery();
+    renderGalleryCounts();
+    updateGalleryLoadingNotice({ done: !!state.gallery.fullLoaded });
+  }
+  /* Skip while a submit is in flight — the button then shows a progress label
+     that onSubmit owns. updateSubmitState() re-derives disabled separately. */
+  if (els.submitBtn && !els.submitBtn.disabled) {
+    els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+  }
 }
 
 function wireLanguageSwitcher() {
@@ -440,7 +466,7 @@ async function boot() {
     return;
   }
   if (!state.sessionId) {
-    showError('세션 ID가 없습니다. URL의 `?id=` 값을 확인해 주세요.');
+    showError(copy().errNoSessionId);
     return;
   }
   try {
@@ -459,7 +485,7 @@ async function boot() {
     showApp();
     // 출력 후 픽업예약 흐름: 제출 단계에서 달력을 더 이상 열지 않는다.
     // (구흐름에서 이미 잡힌 픽업일시는 state에 하이드레이션되어 안내문에 표시만 한다)
-    setBanner(state.editMode ? '기존 제출 내용을 불러왔습니다. 수정 후 다시 제출할 수 있습니다.' : '셀렉 세션을 불러왔습니다.', 'success');
+    setBanner(state.editMode ? copy().bannerLoadedEdit : copy().bannerLoaded, 'success');
   } catch (error) {
     console.error(error);
     showError(error.message);
@@ -592,8 +618,18 @@ function getSessionProductInput(session = state.session) {
   };
 }
 
+/* Prices live in PRINT_OPTIONS above (billed values — do not move them).
+   Display names come from shared/print-catalog.js, which already carries
+   ko/en/de, so the label follows the customer's language. */
+function printOptionLabel(option) {
+  const item = PRINT_CATALOG.find((entry) => entry.id === option.id);
+  return (item && printCatalogName(item, state.lang)) || option.label;
+}
+
 function getSelectablePrintOptions() {
-  return PRINT_OPTIONS.filter((option) => option.id !== PRINT_NONE_ID);
+  return PRINT_OPTIONS
+    .filter((option) => option.id !== PRINT_NONE_ID)
+    .map((option) => ({ ...option, label: printOptionLabel(option) }));
 }
 
 function getSessionIncludedPrintQuota(session = state.session) {
@@ -658,10 +694,11 @@ function syncStudioIncludedA4Default() {
 function renderStudioIncludedA4Notice() {
   const includedSummary = getIncludedPrintSummary();
   if (!includedSummary) return '';
+  const c = copy();
   return `
     <div class="included-print-callout">
-      <strong>기본 제공 출력물: ${escapeHtml(includedSummary)}</strong>
-      <span>상품에 포함된 출력 사이즈가 보정 사진 목록에 미리 설정되어 있습니다. 다른 사진으로 바꾸려면 해당 사진의 인화 사이즈를 조정해 주세요.</span>
+      <strong>${escapeHtml(c.includedPrintStrong(includedSummary))}</strong>
+      <span>${escapeHtml(c.includedPrintNote)}</span>
     </div>
   `;
 }
@@ -719,7 +756,7 @@ function defaultPhotocardSelection() {
 function normalizePhotocardSelection(value) {
   const fallback = defaultPhotocardSelection();
   if (!value || typeof value !== 'object') return fallback;
-  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(String(value.mode || ''))
+  const mode = PHOTOCARD_MODES.includes(String(value.mode || ''))
     ? String(value.mode)
     : fallback.mode;
   return {
@@ -777,12 +814,12 @@ function getIncludedPhotocardCount() {
 }
 
 function getPhotocardModeLabel(mode = state.photocard.mode) {
-  return PHOTOCARD_MODE_LABELS[mode] || PHOTOCARD_MODE_LABELS.retouched;
+  return photocardModeLabel(mode);
 }
 
 function getPhotocardPayload() {
   if (!hasIncludedPhotocard()) return null;
-  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(state.photocard.mode)
+  const mode = PHOTOCARD_MODES.includes(state.photocard.mode)
     ? state.photocard.mode
     : 'retouched';
   return {
@@ -810,10 +847,10 @@ function getPhotocardPrintFallbackPayload() {
   const payload = getPhotocardPayload();
   if (!payload || state.session?.photocardSupported === true) return null;
   return {
-    photoNum: `앞면 ${payload.frontNum || '-'} / 뒷면 ${payload.backNum || '-'}`,
+    photoNum: copy().pcPhotoNumField(payload.frontNum || '-', payload.backNum || '-'),
     printId: 'included_photocard',
     qty: payload.qty,
-    label: `포함 양면 포토카드 (${payload.modeLabel})`,
+    label: copy().pcPrintLabel(payload.modeLabel),
     price: 0,
     isRetouched: false,
     includedPhotocard: true,
@@ -825,7 +862,7 @@ function getPhotocardWarning() {
   if (!hasIncludedPhotocard()) return '';
   const payload = getPhotocardPayload();
   if (!payload.frontNum || !payload.backNum) {
-    return '포토카드 앞면과 뒷면 사진 번호를 모두 입력해 주세요.';
+    return copy().errPhotocardSides;
   }
   return '';
 }
@@ -833,9 +870,9 @@ function getPhotocardWarning() {
 function getPhotocardReviewText() {
   const payload = getPhotocardPayload();
   if (!payload) return '';
-  const countText = payload.qty > 1 ? ` · ${payload.qty}장 제작` : '';
+  const countText = payload.qty > 1 ? ` · ${copy().pcCount(payload.qty)}` : '';
   const noteText = payload.note ? ` · ${payload.note}` : '';
-  return `${payload.modeLabel}${countText} / 앞면 ${payload.frontNum || '-'} · 뒷면 ${payload.backNum || '-'}${noteText}`;
+  return copy().pcReview(payload.modeLabel, countText, payload.frontNum || '-', payload.backNum || '-', noteText);
 }
 
 function normalizeMailAddressText(value) {
@@ -1010,30 +1047,22 @@ function isRetouchScopeLimited() {
 }
 
 function retouchScopeNoticeHtml(compact) {
+  const c = copy();
+  const items = (list) => list.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
   return `
-    <div class="detail-title">✂️ 보정 범위 안내 (야외/홈스냅·여행스냅)</div>
-    <div class="guide-copy">스냅 촬영의 기본 보정은 <b>간단 보정</b> 기준이에요.</div>
+    <div class="detail-title">${escapeHtml(c.scopeTitle)}</div>
+    <div class="guide-copy">${c.scopeLeadHtml}</div>
     <div class="guide-examples">
       <div class="guide-ex good">
-        <div class="guide-ex-head">기본 보정에 포함</div>
-        <ul>
-          <li>피부 보정 · 잡티 정리 · 미백(피부 톤)</li>
-          <li>잔머리 정리</li>
-          <li>옷 라인(실루엣) 정리</li>
-          <li>전체 색감 · 밝기 보정</li>
-        </ul>
+        <div class="guide-ex-head">${escapeHtml(c.scopeInHead)}</div>
+        <ul>${items(c.scopeIn)}</ul>
       </div>
       <div class="guide-ex bad">
-        <div class="guide-ex-head">기본 범위에서 제외 (디테일 작업)</div>
-        <ul>
-          <li>신체 비율·체형 보정(합성)</li>
-          <li>하늘/배경 합성·교체</li>
-          <li>사람 제거(합성) — 행인·배경 인물 지우기</li>
-          <li>의상 주름 제거 등 디테일 리터칭</li>
-        </ul>
+        <div class="guide-ex-head">${escapeHtml(c.scopeOutHead)}</div>
+        <ul>${items(c.scopeOut)}</ul>
       </div>
     </div>
-    ${compact ? '' : '<div class="guide-copy lettering-note">제외 항목이 꼭 필요하시면 요청사항에 적어 주세요 — <b>가능 여부와 추가 비용을 접수 후 개별 안내</b>드립니다.</div>'}
+    ${compact ? '' : `<div class="guide-copy lettering-note">${c.scopeFootHtml}</div>`}
   `;
 }
 
@@ -1051,16 +1080,15 @@ function renderRetouchScopeNotice() {
   if (limited) {
     document.querySelectorAll('.ex-good-wrinkle').forEach((li) => {
       li.textContent = li.textContent.includes('0031')
-        ? '“0031번: 바람에 날린 잔머리를 정리하고, 전체 색감을 조금 따뜻하게 맞춰 주세요.”'
-        : '“잔머리를 정리하고, 전체 색감을 따뜻하게 맞춰 주세요.”';
+        ? copy().scopeSwapGood1
+        : copy().scopeSwapGood2;
     });
   }
 }
 
 function retouchNotePlaceholder() {
-  return isRetouchScopeLimited()
-    ? '예: 피부 잡티 정리와 미백(원래 피부결 유지). / 잔머리 정리. / 전체 색감을 따뜻하게.'
-    : '예: 턱선을 살짝만 갸름하게 정리(원래 얼굴형 유지). / 이마 번들거림 줄이고 피부 톤 고르게(점·주근깨 살리기). / 어깨·가슴 옷 주름 펴기(실루엣 유지).';
+  const c = copy();
+  return isRetouchScopeLimited() ? c.notePlaceholderLimited : c.notePlaceholderFull;
 }
 
 function syncRetouchScopeHint(textarea) {
@@ -1072,7 +1100,7 @@ function syncRetouchScopeHint(textarea) {
   if (flagged && !hint) {
     hint = document.createElement('div');
     hint.className = 'scope-hint';
-    hint.textContent = '⚠️ 신체·하늘 합성, 사람 제거(합성), 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.';
+    hint.textContent = copy().scopeHint;
     row.appendChild(hint);
   } else if (!flagged && hint) {
     hint.remove();
@@ -1108,7 +1136,8 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다.<br>또한 서비스 컷 사진마다 <b>시그니처 10×15cm 인화 1장이 무료로 포함</b>돼요. 다음 <b>출력 선택</b> 단계에서 같은 사진 번호로 인화를 주문하면 10×15는 무료, 더 큰 사이즈는 <b>차액만</b> 청구됩니다.</div>`;
+  const c = copy();
+  box.innerHTML = `<div class="service-cut-title">${escapeHtml(c.serviceCutTitle(count))}</div><div class="service-cut-copy">${c.serviceCutCopyHtml}</div>`;
 }
 
 function updateMarketingCopy() {
@@ -1319,8 +1348,8 @@ async function loadGallery(options = {}) {
       state.gallery.fullLoaded = !hasMore;
       updateGalleryLoadingNotice({ done: !hasMore });
       if (!hasMore) break;
-      if (!nextCursor) throw new Error('다음 사진 묶음 위치를 확인할 수 없습니다. 다시 불러와 주세요.');
-      if (seenCursors.has(nextCursor)) throw new Error('같은 사진 묶음이 반복되어 갤러리 로딩을 중단했습니다. 다시 불러와 주세요.');
+      if (!nextCursor) throw new Error(copy().errCursorMissing);
+      if (seenCursors.has(nextCursor)) throw new Error(copy().errCursorRepeat);
       seenCursors.add(nextCursor);
       cursor = nextCursor;
       await waitForGalleryBatchDelay();
@@ -1330,8 +1359,8 @@ async function loadGallery(options = {}) {
     if (els.galleryLoadingHint) {
       els.galleryLoadingHint.style.display = '';
       els.galleryLoadingHint.innerHTML = `
-        <div>갤러리 불러오기 실패: ${escapeHtml(err.message || err)}</div>
-        <button type="button" class="gallery-more" data-gallery-retry style="margin-top:12px;">다시 불러오기</button>
+        <div>${escapeHtml(copy().errGalleryLoadHtml(err.message || err))}</div>
+        <button type="button" class="gallery-more" data-gallery-retry style="margin-top:12px;">${escapeHtml(copy().galleryRetry)}</button>
       `;
       els.galleryLoadingHint.querySelector('[data-gallery-retry]')?.addEventListener('click', () => {
         state.gallery.loaded = false;
@@ -1339,7 +1368,7 @@ async function loadGallery(options = {}) {
         loadGallery({ force: true });
       });
     }
-    if (els.galleryStatus) els.galleryStatus.textContent = '불러오기 실패';
+    if (els.galleryStatus) els.galleryStatus.textContent = copy().galleryLoadFailedShort;
   } finally {
     state.gallery.loading = false;
   }
@@ -1419,12 +1448,13 @@ function compareGalleryPhotos(a, b) {
 function updateGalleryLoadingNotice(options = {}) {
   const done = !!options.done;
   const count = state.gallery.photos.length;
+  const c = copy();
   if (els.galleryStatus) {
     els.galleryStatus.textContent = done
-      ? `전체 사진 ${count}장을 모두 불러왔습니다.`
+      ? c.galleryAllLoaded(count)
       : count
-        ? `사진 ${count}장 불러오는 중...`
-        : '전체 사진 불러오는 중...';
+        ? c.galleryLoadingCount(count)
+        : c.galleryLoadingStart;
   }
   if (!els.galleryLoadingHint) return;
   if (done) {
@@ -1433,8 +1463,8 @@ function updateGalleryLoadingNotice(options = {}) {
   }
   els.galleryLoadingHint.style.display = '';
   els.galleryLoadingHint.innerHTML = count
-    ? `고객 폴더 전체 사진을 300장씩 자동으로 계속 불러오는 중입니다. 현재 ${escapeHtml(String(count))}장을 먼저 표시하고 있습니다.`
-    : '고객 폴더 전체 사진을 300장씩 자동으로 불러오는 중입니다. 하위 폴더와 사진 수에 따라 잠시 걸릴 수 있습니다.';
+    ? escapeHtml(c.galleryHintWithCount(count))
+    : escapeHtml(c.galleryHintStart);
 }
 
 function waitForGalleryBatchDelay() {
@@ -1587,11 +1617,11 @@ function renderGallery() {
   const visible = list.slice(0, visibleCount);
   const html = visible.map((p, idx) => galleryCellHtml(p, idx)).join('');
   const moreHtml = visibleCount < list.length
-    ? `<button type="button" class="gallery-more" data-gallery-more>사진 더 보기 · ${visibleCount} / ${list.length}</button>`
+    ? `<button type="button" class="gallery-more" data-gallery-more>${escapeHtml(copy().galleryMore(visibleCount, list.length))}</button>`
     : '';
   els.galleryGrid.innerHTML = html
     ? `${html}${moreHtml}`
-    : '<div class="empty-state" style="grid-column:1/-1;">표시할 사진이 없습니다.</div>';
+    : `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(copy().galleryNoPhotos)}</div>`;
   bindGalleryCellEvents();
   renderGalleryCounts();
 }
@@ -1603,11 +1633,12 @@ function galleryCellHtml(p, idx) {
   const focused = idx === state.gallery.focusIndex ? ' focused' : '';
   const layoutClass = galleryLayoutClass(p, idx);
   const sizes = galleryImageSizes(layoutClass);
-  const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="별 ${i}">★</button>`).join('');
+  const c = copy();
+  const starsHtml = [1, 2, 3, 4, 5].map((i) => `<button type="button" class="cell-star${i <= star ? ' on' : ''}" data-set-star="${i}" data-key="${escapeHtml(key)}" aria-label="${escapeHtml(c['lbStar' + i])}">★</button>`).join('');
   return `<div class="gallery-cell ${layoutClass}${selected}${focused}" data-gallery-key="${escapeHtml(key)}" data-gallery-idx="${idx}" title="${escapeHtml(p.name)}">
       <img src="${escapeHtml(p.thumb)}" srcset="${escapeHtml(p.thumbSet || '')}" sizes="${escapeHtml(sizes)}" data-full="${escapeHtml(p.full || p.thumb)}" data-fallback="${escapeHtml(p.fallback || '')}" alt="" loading="lazy" decoding="async" fetchpriority="${idx < 8 ? 'high' : 'low'}" referrerpolicy="no-referrer">
-      <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기 (Space)">보기</button>
-      ${star > 0 ? `<div class="cell-star-badge">${star}점</div>` : ''}
+      <button type="button" class="gallery-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="${escapeHtml(c.galleryZoomAria)}" title="${escapeHtml(c.galleryZoomTitle)}">${escapeHtml(c.galleryZoom)}</button>
+      ${star > 0 ? `<div class="cell-star-badge">${escapeHtml(c.starBadge(star))}</div>` : ''}
       <div class="cell-stars">${starsHtml}</div>
       <div class="gallery-name">${escapeHtml(p.name)}</div>
     </div>`;
@@ -1722,13 +1753,14 @@ function renderGalleryCounts() {
   const rated = state.gallery.ratings.size;
   const byStar = [0, 0, 0, 0, 0, 0];
   state.gallery.ratings.forEach((v) => { byStar[v] = (byStar[v] || 0) + 1; });
+  const c = copy();
   if (els.galleryCount) {
-    els.galleryCount.textContent = `${rated} / ${total}장 평점 선택 완료`;
+    els.galleryCount.textContent = c.galleryRatedOf(rated, total);
   }
   if (els.gallerySelectedSummary) {
     els.gallerySelectedSummary.innerHTML = rated
-      ? `<b>현재 평점 분포:</b> 5점 ${byStar[5]}장 · 4점 ${byStar[4]}장 · 3점 ${byStar[3]}장 · 2점 ${byStar[2]}장 · 1점 ${byStar[1]}장 &nbsp;→&nbsp; 다음 단계에서 총 <b>${rated}장</b>이 보정 목록에 자동으로 담깁니다.`
-      : '아직 평점을 준 사진이 없습니다. 마음에 드는 사진에 1~5 숫자키 또는 아래 평점 버튼으로 표시해 주세요.';
+      ? c.galleryDistributionHtml(byStar, rated)
+      : escapeHtml(c.galleryNoRatings);
   }
   // 필터 버튼 카운트 업데이트
   els.starFilters.forEach((btn) => {
@@ -2035,12 +2067,12 @@ function stripExt(name) {
  * ====================================================================== */
 function downloadAllPhotos() {
   if (state.previewMode) {
-    alert('[미리보기] 실제 배포 시 Google Drive 폴더가 새 탭에서 열리고, 우측 상단 메뉴 "다운로드"로 ZIP 일괄 다운로드가 가능합니다.');
+    alert(copy().downloadPreviewAlert);
     return;
   }
   const driveLink = state.session?.driveLink || '';
-  if (!driveLink) { alert('Drive 폴더 링크가 연결되어 있지 않습니다.'); return; }
-  if (!confirm('Google Drive 폴더가 새 탭에서 열립니다.\n우측 상단 메뉴(⋮) → "다운로드"를 누르면 전체 사진이 ZIP으로 다운로드됩니다.\n\n계속할까요?')) return;
+  if (!driveLink) { alert(copy().downloadNoLink); return; }
+  if (!confirm(copy().downloadConfirm)) return;
   globalThis.open(driveLink, '_blank', 'noopener');
 }
 
@@ -2061,12 +2093,13 @@ function addPhotoRow() {
 
 function thumbHtmlForNum(num) {
   const key = stripExt(num);
-  if (!key) return '<div class="entry-thumb placeholder">사진 번호를 입력하면 썸네일이 표시됩니다</div>';
+  const c = copy();
+  if (!key) return `<div class="entry-thumb placeholder">${escapeHtml(c.thumbEmpty)}</div>`;
   const p = state.gallery.byKey.get(key);
-  if (!p) return `<div class="entry-thumb placeholder">갤러리에서 ${escapeHtml(key)}를 찾지 못했습니다 <br><small>(갤러리를 먼저 불러오면 미리보기가 표시됩니다)</small></div>`;
+  if (!p) return `<div class="entry-thumb placeholder">${c.thumbNotFoundHtml(escapeHtml(key))}</div>`;
   return `<div class="entry-thumb" data-zoom-entry="${escapeHtml(key)}">
     <img src="${escapeHtml(p.full || p.thumb)}" data-full="${escapeHtml(p.full || p.thumb)}" alt="${escapeHtml(p.name)}" referrerpolicy="no-referrer" loading="lazy" decoding="async">
-    <button type="button" class="entry-thumb-zoom" data-zoom-entry="${escapeHtml(key)}" aria-label="크게 보기" title="크게 보기">보기</button>
+    <button type="button" class="entry-thumb-zoom" data-zoom-entry="${escapeHtml(key)}" aria-label="${escapeHtml(c.thumbZoomAria)}" title="${escapeHtml(c.thumbZoomAria)}">${escapeHtml(c.thumbZoom)}</button>
   </div>`;
 }
 
@@ -2084,20 +2117,19 @@ function printFinishHtml(index, print) {
   const src = g ? (g.thumb || g.full) : '';
   const inner = src
     ? `<img src="${escapeHtml(src)}" referrerpolicy="no-referrer" alt="" loading="lazy" decoding="async">`
-    : '<span class="finish-preview-empty">사진 번호 입력 시 미리보기</span>';
+    : `<span class="finish-preview-empty">${escapeHtml(copy().finishPreviewEmpty)}</span>`;
+  const c = copy();
   return `
     <div class="field-full finish-field">
-      <label>가장자리 마감</label>
-      <div class="finish-toggle" role="group" aria-label="가장자리 마감 선택">
-        <button type="button" class="finish-opt${finish === 'full' ? ' active' : ''}" data-finish-idx="${index}" data-finish="full">여백 없음 · 풀프레임</button>
-        <button type="button" class="finish-opt${finish === 'border' ? ' active' : ''}" data-finish-idx="${index}" data-finish="border">흰 테두리</button>
+      <label>${escapeHtml(c.finishLabel)}</label>
+      <div class="finish-toggle" role="group" aria-label="${escapeHtml(c.finishGroupAria)}">
+        <button type="button" class="finish-opt${finish === 'full' ? ' active' : ''}" data-finish-idx="${index}" data-finish="full">${escapeHtml(c.finishFull)}</button>
+        <button type="button" class="finish-opt${finish === 'border' ? ' active' : ''}" data-finish-idx="${index}" data-finish="border">${escapeHtml(c.finishBorder)}</button>
       </div>
       <div class="finish-preview finish-${finish}">
         <div class="finish-paper${tierClass}" style="aspect-ratio:${asp.toFixed(4)}">${inner}</div>
       </div>
-      <div class="finish-help">${finish === 'border'
-        ? '사진 둘레에 흰 여백을 남겨 인화합니다.'
-        : '용지 끝까지 사진으로 꽉 채웁니다 (가장자리가 약간 잘릴 수 있어요).'}</div>
+      <div class="finish-help">${escapeHtml(finish === 'border' ? c.finishHelpBorder : c.finishHelpFull)}</div>
       ${tierCopy?.texture ? `<div class="finish-help">${tierCopy.texture}</div>` : ''}
     </div>`;
 }
@@ -2109,43 +2141,37 @@ function renderPhotocardBox() {
     els.photocardBox.innerHTML = '';
     return;
   }
-  const mode = Object.keys(PHOTOCARD_MODE_LABELS).includes(state.photocard.mode)
+  const mode = PHOTOCARD_MODES.includes(state.photocard.mode)
     ? state.photocard.mode
     : 'retouched';
-  const countText = getIncludedPhotocardCount() > 1 ? `${getIncludedPhotocardCount()}장 제작` : '1장 제작';
-  const modeCards = Object.entries(PHOTOCARD_MODE_LABELS).map(([value, label]) => {
-    const help = value === 'retouched'
-      ? '최종 보정본 중 2장을 앞면과 뒷면에 사용합니다.'
-      : value === 'mixed'
-        ? '한 면은 보정본, 한 면은 원본 사진으로 구성합니다.'
-        : '원본 사진 2장을 보정 없이 사용합니다.';
-    return `
+  const c = copy();
+  const countText = c.pcCount(Math.max(1, getIncludedPhotocardCount()));
+  const modeCards = PHOTOCARD_MODES.map((value) => `
       <label class="radio-card photocard-mode-card${mode === value ? ' active' : ''}">
         <input type="radio" name="photocardMode" value="${value}"${mode === value ? ' checked' : ''}>
-        <span><b>${escapeHtml(label)}</b><small>${escapeHtml(help)}</small></span>
+        <span><b>${escapeHtml(photocardModeLabel(value))}</b><small>${escapeHtml(photocardModeHelp(value))}</small></span>
       </label>
-    `;
-  }).join('');
+    `).join('');
 
   els.photocardBox.classList.remove('hidden');
   els.photocardBox.innerHTML = `
-    <div class="detail-title">포함 포토카드 사진 선택</div>
-    <div class="guide-copy">프로모션에 포함된 양면 포토카드입니다. 앞면과 뒷면에 사용할 사진 번호를 입력해 주세요. (${countText})</div>
+    <div class="detail-title">${escapeHtml(c.pcTitle)}</div>
+    <div class="guide-copy">${escapeHtml(c.pcCopy(countText))}</div>
     <div class="photocard-mode-grid">${modeCards}</div>
     <div class="entry-grid photocard-fields">
       <div class="field field-photo">
-        <label>앞면 사진 번호</label>
-        <input data-photocard-side="frontNum" value="${escapeHtml(state.photocard.frontNum || '')}" placeholder="예: IMG_0023 또는 0023">
+        <label>${escapeHtml(c.pcFront)}</label>
+        <input data-photocard-side="frontNum" value="${escapeHtml(state.photocard.frontNum || '')}" placeholder="${escapeHtml(c.entryPhotoNumPlaceholder)}">
         ${thumbHtmlForNum(state.photocard.frontNum || '')}
       </div>
       <div class="field field-photo">
-        <label>뒷면 사진 번호</label>
-        <input data-photocard-side="backNum" value="${escapeHtml(state.photocard.backNum || '')}" placeholder="예: IMG_0045 또는 0045">
+        <label>${escapeHtml(c.pcBack)}</label>
+        <input data-photocard-side="backNum" value="${escapeHtml(state.photocard.backNum || '')}" placeholder="${escapeHtml(c.printPhotoNumPlaceholder)}">
         ${thumbHtmlForNum(state.photocard.backNum || '')}
       </div>
       <div class="field-full">
-        <label>포토카드 메모</label>
-        <textarea data-photocard-note placeholder="방향, 레터링, 보정/원본 면 지정 등 메모가 있으면 적어 주세요.">${escapeHtml(state.photocard.note || '')}</textarea>
+        <label>${escapeHtml(c.pcNote)}</label>
+        <textarea data-photocard-note placeholder="${escapeHtml(c.pcNotePlaceholder)}">${escapeHtml(state.photocard.note || '')}</textarea>
       </div>
     </div>
   `;
@@ -2194,9 +2220,10 @@ function wirePhotocardZoom() {
 }
 
 function renderPhotos() {
-  const retouchIntro = `<div class="included-print-callout"><strong>보정 선택</strong><span>보정할 사진과 요청사항만 선택하세요. 출력물은 다음 단계에서 따로 고르며, 보정과 다른 사진도 출력할 수 있습니다.</span></div>`;
+  const c = copy();
+  const retouchIntro = `<div class="included-print-callout"><strong>${escapeHtml(c.retouchIntroTitle)}</strong><span>${escapeHtml(c.retouchIntroCopy)}</span></div>`;
   if (!state.photos.length) {
-    els.photoList.innerHTML = `${retouchIntro}<div class="empty-state">아직 선택된 보정 사진이 없습니다. 1차 셀렉에서 별점을 준 사진이 이곳에 자동으로 채워지거나, 아래 버튼으로 직접 추가할 수 있습니다.</div>`;
+    els.photoList.innerHTML = `${retouchIntro}<div class="empty-state">${escapeHtml(c.retouchEmpty)}</div>`;
     return;
   }
   const retouchPrice = Number(state.session?.retouchPrice || 0);
@@ -2205,29 +2232,29 @@ function renderPhotos() {
     const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
     const extra = paid ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
     const bonus = photo.isService
-      ? '<span class="service-badge">서비스 컷</span>'
+      ? `<span class="service-badge">${escapeHtml(c.badgeService)}</span>`
       : photo.isBonus
-        ? '<span class="bonus-badge">마케팅 보너스</span>'
+        ? `<span class="bonus-badge">${escapeHtml(c.badgeBonus)}</span>`
         : source === 'gallery'
-          ? '<span class="gallery-badge">갤러리 선택</span>'
-          : '<span class="manual-badge">직접 추가</span>';
+          ? `<span class="gallery-badge">${escapeHtml(c.badgeGallery)}</span>`
+          : `<span class="manual-badge">${escapeHtml(c.badgeManual)}</span>`;
     const key = stripExt(photo.num);
     const star = key ? getStarOf(key) : 0;
-    const starChip = star ? `<span class="entry-star-chip">${star}점</span>` : '';
+    const starChip = star ? `<span class="entry-star-chip">${escapeHtml(c.starBadge(star))}</span>` : '';
     return `
       <div class="entry-card${photo.isService ? ' service' : photo.isBonus ? ' bonus' : ''}">
         <div class="entry-head">
           <div class="entry-label">#${index + 1} ${starChip} ${bonus} ${extra}</div>
-          ${photo.isBonus ? '' : `<button type="button" class="remove-btn" data-remove-photo="${index}">삭제</button>`}
+          ${photo.isBonus ? '' : `<button type="button" class="remove-btn" data-remove-photo="${index}">${escapeHtml(c.entryRemove)}</button>`}
         </div>
         <div class="entry-grid">
           <div class="field field-photo field-full">
-            <label>사진 번호</label>
-            <input data-photo-num="${index}" value="${escapeHtml(photo.num || '')}" placeholder="예: IMG_0023 또는 0023">
+            <label>${escapeHtml(c.entryPhotoNum)}</label>
+            <input data-photo-num="${index}" value="${escapeHtml(photo.num || '')}" placeholder="${escapeHtml(c.entryPhotoNumPlaceholder)}">
             ${thumbHtmlForNum(photo.num || '')}
           </div>
           <div class="field-full">
-            <label>보정 요청사항 <small style="color:#9a6a3a;">(구체적으로 작성해 주세요)</small></label>
+            <label>${escapeHtml(c.entryNoteLabel)} <small style="color:#8e6235;">${escapeHtml(c.entryNoteHint)}</small></label>
             <textarea data-photo-note="${index}" placeholder="${escapeHtml(retouchNotePlaceholder())}">${escapeHtml(photo.note || '')}</textarea>
           </div>
         </div>
@@ -2333,28 +2360,32 @@ function renderServiceCutPrintNote() {
     .filter((p) => p?.isService && String(p.num || '').trim())
     .map((p) => stripExt(p.num))
     .join(', ');
-  const target = nums ? `서비스 컷 사진 번호(<b>${escapeHtml(nums)}</b>)` : '서비스 컷으로 정한 사진 번호';
-  return `<div class="service-cut-print-note">🎁 <b>서비스 컷 무료 인화 ${used}/${total}장 사용</b> — ${target}로 인화를 추가하면 시그니처 10×15cm는 <b>무료</b>, 더 큰 사이즈는 <b>차액만</b> 청구돼요.</div>`;
+  const c = copy();
+  const target = nums ? c.serviceCutPrintTargetHtml(escapeHtml(nums)) : escapeHtml(c.serviceCutPrintTargetNone);
+  const sizeName = escapeHtml(printOptionLabel(getPrintOption('basic_10x15')));
+  return `<div class="service-cut-print-note">${c.serviceCutPrintNoteHtml(used, total, target, sizeName)}</div>`;
 }
 
 function renderPrintQuotaBanner() {
   const summary = getPrintQuotaSummary();
   const serviceNote = renderServiceCutPrintNote();
   if (!summary.length) {
-    return `<div class="included-print-callout"><strong>출력 선택</strong><span>이 상품은 기본 제공 출력물이 없습니다. 필요한 사진을 아래에서 인화 주문할 수 있어요. 보정과 다른 사진도 선택할 수 있습니다.</span>${serviceNote}</div>`;
+    return `<div class="included-print-callout"><strong>${escapeHtml(copy().quotaNoneTitle)}</strong><span>${escapeHtml(copy().quotaNoneCopy)}</span>${serviceNote}</div>`;
   }
   const chips = summary.map((q) => {
     const done = q.remaining === 0;
     return `<span class="quota-chip${done ? ' used' : ''}">${escapeHtml(q.label)} <b>${q.used}/${q.total}</b></span>`;
   }).join('');
   // 포함/추가(차액) 관계를 말하는 유일한 자리 — 등급 라벨이나 옵션 텍스트에는 넣지 않는다.
-  return `<div class="included-print-callout"><strong>기본 제공 출력물 (무료)</strong><span>포함된 사이즈는 무료입니다. 보정과 다른 사진을 출력해도 됩니다. 포함 수량을 넘으면 초과분만 요금이 붙어요.</span><span>${getPrintMicrocopy('quotaUpgradeNote')}</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
+  const c = copy();
+  return `<div class="included-print-callout"><strong>${escapeHtml(c.quotaTitle)}</strong><span>${escapeHtml(c.quotaCopy)}</span><span>${getPrintMicrocopy('quotaUpgradeNote', state.lang)}</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
 function renderPrints() {
+  const c = copy();
   const banner = renderPrintQuotaBanner();
   if (!state.prints.length) {
-    els.printList.innerHTML = `${banner}<div class="empty-state">아직 출력 주문이 없습니다. 아래 버튼으로 출력할 사진을 추가하세요.</div>`;
+    els.printList.innerHTML = `${banner}<div class="empty-state">${escapeHtml(copy().printEmpty)}</div>`;
     return;
   }
   const annotations = computePrintAnnotations();
@@ -2362,41 +2393,41 @@ function renderPrints() {
     const ann = annotations[index];
     const option = ann.option;
     const priceRight = ann.amount === 0
-      ? `<strong class="free">${ann.serviceDiscount > 0 ? '무료 (서비스 컷)' : '무료'}</strong>`
+      ? `<strong class="free">${escapeHtml(ann.serviceDiscount > 0 ? c.printFreeService : c.printFree)}</strong>`
       : `<strong class="paid">€${ann.amount}</strong>`;
     const tierBadge = ann.isRetouched
-      ? '<span class="included-print-badge">보정본 출력</span>'
-      : '<span class="manual-badge">원본 출력</span>';
+      ? `<span class="included-print-badge">${escapeHtml(c.printBadgeRetouched)}</span>`
+      : `<span class="manual-badge">${escapeHtml(c.printBadgeOriginal)}</span>`;
     const serviceLine = ann.serviceDiscount > 0
-      ? `<div class="review-note">🎁 서비스 컷 인화 −€${ann.serviceDiscount}${ann.amount > 0 ? ' (차액만 청구)' : ' (무료)'}</div>`
+      ? `<div class="review-note">${escapeHtml(c.printServiceLine(ann.serviceDiscount, ann.amount > 0))}</div>`
       : '';
     /* 쿼터 차액이 섞인 행은 '추가 N × €단가'가 성립하지 않는다(장마다 상쇄액이 다를 수 있다).
        그럴 땐 장수와 실제 합계만 말한다. */
     const breakdown = (ann.quotaDiffQty > 0
-      ? `<div class="review-note">${ann.includedQty > 0 ? `기본 제공 ${ann.includedQty}장 · ` : ''}기본 제공분 차액 ${ann.quotaDiffQty}장${ann.chargedQty > ann.quotaDiffQty ? ` · 추가 ${ann.chargedQty - ann.quotaDiffQty}장` : ''} — €${ann.amount}</div>`
+      ? `<div class="review-note">${escapeHtml(c.printQuotaDiffLine(ann.includedQty, ann.quotaDiffQty, Math.max(0, ann.chargedQty - ann.quotaDiffQty), ann.amount))}</div>`
       : ann.includedQty > 0 && ann.chargedQty > 0
-        ? `<div class="review-note">포함 ${ann.includedQty} · 추가 ${ann.chargedQty} × €${ann.unit}</div>`
+        ? `<div class="review-note">${escapeHtml(c.printIncludedPlusExtra(ann.includedQty, ann.chargedQty, ann.unit))}</div>`
         : ann.includedQty > 0
-          ? '<div class="review-note">기본 제공 (무료)</div>'
-          : `<div class="review-note">추가 인화 ${ann.qty} × €${ann.unit}</div>`) + serviceLine;
+          ? `<div class="review-note">${escapeHtml(c.printIncludedFree)}</div>`
+          : `<div class="review-note">${escapeHtml(c.printExtraLine(ann.qty, ann.unit))}</div>`) + serviceLine;
     return `
       <div class="entry-card">
         <div class="entry-head">
-          <div class="entry-label">출력 #${index + 1} ${tierBadge}</div>
-          <button type="button" class="remove-btn" data-remove-print="${index}">삭제</button>
+          <div class="entry-label">${escapeHtml(c.printEntryLabel(index + 1))} ${tierBadge}</div>
+          <button type="button" class="remove-btn" data-remove-print="${index}">${escapeHtml(c.entryRemove)}</button>
         </div>
         <div class="entry-grid">
           <div class="field">
-            <label>사진 번호</label>
-            <input data-print-photo="${index}" value="${escapeHtml(print.photoNum || '')}" placeholder="예: IMG_0045 또는 0045">
+            <label>${escapeHtml(c.printPhotoNum)}</label>
+            <input data-print-photo="${index}" value="${escapeHtml(print.photoNum || '')}" placeholder="${escapeHtml(c.printPhotoNumPlaceholder)}">
             ${thumbHtmlForNum(print.photoNum || '')}
           </div>
           <div class="field">
-            <label>수량</label>
+            <label>${escapeHtml(c.printQty)}</label>
             <input data-print-qty="${index}" type="number" min="1" value="${escapeHtml(print.qty || 1)}">
           </div>
           <div class="field-full">
-            <label>용지 종류</label>
+            <label>${escapeHtml(c.printPaperType)}</label>
             <select data-print-type="${index}">
               ${getSelectablePrintOptions().map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}
             </select>
@@ -2514,7 +2545,7 @@ function renderPickupCalendar() {
   const cells = [];
 
   els.pickupMonthLabel.textContent = formatMonthLabel(state.pickupCalendarYear, state.pickupCalendarMonth);
-  els.pickupCalendarStatus.textContent = '외부 일정으로 스튜디오에 있는 시간만 표시됩니다.';
+  els.pickupCalendarStatus.textContent = copy().pickupOnSiteOnly;
 
   for (let index = 0; index < firstWeekday; index += 1) {
     cells.push('<div class="pickup-day is-empty" aria-hidden="true"></div>');
@@ -2571,8 +2602,8 @@ async function loadPickupSlots(date) {
     state.pickupCalendarCache.set(key, calendar);
   }
   els.pickupSlotHint.textContent = state.pickupDate
-    ? `${state.pickupDate} 픽업 가능 시간입니다.`
-    : '날짜를 선택하면 픽업 가능한 시간이 표시됩니다.';
+    ? copy().pickupSlotsFor(state.pickupDate)
+    : copy().pickupSlotHint;
   renderPickupCalendar();
   renderPickupSlots(state.pickupSlots);
 }
@@ -2580,7 +2611,7 @@ async function loadPickupSlots(date) {
 function renderPickupSlots(slots) {
   const list = Array.isArray(slots) ? slots : [];
   if (!list.length) {
-    els.pickupSlotGrid.innerHTML = `<div class="empty-state">${state.pickupDate ? '선택한 날짜에 가능한 픽업 시간이 없습니다.' : '아직 선택한 날짜가 없습니다.'}</div>`;
+    els.pickupSlotGrid.innerHTML = `<div class="empty-state">${escapeHtml(state.pickupDate ? copy().pickupNoSlots : copy().pickupNoDate)}</div>`;
     return;
   }
   els.pickupSlotGrid.innerHTML = list.map((time) => `
@@ -2615,16 +2646,16 @@ function getDeliveryReviewText() {
 
 function validateDeliverySelection() {
   if (!requiresDeliverySelection()) return true;
-  if (!state.deliveryMethod) { setBanner('수령 방식을 먼저 선택해 주세요.', 'error'); return false; }
+  if (!state.deliveryMethod) { setBanner(copy().errPickDelivery, 'error'); return false; }
   if (state.deliveryMethod === 'pickup') {
     // 출력 후 픽업예약: 제출 시 일정 불필요 — 인화 완료 후 예약 페이지에서 신청
     return true;
   }
   const mailName = getMailNameForSubmission();
   const mailAddress = getMailAddressForSubmission();
-  if (!mailName) { setBanner('우편 수령 받으실 분 성함을 입력해 주세요.', 'error'); return false; }
-  if (!mailAddress) { setBanner('우편 수령 주소를 입력해 주세요.', 'error'); return false; }
-  if (!hasMailAddressPostalCity(mailAddress)) { setBanner('우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel', 'error'); return false; }
+  if (!mailName) { setBanner(copy().warnMailName, 'error'); return false; }
+  if (!mailAddress) { setBanner(copy().warnMailAddress, 'error'); return false; }
+  if (!hasMailAddressPostalCity(mailAddress)) { setBanner(copy().warnMailPostal, 'error'); return false; }
   state.mailName = mailName;
   state.mailAddress = mailAddress;
   if (els.mailNameInput) els.mailNameInput.value = mailName;
@@ -2636,6 +2667,7 @@ function validateDeliverySelection() {
  * 검토 단계
  * ====================================================================== */
 function updateReview() {
+  const c = copy();
   const base = Number(state.session?.baseRetouchCount || 0);
   const retouchPrice = Number(state.session?.retouchPrice || 0);
 
@@ -2646,16 +2678,16 @@ function updateReview() {
         const extra = paid
           ? `+€${retouchPrice}`
           : photo.isService
-            ? '서비스 컷'
+            ? c.badgeService
             : photo.isBonus
-              ? '마케팅 보너스'
+              ? c.badgeBonus
               : source === 'gallery'
-                ? '갤러리 선택'
-                : '포함';
+                ? c.badgeGallery
+                : c.reviewIncluded;
         return `
           <div class="review-item">
             <div>
-              <strong>${escapeHtml(photo.num || `사진 ${index + 1}`)}</strong>
+              <strong>${escapeHtml(photo.num || c.reviewPhotoFallback(index + 1))}</strong>
               <div class="review-note">${escapeHtml(photo.note || '')}</div>
             </div>
             <div style="text-align:right;">
@@ -2664,19 +2696,19 @@ function updateReview() {
           </div>
         `;
       }).join('')
-    : '<div class="empty-state">선택된 보정 사진이 없습니다.</div>';
+    : `<div class="empty-state">${escapeHtml(c.reviewNoRetouch)}</div>`;
 
   const printAnnotations = computePrintAnnotations();
   els.reviewPrints.innerHTML = state.prints.length
     ? state.prints.map((print, index) => {
         const ann = printAnnotations[index];
-        const tier = ann.isRetouched ? '보정본' : '원본';
-        const priceText = ann.amount === 0 ? '무료' : `€${ann.amount}`;
+        const tier = ann.isRetouched ? c.reviewTierRetouched : c.reviewTierOriginal;
+        const priceText = ann.amount === 0 ? c.printFree : `€${ann.amount}`;
         const detail = (ann.includedQty > 0 && ann.chargedQty > 0
-          ? ` (포함 ${ann.includedQty} · 추가 ${ann.chargedQty})`
+          ? c.reviewIncludedPlusExtra(ann.includedQty, ann.chargedQty)
           : ann.includedQty > 0
-            ? ' (기본 제공)'
-            : '') + (ann.serviceDiscount > 0 ? ' 🎁서비스 컷' : '');
+            ? c.reviewIncludedOnly
+            : '') + (ann.serviceDiscount > 0 ? c.reviewServiceTag : '');
         return `
           <div class="review-item">
             <span>${escapeHtml(print.photoNum || '-')} · ${escapeHtml(ann.option.label)} × ${escapeHtml(print.qty || 1)} · ${tier}${detail}</span>
@@ -2684,7 +2716,7 @@ function updateReview() {
           </div>
         `;
       }).join('')
-    : '<div class="empty-state">출력 선택 없음</div>';
+    : `<div class="empty-state">${escapeHtml(c.reviewNoPrints)}</div>`;
   // 출력이 전부 시그니처일 때만 되돌아가는 방법을 한 줄로 안내(버튼·강조 없음).
   if (state.prints.length && state.prints.every((print) => getPrintTier(normalizePrintTypeId(print.printId)) === 'signature')) {
     els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-note">${getPrintMicrocopy('reviewBackNote', state.lang)}</div>`);
@@ -2695,34 +2727,34 @@ function updateReview() {
     els.reviewPhotocardBlock.classList.toggle('hidden', !visible);
     els.reviewPhotocard.textContent = visible ? getPhotocardReviewText() : '';
   }
-  els.reviewMarketing.textContent = state.marketing === 'Y' ? '동의' : '미동의';
+  els.reviewMarketing.textContent = state.marketing === 'Y' ? c.marketingYes : c.marketingNo;
   syncDeliveryUi();
   if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
   const total = calcTotal();
-  els.reviewTotal.textContent = total === 0 ? '무료' : `€${total}`;
+  els.reviewTotal.textContent = total === 0 ? c.printFree : `€${total}`;
   updateSubmitState();
   renderStepWarnings();
 }
 
 function validateStep1() {
   if (!state.marketing) {
-    setBanner('마케팅 동의 여부를 먼저 선택해 주세요.', 'error');
+    setBanner(copy().errPickMarketing, 'error');
     return false;
   }
   // 갤러리: 최소 1장은 별점을 주거나 직접 추가돼 있어야 다음으로 이동 가능
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
   if (regularCount < 1) {
-    setBanner('1차 셀렉에서 최소 1장 이상 별점을 주세요.', 'error');
+    setBanner(copy().errRateAtLeastOne, 'error');
     return false;
   }
   return true;
 }
 
 function validateStep2() {
-  if (!state.photos.length) { setBanner('보정 사진을 최소 1장 선택해 주세요.', 'error'); return false; }
+  if (!state.photos.length) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
   const invalid = state.photos.findIndex((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim());
   if (invalid >= 0) {
-    setBanner(`${invalid + 1}번째 보정 사진의 번호와 요청사항을 입력해 주세요.`, 'error');
+    setBanner(copy().errRetouchRow(invalid + 1), 'error');
     return false;
   }
   const photocardWarning = getPhotocardWarning();
@@ -2735,7 +2767,7 @@ function validateStep2() {
 
 function validateStep3() {
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
-  if (invalid >= 0) { setBanner(`${invalid + 1}번째 추가 인화의 사진 번호를 입력해 주세요.`, 'error'); return false; }
+  if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
   return true;
 }
 
@@ -2864,8 +2896,11 @@ function buildMockSession() {
 
 function showPreviewBanner() {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f59e0b;color:#fff;padding:8px 14px;text-align:center;font-weight:700;font-size:13px;z-index:10000;box-shadow:0 2px 6px rgba(0,0,0,.15);';
-  el.innerHTML = '미리보기 모드 — 실제 예약 데이터가 아니며, 제출/다운로드는 동작하지 않습니다.';
+  /* was white on #f59e0b (Tailwind amber, outside the palette) at 2.15:1.
+     Palette warning surface with body text instead, and the amber kept as
+     a bottom rule so the strip still reads as a warning. */
+  el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--sm-warn-bg);color:var(--sm-text);border-bottom:2px solid var(--sm-warn);padding:8px 14px;text-align:center;font-weight:700;font-size:13px;z-index:10000;box-shadow:0 2px 6px rgba(0,0,0,.15);';
+  el.innerHTML = escapeHtml(copy().previewBanner);
   document.body.appendChild(el);
   document.body.style.paddingTop = '36px';
 }
@@ -2890,11 +2925,11 @@ function buildMockGalleryPhotos(n) {
 async function onSubmit() {
   if (!validateStep2() || !validateStep3() || !validateDeliverySelection()) return;
   if (state.previewMode) {
-    alert('[미리보기] 실제 배포에서는 이 시점에 서버로 제출되고 확인 이메일이 발송됩니다.');
+    alert(copy().previewSubmitAlert);
     return;
   }
   els.submitBtn.disabled = true;
-  els.submitBtn.textContent = state.editMode ? '수정 제출 중...' : '제출 중...';
+  els.submitBtn.textContent = state.editMode ? copy().submittingEdit : copy().submitting;
   const deliveryRequired = requiresDeliverySelection();
   const printAnnotations = computePrintAnnotations();
   const payload = {
@@ -2942,15 +2977,15 @@ async function onSubmit() {
     const result = state.editMode
       ? await updateSelectSession(state.sessionId, payload, requestId)
       : await submitSelectSession(state.sessionId, payload, requestId);
-    setBanner(state.editMode ? '수정 제출이 완료됐습니다.' : '셀렉 제출이 완료됐습니다.', 'success');
+    setBanner(state.editMode ? copy().submitDoneEdit : copy().submitDone, 'success');
     renderSuccess(result);
   } catch (error) {
     console.error(error);
-    setBanner(`셀렉 제출 실패: ${error.message}`, 'error');
+    setBanner(copy().submitFailed(error.message), 'error');
   } finally {
     if (!state.submitted) {
       els.submitBtn.disabled = false;
-      els.submitBtn.textContent = state.editMode ? '수정 제출' : '제출';
+      els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
     }
   }
 }

@@ -5,6 +5,22 @@
 [build.environment]
   SITE_MODE = "production"
 
+# The v1 ("classic") select app was removed. Sessions whose 페이지버전 cell is
+# blank still resolve to `classic` in Code.gs (normalizeSelectPageVersion_),
+# so `/?id=...` links already sitting in customers' inboxes must keep working.
+# Netlify forwards the query string, so ?id= / ?test= / ?ops= survive the hop.
+[[redirects]]
+  from = "/"
+  to = "/v2/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/index.html"
+  to = "/v2/"
+  status = 301
+  force = true
+
 [[headers]]
   for = "/"
   [headers.values]

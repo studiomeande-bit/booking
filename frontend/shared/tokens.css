@@ -42,6 +42,12 @@
   --sm-surface: #ffffff;
   --sm-surface-raised: #fffdf8;
   --sm-surface-soft: #f5f2ec;
+  /* Largest drift cluster found 2026-07-26: seven visually identical
+     off-whites (#f4f1ea … #f8f5ef) were in use 54 times across four
+     stylesheets. All ΔE < 1.6 apart — below the ~2.3 just-noticeable
+     threshold, so nobody could tell them apart, but each had to be
+     maintained separately. */
+  --sm-surface-tint: #f6f3ed;
   --sm-surface-warm: #f7f1e7;    /* was #f7f1e7 / #f7f1e6 in two files */
   --sm-surface-sunken: #f1ede7;
   --sm-surface-shade: #efe5db;   /* darkest soft surface in use */

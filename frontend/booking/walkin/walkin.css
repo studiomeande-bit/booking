@@ -349,7 +349,7 @@ select:focus {
   border: 0;
   border-radius: 999px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #2d2a26, #4b4034);
+  background: linear-gradient(135deg, var(--sm-brand-ink), #4b4034);
   color: #fff;
   font-size: 16px;
   font-weight: 800;
