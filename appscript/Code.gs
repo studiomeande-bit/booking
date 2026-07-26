@@ -1190,6 +1190,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-handover-done') return jsonOk_(markSelectHandoverAdmin(token,payload));
         if(action==='select-handover-undo') return jsonOk_(undoSelectHandoverAdmin(token,payload));
         if(action==='select-pickup-reminder-run') return jsonOk_(runSelectPickupRemindersAdmin(token,payload));
+        if(action==='select-add-reshoot') return jsonOk_(addSelectReshootForAgent_(token,payload));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='studio-pin-status') return jsonOk_(getStudioPinStatusAdmin(token));
         if(action==='studio-pin-set'){
@@ -17708,6 +17709,140 @@ function runSelectPickupRemindersAdmin(token,payload){
   payload=payload||{};
   const res=sendSelectPickupReminders_({dryRun:payload.dryRun===true});
   return Object.assign({ok:true},res);
+}
+
+/* ===== 재촬영 (re-shoot) — 원 촬영 세션에 재촬영을 얹는다 =============================
+   ① 재촬영비를 별도 수기 매출행으로 기록(원건과 분리 → 회계·SumUp 매칭 정확)
+   ② 재촬영 사진을 합친 갤러리로 새로고침(Drive 재지정 또는 캐시 버스트)
+   ③ 옵션: 셀렉 링크 재발송(고객이 합친 갤러리에서 다시 선택)
+   ④ 옵션: 무료 보정 추가(기본 0 = 기존 entitlement 유지)
+   물리적 사진 업로드(Drive)는 여전히 로컬 작업 — 이 액션은 기록·연결·발송만 한다.
+   기존 addManualBookingAdmin / updateSelectDriveLinkAdmin / resendSelectLinkAdmin 재사용. ===== */
+function addSelectReshootForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  // 원 촬영의 셀렉 행 해석 (sessionId | selectRowIndex | bookingRowIndex)
+  let selRowIdx=0;
+  if(payload.sessionId){
+    const rows=selSh.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[0])===String(payload.sessionId);});
+    if(idx>-1) selRowIdx=idx+2;
+  }else if(payload.selectRowIndex){
+    selRowIdx=parseInt(payload.selectRowIndex,10)||0;
+  }else if(payload.bookingRowIndex){
+    const found=getActiveSelectRowForBooking_(selSh,payload.bookingRowIndex);
+    if(found) selRowIdx=found.rowIndex;
+  }
+  if(!selRowIdx||selRowIdx<2||selRowIdx>selSh.getLastRow()) throw new Error('원 촬영의 셀렉 세션을 찾을 수 없습니다.');
+  const selRow=selSh.getRange(selRowIdx,1,1,selSh.getLastColumn()).getValues()[0];
+  const sessionId=String(selRow[SELECT_COL['세션ID']]||'').trim();
+  const bookingRowIndex=parseInt(selRow[SELECT_COL['예약장부행']],10)||0;
+  if(!(bookingRowIndex>1)) throw new Error('셀렉 세션에 유효한 예약장부행이 없습니다.');
+  // 안전장치: 이름 확인
+  const custName=String(selRow[SELECT_COL['고객명']]||'').trim();
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && expectName!==custName) throw new Error(`고객명이 일치하지 않습니다(시트: ${custName}).`);
+
+  const fee=payload.fee||{};
+  const feeAmount=roundCurrency_(Number(fee.amount)||0);
+  if(!(feeAmount>0)) throw new Error('재촬영비(fee.amount)를 0보다 크게 지정해 주세요.');
+  const tz=CONFIG.TIMEZONE;
+  const reshootDate=String(fee.date||Utilities.formatDate(new Date(),tz,'yyyy-MM-dd')).slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(reshootDate)) throw new Error('재촬영일(fee.date)은 YYYY-MM-DD 형식이어야 합니다.');
+  const payMethod=String(fee.payMethod||'카드').trim();
+
+  // 원 예약에서 고객정보/상품 가져오기
+  const bookSh=getDbSheet();
+  const bookRow=bookSh.getRange(bookingRowIndex,1,1,bookSh.getLastColumn()).getValues()[0];
+  const origDate=parseDateSafe_(bookRow[BOOKING_COL['예약일시']]).str.slice(0,10);
+  const itemGroup=String(bookRow[BOOKING_COL['촬영종류']]||selRow[SELECT_COL['촬영종류']]||'');
+  const product=String(bookRow[BOOKING_COL['상품']]||selRow[SELECT_COL['상품']]||'');
+
+  // 중복 방지: 같은 원건·같은 날 재촬영 매출행이 이미 있으면 거부(재시도 이중청구 방지)
+  const reTag='[재촬영] 원건행'+bookingRowIndex;
+  const bLast=bookSh.getLastRow();
+  const scanFrom=Math.max(2,bLast-40);
+  if(bLast>=scanFrom){
+    const memoCol=BOOKING_COL['요청사항'];
+    const scan=bookSh.getRange(scanFrom,1,bLast-scanFrom+1,bookSh.getLastColumn()).getValues();
+    for(let i=0;i<scan.length;i++){
+      const m=String(scan[i][memoCol]||'');
+      const d=parseDateSafe_(scan[i][BOOKING_COL['예약일시']]).str.slice(0,10);
+      if(m.indexOf(reTag)>-1 && d===reshootDate){
+        throw new Error(`이미 ${reshootDate} 재촬영 매출행이 있습니다(예약행 ${scanFrom+i}). 중복 청구 방지로 중단합니다.`);
+      }
+    }
+  }
+
+  // ① 재촬영비 별도 수기 매출행 (완납 처리)
+  // addManualBookingAdmin 은 입금 여부를 depositPayMethod 로 판정한다(계약금=전액·수단=카드 → 완납으로 기록).
+  // 이걸 안 넘기면 '입금전'으로 찍혀 미수로 잡힌다. 상태는 항상 '확정됨'으로 저장되므로 아래서 작업완료로 전환.
+  const feeResult=addManualBookingAdmin(token,{
+    name:custName||String(bookRow[BOOKING_COL['고객명']]||''),
+    phone:String(bookRow[BOOKING_COL['연락처']]||''),
+    email:String(bookRow[BOOKING_COL['이메일']]||''),
+    lang:String(bookRow[BOOKING_COL['언어']]||'ko'),
+    itemGroup:itemGroup,
+    product:(product||'촬영')+' 재촬영',
+    date:reshootDate,
+    time:String(fee.time||'00:00'),
+    people:1,
+    price:feeAmount,
+    deposit:feeAmount,          // 전액을 계약금으로 = 완납
+    balance:0,
+    payMethod:payMethod,
+    depositPayMethod:payMethod, // 입금 완료 판정용(카드 등) — 없으면 '입금전'으로 미수 처리됨
+    memo:`${reTag} · 원 촬영 ${origDate} · 30% 재촬영비 · 사진은 원 셀렉(${sessionId})에 합쳐 발송`
+  });
+  if(!feeResult||!feeResult.ok) throw new Error('재촬영비 매출행 생성 실패: '+((feeResult&&feeResult.message)||''));
+  // 완료된 거래 → 작업완료(확정됨으로 남으면 파이프라인에 미완 촬영처럼 보임)
+  try{ updateBookingStatusForAgent_(token,feeResult.bookingRowIndex,'작업완료'); }
+  catch(e){ Logger.log('reshoot fee status set fail: '+e.message); }
+
+  // ④ 옵션: 무료 보정 추가 (기본 0 = 유지)
+  const extraRetouch=Math.max(0,parseInt(payload.extraRetouch,10)||0);
+  let newBaseCount=parseInt(selRow[SELECT_COL['기본보정수']],10)||0;
+  if(extraRetouch>0){
+    newBaseCount=newBaseCount+extraRetouch;
+    selSh.getRange(selRowIdx,SELECT_COL['기본보정수']+1).setValue(newBaseCount);
+  }
+
+  // ② 갤러리 갱신 + ③ 옵션 재발송
+  const resend=payload.resend===true;
+  const driveFolderId=String(payload.driveFolderId||payload.driveLink||'').trim();
+  let driveRelinked=false, resent=false, selectUrl='', mailMsg='';
+  if(driveFolderId){
+    const dr=updateSelectDriveLinkAdmin(token,bookingRowIndex,{driveFolderId:driveFolderId,sendEmail:resend});
+    if(!dr||!dr.ok) throw new Error('Drive 재연결 실패: '+((dr&&dr.message)||''));
+    driveRelinked=true; resent=!!dr.emailSent; selectUrl=dr.selectUrl||''; mailMsg=dr.message||'';
+  }else{
+    // 같은 폴더에 사진을 추가한 경우 — 캐시만 버스트
+    clearSelectPhotoCache_(sessionId);
+    selectUrl=buildSelectSessionUrl_(sessionId,normalizeSelectPageVersion_(selRow[SELECT_COL['페이지버전']]));
+    if(resend){
+      const rr=resendSelectLinkAdmin(token,bookingRowIndex);
+      if(rr&&rr.ok){ resent=!!rr.emailSent; if(rr.selectUrl) selectUrl=rr.selectUrl; }
+      else mailMsg=(rr&&rr.message)||'링크 재발송 실패';
+    }
+  }
+
+  return {ok:true,
+    sessionId:sessionId,
+    bookingRowIndex:bookingRowIndex,
+    feeRowIndex:feeResult.bookingRowIndex,
+    feeAmount:feeAmount,
+    reshootDate:reshootDate,
+    payMethod:payMethod,
+    baseRetouchCount:newBaseCount,
+    extraRetouchAdded:extraRetouch,
+    driveRelinked:driveRelinked,
+    cacheBusted:true,
+    selectUrl:selectUrl,
+    resent:resent,
+    note:mailMsg||(resend?'':'resend:false — 갤러리만 갱신, 링크는 발송하지 않음(selectUrl로 확인 후 발송)')
+  };
 }
 
 /* ===== 수령방식 전환 (픽업↔우편) — 어드민 원클릭·픽업페이지 셀프전환·에이전트 공용 코어.
