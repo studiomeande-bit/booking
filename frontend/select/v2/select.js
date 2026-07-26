@@ -20,14 +20,14 @@ import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../../share
 // ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
 const PRINT_OPTIONS = [
   { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
-  { id: 'basic_10x15', label: '기본 10×15cm / 6×4 inch', retouched: 5, additional: 5 },
-  { id: 'premium_10x15', label: '프리미엄 10×15cm', retouched: 3, additional: 8 },
+  { id: 'basic_10x15', label: '시그니처 10×15cm', retouched: 3, additional: 4 },
+  { id: 'premium_10x15', label: '파인아트 10×15cm', retouched: 6, additional: 8 },
   { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
   { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
-  { id: 'basic_a4', label: '기본 A4', retouched: 10, additional: 15 },
-  { id: 'premium_a4', label: '프리미엄 A4', retouched: 15, additional: 20 },
-  { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 },
-  { id: 'premium_a3plus', label: '프리미엄 A3+', retouched: 45, additional: 60 }
+  { id: 'basic_a4', label: '시그니처 A4', retouched: 10, additional: 15 },
+  { id: 'premium_a4', label: '파인아트 A4', retouched: 15, additional: 20 },
+  { id: 'premium_a3', label: '파인아트 A3', retouched: 35, additional: 50 },
+  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 45, additional: 60 }
 ];
 
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
@@ -68,7 +68,7 @@ function isRetouchedPhotoNum(num) {
 // 백엔드 computeSelectDecoupledPrints_ 와 동일한 규칙 (서버가 최종 판정).
 function computePrintAnnotations() {
   const quota = getSessionIncludedPrintQuota().map((item) => ({ id: item.id, qty: Number(item.qty) || 0 }));
-  // 서비스 컷: 서비스 슬롯 번호마다 인화 1건(1장)에 €5(기본 10×15 보정본가) 크레딧. 총 크레딧은 serviceCutCount로 상한.
+  // 서비스 컷: 서비스 슬롯 번호마다 인화 1건(1장)에 €3(시그니처 10×15 보정본가) 크레딧. 총 크레딧은 serviceCutCount로 상한.
   // 서버 computeSelectDecoupledPrints_ 와 완전히 동일한 규칙 — 유닛(장) 단위 적용 + 상한, 인화 행 순서대로 소진.
   const serviceCredit = {};
   state.photos.forEach((p) => {
@@ -766,7 +766,7 @@ function renderPackageSummary() {
   els.packageSummary.innerHTML = `
     <div class="detail-title">보정 패키지 안내</div>
     <div class="guide-copy">기본 보정 <b>${escapeHtml(s.baseRetouchCount || 0)}장</b> 포함 · 추가 보정 <b>€${escapeHtml(s.retouchPrice || 0)}/장</b></div>
-    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">🎁 스튜디오 <b>서비스 컷 ${getServiceCutCount()}장</b> 추가 증정 — 보정 무료 + 기본 10×15cm 인화 1장씩 포함 (보정 단계에서 사진 번호만 넣어 주세요)</div>` : ''}
+    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">🎁 스튜디오 <b>서비스 컷 ${getServiceCutCount()}장</b> 추가 증정 — 보정 무료 + 시그니처 10×15cm 인화 1장씩 포함 (보정 단계에서 사진 번호만 넣어 주세요)</div>` : ''}
     ${includedLine}
     ${autoPrintNotice}
     ${deliveryLines.length ? `<div class="guide-copy">${deliveryLines.map(escapeHtml).join(' · ')}</div>` : ''}
@@ -935,7 +935,7 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다.<br>또한 서비스 컷 사진마다 <b>기본 10×15cm 인화 1장이 무료로 포함</b>돼요. 다음 <b>출력 선택</b> 단계에서 같은 사진 번호로 인화를 주문하면 10×15는 무료, 더 큰 사이즈는 <b>차액만</b> 청구됩니다.</div>`;
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호와 보정 요청사항을 넣어 주세요. 서비스 컷 보정은 <b>무료</b>이며 기본 보정 장수에 포함되지 않습니다.<br>또한 서비스 컷 사진마다 <b>시그니처 10×15cm 인화 1장이 무료로 포함</b>돼요. 다음 <b>출력 선택</b> 단계에서 같은 사진 번호로 인화를 주문하면 10×15는 무료, 더 큰 사이즈는 <b>차액만</b> 청구됩니다.</div>`;
 }
 
 function updateMarketingCopy() {
@@ -2139,7 +2139,7 @@ function updatePhotoCounter() {
  * 추가 인화 (Step 3)
  * ====================================================================== */
 function addPrintRow() {
-  // 기본값: 아직 남은 포함 쿼터 사이즈를 우선 제안, 없으면 기본 10×15
+  // 기본값: 아직 남은 포함 쿼터 사이즈를 우선 제안, 없으면 시그니처 10×15
   const remaining = getPrintQuotaSummary().find((q) => q.remaining > 0);
   state.prints.push({ photoNum: '', printId: remaining ? remaining.id : 'basic_10x15', qty: 1, finish: 'full' });
   renderPrints();
@@ -2155,7 +2155,7 @@ function renderServiceCutPrintNote() {
     .map((p) => stripExt(p.num))
     .join(', ');
   const target = nums ? `서비스 컷 사진 번호(<b>${escapeHtml(nums)}</b>)` : '서비스 컷으로 정한 사진 번호';
-  return `<div class="service-cut-print-note">🎁 <b>서비스 컷 무료 인화 ${used}/${total}장 사용</b> — ${target}로 인화를 추가하면 기본 10×15cm는 <b>무료</b>, 더 큰 사이즈는 <b>차액만</b> 청구돼요.</div>`;
+  return `<div class="service-cut-print-note">🎁 <b>서비스 컷 무료 인화 ${used}/${total}장 사용</b> — ${target}로 인화를 추가하면 시그니처 10×15cm는 <b>무료</b>, 더 큰 사이즈는 <b>차액만</b> 청구돼요.</div>`;
 }
 
 function renderPrintQuotaBanner() {

@@ -16655,12 +16655,12 @@ const PRINT_LABELS={
   'print_none':{label:'출력 없음',summaryLabel:'출력 없음',price:0,retouchedPrice:0},
   'photocard_single':{label:'포토카드 프린트 (단면)',summaryLabel:'포토카드 단면',price:5,retouchedPrice:5},
   'photocard_double':{label:'포토카드 프린트 (양면)',summaryLabel:'포토카드 양면',price:8,retouchedPrice:8},
-  'basic_10x15':{label:'기본 10×15cm / 6×4 inch',summaryLabel:'6×4 inch / 10×15cm',price:5,retouchedPrice:5},
-  'premium_10x15':{label:'프리미엄 10×15cm',summaryLabel:'프리미엄 10×15cm',price:8,retouchedPrice:3},
-  'basic_a4':{label:'기본 A4',summaryLabel:'A4',price:15,retouchedPrice:10},
-  'premium_a4':{label:'프리미엄 A4',summaryLabel:'프리미엄 A4',price:20,retouchedPrice:15},
-  'premium_a3':{label:'프리미엄 A3',summaryLabel:'A3',price:50,retouchedPrice:35},
-  'premium_a3plus':{label:'프리미엄 A3+',summaryLabel:'A3+',price:60,retouchedPrice:45}
+  'basic_10x15':{label:'시그니처 10×15cm (세미글로스)',summaryLabel:'시그니처 10×15',price:4,retouchedPrice:3},
+  'premium_10x15':{label:'파인아트 10×15cm (Hahnemühle)',summaryLabel:'파인아트 10×15',price:8,retouchedPrice:6},
+  'basic_a4':{label:'시그니처 A4 (세미글로스)',summaryLabel:'시그니처 A4',price:15,retouchedPrice:10},
+  'premium_a4':{label:'파인아트 A4 (Hahnemühle)',summaryLabel:'파인아트 A4',price:20,retouchedPrice:15},
+  'premium_a3':{label:'파인아트 A3 (Hahnemühle)',summaryLabel:'파인아트 A3',price:50,retouchedPrice:35},
+  'premium_a3plus':{label:'파인아트 A3+ (Hahnemühle)',summaryLabel:'파인아트 A3+',price:60,retouchedPrice:45}
 };
 function getPrintInfo_(printId){
   const key=String(printId||'').replace(/_(r|e)$/,'').trim();
@@ -16771,7 +16771,7 @@ function buildSelectServiceCutNums_(photos){
   });
   return nums;
 }
-// 서비스 컷: 채워진 서비스 슬롯 번호 1개당 기본 10×15 인화 크레딧(€5). 큰 사이즈는 차액만.
+// 서비스 컷: 채워진 서비스 슬롯 번호 1개당 시그니처 10×15 인화 크레딧(€3). 큰 사이즈는 차액만.
 function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
   const itemGroup=row&&row[SELECT_COL['촬영종류']];
   const productName=row&&row[SELECT_COL['상품']];
@@ -16814,7 +16814,7 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       }
     }
   });
-  // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1장에 €5(기본 10×15) 차감 (10×15 무료, 큰 사이즈 차액). 총 상한 = 서비스컷수.
+  // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1장에 €3(시그니처 10×15) 차감 (10×15 무료, 큰 사이즈 차액). 총 상한 = 서비스컷수.
   chargeable.forEach(function(item){
     const k=selectPhotoNumKey_(item.photoNum);
     if(k&&serviceCredit[k]>0&&serviceCreditsRemaining>0&&Number(item.price)>0){
@@ -21329,11 +21329,12 @@ function getInvoicePrintLabelCatalog_(){
   return {
     photocard_single:{ko:'포토카드 프린트 (단면)',en:'Photo card print (single-sided)',de:'Fotokarten-Druck (einseitig)'},
     photocard_double:{ko:'포토카드 프린트 (양면)',en:'Photo card print (double-sided)',de:'Fotokarten-Druck (doppelseitig)'},
-    basic_10x15:{ko:'기본 10×15cm',en:'Basic 10×15cm',de:'Basic 10×15cm'},
-    premium_10x15:{ko:'프리미엄 10×15cm',en:'Premium 10×15cm',de:'Premium 10×15cm'},
-    basic_a4:{ko:'기본 A4',en:'Basic A4',de:'Basic A4'},
-    premium_a4:{ko:'프리미엄 A4',en:'Premium A4',de:'Premium A4'},
-    premium_a3:{ko:'프리미엄 A3',en:'Premium A3',de:'Premium A3'}
+    basic_10x15:{ko:'시그니처 10×15cm',en:'Signature 10×15cm',de:'Signature-Abzug 10×15cm'},
+    premium_10x15:{ko:'파인아트 10×15cm',en:'Fine Art 10×15cm',de:'FineArt-Druck 10×15cm'},
+    basic_a4:{ko:'시그니처 A4',en:'Signature A4',de:'Signature-Abzug A4'},
+    premium_a4:{ko:'파인아트 A4',en:'Fine Art A4',de:'FineArt-Druck A4'},
+    premium_a3:{ko:'파인아트 A3',en:'Fine Art A3',de:'FineArt-Druck A3'},
+    premium_a3plus:{ko:'파인아트 A3+',en:'Fine Art A3+',de:'FineArt-Druck A3+'}
   };
 }
 

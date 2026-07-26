@@ -19,15 +19,26 @@ import { createRequestId, escapeHtml, formatMonthLabel, pad2 } from '../shared/u
 // ⚠ additional(추가 인화 단가)은 예약 안내용 shared/print-catalog.js 와 동일하게 유지할 것(값 변경 시 함께 수정).
 const PRINT_OPTIONS = [
   { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
-  { id: 'basic_10x15', label: '기본 10×15cm / 6×4 inch', retouched: 5, additional: 5 },
-  { id: 'premium_10x15', label: '프리미엄 10×15cm', retouched: 3, additional: 8 },
+  { id: 'basic_10x15', label: '시그니처 10×15cm', retouched: 3, additional: 4 },
+  { id: 'premium_10x15', label: '파인아트 10×15cm', retouched: 6, additional: 8 },
   { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
   { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
-  { id: 'basic_a4', label: '기본 A4', retouched: 10, additional: 15 },
-  { id: 'premium_a4', label: '프리미엄 A4', retouched: 15, additional: 20 },
-  { id: 'premium_a3', label: '프리미엄 A3', retouched: 35, additional: 50 },
-  { id: 'premium_a3plus', label: '프리미엄 A3+', retouched: 45, additional: 60 }
+  { id: 'basic_a4', label: '시그니처 A4', retouched: 10, additional: 15 },
+  { id: 'premium_a4', label: '파인아트 A4', retouched: 15, additional: 20 },
+  { id: 'premium_a3', label: '파인아트 A3', retouched: 35, additional: 50 },
+  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 45, additional: 60 }
 ];
+
+// 리네이밍 이전 라벨 → SKU id. 저장된 구 라벨이 신규 라벨과 매칭 실패해 basic_10x15로 잘못 폴백하는 것을 막는다.
+const LEGACY_PRINT_LABEL_IDS = {
+  '기본 10×15cm / 6×4 inch': 'basic_10x15',
+  '기본 10×15cm': 'basic_10x15',
+  '프리미엄 10×15cm': 'premium_10x15',
+  '기본 A4': 'basic_a4',
+  '프리미엄 A4': 'premium_a4',
+  '프리미엄 A3': 'premium_a3',
+  '프리미엄 A3+': 'premium_a3plus'
+};
 
 const PHOTOCARD_MODE_LABELS = {
   retouched: '양면 · 보정본 2장',
@@ -347,6 +358,10 @@ function resolvePrintId(print) {
   const exact = PRINT_OPTIONS.find((item) => item.id === raw);
   if (exact) return exact.id;
 
+  // 구 라벨(시그니처/파인아트 리네이밍 이전) 하위호환 — 진행 중 세션·과거 주문 데이터 보호.
+  const legacy = LEGACY_PRINT_LABEL_IDS[raw.trim()];
+  if (legacy) return legacy;
+
   const normalized = raw.toLowerCase().replace(/\s+/g, '');
   const labelMatch = PRINT_OPTIONS.find((item) => {
     const itemLabel = item.label.toLowerCase().replace(/\s+/g, '');
@@ -618,14 +633,14 @@ function renderServiceCutNotice() {
   const count = getServiceCutCount();
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
-  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 넣어 주세요. 각 서비스 컷에는 <b>기본 10×15cm 인화 1장</b>이 무료로 포함됩니다. 더 큰 사이즈로 바꾸시면 차액만 청구돼요.</div>`;
+  box.innerHTML = `<div class="service-cut-title">🎁 스튜디오 서비스 컷 ${count}장</div><div class="service-cut-copy">감사의 마음을 담아 준비했어요. 아래 보정 사진 목록의 <b>서비스 컷</b> 슬롯에 원하시는 사진 번호를 넣어 주세요. 각 서비스 컷에는 <b>시그니처 10×15cm 인화 1장</b>이 무료로 포함됩니다. 더 큰 사이즈로 바꾸시면 차액만 청구돼요.</div>`;
 }
 
 function makeBonusPhoto() {
   return { num: '', note: '', printType: 'basic_10x15', isBonus: true };
 }
 
-// 보너스/서비스 컷 공통: 기본 10×15cm 인화 무료 포함, 큰 사이즈 선택 시 차액만 청구
+// 보너스/서비스 컷 공통: 시그니처 10×15cm 인화 무료 포함, 큰 사이즈 선택 시 차액만 청구
 const BONUS_INCLUDED_PRINT_ID = 'basic_10x15';
 function getBonusPrintUpcharge(photo) {
   const typeId = normalizePrintTypeId(photo?.printType);

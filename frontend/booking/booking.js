@@ -3650,7 +3650,7 @@ function getCompositionCopy() {
     notes: '추가 / 조건',
     price: '금액',
     shootTime: '촬영 시간',
-    studioA4: '기본 A4 1장 포함'
+    studioA4: '시그니처 A4 1장 포함'
   };
 }
 

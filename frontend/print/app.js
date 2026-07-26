@@ -486,18 +486,20 @@ function applyPageSize(){
 }
 /* ============================================================ ORDER — ERP 작업지시서 → 로컬/드라이브 원본 매칭 → 자동 출력 셋업 */
 const PRINT_SIZE_MM = {
-  basic_10x15:{w:100,h:150,label:'10×15cm'}, premium_10x15:{w:100,h:150,label:'프리미엄 10×15'},
+  basic_10x15:{w:100,h:150,label:'시그니처 10×15'}, premium_10x15:{w:100,h:150,label:'파인아트 10×15'},
   photocard_single:{w:55,h:85,label:'포토카드(단면)'}, photocard_double:{w:55,h:85,label:'포토카드(양면)'},
-  basic_a4:{w:210,h:297,label:'A4'}, premium_a4:{w:210,h:297,label:'프리미엄 A4'},
-  premium_a3:{w:297,h:420,label:'A3'}, premium_a3plus:{w:329,h:483,label:'A3+'}
+  basic_a4:{w:210,h:297,label:'시그니처 A4'}, premium_a4:{w:210,h:297,label:'파인아트 A4'},
+  premium_a3:{w:297,h:420,label:'파인아트 A3'}, premium_a3plus:{w:329,h:483,label:'파인아트 A3+'}
 };
+/* 상위 등급(파인아트=구 프리미엄) 라벨 인식. 신규 명칭 누락 시 시그니처 용지로 잘못 출력되므로 반드시 함께 유지. */
+const PREMIUM_LABEL_RE=/prem|프리미엄|파인아트|fine\s*art|fineart/;
 function normNum(s){return String(s||'').trim().toLowerCase().replace(/\.[a-z0-9]+$/,'');}
 function numTail(s){const m=normNum(s).match(/(\d+)\s*$/);return m?String(parseInt(m[1],10)):'';}
 function normPrintId(v){v=String(v||'').trim();if(PRINT_SIZE_MM[v])return v;const low=v.toLowerCase();
   if(/a3\s*\+|a3plus/.test(low))return 'premium_a3plus'; if(/a3/.test(low))return 'premium_a3';
-  if(/a4/.test(low))return /prem|프리미엄/.test(low)?'premium_a4':'basic_a4';
+  if(/a4/.test(low))return PREMIUM_LABEL_RE.test(low)?'premium_a4':'basic_a4';
   if(/photocard|포토카드/.test(low))return /double|양면/.test(low)?'photocard_double':'photocard_single';
-  if(/10.?15|4.?6|kg|엽서/.test(low))return /prem|프리미엄/.test(low)?'premium_10x15':'basic_10x15';
+  if(/10.?15|4.?6|kg|엽서/.test(low))return PREMIUM_LABEL_RE.test(low)?'premium_10x15':'basic_10x15';
   return 'basic_10x15';}
 function parseOrder(text){let d;try{d=JSON.parse(text);}catch(e){throw new Error('JSON 파싱 실패');}
   const arr=Array.isArray(d)?d:(d.existingPrints||d.prints||d.lines||d.order||[]);
