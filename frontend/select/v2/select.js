@@ -366,6 +366,10 @@ function applyCopy() {
     });
   });
 
+  /* Created once at boot, before the session language is known. */
+  const previewBanner = document.getElementById('previewBanner');
+  if (previewBanner) previewBanner.textContent = c.previewBanner;
+
   const weekdays = document.getElementById('pickupWeekdays');
   if (weekdays) {
     weekdays.querySelectorAll('span').forEach((cell, index) => {
@@ -2896,6 +2900,7 @@ function buildMockSession() {
 
 function showPreviewBanner() {
   const el = document.createElement('div');
+  el.id = 'previewBanner';
   /* was white on #f59e0b (Tailwind amber, outside the palette) at 2.15:1.
      Palette warning surface with body text instead, and the amber kept as
      a bottom rule so the strip still reads as a warning. */
