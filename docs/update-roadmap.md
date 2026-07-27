@@ -307,8 +307,15 @@ Updated: 2026-07-16 Europe/Berlin
     (`?api=__nope__` → 즉시 jsonError_) 3.5~4.1s**. 구간 분해: DNS 6ms · TCP 25ms · TLS 80~180ms ·
     **첫 바이트 3.4s(그중 리다이렉트 2.9~3.5s)**. 즉 3.5초는 Apps Script 웹앱의 디스패치·302 오버헤드이고
     우리 코드(시트 읽기+직렬화)는 그 위 **0.3초 남짓**이다. TTL·프리페치·쿼리 튜닝으로 얻을 수 있는 최대치가
-    전체의 8% 미만이라 착수하지 않는다. 체감 개선은 **클라이언트 캐시 쪽**에만 남아 있다
-    (booking.js `readInitDataCache`: 현재 sessionStorage·5분 → 탭을 닫으면 소멸).
+    전체의 8% 미만이라 착수하지 않는다. 체감 개선은 **클라이언트 캐시 쪽**에만 남아 있었다
+    → 2026-07-27 처리 완료(커밋 9155df6): `readInitDataCache` 를 sessionStorage·5분 →
+    localStorage·12시간으로, **재방문 4초 → 65ms**. 이 과정에서 캐시 히트 시 부팅이 TDZ 오류로
+    죽던 **라이브 버그**도 발견·수정(같은 탭 5분 내 새로고침한 고객이 로딩 화면에 갇혔다).
+  - **⚠ 단, `/api/slots` 는 별개였다 — 여기는 실제로 우리 코드가 느렸다 (2026-07-27 완료, 커밋 ebe54df).**
+    날짜 클릭 시 중앙값 9.6초·최대 17초, 닫힌 날짜는 22.8초였는데 `getPublicSlots_` 에 캐시가 전혀 없었다.
+    바로 옆 `getPublicCalendarBatch_` 의 버전키 캐시를 복사해 **9.9초 → 3.6초**(= 플랫폼 바닥, 더 줄일 여지 없음).
+    무효화는 기존 `bumpCalCacheVer_` 가 그대로 담당하고, 예약 제출의 서버 재검증만 `skipCache` 로 우회한다.
+    교훈: "Apps Script 라 느리다"는 결론을 엔드포인트 단위로 재검증할 것 — init 은 맞았고 slots 는 틀렸다.
 - **아침 브리핑 마케팅 섹션 (2026-07-17, ✅ 배포 @608)** — `Code.gs _buildDailyBriefingData_`에 marketing 블록
   (마케팅 스케줄 시트 예정게시 7일+최근 성과) + D7 메일에 "📣 마케팅(인스타)" 섹션. 부가 구현(기존 필드 불변).
   clasp push+redeploy @607→@608, daily-briefing 에이전트로 스모크테스트(marketing 필드 반환 확인, 현재 데이터 0/0은 정상). git 커밋됨.
