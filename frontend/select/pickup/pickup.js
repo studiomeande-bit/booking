@@ -23,6 +23,11 @@
     loading:    { ko: '불러오는 중입니다…', en: 'Loading…', de: 'Wird geladen…' },
     noSession:  { ko: '유효하지 않은 링크입니다. 안내 메일의 링크로 다시 접속해 주세요.', en: 'Invalid link. Please use the link from our email.', de: 'Ungültiger Link. Bitte nutzen Sie den Link aus unserer E-Mail.' },
     notPickup:  { ko: '이 세션은 픽업 수령으로 신청되어 있지 않습니다. 변경을 원하시면 스튜디오로 연락해 주세요.', en: 'This session is not set for studio pickup. Please contact us if you would like to change it.', de: 'Diese Sitzung ist nicht für Abholung vorgesehen. Bitte kontaktieren Sie uns für eine Änderung.' },
+    /* 마감된 세션 — 오류가 아니라 완료 안내다. 수령 여부를 단정하지 않는 문구와, 실제로 수령 기록이
+       있을 때만 쓰는 문구를 따로 둔다(어드민에서 수령 전에 먼저 마감하는 경우가 있다). */
+    doneGeneric:{ ko: '이 촬영 건은 마무리되었습니다. 이용해 주셔서 감사합니다! 😊 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.', en: 'This session is complete. Thank you! 😊 For any questions, email studio.mean.de@gmail.com.', de: 'Diese Sitzung ist abgeschlossen. Vielen Dank! 😊 Bei Fragen schreiben Sie an studio.mean.de@gmail.com.' },
+    handedOver: { ko: '수령이 완료되어 이 촬영 건은 마무리되었습니다. 이용해 주셔서 감사합니다! 😊 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.', en: 'Your prints have been collected and this session is complete. Thank you! 😊 For any questions, email studio.mean.de@gmail.com.', de: 'Ihre Abzüge wurden abgeholt und diese Sitzung ist abgeschlossen. Vielen Dank! 😊 Bei Fragen schreiben Sie an studio.mean.de@gmail.com.' },
+    shipped:    { ko: '인화물 발송이 완료되어 이 촬영 건은 마무리되었습니다. 이용해 주셔서 감사합니다! 😊 문의는 studio.mean.de@gmail.com 으로 연락해 주세요.', en: 'Your prints have been shipped and this session is complete. Thank you! 😊 For any questions, email studio.mean.de@gmail.com.', de: 'Ihre Abzüge wurden versandt und diese Sitzung ist abgeschlossen. Vielen Dank! 😊 Bei Fragen schreiben Sie an studio.mean.de@gmail.com.' },
     isMail:     { ko: '이 세션은 📮 우편 수령으로 진행됩니다. 인화물 발송이 완료되면 메일로 안내드립니다. 픽업으로 변경을 원하시면 스튜디오로 연락해 주세요.', en: 'This session is set for 📮 postal delivery. We will email you once your prints are shipped. Contact us if you prefer pickup instead.', de: 'Diese Sitzung läuft über 📮 Postversand. Wir informieren Sie per E-Mail nach dem Versand. Für Abholung kontaktieren Sie uns bitte.' },
     notPrinted: { ko: '아직 인화 준비 중입니다. 인화가 완료되면 예약 안내 메일을 보내드립니다. 😊', en: 'Your prints are still in production. We will email you as soon as they are ready. 😊', de: 'Ihre Abzüge sind noch in Bearbeitung. Wir informieren Sie per E-Mail, sobald sie fertig sind. 😊' },
     ready:      { ko: '인화가 완료되었습니다! 아래에서 편하신 시간을 선택해 주세요.', en: 'Your prints are ready! Please pick a convenient time below.', de: 'Ihre Abzüge sind fertig! Bitte wählen Sie unten eine passende Zeit.' },
@@ -274,6 +279,18 @@
         applyStaticText();
 
         var method = String(session.existingDeliveryMethod || '').trim();
+
+        /* 최종작업완료로 마감된 세션: 더 이상 예약 UI 를 열지 않는다.
+           LANG 을 세팅한 뒤에 분기해야 EN/DE 고객이 자국어 안내를 본다.
+           수령/발송 여부를 단정하지 않는다 — 우편 건에 '수령하셨습니다'는 거짓이고,
+           어드민이 수령 전에 먼저 마감하는 경우도 있다. */
+        if (session.finalLocked) {
+          var doneMsg = String(session.handoverAt || '').trim()
+            ? (method === 'mail' ? t('shipped') : t('handedOver'))
+            : t('doneGeneric');
+          setBanner(doneMsg);
+          return;
+        }
         var pickupAt = String(session.existingPickupAt || '').trim();
         var printed = String(session.printDoneAt || '').trim();
 

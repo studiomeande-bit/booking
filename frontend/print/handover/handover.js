@@ -163,7 +163,8 @@ async function markDone(sid, method, memo) {
   let msg;
   if (method === "우편발송") msg = `${name}님 · 우편 발송 완료로 기록합니다.\n고객에게 발송 안내 메일이 나갑니다.\n계속할까요?`;
   else if (method === "기타") msg = `${name}님 · 수령포기/폐기로 기록합니다.\n목록에서 사라지며 고객 메일은 없습니다.\n계속할까요?`;
-  else msg = `${name}님 · ${method}으로 기록합니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
+  // 방문/대리 수령은 서버가 '최종작업완료'까지 마감한다 — 확인창이 그 사실을 말해야 한다
+  else msg = `${name}님 · ${method}으로 기록하고 최종작업완료로 마감합니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
   if (!confirm(msg)) return;
 
   busy = true;

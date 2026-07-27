@@ -49,6 +49,15 @@
       <div id="errorMessage" class="empty-state"></div>
     </section>
 
+    <!-- 마감된 세션 안내. 오류 패널과 분리해 둔다 — 재사용하면 '오류' 제목 밑에 완료 안내가 뜬다. -->
+    <section id="donePanel" class="panel hidden">
+      <div class="panel-head">
+        <h2 id="doneTitle"></h2>
+      </div>
+      <div id="doneBody" class="empty-state"></div>
+      <a id="doneDriveBtn" class="primary-btn hidden" style="display:inline-block;margin-top:16px;" target="_blank" rel="noopener"></a>
+    </section>
+
     <section id="appPanel" class="hidden">
       <div class="progress-row">
         <div class="step-dot active" id="dot0" data-i18n-attr="title:dot0" title="시작 안내"></div>
@@ -433,6 +442,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=db9e7903ce"></script>
+  <script src="./select.min.js?v=69d526f68d"></script>
 </body>
 </html>

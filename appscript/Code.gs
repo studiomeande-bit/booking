@@ -964,7 +964,7 @@ function handlePublicApiRequest_(route,method,e){
       if(!gate.ok) return jsonError_(gate.code,gate.message);
       const sid=String(payload.sessionId||payload.id||'').trim();
       const res=route==='select-handover-done'
-        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,finalize:payload.finalize===true,notify:payload.notify!==false})
+        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false})
         : undoSelectHandoverBySession_(sid);
       if(!res||!res.ok) return jsonError_('HANDOVER_FAILED',(res&&res.message)||'기록 실패');
       return jsonOk_(res);
@@ -9581,7 +9581,9 @@ function approveRetouch_(sessionId,p){
     // 이미 승인된 세션이면 재처리하지 않음 (중복 클릭 시 어드민 메일 중복 방지)
     const alreadyApproved=String(row[SELECT_COL['상태']]||'')==='보정본확인완료';
     if(!alreadyApproved){
+      const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
       selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
+      reopenBookingIfSelectUnlocked_(selSh,idx+2,prevStatusForReopen);
       try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. 인화 작업을 진행해 주세요.<br>상품: ${row[7]}</p>`});}catch(e){}
     }
     const msgs={ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>Studio mean에서 인화 작업을 진행할 예정입니다. 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Studio mean will proceed with printing. Thank you!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Studio mean wird mit dem Druck beginnen. Vielen Dank!</p>'};
@@ -9757,7 +9759,9 @@ function reviseRetouch_(sessionId,p){
       requestedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
       note:note
     });
+    const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('재수정요청');
+    reopenBookingIfSelectUnlocked_(selSh,rowNum,prevStatusForReopen);
     selSh.getRange(rowNum,SELECT_COL['재수정요청횟수']+1).setValue(newCount);
     selSh.getRange(rowNum,SELECT_COL['재수정요청메모']+1).setValue(note);
     selSh.getRange(rowNum,SELECT_COL['재수정요청이력JSON']+1).setValue(JSON.stringify(history));
@@ -15598,7 +15602,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 // ⚠ SELECT_HEADERS 는 append-only. 중간 삽입은 SELECT_COL 이 상수에서 파생되므로 기존 전 행이 조용히 어긋난다.
@@ -16642,7 +16646,27 @@ function getSelectSession(sessionId){
     const rawStatus=String(row[SELECT_COL['상태']]||'').trim();
     if(hasSelectSubmittedContent_(row)){
       if(isSelectFinalLockedStatus_(rawStatus)){
-        return{ok:false,message:'최종 작업이 완료되어 수정 제출이 마감되었습니다.'};
+        /* 마감된 세션 — 쓰기는 계속 막되(제출·수정·픽업예약·우편전환 가드는 그대로), 읽기는 안내가 되게 한다.
+           맨 {ok:false,message} 로 내려보내면 api-select 가 throw 로 바꿔 셀렉 v2 는 오류 패널,
+           픽업 페이지는 빨간 배너(언어 교체 전이라 EN/DE 고객도 한국어)를 본다.
+           수령 기록이 이제 자동으로 마감을 찍으므로 픽업 고객 전원이 그 화면을 만나게 된다.
+           submitted 를 붙여 프론트가 정상 응답으로 받게 하고, finalLocked 로 완료 화면을 띄우게 한다.
+           필드는 최소한만 — 열린 세션이 이미 주는 것보다 적게(주소·이메일·보정 선택내역 제외).
+           단 existingPrints 는 남긴다: 인화앱이 재인화 주문을 이 필드로 읽으므로(print/app.js
+           select-session → existingPrints), 빼면 마감된 건은 사장님이 재인화를 못 건다. */
+        let lockedPrints=[];
+        try{lockedPrints=JSON.parse(String(row[SELECT_COL['추가인화']]||'[]'));}catch(e){}
+        return{
+          ok:false,submitted:true,finalLocked:true,
+          lang:base.lang,name:base.name,driveLink:base.driveLink,
+          handoverAt:base.handoverAt,
+          existingDeliveryMethod:base.existingDeliveryMethod,
+          existingPrints:Array.isArray(lockedPrints)?lockedPrints:[],
+          // 인화앱의 '이미 출력한 세션입니다' 재인화 경고가 이 두 필드로 뜬다. 빼면 경고가 가장 필요한
+          // 케이스(이미 건네준 건)에서만 조용히 사라져 중복 출력이 난다.
+          printDoneAt:base.printDoneAt,printDoneCount:base.printDoneCount,
+          message:'최종 작업이 완료되어 수정 제출이 마감되었습니다.'
+        };
       }
       return buildSubmittedSelectSessionPayload_(row,base);
     }
@@ -17355,6 +17379,14 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
 var HANDOVER_EPOCH_='2026-07-01';    // 이 앵커일 이전 행은 목록·브리핑·리마인드에서 영구 제외(과거행 홍수 방지)
 var HANDOVER_WINDOW_DAYS_=90;        // 롤링 윈도 — 끝내 안 찾아간 건도 결국 큐에서 빠져 브리핑이 무한 증식하지 않는다
 var HANDOVER_METHODS_=['방문수령','대리수령','우편발송','기타'];
+/* 수령 기록만으로 '최종작업완료'까지 마감할 방법 — 실물이 사람 손에 넘어간 경우만.
+   ⚠ 화이트리스트 방향이어야 한다: 아래 method 판정이 미지·누락 값을 전부 '기타'로 폴백시키므로,
+     블랙리스트로 짜면 오타 payload 가 조용히 마감을 찍는다. 화이트리스트면 그런 값은 마감되지 않는다.
+   · 우편발송 = 보냈을 뿐 도착 미확인. 마감하면 '우편발송' 상태가 아예 안 써져서 배송 추적 앵커
+     (undo 복구 분기·toship 판정·어드민 확인창 문구)가 통째로 어긋난다.
+   · 기타 = 휴대폰 페이지의 '수령포기·폐기' 버튼 값이자 미지 method 폴백값. 폐기 건을 매출·마케팅
+     후보로 올리면 안 된다. */
+var HANDOVER_FINALIZE_METHODS_=['방문수령','대리수령'];
 var SELECT_HANDOVER_PAGE_BASE='https://print.studio-mean.com/handover/';
 
 // 경과 기준일 — 출력완료/픽업/제출 중 가장 최근 (printPending 앵커와 동일 패턴)
@@ -17453,6 +17485,38 @@ function listSelectHandoverPending_(opts){
 
 /* 수령 기록 코어 — 호출자가 ScriptLock 을 잡고 있다고 가정한다(setSelectDeliveryMethodCore_ 와 동일 계약).
    메일은 보내지 않고 스냅샷만 돌려준다 — 발송은 락 해제 후 호출자가 한다. */
+/* 같은 예약에 아직 안 끝난 **활성** 셀렉 행이 따로 있는가.
+   한 예약에 셀렉 행이 여러 개 생기는 경우가 있다(링크 재발송 이력 등). 그중 하나를 수령 마감했다고
+   예약장부를 '작업완료'로 올리면 getSelectDashboard 가 그 예약을 통째로 걸러내, 아직 진행 중인
+   행까지 어드민 사진셀렉 탭에서 사라진다.
+   ⚠ 전체 행을 훑으면 안 된다 — 버려진 '대기중' 구행 하나가 예약장부 마감을 영구히 막는다.
+     시스템의 나머지가 쓰는 것과 같은 getActiveSelectRowForBooking_ 기준으로, 활성 행이 나 자신이
+     아니면서 아직 안 끝났을 때만 보류한다. */
+function hasOtherOpenSelectRowForBooking_(selSh,bookingRowIndex,selfRowNum){
+  try{
+    const active=getActiveSelectRowForBooking_(selSh,bookingRowIndex);
+    if(!active||active.rowIndex===selfRowNum) return false;
+    return !isSelectFinalLockedStatus_(String(active.row[SELECT_COL['상태']]||'').trim());
+  }catch(e){ Logger.log('hasOtherOpenSelectRow fail: '+e.message); return false; }
+}
+
+/* 마감된 셀렉 행의 상태를 다시 진행 단계로 되돌릴 때, 예약장부도 같이 열어 준다.
+   셀렉 상태만 되돌리면 예약장부는 '작업완료'로 남고, getSelectDashboard 가 그 예약을 통째로
+   걸러내기 때문에 그 건은 어드민 사진셀렉 탭 어디에도 나타나지 않는다(사장님이 손댈 방법이 없어진다).
+   수령 마감이 자동화되면서 '마감 뒤 고객이 재수정을 요청하는' 경로가 실제로 흔해졌다. */
+function reopenBookingIfSelectUnlocked_(selSh,rowNum,prevStatus){
+  if(!isSelectFinalLockedStatus_(String(prevStatus||'').trim())) return '';
+  try{
+    const bri=parseInt(selSh.getRange(rowNum,SELECT_COL['예약장부행']+1).getValue(),10)||0;
+    if(bri<2) return '';
+    const bSh=ensureSheets_().bookingSheet;
+    if(String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim()!=='작업완료') return '';
+    bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('셀렉완료');
+    if(SELECT_COL['수령직전상태']!=null) selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1).setValue('');
+    return '셀렉완료';
+  }catch(e){ Logger.log('reopenBookingIfSelectUnlocked fail: '+e.message); return ''; }
+}
+
 function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
   info=info||{};
   if(SELECT_COL['수령완료일시']==null) return{ok:false,message:'수령 컬럼이 아직 준비되지 않았습니다.'};
@@ -17478,17 +17542,47 @@ function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
   if(SELECT_COL['수령방법']!=null) row[SELECT_COL['수령방법']]=method;
   const st=String(row[SELECT_COL['상태']]||'').trim();
   let statusWritten='';
-  // finalize 가 있으면 그쪽이 이긴다 — 둘 다 쓰면 같은 셀에 두 번 쓰게 되고 두 번째가 낡은 st 로 판단한다
-  if(info.finalize!==true&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
+  let bookingWritten='';   // 예약장부를 우리가 올렸다면 그 직전 값
+  /* 실물이 손에 넘어간 수령(방문·대리)은 그 자체로 작업의 끝이므로 여기서 최종작업완료까지 마감한다.
+     — 사장님 요청(2026-07-27): "픽업 완료되면 최종 작업 마무리 되게".
+     어드민 셀렉 탭의 진행 버튼 체인이 출력→우편발송→최종작업완료 뿐이라 픽업 건은 마감 경로가 없었다.
+     진입점(어드민/휴대폰/에이전트)이 아니라 **method 로 판정**한다: 진입점별로 켜면 실제 기록의 대부분인
+     휴대폰 페이지가 빠지고, 프론트가 finalize 를 보내게 하면 캐시 갱신 전 구버전 화면으로 기록된 건이
+     alreadyDone 조기 반환 때문에 영영 마감되지 않는다. skipFinalize 로만 끌 수 있다. */
+  /* ⚠ 인화가 안 끝난 건은 마감하지 않는다. 휴대폰 수령 큐는 fresh(아직 인화 전)까지 포함해 보여주고
+     그 카드의 주 버튼도 똑같은 '✅ 수령 완료'라, 오터치 한 번이면 보정도 안 끝난 건이 마감될 수 있다.
+     인화하지 않은 인화물을 건넬 수는 없으므로 출력완료일시를 마감의 전제로 둔다(수령 기록 자체는 남는다). */
+  const printedAt=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
+  const finalize=HANDOVER_FINALIZE_METHODS_.indexOf(method)>=0 && info.skipFinalize!==true && !!printedAt;
+  // finalize 가 이기게 둔다 — 둘 다 쓰면 같은 셀에 두 번 쓰게 되고 두 번째가 낡은 st 로 판단한다
+  if(!finalize&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('우편발송');
     row[SELECT_COL['상태']]='우편발송'; statusWritten='우편발송';
   }
-  if(info.finalize===true&&st!=='최종작업완료'){
+  if(finalize&&st!=='최종작업완료'){
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('최종작업완료');
     row[SELECT_COL['상태']]='최종작업완료'; statusWritten='최종작업완료';
     // updateSelectStatusAdmin 이 하는 두 쓰기와 동일. 어드민 토큰 없는 passcode 경로에서도 써야 해서 중복 구현.
+    // ⚠ 취소된 예약은 셀렉 행이 그대로 남으므로(cancelBookingAdmin 이 사진셀렉을 안 건드림) 상태를 확인하고 쓴다.
+    //   확인 없이 덮어쓰면 취소 건이 매출 집계·마케팅 후보로 되살아난다(listSelectHandoverPending_ 와 같은 가드).
     const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
-    if(bri>=2){ try{ ensureSheets_().bookingSheet.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료'); }catch(e){Logger.log('handover booking done fail: '+e.message);} }
+    if(bri>=2&&!hasOtherOpenSelectRowForBooking_(selSh,bri,rowNum)){
+      try{
+        const bSh=ensureSheets_().bookingSheet;
+        const cur=String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim();
+        if(cur&&cur!=='작업완료'&&!isBookingCancelledStatus_(cur)){
+          bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료');
+          bookingWritten=cur;   // 우리가 올렸다는 증거 — undo 는 이게 있을 때만 예약장부를 내린다
+        }
+      }catch(e){Logger.log('handover booking done fail: '+e.message);}
+    }
+  }
+  /* 되돌리기 대칭 — '직전값>내가쓴값[|예약장부직전값]' 으로 남긴다.
+     직전값만 남기면 undo 가 그 사이 사장님이 손수 바꾼 상태까지 덮어쓴다. 내가 쓴 결과값을 함께
+     남겨야 '지금도 내가 쓴 그대로인가'를 확인하고 되돌릴 수 있다(소유권 확인). */
+  if(statusWritten&&SELECT_COL['수령직전상태']!=null){
+    selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1)
+      .setValue(st+'>'+statusWritten+(bookingWritten?('|'+bookingWritten):''));
   }
   return{
     ok:true,sessionId:sessionId,handedOverAt:now,method:method,statusWritten:statusWritten,
@@ -17547,12 +17641,45 @@ function undoSelectHandoverBySession_(sessionId){
     });
     // 기록 시 markSelectHandoverCore_ 가 올린 상태도 되돌린다. 안 되돌리면 상태가 '우편발송'으로 남아
     // listSelectHandoverPending_ 의 toship 조건(st!=='우편발송')에 영원히 걸리지 않아 큐에서 사라진다.
-    if(prevMethod==='우편발송'
+    // 최종작업완료로 마감된 건은 여기서 못 풀면 고객 셀렉 페이지가 영구 잠긴다.
+    const curSt=String(row[SELECT_COL['상태']]||'').trim();
+    const savedRaw=SELECT_COL['수령직전상태']!=null?String(row[SELECT_COL['수령직전상태']]||'').trim():'';
+    // '직전값>내가쓴값[|예약장부직전값]'
+    const savedBooking=savedRaw.indexOf('|')>=0?savedRaw.slice(savedRaw.indexOf('|')+1):'';
+    const savedPair=(savedRaw.indexOf('|')>=0?savedRaw.slice(0,savedRaw.indexOf('|')):savedRaw).split('>');
+    const savedPrev=savedPair[0]||'';
+    const savedWrote=savedPair.length>1?savedPair[1]:'';
+    let restoredStatus='';
+    if(savedRaw&&SELECT_COL['수령직전상태']!=null) selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1).setValue('');
+    if(savedPrev&&savedWrote&&curSt===savedWrote){
+      /* 소유권 확인 — 지금 상태가 우리가 쓴 그 값일 때만 되돌린다.
+         그 사이 사장님이 손수 '재수정요청' 등으로 바꿔 놨다면 건드리지 않는다(기록만 지운다). */
+      selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue(savedPrev);
+      restoredStatus=savedPrev;
+    }else if(prevMethod==='우편발송'
        && String(row[SELECT_COL['수령방식']]||'').trim()==='mail'
-       && String(row[SELECT_COL['상태']]||'').trim()==='우편발송'){
+       && curSt==='우편발송'){
+      // 수령직전상태 컬럼이 생기기 전에 기록된 구행용 폴백
       selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('출력');   // AdminV2 nextMap 상 '우편발송' 직전 단계
+      restoredStatus='출력';
+    }
+    /* 예약장부는 **우리가 올린 경우에만** 내린다. 기록 쪽은 이미 '작업완료'면 쓰지 않으므로,
+       그 대칭이 없으면 사장님이 손수 닫아둔 예약이나 같은 예약의 다른 셀렉 행이 만든 마감까지 풀린다. */
+    let bookingRestored='';
+    if(restoredStatus&&savedBooking){
+      const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+      if(bri>=2){
+        try{
+          const bSh=ensureSheets_().bookingSheet;
+          if(String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim()==='작업완료'){
+            bSh.getRange(bri,BOOKING_COL['상태']+1).setValue(savedBooking);
+            bookingRestored=savedBooking;
+          }
+        }catch(e){Logger.log('handover undo booking fail: '+e.message);}
+      }
     }
     return{ok:true,sessionId:sid,cleared:prev,clearedMethod:prevMethod,
+           restoredStatus:restoredStatus,bookingRestored:bookingRestored,
            name:String(row[SELECT_COL['고객명']]||''),
            mailAlreadySent:prevMethod==='우편발송'};
   } finally { try{lock.releaseLock();}catch(e){} }
@@ -17733,7 +17860,7 @@ function markSelectHandoverAdmin(token,payload){
   if(!sid) throw new Error('셀렉 세션을 찾을 수 없습니다.');
   const res=markSelectHandoverBySession_(sid,{
     method:payload.method,memo:payload.memo,
-    finalize:payload.finalize===true,notify:payload.notify!==false
+    skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false
   });
   if(!res||!res.ok) throw new Error((res&&res.message)||'수령 기록 실패');
   return res;
@@ -18106,13 +18233,34 @@ function markSelectPrintDone_(sessionId,info){
   const count=Math.max(0,parseInt((info&&info.count),10)||0);
   if(SELECT_COL['출력완료일시']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료일시']+1).setValue(now);
   if(SELECT_COL['출력완료매수']!=null) selSh.getRange(rowNum,SELECT_COL['출력완료매수']+1).setValue(count);
+  /* 재인화(prev 존재)면 isSelectHandoverOpen_ 가 수령 큐를 자동으로 다시 연다. 그런데 상태가
+     '최종작업완료'로 잠긴 채면 스튜디오에는 '전달 대기'로 뜨는데 고객은 픽업 재예약·우편전환·
+     셀렉 페이지가 전부 막힌 모순이 남는다. 마감을 풀어 양쪽을 같이 다시 연다.
+     예약장부는 지금 값이 정확히 '작업완료'일 때만 되돌린다(취소·기타 상태는 건드리지 않는다). */
+  let reopened='';
+  if(prev&&isSelectFinalLockedStatus_(String(rows[idx+1][SELECT_COL['상태']]||'').trim())){
+    selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('출력');   // AdminV2 nextMap 상 마감 직전 단계
+    rows[idx+1][SELECT_COL['상태']]='출력';
+    reopened='출력';
+    // 낡은 되돌리기 기록을 남겨두면 이후 undo 가 자기가 쓰지도 않은 상태를 강등시킨다
+    if(SELECT_COL['수령직전상태']!=null) selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1).setValue('');
+    const bri=parseInt(rows[idx+1][SELECT_COL['예약장부행']],10)||0;
+    if(bri>=2){
+      try{
+        const bSh=ensureSheets_().bookingSheet;
+        if(String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim()==='작업완료'){
+          bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('셀렉완료');   // getSelectDashboard 필터에 다시 걸리게
+        }
+      }catch(e){ Logger.log('reprint booking reopen fail: '+e.message); }
+    }
+  }
   // 출력 후 픽업예약 흐름: 픽업 세션이고 아직 미예약이면 예약 안내 메일 발송(1회 멱등)
   let inviteSent=false;
   try{
     if(SELECT_COL['출력완료일시']!=null) rows[idx+1][SELECT_COL['출력완료일시']]=now; // 인메모리 행도 갱신(인바이트의 출력완료 게이트 통과)
     inviteSent=maybeSendSelectPickupInvite_(selSh,rows[idx+1],rowNum,sid);
   }catch(e){ Logger.log('pickup invite fail: '+e.message); }
-  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent};
+  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent,reopened:reopened};
 }
 
 function submitCustomerPrintOrder_(sessionId,order){

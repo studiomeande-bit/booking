@@ -272,6 +272,10 @@ const els = {
   loadingScreen: document.getElementById('loadingScreen'),
   banner: document.getElementById('statusBanner'),
   errorPanel: document.getElementById('errorPanel'),
+  donePanel: document.getElementById('donePanel'),
+  doneTitle: document.getElementById('doneTitle'),
+  doneBody: document.getElementById('doneBody'),
+  doneDriveBtn: document.getElementById('doneDriveBtn'),
   errorMessage: document.getElementById('errorMessage'),
   appPanel: document.getElementById('appPanel'),
   successPanel: document.getElementById('successPanel'),
@@ -423,6 +427,8 @@ function setLang(lang) {
    still come from Korean literals in this file — migrating those is the
    next batch — but the static surface and anything already keyed updates. */
 function rerenderForLang() {
+  // 완료 화면은 state.session 없이 떠 있으므로 아래 가드보다 먼저 처리해야 언어 전환이 먹는다
+  if (state.doneSession) { renderDoneScreen(); return; }
   if (!state.session) return;
   renderHeader();
   renderSessionSummary();
@@ -498,6 +504,13 @@ async function boot() {
   }
   try {
     const session = await fetchSelectSession(state.sessionId);
+    /* 최종작업완료로 마감된 세션 — 오류가 아니라 '끝났습니다' 안내다.
+       hydrate 하면 canEdit 이 없어 신규 제출 모드로 열리고, 고객이 다 채운 뒤 제출에서 거절당한다. */
+    if (session?.finalLocked) {
+      showDoneScreen(session);
+      hideLoading();
+      return;
+    }
     hydrateSession(session);
     renderHeader();
     renderSessionSummary();
@@ -575,6 +588,43 @@ function showError(message) {
   els.appPanel.classList.add('hidden');
   els.successPanel.classList.add('hidden');
   hideLoading();
+}
+
+/* 마감된 세션의 완료 화면 — 고객 입장에선 잘못된 게 아니라 다 끝난 것이다. */
+function showDoneScreen(session) {
+  state.doneSession = session;
+  // 세션 언어로 먼저 맞춘다(고객이 URL/저장값으로 직접 고른 경우는 그쪽이 우선).
+  if (!state.langChosen) {
+    const sessionLang = normalizeLang(session.lang);
+    if (sessionLang && sessionLang !== state.lang) {
+      state.lang = sessionLang;
+      applyCopy();
+    }
+  }
+  els.errorPanel.classList.add('hidden');
+  els.appPanel.classList.add('hidden');
+  els.successPanel.classList.add('hidden');
+  els.progressRow?.classList.add('hidden');
+  els.donePanel.classList.remove('hidden');
+  renderDoneScreen();
+}
+
+function renderDoneScreen() {
+  const session = state.doneSession;
+  if (!session) return;
+  const c = copy();
+  /* 수령 여부를 단정하지 않는다 — 어드민에서 '출력 → 최종작업완료'로 먼저 마감하는 경우가 있어,
+     아직 찾아가지 않은 고객에게 '수령하셨습니다'라고 말하면 거짓말이 된다. */
+  const handedOver = !!String(session.handoverAt || '').trim();
+  els.doneTitle.textContent = c.doneTitle;
+  els.doneBody.textContent = handedOver ? c.doneBodyHandedOver : c.doneBody;
+  setBanner(c.doneTitle, 'success');
+  const link = String(session.driveLink || '').trim();
+  els.doneDriveBtn.classList.toggle('hidden', !link);
+  if (link) {
+    els.doneDriveBtn.href = link;
+    els.doneDriveBtn.textContent = c.doneDrive;
+  }
 }
 
 function showApp() {

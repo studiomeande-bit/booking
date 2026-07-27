@@ -9462,7 +9462,7 @@ function markSelHandover(rowIndex){
   const custName=(r&&r.name)||'';
   const msg=isMail
     ? `${custName}님 · 우편 발송 완료로 기록합니다.\n고객에게 발송 안내 메일이 나가고, 상태도 '우편발송'으로 바뀝니다.\n계속할까요?`
-    : `${custName}님 · 방문 수령 완료로 기록합니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
+    : `${custName}님 · 방문 수령 완료로 기록합니다.\n상태가 '최종작업완료'로 마감되어 이 목록에서 사라집니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
   if(!confirm(msg))return;
   const memo=prompt('내부 메모 (선택, 120자) — 고객·제3자 개인정보는 입력하지 마세요.','');
   if(memo===null)return;
@@ -9470,9 +9470,10 @@ function markSelHandover(rowIndex){
     if(res&&res.ok){
       // 우편발송인데 mailSent 가 false면 메일주소가 없어 못 보낸 것 — 확인창에서 약속했으니 알린다
       const mailNote=!isMail?'':(res.mailSent?' (발송 안내 메일 발송됨)':' ⚠ 메일주소가 없어 안내 미발송');
+      const doneNote=res.statusWritten==='최종작업완료'?' · 최종작업완료로 마감':'';
       showToast(res.alreadyDone
         ? '이미 수령 완료로 기록된 건입니다.'
-        : ('수령 완료로 기록했습니다.'+mailNote),res.alreadyDone||!isMail||res.mailSent?'ok':'warn');
+        : ('수령 완료로 기록했습니다.'+doneNote+mailNote),res.alreadyDone||!isMail||res.mailSent?'ok':'warn');
       loadSelectHistory();   // 상태 부수효과를 클라이언트가 예측할 수 없어 서버 재조회
     } else alert('기록 실패: '+((res&&res.message)||'오류'));
   }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
@@ -9779,7 +9780,11 @@ function renderSelectDashboard(){
     } else if(s==='재수정요청'){
       actions=`<button class="btn btn-outline btn-sm" onclick="viewSubmission(${r.rowIndex})">회신 확인</button> <button class="btn btn-primary btn-sm" onclick="openRetouchSendModal(${r.rowIndex})">수정본 발송</button>`;
     } else if(['보정본발송','보정본확인완료','출력','우편발송'].includes(s)){
-      const nextMap={'보정본발송':'보정본확인완료','보정본확인완료':'출력','출력':'우편발송','우편발송':'최종작업완료'};
+      // 픽업 건은 '우편발송'을 거치지 않는다 — 기존 체인은 출력→우편발송→최종작업완료 뿐이라
+      // 픽업 고객에게는 마감 버튼이 아예 없어 드롭다운에서 직접 골라야 했다.
+      const isPickup=String((sel&&sel.deliveryMethod)||'').trim()==='pickup';
+      const nextMap={'보정본발송':'보정본확인완료','보정본확인완료':'출력',
+                     '출력':isPickup?'최종작업완료':'우편발송','우편발송':'최종작업완료'};
       const nextStatus=nextMap[s];
       actions=`<button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewSubmission(${r.rowIndex})">회신</button> `;
       if(nextStatus) actions+=`<button class="btn btn-outline btn-sm" onclick="advanceSelectStatus(${r.rowIndex},'${nextStatus}')">→ ${nextStatus}</button>`;
