@@ -126,6 +126,17 @@ check('forfeit 기록', r.ok === true && r.res.totalRefund === 0, r.ok ? `forfei
 r = runRefund(paidRow, { amount: 10, method: '오타' });
 check('미지 수단 폴백', r.ok === true && r.res.event.method === 'bank', r.ok ? r.res.event.method : r.error);
 
+// 굿샤인 복원: 현금이 아니므로 실수령 0 이어도 기록되고, 누계에 안 잡힌다
+r = runRefund({ '총결제액': 170, '계약금': 100, '고객명': 'T' }, { amount: 100, type: 'gutschein_restore', method: 'gutschein' });
+check('복원 기록(캡 미적용)', r.ok === true, r.error || '');
+check('복원 누계 제외', r.ok && r.res.totalRefund === 0 && r.written['환불누계금액'] === 0, r.ok ? `누계 ${r.res.totalRefund}` : '');
+// 복원 이벤트가 있어도 현금 환불 상한은 그대로 실수령 기준
+const withRestore = { ...paidRow, '환불내역JSON': JSON.stringify([{ ts: 'x', payoutDate: '2026-07-01', amount: 100, method: 'gutschein', type: 'gutschein_restore' }]) };
+r = runRefund(withRestore, { amount: 170 });
+check('복원 후 현금 상한 유지', r.ok === true && r.res.totalRefund === 170, r.ok ? `누계 ${r.res.totalRefund}` : r.error);
+r = runRefund(withRestore, { amount: 171 });
+check('복원 후 현금 초과 거부', r.ok === false, '171 통과됨');
+
 // Y 플래그인데 금액 미기재 → due 폴백 (장부와 동일 규칙)
 r = runRefund({ '총결제액': 170, '계약금': 100, '계약금입금여부': 'Y', '고객명': 'T' }, { amount: 100 });
 check('Y+금액미기재 due 폴백', r.ok === true, r.error || '');

@@ -12828,7 +12828,7 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       }
     }
     refunds.forEach(function(ev){
-      if(!ev||ev.type==='forfeit') return;
+      if(!ev||ev.type!=='refund') return;   // forfeit=마커, gutschein_restore=현금 아님 — 음수 미발생
       const amt=roundCurrency_(Number(ev.amount)||0);
       if(amt<=0) return;
       const d=String(ev.payoutDate||'').slice(0,10);
@@ -13712,7 +13712,7 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
     }
     // 현금 환불 — 환불 이벤트(method:'cash')를 지급일 날짜의 출금으로 파생
     bookingRefunds.forEach(function(ev){
-      if(!ev||ev.type==='forfeit'||ev.method!=='cash') return;
+      if(!ev||ev.type!=='refund'||ev.method!=='cash') return;
       const amt=roundCurrency_(Number(ev.amount)||0);
       const d=String(ev.payoutDate||'').slice(0,10);
       if(amt<=0||!d||!inRange(d)) return;
@@ -22887,10 +22887,11 @@ function parseBookingRefunds_(row){
     return Array.isArray(a)?a:[];
   }catch(e){ return []; }
 }
-// forfeit(몰수 표시) 이벤트는 금액 0의 마커라 누계에서 제외
+// 현금성 환불(type 'refund')만 누계에 잡는다 — forfeit 는 몰수 마커, gutschein_restore 는
+// 바우처 사용 취소라 돈이 나가지 않는다(실수령 상한·장부 음수 모두 미해당).
 function bookingRefundTotal_(row){
   return roundCurrency_(parseBookingRefunds_(row)
-    .reduce(function(s,e){return s+(e&&e.type!=='forfeit'?(Number(e.amount)||0):0);},0));
+    .reduce(function(s,e){return s+(e&&e.type==='refund'?(Number(e.amount)||0):0);},0));
 }
 
 /* 예약 한 건의 실수령액 — 매출장부 인라인 계산과 동일 규칙(Y 플래그인데 금액 미기재면 due 폴백).
@@ -22919,7 +22920,7 @@ function recordBookingRefund_(sheets,rowIndex,event){
   event=event||{};
   const sh=sheets.bookingSheet;
   const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
-  const type=event.type==='forfeit'?'forfeit':'refund';
+  const type=['forfeit','gutschein_restore'].indexOf(String(event.type||''))>=0?String(event.type):'refund';
   const amount=roundCurrency_(Number(event.amount)||0);
   if(type==='refund'&&amount<=0) throw new Error('환불 금액은 0보다 커야 합니다.');
   const method=BOOKING_REFUND_METHODS_.indexOf(String(event.method||''))>=0?String(event.method):'bank';
@@ -22939,7 +22940,7 @@ function recordBookingRefund_(sheets,rowIndex,event){
   const list=parseBookingRefunds_(row);
   list.push(rec);
   sh.getRange(rowIndex,BOOKING_COL['환불내역JSON']+1).setValue(JSON.stringify(list));
-  const totalRefund=roundCurrency_(list.reduce(function(s,e){return s+(e.type!=='forfeit'?(Number(e.amount)||0):0);},0));
+  const totalRefund=roundCurrency_(list.reduce(function(s,e){return s+(e.type==='refund'?(Number(e.amount)||0):0);},0));
   if(BOOKING_COL['환불누계금액']!=null) sh.getRange(rowIndex,BOOKING_COL['환불누계금액']+1).setValue(totalRefund);
   return{ok:true,rowIndex:rowIndex,event:rec,totalRefund:totalRefund,paid:pay.paid,
          remaining:roundCurrency_(Math.max(0,pay.paid-totalRefund)),
@@ -23026,7 +23027,38 @@ function getCancellationRefundQuoteAdmin(token,rowIndex){
   return calcCancellationRefundQuote_(row);
 }
 
-/* 어드민/에이전트 진입점 — payload={amount,payoutDate?,method?,reason?,memo?,issueInvoice?,notify?} */
+/* 바우처 복원 — 굿샤인으로 결제된 부분의 '환불'은 현금이 아니라 사용 취소다(사장님 확정 2026-07-27).
+   원 판매 시점 과세(Einzweck)를 건드리지 않고 사용만 되돌리므로 세무상 가장 단순하고 현금 유출이 없다.
+   복원 상태: 발송 이력이 있으면 '메일발송', 없으면 '판매완료'(고객이 이미 보유 중인 상태로). */
+function restoreGutscheinForBookingRefund_(bookingRowIndex,bookingRow){
+  const code=String(bookingRow[BOOKING_COL['굿샤인코드']]||'').trim();
+  if(!code) throw new Error('이 예약에는 적용된 굿샤인이 없습니다.');
+  const sheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(sheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다: '+code);
+  const gRow=found.row;
+  const st=String(gRow[GUTSCHEIN_COL['상태']]||'').trim();
+  if(st!==GUTSCHEIN_STATUS.USED) throw new Error('사용완료 상태의 굿샤인이 아닙니다(현재: '+(st||'미상')+').');
+  const linked=parseInt(gRow[GUTSCHEIN_COL['연결예약행']],10)||0;
+  if(linked&&linked!==parseInt(bookingRowIndex,10)) throw new Error('다른 예약(행 '+linked+')에 연결된 굿샤인입니다.');
+  const amount=roundCurrency_(parseMoneyValue_(gRow[GUTSCHEIN_COL['사용금액(€)']]))
+    ||roundCurrency_(parseMoneyValue_(bookingRow[BOOKING_COL['굿샤인차감금액']]));
+  const prevStatus=String(gRow[GUTSCHEIN_COL['메일발송일시']]||'').trim()?GUTSCHEIN_STATUS.MAILED:GUTSCHEIN_STATUS.SOLD;
+  ['사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)',
+   '실제사용상품ID','실제사용상품명','실제사용일시','최종사용확정일시'].forEach(function(h){
+    if(GUTSCHEIN_COL[h]!=null) sheet.getRange(found.rowIndex,GUTSCHEIN_COL[h]+1).setValue('');
+  });
+  sheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(prevStatus);
+  if(GUTSCHEIN_COL['관리메모']!=null){
+    const memo=String(gRow[GUTSCHEIN_COL['관리메모']]||'').trim();
+    const note='[복원] '+Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')+' — 예약 행 '+bookingRowIndex+' 취소 환불';
+    sheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(memo?memo+' '+note:note);
+  }
+  return{code:code,amount:amount,restoredTo:prevStatus,gutscheinRowIndex:found.rowIndex};
+}
+
+/* 어드민/에이전트 진입점 — payload={amount,payoutDate?,method?,reason?,memo?,issueInvoice?,notify?}
+   method 'gutschein' 은 현금 환불이 아니라 바우처 복원으로 동작한다(취소된 예약 전용). */
 function recordBookingRefundAdmin(token,rowIndex,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -23036,7 +23068,22 @@ function recordBookingRefundAdmin(token,rowIndex,payload){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) throw new Error('처리 중입니다. 잠시 후 다시 시도해 주세요.');
   let res;
-  try{ res=recordBookingRefund_(sheets,rIdx,payload); }
+  try{
+    if(String(payload.method||'')==='gutschein'){
+      const row=sheets.bookingSheet.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+      // 예약이 살아있는 채 복원하면 할인도 받고 바우처도 되찾는 이중 혜택 — 취소건 전용으로 게이트
+      if(!isBookingCancelledStatus_(row[BOOKING_COL['상태']])){
+        throw new Error('굿샤인 복원은 취소된 예약에서만 가능합니다. 예약을 먼저 취소해 주세요.');
+      }
+      const restored=restoreGutscheinForBookingRefund_(rIdx,row);
+      res=recordBookingRefund_(sheets,rIdx,{type:'gutschein_restore',amount:restored.amount,method:'gutschein',
+        payoutDate:payload.payoutDate,reason:String(payload.reason||'굿샤인 복원 ('+restored.code+')'),
+        memo:String(payload.memo||''),source:String(payload.source||'admin')});
+      res.gutscheinRestored=restored;
+    }else{
+      res=recordBookingRefund_(sheets,rIdx,payload);
+    }
+  }
   finally{ try{lock.releaseLock();}catch(e){} }
   // 인보이스(옵션): 부분환불마다 발행 가능 — refundEventTs 로 예약당 1건 중복 가드를 우회하고 이벤트에 번호를 연결
   if(payload.issueInvoice===true&&res.event.type==='refund'){
@@ -23050,7 +23097,7 @@ function recordBookingRefundAdmin(token,rowIndex,payload){
       }
     }catch(e){ res.invoiceError=e.message; }
   }
-  if(payload.notify===true) res.mailSent=_sendBookingRefundEmail_(rIdx,res);
+  if(payload.notify===true&&res.event.type==='refund') res.mailSent=_sendBookingRefundEmail_(rIdx,res);
   return res;
 }
 

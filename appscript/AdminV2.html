@@ -2781,8 +2781,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <option value="bank">계좌 이체</option>
         <option value="cash">현금</option>
         <option value="sumup">카드 취소 (SumUp)</option>
-        <option value="gutschein">기프트 바우처</option>
+        <option value="gutschein">기프트 바우처 복원</option>
       </select>
+      <div class="modal-inline-meta" style="margin-top:4px;">바우처 복원 = 결제에 쓰인 굿샤인을 다시 사용 가능 상태로 되돌립니다 (취소된 예약 전용 · 현금 유출 없음)</div>
     </div>
     <div class="form-group">
       <label>사유</label>
@@ -12379,7 +12380,14 @@ function openRefundModal(rowIndex){
   google.script.run.withSuccessHandler(res=>{
     if(!res){h.textContent='';return;}
     const n=(v)=>Number(v)||0;
-    h.innerHTML=`실수령 <b>€${n(res.paid)}</b> · 기환불 <b>€${n(res.alreadyRefunded)}</b> · 환불 가능 <b style="color:#b91c1c;">€${Math.max(0,Math.round((n(res.paid)-n(res.alreadyRefunded))*100)/100)}</b>`;
+    const avail=Math.max(0,Math.round((n(res.paid)-n(res.alreadyRefunded))*100)/100);
+    let html=`실수령 <b>€${n(res.paid)}</b> · 기환불 <b>€${n(res.alreadyRefunded)}</b> · 환불 가능 <b style="color:#b91c1c;">€${avail}</b>`;
+    // 여권 촬영미흡 환불 규정 (사장님 확정 2026-07-27): 결과물을 사용할 수 없는 경우 실수령의 50%
+    if(String(c.itemGroup||'')==='pass'&&avail>0){
+      const half=Math.round(avail*50)/100;
+      html+=` <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px;" onclick="document.getElementById('refund_amount').value=${half};document.getElementById('refund_reason').value='여권 촬영 미흡 환불 (50%)';">여권 미흡 50% = €${half}</button>`;
+    }
+    h.innerHTML=html;
   }).withFailureHandler(()=>{h.textContent='';})
   .getCancellationRefundQuoteAdmin(adminToken,rowIndex);
   document.getElementById('refundModal').classList.add('open');
