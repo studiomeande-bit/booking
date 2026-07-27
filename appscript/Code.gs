@@ -1169,6 +1169,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
+        if(action==='booking-delete') return jsonOk_(deleteBookingForAgent_(token,payload));
         if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
         // 사진 셀렉 / 보정
@@ -11382,6 +11383,105 @@ function searchBookingsForAgent_(token,query){
     out.push(_bookingRowToAgentObject_(row,i+1));
   }
   return {ok:true,count:out.length,bookings:out};
+}
+
+/* 예약 행 삭제 — 지금까지 삭제 액션이 없었던 이유는 **행 인덱스 참조** 때문이다:
+   행을 지우면 아래 행이 전부 당겨져 사진셀렉 '예약장부행', 출장장부 '예약장부행',
+   예약장부 자신의 '결제연결행'이 조용히 엉뚱한 행을 가리키게 된다. 여기서는 삭제 후
+   그 세 참조를 전부 보정한다. 여러 건 삭제 시 호출자는 **행번호 큰 것부터** 지울 것.
+
+   안전장치: ① expectName 이 행 고객명과 정확히 일치 ② confirm:'DELETE' 명시
+   ③ 합성행 판별(이름에 검증/테스트 또는 스튜디오 자체 메일) — 실고객 행은 force:true 없인 거부. */
+function deleteBookingForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  if(String(payload.confirm||'')!=='DELETE') throw new Error("삭제는 되돌릴 수 없습니다. confirm:'DELETE' 를 명시해 주세요.");
+  const expectName=String(payload.expectName||'').trim();
+  if(!expectName) throw new Error('expectName(고객명)이 필요합니다.');
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(15000)) throw new Error('처리 중입니다. 잠시 후 다시 시도해 주세요.');
+  try{
+    const sheets=ensureSheets_();
+    const sh=sheets.bookingSheet;
+    if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+    const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    if(name!==expectName) throw new Error('행 고객명 불일치: 행="'+name+'" / 기대="'+expectName+'"');
+    const email=String(row[BOOKING_COL['이메일']]||'').trim().toLowerCase();
+    const synthetic=/검증|테스트/.test(name)||email===String(CONFIG.ADMIN_EMAIL||'').toLowerCase();
+    if(!synthetic&&payload.force!==true) throw new Error('실고객으로 보이는 행입니다. 정말 삭제하려면 force:true 를 함께 보내 주세요.');
+    // ① 예약 캘린더 이벤트 삭제
+    let calDeleted=false;
+    const calId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+    if(calId){
+      try{
+        const ev=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(calId);
+        if(ev){ev.deleteEvent();calDeleted=true;}
+      }catch(e){Logger.log('booking-delete cal fail: '+e.message);}
+    }
+    // ② 연결된 셀렉 행 삭제 (픽업 이벤트 포함). 아래에서 위로 지워 셀렉 행 인덱스가 안 밀리게.
+    const selSh=ensureSelectSheet_(sheets.ss);
+    const selRows=selSh.getDataRange().getValues();
+    const selToDelete=[];
+    for(let i=1;i<selRows.length;i++){
+      if(String(selRows[i][SELECT_COL['예약장부행']]||'')!==String(rIdx)) continue;
+      selToDelete.push(i+1);
+      const pev=String(selRows[i][SELECT_COL['픽업캘린더ID']]||'').trim();
+      if(pev){
+        try{
+          const e2=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(pev);
+          if(e2) e2.deleteEvent();
+        }catch(e){Logger.log('booking-delete pickup cal fail: '+e.message);}
+      }
+    }
+    selToDelete.sort(function(a,b){return b-a;}).forEach(function(rn){selSh.deleteRow(rn);});
+    // ③ 예약 행 삭제
+    sh.deleteRow(rIdx);
+    // ④ 참조 보정 — 삭제행보다 큰 행번호는 전부 1 당겨졌다
+    const fixed={select:0,travel:0,paymentLinks:0};
+    const fixColumn=function(sheet,colIdx){
+      const last=sheet.getLastRow();
+      if(last<2||colIdx==null) return 0;
+      const rng=sheet.getRange(2,colIdx+1,last-1,1);
+      const vals=rng.getValues();
+      let n=0;
+      for(let i=0;i<vals.length;i++){
+        const v=parseInt(vals[i][0],10);
+        if(isFinite(v)&&v>rIdx){vals[i][0]=v-1;n++;}
+      }
+      if(n) rng.setValues(vals);
+      return n;
+    };
+    fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
+    try{
+      const tSh=sheets.ss.getSheetByName('출장장부');
+      if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
+    }catch(e){Logger.log('booking-delete travel fix fail: '+e.message);}
+    // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정
+    try{
+      const last=sh.getLastRow();
+      if(last>1&&BOOKING_COL['결제연결행']!=null){
+        const rng=sh.getRange(2,BOOKING_COL['결제연결행']+1,last-1,1);
+        const vals=rng.getValues();
+        let n=0;
+        for(let i=0;i<vals.length;i++){
+          const raw=String(vals[i][0]||'').trim();
+          if(!raw) continue;
+          const out=raw.split(/([,\s]+)/).map(function(tok){
+            const v=parseInt(tok,10);
+            return (/^\d+$/.test(tok.trim())&&isFinite(v)&&v>rIdx)?String(v-1):tok;
+          }).join('');
+          if(out!==raw){vals[i][0]=out;n++;}
+        }
+        if(n) rng.setValues(vals);
+        fixed.paymentLinks=n;
+      }
+    }catch(e){Logger.log('booking-delete paylink fix fail: '+e.message);}
+    return{ok:true,deletedRow:rIdx,name:name,calendarDeleted:calDeleted,
+           deletedSelectRows:selToDelete,refsFixed:fixed};
+  } finally { try{lock.releaseLock();}catch(e){} }
 }
 
 function getBookingForAgent_(token,rowIndex){
