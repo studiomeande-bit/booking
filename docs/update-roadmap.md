@@ -301,7 +301,14 @@ Updated: 2026-07-16 Europe/Berlin
   생성기: 세션 스크래치패드 `lp_gen.py`/`lp_gen2.py`(KO style 재사용, 콘텐츠 config만 교체) — 확장 시 재사용.
   남은 선택: 랜딩↔랜딩 상호링크, 서치콘솔 sitemap 제출(색인), 여권 히어로 이미지 교체.
 - **캘린더 성능 계측 배포 (2026-07-17)** — `booking.js recordCalendarTiming`: 월별(현재/다음/셋째) 로드타임 localStorage 수집,
-  콘솔 `__calPerf()` 열람, >1.5s 경고. 라이브(booking.min.js 재빌드+캐시버스트 u6a). **며칠 뒤 실측으로 TTL·프리페치 튜닝 예정.**
+  콘솔 `__calPerf()` 열람, >1.5s 경고. 라이브(booking.min.js 재빌드+캐시버스트 u6a).
+  - **2026-07-27 실측으로 종결 — 서버 최적화는 무의미하다는 결론.** 라이브 웹앱 curl 측정:
+    `?api=init` 3.7~4.6s, `?api=calendar-batch`(캐시 히트) 2.9~3.7s, **아무 일도 안 하는 경로
+    (`?api=__nope__` → 즉시 jsonError_) 3.5~4.1s**. 구간 분해: DNS 6ms · TCP 25ms · TLS 80~180ms ·
+    **첫 바이트 3.4s(그중 리다이렉트 2.9~3.5s)**. 즉 3.5초는 Apps Script 웹앱의 디스패치·302 오버헤드이고
+    우리 코드(시트 읽기+직렬화)는 그 위 **0.3초 남짓**이다. TTL·프리페치·쿼리 튜닝으로 얻을 수 있는 최대치가
+    전체의 8% 미만이라 착수하지 않는다. 체감 개선은 **클라이언트 캐시 쪽**에만 남아 있다
+    (booking.js `readInitDataCache`: 현재 sessionStorage·5분 → 탭을 닫으면 소멸).
 - **아침 브리핑 마케팅 섹션 (2026-07-17, ✅ 배포 @608)** — `Code.gs _buildDailyBriefingData_`에 marketing 블록
   (마케팅 스케줄 시트 예정게시 7일+최근 성과) + D7 메일에 "📣 마케팅(인스타)" 섹션. 부가 구현(기존 필드 불변).
   clasp push+redeploy @607→@608, daily-briefing 에이전트로 스모크테스트(marketing 필드 반환 확인, 현재 데이터 0/0은 정상). git 커밋됨.

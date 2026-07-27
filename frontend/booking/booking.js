@@ -13,7 +13,14 @@ const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WE
 const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v1';
 const DEFAULT_SHOOTING_LOCATION = 'Holzweg-Passage 3, 61440 Oberursel';
 const INIT_CACHE_KEY = 'studioMeanBookingInit:v2';
-const INIT_CACHE_TTL_MS = 5 * 60 * 1000;
+/* 첫 화면 즉시 렌더용 스냅샷 TTL.
+   실측(2026-07-27): 라이브 init 응답이 3.7~4.6초인데 그중 3.5초는 Apps Script 웹앱의
+   디스패치·302 오버헤드다(아무 일도 안 하는 경로도 3.5~4.1초). 서버로는 줄일 수 없으므로
+   체감은 이 캐시로만 좋아진다. sessionStorage(탭 닫으면 소멸)에서 localStorage 로 옮기고
+   TTL 을 12시간으로 늘려, 재방문 고객이 로딩 화면을 보지 않게 한다.
+   스냅샷은 화면을 먼저 그리기 위한 것일 뿐 — 부팅은 항상 서버를 다시 불러 덮어쓰고(boot()),
+   최종 금액은 견적·제출 시점에 서버가 다시 계산한다(가격은 서버가 권위). */
+const INIT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const CONTACT_COUNTRY_PRESETS = [
   { value: '+49', label: 'DE +49' },
   { value: '+82', label: 'KR +82' },
@@ -1441,8 +1448,11 @@ const els = {
   }
 };
 
-boot();
-
+/* ⚠ boot() 호출은 이 파일 **맨 끝**에 있다. 여기서 부르면 안 된다.
+   boot() 의 캐시 분기는 첫 await 이전에 동기로 renderInitData 까지 실행하는데, 그 시점엔 이 아래에
+   선언된 모듈 최상위 const 들이 아직 TDZ 라 ReferenceError 로 죽는다(실측: FAMEVT_PRODUCT_IDS,
+   booking.js:2917 → getGroupProducts → renderGroups). 캐시가 없을 땐 await 뒤에 렌더해서 안 터졌기에
+   "같은 탭에서 5분 내 새로고침한 고객만 로딩 화면에서 멈추는" 형태로 오래 숨어 있었다. */
 async function boot() {
   wireEvents();
   applyCopy();
@@ -1553,7 +1563,9 @@ function syncSelectedProductWithInitData() {
 
 function readInitDataCache() {
   try {
-    const raw = globalThis.sessionStorage?.getItem(INIT_CACHE_KEY);
+    const raw = globalThis.localStorage?.getItem(INIT_CACHE_KEY)
+      // 이전 배포에서 sessionStorage 에 남은 스냅샷도 한 번은 살려 쓴다(전환 시 빈 화면 방지)
+      || globalThis.sessionStorage?.getItem(INIT_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.savedAt || Date.now() - Number(parsed.savedAt) > INIT_CACHE_TTL_MS) return null;
@@ -1565,7 +1577,7 @@ function readInitDataCache() {
 
 function writeInitDataCache(data) {
   try {
-    globalThis.sessionStorage?.setItem(INIT_CACHE_KEY, JSON.stringify({
+    globalThis.localStorage?.setItem(INIT_CACHE_KEY, JSON.stringify({
       savedAt: Date.now(),
       data
     }));
@@ -6828,3 +6840,7 @@ function renderSubmitResult(payload, result) {
   `;
   document.getElementById('resultResetBtn')?.addEventListener('click', resetBookingFlow);
 }
+
+/* 모듈 최상위 const 가 전부 초기화된 뒤에 부팅한다 — 위쪽에서 부르면 캐시 분기의 동기 렌더가
+   아래 선언 const 들의 TDZ 를 밟는다(위 boot() 주석 참조). 함수 선언은 호이스팅되므로 안전. */
+boot();
