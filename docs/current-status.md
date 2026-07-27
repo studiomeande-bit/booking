@@ -1,6 +1,6 @@
 # Current Status
 
-Updated: 2026-05-08 Europe/Berlin
+Updated: 2026-07-27 Europe/Berlin (구조 목록만 갱신 — 아래 Compressed Progress 는 2026-05-08 기준으로 낡음)
 
 ## Live Endpoints
 
@@ -21,9 +21,12 @@ Updated: 2026-05-08 Europe/Berlin
   - `frontend/booking/booking.js`
   - `frontend/booking/booking.css`
   - `frontend/booking/studio-mean-logo.png`
-- Frontend select:
-  - `frontend/select/index.html`
-  - `frontend/select/select.css`
+- Frontend select (v1 제거 2026-07-26 — 루트는 `/v2/` 로 301):
+  - `frontend/select/v2/index.html`
+  - `frontend/select/v2/select.css`
+  - `frontend/select/v2/select.js`
+  - `frontend/select/v2/i18n.js`
+  - `frontend/select/pickup/`
   - `frontend/select/studio-mean-logo.png`
 - Apps Script backend/admin:
   - `appscript/Code.gs`

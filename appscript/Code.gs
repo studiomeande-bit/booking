@@ -16793,6 +16793,7 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
   const basicPrintCredit=Number((getPrintInfo_('basic_10x15')||{}).retouchedPrice||0);
   const chargeable=[];
   const included=[];
+  const units=[];   // 인화 1장 단위로 펼친 목록(쿼터 배정을 전역 2-pass 로 하기 위해)
   (prints||[]).forEach(function(p){
     const printId=String((p&&p.printId)||'print_none').replace(/_(r|e)$/,'').trim()||'print_none';
     if(printId==='print_none') return;
@@ -16812,36 +16813,47 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       ? !!retouchSet[selectPhotoNumKey_(p&&p.photoNum)]
       : !!(p&&p.isRetouched);
     const unit=isRet?Number(info.retouchedPrice||info.price||0):Number(info.price||0);
+    // 장 단위로 펼쳐 두고, 쿼터 배정은 아래에서 전역 2-pass 로 처리한다(순서 의존 제거).
     for(let k=0;k<qty;k+=1){
-      /* 포함 쿼터 소진 — 사장님 확정 규칙(2026-07-26): 쿼터와 다른 인화를 골라도 **차액만** 청구한다.
-         ① 정확히 같은 SKU 쿼터가 있으면 그것부터 소진(=무료). 다른 쿼터를 아껴 고객에게 유리하다.
-         ② 없으면 남은 쿼터 중 **크레딧이 가장 큰 것**을 소진해 차액을 최소화한다(고객 유리).
-         크레딧은 그 행과 같은 맥락의 단가(보정본이면 보정본가, 아니면 추가인화가)로 계산한다.
-         ⚠ 이전에는 SKU 완전일치만 무료였고 나머지는 전액이었다 — 의도와 달랐던 과금 버그. */
-      let match=quota.find(function(item){return item.id===printId&&item.qty>0;});
-      let credit=0;
-      if(match){
-        credit=unit;                                  // 완전 일치 → 전액 상쇄(무료)
+      units.push({photoNum:photoNum,printId:printId,label:label,unit:unit,isRet:isRet,finish:finish,credit:0,matched:false});
+    }
+  });
+
+  /* 포함 쿼터 배정 — 사장님 확정 규칙(2026-07-26): 쿼터와 다른 인화를 골라도 **차액만** 청구한다.
+     ⚠ 반드시 2-pass 여야 한다. 인화를 순서대로 그리디 매칭하면 **같은 주문이 입력 순서에 따라 총액이 달라진다**
+     (실측: 파인아트10×15+시그니처A4 를 A4 먼저 넣으면 €3, 10×15 먼저 넣으면 €7 — 파인아트10×15 가
+      A4 쿼터를 먼저 삼켜 정작 A4 가 정확일치를 못 쓴다).
+     ① 1차: 정확히 같은 SKU 끼리 전역 매칭(=무료). 순서와 무관하게 정확일치를 먼저 보호한다.
+     ② 2차: 남은 인화를 **단가 높은 순**으로 남은 쿼터 중 크레딧이 가장 큰 것에 배정 → 총액 최소(고객 유리)·순서 무관.
+     크레딧은 그 장과 같은 맥락의 단가(보정본이면 보정본가, 아니면 추가인화가). */
+  units.forEach(function(u){
+    const m=quota.find(function(item){return item.id===u.printId&&item.qty>0;});
+    if(m){ m.qty-=1; u.credit=u.unit; u.matched=true; }
+  });
+  units.filter(function(u){return !u.matched;})
+    .slice()
+    .sort(function(a,b){return b.unit-a.unit;})
+    .forEach(function(u){
+      let best=null,bestCredit=-1;
+      quota.forEach(function(item){
+        if(!item||!(item.qty>0)) return;
+        const c=selectQuotaCredit_(item.id,u.isRet);
+        if(c>bestCredit){bestCredit=c;best=item;}
+      });
+      if(best){ best.qty-=1; u.credit=Math.max(0,bestCredit); u.matched=true; }
+    });
+
+  // 결과 분배 — 표시 순서는 고객이 입력한 원래 순서를 유지한다.
+  units.forEach(function(u){
+    if(u.matched){
+      const charge=Math.max(0,roundCurrency_(u.unit-u.credit));
+      if(charge<=0){
+        included.push({photoNum:u.photoNum,printId:u.printId,label:u.label,qty:1,price:0,isRetouched:u.isRet,included:true,source:'included_print',finish:u.finish});
       }else{
-        let best=null,bestCredit=-1;
-        quota.forEach(function(item){
-          if(!item||!(item.qty>0)) return;
-          const c=selectQuotaCredit_(item.id,isRet);
-          if(c>bestCredit){bestCredit=c;best=item;}
-        });
-        if(best){match=best;credit=Math.max(0,bestCredit);}
+        chargeable.push({photoNum:u.photoNum,printId:u.printId,label:u.label+' (포함 차액)',qty:1,price:charge,isRetouched:u.isRet,source:'quota_upgrade',quotaCredit:u.credit,finish:u.finish});
       }
-      if(match){
-        match.qty-=1;
-        const charge=Math.max(0,roundCurrency_(unit-credit));
-        if(charge<=0){
-          included.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:0,isRetouched:isRet,included:true,source:'included_print',finish:finish});
-        }else{
-          chargeable.push({photoNum:photoNum,printId:printId,label:label+' (포함 차액)',qty:1,price:charge,isRetouched:isRet,source:'quota_upgrade',quotaCredit:credit,finish:finish});
-        }
-      }else{
-        chargeable.push({photoNum:photoNum,printId:printId,label:label,qty:1,price:unit,isRetouched:isRet,source:isRet?'retouch_print':'extra_print',finish:finish});
-      }
+    }else{
+      chargeable.push({photoNum:u.photoNum,printId:u.printId,label:u.label,qty:1,price:u.unit,isRetouched:u.isRet,source:u.isRet?'retouch_print':'extra_print',finish:u.finish});
     }
   });
   // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1장에 €3(시그니처 10×15) 차감 (10×15 무료, 큰 사이즈 차액). 총 상한 = 서비스컷수.

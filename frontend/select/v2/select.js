@@ -105,57 +105,72 @@ function computePrintAnnotations() {
   });
   let serviceCreditsRemaining = getServiceCutCount();
   const basicPrintCredit = Number(getPrintOption('basic_10x15').retouched) || 0;
-  return state.prints.map((print) => {
+  /* 쿼터 배정은 행 순서와 무관해야 한다 — 서버 computeSelectDecoupledPrints_ 와 **동일한 2-pass**.
+     그리디로 행마다 처리하면 같은 주문이 입력 순서에 따라 총액이 달라진다(파인아트10×15 가 A4 쿼터를 먼저 삼킴).
+     ① 1차 전역 정확일치(무료) ② 2차 남은 장을 단가 높은 순으로 최대 크레딧 쿼터에 배정. */
+  const rows = state.prints.map((print) => {
     const typeId = normalizePrintTypeId(print.printId);
     const option = getPrintOption(typeId);
     const qty = Math.max(1, Number(print.qty) || 1);
     const isRetouched = isRetouchedPhotoNum(print.photoNum);
     const unit = isRetouched ? Number(option.retouched) || 0 : Number(option.additional) || 0;
-    const numKey = printNumKey(print.photoNum);
-    let includedQty = 0;      // 전액 상쇄되어 무료인 장수
-    let quotaDiffQty = 0;     // 쿼터를 썼지만 차액이 남은 장수
-    let quotaCredit = 0;      // 쿼터로 상쇄된 총액
-    let amount = 0;
-    let serviceDiscount = 0;
-    let serviceCreditUnits = 0;
-    for (let k = 0; k < qty; k += 1) {
-      /* 포함 쿼터 소진 — 서버 computeSelectDecoupledPrints_ 와 **동일 규칙**(사장님 확정 2026-07-26).
-         ① 정확히 같은 SKU 쿼터 우선(=무료) ② 없으면 남은 쿼터 중 크레딧이 가장 큰 것을 소진해 차액만 청구. */
-      let match = quota.find((q) => q.id === typeId && q.qty > 0);
-      let credit = 0;
-      if (match) {
-        credit = unit;
-      } else {
-        let best = null;
-        let bestCredit = -1;
-        quota.forEach((q) => {
-          if (!(q.qty > 0)) return;
-          const c = getQuotaCreditValue(q.id, isRetouched);
-          if (c > bestCredit) { bestCredit = c; best = q; }
-        });
-        if (best) { match = best; credit = Math.max(0, bestCredit); }
-      }
-      let unitCharge = unit;
-      if (match) {
-        match.qty -= 1;
-        unitCharge = Math.max(0, unit - credit);
-        if (unitCharge <= 0) includedQty += 1;
-        else { quotaDiffQty += 1; quotaCredit += credit; }
-      }
-      if (unitCharge > 0 && numKey && serviceCredit[numKey] > 0 && serviceCreditsRemaining > 0) {
-        const disc = Math.min(unitCharge, basicPrintCredit);
-        if (disc > 0) {
-          unitCharge = Math.max(0, unitCharge - disc);
-          serviceDiscount += disc;
-          serviceCreditUnits += 1;
-          serviceCredit[numKey] -= 1;
-          serviceCreditsRemaining -= 1;
-        }
-      }
-      amount += unitCharge;
+    return { print, typeId, option, qty, isRetouched, unit, numKey: printNumKey(print.photoNum) };
+  });
+  const units = [];
+  rows.forEach((r, rowIndex) => {
+    for (let k = 0; k < r.qty; k += 1) {
+      units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false });
     }
-    const chargedQty = qty - includedQty;
-    return { option, qty, isRetouched, unit, includedQty, chargedQty, quotaDiffQty, quotaCredit, amount, serviceDiscount, serviceCreditUnits };
+  });
+  units.forEach((u) => {
+    const m = quota.find((q) => q.id === u.typeId && q.qty > 0);
+    if (m) { m.qty -= 1; u.credit = u.unit; u.matched = true; }
+  });
+  units.filter((u) => !u.matched)
+    .slice()
+    .sort((a, b) => b.unit - a.unit)
+    .forEach((u) => {
+      let best = null;
+      let bestCredit = -1;
+      quota.forEach((q) => {
+        if (!(q.qty > 0)) return;
+        const c = getQuotaCreditValue(q.id, u.isRetouched);
+        if (c > bestCredit) { bestCredit = c; best = q; }
+      });
+      if (best) { best.qty -= 1; u.credit = Math.max(0, bestCredit); u.matched = true; }
+    });
+
+  const acc = rows.map(() => ({ includedQty: 0, quotaDiffQty: 0, quotaCredit: 0, amount: 0, serviceDiscount: 0, serviceCreditUnits: 0 }));
+  // 서비스 컷 크레딧은 서버와 같은 순서(행→장)로 적용해야 결과가 일치한다.
+  units.forEach((u) => {
+    const r = rows[u.rowIndex];
+    const a = acc[u.rowIndex];
+    let unitCharge = u.matched ? Math.max(0, u.unit - u.credit) : u.unit;
+    if (u.matched) {
+      if (unitCharge <= 0) a.includedQty += 1;
+      else { a.quotaDiffQty += 1; a.quotaCredit += u.credit; }
+    }
+    if (unitCharge > 0 && r.numKey && serviceCredit[r.numKey] > 0 && serviceCreditsRemaining > 0) {
+      const disc = Math.min(unitCharge, basicPrintCredit);
+      if (disc > 0) {
+        unitCharge = Math.max(0, unitCharge - disc);
+        a.serviceDiscount += disc;
+        a.serviceCreditUnits += 1;
+        serviceCredit[r.numKey] -= 1;
+        serviceCreditsRemaining -= 1;
+      }
+    }
+    a.amount += unitCharge;
+  });
+
+  return rows.map((r, idx) => {
+    const a = acc[idx];
+    return {
+      option: r.option, qty: r.qty, isRetouched: r.isRetouched, unit: r.unit,
+      includedQty: a.includedQty, chargedQty: r.qty - a.includedQty,
+      quotaDiffQty: a.quotaDiffQty, quotaCredit: a.quotaCredit,
+      amount: a.amount, serviceDiscount: a.serviceDiscount, serviceCreditUnits: a.serviceCreditUnits
+    };
   });
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
