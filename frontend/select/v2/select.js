@@ -1260,10 +1260,6 @@ function syncDeliveryUi() {
   }
 }
 
-function getQuotaMap() {
-  return getSessionIncludedPrintQuota().map((item) => ({ ...item }));
-}
-
 function getRegularPhotos() {
   return state.photos.filter((photo) => !photo.isBonus);
 }
@@ -1291,25 +1287,6 @@ function isPhotoPaid(photo, photoIndex) {
     if (!state.photos[i].isBonus) nonBonusPosition += 1;
   }
   return nonBonusPosition > included;
-}
-
-function isPrintFreeByQuota(index, printTypeId) {
-  const targetTypeId = normalizePrintTypeId(printTypeId);
-  if (targetTypeId === PRINT_NONE_ID) return false;
-  const quota = getQuotaMap();
-  for (let i = 0; i <= index; i += 1) {
-    const photo = state.photos[i];
-    if (photo?.isBonus) continue;
-    const typeId = normalizePrintTypeId(photo.printType);
-    const option = PRINT_OPTIONS.find((item) => item.id === typeId);
-    if (!option || option.retouched === 0) continue;
-    const match = quota.find((item) => item.id === typeId && item.qty > 0);
-    if (match) {
-      if (i === index && typeId === targetTypeId) return true;
-      match.qty -= 1;
-    }
-  }
-  return false;
 }
 
 function calcTotal() {
