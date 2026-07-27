@@ -795,16 +795,29 @@ const COPY = {
     otherCountryLabel: '기타 국가명',
     otherCountryPlaceholder: '예: France, Canada',
     memoLabel: '요청사항',
-    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
-    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
+    consentTitle: '표준 촬영 계약서 및 예약 조건',
+    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다.',
     requiredConsentLabel: '필수 동의',
     optionalConsentLabel: '선택 동의',
     selectAllLabel: '필수 항목 전체 선택',
     selectAllSub: '표준 계약 및 개인정보 필수 항목을 한 번에 체크합니다.',
+    contractTerms: [
+      { t: '계약 당사자', p: '촬영자: Studio mean<br>의뢰자: 예약 시 입력한 고객 정보 기준' },
+      { t: '촬영 계약 내용', p: '본 계약은 예약 시 선택 또는 입력한 촬영 상품, 촬영일, 촬영 시간, 촬영 장소, 비용, 납품 방식 및 별도 요청사항을 기준으로 합니다.<br>Studio mean은 해당 예약 내용에 따라 촬영을 준비하고 진행합니다.<br>촬영 전 필요한 예식 순서, 동선, 현장 담당자 정보, 촬영 제한 사항 또는 장소 규정은 의뢰자가 사전에 공유해야 합니다.' },
+      { t: '비용 및 결제', p: '모든 금액은 brutto 기준입니다.<br>계약금이 있는 상품의 경우 계약금 입금 후 예약이 확정됩니다.<br>잔금은 촬영 당일 또는 촬영 후 7일 이내, 원본 또는 결과물 전달 전까지 지급합니다.<br>세금 표기는 최종 Rechnung 기준으로 처리합니다.' },
+      { t: '납품 및 원본 전달', p: '납품 내용과 방식은 선택한 상품 또는 별도 합의 내용을 기준으로 합니다.<br>원본 전달이 포함된 경우, 기술적으로 사용 가능한 촬영 원본 디지털 파일을 전달합니다.<br>테스트 컷, 심한 중복 컷, 초점 실패, 노출 실패, 카메라 오류 등 납품 가치가 없는 파일은 제외될 수 있습니다.<br>RAW 파일은 상품 또는 별도 합의에 포함된 경우에만 제공됩니다.<br>RAW 파일 전달이 포함된 경우, 저장매체는 의뢰자가 준비하며 수령은 방문 수령으로 진행합니다.' },
+      { t: '포함되지 않는 항목', p: '각 상품에 기본 포함된 인화는 상품 설명에 표시된 만큼 제공됩니다. 별도 합의가 없는 한 상세 보정, 색감 보정본, 피부 보정, 합성, 앨범, <b>기본 포함분 외 추가 인화</b>, 영상 촬영, 영상 편집, 추가 촬영 시간, 별도 출장비, 주차비, 입장료, 장소 촬영 허가비는 포함되지 않습니다.' },
+      { t: '취소 및 환불', p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
+      { t: '저작권 및 이용권', p: '촬영물의 저작권 및 원저작권은 Studio mean에 있습니다.<br>고객은 전달받은 사진 또는 영상을 개인 보관, 가족 및 지인 공유, 개인 SNS 게시, 개인 인화 목적으로 사용할 수 있습니다.<br>상업적 사용, 재판매, 제3자 브랜드 또는 매체 제공, 대량 편집 및 2차 제작은 별도 서면 동의가 필요합니다.' },
+      { t: '외부 공개 및 마케팅 사용', p: '본 표준 계약 동의에는 Studio mean이 식별 가능한 사진 또는 영상을 포트폴리오, SNS, 웹사이트, 광고 또는 홍보 자료로 사용하는 허락이 포함되지 않습니다.<br>외부 공개가 필요한 경우 별도 서면 동의를 받습니다.' },
+      { t: '개인정보 및 보관', p: '개인정보와 이미지 파일은 예약, 계약 이행, 커뮤니케이션, 청구, 납품, 보관 목적에 한해 처리됩니다.<br>전달 파일은 납품 후 3개월 동안 보관될 수 있으며 이후 삭제될 수 있습니다.' }
+    ],
+    contractTermsSummary: '전체 계약 조건 보기',
+    contractTermsSummaryHint: '필수 동의 전 필요한 경우 펼쳐서 확인해 주세요.',
     contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
-    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
+    contractTermsSub: '예약 시 선택한 상품·일정·장소·비용과 위 표준 계약 조건이 함께 적용됩니다.',
     gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
-    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
+    gdprSub: '수집 항목은 예약·결제·촬영 진행·파일 전달에 필요한 범위로 한정되며, 별도 동의 없이 외부에 공개되지 않습니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
     aiSub: '촬영본 보정과 결과물 제작 과정에서 AI 기반 도구가 보조적으로 활용될 수 있음을 안내합니다.',
     marketingLabel: '[선택] 마케팅/SNS/포트폴리오 활용에 동의합니다.',
@@ -999,16 +1012,29 @@ const COPY = {
     otherCountryLabel: 'Other Country',
     otherCountryPlaceholder: 'e.g. France, Canada',
     memoLabel: 'Notes',
-    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
-    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
+    consentTitle: 'Standard photography contract and booking terms',
+    consentCopy: 'Please read the standard contract terms below before completing your booking. They apply together with the shooting package, date, location, price, delivery method and any separate agreements selected or entered at booking.',
     requiredConsentLabel: 'Required',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Select all required items',
     selectAllSub: 'Checks the standard contract and privacy consent items together.',
-    contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
-    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
-    gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
-    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
+    contractTerms: [
+      { t: 'Contracting parties', p: 'Photographer: Studio mean<br>Client: as per the customer details entered at booking' },
+      { t: 'Scope of the shoot', p: 'This agreement is based on the shooting package, date, time, location, price, delivery method and any special requests selected or entered at booking.<br>Studio mean prepares and carries out the shoot on the basis of those booking details.<br>The client shares the schedule, routes, on-site contact person, photographic restrictions or venue rules in good time before the shoot.' },
+      { t: 'Fees and payment', p: 'All amounts are gross (incl. VAT).<br>For packages with a deposit, the booking is confirmed once the deposit has been received.<br>The balance is due on the day of the shoot or within 7 days after it, and in any case before the files or results are delivered.<br>Tax is shown as stated on the final invoice (Rechnung).' },
+      { t: 'Delivery and original files', p: 'The content and method of delivery follow the booked package or a separate agreement.<br>Where original files are included, technically usable original digital files are delivered.<br>Test shots, heavy duplicates, out-of-focus or clearly mis-exposed frames, camera errors and files with no delivery value may be sorted out.<br>RAW files are provided only if they are included in the package or in a separate agreement.<br>Where RAW files are delivered, the client provides the storage medium and collection takes place in person at the studio.' },
+      { t: 'Services not included', p: 'The prints included in each package are as stated in the package description. Unless separately agreed, detailed retouching, colour-graded selects, skin retouching, composings, albums, <b>prints beyond the quantity included in the package</b>, video recording, video editing, additional shooting time, separate travel costs, parking fees, entrance fees or venue permit fees are not included.' },
+      { t: 'Cancellation and refund', p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
+      { t: 'Copyright and usage rights', p: 'The copyright and related rights in the images remain with Studio mean.<br>The client receives a simple right of use for private archiving, sharing with family and friends, private social media use and private prints.<br>Commercial use, resale, provision to third-party brands or media, and extensive editing or derivative work require separate written consent.' },
+      { t: 'Publication and marketing use', p: 'This standard contract consent does not include permission for Studio mean to use identifiable photos or videos for portfolio, social media, website, advertising or self-promotion.<br>If external publication is desired, separate written consent is obtained for it.' },
+      { t: 'Data protection and storage', p: 'Personal data and image files are processed only for booking, performance of the contract, communication, invoicing, delivery and storage.<br>Delivered files may be retained for 3 months after delivery and may be deleted thereafter.' }
+    ],
+    contractTermsSummary: 'View all contract terms',
+    contractTermsSummaryHint: 'Expand to read them before giving the required consent.',
+    contractTermsLabel: '[Required] I agree to the standard photography contract and booking terms.',
+    contractTermsSub: 'The package, date, location and price selected at booking apply together with the standard terms above.',
+    gdprLabel: '[Required] I agree that my personal data is processed for booking, payment, carrying out the shoot and delivering the files.',
+    gdprSub: 'Data is limited to what is needed for booking, payment, carrying out the shoot and delivering files, and is not published without separate consent.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
     aiSub: 'AI-based tools may be used as supporting tools during the retouching and delivery workflow.',
     marketingLabel: '[Optional] I agree to marketing/SNS/portfolio usage.',
@@ -1203,16 +1229,29 @@ const COPY = {
     otherCountryLabel: 'Anderes Land',
     otherCountryPlaceholder: 'z. B. Frankreich, Kanada',
     memoLabel: 'Hinweise',
-    consentTitle: '표준 촬영 계약서 및 예약 조건 / Standard-Fotovertrag und Buchungsbedingungen',
-    consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다. Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
+    consentTitle: 'Standard-Fotovertrag und Buchungsbedingungen',
+    consentCopy: 'Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
     requiredConsentLabel: 'Pflicht',
     optionalConsentLabel: 'Optional',
     selectAllLabel: 'Alle Pflichtangaben auswählen',
     selectAllSub: 'Bestätigt Standardvertrag und Datenschutz zusammen.',
-    contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
-    contractTermsSub: 'Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
-    gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
-    gdprSub: 'Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.',
+    contractTerms: [
+      { t: 'Vertragsparteien', p: 'Auftragnehmer: Studio mean<br>Auftraggeberin bzw. Auftraggeber: gemäß den bei der Buchung eingegebenen Kundendaten' },
+      { t: 'Vertragsinhalt', p: 'Dieser Vertrag richtet sich nach dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Zeitraum, Ort, Preis, Lieferart und besonderen Wünschen.<br>Studio mean bereitet das Shooting auf Grundlage dieser Buchungsdaten vor und führt es entsprechend durch.<br>Ablaufplan, Wege, Ansprechpartner vor Ort, fotografische Einschränkungen oder Regeln der Location teilt die Auftraggeberin bzw. der Auftraggeber rechtzeitig vor dem Termin mit.' },
+      { t: 'Vergütung und Zahlung', p: 'Alle Beträge verstehen sich brutto.<br>Bei Buchungen mit Anzahlung ist der Termin nach Eingang der Anzahlung verbindlich reserviert.<br>Der Restbetrag ist am Shootingtag oder innerhalb von 7 Tagen nach dem Termin, jedenfalls vor Lieferung der Dateien oder Ergebnisse, fällig.<br>Die steuerliche Ausweisung erfolgt gemäß Rechnung.' },
+      { t: 'Lieferung und Originaldateien', p: 'Inhalt und Art der Lieferung richten sich nach dem gebuchten Paket oder einer gesonderten Vereinbarung.<br>Wenn Originaldateien enthalten sind, werden technisch verwertbare digitale Originaldateien geliefert.<br>Testaufnahmen, starke Dubletten, unscharfe oder deutlich fehlbelichtete Aufnahmen, Kamerafehler und Dateien ohne Lieferwert können aussortiert werden.<br>RAW-Dateien werden nur geliefert, wenn sie im Paket oder in einer gesonderten Vereinbarung enthalten sind.<br>Wenn RAW-Dateien geliefert werden, stellt die Auftraggeberin bzw. der Auftraggeber das Speichermedium bereit. Die Übergabe erfolgt persönlich bei Abholung vor Ort.' },
+      { t: 'Nicht enthaltene Leistungen', p: 'Die im jeweiligen Paket enthaltenen Abzüge sind in der Paketbeschreibung angegeben. Soweit nicht gesondert vereinbart, sind Detailretusche, farblich bearbeitete Auswahlbilder, Hautretusche, Composings, Alben, <b>Abzüge über die im Paket enthaltene Menge hinaus</b>, Videoaufnahmen, Videoschnitt, zusätzliche Shootingzeit, gesonderte Reisekosten, Parkgebühren, Eintrittsgebühren oder Genehmigungsgebühren der Location nicht enthalten.' },
+      { t: 'Stornierung und Erstattung', p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
+      { t: 'Urheberrecht und Nutzungsrecht', p: 'Die Urheber- und Leistungsschutzrechte an den Aufnahmen verbleiben bei Studio mean.<br>Die Kundin bzw. der Kunde erhält ein einfaches Nutzungsrecht für private Archivierung, Weitergabe an Familie und Freunde, private Social-Media-Nutzung und private Prints.<br>Kommerzielle Nutzung, Weiterverkauf, Weitergabe an Marken oder Medien sowie umfangreiche Bearbeitung oder Weiterverarbeitung bedürfen einer gesonderten schriftlichen Zustimmung.' },
+      { t: 'Veröffentlichung und Werbung', p: 'Diese Standard-Vertragszustimmung enthält keine Einwilligung, identifizierbare Fotos oder Videos für Portfolio, Social Media, Website, Werbung oder Eigenwerbung von Studio mean zu verwenden.<br>Falls eine externe Veröffentlichung gewünscht wird, wird dafür eine gesonderte schriftliche Einwilligung eingeholt.' },
+      { t: 'Datenschutz und Speicherung', p: 'Personenbezogene Daten und Bilddateien werden zur Buchung, Vertragsdurchführung, Kommunikation, Abrechnung, Lieferung und Speicherung verarbeitet.<br>Gelieferte Dateien können nach Lieferung 3 Monate gesichert und danach gelöscht werden.' }
+    ],
+    contractTermsSummary: 'Alle Vertragsbedingungen anzeigen',
+    contractTermsSummaryHint: 'Bei Bedarf vor der Pflichtzustimmung ausklappen.',
+    contractTermsLabel: '[Pflicht] Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
+    contractTermsSub: 'Das bei der Buchung gewählte Paket, der Termin, der Ort und der Preis gelten zusammen mit den obigen Standardbedingungen.',
+    gdprLabel: '[Pflicht] Ich stimme zu, dass meine personenbezogenen Daten für Buchung, Zahlung, Durchführung des Shootings und Lieferung der Dateien verarbeitet werden.',
+    gdprSub: 'Die Daten beschränken sich auf das, was für Buchung, Zahlung, Durchführung des Shootings und Lieferung nötig ist, und werden ohne gesonderte Einwilligung nicht veröffentlicht.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
     aiSub: 'KI-basierte Werkzeuge können unterstützend bei Retusche und Auslieferung eingesetzt werden.',
     marketingLabel: '[Optional] Ich stimme Marketing/SNS/Portfolio-Nutzung zu.',
@@ -2254,6 +2293,7 @@ function applyCopy() {
   setText('memoLabel', copy.memoLabel);
   setText('consentTitle', copy.consentTitle);
   setText('consentCopy', copy.consentCopy);
+  renderContractTerms(copy);
   setText('requiredConsentLabel', copy.requiredConsentLabel);
   setText('optionalConsentLabel', copy.optionalConsentLabel);
   setText('selectAllLabel', copy.selectAllLabel);
@@ -2882,6 +2922,49 @@ function renderReturnNotice() {
       if (changed && state.selectedProduct) await refreshQuote();
     }
   }, 350);
+}
+
+/* 계약 조건 본문의 최소 서식(<br> 줄바꿈, <b> 강조)만 노드로 만든다.
+   HTML 문자열을 그대로 주입하지 않고 텍스트 노드로 조립해, 문구가 나중에 어디서 오든 주입 경로가 없다. */
+function appendContractText(target, raw) {
+  String(raw || '').split(/<br\s*\/?>/i).forEach((segment, index) => {
+    if (index > 0) target.appendChild(document.createElement('br'));
+    segment.split(/(<b>.*?<\/b>)/i).forEach((part) => {
+      if (!part) return;
+      const bold = /^<b>/i.test(part);
+      const text = bold ? part.replace(/^<b>/i, '').replace(/<\/b>$/i, '') : part;
+      if (bold) {
+        const strong = document.createElement('strong');
+        strong.textContent = text;
+        target.appendChild(strong);
+      } else {
+        target.appendChild(document.createTextNode(text));
+      }
+    });
+  });
+}
+
+/* 표준 촬영 계약 조건 — 선택한 언어로만 렌더한다.
+   예전에는 index.html 에 KO+DE 를 그대로 박아 두어 **영어 고객이 자기가 체크하는 필수 동의문과
+   계약 전문을 한 글자도 읽을 수 없었다**(동의 없이는 예약 자체가 불가능한 항목이다).
+   조건 본문은 COPY[lang].contractTerms 한 곳에만 두고, 언어 전환 때 이 함수가 다시 그린다. */
+function renderContractTerms(copy = getCopy()) {
+  setText('contractTermsSummary', copy.contractTermsSummary);
+  setText('contractTermsSummaryHint', copy.contractTermsSummaryHint);
+  const list = document.getElementById('contractTermsList');
+  if (!list) return;
+  list.replaceChildren();
+  (Array.isArray(copy.contractTerms) ? copy.contractTerms : []).forEach((item) => {
+    const li = document.createElement('li');
+    const title = document.createElement('span');
+    title.textContent = item.t || '';
+    const body = document.createElement('p');
+    appendContractText(body, item.p);
+    li.append(title, body);
+    list.appendChild(li);
+  });
+  const section = document.getElementById('contractTermsSection');
+  if (section) section.setAttribute('aria-label', copy.consentTitle || '');
 }
 
 function renderGroups() {

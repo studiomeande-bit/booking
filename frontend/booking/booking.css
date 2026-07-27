@@ -1793,9 +1793,8 @@ h1 {
   color: var(--sm-brand-ink);
   font-weight: 400;
 }
-.contract-terms-list li p + p {
-  margin-top: 4px;
-}
+/* 항목당 문단은 이제 선택한 언어 하나뿐이다 — 예전엔 KO 문단 + DE 문단이 나란히 붙어 있어
+   둘 사이 간격이 필요했다(booking.js renderContractTerms 로 언어별 렌더로 바뀌면서 불필요해짐). */
 @media (max-width: 560px) {
   .contract-terms-summary {
     padding: 13px 14px;
