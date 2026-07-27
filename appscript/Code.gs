@@ -11631,6 +11631,11 @@ function getAgentDailyBriefing_(token){
   assertAdmin_(token);
   return _buildDailyBriefingData_();
 }
+// 브리핑 섹션 집계 실패 수집 — 조용한 실패가 '할 일 없음'으로 보이지 않게
+function _briefFail_(bucket,label,err){
+  try{ bucket.push({section:String(label||''),message:String((err&&err.message)||err||'').slice(0,140)}); }catch(e){}
+}
+
 function _buildDailyBriefingData_(){
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
@@ -11639,6 +11644,10 @@ function _buildDailyBriefingData_(){
   const sh=getDbSheet();
   const rows=sh.getDataRange().getValues();
   const upcoming=[],depositWait=[],unpaidBalances=[];
+  /* 섹션별 집계 실패를 모아 브리핑 본문에 드러낸다. 지금까지는 try/catch 가 Logger 로만 남기고
+     빈 배열을 그대로 내보내서, 예를 들어 수령 미완결 조회가 죽어도 브리핑은 "오늘 처리할 항목이
+     없습니다 👍"로 보였다 — 조용한 실패가 '할 일 없음'으로 위장되던 구조. */
+  const sectionFailures=[];
   let pendingCount=0;
   for(let i=1;i<rows.length;i++){
     const row=rows[i];
@@ -11649,8 +11658,25 @@ function _buildDailyBriefingData_(){
     if(d10&&d10>=today&&d10<=weekEnd&&(st==='확정됨'||st==='대기중')){
       upcoming.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0});
     }
-    if(st==='확정됨'&&String(row[BOOKING_COL['계약금']]||'').indexOf('입금전')>-1&&d10>=today){
-      depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),deposit:String(row[BOOKING_COL['계약금']]||'')});
+    /* 계약금 대기 — 판정은 **계약금입금여부**로 한다(자동취소 flagAndCancelOverdueDepositBookings_ 와 동일 기준).
+       예전엔 '계약금' 셀의 '입금전' 텍스트를 봤는데, 입금 확인 3경로(어드민 confirmBookingDepositAdmin ·
+       은행 CSV · SumUp)가 전부 계약금입금여부만 'Y'로 쓰고 그 텍스트는 그대로 둔다. 그래서 이미 받은 건이
+       촬영일까지 매일 아침 독촉 목록에 남아 진짜 미입금 건을 묻었다 — 정작 그 진짜 건은 10일째에
+       캘린더 삭제 + 고객 취소메일까지 자동 실행된다. 늑대소년이 실제 손실을 가리던 구조.
+       현장결제 예외 건도 제외한다(받을 돈이 아직 없는 게 정상). */
+    if(st==='확정됨'&&d10>=today
+       &&getEffectiveBookingDeposit_(row)>0
+       &&!isPaymentConfirmedValue_(row[BOOKING_COL['계약금입금여부']])
+       &&!isBookingDepositOnsiteException_(row)){
+      const warnedAt=BOOKING_COL['입금경고일시']!=null?String(row[BOOKING_COL['입금경고일시']]||'').trim():'';
+      const baseInfo=getDepositDeadlineBaseDate_(row);
+      const ageDays=baseInfo&&baseInfo.obj&&!isNaN(baseInfo.obj.getTime())
+        ? Math.floor((now.getTime()-baseInfo.obj.getTime())/86400000) : null;
+      depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),
+        deposit:formatEuroAmount_(getEffectiveBookingDeposit_(row)),
+        ageDays:ageDays,warned:!!warnedAt,
+        // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)까지 남은 일수 — 사장님이 개입할 마지막 시점
+        daysToAutoCancel:(ageDays==null?null:Math.max(0,10-ageDays))});
     }
     // 미수 잔금: 촬영은 끝났는데(과거 촬영일 + 진행 상태) 잔금이 남고 결제수단이 미결제인 건
     if(d10&&d10<today&&['촬영완료','셀렉완료','작업완료'].indexOf(st)>-1){
@@ -11679,9 +11705,15 @@ function _buildDailyBriefingData_(){
         if(q.validUntil&&q.validUntil>=today&&q.validUntil<=weekEnd) quotes.expiringSoon.push({number:q.number,customer:q.companyName||q.name,validUntil:q.validUntil,total:q.total});
       }
     }
-  }catch(e){Logger.log('briefing quotes fail: '+e.message);}
-  // 셀렉 현황 + 인화 출력 대기
+  }catch(e){Logger.log('briefing quotes fail: '+e.message);_briefFail_(sectionFailures,'견적',e);}
+  // 셀렉 현황 + 인화 출력 대기 + 셀렉 미발송
   const select={waiting:0,revisionRequested:0,submitted:0};
+  /* 셀렉 미발송 — 촬영은 끝났는데 셀렉 링크를 아직 안 보낸 건.
+     원래 autoSelectDailyCheck 안에 별도 메일 알림이 있었지만 **구조적으로 죽어 있었다**: 같은 함수의
+     0단계가 '확정됨 + 지난 촬영일'을 '촬영완료'로 먼저 바꿔버려서, 2단계의 (확정됨 && 7일 경과)
+     조건이 성립할 수 없었다. 그래서 판정을 촬영완료 기준으로 고쳐 브리핑으로 옮긴다
+     (사장님이 매일 여는 단일 채널로 통일 — 별도 메일은 제거). */
+  const selectNotSent={count:0,items:[]};
   // 인화 출력 대기: 추가인화 주문이 있고 아직 출력완료 기록이 없으며, 실제 물리 출력/배송이
   // 필요한(디지털전용·MRT·출력물없음 제외) 세션. 앵커일 = 제출/보정본발송/촬영일 중 가장 최근
   // 활동일 기준 60일 창 — 기능 도입(2026-07-20) 전 미기록 과거 세션의 영구 '대기' 홍수를 막고
@@ -11695,7 +11727,10 @@ function _buildDailyBriefingData_(){
       const st=String(sRows[i][SELECT_COL['상태']]||'').trim();
       if(st==='대기중') select.waiting++;
       else if(st==='재수정요청') select.revisionRequested++;
-      else if(st==='제출완료') select.submitted++;
+      /* ⚠ 고객 제출은 '작업대기'를 쓴다(submitPhotoSelection/updatePhotoSelection). '제출완료'는
+         어드민 수기 입력(updateSelectManualAdmin)만 쓰는 옛 값이라, '제출완료'만 세면 실제 작업
+         백로그가 **항상 0**으로 보였다. 다른 소비처들은 이미 둘 다 인정한다(운영보드·상태정규화·셀렉탭). */
+      else if(st==='제출완료'||st==='작업대기') select.submitted++;
       if(SELECT_COL['출력완료일시']!=null && selectJsonArrayHasItems_(sRows[i][SELECT_COL['추가인화']])
          && !String(sRows[i][SELECT_COL['출력완료일시']]||'').trim()){
         const anchor=[SELECT_COL['제출일시'],SELECT_COL['보정본발송일시'],SELECT_COL['촬영일']]
@@ -11716,13 +11751,36 @@ function _buildDailyBriefingData_(){
         }
       }
     }
-  }catch(e){Logger.log('briefing select fail: '+e.message);}
+    /* 셀렉 미발송: 촬영 후 7일 넘게 셀렉 행이 아예 없는 예약. 여권은 셀렉 대상이 아니라 제외.
+       예약장부는 이미 위에서 읽은 rows 를 재사용한다(시트 재조회 없음). */
+    const sentBri=new Set();
+    for(let i=1;i<sRows.length;i++){
+      const bri=String(sRows[i][SELECT_COL['예약장부행']]||'').trim();
+      if(bri) sentBri.add(bri);
+    }
+    for(let r=1;r<rows.length;r++){
+      const brow=rows[r];
+      if(!brow[BOOKING_COL['예약일시']]) continue;
+      if(String(brow[BOOKING_COL['상태']]||'').trim()!=='촬영완료') continue;
+      if(sentBri.has(String(r+1))) continue;
+      if(isPassportBookingItem_(brow[BOOKING_COL['촬영종류']],brow[BOOKING_COL['상품']])) continue;
+      const sd=parseDateSafe_(brow[BOOKING_COL['예약일시']]).str.slice(0,10);
+      if(!sd) continue;
+      const days=Math.floor((now.getTime()-new Date(sd+'T00:00:00').getTime())/86400000);
+      if(days<7) continue;
+      selectNotSent.count++;
+      if(selectNotSent.items.length<6){
+        selectNotSent.items.push({rowIndex:r+1,name:String(brow[BOOKING_COL['고객명']]||''),
+          shootDate:sd,product:String(brow[BOOKING_COL['상품']]||''),days:days});
+      }
+    }
+  }catch(e){Logger.log('briefing select fail: '+e.message);_briefFail_(sectionFailures,'셀렉/인화대기',e);}
   // 회계 인박스 (미처리 증빙)
   let evidenceInbox=0;
   try{
     const files=ensureExpenseEvidenceSubfolder_('인박스').getFiles();
     while(files.hasNext()&&evidenceInbox<100){files.next();evidenceInbox++;}
-  }catch(e){Logger.log('briefing evidence inbox fail: '+e.message);}
+  }catch(e){Logger.log('briefing evidence inbox fail: '+e.message);_briefFail_(sectionFailures,'회계 인박스',e);}
   // 미처리 상담 (B2B 파이프라인): 신규/상담예정/상담중/견적준비 상태를 브리핑에 노출
   const consultations={open:0,items:[]};
   try{
@@ -11747,7 +11805,7 @@ function _buildDailyBriefingData_(){
         }
       }
     }
-  }catch(e){Logger.log('briefing consultations skipped: '+e.message);}
+  }catch(e){Logger.log('briefing consultations skipped: '+e.message);_briefFail_(sectionFailures,'상담',e);}
   // 마케팅(인스타): 예정 게시(7일) + 최근 게시 성과 — 마케팅 스케줄 시트 (자동화 파이프라인이 기록)
   const marketing={upcoming:[],recent:[]};
   try{
@@ -11773,7 +11831,7 @@ function _buildDailyBriefingData_(){
       marketing.recent.sort(function(a,b){return a.due<b.due?1:-1;});
       marketing.recent=marketing.recent.slice(0,4);
     }
-  }catch(e){Logger.log('briefing marketing skipped: '+e.message);}
+  }catch(e){Logger.log('briefing marketing skipped: '+e.message);_briefFail_(sectionFailures,'마케팅',e);}
   // 분기 마감(ELSTER) 리마인더 — 분기 말(25일~)·초(~20일) 창에만 노출 (신고 준비 시작 알림)
   const qtr={active:false,label:''};
   try{
@@ -11790,7 +11848,7 @@ function _buildDailyBriefingData_(){
     handoverPending.count=hp.count;
     handoverPending.counts=hp.counts;
     handoverPending.items=hp.items.slice(0,5);
-  }catch(e){Logger.log('briefing handover fail: '+e.message);}
+  }catch(e){Logger.log('briefing handover fail: '+e.message);_briefFail_(sectionFailures,'수령 미완결',e);}
   // 셀렉 추가금 미청구 — 수령·마감되면 셀렉 탭에서 사라져 마지막 청구 알림도 함께 사라진다.
   // 인보이스 번호가 찍히면 청구된 것으로 본다. 30일 롤링 윈도라 방치해도 목록이 무한 증식하지 않는다.
   const extrasUnbilled={count:0,total:0,items:[]};
@@ -11817,8 +11875,8 @@ function _buildDailyBriefingData_(){
         });
       }
     }
-  }catch(e){Logger.log('briefing extras fail: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
+  }catch(e){Logger.log('briefing extras fail: '+e.message);_briefFail_(sectionFailures,'셀렉 추가금',e);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -11832,6 +11890,14 @@ function buildDailyBriefingEmailHtml_(b){
   const badge=function(text,bg,fg){return `<span style="background:${bg};color:${fg};border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;">${text}</span>`;};
 
   const parts=[];
+  /* 0) 집계 실패 — 맨 위에 세운다. 아래 섹션들이 비어 보이는 게 '할 일 없음'인지 '못 읽은 것'인지
+     구분되지 않으면 브리핑 전체를 믿을 수 없다. */
+  if(b.sectionFailures&&b.sectionFailures.length){
+    parts.push(section('⚠️ 이 브리핑에서 읽지 못한 항목',
+      b.sectionFailures.map(function(f){
+        return line(`<b style="color:#b91c1c;">${esc(f.section)}</b> 집계 실패 — 아래 해당 섹션은 <b>비어 보여도 믿지 마세요</b>. <span style="color:#94a3b8;">${esc(f.message)}</span>`);
+      }).join('')));
+  }
   // 1) 이번 주 일정
   parts.push(section('📅 이번 주 촬영 (7일)',
     b.upcomingBookings.length
@@ -11843,7 +11909,15 @@ function buildDailyBriefingEmailHtml_(b){
   // 2) 액션 필요
   const actions=[];
   if(b.pendingBookingCount>0) actions.push(line(`🟡 확정 대기 예약 <b>${b.pendingBookingCount}건</b> — 어드민에서 확정 처리 필요`));
-  b.depositWaiting.forEach(function(d){actions.push(line(`💰 계약금 미입금 — <b>${esc(d.name)}</b>님 (${esc(d.dateTime.slice(5,16))} 촬영, ${esc(d.deposit)})`));});
+  b.depositWaiting.forEach(function(d){
+    // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)가 사장님 확인 없이 실행되므로, 남은 일수를 앞에 세운다
+    const urgent=d.daysToAutoCancel!=null&&d.daysToAutoCancel<=3;
+    const tail=d.daysToAutoCancel==null?''
+      :(d.daysToAutoCancel<=0?' · <b style="color:#b91c1c;">오늘 자동취소 대상</b>'
+        :` · <b style="color:${urgent?'#b91c1c':'#b45309'};">자동취소 D-${d.daysToAutoCancel}</b>`);
+    actions.push(line(`💰 계약금 미입금 — <b>${esc(d.name)}</b>님 (${esc(d.dateTime.slice(5,16))} 촬영, ${esc(d.deposit)})`
+      +`${d.ageDays!=null?` · 확정 ${d.ageDays}일 경과`:''}${d.warned?' · 독촉 발송됨':''}${tail}`));
+  });
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
@@ -11865,6 +11939,12 @@ function buildDailyBriefingEmailHtml_(b){
     });
     actions.push(line(`&nbsp;&nbsp;· <a href="${SELECT_HANDOVER_PAGE_BASE}" style="color:#2563eb;">수령 확인 페이지 열기</a>`
       +`${b.handoverPending.count>(b.handoverPending.items||[]).length?(' · 외 '+(b.handoverPending.count-(b.handoverPending.items||[]).length)+'건'):''}`));
+  }
+  if(b.selectNotSent&&b.selectNotSent.count>0){
+    actions.push(line(`📷 셀렉 미발송 <b>${b.selectNotSent.count}건</b> — 촬영이 끝났는데 셀렉 링크가 안 나갔습니다`));
+    (b.selectNotSent.items||[]).forEach(function(s){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(s.name)}</b>님 · ${esc(String(s.shootDate).slice(5))} ${esc(s.product)} — <b style="color:#b91c1c;">${s.days}일 경과</b>`));
+    });
   }
   if(b.extrasUnbilled&&b.extrasUnbilled.count>0){
     actions.push(line(`🧾 셀렉 추가금 미청구 <b>${b.extrasUnbilled.count}건</b> · 합계 <b style="color:#b91c1c;">${money(b.extrasUnbilled.total)}</b> — 수령은 끝났는데 인보이스가 없습니다`));
@@ -11923,10 +12003,15 @@ function buildDailyBriefingEmailHtml_(b){
 // 브리핑 제목의 '액션 N건' — sendDailyBriefingEmail_ 과 sendCombinedMorningReport_ 두 곳이 쓴다.
 // 손으로 복제해 두면 섹션을 추가할 때 한쪽만 고치게 되고, 제목이 조용히 실제보다 적게 나온다.
 function briefingActionCount_(b){
+  /* 제목 숫자 = 액션 필요 섹션에 실제로 찍히는 항목 수. 섹션을 추가하면 여기도 더해야
+     제목이 조용히 실제보다 적게 나오지 않는다(이 함수가 두 발송 경로의 단일 소스). */
   return b.pendingBookingCount+b.depositWaiting.length+b.quotes.holdDueToday.length
     +b.quotes.expiringSoon.length+b.select.revisionRequested
     +((b.printPending&&b.printPending.count)||0)
-    +((b.handoverPending&&b.handoverPending.count)||0);
+    +((b.selectNotSent&&b.selectNotSent.count)||0)
+    +((b.handoverPending&&b.handoverPending.count)||0)
+    +((b.extrasUnbilled&&b.extrasUnbilled.count)||0)
+    +((b.sectionFailures&&b.sectionFailures.length)||0);
 }
 
 function sendDailyBriefingEmail_(){
@@ -19948,26 +20033,10 @@ function autoSelectDailyCheck(){
     }catch(e){Logger.log('셀렉 리마인드 오류:'+e.message);}
   });
 
-  // 2. 예약장부: 촬영일 기준 7일 이상, 셀렉 미발송인 확정됨 건 → 어드민 알림
-  const bookRows=bookSh.getDataRange().getValues().slice(1);
-  const sentBri=new Set(selRows.map(r=>String(r[SELECT_COL['예약장부행']]||'')).filter(Boolean));
-  const alert7=[];
-  bookRows.forEach((row,r)=>{
-    if(String(row[1]||'')!=='확정됨') return;
-    if(isPassportBookingItem_(row[6],row[7])) return;
-    const bri=String(r+2);
-    if(sentBri.has(bri)) return;
-    const dStr=String(row[0]||'').slice(0,10);
-    if(!dStr) return;
-    const shootDate=new Date(dStr+'T00:00:00');
-    const days=Math.floor((now-shootDate)/86400000);
-    if(days>=7) alert7.push({name:String(row[2]||''),dateStr:dStr,product:String(row[7]||''),days});
-  });
-  if(alert7.length>0){
-    const rows=alert7.map(a=>`<tr><td>${a.dateStr}</td><td>${a.name}</td><td>${a.product}</td><td style="color:#ef4444;font-weight:bold;">${a.days}일 경과</td></tr>`).join('');
-    const html=`<h2>📷 사진셀렉 미발송 알림</h2><p>촬영 후 7일 이상 셀렉 링크를 보내지 않은 고객이 있습니다.</p><table border="1" cellpadding="8" style="border-collapse:collapse;"><tr><th>촬영일</th><th>고객명</th><th>상품</th><th>경과일</th></tr>${rows}</table>`;
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[Studio mean] 셀렉 미발송 알림 — ${alert7.length}건`,htmlBody:html});
-  }
+  /* 2. 셀렉 미발송 알림은 D7 아침 브리핑(_buildDailyBriefingData_ 의 selectNotSent)으로 이관했다.
+     여기 있던 별도 메일은 **구조적으로 죽어 있었다**: 바로 위 0단계가 '확정됨 + 지난 촬영일'을
+     '촬영완료'로 먼저 바꾸므로, 판정 조건이던 (상태==='확정됨' && 촬영 후 7일)이 성립할 수 없었다.
+     브리핑에서는 '촬영완료 + 셀렉 행 없음 + 7일 경과'로 판정한다. */
 }
 
 function isPassportBookingItem_(itemGroup,product){
