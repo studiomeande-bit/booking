@@ -118,6 +118,10 @@ function computePrintAnnotations() {
   });
   const units = [];
   rows.forEach((r, rowIndex) => {
+    /* '출력 없음' 행은 아예 참여시키지 않는다 — 서버 computeSelectDecoupledPrints_ 도 print_none 을 건너뛴다.
+       유닛으로 펼치면 단가 0이라 2차 배정에서 남은 포함 쿼터를 집어가고, 리뷰 화면에 그 빈 행이
+       '포함'으로 표시된다(서버 청구엔 없는 항목). 금액은 0이라 총액으로는 드러나지 않는다. */
+    if (r.typeId === PRINT_NONE_ID) return;
     // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
     const skipQuota = /^photocard_/.test(r.typeId);
