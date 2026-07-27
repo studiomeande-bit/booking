@@ -2318,6 +2318,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         </select>
         <button class="btn btn-sm btn-outline" onclick="executeSelBatch()">적용</button>
         <span id="selBatchCount" style="font-size:12px;color:#64748b;"></span>
+        <button class="btn btn-sm btn-outline" style="color:#9a3412;border-color:#fed7aa;" onclick="openRecentHandoverUndo()" title="마감돼 목록에서 사라진 수령 기록 취소 (최근 7일)">수령 되돌리기</button>
         <span style="margin-left:auto;font-size:12px;color:#64748b;font-weight:700;">상태 점검</span>
         <input type="text" id="sel_caseQuery" placeholder="고객명/연락처" onkeydown="if(event.key==='Enter')diagnoseSelectCaseUi()" style="width:160px;padding:6px 10px;font-size:12px;">
         <button class="btn btn-sm btn-outline" onclick="diagnoseSelectCaseUi()">점검</button>
@@ -9398,11 +9399,56 @@ function renderSelectDeliveryCell(sel,rowIndex){
   const handoverBtn=(sel&&sel.submittedAt&&rowIndex&&(dm==='pickup'||dm==='mail')&&!String((sel&&sel.handoverAt)||'').trim())
     ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#065f46;border-color:#a7f3d0;" onclick="markSelHandover(${rowIndex})" title="${dm==='mail'?'우편 발송 완료 기록':'방문 수령 완료 기록'}">${dm==='mail'?'발송완료':'수령완료'}</button>`
     : '';
+  // 수령 기록 되돌리기 — 아직 탭에 보이는 건(주로 우편발송)용. 마감돼 사라진 건은 툴바 '수령 되돌리기'로.
+  const undoBtn=(sel&&sel.sessionId&&rowIndex&&String((sel&&sel.handoverAt)||'').trim())
+    ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#9a3412;border-color:#fed7aa;" onclick="undoSelHandover(${rowIndex})" title="수령/발송 기록 취소">되돌리기</button>`
+    : '';
   return `<div title="${escHtml(detailPlain)}" style="max-width:220px;">
     <span style="display:inline-block;${info.tone}padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;">${info.label}</span>
     <div style="margin-top:4px;font-size:10px;line-height:1.4;color:#64748b;max-width:220px;white-space:normal;overflow:visible;">${formatSelectDeliveryDetailHtml(detail)}</div>
-    ${switchBtn}${handoverBtn}
+    ${switchBtn}${handoverBtn}${undoBtn}
   </div>`;
+}
+
+/* 수령 기록 되돌리기 — 서버가 수령직전상태로 소유권 확인 후 상태·예약장부까지 대칭 복구한다. */
+function undoSelHandover(rowIndex){
+  const r=allSelectDashboard.find(x=>Number(x.rowIndex)===Number(rowIndex));
+  const sel=r&&r.sel;
+  if(!sel||!sel.sessionId){showToast('셀렉 세션이 없습니다.','warn');return;}
+  const when=String(sel.handoverAt||'').trim();
+  if(!confirm(`${r.name}님 · ${when} 수령/발송 기록을 취소합니다.\n상태와 예약장부도 기록 당시 값으로 되돌립니다.\n(이미 나간 고객 메일은 회수되지 않습니다)\n계속할까요?`))return;
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      const note=res.restoredStatus?` · 상태 '${res.restoredStatus}' 복구`:'';
+      showToast('수령 기록을 취소했습니다.'+note+(res.bookingRestored?` · 예약장부 '${res.bookingRestored}'`:''),'ok');
+      loadSelectHistory();
+    } else alert('취소 실패: '+((res&&res.message)||'오류'));
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .adminRpc(adminToken,'undoSelectHandover',{sessionId:sel.sessionId,expectName:String(r.name||'').trim()});
+}
+
+/* 마감돼 셀렉 탭에서 사라진 건 되돌리기 — 최근 7일 수령 기록에서 고른다.
+   오조작은 보통 당일~수일 내 발견되므로 최근 목록이면 충분하다. */
+function openRecentHandoverUndo(){
+  google.script.run.withSuccessHandler(res=>{
+    const items=(res&&res.items)||[];
+    if(!items.length){showToast('최근 7일 수령 기록이 없습니다.','warn');return;}
+    const listText=items.map((it,i)=>`${i+1}. ${it.name} · ${it.method||'-'} · ${it.handedOverAt} (${it.status})`).join('\n');
+    const pick=prompt(`되돌릴 수령 기록 번호를 입력하세요:\n\n${listText}`,'');
+    if(pick===null)return;
+    const idx=parseInt(pick,10)-1;
+    const it=items[idx];
+    if(!it){showToast('잘못된 번호입니다.','warn');return;}
+    if(!confirm(`${it.name}님 · ${it.handedOverAt} (${it.method||'-'}) 기록을 취소합니다.\n상태와 예약장부도 기록 당시 값으로 되돌립니다.\n계속할까요?`))return;
+    google.script.run.withSuccessHandler(r2=>{
+      if(r2&&r2.ok){
+        showToast('수령 기록을 취소했습니다.'+(r2.restoredStatus?` · 상태 '${r2.restoredStatus}' 복구`:''),'ok');
+        loadSelectHistory();
+      } else alert('취소 실패: '+((r2&&r2.message)||'오류'));
+    }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+    .adminRpc(adminToken,'undoSelectHandover',{sessionId:it.sessionId,expectName:it.name});
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .adminRpc(adminToken,'listRecentSelectHandovers',{days:7,limit:20});
 }
 
 /* 수령방식 전환 (픽업↔우편) — 전화로 변경 요청받았을 때 원클릭 처리.
@@ -9460,9 +9506,13 @@ function markSelHandover(rowIndex){
   if(!sel){showToast('셀렉 세션이 없습니다.','warn');return;}
   const isMail=String(sel.deliveryMethod||'').trim()==='mail';
   const custName=(r&&r.name)||'';
+  // 추가금 미청구 경고 — 마감되면 셀렉 탭에서 사라져 이 순간이 마지막 청구 기회다
+  const extraDue=(Number(sel.totalExtra)||0)>0&&!String(sel.extraInvoiceNumber||'').trim()
+    ? `\n⚠ 추가금 €${Number(sel.totalExtra).toFixed(2)} 미청구 상태입니다 — 결제 확인하셨나요?`
+    : '';
   const msg=isMail
-    ? `${custName}님 · 우편 발송 완료로 기록합니다.\n고객에게 발송 안내 메일이 나가고, 상태도 '우편발송'으로 바뀝니다.\n계속할까요?`
-    : `${custName}님 · 방문 수령 완료로 기록합니다.\n상태가 '최종작업완료'로 마감되어 이 목록에서 사라집니다.\n(고객 메일은 발송되지 않습니다)\n계속할까요?`;
+    ? `${custName}님 · 우편 발송 완료로 기록합니다.\n고객에게 발송 안내 메일이 나가고, 상태도 '우편발송'으로 바뀝니다.${extraDue}\n계속할까요?`
+    : `${custName}님 · 방문 수령 완료로 기록합니다.\n상태가 '최종작업완료'로 마감되어 이 목록에서 사라집니다.\n(고객 메일은 발송되지 않습니다)${extraDue}\n계속할까요?`;
   if(!confirm(msg))return;
   const memo=prompt('내부 메모 (선택, 120자) — 고객·제3자 개인정보는 입력하지 마세요.','');
   if(memo===null)return;

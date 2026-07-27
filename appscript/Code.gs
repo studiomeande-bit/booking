@@ -334,6 +334,8 @@ function adminRpc(token, action, payload){
       return markSelectHandoverAdmin(token, payload||{});
     case 'undoSelectHandover':
       return undoSelectHandoverAdmin(token, payload||{});
+    case 'listRecentSelectHandovers':
+      return listRecentSelectHandoversAdmin(token, payload||{});
     case 'getStudioPresenceState':
       return getStudioPresenceAdmin(token);
     case 'openStudioPresence':
@@ -2603,7 +2605,7 @@ const MORNING_REPORT_JOB_NAME_='D7 아침 리포트(브리핑+결제검토)';
 const AUTOMATION_JOB_NAMES_=[
   'D1 DB 백업','M1 마이리얼트립 예약 알림 가져오기','P1 SumUp 최근거래 동기화',
   'B2 예약 24시간 리마인드','L2 계약금 지연 확인/자동취소','C2 셀렉 자동 점검','B3 촬영 후 감사메일',
-  'B4 돌촬영 추천메일','B5 기념일 재촬영 추천메일','C3 보정 후 후속메일','C4 픽업 미예약 리마인드',
+  'B4 돌촬영 추천메일','B5 기념일 재촬영 추천메일','C3 보정 후 후속메일','C4 픽업 미예약 리마인드','C5 우편발송 D+7 자동마감',
   'T1 출장장부 동기화','D5 견적서 만료 처리','D6 견적 보류 팔로업','D8 경비 인보이스 메일 수집',
   MORNING_REPORT_JOB_NAME_
 ];
@@ -11680,7 +11682,34 @@ function _buildDailyBriefingData_(){
     handoverPending.counts=hp.counts;
     handoverPending.items=hp.items.slice(0,5);
   }catch(e){Logger.log('briefing handover fail: '+e.message);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,handoverPending:handoverPending,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
+  // 셀렉 추가금 미청구 — 수령·마감되면 셀렉 탭에서 사라져 마지막 청구 알림도 함께 사라진다.
+  // 인보이스 번호가 찍히면 청구된 것으로 본다. 30일 롤링 윈도라 방치해도 목록이 무한 증식하지 않는다.
+  const extrasUnbilled={count:0,total:0,items:[]};
+  try{
+    const exSh=ensureSelectSheet_(ensureSheets_().ss);
+    const exRows=exSh.getDataRange().getValues();
+    const exFloor=Utilities.formatDate(new Date(now.getTime()-30*86400000),tz,'yyyy-MM-dd');
+    for(let xi=1;xi<exRows.length;xi++){
+      const xr=exRows[xi];
+      if(!xr[0]) continue;
+      const amt=Number(parseMoneyValue_(xr[SELECT_COL['총추가금액']]))||0;
+      if(amt<=0) continue;
+      if(String(xr[SELECT_COL['추가금인보이스번호']]||'').trim()) continue;
+      const hAt=SELECT_COL['수령완료일시']!=null?parseDateSafe_(xr[SELECT_COL['수령완료일시']]).str.slice(0,16):'';
+      if(!hAt||hAt.slice(0,10)<exFloor) continue;
+      extrasUnbilled.count++;
+      extrasUnbilled.total+=amt;
+      if(extrasUnbilled.items.length<6){
+        extrasUnbilled.items.push({
+          name:String(xr[SELECT_COL['고객명']]||'').trim()||'(이름없음)',
+          amount:amt,
+          handedOverAt:hAt,
+          method:SELECT_COL['수령방법']!=null?String(xr[SELECT_COL['수령방법']]||''):''
+        });
+      }
+    }
+  }catch(e){Logger.log('briefing extras fail: '+e.message);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -11727,6 +11756,12 @@ function buildDailyBriefingEmailHtml_(b){
     });
     actions.push(line(`&nbsp;&nbsp;· <a href="${SELECT_HANDOVER_PAGE_BASE}" style="color:#2563eb;">수령 확인 페이지 열기</a>`
       +`${b.handoverPending.count>(b.handoverPending.items||[]).length?(' · 외 '+(b.handoverPending.count-(b.handoverPending.items||[]).length)+'건'):''}`));
+  }
+  if(b.extrasUnbilled&&b.extrasUnbilled.count>0){
+    actions.push(line(`🧾 셀렉 추가금 미청구 <b>${b.extrasUnbilled.count}건</b> · 합계 <b style="color:#b91c1c;">${money(b.extrasUnbilled.total)}</b> — 수령은 끝났는데 인보이스가 없습니다`));
+    (b.extrasUnbilled.items||[]).forEach(function(x){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(x.name)}</b>님 · ${money(x.amount)} · 수령 ${esc(String(x.handedOverAt).slice(5,16))}${x.method?' ('+esc(x.method)+')':''}`));
+    });
   }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   if(b.consultations&&b.consultations.open>0){
@@ -17517,6 +17552,33 @@ function reopenBookingIfSelectUnlocked_(selSh,rowNum,prevStatus){
   }catch(e){ Logger.log('reopenBookingIfSelectUnlocked fail: '+e.message); return ''; }
 }
 
+/* 셀렉 행 마감 3종 세트 — 상태 '최종작업완료' + 예약장부 '작업완료'(가드) + 수령직전상태 기록.
+   markSelectHandoverCore_(즉시 마감)와 autoFinalizeShippedSelects_(우편 D+7)가 공유한다.
+   예약장부 가드: ① 취소된 예약은 셀렉 행이 그대로 남으므로(cancelBookingAdmin 이 사진셀렉을 안 건드림)
+   확인 없이 덮어쓰면 취소 건이 매출 집계·마케팅 후보로 되살아난다. ② 같은 예약의 활성 셀렉 행이
+   아직 안 끝났으면 보류. 반환값 = 우리가 예약장부를 올렸다면 그 직전 상태(undo 소유권 증거). */
+function finalizeSelectRowCore_(selSh,row,rowNum,prevStatus){
+  selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('최종작업완료');
+  row[SELECT_COL['상태']]='최종작업완료';
+  let bookingWritten='';
+  const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+  if(bri>=2&&!hasOtherOpenSelectRowForBooking_(selSh,bri,rowNum)){
+    try{
+      const bSh=ensureSheets_().bookingSheet;
+      const cur=String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim();
+      if(cur&&cur!=='작업완료'&&!isBookingCancelledStatus_(cur)){
+        bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료');
+        bookingWritten=cur;
+      }
+    }catch(e){Logger.log('finalize booking fail: '+e.message);}
+  }
+  if(SELECT_COL['수령직전상태']!=null){
+    selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1)
+      .setValue(String(prevStatus||'')+'>최종작업완료'+(bookingWritten?('|'+bookingWritten):''));
+  }
+  return bookingWritten;
+}
+
 function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
   info=info||{};
   if(SELECT_COL['수령완료일시']==null) return{ok:false,message:'수령 컬럼이 아직 준비되지 않았습니다.'};
@@ -17558,31 +17620,15 @@ function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
   if(!finalize&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('우편발송');
     row[SELECT_COL['상태']]='우편발송'; statusWritten='우편발송';
-  }
-  if(finalize&&st!=='최종작업완료'){
-    selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('최종작업완료');
-    row[SELECT_COL['상태']]='최종작업완료'; statusWritten='최종작업완료';
-    // updateSelectStatusAdmin 이 하는 두 쓰기와 동일. 어드민 토큰 없는 passcode 경로에서도 써야 해서 중복 구현.
-    // ⚠ 취소된 예약은 셀렉 행이 그대로 남으므로(cancelBookingAdmin 이 사진셀렉을 안 건드림) 상태를 확인하고 쓴다.
-    //   확인 없이 덮어쓰면 취소 건이 매출 집계·마케팅 후보로 되살아난다(listSelectHandoverPending_ 와 같은 가드).
-    const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
-    if(bri>=2&&!hasOtherOpenSelectRowForBooking_(selSh,bri,rowNum)){
-      try{
-        const bSh=ensureSheets_().bookingSheet;
-        const cur=String(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue()||'').trim();
-        if(cur&&cur!=='작업완료'&&!isBookingCancelledStatus_(cur)){
-          bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료');
-          bookingWritten=cur;   // 우리가 올렸다는 증거 — undo 는 이게 있을 때만 예약장부를 내린다
-        }
-      }catch(e){Logger.log('handover booking done fail: '+e.message);}
+    /* 되돌리기 대칭 — '직전값>내가쓴값' 으로 남긴다. 직전값만 남기면 undo 가 그 사이 사장님이
+       손수 바꾼 상태까지 덮어쓴다. 내가 쓴 결과값을 함께 남겨야 소유권 확인 후 복구할 수 있다. */
+    if(SELECT_COL['수령직전상태']!=null){
+      selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1).setValue(st+'>우편발송');
     }
   }
-  /* 되돌리기 대칭 — '직전값>내가쓴값[|예약장부직전값]' 으로 남긴다.
-     직전값만 남기면 undo 가 그 사이 사장님이 손수 바꾼 상태까지 덮어쓴다. 내가 쓴 결과값을 함께
-     남겨야 '지금도 내가 쓴 그대로인가'를 확인하고 되돌릴 수 있다(소유권 확인). */
-  if(statusWritten&&SELECT_COL['수령직전상태']!=null){
-    selSh.getRange(rowNum,SELECT_COL['수령직전상태']+1)
-      .setValue(st+'>'+statusWritten+(bookingWritten?('|'+bookingWritten):''));
+  if(finalize&&st!=='최종작업완료'){
+    statusWritten='최종작업완료';
+    bookingWritten=finalizeSelectRowCore_(selSh,row,rowNum,st);
   }
   return{
     ok:true,sessionId:sessionId,handedOverAt:now,method:method,statusWritten:statusWritten,
@@ -17602,14 +17648,34 @@ function markSelectHandoverBySession_(sessionId,info){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
   let done;
+  let pickupInfo=null;
   try{
     const selSh=ensureSelectSheet_(ensureSheets_().ss);
     const rows=selSh.getDataRange().getValues();
     const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
     if(idx===-1) return{ok:false,message:'유효하지 않은 세션입니다.'};
+    pickupInfo={
+      rowNum:idx+2,
+      eventId:String(rows[idx+1][SELECT_COL['픽업캘린더ID']]||'').trim(),
+      pickupAt:parseDateSafe_(rows[idx+1][SELECT_COL['픽업일시']]).str.slice(0,16)
+    };
     done=markSelectHandoverCore_(selSh,rows[idx+1],idx+2,sid,info);
   } finally { try{lock.releaseLock();}catch(e){} }
   if(!done||!done.ok) return done||{ok:false,message:'기록 실패'};
+  /* 수령이 끝났으니 **미래** [픽업] 이벤트는 무의미 — 남겨두면 예약시간까지 다른 고객의 픽업 슬롯과
+     일반 촬영 슬롯을 15분+버퍼만큼 막는다(checkConflict_ 는 제목으로 거르지 않는다).
+     캘린더 호출은 느리므로 메일과 같은 규칙으로 락 밖에서 처리. 픽업일시 값 자체는 기록으로 남긴다.
+     undo 는 이벤트를 재생성하지 않는다 — 필요하면 고객이 픽업 페이지에서 다시 예약한다. */
+  if(!done.alreadyDone&&pickupInfo&&pickupInfo.eventId
+     &&pickupInfo.pickupAt&&pickupInfo.pickupAt>Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')){
+    try{
+      const ev=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(pickupInfo.eventId);
+      if(ev) ev.deleteEvent();
+      ensureSelectSheet_(ensureSheets_().ss).getRange(pickupInfo.rowNum,SELECT_COL['픽업캘린더ID']+1).setValue('');
+      bumpCalCacheVer_();
+      done.pickupEventCleared=true;
+    }catch(e){ Logger.log('handover pickup event clear fail: '+e.message); }
+  }
   let mailSent=false;
   if(done.method==='우편발송'&&!done.alreadyDone&&info.notify!==false){
     // 메일 실패가 기록을 되돌리면 안 된다 — 로그만 남기고 mailSent:false 로 알린다.
@@ -17824,6 +17890,62 @@ function backfillSelectHandoverOnShipStatus_(selSh,rowIndex,newStatus){
     if(SELECT_COL['수령방법']!=null) selSh.getRange(rowIndex,SELECT_COL['수령방법']+1).setValue('우편발송');
     return true;
   }catch(e){ Logger.log('handover backfill fail: '+e.message); return false; }
+}
+
+/* C5: 우편발송 D+7 자동 마감 — 발송 안내 메일이 '일주일 내 미도착 시 회신'을 안내하는 시점과 맞춘다.
+   회신이 없으면 도착으로 보고 마감한다. 반송·분실은 되돌리기(수령직전상태 기록)로 복구.
+   에포크·롤링 윈도로 첫 실행 시 낡은 건 대량 소급을 막는다(마감은 후속 메일 게이트를 켜는 전이라서). */
+function autoFinalizeShippedSelects_(){
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues();
+  if(rows.length<2) return;
+  const now=new Date();
+  let count=0;
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    if(!row[0]) continue;
+    if(String(row[SELECT_COL['상태']]||'').trim()!=='우편발송') continue;
+    if(String(row[SELECT_COL['수령방법']]||'').trim()!=='우편발송') continue;
+    const at=parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16);
+    if(!at||at.slice(0,10)<HANDOVER_EPOCH_) continue;
+    const days=selectHandoverDaysSince_(at,now);
+    if(days<7||days>HANDOVER_WINDOW_DAYS_) continue;
+    finalizeSelectRowCore_(selSh,row,i+1,'우편발송');   // 되돌리면 '우편발송'(배송중)으로 복귀
+    count++;
+  }
+  if(count) Logger.log('autoFinalizeShippedSelects_: '+count+'건 마감');
+}
+
+/* 최근 수령 기록 목록 — 어드민 '수령 되돌리기'용. 마감된 건은 셀렉 탭에서 사라지므로
+   되돌릴 대상을 여기서 찾는다(오조작은 보통 당일~수일 내에 발견된다). */
+function listRecentSelectHandoversAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const days=Math.max(1,Math.min(30,parseInt(payload.days,10)||7));
+  const limit=Math.max(1,Math.min(50,parseInt(payload.limit,10)||20));
+  const now=new Date();
+  const floor=Utilities.formatDate(new Date(now.getTime()-days*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues();
+  const items=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    if(!row[0]) continue;
+    const at=SELECT_COL['수령완료일시']!=null?parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16):'';
+    if(!at||at.slice(0,10)<floor) continue;
+    items.push({
+      sessionId:String(row[SELECT_COL['세션ID']]||''),
+      selectRowIndex:i+1,
+      bookingRowIndex:parseInt(row[SELECT_COL['예약장부행']],10)||0,
+      name:String(row[SELECT_COL['고객명']]||'').trim()||'(이름없음)',
+      method:SELECT_COL['수령방법']!=null?String(row[SELECT_COL['수령방법']]||''):'',
+      handedOverAt:at,
+      status:String(row[SELECT_COL['상태']]||'').trim(),
+      totalExtra:Number(parseMoneyValue_(row[SELECT_COL['총추가금액']]))||0
+    });
+  }
+  items.sort(function(a,b){return a.handedOverAt<b.handedOverAt?1:(a.handedOverAt>b.handedOverAt?-1:0);});
+  return{ok:true,items:items.slice(0,limit),days:days};
 }
 
 /* ===== 수령 완결 — 어드민/에이전트 진입점 ===== */
@@ -22810,6 +22932,7 @@ function dailyTasks(){
     ['B5 기념일 재촬영 추천메일',sendAnniversaryRecommendationEmails_],
     ['C3 보정 후 후속메일',sendPostRetouchFollowupEmails_],
     ['C4 픽업 미예약 리마인드',sendSelectPickupReminders_],
+    ['C5 우편발송 D+7 자동마감',autoFinalizeShippedSelects_],
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
     ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],

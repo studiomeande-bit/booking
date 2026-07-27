@@ -54,6 +54,7 @@ const MODULE = [
   extractFn(gs, 'isSelectHandoverOpen_'),
   extractLine(gs, 'var HANDOVER_METHODS_='),
   extractLine(gs, 'var HANDOVER_FINALIZE_METHODS_='),
+  extractFn(gs, 'finalizeSelectRowCore_'),   // 마감 3종 세트 공용 헬퍼 (Core·우편 D+7 이 공유)
   extractFn(gs, 'markSelectHandoverCore_'),
   // 하네스가 주입: 예약장부 스텁 + '다른 활성 셀렉 행' 여부
   `let __booking={status:'셀렉완료',writes:[]};`,
