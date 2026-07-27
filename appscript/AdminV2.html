@@ -12387,6 +12387,15 @@ function openRefundModal(rowIndex){
       const half=Math.round(avail*50)/100;
       html+=` <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px;" onclick="document.getElementById('refund_amount').value=${half};document.getElementById('refund_reason').value='여권 촬영 미흡 환불 (50%)';">여권 미흡 50% = €${half}</button>`;
     }
+    // 환불 이력 — SumUp✓ 는 카드 환불 거래와 자동 대조까지 끝난 이벤트
+    if(Array.isArray(res.events)&&res.events.length){
+      const T={refund:'환불',forfeit:'몰수확정',gutschein_restore:'바우처복원'};
+      const M={bank:'이체',cash:'현금',sumup:'카드',gutschein:'바우처'};
+      html+='<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">'+res.events.map(ev=>
+        `· ${escapeAdminHtml(String(ev.payoutDate||''))} ${T[ev.type]||escapeAdminHtml(String(ev.type||''))} <b>€${n(ev.amount)}</b> (${M[ev.method]||escapeAdminHtml(String(ev.method||''))})`
+        +`${ev.reason?' — '+escapeAdminHtml(String(ev.reason)):''}${ev.invoiceNo?' · '+escapeAdminHtml(String(ev.invoiceNo)):''}${ev.sumupTxRef?' · <span style="color:#1d4ed8;">SumUp✓</span>':''}`
+      ).join('<br>')+'</div>';
+    }
     h.innerHTML=html;
   }).withFailureHandler(()=>{h.textContent='';})
   .getCancellationRefundQuoteAdmin(adminToken,rowIndex);

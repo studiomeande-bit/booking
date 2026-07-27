@@ -76,15 +76,25 @@ const MODULE = [
        return {ok:true,res,written};
      }catch(e){ return {ok:false,error:e.message,written}; }
    }`,
-  `export function runQuote(rowObj){ return calcCancellationRefundQuote_(makeRow(rowObj)); }`
+  `export function runQuote(rowObj){ return calcCancellationRefundQuote_(makeRow(rowObj)); }`,
+  // SumUp 환불 대조 — 가짜 예약 시트 위에서 원본 매처를 돌린다
+  extractFn(gs, 'parseDateOnly_'),   // daysBetweenDates_ 의존
+  extractFn(gs, 'daysBetweenDates_'),
+  extractFn(gs, 'matchSumupRefundToRefundEvents_'),
+  `export function runMatch(rowObjs,tx){
+     const rows=[new Array(CONFIG.BOOKING_HEADERS.length).fill('')].concat(rowObjs.map(makeRow));
+     const sh={getDataRange:()=>({getValues:()=>rows})};
+     return matchSumupRefundToRefundEvents_(tx,sh);
+   }`
 ].join('\n\n');
 
 const dir = mkdtempSync(join(tmpdir(), 'refund-'));
 let runRefund;
 let runQuote;
+let runMatch;
 try {
   writeFileSync(join(dir, 'core.mjs'), MODULE);
-  ({ runRefund, runQuote } = await import(pathToFileURL(join(dir, 'core.mjs')).href));
+  ({ runRefund, runQuote, runMatch } = await import(pathToFileURL(join(dir, 'core.mjs')).href));
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
@@ -162,6 +172,26 @@ check('웨딩 6일~당일 0%', q(3, { '촬영종류': 'wed' }).rate === 0, '');
 // 잔금까지 냈으면 잔금분은 100% + 계약금분만 요율
 const full = q(15, { '잔금결제여부': 'Y', '잔금결제금액': 70 });
 check('잔금 100% + 계약금 요율', full.suggested === 120, `sug=${full.suggested} (기대 70+50)`);
+
+/* ── SumUp 환불 거래 대조 ── */
+const evRow = (events, name) => ({ '고객명': name || 'M', '환불내역JSON': JSON.stringify(events) });
+const sumupEv = (over) => ({ ts: 't1', payoutDate: '2026-07-20', amount: 50, method: 'sumup', type: 'refund', ...(over || {}) });
+const tx = (over) => ({ gross: -50, date: '2026-07-22', paymentRef: 'TXABC', ...(over || {}) });
+
+let m = runMatch([evRow([sumupEv()])], tx());
+check('대조: 정확 매칭', m && m.linked === false && m.rowIndex === 2, JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ amount: 49 })])], tx());
+check('대조: 금액 불일치 제외', m === null, JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ payoutDate: '2026-07-01' })])], tx());
+check('대조: ±10일 창 밖 제외', m === null, JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ method: 'bank' })])], tx());
+check('대조: 수단 sumup 아니면 제외', m === null, JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ sumupTxRef: 'OTHER' })])], tx());
+check('대조: 타 거래 연결 이벤트 제외', m === null, JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ ts: 'u1' })], 'A'), evRow([sumupEv({ ts: 'l1', sumupTxRef: 'TXABC' })], 'B')], tx());
+check('대조: 같은 ref 연결이 미연결보다 우선', m && m.linked === true && m.eventTs === 'l1', JSON.stringify(m));
+m = runMatch([evRow([sumupEv({ type: 'gutschein_restore' })])], tx());
+check('대조: 복원 이벤트 제외', m === null, JSON.stringify(m));
 
 console.log('환불 규칙 검증');
 if (fails.length) {

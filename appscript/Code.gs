@@ -14197,6 +14197,32 @@ function analyzeSettlementReviewReason_(tx,bookingSheetOpt,options){
   const source=String(t.source||'').toLowerCase();
   const statusText=String([t.type,t.description,t.memo].join(' '));
   if(/failed|cancel|refund|charge.?back|storniert|erstattet|환불|취소/i.test(statusText) && amount<=0){
+    /* SumUp 카드 환불은 ERP 환불 이벤트와 자동 대조한다 — 기록이 있으면 확인 완료(info)로
+       내려 검수 목록에서 조용해지고, 없으면 '기록하라'는 구체적 경고가 남는다.
+       대조 성사 시 이벤트에 거래 ref 를 각인해 재실행이 멱등이 된다. */
+    if(source==='sumup'&&Math.abs(amount)>0){
+      let hit=null;
+      try{ hit=matchSumupRefundToRefundEvents_(t,bookingSheetOpt); }catch(e){Logger.log('refund match fail: '+e.message);}
+      if(hit){
+        if(!hit.linked){ try{ linkSumupRefundEvent_(hit.rowIndex,hit.eventTs,String(t.paymentRef||'')); }catch(e){} }
+        return createSettlementReviewReason_(
+          'refund_matched',
+          '환불 대조 확인',
+          'ERP 환불 기록과 일치합니다 — '+hit.name+'님 €'+hit.amount+' (지급일 '+(hit.payoutDate||'-')+').',
+          '추가 조치가 필요 없습니다.',
+          'info',
+          []
+        );
+      }
+      return createSettlementReviewReason_(
+        'reversal_or_refund',
+        '취소/환불 거래 (기록 없음)',
+        '카드 환불/차감 거래인데 ERP에 대응하는 환불 기록이 없습니다.',
+        '예약 상세 → 환불 버튼에서 수단 "카드 취소(SumUp)"로 기록해 주세요 — 지출장부에 넣으면 매출차감이 아니라 비용으로 잘못 분류됩니다.',
+        'warn',
+        []
+      );
+    }
     return createSettlementReviewReason_(
       'reversal_or_refund',
       '취소/환불 거래',
@@ -23024,7 +23050,15 @@ function getCancellationRefundQuoteAdmin(token,rowIndex){
   const rIdx=parseInt(rowIndex,10)||0;
   if(rIdx<2||rIdx>sh.getLastRow()) throw new Error('잘못된 예약 행 번호');
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
-  return calcCancellationRefundQuote_(row);
+  const quote=calcCancellationRefundQuote_(row);
+  // 환불 모달의 이력 표시용 — 최근 10건 (표시 필드만, JSON 원문은 내려보내지 않는다)
+  quote.events=parseBookingRefunds_(row).slice(-10).map(function(ev){
+    return{payoutDate:String(ev.payoutDate||''),amount:roundCurrency_(Number(ev.amount)||0),
+           method:String(ev.method||''),type:String(ev.type||'refund'),
+           reason:String(ev.reason||'').slice(0,60),invoiceNo:String(ev.invoiceNo||''),
+           sumupTxRef:String(ev.sumupTxRef||'')};
+  });
+  return quote;
 }
 
 /* 바우처 복원 — 굿샤인으로 결제된 부분의 '환불'은 현금이 아니라 사용 취소다(사장님 확정 2026-07-27).
@@ -23055,6 +23089,59 @@ function restoreGutscheinForBookingRefund_(bookingRowIndex,bookingRow){
     sheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(memo?memo+' '+note:note);
   }
   return{code:code,amount:amount,restoredTo:prevStatus,gutscheinRowIndex:found.rowIndex};
+}
+
+/* SumUp 환불 거래 ↔ ERP 환불 이벤트 대조 — 카드 환불이 ERP 기록 없이 조용히 지나가지 못하게 한다.
+   매칭: method 'sumup' + 금액 일치(±0.01) + 지급일 ±10일 + (미연결이거나 같은 거래 ref 에 연결).
+   같은 ref 로 이미 연결된 이벤트가 최우선 — 재실행이 멱등이 된다. */
+function matchSumupRefundToRefundEvents_(tx,bookingSheetOpt){
+  if(BOOKING_COL['환불내역JSON']==null) return null;
+  const amount=roundCurrency_(Math.abs(Number(tx&&tx.gross||0)));
+  if(amount<=0) return null;
+  const ref=String((tx&&tx.paymentRef)||'').trim();
+  const txDate=String((tx&&tx.date)||'').slice(0,10);
+  let sh=bookingSheetOpt;
+  try{ if(!sh) sh=getDbSheet(); }catch(e){ return null; }
+  const rows=sh.getDataRange().getValues();
+  let fallback=null;
+  for(let r=1;r<rows.length;r++){
+    const raw=String(rows[r][BOOKING_COL['환불내역JSON']]||'').trim();
+    if(!raw||raw==='[]') continue;
+    const list=parseBookingRefunds_(rows[r]);
+    for(let i=0;i<list.length;i++){
+      const ev=list[i];
+      if(!ev||ev.type!=='refund'||ev.method!=='sumup') continue;
+      if(Math.abs(roundCurrency_(Number(ev.amount)||0)-amount)>0.01) continue;
+      const evRef=String(ev.sumupTxRef||'').trim();
+      if(evRef&&ref&&evRef!==ref) continue;   // 다른 거래에 이미 연결된 이벤트는 건너뛴다
+      const d=String(ev.payoutDate||'').slice(0,10);
+      if(txDate&&d){
+        const gap=Math.abs(daysBetweenDates_(txDate,d));
+        if(isFinite(gap)&&gap>10) continue;
+      }
+      const hit={rowIndex:r+1,name:String(rows[r][BOOKING_COL['고객명']]||''),eventTs:String(ev.ts||''),
+                 amount:amount,payoutDate:d,linked:!!evRef};
+      if(evRef) return hit;
+      if(!fallback) fallback=hit;
+    }
+  }
+  return fallback;
+}
+
+// 대조 성사 시 이벤트에 SumUp 거래 ref 를 각인 — 이후 같은 거래는 linked 로 즉시 확인된다
+function linkSumupRefundEvent_(rowIndex,eventTs,ref){
+  if(!ref) return false;
+  try{
+    const sh=getDbSheet();
+    const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const list=parseBookingRefunds_(row);
+    const ev=list.find(function(e){return e&&e.ts===eventTs;});
+    if(!ev) return false;
+    if(String(ev.sumupTxRef||'')===String(ref)) return true;
+    ev.sumupTxRef=String(ref);
+    sh.getRange(rowIndex,BOOKING_COL['환불내역JSON']+1).setValue(JSON.stringify(list));
+    return true;
+  }catch(e){ Logger.log('sumup refund link fail: '+e.message); return false; }
 }
 
 /* 어드민/에이전트 진입점 — payload={amount,payoutDate?,method?,reason?,memo?,issueInvoice?,notify?}
