@@ -2454,7 +2454,7 @@ function renderPrints() {
             <select data-print-type="${index}">
               ${getSelectablePrintOptions().map((item) => `<option value="${item.id}"${item.id === print.printId ? ' selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}
             </select>
-            ${getPrintTierCopy(printTypeId, state.lang)?.paper ? `<div class="finish-help print-paper-note">${getPrintTierCopy(printTypeId, state.lang).paper}</div>` : ''}
+            ${getPrintTierCopy(normalizePrintTypeId(print.printId), state.lang)?.paper ? `<div class="finish-help print-paper-note">${getPrintTierCopy(normalizePrintTypeId(print.printId), state.lang).paper}</div>` : ''}
           </div>
         </div>
         ${printFinishHtml(index, print)}
