@@ -4817,6 +4817,10 @@ a.b2b-consult-card:hover { border-color: #0f766e; }
 }
 
 /* 성공 화면 폴리시 */
+/* 항목이 홀수 개면 마지막 칸(보통 금액)이 반쪽 옆에 구멍을 남긴다 — 가장 중요한 값이니 한 줄을 다 쓰게 한다 */
+.result-grid .result-item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .result-check {
   width: 46px; height: 46px; margin: 0 auto 10px;
   border-radius: 50%;

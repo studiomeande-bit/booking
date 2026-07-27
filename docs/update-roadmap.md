@@ -61,7 +61,7 @@ Updated: 2026-07-16 Europe/Berlin
 - Phase 2+3 → **Update 4로 확정** (2026-07-16 사장님 승인): `docs/update-4-plan.md` — 첫 메뉴 B2B/B2C 분리(사장님 지시), 프리웨딩↔웨딩본식 구분, 설명문 개선, B2B 상담형 전환(상담 설문 인프라 재사용), 견적 드래프트는 에이전트 경로만, 계약금 인보이스 명시 실행형, Drehvertrag→Update 5
 
 11. Final design pass (2026-07-15 부분 완료)
-- booking success screen polish (남음)
+- ~~booking success screen polish~~ → 2026-07-27 완료: 디자인 패스 세션이 이미 핵심(체크 원형·중앙 정렬, booking.css "성공 화면 폴리시" 블록)을 적용해 둔 상태였고, 남은 흠(홀수 개 요약 그리드에서 금액 옆 빈 칸)만 마지막 항목 전체폭 스팬으로 마감
 - ~~select design alignment with booking~~ → 사장님 결정으로 종결: 셀렉은 크림+그린 톤 유지 (의도된 무드 구분)
 - ~~spacing / typography consistency review~~ → 폰트 스택 통일 완료 (Noto Sans KR 우선)
 - ~~mobile safe-area and in-app browser polish~~ → select viewport-fit=cover + safe-area insets 적용 완료
