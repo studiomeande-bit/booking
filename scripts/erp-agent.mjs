@@ -10,6 +10,10 @@
  *   quote-hold | quote-snooze | quote-release-hold | quote-extend
  *   invoice-list | invoice-create | invoice-send
  *   booking-search | booking-get | booking-set-time | booking-set-amount
+ *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
+ *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
+ *   booking-refund-quote: 취소 환불 규정 제안액(실수령·기환불 포함) 조회
+ *   booking-delete: 예약 행 삭제(expectName+confirm:'DELETE', 참조 보정 포함 — 합성행 전용, 실고객은 force)
  *
  * booking-set-amount: 예약 총결제액 정정(매출 소급 정정). 회계장부 gross는 총결제액에서 파생.
  *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'

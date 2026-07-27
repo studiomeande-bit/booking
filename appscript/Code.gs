@@ -49,7 +49,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -1170,6 +1170,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
         if(action==='booking-delete') return jsonOk_(deleteBookingForAgent_(token,payload));
+        if(action==='booking-refund') return jsonOk_(Object.assign({},recordBookingRefundAdmin(token,payload.rowIndex,Object.assign({},payload,{source:'agent'})),{}));
+        if(action==='booking-refund-quote') return jsonOk_(getCancellationRefundQuoteAdmin(token,payload.rowIndex));
         if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
         // 사진 셀렉 / 보정
@@ -3685,6 +3687,11 @@ function ensureBookingSheet_(ss) {
     // ✅ 헤더 행 개수가 늘어난 경우만 추가 (매번 21번 write 방지)
     const lastCol = sh.getLastColumn();
     if(lastCol < CONFIG.BOOKING_HEADERS.length) {
+      // ① 그리드가 모자라면 먼저 넓힌다. 안 넓히면 아래 getRange 가 throw 하는데, 이 함수는
+      //    ensureSheets_ 의 첫 관문이라 예약 접수·어드민·에이전트가 전부 한꺼번에 죽는다
+      //    (ensureSelectSheet_ 가 실제로 겪은 함정과 동일).
+      const need = CONFIG.BOOKING_HEADERS.length - sh.getMaxColumns();
+      if(need > 0) sh.insertColumnsAfter(sh.getMaxColumns(), need);
       sh.getRange(1, lastCol+1, 1, CONFIG.BOOKING_HEADERS.length-lastCol)
         .setValues([CONFIG.BOOKING_HEADERS.slice(lastCol)]);
     }
@@ -11262,7 +11269,9 @@ function getDashboardData_(){
       if(bookingTime>=weekStart.getTime()&&bookingTime<weekEnd.getTime()) addPeriodRevenue(periodRevenue.week,price,status,dObj);
       if(bookingTime>=monthStart.getTime()&&bookingTime<monthEnd.getTime()) addPeriodRevenue(periodRevenue.month,price,status,dObj);
     }
-    if(isBookingRevenueStatus_(status)&&bookingTime<=now){totReal+=price;monthly[m].revenue+=price;monthly[m].count++;prod[g]=(prod[g]||0)+price;if(payStr.includes('현금'))pay.cash+=price;else if(payStr.includes('카드'))pay.card+=price;else if(payStr.includes('계좌이체'))pay.transfer+=price;else if(payStr.includes('마이리얼트립'))pay.myreal+=price;else pay.none+=price;}
+    // 환불 누계는 대시보드 통계에서도 차감(예약 월 기준 근사 — 세무 숫자는 매출장부의 지급일 귀속이 기준)
+    const refundedTotal=bookingRefundTotal_(row);
+    if(isBookingRevenueStatus_(status)&&bookingTime<=now){totReal+=price-refundedTotal;monthly[m].revenue+=price-refundedTotal;monthly[m].count++;prod[g]=(prod[g]||0)+price;if(payStr.includes('현금'))pay.cash+=price;else if(payStr.includes('카드'))pay.card+=price;else if(payStr.includes('계좌이체'))pay.transfer+=price;else if(payStr.includes('마이리얼트립'))pay.myreal+=price;else pay.none+=price;}
     else if(!inactive&&bookingTime>now) totExp+=price;
   }
   ['week','month'].forEach(function(key){
@@ -12788,6 +12797,54 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       openAmount: localOpenAmount
     });
   }
+  /* ===== 환불/취소보유금 파생 — 원 매출행은 절대 수정하지 않는다 =====
+     매출 귀속일(잔금입금일)과 환불 지급일의 분기가 다를 수 있으므로, 환불은 **지급일** 날짜의
+     음수 수입 엔트리로 낸다(이미 신고된 분기 소급 방지, §20 UStG Ist-Versteuerung).
+     취소건 보유금(위약금)은 환불 이벤트가 기록된 예약만 인식한다 — 과거 취소건을 소급 등장시켜
+     이미 마감·검증한 분기 내부 숫자를 흔들지 않기 위함(기존 갭은 kontoauszug 에서 수동 추적). */
+  for(let r=1; r<bookData.length; r++) {
+    const row=bookData[r]; if(!row[0]) continue;
+    const refunds=parseBookingRefunds_(row);
+    if(!refunds.length) continue;
+    /* 매출이 인식된 행(완료 3종 = 위의 +수입 행 존재, 또는 취소 = 아래 보유금 행 존재)에서만
+       음수를 낸다. 미인식 상태(확정됨 등)에서 음수만 내면 장부가 짝 없는 마이너스를 갖는다 —
+       상태가 완료/취소로 결정되는 순간 +와 −가 함께 나타난다. */
+    const st=String(row[1]||'').trim();
+    if(!['촬영완료','셀렉완료','작업완료'].includes(st)&&!isBookingCancelledStatus_(st)) continue;
+    const name=String(row[2]||'');
+    if(isBookingCancelledStatus_(st)){
+      const pay=getEffectiveBookingPayment_(row);
+      if(pay.paid>0.01){
+        const recvDate=(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||parseDateSafe_(row[0]).str).slice(0,10);
+        if((!startDate||recvDate>=startDate)&&(!endDate||recvDate<=endDate)){
+          const g=roundCurrency_(pay.paid);
+          const n=Math.round((g/1.19)*100)/100;
+          entries.push({date:recvDate,dateStr:recvDate,type:'촬영예약',category:String(row[6]||''),
+            accountingClass:classifyBookingAccounting_(row[6],row[7]),name:name,
+            description:`${row[7]||''} - ${name} (취소 보유금)`,gross:g,net:n,tax:roundCurrency_(g-n),
+            payMethod:String(row[13]||''),status:'취소보유금',invoice:'',note:String(row[15]||''),
+            source:'booking',flow:'income',rowIndex:r+1,openAmount:0});
+        }
+      }
+    }
+    refunds.forEach(function(ev){
+      if(!ev||ev.type==='forfeit') return;
+      const amt=roundCurrency_(Number(ev.amount)||0);
+      if(amt<=0) return;
+      const d=String(ev.payoutDate||'').slice(0,10);
+      if(!d) return;
+      if(startDate&&d<startDate) return;
+      if(endDate&&d>endDate) return;
+      const g=-amt;
+      const n=Math.round((g/1.19)*100)/100;
+      entries.push({date:d,dateStr:d,type:'환불',category:String(row[6]||''),
+        accountingClass:classifyBookingAccounting_(row[6],row[7]),name:name,
+        description:(`${row[7]||''} - ${name} 환불`+(ev.reason?` (${ev.reason})`:'')).trim(),
+        gross:g,net:n,tax:roundCurrency_(g-n),
+        payMethod:String(ev.method||''),status:'환불',invoice:String(ev.invoiceNo||''),note:String(ev.memo||''),
+        source:'booking-refund',flow:'income',rowIndex:r+1,openAmount:0});
+    });
+  }
   _mark('bookLoop');
   const printSh = sheets.printSheet;
   const printColMap = getPrintSheetColMap_(printSh);
@@ -12796,6 +12853,10 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
   for(let r=1; r<printData.length; r++) {
     const row = printData[r]; if(!row[0]) continue;
     const normalized = normalizePrintRow_(row, r+1, printColMap);
+    // 미결제 무효건(취소/환불 표기)은 매출에서 제외 — 현금장부(같은 정규식)와 대칭.
+    // ⚠ 이 상태 표기는 '결제 전에 무효가 된 건' 전용. 결제 후 환불은 예약행 환불 이벤트로만
+    //   기록한다(상태도 바꾸면 이중 차감이 된다).
+    if(/취소|환불|cancel/i.test(String(normalized.status||''))) continue;
     const salesDateRaw = normalized.salesDate || normalized.dateStr;
     const {str:dStr} = parseDateSafe_(salesDateRaw);
     const dateOnly = dStr.slice(0,10);
@@ -13604,7 +13665,10 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
     const row=bookingRows[r];
     if(!row[BOOKING_COL['예약일시']]) continue;
     const status=String(row[BOOKING_COL['상태']]||'').trim();
-    if(isBookingCancelledStatus_(status) || isBookingPostponedStatus_(status)) continue;
+    const bookingRefunds=parseBookingRefunds_(row);
+    // 취소건이라도 환불 이벤트가 기록된 건은 유지 — 현금 받고 취소된 돈의 흐름(수납+환불 출금)이
+    // 통째로 사라지던 기존 불일치의 해소. 이벤트 없는 과거 취소건은 현행대로 미포함(소급 방지).
+    if((isBookingCancelledStatus_(status)&&!bookingRefunds.length) || isBookingPostponedStatus_(status)) continue;
     const bookingDate=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
     const name=String(row[BOOKING_COL['고객명']]||'').trim();
     const product=String(row[BOOKING_COL['상품']]||'').trim();
@@ -13646,6 +13710,26 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
         memo:String(row[BOOKING_COL['요청사항']]||'')
       }));
     }
+    // 현금 환불 — 환불 이벤트(method:'cash')를 지급일 날짜의 출금으로 파생
+    bookingRefunds.forEach(function(ev){
+      if(!ev||ev.type==='forfeit'||ev.method!=='cash') return;
+      const amt=roundCurrency_(Number(ev.amount)||0);
+      const d=String(ev.payoutDate||'').slice(0,10);
+      if(amt<=0||!d||!inRange(d)) return;
+      entries.push(makeCashLedgerEntry_({
+        id:'booking-refund-'+(r+1)+'-'+String(ev.ts||'').replace(/[^0-9]/g,''),
+        date:d,
+        type:'출금',
+        category:'환불',
+        counterparty:name,
+        description:(product?product+' · ':'')+'현금 환불'+(ev.reason?(' — '+ev.reason):''),
+        cashOut:amt,
+        source:'booking',
+        sourceLabel:'예약장부',
+        refRow:r+1,
+        memo:String(ev.memo||'')
+      }));
+    });
   }
   const printRows=sheets.printSheet.getDataRange().getValues();
   const printColMap=getPrintSheetColMap_(sheets.printSheet);
@@ -14117,7 +14201,7 @@ function analyzeSettlementReviewReason_(tx,bookingSheetOpt,options){
       'reversal_or_refund',
       '취소/환불 거래',
       '정상 매출 입금이 아니라 취소, 환불 또는 차감 거래로 보입니다.',
-      '원거래와 환불 처리 여부를 확인하고 필요하면 지출장부나 메모로 정리해 주세요.',
+      '원거래를 확인하고 예약 상세의 환불 기록(부분/전체)으로 정리해 주세요 — 지출장부에 넣으면 매출차감이 아니라 비용으로 잘못 분류됩니다.',
       'warn',
       []
     );
@@ -22653,6 +22737,10 @@ function findExistingInvoiceForPayload_(invoiceSheet,payload){
     });
   if(!invoices.length) return null;
   if(isRefundRequest){
+    /* 부분환불은 한 예약에 환불 인보이스가 여러 장일 수 있다. refundEventTs 가 오면
+       환불 이벤트 단위 발행이므로 예약당 1건 가드를 건너뛴다 — 이벤트당 1건 중복 방지는
+       호출자(recordBookingRefundAdmin: 이벤트에 invoiceNo 연결)가 진다. */
+    if(payload&&payload.refundEventTs) return null;
     return invoices.find(function(inv){
       return String(inv&&inv.type||'')==='취소/환불' || toNumberOrZero_(inv&&inv.refund)>0;
     })||null;
@@ -22784,6 +22872,188 @@ function deleteInvoiceAdmin(token, invNumber){
   return{ok:true};
 }
 
+/* ===== 환불 (부분/전체) — "상태가 아니라 결제 이벤트" =========================================
+   환불은 예약 상태를 바꾸지 않는다(촬영완료 후 불만 환불은 취소가 아니다). 예약행의
+   '환불내역JSON'에 이벤트를 append 하고, 가상 장부 빌더(getAccountingLedger/getCashLedgerAdmin)가
+   **환불 지급일** 날짜의 음수/출금 엔트리를 파생한다 — 원 매출행을 절대 수정하지 않으므로
+   이미 신고된 ELSTER 분기 숫자가 소급으로 틀어지지 않는다(§20 UStG Ist-Versteuerung:
+   환불은 실제 지급된 분기의 수령액 차감, kontoauszug/00_README 기준). ============================ */
+var BOOKING_REFUND_METHODS_=['bank','cash','sumup','gutschein'];
+
+function parseBookingRefunds_(row){
+  if(BOOKING_COL['환불내역JSON']==null) return [];
+  try{
+    const a=JSON.parse(String(row[BOOKING_COL['환불내역JSON']]||'[]'));
+    return Array.isArray(a)?a:[];
+  }catch(e){ return []; }
+}
+// forfeit(몰수 표시) 이벤트는 금액 0의 마커라 누계에서 제외
+function bookingRefundTotal_(row){
+  return roundCurrency_(parseBookingRefunds_(row)
+    .reduce(function(s,e){return s+(e&&e.type!=='forfeit'?(Number(e.amount)||0):0);},0));
+}
+
+/* 예약 한 건의 실수령액 — 매출장부 인라인 계산과 동일 규칙(Y 플래그인데 금액 미기재면 due 폴백).
+   환불 상한 검증과 취소건 보유금 인식이 장부와 같은 정의를 쓰기 위한 단일 소스. */
+function getEffectiveBookingPayment_(row){
+  const gross=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
+  const depositDue=getEffectiveBookingDeposit_(row);
+  const localDepositPaid=isPaymentConfirmedValue_(row[BOOKING_COL['계약금입금여부']]);
+  const localBalancePaid=isPaymentConfirmedValue_(row[BOOKING_COL['잔금결제여부']]);
+  const depositPaidRaw=parseMoneyValue_(row[BOOKING_COL['계약금입금금액']]);
+  const balancePaidRaw=parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]);
+  const effDep=localDepositPaid?(depositPaidRaw>0?depositPaidRaw:depositDue):depositPaidRaw;
+  const effBal=localBalancePaid?(balancePaidRaw>0?balancePaidRaw:Math.max(0,gross-(localDepositPaid?effDep:0))):balancePaidRaw;
+  const sum=Math.max(0,effDep)+Math.max(0,effBal);
+  return{
+    gross:gross,depositDue:depositDue,
+    depositPaidAmount:Math.max(0,effDep),balancePaidAmount:Math.max(0,effBal),
+    paid:gross>0.01?Math.min(gross,sum):sum
+  };
+}
+
+/* 환불 이벤트 기록 코어 — 어드민 모달·에이전트 액션·취소 플로우 3곳이 공유.
+   event={amount,payoutDate?,method?,reason?,memo?,type?('refund'|'forfeit'),source?,invoiceNo?} */
+function recordBookingRefund_(sheets,rowIndex,event){
+  if(BOOKING_COL['환불내역JSON']==null) throw new Error('환불 컬럼이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.');
+  event=event||{};
+  const sh=sheets.bookingSheet;
+  const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const type=event.type==='forfeit'?'forfeit':'refund';
+  const amount=roundCurrency_(Number(event.amount)||0);
+  if(type==='refund'&&amount<=0) throw new Error('환불 금액은 0보다 커야 합니다.');
+  const method=BOOKING_REFUND_METHODS_.indexOf(String(event.method||''))>=0?String(event.method):'bank';
+  const pay=getEffectiveBookingPayment_(row);
+  const already=bookingRefundTotal_(row);
+  /* 상한: 누계 환불 ≤ 실수령. 실수령을 넘는 보상금은 매출 차감이 아니라 비용이므로 지출장부로. */
+  if(type==='refund'&&amount+already>pay.paid+0.01){
+    throw new Error('환불 누계 €'+roundCurrency_(amount+already)+' 가 실수령액 €'+roundCurrency_(pay.paid)
+      +' 을 초과합니다. 결제 기록(계약금/잔금)을 먼저 확인하시고, 실수령 초과 보상은 지출장부에 기록해 주세요.');
+  }
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const payoutDate=/^\d{4}-\d{2}-\d{2}/.test(String(event.payoutDate||''))?String(event.payoutDate).slice(0,10):now.slice(0,10);
+  const rec={ts:now,payoutDate:payoutDate,amount:amount,method:method,type:type,
+             reason:String(event.reason||'').slice(0,120),memo:String(event.memo||'').slice(0,200),
+             source:String(event.source||'admin')};
+  if(event.invoiceNo) rec.invoiceNo=String(event.invoiceNo);
+  const list=parseBookingRefunds_(row);
+  list.push(rec);
+  sh.getRange(rowIndex,BOOKING_COL['환불내역JSON']+1).setValue(JSON.stringify(list));
+  const totalRefund=roundCurrency_(list.reduce(function(s,e){return s+(e.type!=='forfeit'?(Number(e.amount)||0):0);},0));
+  if(BOOKING_COL['환불누계금액']!=null) sh.getRange(rowIndex,BOOKING_COL['환불누계금액']+1).setValue(totalRefund);
+  return{ok:true,rowIndex:rowIndex,event:rec,totalRefund:totalRefund,paid:pay.paid,
+         remaining:roundCurrency_(Math.max(0,pay.paid-totalRefund)),
+         name:String(row[BOOKING_COL['고객명']]||''),email:String(row[BOOKING_COL['이메일']]||''),
+         lang:String(row[BOOKING_COL['언어']]||'ko').toLowerCase().trim()};
+}
+
+// 이벤트에 인보이스 번호를 뒤늦게 연결(발행은 이벤트 기록 후에 일어난다)
+function updateBookingRefundEventInvoice_(sheets,rowIndex,eventTs,invoiceNo){
+  try{
+    const sh=sheets.bookingSheet;
+    const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const list=parseBookingRefunds_(row);
+    const ev=list.find(function(e){return e&&e.ts===eventTs;});
+    if(!ev) return false;
+    ev.invoiceNo=String(invoiceNo||'');
+    sh.getRange(rowIndex,BOOKING_COL['환불내역JSON']+1).setValue(JSON.stringify(list));
+    return true;
+  }catch(e){ Logger.log('refund invoice link fail: '+e.message); return false; }
+}
+
+// 옵트인 환불 확인 메일 — 취소 플로우는 기존 취소메일이 환불액을 이미 전달하므로 단독 환불 전용
+function _sendBookingRefundEmail_(rowIndex,res){
+  const email=String(res.email||'').trim();
+  if(!email||email.indexOf('@')<1||email.includes('수기등록')) return false;
+  const L=(res.lang==='en'||res.lang==='de')?res.lang:'ko';
+  const amt=formatEuroAmount_(res.event.amount);
+  const M={bank:{ko:'계좌 이체',en:'bank transfer',de:'per Überweisung'},
+           cash:{ko:'현금',en:'in cash',de:'in bar'},
+           sumup:{ko:'카드 결제 취소(SumUp)',en:'as a card refund (SumUp)',de:'als Kartenrückbuchung (SumUp)'},
+           gutschein:{ko:'기프트 바우처',en:'as a gift voucher',de:'als Gutschein'}}[res.event.method]||{ko:'계좌 이체',en:'bank transfer',de:'per Überweisung'};
+  const bankNote={ko:'<br>은행 사정에 따라 입금 확인까지 1~3영업일이 걸릴 수 있습니다.',
+                  en:'<br>Depending on your bank, it may take 1-3 business days to appear.',
+                  de:'<br>Je nach Bank kann die Gutschrift 1-3 Werktage dauern.'};
+  const subj={ko:`[Studio mean] 환불 처리 안내 — ${amt}`,en:`[Studio mean] Refund processed — ${amt}`,de:`[Studio mean] Rückerstattung veranlasst — ${amt}`};
+  const body={
+    ko:`안녕하세요, ${res.name}님.<br><br>${res.event.payoutDate} 기준으로 <b>${amt}</b> 환불을 ${M.ko}로 처리해 드렸습니다.${res.event.method==='bank'?bankNote.ko:''}<br><br>문의사항은 이 메일로 편하게 회신해 주세요.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com`,
+    en:`Hello ${res.name},<br><br>We have processed a refund of <b>${amt}</b> on ${res.event.payoutDate} ${M.en}.${res.event.method==='bank'?bankNote.en:''}<br><br>If you have any questions, just reply to this email.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com`,
+    de:`Guten Tag, ${res.name},<br><br>wir haben am ${res.event.payoutDate} eine Rückerstattung von <b>${amt}</b> ${M.de} veranlasst.${res.event.method==='bank'?bankNote.de:''}<br><br>Bei Fragen antworten Sie einfach auf diese E-Mail.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com`
+  };
+  try{
+    sendTrackedEmail_({to:email,subject:subj[L],htmlBody:body[L]},
+      {type:'refund_confirm',customerName:res.name,email:email,bookingRowIndex:rowIndex});
+    return true;
+  }catch(e){ Logger.log('refund mail fail: '+e.message); return false; }
+}
+
+/* 취소 환불 규정 제안액 — 고객이 매번 취소메일로 받는 규정(EMAIL_I18N refund_policy)을 코드화.
+   계약금 실수령분에 요율(30일+ 100% / 8~29일 50% / 2~7일 25% / 전일·당일 0%)을 적용하고,
+   잔금 실수령분은 촬영 전 취소이므로 100% 반환 가정. 웨딩(wed)은 별도 스케줄(60/70/50/30/0).
+   ⚠ 제안 전용 — 자동 적용 금지. 약관 텍스트(booking/index.html)와 메일 규정이 서로 달라
+   최종 금액은 사장님이 확정한다. */
+function calcCancellationRefundQuote_(row){
+  const shoot=parseDateSafe_(row[BOOKING_COL['예약일시']]).obj;
+  const pay=getEffectiveBookingPayment_(row);
+  if(!shoot||isNaN(shoot.getTime())) return{ok:false,message:'촬영일을 해석할 수 없습니다.',paid:pay.paid};
+  const today=new Date(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+'T00:00:00');
+  const shootDay=new Date(Utilities.formatDate(shoot,CONFIG.TIMEZONE,'yyyy-MM-dd')+'T00:00:00');
+  const days=Math.floor((shootDay.getTime()-today.getTime())/86400000);
+  const isWed=String(row[BOOKING_COL['촬영종류']]||'').trim().toLowerCase()==='wed';
+  let rate;
+  let schedule;
+  if(isWed){
+    schedule='wedding';
+    rate=days>=60?1:(days>=30?0.7:(days>=14?0.5:(days>=7?0.3:0)));
+  }else{
+    schedule='standard';
+    rate=days>=30?1:(days>=8?0.5:(days>=2?0.25:0));
+  }
+  const depositPart=Math.min(pay.paid,pay.depositPaidAmount);
+  const balancePart=Math.max(0,pay.paid-depositPart);
+  const suggested=roundCurrency_(depositPart*rate+balancePart);
+  return{ok:true,days:days,rate:rate,schedule:schedule,paid:pay.paid,
+         depositPart:roundCurrency_(depositPart),balancePart:roundCurrency_(balancePart),
+         suggested:suggested,alreadyRefunded:bookingRefundTotal_(row)};
+}
+
+function getCancellationRefundQuoteAdmin(token,rowIndex){
+  assertAdmin_(token);
+  const sh=getDbSheet();
+  const rIdx=parseInt(rowIndex,10)||0;
+  if(rIdx<2||rIdx>sh.getLastRow()) throw new Error('잘못된 예약 행 번호');
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  return calcCancellationRefundQuote_(row);
+}
+
+/* 어드민/에이전트 진입점 — payload={amount,payoutDate?,method?,reason?,memo?,issueInvoice?,notify?} */
+function recordBookingRefundAdmin(token,rowIndex,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sheets=ensureSheets_();
+  const rIdx=parseInt(rowIndex,10)||0;
+  if(rIdx<2||rIdx>sheets.bookingSheet.getLastRow()) throw new Error('잘못된 예약 행 번호');
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) throw new Error('처리 중입니다. 잠시 후 다시 시도해 주세요.');
+  let res;
+  try{ res=recordBookingRefund_(sheets,rIdx,payload); }
+  finally{ try{lock.releaseLock();}catch(e){} }
+  // 인보이스(옵션): 부분환불마다 발행 가능 — refundEventTs 로 예약당 1건 중복 가드를 우회하고 이벤트에 번호를 연결
+  if(payload.issueInvoice===true&&res.event.type==='refund'){
+    try{
+      const inv=createInvoiceAdmin(token,{bookingRowIndex:rIdx,type:'취소/환불',refundAmount:res.event.amount,
+        memo:String(payload.memo||('환불 '+res.event.payoutDate)),refundEventTs:res.event.ts});
+      if(inv&&inv.invoiceNumber){
+        res.invoiceNumber=inv.invoiceNumber;
+        updateBookingRefundEventInvoice_(sheets,rIdx,res.event.ts,inv.invoiceNumber);
+        res.event.invoiceNo=inv.invoiceNumber;
+      }
+    }catch(e){ res.invoiceError=e.message; }
+  }
+  if(payload.notify===true) res.mailSent=_sendBookingRefundEmail_(rIdx,res);
+  return res;
+}
+
 function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, memo){
   assertAdmin_(token);
   const {bookingSheet}=ensureSheets_();
@@ -22827,13 +23097,29 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
     const itemGroup=product&&product.itemGroup?String(product.itemGroup):_guessItemGroupFromProduct_(row[7]);
     if(cancelledDate) notifyWaitlistForDate_(cancelledDate,itemGroup);
   }catch(wlErr){Logger.log('waitlist notify (admin cancel) failed: '+wlErr.message);}
+  /* 환불/몰수 이벤트 기록 — 지금까지 환불액이 취소메일 문구로만 존재하고 어디에도 기록되지 않아
+     장부에서 증발했다. 이벤트가 있어야 장부 빌더가 취소건의 보유금·환불을 인식한다.
+     상한 검증 실패(결제 기록 미비 등)는 취소 자체를 막지 않고 경고로만 돌려준다. */
+  let refundRecord=null;
+  let refundRecordError='';
+  try{
+    const refundNum=roundCurrency_(parseFloat(refundAmount)||0);
+    refundRecord=recordBookingRefund_({bookingSheet:bookingSheet},bookingRowIndex,
+      refundNum>0
+        ? {amount:refundNum,method:'bank',reason:'예약 취소 환불',source:'cancel'}
+        : {amount:0,type:'forfeit',reason:'예약 취소(환불 없음)',source:'cancel'});
+  }catch(e){ refundRecordError=e.message; Logger.log('cancel refund record fail: '+e.message); }
   // 인보이스 발행
   let invoiceNumber=null;
   if(issueInvoice){
-    const res=createInvoiceAdmin(token,bookingRowIndex,'취소/환불',refundAmount,memo||'취소 처리');
+    const res=createInvoiceAdmin(token,{bookingRowIndex:bookingRowIndex,type:'취소/환불',refundAmount:refundAmount,
+      memo:memo||'취소 처리',refundEventTs:refundRecord&&refundRecord.event?refundRecord.event.ts:''});
     invoiceNumber=res.invoiceNumber;
+    if(invoiceNumber&&refundRecord&&refundRecord.event){
+      updateBookingRefundEventInvoice_({bookingSheet:bookingSheet},bookingRowIndex,refundRecord.event.ts,invoiceNumber);
+    }
   }
-  return {ok:true, invoiceNumber};
+  return {ok:true, invoiceNumber, refundRecorded:!!refundRecord, refundRecordError:refundRecordError};
 }
 
 function getInvoiceList(token){

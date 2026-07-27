@@ -2740,6 +2740,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <input type="hidden" id="cancel_rowIndex">
     <div id="cancel_info" class="modal-panel danger modal-copy" style="margin-bottom:14px;"></div>
     <div class="modal-section-title">환불 · 메모</div>
+    <div id="cancel_quote" class="modal-copy" style="margin-bottom:8px;font-size:12px;color:#64748b;"></div>
     <div class="form-group">
       <label>환불 금액 (€) <span class="modal-inline-meta">— 0이면 환불 없음</span></label>
       <input type="number" id="cancel_refund" value="0" min="0" step="0.01" placeholder="0">
@@ -2755,6 +2756,49 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="modal-actions-inline">
       <button class="btn btn-outline btn-sm" onclick="closeCancelModal()">닫기</button>
       <button class="btn btn-sm" style="background:#ef4444;color:#fff;" onclick="confirmCancelBooking()">취소 처리</button>
+    </div>
+  </div>
+</div>
+
+<!-- 환불 기록 — 취소와 별개의 결제 이벤트. 부분환불 누적 가능, 상한(실수령)은 서버가 검증 -->
+<div class="modal-overlay" id="refundModal">
+  <div class="modal">
+    <div class="modal-title">환불 기록</div>
+    <input type="hidden" id="refund_rowIndex">
+    <div id="refund_info" class="modal-panel modal-copy" style="margin-bottom:12px;"></div>
+    <div id="refund_history" class="modal-copy" style="margin-bottom:12px;font-size:12px;color:#64748b;"></div>
+    <div class="form-group">
+      <label>환불 금액 (€)</label>
+      <input type="number" id="refund_amount" value="" min="0.01" step="0.01" placeholder="예: 50">
+    </div>
+    <div class="form-group">
+      <label>지급일</label>
+      <input type="date" id="refund_date">
+    </div>
+    <div class="form-group">
+      <label>지급 수단</label>
+      <select id="refund_method">
+        <option value="bank">계좌 이체</option>
+        <option value="cash">현금</option>
+        <option value="sumup">카드 취소 (SumUp)</option>
+        <option value="gutschein">기프트 바우처</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>사유</label>
+      <input type="text" id="refund_reason" placeholder="예: 촬영 불만 부분환불 / 인화물 하자">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <input type="checkbox" id="refund_invoice" style="width:auto;margin:0;">
+      <label for="refund_invoice" style="margin:0;font-weight:600;cursor:pointer;">환불 인보이스 발행 (취소/환불)</label>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <input type="checkbox" id="refund_notify" style="width:auto;margin:0;">
+      <label for="refund_notify" style="margin:0;font-weight:600;cursor:pointer;">고객에게 환불 확인 메일 발송</label>
+    </div>
+    <div class="modal-actions-inline">
+      <button class="btn btn-outline btn-sm" onclick="closeRefundModal()">닫기</button>
+      <button class="btn btn-sm" style="background:#9a3412;color:#fff;" onclick="confirmRefundBooking()">환불 기록</button>
     </div>
   </div>
 </div>
@@ -6187,6 +6231,8 @@ function renderBookingQuickActions(c){
     buttons.push(`<button class="btn btn-outline btn-sm" onclick="confirmBookingDeposit(${row})">입금확인</button>`);
   }
   buttons.push(`<button class="btn btn-outline btn-sm" onclick="openInvIssueModal(${row})">인보이스</button>`);
+  // 환불: 취소와 무관한 결제 이벤트(촬영 후 불만, 부분 환불 등). 서버가 실수령·기환불 상한을 검증한다.
+  buttons.push(`<button class="btn btn-outline btn-sm" style="color:#9a3412;border-color:#fed7aa;" onclick="openRefundModal(${row})">환불</button>`);
   if(String(c.status||'')==='작업완료'&&String(c.marketingConsent||'').toUpperCase()==='Y'){
     buttons.push(`<button class="btn btn-outline btn-sm" onclick="switchTab('marketing');loadMarketingSchedule()">마케팅</button>`);
   }
@@ -12278,6 +12324,19 @@ function openCancelModal(rowIndex){
       <div><span style="color:#94a3b8;">총금액</span><br><b>${c.price}€</b></div>
     </div>`;
   document.getElementById('cancelModal').classList.add('open');
+  // 규정 제안액 프리필 — 제안일 뿐 확정은 사장님이 한다(수정 가능). 서버가 실수령·기환불까지 계산.
+  const q=document.getElementById('cancel_quote');
+  q.textContent='환불 규정 제안액 계산 중…';
+  google.script.run.withSuccessHandler(res=>{
+    if(!res||!res.ok){q.textContent='';return;}
+    // 전부 서버 계산 숫자지만 innerHTML 에 넣기 전에 Number 로 강제해 둔다(XSS 소지 원천 차단)
+    const n=(v)=>Number(v)||0;
+    const sch=res.schedule==='wedding'?'웨딩 규정':'일반 규정';
+    q.innerHTML=`실수령 <b>€${n(res.paid)}</b>${n(res.alreadyRefunded)>0?` · 기환불 €${n(res.alreadyRefunded)}`:''} · 촬영까지 <b>${n(res.days)}일</b> → ${sch} ${Math.round(n(res.rate)*100)}% = 제안 <b style="color:#b91c1c;">€${n(res.suggested)}</b> (수정 가능)`;
+    const input=document.getElementById('cancel_refund');
+    if(!parseFloat(input.value)) input.value=n(res.suggested);
+  }).withFailureHandler(()=>{q.textContent='';})
+  .getCancellationRefundQuoteAdmin(adminToken,rowIndex);
 }
 function closeCancelModal(){document.getElementById('cancelModal').classList.remove('open');}
 function confirmCancelBooking(){
@@ -12294,6 +12353,63 @@ function confirmCancelBooking(){
     })
     .withFailureHandler(handleApiError)
     .cancelBookingAdmin(adminToken,rowIndex,refund,issueInvoice,memo);
+}
+
+/* ====== 환불 기록 (취소와 별개의 결제 이벤트) ====== */
+function openRefundModal(rowIndex){
+  const c=allCustomers.find(x=>x.rowIndex===rowIndex);
+  if(!c)return;
+  document.getElementById('refund_rowIndex').value=rowIndex;
+  document.getElementById('refund_amount').value='';
+  document.getElementById('refund_date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('refund_method').value='bank';
+  document.getElementById('refund_reason').value='';
+  document.getElementById('refund_invoice').checked=false;
+  document.getElementById('refund_notify').checked=false;
+  document.getElementById('refund_info').innerHTML=
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <div><span style="color:#94a3b8;">고객명</span><br><b>${escHtml(c.name)}</b></div>
+      <div><span style="color:#94a3b8;">촬영일시</span><br><b>${escHtml(c.dateStr||'-')}</b></div>
+      <div><span style="color:#94a3b8;">상품</span><br>${escHtml(c.product||'-')}</div>
+      <div><span style="color:#94a3b8;">총금액</span><br><b>${escHtml(String(c.price||'-'))}€</b></div>
+    </div>`;
+  // 실수령·기환불 컨텍스트 — 취소 견적 함수를 재사용(paid/alreadyRefunded만 쓴다)
+  const h=document.getElementById('refund_history');
+  h.textContent='실수령액 확인 중…';
+  google.script.run.withSuccessHandler(res=>{
+    if(!res){h.textContent='';return;}
+    const n=(v)=>Number(v)||0;
+    h.innerHTML=`실수령 <b>€${n(res.paid)}</b> · 기환불 <b>€${n(res.alreadyRefunded)}</b> · 환불 가능 <b style="color:#b91c1c;">€${Math.max(0,Math.round((n(res.paid)-n(res.alreadyRefunded))*100)/100)}</b>`;
+  }).withFailureHandler(()=>{h.textContent='';})
+  .getCancellationRefundQuoteAdmin(adminToken,rowIndex);
+  document.getElementById('refundModal').classList.add('open');
+}
+function closeRefundModal(){document.getElementById('refundModal').classList.remove('open');}
+function confirmRefundBooking(){
+  const rowIndex=parseInt(document.getElementById('refund_rowIndex').value);
+  const amount=parseFloat(document.getElementById('refund_amount').value)||0;
+  if(amount<=0){alert('환불 금액을 입력해 주세요.');return;}
+  const payload={
+    amount:amount,
+    payoutDate:document.getElementById('refund_date').value,
+    method:document.getElementById('refund_method').value,
+    reason:document.getElementById('refund_reason').value.trim(),
+    issueInvoice:document.getElementById('refund_invoice').checked,
+    notify:document.getElementById('refund_notify').checked
+  };
+  if(!confirm(`€${amount} 환불을 기록합니다.`+(payload.notify?'\n고객에게 환불 확인 메일이 나갑니다.':'')+(payload.issueInvoice?'\n환불 인보이스가 발행됩니다.':'')+'\n계속할까요?'))return;
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      closeRefundModal();
+      let msg=`환불 기록 완료 — 누계 €${res.totalRefund} / 잔여 가능 €${res.remaining}`;
+      if(res.invoiceNumber) msg+=`\n인보이스: ${res.invoiceNumber}`;
+      if(res.invoiceError) msg+=`\n⚠ 인보이스 실패: ${res.invoiceError}`;
+      if(payload.notify) msg+=res.mailSent?'\n메일 발송됨':'\n⚠ 메일 미발송(주소 없음)';
+      alert(msg);
+      loadAll();
+    } else alert('환불 기록 실패: '+((res&&res.message)||'오류'));
+  }).withFailureHandler(handleApiError)
+  .recordBookingRefundAdmin(adminToken,rowIndex,payload);
 }
 
 /* ====== 굿샤인 ====== */
