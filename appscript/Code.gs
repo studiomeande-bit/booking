@@ -4791,22 +4791,49 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   return out;
 }
 
-function getPublicSlots_(dateStr,totalDur,itemGroup){
+/* 날짜 클릭 → 시간대 조회. 실측(2026-07-27) 중앙값 9.6초·최대 17초로 고객 여정 최대 병목이었다.
+   같은 파일의 getPublicCalendarBatch_ 와 동일한 버전키 캐시를 적용한다 — 캐시 무효화는 이미
+   전 시스템이 쓰는 bumpCalCacheVer_ 가 담당하므로(예약 생성·수정·취소·차단 등 20여 곳),
+   새 예약이 들어오면 버전이 올라가 즉시 무효화된다.
+   ⚠ skipCache: 예약 제출의 서버 재검증(submitBooking)은 반드시 실시간으로 읽어야 한다.
+     실제 예약 가드는 slotAvailable_ 이지만, 이 함수의 결과가 확정모드·추천상태 메타데이터를
+     결정하므로 캐시된 값으로 라벨이 잘못 붙는 것을 막는다. */
+function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
   if(!isPublicBookingItemGroup_(itemGroup)) return [];
   if(itemGroup==='promo'&&!isPromoDateAllowed_(dateStr)) return[];
+  const cache=CacheService.getScriptCache();
+  const cacheKey=`public_slots_v1_${getCalCacheVer_()}_${dateStr}_${itemGroup}_${totalDur}`;
+  if(skipCache!==true){
+    try{
+      const hit=cache.get(cacheKey);
+      if(hit){
+        const parsed=JSON.parse(hit);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){}
+  }
   let studioPresenceEvents=[];
   let hasStudioAutoOpenBlocks=false;
   if(isStudioAutoOpenEligibleGroup_(itemGroup)){
     studioPresenceEvents=getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
     hasStudioAutoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents).length>0;
   }
-  if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return[];
+  // 닫힌 날짜도 빈 배열을 캐시한다 — 캐시 안 하면 '닫힘' 응답마다 캘린더를 다시 훑는다
+  if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)){
+    if(skipCache!==true){ try{cache.put(cacheKey,'[]',getAvailabilityCacheTtlSec_(itemGroup));}catch(e){} }
+    return[];
+  }
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
   const slotStrings = computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
   const detailedEvents = (studioPresenceEvents && studioPresenceEvents.length)
     ? studioPresenceEvents
     : getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
-  return buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents, itemGroup);
+  const out = buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents, itemGroup);
+  if(skipCache!==true){
+    // 스튜디오 자동오픈 그룹은 상주 일정에 따라 자주 바뀌므로 짧은 TTL(기존 규칙 재사용)
+    try{cache.put(cacheKey,JSON.stringify(out),getAvailabilityCacheTtlSec_(itemGroup));}catch(e){}
+  }
+  return out;
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
@@ -7924,7 +7951,8 @@ function processForm(data){
     const startTime=new Date(`${data.date}T${data.time}:00`);
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,bookingLocation)) throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
-    const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup);
+    // skipCache=true — 제출 시점의 확정모드·추천상태는 캐시가 아니라 실시간 캘린더로 판정한다
+    const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup, true);
     const matchedSlot = (publicSlotEntries || []).find(function(entry){
       return String(entry && entry.time || '') === String(data.time || '');
     });
