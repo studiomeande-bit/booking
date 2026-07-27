@@ -742,6 +742,7 @@ const COPY = {
     profileAgeLabel: '나이',
     profileAgePlaceholder: '예: 만 7세 / 72세',
     babyTypeFieldLabel: '백일/돌 구분',
+    babyTypeHint: '분위기에서 백일/돌을 고르셨어요. 어느 쪽인지 선택해 주세요.',
     studioFamilyLabel: '가족 구성',
     studioFamilyPlaceholder: '예: 부모님 2명 + 아이 2명',
     optionFieldLabel: '추가 옵션',
@@ -945,6 +946,7 @@ const COPY = {
     profileAgeLabel: 'Age',
     profileAgePlaceholder: 'e.g. 7 years old / 72 years old',
     babyTypeFieldLabel: 'Baby Session Type',
+    babyTypeHint: 'You chose Baby / Birthday as the mood. Please pick which one.',
     studioFamilyLabel: 'Family members',
     studioFamilyPlaceholder: 'e.g. 2 parents + 2 children',
     optionFieldLabel: 'Additional Options',
@@ -1148,6 +1150,7 @@ const COPY = {
     profileAgeLabel: 'Alter',
     profileAgePlaceholder: 'z. B. 7 Jahre / 72 Jahre',
     babyTypeFieldLabel: 'Baby-Aufnahmetyp',
+    babyTypeHint: 'Sie haben Baby / Geburtstag als Stimmung gewählt. Bitte wählen Sie, welches.',
     studioFamilyLabel: 'Familienmitglieder',
     studioFamilyPlaceholder: 'z. B. 2 Eltern + 2 Kinder',
     optionFieldLabel: 'Zusätzliche Optionen',
@@ -1359,6 +1362,7 @@ const els = {
   profileAgeField: document.getElementById('profileAgeField'),
   profileAgeInput: document.getElementById('profileAgeInput'),
   babyTypeField: document.getElementById('babyTypeField'),
+  babyTypeHint: document.getElementById('babyTypeHint'),
   babyTypeGrid: document.getElementById('babyTypeGrid'),
   optionField: document.getElementById('optionField'),
   reshootingField: document.getElementById('reshootingField'),
@@ -2199,6 +2203,7 @@ function applyCopy() {
   setText('profileAgeLabel', copy.profileAgeLabel);
   if (els.profileAgeInput) els.profileAgeInput.placeholder = copy.profileAgePlaceholder;
   setText('babyTypeFieldLabel', copy.babyTypeFieldLabel);
+  setText('babyTypeHint', copy.babyTypeHint);
   setText('studioFamilyLabel', copy.studioFamilyLabel);
   if (els.studioFamilyInput) els.studioFamilyInput.placeholder = copy.studioFamilyPlaceholder;
   setText('optionFieldLabel', copy.optionFieldLabel);
@@ -3007,6 +3012,35 @@ function needsBabyTypeChoice(product = state.selectedProduct) {
   return (product.g === 'prof' && state.ageGroup === 'baby') || state.surveyKeys.includes('baby');
 }
 
+/* '백일/돌 구분'을 요구한 쪽이 연령인지 분위기인지 — 이 필드를 어디에 둘지 결정한다. */
+function babyTypeAskedBySurvey() {
+  return state.surveyKeys.includes('baby')
+    && !(state.selectedProduct?.g === 'prof' && state.ageGroup === 'baby');
+}
+
+/* '백일/돌 구분'은 마크업상 '촬영 대상 연령' 바로 아래에 있는데, 분위기에서 백일/돌을 고르면
+   그 필드는 화면 한참 위라 고객이 다시 위로 올라가 골라야 했다(사장님 지적).
+   선택을 유발한 컨트롤 바로 아래로 옮겨서, 고른 자리에서 이어서 답하게 한다. */
+function placeBabyTypeField() {
+  if (!els.babyTypeField) return;
+  const bySurvey = babyTypeAskedBySurvey();
+  const anchor = bySurvey ? els.surveyField : els.ageField;
+  // 분위기 필드가 숨겨져 있으면(여권·기업) 옮길 자리가 아니다 — 원래 자리를 지킨다.
+  if (anchor && !(bySurvey && anchor.classList.contains('hidden-field'))
+      && anchor.nextElementSibling !== els.babyTypeField) {
+    anchor.insertAdjacentElement('afterend', els.babyTypeField);
+  }
+  els.babyTypeHint?.classList.toggle('hidden-field', !bySurvey);
+}
+
+/* 분위기에서 백일/돌을 막 고른 순간, 이어서 답해야 할 칸으로 시선을 옮겨 준다.
+   강조(field-attention)는 건드리지 않는다 — 미입력 표시는 syncStep2RequiredFieldState 가 단독으로 관리한다. */
+function focusBabyTypeField() {
+  const field = els.babyTypeField;
+  if (!field || field.classList.contains('hidden-field')) return;
+  try { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { field.scrollIntoView(); }
+}
+
 function requiresExplicitBabyBirthdayType(product = state.selectedProduct) {
   return !!product && state.surveyKeys.includes('baby') && !isBabyBirthdayType(state.babyType);
 }
@@ -3275,6 +3309,8 @@ function renderSurveyChips() {
       syncConditionalFields();
       renderReview();
       refreshStepLocks();
+      // 백일/돌을 방금 켰고 아직 어느 쪽인지 안 골랐으면, 그 칸으로 바로 데려간다.
+      if (key === 'baby' && index < 0 && !isBabyBirthdayType(state.babyType)) focusBabyTypeField();
     });
   });
 }
@@ -5118,6 +5154,8 @@ function syncConditionalFields() {
   els.ageField.classList.toggle('hidden-field', group !== 'prof');
   els.profileAgeField?.classList.toggle('hidden-field', !needsProfileAgeField());
   els.babyTypeField.classList.toggle('hidden-field', !needsBabyType);
+  // 숨김 여부를 정한 뒤에 자리를 잡는다 — 분위기 필드가 아직 숨겨져 있으면 그 아래로 옮기지 않는다.
+  placeBabyTypeField();
   els.babyNameField.classList.toggle('hidden-field', !needsBabyName);
   els.studioFamilyField?.classList.toggle('hidden-field', !needsStudioFamilyField());
   els.payerNameField.classList.toggle('hidden-field', !needsPayerName);
