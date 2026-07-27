@@ -118,15 +118,19 @@ function computePrintAnnotations() {
   });
   const units = [];
   rows.forEach((r, rowIndex) => {
+    // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
+    // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
+    const skipQuota = /^photocard_/.test(r.typeId);
     for (let k = 0; k < r.qty; k += 1) {
-      units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false });
+      units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false, skipQuota });
     }
   });
   units.forEach((u) => {
+    if (u.skipQuota) return;
     const m = quota.find((q) => q.id === u.typeId && q.qty > 0);
     if (m) { m.qty -= 1; u.credit = u.unit; u.matched = true; }
   });
-  units.filter((u) => !u.matched)
+  units.filter((u) => !u.matched && !u.skipQuota)
     .slice()
     .sort((a, b) => b.unit - a.unit)
     .forEach((u) => {

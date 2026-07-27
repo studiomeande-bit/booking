@@ -16814,8 +16814,11 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       : !!(p&&p.isRetouched);
     const unit=isRet?Number(info.retouchedPrice||info.price||0):Number(info.price||0);
     // 장 단위로 펼쳐 두고, 쿼터 배정은 아래에서 전역 2-pass 로 처리한다(순서 의존 제거).
+    // 포토카드는 사장님 확정(2026-07-26)으로 **포함 쿼터 대상 밖** — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
+    // (상품에 기본 포함된 '포함 포토카드'는 위에서 included_photocard 로 이미 무료 처리된 별개 개념)
+    const skipQuota=/^photocard_/.test(printId);
     for(let k=0;k<qty;k+=1){
-      units.push({photoNum:photoNum,printId:printId,label:label,unit:unit,isRet:isRet,finish:finish,credit:0,matched:false});
+      units.push({photoNum:photoNum,printId:printId,label:label,unit:unit,isRet:isRet,finish:finish,credit:0,matched:false,skipQuota:skipQuota});
     }
   });
 
@@ -16827,10 +16830,11 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
      ② 2차: 남은 인화를 **단가 높은 순**으로 남은 쿼터 중 크레딧이 가장 큰 것에 배정 → 총액 최소(고객 유리)·순서 무관.
      크레딧은 그 장과 같은 맥락의 단가(보정본이면 보정본가, 아니면 추가인화가). */
   units.forEach(function(u){
+    if(u.skipQuota) return;
     const m=quota.find(function(item){return item.id===u.printId&&item.qty>0;});
     if(m){ m.qty-=1; u.credit=u.unit; u.matched=true; }
   });
-  units.filter(function(u){return !u.matched;})
+  units.filter(function(u){return !u.matched&&!u.skipQuota;})
     .slice()
     .sort(function(a,b){return b.unit-a.unit;})
     .forEach(function(u){
