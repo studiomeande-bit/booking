@@ -25361,7 +25361,7 @@ function buildQuoteHtml_(q){
   const fmtValid=fmtD(q.validUntil);
   const fmtShoot=fmtD(q.shootDate);
   const T={
-    de:{invLabel:'Angebotnummer',dateLabel:'Angebotdatum',validLabel:'Gültig bis',shootLabel:'Geplanter Termin',vatNote:'Alle Preise verstehen sich netto zzgl. der gesetzlichen Mehrwertsteuer (19%).',pos:'Pos.',bez:'Bezeichnung',qty:'Qty',ep:'Einzelpreis',gp:'Gesamtpreis (Netto)',subtotal:'Zwischensumme (brutto)',disc:'Rabatt',net:'Netto',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung'},
+    de:{invLabel:'Angebotnummer',dateLabel:'Angebotdatum',validLabel:'Gültig bis',shootLabel:'Geplanter Termin',vatNote:'Alle Preise verstehen sich netto zzgl. der gesetzlichen Mehrwertsteuer (19%).',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',subtotal:'Zwischensumme (brutto)',disc:'Rabatt',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung'},
     ko:{invLabel:'견적번호',dateLabel:'발행일',validLabel:'유효기한',shootLabel:'촬영예정일',vatNote:'모든 금액은 세전(Netto) 기준이며, 법정 부가가치세 19%가 별도 가산됩니다.',pos:'번호',bez:'항목',qty:'수량',ep:'단가',gp:'합계(세전)',subtotal:'소계(세후)',disc:'할인',net:'공급가액',mwst:'부가세 19%',end:'총 금액',dep:'계약금'},
     en:{invLabel:'Quotation No.',dateLabel:'Quotation Date',validLabel:'Valid Until',shootLabel:'Planned Date',vatNote:'All prices are net; statutory VAT (19%) will be added.',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (Net)',subtotal:'Subtotal (gross)',disc:'Discount',net:'Net',mwst:'VAT 19%',end:'Total',dep:'Deposit'}
   };
@@ -25405,29 +25405,32 @@ function buildQuoteHtml_(q){
   </div>
 </div>
 <div class="inv-meta">
-  <div class="meta-main"><span class="lbl">${t.invLabel}</span><span>: ${escapeHtml_(q.number||'')}</span></div>
-  <div class="meta-sub"><span class="lbl">${t.dateLabel}</span><span>${escapeHtml_(fmtDate)}</span></div>
-  ${(opt.showValidUntil&&fmtValid)?`<div class="meta-sub"><span class="lbl">${t.validLabel}</span><span>${escapeHtml_(fmtValid)}</span></div>`:''}
-  ${(opt.showShootDate&&fmtShoot)?`<div class="meta-sub"><span class="lbl">${t.shootLabel}</span><span>${escapeHtml_(fmtShoot)}</span></div>`:''}
+  <div class="inv-meta-row inv-meta-main"><span class="inv-meta-label">${t.invLabel}</span><span class="inv-meta-colon">:</span><span class="inv-meta-value">${escapeHtml_(q.number||'')}</span></div>
+  <div class="inv-meta-row"><span class="inv-meta-label-sm">${t.dateLabel}</span><span class="inv-meta-colon-sm">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtDate)}</span></div>
+  ${(opt.showValidUntil&&fmtValid)?`<div class="inv-meta-row"><span class="inv-meta-label-sm">${t.validLabel}</span><span class="inv-meta-colon-sm">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtValid)}</span></div>`:''}
+  ${(opt.showShootDate&&fmtShoot)?`<div class="inv-meta-row"><span class="inv-meta-label-sm">${t.shootLabel}</span><span class="inv-meta-colon-sm">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtShoot)}</span></div>`:''}
 </div>
 <div class="vat-note">${t.vatNote}</div>
-<table class="invoice-table"><thead><tr><th style="width:70px;">${t.pos}</th><th>${t.bez}</th><th style="width:44px;">${t.qty}</th><th style="width:90px;">${t.ep}</th><th style="width:110px;">${t.gp}</th></tr></thead><tbody>
+<table class="invoice-table"><thead><tr><th style="width:36px;">${t.pos}</th><th>${t.bez}</th><th style="width:36px;text-align:center;">${t.qty}</th><th style="width:110px;text-align:right;">${t.ep}</th><th style="width:140px;text-align:right;">${t.gp}</th></tr></thead><tbody>
 ${rowsHtml}
 </tbody></table>
 <div class="totals">
-  ${showDiscountRow?`<div class="t-row t-first"><span>${t.subtotal}</span><span>€${totals.subtotal.toFixed(2)}</span></div>
+  ${showDiscountRow?`<div class="t-row"><span>${t.subtotal}</span><span>€${totals.subtotal.toFixed(2)}</span></div>
   <div class="t-row" style="color:#c00;"><span>${t.disc}</span><span>-€${totals.discount.toFixed(2)}</span></div>
   <div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`
-  :`<div class="t-row t-first"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`}
+  :`<div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`}
   <div class="t-row"><span>${t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
   <div class="t-row t-end"><span>${t.end}</span><span>€${totals.total.toFixed(2)}</span></div>
   ${showDepositRow?`<div class="t-row t-dep"><span>${t.dep}${q.depositRate>0?' ('+q.depositRate+'%)':''}</span><span>€${Number(q.depositAmount).toFixed(2)}</span></div>`:''}
 </div>
 ${notesHtml}
-<div class="footer"><div class="footer-sep"></div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>${opt.showBank?bankHtml:''}</div></div></div>
+<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(q.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>${opt.showBank?bankHtml:''}</div></div></div>
 </div>`;
   };
   const pagesHtml=pageLangs.map(function(L,i){return buildPage(L,i,i>0);}).join('');
+  /* CSS 는 buildInvoiceHtml_ 와 동일 세트(2026-07-29 사장님 요청: 견적서 디자인 = 인보이스).
+     인보이스 쪽 스타일을 바꾸면 여기도 같이 바꿔야 두 문서가 계속 같은 얼굴을 유지한다.
+     견적 전용 추가분: .pbreak(다국어 합본), .vat-note, .t-dep(계약금), .notes-block(약관). */
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(q.number||'Angebot')}</title>
 <style>
@@ -25443,34 +25446,37 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:1
 .logo-wordmark{width:240px;padding-top:8px;color:#201c1f;}
 .logo-name{font-size:28px;font-weight:700;letter-spacing:.02em;}
 .logo-tag{margin-top:4px;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#666;}
-.sender-line{border-top:1px solid #bbb;width:88%;margin-top:8px;padding-top:5px;font-size:9px;color:#999;}
-.customer-block{margin-top:22px;font-size:11px;line-height:1.6;min-height:60px;}
-.customer-name{font-weight:700;}
-.biz-info{text-align:left;font-size:10.5px;line-height:1.6;min-width:215px;padding-top:6px;}
-.inv-meta{margin:72px 0 26px;}
-.meta-main{display:flex;gap:10px;font-size:16px;font-weight:700;margin-bottom:6px;}
-.meta-main .lbl{min-width:150px;}
-.meta-sub{display:flex;gap:10px;font-size:10.5px;margin-bottom:3px;}
-.meta-sub .lbl{min-width:160px;}
-.vat-note{text-align:right;font-size:10.5px;margin-bottom:6px;}
-.invoice-table{width:100%;border-collapse:collapse;}
-.invoice-table thead tr{border-top:1.2px solid #333;border-bottom:1.2px solid #333;}
-.invoice-table th{padding:5px 8px;font-size:10.5px;font-weight:700;text-align:center;background:#fff;}
-.invoice-table td{padding:5px 8px;font-size:10.5px;vertical-align:middle;}
-.invoice-table tbody tr{border-bottom:1px solid #ccc;}
-.invoice-table td.pos{text-align:center;width:70px;}
-.invoice-table td.qty{text-align:center;width:44px;}
-.invoice-table td.ep{text-align:right;width:90px;}
-.invoice-table td.gp{text-align:right;width:110px;}
+.sender-line{border-top:1px solid #aaa;width:74%;margin-top:10px;padding-top:5px;font-size:9.5px;color:#666;}
+.customer-block{margin-top:28px;font-size:11px;line-height:1.55;min-height:90px;}
+.customer-name{font-weight:700;margin-bottom:4px;}
+.biz-info{text-align:left;font-size:11px;line-height:1.75;min-width:215px;}
+.inv-meta{margin:26px 0 18px;}
+.inv-meta-row{display:flex;align-items:flex-end;gap:8px;margin-bottom:4px;}
+.inv-meta-main{margin-bottom:2px;}
+.inv-meta-label{font-size:17px;font-weight:700;white-space:nowrap;}
+.inv-meta-label-sm{font-size:11px;white-space:nowrap;}
+.inv-meta-colon{font-size:17px;font-weight:700;line-height:1;}
+.inv-meta-colon-sm{font-size:11px;font-weight:400;line-height:1;}
+.inv-meta-value{font-size:17px;font-weight:700;white-space:nowrap;}
+.inv-meta-value-sm{font-size:11px;white-space:nowrap;}
+.vat-note{text-align:right;font-size:10.5px;margin:8px 0 0;}
+.invoice-table{width:100%;border-collapse:collapse;margin-top:16px;}
+.invoice-table thead tr{border-top:1px solid #bbb;border-bottom:1px solid #bbb;}
+.invoice-table th{padding:7px 10px;text-align:left;font-size:11px;font-weight:normal;background:#fff;}
+.invoice-table td{padding:7px 10px;font-size:11px;vertical-align:middle;}
+.invoice-table tbody tr{border-bottom:1px solid #ddd;}
+.invoice-table td.pos{text-align:left;width:36px;}
+.invoice-table td.qty{text-align:center;width:36px;}
+.invoice-table td.ep{text-align:right;width:110px;}
+.invoice-table td.gp{text-align:right;width:140px;}
 .item-desc{line-height:1.45;white-space:pre-line;}
-.totals{margin-top:20px;margin-left:auto;width:220px;}
-.t-row{display:flex;justify-content:space-between;padding:4px 2px;font-size:10.5px;border-bottom:1px solid #ccc;}
-.t-first{border-top:1.2px solid #333;}
-.t-end{font-weight:700;border-top:1.2px solid #333;border-bottom:1.2px solid #333;}
-.t-dep{color:#2563eb;border-bottom:none;}
-.notes-block{margin:56px 0 0;font-size:10px;line-height:1.9;}
+.totals{margin-top:28px;margin-left:auto;width:260px;}
+.t-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;}
+.t-end{font-weight:bold;font-size:12px;border-top:1px solid #1a1a1a;margin-top:5px;padding-top:6px;}
+.t-dep{color:#555;font-size:10.5px;padding-top:5px;}
+.notes-block{margin:18px 0 0;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;color:#555;}
 .footer{margin-top:auto;padding-top:18px;}
-.footer-sep{border-top:1px solid #999;margin-bottom:12px;}
+.footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
 .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
 @media print{html,body{width:auto;}body{margin:0;}}
 </style></head><body>
@@ -25990,11 +25996,22 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   const endTime=new Date(startTime.getTime()+durationMin*60000);
   const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
   const displayName=q.companyName||q.name||'고객';
-  const productLabel=q.product||q.items[0]&&q.items[0].description||'맞춤 촬영';
+  /* 전환 디테일 오버라이드 — 모달에서 상품명·분류·계약금·상태·메모를 조정할 수 있다.
+     기본값은 견적서 값 그대로: 오버라이드를 안 보내면 기존 동작과 동일하다. */
+  const productLabel=String(o.product||'').trim()||q.product||(q.items[0]&&q.items[0].description)||'맞춤 촬영';
   const priceLabel=Number(q.total||0).toFixed(0)+'€';
-  const bookingItemGroup=String(q.itemGroup||'biz').trim();
+  const bookingItemGroup=String(o.itemGroup||q.itemGroup||'biz').trim();
   const quoteMeetingLocation=String(o.location||o.shootingLocation||o.meetingLocation||extractBookingLocationFromText_(q.memo)||'').trim();
   const bookingLocation=quoteMeetingLocation||(_isExternalBookingItemGroup_(bookingItemGroup)?'':STUDIO_ADDRESS);
+  const totalAmt=roundCurrency_(Number(q.total)||0);
+  let depositAmt=(o.depositAmount!==undefined&&o.depositAmount!==null&&String(o.depositAmount).trim()!=='')
+    ? roundCurrency_(Number(o.depositAmount)||0)
+    : roundCurrency_(Number(q.depositAmount)||0);
+  if(depositAmt<0) depositAmt=0;
+  if(depositAmt>totalAmt) throw new Error('계약금(€'+depositAmt.toFixed(2)+')이 총액(€'+totalAmt.toFixed(2)+')을 초과합니다.');
+  const balanceAmt=roundCurrency_(totalAmt-depositAmt);
+  const bookingStatus=String(o.status||'').trim()==='대기중'?'대기중':'확정됨';
+  const memoOut=[String(q.memo||'').trim(),String(o.memo||'').trim()].filter(Boolean).join('\n');
   /* 이 견적의 가예약 이벤트를 **충돌 검사 전에** 먼저 지운다. 가예약은 이제 슬롯을 막는 시간
      이벤트라, 안 지우고 검사하면 자기 자신의 가예약과 충돌로 잡혀 전환이 막힌다. */
   _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
@@ -26012,16 +26029,16 @@ function convertQuoteToBookingAdmin(token, number, overrides){
     `패키지=${productLabel}`,
     `인원=${o.people||1}`,
     `총비용=${priceLabel}`,
-    `계약금=${q.depositAmount||0}|DB|${dateStr}`,
-    `잔금=${Math.round((q.total-q.depositAmount)*100)/100}|미정|${dateStr}`,
+    `계약금=${depositAmt}|DB|${dateStr}`,
+    `잔금=${balanceAmt}|미정|${dateStr}`,
     `마케팅=N`,
-    `상태=대기`,
+    `상태=${bookingStatus==='확정됨'?'확정':'대기'}`,
     `---`,
     `견적서: ${q.number}`
   ];
   if(q.vatId) descLines.push(`VAT: ${q.vatId}`);
   if(quoteMeetingLocation) descLines.push(`촬영장소=${quoteMeetingLocation}`);
-  if(q.memo) descLines.push(`메모: ${q.memo}`);
+  if(memoOut) descLines.push(`메모: ${memoOut}`);
   // 가예약은 위 충돌 검사 전에 이미 해제됨(자기 충돌 방지)
   const event=calendar.createEvent(
     `${productLabel} | ${displayName} | ${priceLabel}`,
@@ -26031,11 +26048,11 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const extraItem=`[견적: ${q.number}] ${q.items.map(function(it){return `${it.description} x${it.qty}`;}).join(' | ')}${quoteMeetingLocation?' | 장소: '+quoteMeetingLocation:''}`;
   bookingSheet.appendRow([
-    `${dateStr} ${timeStr}`, '확정됨', q.name||q.companyName, q.phone, q.email, q.lang,
+    `${dateStr} ${timeStr}`, bookingStatus, q.name||q.companyName, q.phone, q.email, q.lang,
     bookingItemGroup, productLabel,
     (q.items[0]&&q.items[0].description)||'', Number(o.people||1),
-    Number(q.total||0), q.depositAmount>0?`입금전(${q.depositAmount}€)`:'0', Math.round((q.total-q.depositAmount)*100)/100,
-    '미결제', '', q.memo||'', event.getId(), q.depositAmount>0?'계좌이체':'-',
+    totalAmt, depositAmt>0?`입금전(${depositAmt}€)`:'0', balanceAmt,
+    '미결제', '', memoOut, event.getId(), depositAmt>0?'계좌이체':'-',
     extraItem, q.companyName?'기업':'신규', '',
     'Y', 'N', now, '', 'N', q.customerAddress||q.billingAddress||'',
     '','','','','','','','','',now,
@@ -26051,7 +26068,18 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.CONVERTED);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['연결예약행']+1).setValue(bookingRowIndex);
   if(!q.acceptedAt) quoteSheet.getRange(found.rowIndex,QUOTE_COL['수락일시']+1).setValue(now);
-  return {ok:true,bookingRowIndex,eventId:event.getId(),startAt:`${dateStr} ${timeStr}`};
+  // 확정 메일(옵션) — 수기등록과 같은 확정 메일 재사용. '대기중' 전환에는 보내지 않는다(아직 확정 아님).
+  let mailSent=false;
+  if(o.sendEmail===true&&bookingStatus==='확정됨'&&isValidEmailAddress_(q.email)){
+    try{
+      _sendConfirmEmail(q.name||q.companyName||'고객',q.email,String(q.lang||'ko'),bookingItemGroup,productLabel,
+        totalAmt,`${dateStr} ${timeStr}`,[],[],depositAmt,balanceAmt,event.getId(),
+        {people:Number(o.people||1),location:bookingLocation,memo:memoOut,extraItem:extraItem});
+      mailSent=true;
+    }catch(e){Logger.log('견적전환 확정메일 실패: '+e.message);}
+  }
+  return {ok:true,bookingRowIndex,eventId:event.getId(),startAt:`${dateStr} ${timeStr}`,
+          status:bookingStatus,deposit:depositAmt,balance:balanceAmt,total:totalAmt,mailSent:mailSent};
 }
 
 function _expireStaleQuotes_(){

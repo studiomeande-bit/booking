@@ -1919,7 +1919,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   </div>
 
   <div class="modal-overlay" id="quoteConvertModal">
-    <div class="modal" style="max-width:520px;">
+    <div class="modal" style="max-width:560px;">
       <div class="modal-title">견적 → 예약 전환</div>
       <input type="hidden" id="qcv_number">
       <div id="qcv_info" class="form-note-box" style="background:#ecfdf5;border-color:#bbf7d0;margin-bottom:14px;font-size:13px;"></div>
@@ -1931,7 +1931,37 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>소요 (분)</label><input type="number" id="qcv_duration" value="120" min="30" step="15"></div>
         <div class="form-group"><label>인원</label><input type="number" id="qcv_people" value="1" min="1"></div>
       </div>
-      <div style="font-size:11px;color:#64748b;margin-bottom:10px;">예약장부에 행이 추가되고 캘린더 이벤트가 자동 생성됩니다. 고객에게 별도 메일이 발송되지 않으므로 필요 시 직접 안내해 주세요.</div>
+      <div class="form-row">
+        <div class="form-group"><label>상품명 (장부 표기)</label><input type="text" id="qcv_product" placeholder="견적서 상품명 그대로"></div>
+        <div class="form-group"><label>촬영 종류</label>
+          <select id="qcv_group">
+            <option value="biz">행사/이벤트 (biz)</option>
+            <option value="wed">웨딩 (wed)</option>
+            <option value="stud">스튜디오 (stud)</option>
+            <option value="prof">프로필 (prof)</option>
+            <option value="out">야외스냅 (out)</option>
+            <option value="pass">여권/비자 (pass)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>촬영 장소</label><input type="text" id="qcv_location" placeholder="비우면 견적 메모/스튜디오 주소"></div>
+        <div class="form-group"><label>계약금 (€) <span id="qcv_balanceHint" style="font-weight:400;color:#64748b;"></span></label><input type="text" id="qcv_deposit" placeholder="견적서 계약금 그대로" oninput="updateQcvBalanceHint()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>예약 상태</label>
+          <select id="qcv_status" onchange="document.getElementById('qcv_sendmail').disabled=this.value!=='확정됨';if(this.value!=='확정됨')document.getElementById('qcv_sendmail').checked=false;">
+            <option value="확정됨">확정됨</option>
+            <option value="대기중">대기중 (일정 미확정)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>추가 메모</label><input type="text" id="qcv_memo" placeholder="장부 요청사항에 덧붙임"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <input type="checkbox" id="qcv_sendmail" style="width:auto;margin:0;">
+        <label for="qcv_sendmail" style="margin:0;font-weight:600;cursor:pointer;font-size:13px;">고객에게 예약 확정 메일 발송 (계좌 안내 포함)</label>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:10px;">예약장부 행 + 캘린더 이벤트가 생성됩니다. 시간이 겹치면 확인 후 강행할 수 있습니다.</div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-outline btn-sm" onclick="closeQuoteConvertModal()">닫기</button>
         <button class="btn btn-primary btn-sm" onclick="confirmQuoteConvert()">전환</button>
@@ -13800,25 +13830,74 @@ function deleteQuoteUI(number){
     .deleteQuoteAdmin(adminToken,number);
 }
 
+let __qcvQuote=null; // 잔금 힌트·프리필용 (모달 열려있는 동안만 유효)
 function openQuoteConvertModal(number){
   const q=(allQuotes||[]).find(x=>x.number===number);
   if(!q){alert('견적서를 찾을 수 없습니다.');return;}
+  __qcvQuote=q;
   document.getElementById('qcv_number').value=number;
-  document.getElementById('qcv_info').innerHTML=`<b>${q.number}</b> — ${escHtml(q.companyName||q.name||'')}<br>상품: ${q.product||'-'} · 총액 €${Number(q.total||0).toFixed(2)}`;
+  // 견적 내용 요약 — 뭘 전환하는지 항목 단위로 보이게 (긴 목록은 4줄에서 자름)
+  const itemsHtml=(Array.isArray(q.items)&&q.items.length)
+    ? '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #a7f3d0;font-size:12px;color:#065f46;">'
+      +q.items.slice(0,4).map(it=>`· ${escHtml(String(it.description||'').split('\n')[0].slice(0,40))} ×${Number(it.qty)||1}`).join('<br>')
+      +(q.items.length>4?`<br>외 ${q.items.length-4}개 항목`:'')+'</div>'
+    : '';
+  document.getElementById('qcv_info').innerHTML=
+    `<b>${escHtml(q.number)}</b> — ${escHtml(q.companyName||q.name||'')}${q.companyName&&q.name?` (${escHtml(q.name)})`:''}`
+    +`<br>총액 <b>€${Number(q.total||0).toFixed(2)}</b> · 견적 계약금 €${Number(q.depositAmount||0).toFixed(2)}`
+    +`${q.discount>0?` · 할인 €${Number(q.discount).toFixed(2)} 반영`:''} · ${escHtml(String(q.lang||'ko').toUpperCase())}`
+    +itemsHtml;
   document.getElementById('qcv_date').value=q.shootDate||'';
   document.getElementById('qcv_time').value='10:00';
   document.getElementById('qcv_duration').value='120';
   document.getElementById('qcv_people').value='1';
+  document.getElementById('qcv_product').value=q.product||'';
+  document.getElementById('qcv_group').value=['biz','wed','stud','prof','out','pass'].includes(String(q.itemGroup||'').trim())?String(q.itemGroup).trim():'biz';
+  document.getElementById('qcv_location').value='';
+  document.getElementById('qcv_deposit').value=Number(q.depositAmount||0)>0?String(q.depositAmount):'';
+  document.getElementById('qcv_status').value='확정됨';
+  document.getElementById('qcv_memo').value='';
+  const mail=document.getElementById('qcv_sendmail');
+  mail.disabled=false;
+  mail.checked=false;
+  updateQcvBalanceHint();
   document.getElementById('quoteConvertModal').classList.add('open');
+}
+function updateQcvBalanceHint(){
+  const el=document.getElementById('qcv_balanceHint');
+  if(!el||!__qcvQuote)return;
+  const raw=document.getElementById('qcv_deposit').value;
+  const dep=String(raw).trim()===''?Number(__qcvQuote.depositAmount||0):parseAdminEuroInput(raw);
+  const total=Number(__qcvQuote.total||0);
+  if(dep>total){el.textContent='⚠ 총액 초과';el.style.color='#b91c1c';return;}
+  el.style.color='#64748b';
+  el.textContent=`(잔금 €${Math.round((total-dep)*100)/100})`;
 }
 function closeQuoteConvertModal(){document.getElementById('quoteConvertModal').classList.remove('open');}
 function confirmQuoteConvert(){
   const number=document.getElementById('qcv_number').value;
-  const date=document.getElementById('qcv_date').value;
-  const time=document.getElementById('qcv_time').value;
-  const durationMin=parseInt(document.getElementById('qcv_duration').value,10)||120;
-  const people=parseInt(document.getElementById('qcv_people').value,10)||1;
-  if(!date||!time){showToast('촬영 날짜와 시간을 지정해 주세요','warn');return;}
+  const o={
+    date:document.getElementById('qcv_date').value,
+    time:document.getElementById('qcv_time').value,
+    durationMin:parseInt(document.getElementById('qcv_duration').value,10)||120,
+    people:parseInt(document.getElementById('qcv_people').value,10)||1,
+    itemGroup:document.getElementById('qcv_group').value,
+    status:document.getElementById('qcv_status').value,
+    sendEmail:document.getElementById('qcv_sendmail').checked
+  };
+  // 비운 필드는 보내지 않는다 — 서버가 견적서 값을 그대로 쓴다 (기존 동작 유지)
+  const prod=document.getElementById('qcv_product').value.trim();
+  if(prod) o.product=prod;
+  const loc=document.getElementById('qcv_location').value.trim();
+  if(loc) o.location=loc;
+  const depRaw=document.getElementById('qcv_deposit').value;
+  if(String(depRaw).trim()!=='') o.depositAmount=parseAdminEuroInput(depRaw);
+  const memo=document.getElementById('qcv_memo').value.trim();
+  if(memo) o.memo=memo;
+  if(!o.date||!o.time){showToast('촬영 날짜와 시간을 지정해 주세요','warn');return;}
+  if(o.sendEmail&&!confirm('전환 직후 고객에게 예약 확정 메일(계좌 안내 포함)이 발송됩니다. 계속할까요?'))return;
+  const doneMsg=(r)=>`예약 전환 완료 (행 ${r.bookingRowIndex} · ${r.status||'확정됨'}`
+    +`${r.deposit>0?` · 계약금 €${Number(r.deposit).toFixed(2)}`:''}${r.mailSent?' · 확정메일 발송됨':''})`;
   runExclusive('quote:convert:'+number, release=>{
     google.script.run
       .withSuccessHandler(res=>{
@@ -13828,22 +13907,22 @@ function confirmQuoteConvert(){
             runExclusive('quote:convert:'+number, release2=>{
               google.script.run
                 .withSuccessHandler(r2=>{release2();
-                  if(r2&&r2.ok){showToast(`예약 전환 완료 — 일정 겹침 승인됨 (행 ${r2.bookingRowIndex})`,'ok');closeQuoteConvertModal();loadQuoteList();}
+                  if(r2&&r2.ok){showToast(doneMsg(r2)+' — 일정 겹침 승인됨','ok');closeQuoteConvertModal();loadQuoteList();}
                   else{showToast('전환 실패: '+((r2&&r2.message)||''),'err');}
                 })
                 .withFailureHandler(e=>{release2();handleApiError(e);})
-                .convertQuoteToBookingAdmin(adminToken,number,{date,time,durationMin,people,allowConflict:true});
+                .convertQuoteToBookingAdmin(adminToken,number,Object.assign({},o,{allowConflict:true}));
             });
           }
           return;
         }
         if(res&&res.ok){
-          showToast(`예약 전환 완료 (행 ${res.bookingRowIndex})`,'ok');
+          showToast(doneMsg(res),'ok');
           closeQuoteConvertModal();loadQuoteList();
         } else {showToast('전환 실패: '+((res&&res.message)||''),'err');}
       })
       .withFailureHandler(e=>{release();handleApiError(e);})
-      .convertQuoteToBookingAdmin(adminToken,number,{date,time,durationMin,people});
+      .convertQuoteToBookingAdmin(adminToken,number,o);
   });
 }
 
