@@ -1174,6 +1174,18 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-refund-quote') return jsonOk_(getCancellationRefundQuoteAdmin(token,payload.rowIndex));
         if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
+        if(action==='booking-add-calendar'){
+          // 메일 없이 구글 캘린더 이벤트만 부착/동기화. ensureBookingCalendarEventForRow_ 는 중복 방지:
+          // 기존 캘린더ID가 있으면 sync, 없을 때만 생성. (취소 등 비활성 상태면 '' 반환·이벤트 삭제)
+          const rIdx=parseInt(payload.rowIndex,10);
+          if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+          const sh=getDbSheet();
+          if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
+          const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+          const eventId=ensureBookingCalendarEventForRow_(sh,rIdx,row);
+          return jsonOk_({ok:true,rowIndex:rIdx,eventId:eventId||''});
+        }
+        if(action==='booking-update') return jsonOk_(updateBookingFieldsForAgent_(token,parseInt(payload.rowIndex,10),payload.data||{}));
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
@@ -12641,6 +12653,55 @@ function updateBookingAdmin(token,rIdx,d){
     ensureBookingCalendarEventForRow_(sh,rIdx,newRow);
   }catch(e){Logger.log('updateBookingAdmin calendar sync failed row '+rIdx+': '+e.message);}
   return{ok:true};
+}
+
+// 에이전트 전용 예약 필드 수정 — updateBookingAdmin 을 재사용하되, '부분 업데이트 필드 소실'을 막는다.
+// updateBookingAdmin 은 어드민 편집폼의 '전체 객체 왕복'을 전제로 status/name/phone/price/deposit/balance/
+// payMethod/memo(요청사항)/depPayMethod/extraItem(추가항목)/balanceDate 칸을 '무조건' 덮어쓴다. 에이전트가
+// data:{location} 처럼 일부만 보내면 나머지 칸이 ''로 지워진다. 그래서 현재 행 값을 시드로 채운 뒤,
+// 허용 필드(location/memo/name/phone/email/people/date/time)만 얹어 안전하게 위임한다.
+//   · 시드 인덱스는 BOOKING_HEADERS 순서(0-base)에 고정: 상태1·고객명2·연락처3·이메일4·인원9·총결제액10·
+//     계약금11·잔금12·결제수단13·요청사항15·계약금수단17·추가항목18·잔금입금일20 (updateBookingAdmin 의 w() 열과 동일)
+//   · 상태/금액/결제수단 변경은 전용 액션(booking-update-status, booking-set-amount, booking-refund 등)을 쓰도록
+//     이 경로에서는 화이트리스트 밖 키를 거부한다.
+//   · 고객 메일은 발송하지 않는다(updateBookingAdmin 자체가 메일 미발송). location/date/time 변경 시 구글 캘린더는
+//     기존 이벤트에 sync 되고, 캘린더가 없던 활성 예약이면 1건 생성된다(어드민 저장과 동일 동작).
+function updateBookingFieldsForAgent_(token,rIdx,data){
+  assertAdmin_(token);
+  rIdx=parseInt(rIdx,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const d=data||{};
+  const ALLOWED=['location','memo','name','phone','email','people','date','time'];
+  const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
+  if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
+  // '무조건 덮어쓰기' 칸은 현재 값으로 시드(미지정 시 소실 방지). 화이트리스트 필드는 있으면 얹는다.
+  const merged={
+    status:row[1],                                       // 상태 (에이전트 변경 불가 — 현재값 유지)
+    name:(d.name!==undefined?d.name:row[2]),             // 고객명
+    phone:(d.phone!==undefined?d.phone:row[3]),          // 연락처
+    price:row[10],                                       // 총결제액 (유지)
+    deposit:row[11],                                     // 계약금 (유지)
+    balance:row[12],                                     // 잔금 (유지)
+    payMethod:row[13],                                   // 결제수단 (유지)
+    depPayMethod:row[17],                                // 계약금수단 (유지)
+    balanceDate:row[20],                                 // 잔금입금일 (유지)
+    memo:(d.memo!==undefined?d.memo:row[15]),            // 요청사항
+    extraItem:row[18]                                    // 추가항목 (updateBookingAdmin 이 세부내역 블록 재구성)
+  };
+  // 조건부 칸: 에이전트가 준 경우에만 포함(안 주면 updateBookingAdmin 이 해당 칸을 건드리지 않음)
+  if(d.location!==undefined) merged.location=d.location;
+  if(d.email!==undefined) merged.email=d.email;
+  if(d.people!==undefined) merged.people=d.people;
+  if(d.date!==undefined) merged.date=d.date;
+  if(d.time!==undefined) merged.time=d.time;
+  // 인원을 현재값으로 시드해 [예약 세부내역] 블록 재생성을 유도(어드민과 동일). 값은 그대로라 셀 변화 없음.
+  // 빈 인원(값 없음)일 땐 시드하지 않아 1로 바뀌는 부작용을 피한다.
+  if(merged.people===undefined && row[9]!=='' && row[9]!=null) merged.people=row[9];
+  const res=updateBookingAdmin(token,rIdx,merged);
+  return Object.assign({ok:true},res,{rowIndex:rIdx,updated:Object.keys(d)});
 }
 
 function parseMoneyValue_(value){
