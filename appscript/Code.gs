@@ -54,7 +54,8 @@ const CONFIG = {
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
-  PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄']
+  // '스케쥴/스케줄' 두 표기 모두 — 이름 정확일치로 매칭하므로 한 글자 다르면 개인 일정이 슬롯을 못 막는다
+  PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄', '태웅 개인스케쥴']
 };
 const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -4708,15 +4709,32 @@ function auditBookingCalendarConsistency_(){
     report[listName+'Count']++;
     if(report[listName].length<CAP) report[listName].push(text);
   };
-  /* 애플 캘린더 대조 — 운영 관행: 확정 전에는 구글, 확정 후에는 애플 '사진 촬영' 캘린더로 이관
-     (2026-07-28 사장님 확인). 그래서 확정 예약이 구글에 없는 것은 **정상**이며, 무턱대고 재생성
-     하면 구글+애플 중복이 생긴다. 이름 포함 + 같은 날짜로 애플 쪽 존재를 확인한 뒤에만 '증발'로
-     판정한다. 애플 피드 자체가 실패하면 이번 회차의 재생성을 전부 보류한다(중복 폭탄 방지). */
+  /* 애플(이관처) 캘린더 대조 — 운영 관행: 확정 전에는 메인 구글, 확정 후에는 애플 '사진촬영 일정'
+     으로 이관. 이 애플 캘린더들은 **구글 캘린더에 공유돼 있어**(2026-07-29 사장님 확인)
+     getBusyCalendarMeta_ 의 비-메인 캘린더로 실시간 조회된다 — ICS 피드(지연·불안정)는 보조로만
+     합친다. 확정 예약이 메인에 없는 것은 정상이며, 이관을 모르고 재생성하면 중복이 생긴다.
+     조회가 실패하면 이번 회차의 재생성을 전부 보류한다(중복 폭탄 방지). */
   let appleEvents=[];
+  let appleScanFailed=false;
   try{
-    appleEvents=fetchAppleCalendarDetailedEvents_(new Date(today+'T00:00:00'),new Date(horizonStr+'T23:59:59'))||[];
-  }catch(e){ICLOUD_DETAIL_READ_FAILED_=true;}
-  const appleFeedFailed=ICLOUD_DETAIL_READ_FAILED_;
+    const winS=new Date(today+'T00:00:00'), winE=new Date(horizonStr+'T23:59:59');
+    getBusyCalendarMeta_().forEach(function(m){
+      if(m.id===CONFIG.MAIN_CALENDAR_ID) return; // 메인은 ID 조회로 별도 검사
+      try{
+        const c=CalendarApp.getCalendarById(m.id);
+        if(!c) return;
+        c.getEvents(winS,winE).forEach(function(ev){
+          if(ev.isAllDayEvent()) return;
+          appleEvents.push({start:ev.getStartTime().getTime(),title:ev.getTitle()||''});
+        });
+      }catch(e){appleScanFailed=true;Logger.log('audit shared-cal scan fail '+m.name+': '+e.message);}
+    });
+    // ICS 피드는 보조(지연·불안정) — 실패해도 판정 보류 사유로 삼지 않는다(주 소스는 공유 캘린더 스캔)
+    try{
+      (fetchAppleCalendarDetailedEvents_(winS,winE)||[]).forEach(function(ev){appleEvents.push(ev);});
+    }catch(e){}
+  }catch(e){appleScanFailed=true;}
+  const appleFeedFailed=appleScanFailed;
   if(appleFeedFailed) push('failures','애플 캘린더 피드 확인 불가 — 이번 회차는 이벤트 재생성·이관 판정을 보류합니다');
   const appleSameDayMatch=function(custName,dayStr){
     if(!custName||custName==='(이름없음)'||!appleEvents.length) return null;
@@ -4793,7 +4811,9 @@ function auditBookingCalendarConsistency_(){
       if(evStart!==dtStr.slice(0,16)){
         push('drifted',name+': 장부 '+dtStr.slice(0,16)+' ↔ 캘린더 '+evStart);
       }
-      // 구글에도 있고 애플에도 있다 — 이관 후 재생성됐거나 복사된 중복. 한쪽을 지워야 한다.
+      /* 메인에도 있고 사진촬영 일정에도 있다 — 실측(2026-07-29) 결과 활성 예약 13건 중 12건이
+         이 상태 = **양쪽 등록이 운영 관행(정상)**이다. 문제로 집계하지 않고 진단 필드로만 남긴다
+         (양쪽 다 가용성을 막으므로 이중예약 위험 없음). */
       if(apple) push('dupBoth',name+' '+dtStr.slice(0,16));
     }
     if(!isTbd){
@@ -4860,8 +4880,9 @@ function auditBookingCalendarConsistency_(){
       }
     }catch(e){push('failures','역방향 고아 스캔 실패: '+String(e.message||'').slice(0,80));}
   }
+  // dupBoth(메인+사진촬영 양쪽 등록)는 운영 관행상 정상 — 문제 수에서 제외(진단 필드로만 유지)
   report.problemCount=report.overlapsCount+report.healedCount+report.missingCount
-    +report.driftedCount+report.deleteRetriedCount+report.dupBothCount
+    +report.driftedCount+report.deleteRetriedCount
     +report.appleLingerCount+report.orphansCount+report.failuresCount;
   return report;
 }
@@ -6606,6 +6627,9 @@ function getIcloudBasicAuth_(){
   if(!id||!pw) throw new Error('iCloud credentials missing: APPLE_ID / APPLE_APP_PASSWORD');
   return 'Basic '+Utilities.base64Encode(id+':'+pw);
 }
+
+/* (제거됨 2026-07-29) CalDAV PROPFIND 자동탐색 — GAS UrlFetchApp 이 PROPFIND 를 지원하지 않아
+   실행 불가. 애플 캘린더 3종은 구글 캘린더 공유(getBusyCalendarMeta_ 이름 매칭)로 이미 반영된다. */
 
 /** webcal:// → https:// 변환 */
 function normalizeCalUrl_(u){
@@ -12456,7 +12480,7 @@ function buildDailyBriefingEmailHtml_(b){
     (ca.missing||[]).forEach(function(m){actions.push(line(`🔴 캘린더 이벤트 <b>재생성 실패</b> — ${esc(m)} · 이 시간이 지금도 빈 슬롯으로 보입니다. 수동 등록 필요`));});
     (ca.drifted||[]).forEach(function(d){actions.push(line(`🟠 시간 불일치 — ${esc(d)} · 캘린더에서 손으로 옮기셨다면 장부·안내메일·리마인드는 아직 옛 시간입니다 (자동 수정하지 않음)`));});
     (ca.deleteRetried||[]).forEach(function(x){actions.push(line(`🧹 취소건 캘린더 잔재 정리 — ${esc(x)} · 슬롯이 다시 열렸습니다`));});
-    (ca.dupBoth||[]).forEach(function(x){actions.push(line(`🟣 구글·애플 <b>양쪽에 일정</b> — ${esc(x)} · 애플이 진본이면 구글 쪽(자동 복구본일 수 있음)을 지워주세요`));});
+    // dupBoth(메인+사진촬영 양쪽 등록)는 정상 관행 — 브리핑에 표시하지 않는다 (가짜 경보 방지)
     (ca.appleLinger||[]).forEach(function(x){actions.push(line(`🟠 취소건인데 <b>애플 캘린더에 일정 잔존</b> — ${esc(x)} · 애플에서 직접 지워주세요 (그 시간이 계속 막혀 있습니다)`));});
     (ca.orphans||[]).forEach(function(x){actions.push(line(`👻 <b>장부에 없는 캘린더 일정</b> — ${esc(x)} · 시트에 근거가 없습니다. 실수로 남은 것이면 구글 캘린더에서 지워주세요 (그 시간이 예약 페이지에서 막혀 있습니다)`));});
     (ca.failures||[]).forEach(function(f){actions.push(line(`⚠️ 캘린더 정합 처리 실패 — ${esc(f)}`));});

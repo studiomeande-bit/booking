@@ -345,15 +345,34 @@ async function runScenarios(M, rec) {
     rec('애플잔존: appleLinger 1', rep.appleLingerCount, 1);
     rec('애플잔존: 문제 집계 포함', rep.problemCount >= 1, true);
 
-    // 5e) 애플 피드 실패 → '증발/이관' 판정 불가 → 재생성 보류 + 실패 보고
+    // 5e) 이관처(공유 캘린더) 조회 실패 → '증발/이관' 판정 불가 → 재생성 보류 + 실패 보고
     M.resetCals(); M.resetEnsure();
     __CALS__['main-cal'] = new FakeCalendar('main-cal');
-    M.setApple([], true);
+    const sharedFail = new FakeCalendar('shared-cal'); sharedFail.throwOnGetEvents = true;
+    __CALS__['shared-cal'] = sharedFail;
+    M.setMeta([{ id: 'main-cal', name: 'Main', isPersonal: false }, { id: 'shared-cal', name: '사진촬영 일정', isPersonal: false }]);
+    M.setApple([], false);
     M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t, 상태: '확정됨', 고객명: '판정불가', 캘린더ID: 'gone' })]));
     rep = M.auditBookingCalendarConsistency_();
-    rec('피드실패: 재생성 보류(중복 폭탄 방지)', M.ensureCalls().length, 0);
-    rec('피드실패: missing 0 (판정 보류)', rep.missingCount, 0);
-    rec('피드실패: failures 보고', rep.failuresCount >= 1, true);
+    rec('이관처 조회실패: 재생성 보류(중복 폭탄 방지)', M.ensureCalls().length, 0);
+    rec('이관처 조회실패: missing 0 (판정 보류)', rep.missingCount, 0);
+    rec('이관처 조회실패: failures 보고', rep.failuresCount >= 1, true);
+    M.setMeta([{ id: 'main-cal', name: 'Main', isPersonal: false }]); // 원복
+
+    // 5f) 이관 판별이 구글 공유 캘린더(사진촬영 일정)를 직접 읽는다 — ICS 피드 없이도 동작
+    M.resetCals(); M.resetEnsure();
+    __CALS__['main-cal'] = new FakeCalendar('main-cal');
+    const sharedCal = new FakeCalendar('shared-cal');
+    const msS = Date.parse(t.replace(' ', 'T') + ':00');
+    sharedCal.events.push(new FakeEvent('sh-1', msS, msS + 3600000, '스튜디오 | 공유이관고객 | 2인 | 170€'));
+    __CALS__['shared-cal'] = sharedCal;
+    M.setMeta([{ id: 'main-cal', name: 'Main', isPersonal: false }, { id: 'shared-cal', name: '사진촬영 일정', isPersonal: false }]);
+    M.setApple([], false); // ICS 피드는 빈 상태 — 공유 캘린더만으로 판별돼야 한다
+    M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t, 상태: '확정됨', 고객명: '공유이관고객', 캘린더ID: 'moved-x' })]));
+    rep = M.auditBookingCalendarConsistency_();
+    rec('공유캘린더 이관: 재생성하지 않음', M.ensureCalls().length, 0);
+    rec('공유캘린더 이관: appleMovedCount 1', rep.appleMovedCount, 1);
+    M.setMeta([{ id: 'main-cal', name: 'Main', isPersonal: false }]); // 원복
 
     M.setApple([], false); // 이후 섹션은 애플 미설정 상태로
   }
