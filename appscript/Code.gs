@@ -13449,7 +13449,7 @@ function updateBookingAdmin(token,rIdx,d){
     if(detailText) extraItemToSave=[extraItemToSave,'[예약 세부내역]\n'+detailText].filter(Boolean).join('\n');
   }
   w(19,extraItemToSave);
-  if(d.address!==undefined) w(27, normalizedAddress||'');
+  if(d.address!==undefined) w(BOOKING_COL['고객주소']+1, normalizedAddress||'');  // 고객주소(개인 우편주소) 칸에만 기록 — 사업자주소와 무관
   if(d.profileAge!==undefined && BOOKING_COL['프로필나이']!=null) w(BOOKING_COL['프로필나이']+1, String(d.profileAge||'').trim());
   if(d.studioFamilyMembers!==undefined && BOOKING_COL['가족구성']!=null) w(BOOKING_COL['가족구성']+1, String(d.studioFamilyMembers||'').trim());
   if(d.paymentLinkType!==undefined && BOOKING_COL['결제연결유형']!=null) w(BOOKING_COL['결제연결유형']+1, String(d.paymentLinkType||'').trim());
@@ -13474,7 +13474,9 @@ function updateBookingAdmin(token,rIdx,d){
 // updateBookingAdmin 은 어드민 편집폼의 '전체 객체 왕복'을 전제로 status/name/phone/price/deposit/balance/
 // payMethod/memo(요청사항)/depPayMethod/extraItem(추가항목)/balanceDate 칸을 '무조건' 덮어쓴다. 에이전트가
 // data:{location} 처럼 일부만 보내면 나머지 칸이 ''로 지워진다. 그래서 현재 행 값을 시드로 채운 뒤,
-// 허용 필드(location/memo/name/phone/email/people/date/time)만 얹어 안전하게 위임한다.
+// 허용 필드(location/memo/name/phone/email/people/date/time/address)만 얹어 안전하게 위임한다.
+//   · address = 고객주소(개인 우편주소, BOOKING_COL['고객주소']). 사업자주소 등 다른 주소 칸과 무관.
+//     updateBookingAdmin 이 d.address 가 있을 때만 조건부로 쓰므로, 안 보내면 지워지지 않아 시드가 필요 없다.
 //   · 시드 인덱스는 BOOKING_HEADERS 순서(0-base)에 고정: 상태1·고객명2·연락처3·이메일4·인원9·총결제액10·
 //     계약금11·잔금12·결제수단13·요청사항15·계약금수단17·추가항목18·잔금입금일20 (updateBookingAdmin 의 w() 열과 동일)
 //   · 상태/금액/결제수단 변경은 전용 액션(booking-update-status, booking-set-amount, booking-refund 등)을 쓰도록
@@ -13489,7 +13491,7 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address'];
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   // '무조건 덮어쓰기' 칸은 현재 값으로 시드(미지정 시 소실 방지). 화이트리스트 필드는 있으면 얹는다.
@@ -13512,6 +13514,7 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(d.people!==undefined) merged.people=d.people;
   if(d.date!==undefined) merged.date=d.date;
   if(d.time!==undefined) merged.time=d.time;
+  if(d.address!==undefined) merged.address=d.address;   // 고객주소(개인 우편주소) — 준 경우에만 얹음
   // 인원을 현재값으로 시드해 [예약 세부내역] 블록 재생성을 유도(어드민과 동일). 값은 그대로라 셀 변화 없음.
   // 빈 인원(값 없음)일 땐 시드하지 않아 1로 바뀌는 부작용을 피한다.
   if(merged.people===undefined && row[9]!=='' && row[9]!=null) merged.people=row[9];
