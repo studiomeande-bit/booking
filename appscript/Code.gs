@@ -4831,6 +4831,17 @@ function auditBookingCalendarConsistency_(){
   }catch(e){appleScanFailed=true;}
   const appleFeedFailed=appleScanFailed;
   if(appleFeedFailed) push('failures','애플 캘린더 피드 확인 불가 — 이번 회차는 이벤트 재생성·이관 판정을 보류합니다');
+  /* 구성 캘린더 소실 감지 — '사진촬영 일정'(확정 촬영 보관처) 공유가 풀리면 그 일정 전체가
+     가용성에서 조용히 빠진다. 대상 소실은 fail-closed 가 이미 작동 중이고, 여기서 원인을 알린다. */
+  try{
+    getBusyCalendarMeta_();
+    (MISSING_BUSY_CALS_.target||[]).forEach(function(n){
+      push('failures',"공유 캘린더 '"+n+"' 미발견 — 공유 해제/이름 변경 확인 필요 (예약은 안전하게 마감 응답 중)");
+    });
+    (MISSING_BUSY_CALS_.personal||[]).forEach(function(n){
+      push('failures',"개인 캘린더 '"+n+"' 미발견 — 공유 해제/이름 변경 확인 필요 (그 일정이 슬롯을 못 막습니다)");
+    });
+  }catch(e){}
   const appleSameDayMatch=function(custName,dayStr){
     if(!custName||custName==='(이름없음)'||!appleEvents.length) return null;
     for(let k=0;k<appleEvents.length;k++){
@@ -6178,21 +6189,38 @@ function getBusyCalendarIds_(){
   return getBusyCalendarMeta_().map(m=>m.id);
 }
 
+/* 구성됐는데 계정에서 안 보이는 캘린더 이름들 — 공유 해제/이름 변경 감지용(정합점검이 보고).
+   getBusyCalendarMeta_ 가 호출될 때마다 갱신된다(캐시 히트 시에도 저장된 값으로). */
+var MISSING_BUSY_CALS_={target:[],personal:[]};
+
 /** {id, name, isPersonal} 형태로 메타데이터 함께 캐싱 — cal.getName() 반복 호출 제거용 */
 function getBusyCalendarMeta_(){
   const cache=CacheService.getScriptCache();
-  try{const h=cache.get('busy_cal_meta_v2');if(h)return JSON.parse(h);}catch(e){}
+  try{
+    const h=cache.get('busy_cal_meta_v3');
+    if(h){
+      const parsed=JSON.parse(h);
+      MISSING_BUSY_CALS_=parsed.missing||{target:[],personal:[]};
+      /* ⚠ 확정 촬영은 애플 '사진촬영 일정'(구글 공유, 이름 정확일치)에 산다 — 공유가 풀리거나
+         이름이 바뀌면 그 일정 전체가 가용성에서 조용히 빠져 이중예약 직행. 대상 캘린더 소실은
+         fail-closed(마감 응답)로 막고, 정합점검이 브리핑으로 알린다. */
+      if(MISSING_BUSY_CALS_.target.length) CAL_READ_FAILED_=true;
+      return parsed.items||[];
+    }
+  }catch(e){}
   const personalSet=new Set(CONFIG.PERSONAL_CALENDAR_NAMES);
   const targetSet=new Set(CONFIG.TARGET_CALENDAR_NAMES);
   const mainId=CONFIG.MAIN_CALENDAR_ID;
   const meta=[];
   const seenIds=new Set();
+  const foundNames=new Set();
   // 메인 캘린더를 항상 포함
   try{
     const mainCal=CalendarApp.getCalendarById(mainId);
     const mainName=mainCal?mainCal.getName():'';
     meta.push({id:mainId,name:mainName,isPersonal:personalSet.has(mainName)});
     seenIds.add(mainId);
+    if(mainName) foundNames.add(mainName);
   }catch(e){meta.push({id:mainId,name:'',isPersonal:false});seenIds.add(mainId);}
   // 대상/개인 캘린더 추가
   CalendarApp.getAllCalendars().forEach(cal=>{
@@ -6201,9 +6229,21 @@ function getBusyCalendarMeta_(){
     if(targetSet.has(name)||personalSet.has(name)){
       meta.push({id,name,isPersonal:personalSet.has(name)});
       seenIds.add(id);
+      foundNames.add(name);
     }
   });
-  try{cache.put('busy_cal_meta_v2',JSON.stringify(meta),600);}catch(e){}  // 10분 캐시
+  // 개인 캘린더는 표기 변형('스케줄/스케쥴')을 CONFIG 에 중복 등록하는 관행 — 정규화해 묶고,
+  // 변형 전부가 안 보일 때만 소실로 보고한다(아니면 미사용 변형이 매일 가짜 경보를 낸다).
+  const normP=function(n){return String(n).replace(/스케쥴/g,'스케줄');};
+  const foundNorm=new Set(Array.from(foundNames).map(normP));
+  MISSING_BUSY_CALS_={
+    target:CONFIG.TARGET_CALENDAR_NAMES.filter(function(n){return !foundNames.has(n);}),
+    personal:CONFIG.PERSONAL_CALENDAR_NAMES.map(normP)
+      .filter(function(n,i,arr){return arr.indexOf(n)===i;})
+      .filter(function(n){return !foundNorm.has(n);})
+  };
+  if(MISSING_BUSY_CALS_.target.length) CAL_READ_FAILED_=true;
+  try{cache.put('busy_cal_meta_v3',JSON.stringify({items:meta,missing:MISSING_BUSY_CALS_}),600);}catch(e){}  // 10분 캐시
   return meta;
 }
 
@@ -8397,6 +8437,7 @@ function processForm(data){
   const lock=LockService.getScriptLock();
   try{lock.waitLock(15000);}
   catch(e){return{ok:false,message:'동시 예약 처리 중입니다. 잠시 후 다시 시도해 주세요.'};}
+  let lockHeld=true; // 성공 경로는 메일 발송 전에 조기 해제 — finally 의 이중 해제 방지 플래그
   try{
     if(!data.name||!data.phone||!data.email) throw new Error('필수 정보 누락');
     data.phone=normalizePhoneForLedger_(data.phone,data.phoneCountry||data.countryCode||'+49');
@@ -8584,12 +8625,19 @@ function processForm(data){
       meta:{itemGroup:quote.itemGroup,product:koName,totalPrice:quote.totalPrice,confirmationMode,slotRecommendationStatus}
     });
     bumpCalCacheVer_();
+    /* 잠금은 여기서 푼다 — 트랜잭션(중복검사→슬롯검사→캘린더→시트→캐시)은 끝났고, 메일 2통은
+       수 초짜리 I/O 라 잠금 안에 두면 대기자 선착순 경쟁 때 waitLock(15초) 초과로 뒤 요청들이
+       '동시 예약 처리 중' 거절을 받는다. 예약은 이미 성립 — 메일 실패해도 ok 를 돌려준다. */
+    try{lock.releaseLock();}catch(e){}
+    lockHeld=false;
     const bookingMailMeta={type:'예약',bookingRowIndex,customerName:data.name,email:data.email,ref:event.getId()};
-    sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId(),bookingMailMeta);
-    sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn,bookingMailMeta);
+    try{
+      sendCustomerPendingEmail_(data,quote,localName,isReturn,event.getId(),bookingMailMeta);
+      sendAdminNotificationEmail_(data,quote,koName,event.getId(),surveyStr,memo,isReturn,bookingMailMeta);
+    }catch(mailErr){Logger.log('예약접수 메일 실패(예약은 성립): '+mailErr.message);}
     return{ok:true,quote,isReturn,bookingRowIndex,gutschein:gutscheinResult};
   }catch(err){return{ok:false,message:err.message};}
-  finally{try{lock.releaseLock();}catch(e){}}
+  finally{if(lockHeld){try{lock.releaseLock();}catch(e){}}}
 }
 
 function normalizeWalkinLang_(lang){

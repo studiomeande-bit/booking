@@ -124,6 +124,8 @@ const MODULE = [
    export function resetEnsure(result){ __ENSURE_CALLS__=[]; __ENSURE_RESULT__=result===undefined?'new-ev-id':result; }
    export function resetCals(){ for(const k of Object.keys(__CALS__)) delete __CALS__[k]; }
    export function setApple(events,fail){ __APPLE__=events||[]; __APPLE_FAIL__=!!fail; }
+   var MISSING_BUSY_CALS_={target:[],personal:[]};
+   export function setMissingCals(m){ MISSING_BUSY_CALS_=m||{target:[],personal:[]}; }
    let __CONFLICT__=false;
    let __CONFLICT_ARGS__=null;
    function checkConflict_(events,s,e,g,l){ __CONFLICT_ARGS__={n:events.length,s:s,e:e,g:g,l:l}; return __CONFLICT__; }
@@ -483,6 +485,21 @@ async function runScenarios(M, rec) {
     rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
   }
 
+  // ── 8) 구성 캘린더 소실 보고 — 공유 해제/이름 변경이 조용히 슬롯을 여는 사고 방지 ──
+  {
+    M.resetCals(); M.resetEnsure(); M.setApple([], false);
+    __CALS__['main-cal'] = new FakeCalendar('main-cal');
+    M.setSheet(new FakeSheet(H, []));
+    M.setMissingCals({ target: ['사진촬영 일정'], personal: ['여보랑나랑'] });
+    const rep = M.auditBookingCalendarConsistency_();
+    rec('캘린더소실: 실패 2건 보고', rep.failuresCount, 2);
+    rec('캘린더소실: 대상 이름 명시', (rep.failures || []).some(f => f.indexOf('사진촬영 일정') >= 0), true);
+    rec('캘린더소실: 개인 이름 명시', (rep.failures || []).some(f => f.indexOf('여보랑나랑') >= 0), true);
+    M.setMissingCals(null);
+    const rep2 = M.auditBookingCalendarConsistency_();
+    rec('캘린더소실: 정상 시 보고 없음', rep2.failuresCount, 0);
+  }
+
   // ── 4) CAP — 목록은 잘려도 count 는 전체 ─────────────────────────────────
   {
     M.resetCals(); M.resetEnsure('');
@@ -629,6 +646,9 @@ const FAULTS = [
   ['다일정 증발 복구 제거',
     /if\(!isTbd&&BOOKING_COL\['추가일정JSON'\]!=null\)\{\n      const exDays=parseBookingExtraDays_\(row\);/,
     "if(false){\n      const exDays=parseBookingExtraDays_(row);"],
+  ['구성 캘린더 소실 보고 제거(공유 해제를 아무도 모름)',
+    /\(MISSING_BUSY_CALS_\.target\|\|\[\]\)\.forEach\(function\(n\)\{/,
+    '([]).forEach(function(n){'],
 ];
 
 let caught = 0;
