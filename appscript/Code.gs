@@ -881,10 +881,15 @@ function handlePublicApiRequest_(route,method,e){
       const request=getPublicPayloadFromRequest_(e);
       const body=request.body;
       const payload=request.payload;
-      assertPublicBookingPayload_(payload,body);
-      if(!isPublicBookingProduct_(getProductById_(payload.itemId))) return jsonError_('INVALID_ARGUMENT','Unavailable product');
+      const custLang=String((payload&&payload.lang)||'ko');
+      try{
+        assertPublicBookingPayload_(payload,body);
+      }catch(assertErr){
+        return jsonError_('INVALID_ARGUMENT',localizePublicBookingError_(assertErr.message,custLang));
+      }
+      if(!isPublicBookingProduct_(getProductById_(payload.itemId))) return jsonError_('INVALID_ARGUMENT',localizePublicBookingError_('예약페이지에서 선택할 수 없는 상품입니다.',custLang));
       const result=processForm(payload);
-      if(!result||!result.ok) return jsonError_('BOOKING_FAILED',(result&&result.message)||'Booking failed');
+      if(!result||!result.ok) return jsonError_('BOOKING_FAILED',localizePublicBookingError_((result&&result.message)||'Booking failed',custLang));
       return jsonOk_(result);
     }
     if(route==='booking-status'){
@@ -1630,6 +1635,48 @@ function assertWalkinIntakeToken_(token){
   const cacheKey='walkin_token_'+nonce;
   if(cache.get(cacheKey)) throw new Error('이미 처리된 워크인 제출입니다.');
   cache.put(cacheKey,'1',Math.max(60,exp-now));
+}
+
+/* 예약 실패 메시지 다국어 — 프런트(booking.js:6518)는 서버 메시지를 그대로 배너에 띄우므로,
+   EN/DE 고객이 한국어 오류를 보지 않도록 서버가 고객 언어로 번역해 내려준다.
+   맵에 없는 메시지(내부 오류 등)는 원문 유지 — 새 고객 노출 메시지를 추가하면 여기도 등록할 것. */
+var PUBLIC_BOOKING_ERR_I18N_={
+  '예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.':{
+    en:'This time slot has just been booked. Please choose another time.',
+    de:'Dieser Termin ist leider bereits vergeben. Bitte wählen Sie eine andere Zeit.'},
+  '동시 예약 처리 중입니다. 잠시 후 다시 시도해 주세요.':{
+    en:'Another booking is being processed. Please try again in a moment.',
+    de:'Eine andere Buchung wird gerade verarbeitet. Bitte versuchen Sie es gleich erneut.'},
+  '같은 일시에 이미 접수된 예약이 있습니다. 관리자에게 문의해 주세요.':{
+    en:'You already have a booking at this time. Please contact us if this is unexpected.',
+    de:'Für diesen Zeitpunkt liegt bereits eine Buchung von Ihnen vor. Bitte kontaktieren Sie uns bei Fragen.'},
+  '표준 촬영 계약서 및 예약 조건 동의가 필요합니다.':{
+    en:'Please accept the standard shooting contract and booking terms.',
+    de:'Bitte stimmen Sie dem Standard-Fotovertrag und den Buchungsbedingungen zu.'},
+  '개인정보 처리 동의가 필요합니다.':{
+    en:'Please accept the privacy policy.',
+    de:'Bitte stimmen Sie der Datenschutzerklärung zu.'},
+  '필수 정보 누락':{
+    en:'Required fields are missing.',
+    de:'Pflichtangaben fehlen.'},
+  '프로모션 예약 가능 기간이 아닙니다.':{
+    en:'This promotion is not currently available for booking.',
+    de:'Diese Aktion ist derzeit nicht buchbar.'},
+  '희망 촬영 장소를 입력해 주세요.':{
+    en:'Please enter the desired shooting location.',
+    de:'Bitte geben Sie den gewünschten Aufnahmeort an.'},
+  '예약페이지에서 선택할 수 없는 상품입니다.':{
+    en:'This product cannot be booked online.',
+    de:'Dieses Produkt kann nicht online gebucht werden.'},
+  '일정 확인이 일시적으로 불가합니다. 잠시 후 다시 시도해 주세요.':{
+    en:'Availability is temporarily unavailable. Please try again shortly.',
+    de:'Die Terminprüfung ist vorübergehend nicht möglich. Bitte versuchen Sie es gleich erneut.'}
+};
+function localizePublicBookingError_(msg,lang){
+  const L=String(lang||'ko').toLowerCase().slice(0,2);
+  if(L!=='en'&&L!=='de') return msg;
+  const hit=PUBLIC_BOOKING_ERR_I18N_[String(msg||'').trim()];
+  return hit?(hit[L]||msg):msg;
 }
 
 function assertPublicBookingPayload_(payload,body){
