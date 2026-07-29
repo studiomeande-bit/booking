@@ -4917,7 +4917,7 @@ function auditBookingCalendarConsistency_(){
   try{
     getBusyCalendarMeta_();
     (MISSING_BUSY_CALS_.target||[]).forEach(function(n){
-      push('failures',"공유 캘린더 '"+n+"' 미발견 — 공유 해제/이름 변경 확인 필요 (예약은 안전하게 마감 응답 중)");
+      push('failures',"공유 캘린더 '"+n+"' 미발견 — 의도한 정리면 무시하셔도 됩니다 (가용성은 메인 캘린더로 정상, CONFIG 에서 이름 제거 시 이 알림도 사라짐)");
     });
     (MISSING_BUSY_CALS_.personal||[]).forEach(function(n){
       push('failures',"개인 캘린더 '"+n+"' 미발견 — 공유 해제/이름 변경 확인 필요 (그 일정이 슬롯을 못 막습니다)");
@@ -6297,10 +6297,10 @@ function getBusyCalendarMeta_(){
     if(h){
       const parsed=JSON.parse(h);
       MISSING_BUSY_CALS_=parsed.missing||{target:[],personal:[]};
-      /* ⚠ 확정 촬영은 애플 '사진촬영 일정'(구글 공유, 이름 정확일치)에 산다 — 공유가 풀리거나
-         이름이 바뀌면 그 일정 전체가 가용성에서 조용히 빠져 이중예약 직행. 대상 캘린더 소실은
-         fail-closed(마감 응답)로 막고, 정합점검이 브리핑으로 알린다. */
-      if(MISSING_BUSY_CALS_.target.length) CAL_READ_FAILED_=true;
+      /* 대상 캘린더('사진촬영 일정') 소실은 **보고만** 한다 — 확정 예약은 항상 메인에도 있어
+         (실측 13/13, 양쪽 등록) 가용성은 메인만으로 완결된다. 2026-07-29 A안(메인 캘린더를
+         와이프 계정에 직접 공유) 채택으로 사본 관행이 은퇴 수순 — fail-closed 로 두면 나중에
+         그 캘린더를 정리하는 순간 예약 전체가 마감되는 지뢰가 된다. */
       return parsed.items||[];
     }
   }catch(e){}
@@ -6338,7 +6338,6 @@ function getBusyCalendarMeta_(){
       .filter(function(n,i,arr){return arr.indexOf(n)===i;})
       .filter(function(n){return !foundNorm.has(n);})
   };
-  if(MISSING_BUSY_CALS_.target.length) CAL_READ_FAILED_=true;
   try{cache.put('busy_cal_meta_v3',JSON.stringify({items:meta,missing:MISSING_BUSY_CALS_}),600);}catch(e){}  // 10분 캐시
   return meta;
 }
