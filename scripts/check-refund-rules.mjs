@@ -59,6 +59,20 @@ const MODULE = [
   extractFn(gs, 'getEffectiveBookingPayment_'),
   extractFn(gs, 'recordBookingRefund_'),
   extractFn(gs, 'calcCancellationRefundQuote_'),
+  // 환불 취소(무효화) — ensureSheets_/LockService/assertAdmin_ 는 스텁, 판정 로직은 원본
+  `function assertAdmin_(){ return true; }
+   const LockService={ getScriptLock:()=>({ tryLock:()=>true, releaseLock:()=>{} }) };
+   let __VROW__=null;
+   function ensureSheets_(){ return { bookingSheet:{
+     getLastRow:()=>2,
+     getRange:(r,c)=>({ getValues:()=>[__VROW__], setValue:(v)=>{ __VROW__[c-1]=v; } })
+   } }; }`,
+  extractFn(gs, 'voidBookingRefundAdmin'),
+  `export function runVoid(rowObj,payload){
+     __VROW__=makeRow(rowObj);
+     try{ const res=voidBookingRefundAdmin('tok',2,payload||{}); return {ok:true,res,json:__VROW__[BOOKING_COL['환불내역JSON']],cum:__VROW__[BOOKING_COL['환불누계금액']]}; }
+     catch(e){ return {ok:false,error:e.message}; }
+   }`,
   `export function makeRow(o){
      const row=new Array(CONFIG.BOOKING_HEADERS.length).fill('');
      for(const k in o) row[BOOKING_COL[k]]=o[k];
@@ -92,9 +106,10 @@ const dir = mkdtempSync(join(tmpdir(), 'refund-'));
 let runRefund;
 let runQuote;
 let runMatch;
+let runVoid;
 try {
   writeFileSync(join(dir, 'core.mjs'), MODULE);
-  ({ runRefund, runQuote, runMatch } = await import(pathToFileURL(join(dir, 'core.mjs')).href));
+  ({ runRefund, runQuote, runMatch, runVoid } = await import(pathToFileURL(join(dir, 'core.mjs')).href));
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
@@ -192,6 +207,53 @@ m = runMatch([evRow([sumupEv({ ts: 'u1' })], 'A'), evRow([sumupEv({ ts: 'l1', su
 check('대조: 같은 ref 연결이 미연결보다 우선', m && m.linked === true && m.eventTs === 'l1', JSON.stringify(m));
 m = runMatch([evRow([sumupEv({ type: 'gutschein_restore' })])], tx());
 check('대조: 복원 이벤트 제외', m === null, JSON.stringify(m));
+
+/* ── 환불 취소(무효화) ── */
+const oneRefund = (over) => ({ ...paidRow, '환불내역JSON': JSON.stringify([{ ts: 't1', payoutDate: '2026-07-28', amount: 15, method: 'bank', type: 'refund', reason: '오기록', ...(over || {}) }]) });
+let v = runVoid(oneRefund(), { expectName: 'T', expectAmount: 15, reason: '실지급 안함' });
+check('취소: 단건 무효화 성공', v.ok === true && v.res.voidedAmount === 15, v.ok ? '' : v.error);
+check('취소: 누계 0 으로', v.ok && v.res.totalRefund === 0 && v.cum === 0, v.ok ? `누계 ${v.res.totalRefund}` : '');
+check('취소: 실수령 전액 복원', v.ok && v.res.remaining === 170, v.ok ? `잔여 ${v.res.remaining}` : '');
+check('취소: 이벤트 보존(감사흔적)', v.ok && /"type":"refund_voided"/.test(String(v.json || '')) && /"voidedAt"/.test(String(v.json || '')), '무효화 흔적 없음');
+check('취소: 원 amount 는 남김', v.ok && /"amount":15/.test(String(v.json || '')), 'amount 삭제됨');
+
+// 무효화된 환불은 집계에서 빠지므로 그만큼 다시 환불 가능
+v = runVoid(oneRefund(), { expectAmount: 15 });
+const afterVoidRow = { ...paidRow, '환불내역JSON': v.json };
+r = runRefund(afterVoidRow, { amount: 170, method: 'bank' });
+check('취소 후 전액 재환불 가능', r.ok === true && r.res.totalRefund === 170, r.ok ? `누계 ${r.res.totalRefund}` : r.error);
+
+// 이름 불일치 거부
+v = runVoid(oneRefund(), { expectName: '다른사람' });
+check('취소: 이름 불일치 거부', v.ok === false && /불일치/.test(v.error || ''), `err=${v.error}`);
+// 금액 불일치 거부 (엉뚱한 건 무효화 방지)
+v = runVoid(oneRefund(), { expectAmount: 99 });
+check('취소: 금액 불일치 거부', v.ok === false && /금액 불일치/.test(v.error || ''), `err=${v.error}`);
+// 환불 이벤트 없음
+v = runVoid(paidRow, {});
+check('취소: 환불 없음 거부', v.ok === false && /환불 이벤트가 없/.test(v.error || ''), `err=${v.error}`);
+// 인보이스 연결 건은 force 없이 거부, force 로 허용
+v = runVoid(oneRefund({ invoiceNo: 'RE-2026-001' }), {});
+check('취소: 인보이스 연결 시 거부', v.ok === false && /인보이스/.test(v.error || ''), `err=${v.error}`);
+v = runVoid(oneRefund({ invoiceNo: 'RE-2026-001' }), { force: true });
+check('취소: force 로 인보이스 건 허용', v.ok === true && v.res.voidedAmount === 15, v.ok ? '' : v.error);
+
+// 다건이면 ts 지정 필수
+const twoRefunds = { ...paidRow, '환불내역JSON': JSON.stringify([
+  { ts: 't1', payoutDate: '2026-07-01', amount: 30, method: 'bank', type: 'refund' },
+  { ts: 't2', payoutDate: '2026-07-10', amount: 20, method: 'bank', type: 'refund' },
+]) };
+v = runVoid(twoRefunds, {});
+check('취소: 다건 ts 미지정 거부', v.ok === false && /eventTs/.test(v.error || ''), `err=${v.error}`);
+v = runVoid(twoRefunds, { eventTs: 't2', expectAmount: 20 });
+check('취소: ts 로 특정 건만 무효화', v.ok === true && v.res.totalRefund === 30, v.ok ? `누계 ${v.res.totalRefund}` : v.error);
+if (v.ok) {
+  const arr = JSON.parse(v.json);
+  const e1 = arr.find((x) => x.ts === 't1');
+  const e2 = arr.find((x) => x.ts === 't2');
+  check('취소: 지정 건만 무효화(t2)', e2 && e2.type === 'refund_voided', `t2.type=${e2 && e2.type}`);
+  check('취소: 지정 안 한 건 유지(t1)', e1 && e1.type === 'refund', `t1.type=${e1 && e1.type}`);
+}
 
 console.log('환불 규칙 검증');
 if (fails.length) {

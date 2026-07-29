@@ -12467,10 +12467,15 @@ function openRefundModal(rowIndex){
     if(Array.isArray(res.events)&&res.events.length){
       const T={refund:'환불',forfeit:'몰수확정',gutschein_restore:'바우처복원'};
       const M={bank:'이체',cash:'현금',sumup:'카드',gutschein:'바우처'};
-      html+='<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">'+res.events.map(ev=>
-        `· ${escapeAdminHtml(String(ev.payoutDate||''))} ${T[ev.type]||escapeAdminHtml(String(ev.type||''))} <b>€${n(ev.amount)}</b> (${M[ev.method]||escapeAdminHtml(String(ev.method||''))})`
-        +`${ev.reason?' — '+escapeAdminHtml(String(ev.reason)):''}${ev.invoiceNo?' · '+escapeAdminHtml(String(ev.invoiceNo)):''}${ev.sumupTxRef?' · <span style="color:#1d4ed8;">SumUp✓</span>':''}`
-      ).join('<br>')+'</div>';
+      html+='<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">'+res.events.map(ev=>{
+        const voided=String(ev.type||'')==='refund_voided';
+        // 유효한 환불 이벤트에만 취소 버튼 — 무효화/몰수/복원 건은 대상 아님
+        const voidBtn=(String(ev.type||'')==='refund')
+          ? ` <button class="btn btn-outline btn-sm" style="font-size:9px;padding:0 5px;margin-left:4px;color:#9a3412;border-color:#fed7aa;" onclick="voidRefundEvent(${rowIndex},'${escapeAdminHtml(String(ev.ts||''))}',${n(ev.amount)},'${escapeAdminHtml(String(c.name||''))}')">환불취소</button>`
+          : '';
+        return `· ${escapeAdminHtml(String(ev.payoutDate||''))} ${voided?'<s style="color:#94a3b8;">':''}${T[ev.type]||escapeAdminHtml(String(ev.type||''))} <b>€${n(ev.amount)}</b> (${M[ev.method]||escapeAdminHtml(String(ev.method||''))})${voided?'</s> <span style="color:#94a3b8;font-size:10px;">취소됨</span>':''}`
+        +`${ev.reason?' — '+escapeAdminHtml(String(ev.reason)):''}${ev.invoiceNo?' · '+escapeAdminHtml(String(ev.invoiceNo)):''}${ev.sumupTxRef?' · <span style="color:#1d4ed8;">SumUp✓</span>':''}${voidBtn}`;
+      }).join('<br>')+'</div>';
     }
     h.innerHTML=html;
   }).withFailureHandler(()=>{h.textContent='';})
@@ -12478,6 +12483,21 @@ function openRefundModal(rowIndex){
   document.getElementById('refundModal').classList.add('open');
 }
 function closeRefundModal(){document.getElementById('refundModal').classList.remove('open');}
+/* 환불 취소(무효화) — 잘못 기록했거나 실제 지급 안 한 환불을 되돌린다. 삭제가 아니라 무효화라
+   장부/누계에서 빠지되 이력엔 '취소됨'으로 남는다. 서버가 이름·금액을 이중확인한다. */
+function voidRefundEvent(rowIndex,ts,amount,name){
+  if(!confirm(`${name}님 · €${amount} 환불 기록을 취소(무효화)합니다.\n\n실제 지급을 하지 않았거나 잘못 기록한 경우에만 사용하세요.\n장부·환불누계에서 빠지고, 이력엔 '취소됨'으로 남습니다.\n계속할까요?`))return;
+  const reason=prompt('취소 사유 (선택):','실제 지급 안 함');
+  if(reason===null)return;
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      showToast(`환불 취소 완료 — €${Number(res.voidedAmount||0).toFixed(2)} 무효화 (누계 €${Number(res.totalRefund||0).toFixed(2)})`,'ok');
+      openRefundModal(rowIndex); // 이력 새로고침
+      loadAll();
+    } else alert('취소 실패: '+((res&&res.message)||'오류'));
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .voidBookingRefundAdmin(adminToken,rowIndex,{eventTs:ts,expectName:name,expectAmount:amount,reason:reason});
+}
 function confirmRefundBooking(){
   const rowIndex=parseInt(document.getElementById('refund_rowIndex').value);
   const amount=parseFloat(document.getElementById('refund_amount').value)||0;

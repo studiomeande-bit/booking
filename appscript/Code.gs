@@ -1195,6 +1195,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-delete') return jsonOk_(deleteBookingForAgent_(token,payload));
         if(action==='booking-refund') return jsonOk_(Object.assign({},recordBookingRefundAdmin(token,payload.rowIndex,Object.assign({},payload,{source:'agent'})),{}));
         if(action==='booking-refund-quote') return jsonOk_(getCancellationRefundQuoteAdmin(token,payload.rowIndex));
+        if(action==='booking-refund-void') return jsonOk_(voidBookingRefundAdmin(token,payload.rowIndex,payload));
         if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
         if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
         // 사진 셀렉 / 보정
@@ -23830,9 +23831,9 @@ function getCancellationRefundQuoteAdmin(token,rowIndex){
   if(rIdx<2||rIdx>sh.getLastRow()) throw new Error('잘못된 예약 행 번호');
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const quote=calcCancellationRefundQuote_(row);
-  // 환불 모달의 이력 표시용 — 최근 10건 (표시 필드만, JSON 원문은 내려보내지 않는다)
+  // 환불 모달의 이력 표시용 — 최근 10건 (표시 필드 + ts: 취소 버튼이 특정 건을 지정하는 용도)
   quote.events=parseBookingRefunds_(row).slice(-10).map(function(ev){
-    return{payoutDate:String(ev.payoutDate||''),amount:roundCurrency_(Number(ev.amount)||0),
+    return{ts:String(ev.ts||''),payoutDate:String(ev.payoutDate||''),amount:roundCurrency_(Number(ev.amount)||0),
            method:String(ev.method||''),type:String(ev.type||'refund'),
            reason:String(ev.reason||'').slice(0,60),invoiceNo:String(ev.invoiceNo||''),
            sumupTxRef:String(ev.sumupTxRef||'')};
@@ -23965,6 +23966,67 @@ function recordBookingRefundAdmin(token,rowIndex,payload){
   }
   if(payload.notify===true&&res.event.type==='refund') res.mailSent=_sendBookingRefundEmail_(rIdx,res);
   return res;
+}
+
+/* 환불 취소(무효화) — 잘못 기록했거나 실제 지급을 하지 않은 환불 이벤트를 되돌린다.
+   삭제하지 않고 type 을 'refund_voided' 로 바꿔 **감사 흔적은 남기되 모든 집계에서 제외**한다
+   (bookingRefundTotal_·현금장부·매출 음수 파생 3곳 모두 type==='refund' 만 세므로 자동 제외).
+   ref: eventTs(정확 지정) 또는 환불 이벤트가 정확히 1건이면 그걸 무효화. expectAmount 로 이중확인.
+   ⚠ 인보이스가 발행된 환불은 세금계산서 취소가 별도로 필요하므로 force 없이는 막는다. */
+function voidBookingRefundAdmin(token,rowIndex,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(rowIndex,10)||0;
+  const sheets=ensureSheets_();
+  if(rIdx<2||rIdx>sheets.bookingSheet.getLastRow()) throw new Error('잘못된 예약 행 번호');
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) throw new Error('처리 중입니다. 잠시 후 다시 시도해 주세요.');
+  try{
+    const sh=sheets.bookingSheet;
+    const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const expectName=String(payload.expectName||'').trim();
+    if(expectName&&String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+      throw new Error('행 고객명 불일치: 행="'+String(row[BOOKING_COL['고객명']]||'')+'" / 기대="'+expectName+'"');
+    }
+    const list=parseBookingRefunds_(row);
+    const refundIdxs=[];
+    for(let i=0;i<list.length;i++){ if(list[i]&&list[i].type==='refund') refundIdxs.push(i); }
+    if(!refundIdxs.length) throw new Error('취소할 환불 이벤트가 없습니다.');
+    let target=-1;
+    const wantTs=String(payload.eventTs||'').trim();
+    if(wantTs){
+      target=list.findIndex(function(ev){return ev&&ev.ts===wantTs&&ev.type==='refund';});
+      if(target<0) throw new Error('해당 ts 의 환불 이벤트를 찾을 수 없습니다: '+wantTs);
+    }else if(refundIdxs.length===1){
+      target=refundIdxs[0];
+    }else{
+      throw new Error('환불 이벤트가 '+refundIdxs.length+'건입니다. eventTs 로 취소할 건을 지정해 주세요.');
+    }
+    const ev=list[target];
+    // 금액 이중확인 — 잘못된 건을 무효화하지 않도록
+    if(payload.expectAmount!==undefined&&payload.expectAmount!==null&&payload.expectAmount!==''){
+      const want=roundCurrency_(Number(payload.expectAmount)||0);
+      const have=roundCurrency_(Number(ev.amount)||0);
+      if(Math.abs(want-have)>0.005) throw new Error('환불 금액 불일치: 이벤트=€'+have.toFixed(2)+' / 기대=€'+want.toFixed(2));
+    }
+    // 인보이스 발행된 환불은 세금계산서 취소가 별도 — force 없이는 막는다
+    if(String(ev.invoiceNo||'').trim()&&payload.force!==true){
+      throw new Error("이 환불에는 인보이스("+ev.invoiceNo+")가 연결돼 있습니다. 세금계산서 취소를 먼저 처리하고 force:true 로 진행하세요.");
+    }
+    const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    ev.type='refund_voided';
+    ev.voidedAt=now;
+    ev.voidReason=String(payload.reason||'').slice(0,120);
+    sh.getRange(rIdx,BOOKING_COL['환불내역JSON']+1).setValue(JSON.stringify(list));
+    const totalRefund=roundCurrency_(list.reduce(function(s,e){return s+(e&&e.type==='refund'?(Number(e.amount)||0):0);},0));
+    if(BOOKING_COL['환불누계금액']!=null) sh.getRange(rIdx,BOOKING_COL['환불누계금액']+1).setValue(totalRefund);
+    const pay=getEffectiveBookingPayment_(row);
+    return{ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
+           voidedAmount:roundCurrency_(Number(ev.amount)||0),voidedMethod:String(ev.method||''),
+           voidedPayoutDate:String(ev.payoutDate||''),totalRefund:totalRefund,
+           remaining:roundCurrency_(Math.max(0,pay.paid-totalRefund))};
+  }
+  finally{ try{lock.releaseLock();}catch(e){} }
 }
 
 function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, memo){
