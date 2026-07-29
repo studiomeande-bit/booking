@@ -378,6 +378,7 @@ export const COPY = {
     scopeSwapGood2: '“잔머리를 정리하고, 전체 색감을 따뜻하게 맞춰 주세요.”',
     scopeHint: '⚠️ 신체·하늘 합성, 사람 제거(합성), 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.',
     galleryRetry: '다시 불러오기',
+    galleryContactFallback: '문제가 계속되면 이메일로 연락 주세요 — 확인 후 바로 도와드리겠습니다.',
     pcPhotoNumField: (front, back) => `앞면 ${front} / 뒷면 ${back}`
 
   },
@@ -733,6 +734,7 @@ export const COPY = {
     scopeSwapGood2: '“Tidy the stray hairs and warm up the overall colour.”',
     scopeHint: '⚠️ Body or sky compositing, removing people, and taking out fabric creases fall outside standard snap retouching — we will let you know individually whether it is possible and what it would cost.',
     galleryRetry: 'Try again',
+    galleryContactFallback: 'If the problem persists, email us — we will help right away.',
     pcPhotoNumField: (front, back) => `front ${front} / back ${back}`
 
   },
@@ -1088,6 +1090,7 @@ export const COPY = {
     scopeSwapGood2: '„Die Flyaway-Haare glätten und die Farbstimmung insgesamt wärmer.“',
     scopeHint: '⚠️ Composing an Körper oder Himmel, das Entfernen von Personen und das Herausretuschieren von Stofffalten liegen außerhalb der Standard-Snap-Retusche — wir sagen Ihnen individuell, ob es möglich ist und was es kostet.',
     galleryRetry: 'Erneut laden',
+    galleryContactFallback: 'Wenn das Problem weiterhin besteht, schreiben Sie uns eine E-Mail — wir helfen sofort.',
     pcPhotoNumField: (front, back) => `Vorderseite ${front} / Rückseite ${back}`
 
   }

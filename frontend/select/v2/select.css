@@ -1120,6 +1120,19 @@ h1 {
   .cell-stars {
     opacity: 1;
     transform: translateY(0);
+    gap: 4px;
+  }
+  /* 터치 기기 탭 타깃 확대 — 기존 19×17px 는 오탭 유발 (별점이 핵심 인터랙션인데 최소 기준 미달).
+     세로 ~42px 확보, 가로는 셀 폭 제약 내 최대. touch-action 으로 더블탭 줌 오작동 방지. */
+  .cell-star {
+    font-size: 19px;
+    padding: 11px 6px;
+    touch-action: manipulation;
+  }
+  .lb-star {
+    font-size: 22px;
+    padding: 10px 8px;
+    touch-action: manipulation;
   }
 }
 .cell-star {

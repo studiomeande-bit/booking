@@ -1409,12 +1409,19 @@ async function loadGallery(options = {}) {
       await waitForGalleryBatchDelay();
     }
     if (cacheKey && state.gallery.photos.length) writeGalleryCache(cacheKey, buildGalleryCachePayload());
+    state.gallery.failCount = 0;
   } catch (err) {
+    // 재시도 실패가 반복되면(2회+) 재시도 버튼만으로는 막다른 길 — 연락 탈출구를 함께 보여준다
+    state.gallery.failCount = (state.gallery.failCount || 0) + 1;
     if (els.galleryLoadingHint) {
+      const contactHtml = state.gallery.failCount >= 2
+        ? `<div style="margin-top:10px;font-size:13px;color:#6b6b60;">${escapeHtml(copy().galleryContactFallback)}<br><a href="mailto:studio.mean.de@gmail.com" style="color:inherit;font-weight:600;">studio.mean.de@gmail.com</a></div>`
+        : '';
       els.galleryLoadingHint.style.display = '';
       els.galleryLoadingHint.innerHTML = `
         <div>${escapeHtml(copy().errGalleryLoadHtml(err.message || err))}</div>
         <button type="button" class="gallery-more" data-gallery-retry style="margin-top:12px;">${escapeHtml(copy().galleryRetry)}</button>
+        ${contactHtml}
       `;
       els.galleryLoadingHint.querySelector('[data-gallery-retry]')?.addEventListener('click', () => {
         state.gallery.loaded = false;
