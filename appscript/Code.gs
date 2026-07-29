@@ -4648,6 +4648,84 @@ function buildBookingCalendarTitleFromRow_(row){
 /* 반환 규약: '이벤트가 캘린더에 더 이상 없음이 보장되면' true. 이미 지워져 있어도 true 다 —
    '이미 없음'과 '삭제 실패'를 같은 false 로 뭉치면, 손으로 지운 이벤트의 취소행을 정합 점검이
    매일 "삭제 재시도 실패"로 오탐 보고하고 ID 도 영영 못 지운다. false = 진짜 실패(재시도 필요). */
+/* ===== '사진촬영 일정' 자동 사본 (2026-07-29) =============================================
+   운영 관행: 확정 예약은 메인 캘린더 + '사진촬영 일정'(구글 캘린더, 아이폰에 표시) **양쪽 등록**.
+   지금까지 사본은 사장님이 예약마다 손으로 복사했다 — 이걸 자동화한다.
+   멱등: 같은 날 같은 제목이 이미 있으면 만들지 않는다(수동 사본과 공존). 쓰기 실패는 캐시에
+   표시해 두고 일일 정합 점검이 브리핑으로 알린다(권한 문제 등). */
+function getPhotoScheduleCalendar_(){
+  const target=getBusyCalendarMeta_().find(function(m){return !m.isPersonal&&CONFIG.TARGET_CALENDAR_NAMES.indexOf(m.name)>=0;});
+  if(!target) return null;
+  try{return CalendarApp.getCalendarById(target.id);}catch(e){return null;}
+}
+function ensurePhotoScheduleCopyForRow_(row){
+  try{
+    /* 실측(2026-07-29): 현재 '사진촬영 일정'은 iCloud 구독형이라 이 계정에서 쓰기 불가
+       ("Aktion nicht zulässig"). 권한 오류를 한 번 만나면 영구 플래그로 학습해 재시도·노이즈를
+       끊는다 — 사장님이 구글 캘린더로 전환하면 이 프로퍼티만 지우면 즉시 가동된다. */
+    try{ if(PropertiesService.getScriptProperties().getProperty('PHOTO_COPY_UNSUPPORTED')) return ''; }catch(p){}
+    if(String(row[BOOKING_COL['상태']]||'').trim()!=='확정됨') return '';
+    const dt=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+    const dtStr=dt.str;
+    if(!dtStr||dtStr.slice(11,16)==='00:00') return ''; // 시간미정 가등록은 확정 시간 후에
+    const cal=getPhotoScheduleCalendar_();
+    if(!cal) return '';
+    // 제목은 메인 이벤트 것을 그대로(수동 복사와 동일한 결과) — 없으면 표준 형식으로 구성
+    let title='';
+    let location='';
+    const mainId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+    if(mainId){
+      try{
+        const mev=(CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar()).getEventById(mainId);
+        if(mev){ title=mev.getTitle()||''; location=mev.getLocation()||''; }
+      }catch(e){}
+    }
+    if(!title){
+      title=`${row[BOOKING_COL['상품']]||''} | ${row[BOOKING_COL['고객명']]||''} | ${row[BOOKING_COL['인원']]||1}인 | ${parseMoneyValue_(row[BOOKING_COL['총결제액']])||0}€`;
+    }
+    const day=dtStr.slice(0,10);
+    const dayEvs=cal.getEvents(new Date(day+'T00:00:00'),new Date(day+'T23:59:59'));
+    for(let i=0;i<dayEvs.length;i++){
+      if(String(dayEvs[i].getTitle()||'')===title) return 'exists';
+    }
+    const dur=getBookingDurationMinFromRow_(row,60)||60;
+    const s=dt.obj;
+    cal.createEvent(title,s,new Date(s.getTime()+dur*60000),
+      {location:location,description:'메인 캘린더 사본 (ERP 자동 등록)'});
+    return 'created';
+  }catch(e){
+    const msg=String(e.message||'');
+    Logger.log('사진촬영 사본 생성 실패: '+msg);
+    if(/nicht zulässig|not allowed|permission|권한/i.test(msg)){
+      // 권한 문제 = 일시 장애가 아니라 캘린더 유형 문제 — 영구 학습(위 주석의 해제 절차 참고)
+      try{PropertiesService.getScriptProperties().setProperty('PHOTO_COPY_UNSUPPORTED',msg.slice(0,80));}catch(p){}
+      return '';
+    }
+    try{CacheService.getScriptCache().put('photo_copy_write_fail',msg.slice(0,120)||'1',21600);}catch(c){}
+    return '';
+  }
+}
+/* 취소/삭제 시 사본 정리 — 이름 포함 + '|' 형식(예약형 제목)만 지운다. 실패해도 조용히 넘어감
+   (정합 점검의 appleLinger 가 잔존을 잡아 보고한다). */
+function deletePhotoScheduleCopyForRow_(row){
+  try{
+    try{ if(PropertiesService.getScriptProperties().getProperty('PHOTO_COPY_UNSUPPORTED')) return false; }catch(p){}
+    const dtStr=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    if(!dtStr||!name) return false;
+    const cal=getPhotoScheduleCalendar_();
+    if(!cal) return false;
+    const day=dtStr.slice(0,10);
+    const evs=cal.getEvents(new Date(day+'T00:00:00'),new Date(day+'T23:59:59'));
+    let deleted=false;
+    evs.forEach(function(ev){
+      const t=String(ev.getTitle()||'');
+      if(t.indexOf(name)>=0&&t.indexOf('|')>=0){ try{ev.deleteEvent();deleted=true;}catch(e){} }
+    });
+    return deleted;
+  }catch(e){ return false; }
+}
+
 /* ===== 다일정(2일+ 작업) 지원 — 2026-07-29 휘슬러 건으로 도입 =========================
    기업 행사처럼 여러 날에 걸치는 작업은 예약행 하나(매출 1회 인식) + 날짜별 캘린더 이벤트로
    모델링한다. 추가 날짜들은 '추가일정JSON' 컬럼에 [{date,time,durationMin,eventId}] 로 저장 —
@@ -4747,6 +4825,7 @@ function ensureBookingCalendarEventForRow_(sheet,rowIndex,row){
     const deletedOk=eventId?deleteBookingCalendarEventById_(eventId):true;
     if(deletedOk&&eventCol!=null) sheet.getRange(rowIndex,eventCol+1).setValue('');
     try{ cleanupBookingExtraDayEvents_(sheet,rowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
+    try{ deletePhotoScheduleCopyForRow_(row); }catch(e){} // '사진촬영 일정' 사본도 정리
     try{
       const rowForTravel=sheet.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
       upsertTravelLedgerForBooking_(rowIndex,rowForTravel);
@@ -4768,6 +4847,8 @@ function ensureBookingCalendarEventForRow_(sheet,rowIndex,row){
   try{
     const rowForTravel=sheet.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
     upsertTravelLedgerForBooking_(rowIndex,rowForTravel);
+    // 확정 예약은 '사진촬영 일정' 사본까지 보장 (양쪽 등록 관행 자동화 — 확정됨 상태만, 멱등)
+    ensurePhotoScheduleCopyForRow_(rowForTravel);
   }catch(e){
     Logger.log('ensureBookingCalendarEventForRow_ travel ledger sync failed row '+rowIndex+': '+e.message);
   }
@@ -4841,6 +4922,14 @@ function auditBookingCalendarConsistency_(){
     (MISSING_BUSY_CALS_.personal||[]).forEach(function(n){
       push('failures',"개인 캘린더 '"+n+"' 미발견 — 공유 해제/이름 변경 확인 필요 (그 일정이 슬롯을 못 막습니다)");
     });
+  }catch(e){}
+  // 사진촬영 사본 쓰기 실패(권한 등)가 있었으면 원인을 알린다 — 조용히 수동 관행으로 돌아가는 것 방지
+  try{
+    const cw=CacheService.getScriptCache().get('photo_copy_write_fail');
+    if(cw){
+      push('failures',"'사진촬영 일정' 사본 자동 생성 실패 — 캘린더 쓰기 권한 확인 필요 ("+cw+")");
+      CacheService.getScriptCache().remove('photo_copy_write_fail');
+    }
   }catch(e){}
   const appleSameDayMatch=function(custName,dayStr){
     if(!custName||custName==='(이름없음)'||!appleEvents.length) return null;
@@ -4932,6 +5021,13 @@ function auditBookingCalendarConsistency_(){
          이 상태 = **양쪽 등록이 운영 관행(정상)**이다. 문제로 집계하지 않고 진단 필드로만 남긴다
          (양쪽 다 가용성을 막으므로 이중예약 위험 없음). */
       if(apple) push('dupBoth',name+' '+dtStr.slice(0,16));
+      /* 확정인데 사진촬영 사본이 없다 → 자동 생성(양쪽 등록 자동화의 일일 백필 —
+         기능 도입 전 확정건·수동 등록 누락분을 여기서 채운다). */
+      else if(!appleFeedFailed&&String(status||'').trim()==='확정됨'){
+        try{
+          if(ensurePhotoScheduleCopyForRow_(row)==='created') push('healed',name+' 사진촬영 사본 생성');
+        }catch(e){}
+      }
     }
     /* 다일정 추가 날짜 — 이벤트가 증발하면 그 날 슬롯이 조용히 열린다(1일차와 같은 보호).
        애플 사본이 있으면 정상(양쪽 등록 관행), 피드 실패 중엔 판정 보류. */
@@ -9813,6 +9909,7 @@ function cancelBooking(eventId){
       if(BOOKING_COL['캘린더ID']!=null) sh.getRange(idx+2,BOOKING_COL['캘린더ID']+1).setValue('');
     }
     try{ cleanupBookingExtraDayEvents_(sh,idx+2,row); }catch(e){} // 다일정 추가 날짜도 정리
+    try{ deletePhotoScheduleCopyForRow_(row); }catch(e){} // '사진촬영 일정' 사본도 정리
     const email=String(row[4]||'');const rowLang=String(row[5]||'ko').toLowerCase().trim();
     const TC=EMAIL_I18N[rowLang]||EMAIL_I18N.ko;const formattedDt=parseDateSafe_(row[0]).str||String(row[0]);
     const products=getCachedProducts_();const product=products.find(p=>p.nameKo===row[7]);
@@ -12194,6 +12291,7 @@ function deleteBookingForAgent_(token,payload){
     selToDelete.sort(function(a,b){return b-a;}).forEach(function(rn){selSh.deleteRow(rn);});
     // ②b 다일정 추가 날짜 이벤트 정리 (행이 사라지기 전에 — 행이 유일한 포인터)
     try{ cleanupBookingExtraDayEvents_(null,0,row); }catch(e){}
+    try{ deletePhotoScheduleCopyForRow_(row); }catch(e){} // '사진촬영 일정' 사본도 정리
     // ③ 예약 행 삭제
     sh.deleteRow(rIdx);
     // ④ 참조 보정 — 공용 헬퍼 (일괄삭제 경로와 공유)
@@ -13610,11 +13708,14 @@ function batchUpdateAdvanced(token,list,type,val){
       try{
         const evId=BOOKING_COL['캘린더ID']!=null?String(sh.getRange(i.rowIndex,BOOKING_COL['캘린더ID']+1).getValue()||'').trim():'';
         if(evId) evCleared=deleteBookingCalendarEventById_(evId);
-        // 다일정 추가 날짜 이벤트 — 행 삭제 전에 정리(행이 유일한 포인터)
-        if(BOOKING_COL['추가일정JSON']!=null){
+        // 다일정 추가 날짜·사진촬영 사본 — 행 삭제 전에 정리(행이 유일한 포인터)
+        {
           const fakeRow=[];
-          fakeRow[BOOKING_COL['추가일정JSON']]=sh.getRange(i.rowIndex,BOOKING_COL['추가일정JSON']+1).getValue();
+          if(BOOKING_COL['추가일정JSON']!=null) fakeRow[BOOKING_COL['추가일정JSON']]=sh.getRange(i.rowIndex,BOOKING_COL['추가일정JSON']+1).getValue();
+          fakeRow[BOOKING_COL['예약일시']]=sh.getRange(i.rowIndex,BOOKING_COL['예약일시']+1).getValue();
+          fakeRow[BOOKING_COL['고객명']]=sh.getRange(i.rowIndex,BOOKING_COL['고객명']+1).getValue();
           cleanupBookingExtraDayEvents_(null,0,fakeRow);
+          try{ deletePhotoScheduleCopyForRow_(fakeRow); }catch(e){}
         }
       }catch(e){evCleared=false;Logger.log('batch delete calendar cleanup fail row '+i.rowIndex+': '+e.message);}
       if(evCleared){
@@ -24398,6 +24499,7 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
   try{ cleanupBookingExtraDayEvents_(bookingSheet,bookingRowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
+  try{ deletePhotoScheduleCopyForRow_(row); }catch(e){} // '사진촬영 일정' 사본도 정리
   // 취소 이메일 발송
   const email=String(row[4]||'');
   const lang=String(row[5]||'ko').toLowerCase().trim();
@@ -24778,6 +24880,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
   try{ cleanupBookingExtraDayEvents_(bookingSheet,bookingRowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
+  try{ deletePhotoScheduleCopyForRow_(row); }catch(e){} // '사진촬영 일정' 사본도 정리
   // 슬롯이 풀렸다 — 캐시를 즉시 무효화해야 재예약 고객이 열린 시간을 본다 (이전엔 누락돼 최대 30분 지연)
   bumpCalCacheVer_();
   const email=String(row[BOOKING_COL['이메일']]||'').trim();

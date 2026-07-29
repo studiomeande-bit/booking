@@ -126,6 +126,12 @@ const MODULE = [
    export function setApple(events,fail){ __APPLE__=events||[]; __APPLE_FAIL__=!!fail; }
    var MISSING_BUSY_CALS_={target:[],personal:[]};
    export function setMissingCals(m){ MISSING_BUSY_CALS_=m||{target:[],personal:[]}; }
+   let __COPYCALLS__=[];
+   let __COPYRESULT__='exists';
+   function ensurePhotoScheduleCopyForRow_(row){ __COPYCALLS__.push(String(row[BOOKING_COL['고객명']]||'')); return __COPYRESULT__; }
+   function deletePhotoScheduleCopyForRow_(row){ return true; }
+   export function copyCalls(){ return __COPYCALLS__; }
+   export function setCopyResult(r){ __COPYRESULT__=r; __COPYCALLS__=[]; }
    let __CONFLICT__=false;
    let __CONFLICT_ARGS__=null;
    function checkConflict_(events,s,e,g,l){ __CONFLICT_ARGS__={n:events.length,s:s,e:e,g:g,l:l}; return __CONFLICT__; }
@@ -485,6 +491,26 @@ async function runScenarios(M, rec) {
     rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
   }
 
+  // ── 9) 사진촬영 사본 일일 백필 — 확정인데 사본 없으면 자동 생성 ──
+  {
+    M.resetCals(); M.resetEnsure(); M.setApple([], false);
+    const cal = new FakeCalendar('main-cal'); __CALS__['main-cal'] = cal;
+    const t9 = dayOffset(6, '11:00');
+    const ms9 = Date.parse(t9.replace(' ', 'T') + ':00');
+    cal.events.push(new FakeEvent('c1', ms9, ms9 + 3600000, '스튜디오 | 사본대상 | 2인'));
+    M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t9, 상태: '확정됨', 고객명: '사본대상', 캘린더ID: 'c1' })]));
+    M.setCopyResult('created');
+    let rep = M.auditBookingCalendarConsistency_();
+    rec('사본백필: 확정+사본없음 → 생성', M.copyCalls().includes('사본대상'), true);
+    rec('사본백필: healed 로 보고', (rep.healed || []).some(h => h.indexOf('사진촬영 사본') >= 0), true);
+    // 대기중 상태는 사본을 만들지 않는다
+    M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t9, 상태: '대기중', 고객명: '대기고객', 캘린더ID: 'c1' })]));
+    M.setCopyResult('created');
+    rep = M.auditBookingCalendarConsistency_();
+    rec('사본백필: 대기중은 생성 안 함', M.copyCalls().includes('대기고객'), false);
+    M.setCopyResult('exists');
+  }
+
   // ── 8) 구성 캘린더 소실 보고 — 공유 해제/이름 변경이 조용히 슬롯을 여는 사고 방지 ──
   {
     M.resetCals(); M.resetEnsure(); M.setApple([], false);
@@ -533,8 +559,8 @@ const STRUCTURAL = [
     /if\(deleteBookingCalendarEventById_\(eventId\)\)\{\n\s*if\(BOOKING_COL\['캘린더ID'\]!=null\) sh\.getRange\(idx\+2/],
   ['어드민 취소: 삭제 성공시에만 클리어',
     /if\(eventId&&deleteBookingCalendarEventById_\(eventId\)\)\{ \/\/ 실패 시 ID 보존/],
-  ['자동취소: 삭제 성공시에만 클리어 + 캐시 무효화',
-    /if\(eventId&&deleteBookingCalendarEventById_\(eventId\)\)\{ \/\/ 실패 시 ID 보존[\s\S]{0,300}bumpCalCacheVer_\(\);/],
+  ['자동취소: 삭제 성공시에만 클리어 + 다일정·사본 정리 + 캐시 무효화',
+    /if\(eventId&&deleteBookingCalendarEventById_\(eventId\)\)\{ \/\/ 실패 시 ID 보존[\s\S]{0,600}deletePhotoScheduleCopyForRow_\(row\);[\s\S]{0,200}bumpCalCacheVer_\(\);/],
   ['ensure 비활성 분기: 삭제 성공시에만 클리어',
     /const deletedOk=eventId\?deleteBookingCalendarEventById_\(eventId\):true;\n\s*if\(deletedOk&&eventCol!=null\)/],
   ['일괄삭제: 이벤트 정리 성공시에만 행 삭제(실패 행 보존) + 다일정 정리 + 참조보정 + 캐시 무효화',
@@ -649,6 +675,9 @@ const FAULTS = [
   ['구성 캘린더 소실 보고 제거(공유 해제를 아무도 모름)',
     /\(MISSING_BUSY_CALS_\.target\|\|\[\]\)\.forEach\(function\(n\)\{/,
     '([]).forEach(function(n){'],
+  ['사진촬영 사본 백필 제거(양쪽 등록 자동화 무력화)',
+    /else if\(!appleFeedFailed&&String\(status\|\|''\)\.trim\(\)==='확정됨'\)\{/,
+    'else if(false){'],
 ];
 
 let caught = 0;
