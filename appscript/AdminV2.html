@@ -2319,6 +2319,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <button class="btn btn-sm btn-outline" onclick="executeSelBatch()">적용</button>
         <span id="selBatchCount" style="font-size:12px;color:#64748b;"></span>
         <button class="btn btn-sm btn-outline" style="color:#9a3412;border-color:#fed7aa;" onclick="openRecentHandoverUndo()" title="마감돼 목록에서 사라진 수령 기록 취소 (최근 7일)">수령 되돌리기</button>
+        <button class="btn btn-sm btn-outline" style="color:#065f46;border-color:#a7f3d0;" onclick="openUnpaidExtras()" title="인화장부에 '미결제'로 남은 셀렉 추가금 수납 처리">추가금 수납<span id="selExtraUnpaidBadge" style="display:none;margin-left:5px;background:#fee2e2;color:#b91c1c;border-radius:999px;padding:0 6px;font-size:10px;font-weight:800;"></span></button>
         <span style="margin-left:auto;font-size:12px;color:#64748b;font-weight:700;">상태 점검</span>
         <input type="text" id="sel_caseQuery" placeholder="고객명/연락처" onkeydown="if(event.key==='Enter')diagnoseSelectCaseUi()" style="width:160px;padding:6px 10px;font-size:12px;">
         <button class="btn btn-sm btn-outline" onclick="diagnoseSelectCaseUi()">점검</button>
@@ -6409,10 +6410,21 @@ function saveEdit(){
       if(dateChanged){
         // ISO 형식으로 변환해서 전달 (Berlin time)
         const isoStr=newDate+'T'+newTime+':00';
-        google.script.run
-          .withSuccessHandler(()=>{closeModal();loadAll();})
-          .withFailureHandler(handleApiError)
-          .rescheduleBookingAdmin(adminToken,d.rowIndex,isoStr,d.memo||'');
+        const runReschedule=(allow)=>{
+          google.script.run
+            .withSuccessHandler(res=>{
+              if(res&&res.conflict&&!allow){
+                if(confirm((res.message||'옮겨 갈 시간에 다른 일정이 있습니다.')+'\n\n겹친 상태로 그대로 변경할까요?')) runReschedule(true);
+                return;
+              }
+              if(res&&res.calendarReadFailed){alert(res.message||'캘린더 확인 불가 — 잠시 후 다시 시도해 주세요.');return;}
+              if(res&&res.appleNote) alert('일정 변경 완료.\n\n⚠ '+res.appleNote);
+              closeModal();loadAll();
+            })
+            .withFailureHandler(handleApiError)
+            .rescheduleBookingAdmin(adminToken,d.rowIndex,isoStr,d.memo||'',allow===true);
+        };
+        runReschedule(false);
       } else {
         closeModal();loadAll();
       }
@@ -8592,6 +8604,20 @@ function saveManual(){
   res.innerHTML = '<span class="spinner"></span> 처리 중...';
 
   google.script.run.withSuccessHandler(r => {
+    // 충돌 가드: 그 시간이 이미 차 있으면 서버가 확인을 요구한다 — 강행은 명시적 선택
+    if(r && r.conflict){
+      res.textContent = '';
+      if(confirm((r.message||'해당 시간에 다른 일정이 있습니다.')+'\n\n겹친 상태로 그대로 등록할까요?')){
+        const forced = Object.assign({}, data, {allowConflict:true});
+        res.innerHTML = '<span class="spinner"></span> 처리 중...';
+        google.script.run.withSuccessHandler(r2 => {
+          if(r2.ok){alert('등록 완료 (일정 겹침 승인됨 — 메모에 [충돌확인필요] 표시)');res.textContent='';loadAll();}
+          else{res.style.color='#ef4444';res.textContent='오류: '+r2.message;}
+        }).withFailureHandler(e=>{res.style.color='#ef4444';res.textContent='오류: '+e.message;})
+        .addManualBookingAdmin(adminToken, forced);
+      }
+      return;
+    }
     if(r.ok){
       alert('등록 완료\n금액: ' + (r.priceDisplayText || r.priceText) + (r.depositText ? '\n예약금: ' + r.depositText : '') + (data.sendEmail ? '\n확정 메일이 발송되었습니다.' : ''));
       res.textContent = '';
@@ -9498,6 +9524,55 @@ function openRecentHandoverUndo(){
   .adminRpc(adminToken,'listRecentSelectHandovers',{days:7,limit:20});
 }
 
+/* 셀렉 추가금 수납 — 인화장부 행은 '미결제'로 태어난다. 인화내역 수정 모달로 결제수단을 고칠
+   수는 있었지만 미수 집계·수납일 기록이 없어 사실상 방치되던 지점. 여기가 전용 수납 버튼이다
+   (세션ID 대조 + 금액 검증 + [수납] 스탬프 — 범용 편집엔 없는 안전장치 포함). */
+function refreshUnpaidExtrasBadge(){
+  const el=document.getElementById('selExtraUnpaidBadge');
+  if(!el)return;
+  google.script.run.withSuccessHandler(res=>{
+    const n=(res&&Number(res.count))||0;
+    if(n>0){el.textContent=String(n);el.style.display='';}
+    else{el.textContent='';el.style.display='none';}
+  }).withFailureHandler(()=>{/* 배지는 보조 정보 — 실패해도 화면을 막지 않는다 */})
+  .adminRpc(adminToken,'listUnpaidSelectExtras',{limit:1});
+}
+
+function openUnpaidExtras(){
+  google.script.run.withSuccessHandler(res=>{
+    const items=(res&&res.items)||[];
+    if(!items.length){showToast('미수납 추가금이 없습니다. 👍','ok');refreshUnpaidExtrasBadge();return;}
+    const totalTxt='€'+Number((res&&res.total)||0).toFixed(2);
+    const more=(Number(res.count)||0)>items.length?`\n(외 ${Number(res.count)-items.length}건 더 있음)`:'';
+    const listText=items.map((it,i)=>`${i+1}. ${it.name} · €${Number(it.amount||0).toFixed(2)} · 주문 ${it.salesDate||'-'}${it.items?' · '+String(it.items).slice(0,30):''}`).join('\n');
+    const pick=prompt(`수납 처리할 건의 번호를 입력하세요 (미수납 ${res.count}건 / 합계 ${totalTxt}):\n\n${listText}${more}\n\n※ 목록은 지금 시점 기준입니다. 다른 창에서 장부를 고쳤다면 취소하고 다시 여세요.`,'');
+    if(pick===null)return;
+    const it=items[parseInt(pick,10)-1];
+    if(!it){showToast('잘못된 번호입니다.','warn');return;}
+    const pm=prompt(`${it.name}님 · €${Number(it.amount||0).toFixed(2)}\n결제수단을 입력하세요: 현금 / 카드 / 계좌이체`,'현금');
+    if(pm===null)return;
+    const method=String(pm).trim();
+    if(['현금','카드','계좌이체'].indexOf(method)<0){showToast("결제수단은 현금/카드/계좌이체 중 하나여야 합니다.",'warn');return;}
+    if(!confirm(`${it.name}님 · €${Number(it.amount||0).toFixed(2)} 을 '${method}'로 수납 기록합니다.\n인화장부 ${it.rowIndex}행의 결제수단이 바뀝니다.\n계속할까요?`))return;
+    google.script.run.withSuccessHandler(r2=>{
+      if(r2&&r2.ok&&r2.alreadyPaid){showToast(`이미 수납 처리된 건입니다 (${r2.payMethod}).`,'warn');}
+      else if(r2&&r2.ok){showToast(`수납 완료 — ${r2.name}님 €${Number(r2.amount||0).toFixed(2)} (${r2.payMethod})`,'ok');}
+      else{alert('수납 실패: '+((r2&&r2.message)||'오류'));return;}
+      refreshUnpaidExtrasBadge();
+    }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+    /* 세션ID를 1순위로 보낸다 — 행번호는 프롬프트를 읽는 사이에 밀릴 수 있고, 밀린 행이 하필
+       같은 고객의 다른 추가금이면 이름 대조로는 못 걸러낸다. 금액까지 서버가 되짚는다. */
+    .adminRpc(adminToken,'markSelectExtraPaid',{
+      sessionId:it.sessionId||'',
+      printRowIndex:it.rowIndex,
+      expectName:it.name,
+      expectAmount:it.amount,
+      payMethod:method
+    });
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .adminRpc(adminToken,'listUnpaidSelectExtras',{limit:20});
+}
+
 /* 수령방식 전환 (픽업↔우편) — 전화로 변경 요청받았을 때 원클릭 처리.
    픽업→우편: 예약·캘린더 자동 취소 + 주소 저장. 우편→픽업: 일정은 출력 후 고객 예약(인화 완료면 안내메일 즉시). */
 // 합성된 '수령인:/주소:' 텍스트에서 도로명 주소 부분만 추출 (프롬프트 프리필용, 중첩 저장 방지)
@@ -9777,6 +9852,7 @@ function _runNextBatch(){
 
 function loadSelectHistory(){
   document.getElementById('selectHistoryBody').innerHTML='<tr><td colspan="16" style="text-align:center;padding:20px;"><span class="spinner"></span></td></tr>';
+  if(typeof refreshUnpaidExtrasBadge==='function') refreshUnpaidExtrasBadge();
   google.script.run.withSuccessHandler(function(res){
     allSelectDashboard=Array.isArray(res)?res:[];
     if(allSelectDashboard.length===0){
@@ -13727,6 +13803,20 @@ function confirmQuoteConvert(){
     google.script.run
       .withSuccessHandler(res=>{
         release();
+        if(res&&res.conflict){
+          if(confirm((res.message||'해당 시간에 다른 일정이 있습니다.')+'\n\n겹친 상태로 그대로 전환할까요?')){
+            runExclusive('quote:convert:'+number, release2=>{
+              google.script.run
+                .withSuccessHandler(r2=>{release2();
+                  if(r2&&r2.ok){showToast(`예약 전환 완료 — 일정 겹침 승인됨 (행 ${r2.bookingRowIndex})`,'ok');closeQuoteConvertModal();loadQuoteList();}
+                  else{showToast('전환 실패: '+((r2&&r2.message)||''),'err');}
+                })
+                .withFailureHandler(e=>{release2();handleApiError(e);})
+                .convertQuoteToBookingAdmin(adminToken,number,{date,time,durationMin,people,allowConflict:true});
+            });
+          }
+          return;
+        }
         if(res&&res.ok){
           showToast(`예약 전환 완료 (행 ${res.bookingRowIndex})`,'ok');
           closeQuoteConvertModal();loadQuoteList();

@@ -263,6 +263,25 @@ function buildPrintSheetRow_(colMap, data) {
   return row;
 }
 
+/* 인화/추가금 행이 아직 미수인가. 예약 행의 explicitlyUnpaid 와 **같은 규칙**: '미결제'라고
+   적혀 있을 때만 미수다. 빈칸은 미수가 아니다 — 옛 행·워크인 행의 결제수단 칸은 자주 비어 있고,
+   빈칸을 미수로 치면 이미 현장에서 받은 돈이 전부 미수금으로 되살아난다. */
+function isPrintRowUnpaid_(normalized){
+  const pm=String((normalized&&normalized.payMethod)||'').trim();
+  if(!pm) return false;
+  return /미결제|unpaid|offen/i.test(pm);
+}
+/* 메모에 찍은 '[수납] yyyy-MM-dd' 스탬프에서 실제 수납일을 되읽는다.
+   매출날짜(주문일)와 수납일이 다를 수 있어서, 현금 시재는 이 날짜를 써야 맞는다.
+   ⚠ 반드시 **마지막** 스탬프: 수납→재주문([수납해제])→재수납 사이클은 메모를 지우지 않고
+   덧붙이므로, 첫 스탬프를 읽으면 무효화된 옛 결제일로 시재가 잡힌다. */
+function printRowPaidDate_(memo){
+  const all=String(memo||'').match(/\[수납\]\s*\d{4}-\d{2}-\d{2}/g);
+  if(!all||!all.length) return '';
+  const m=all[all.length-1].match(/(\d{4}-\d{2}-\d{2})/);
+  return m?m[1]:'';
+}
+
 function normalizePrintRow_(row, rowIdx, colMap) {
   const hasLegacyHeader =
     colMap['매출날짜'] === 1 &&
@@ -336,6 +355,10 @@ function adminRpc(token, action, payload){
       return undoSelectHandoverAdmin(token, payload||{});
     case 'listRecentSelectHandovers':
       return listRecentSelectHandoversAdmin(token, payload||{});
+    case 'listUnpaidSelectExtras':
+      return listUnpaidSelectExtrasAdmin(token, payload||{});
+    case 'markSelectExtraPaid':
+      return markSelectExtraPaidAdmin(token, payload||{});
     case 'getStudioPresenceState':
       return getStudioPresenceAdmin(token);
     case 'openStudioPresence':
@@ -1196,6 +1219,11 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-handover-undo') return jsonOk_(undoSelectHandoverAdmin(token,payload));
         if(action==='select-pickup-reminder-run') return jsonOk_(runSelectPickupRemindersAdmin(token,payload));
         if(action==='select-add-reshoot') return jsonOk_(addSelectReshootForAgent_(token,payload));
+        if(action==='select-extra-unpaid') return jsonOk_(listUnpaidSelectExtrasAdmin(token,payload));
+        if(action==='select-extra-paid') return jsonOk_(markSelectExtraPaidAdmin(token,payload));
+        if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
+        if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token));
+        if(action==='icloud-status') return jsonOk_(getIcloudFeedStatusAdmin(token));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='studio-pin-status') return jsonOk_(getStudioPinStatusAdmin(token));
         if(action==='studio-pin-set'){
@@ -3126,6 +3154,7 @@ function _upsertConsultationCalendarEvent_(c,appt,existingEventId){
   const events=getEventsForRange_(dayStart,dayEnd).filter(function(ev){
     return !safeExistingId || String(ev.id||'')!==safeExistingId;
   });
+  if(CAL_READ_FAILED_) throw new Error('일정 확인이 일시적으로 불가합니다. 잠시 후 다시 시도해 주세요.');
   if(checkConflict_(events,appt.start.getTime(),appt.end.getTime(),'biz',appt.location)){
     throw new Error('선택한 상담 시간에 이미 일정이 있습니다. 다른 시간을 선택해 주세요.');
   }
@@ -4552,20 +4581,28 @@ function buildBookingCalendarTitleFromRow_(row){
   return `${prefix}${productName} | ${name} | ${people}인 | ${priceLabel}`;
 }
 
+/* 반환 규약: '이벤트가 캘린더에 더 이상 없음이 보장되면' true. 이미 지워져 있어도 true 다 —
+   '이미 없음'과 '삭제 실패'를 같은 false 로 뭉치면, 손으로 지운 이벤트의 취소행을 정합 점검이
+   매일 "삭제 재시도 실패"로 오탐 보고하고 ID 도 영영 못 지운다. false = 진짜 실패(재시도 필요). */
 function deleteBookingCalendarEventById_(eventId){
   const safeEventId=String(eventId||'').trim();
-  if(!safeEventId) return false;
+  if(!safeEventId) return true; // 지울 대상이 없으면 '없음 보장' 성립
+  let ev=null;
   try{
     const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
-    const ev=calendar.getEventById(safeEventId);
-    if(ev){
-      ev.deleteEvent();
-      return true;
-    }
+    ev=calendar.getEventById(safeEventId);
+  }catch(e){
+    Logger.log('deleteBookingCalendarEventById_ lookup failed: '+e.message);
+    return false; // 조회 자체가 실패 — 있는지 없는지 모르므로 실패로 취급
+  }
+  if(!ev) return true; // 이미 없음 (멱등 삭제)
+  try{
+    ev.deleteEvent();
+    return true;
   }catch(e){
     Logger.log('deleteBookingCalendarEventById_ failed: '+e.message);
+    return false;
   }
-  return false;
 }
 
 function syncBookingCalendarEventFromRow_(row,eventId){
@@ -4598,8 +4635,9 @@ function ensureBookingCalendarEventForRow_(sheet,rowIndex,row){
   const status=row ? row[BOOKING_COL['상태']] : '';
   const eventId=eventCol!=null ? String(row[eventCol]||'').trim() : '';
   if(isBookingCalendarInactiveStatus_(status)){
-    if(eventId) deleteBookingCalendarEventById_(eventId);
-    if(eventCol!=null) sheet.getRange(rowIndex,eventCol+1).setValue('');
+    // 삭제 실패 시 ID 보존 — 다음 ensure/정합 점검이 재시도할 수 있는 유일한 단서다
+    const deletedOk=eventId?deleteBookingCalendarEventById_(eventId):true;
+    if(deletedOk&&eventCol!=null) sheet.getRange(rowIndex,eventCol+1).setValue('');
     try{
       const rowForTravel=sheet.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
       upsertTravelLedgerForBooking_(rowIndex,rowForTravel);
@@ -4625,6 +4663,227 @@ function ensureBookingCalendarEventForRow_(sheet,rowIndex,row){
     Logger.log('ensureBookingCalendarEventForRow_ travel ledger sync failed row '+rowIndex+': '+e.message);
   }
   return syncedEventId||'';
+}
+
+/* ===== 예약↔캘린더 일일 정합 점검 =========================================================
+   가용성 판정은 캘린더만 읽는다 — 예약 시트는 슬롯 계산에 단 한 번도 참조되지 않는다. 그래서
+   '시트에는 있는데 캘린더에 없는' 활성 예약은 시스템 입장에서 존재하지 않는 예약이 되고, 그
+   슬롯이 공개 예약 페이지에 다시 열린다 = 이중예약의 근원. 발생 경로는 다양하다(수기등록의
+   캘린더 체크 해제, 캘린더 앱에서 실수로 삭제, 시간변경 중 캘린더 쓰기 실패, 취소 시 삭제 실패
+   잔재…) — 경로마다 막는 대신, 매 브리핑마다 오늘~+60일을 전수 대조한다.
+   - 활성인데 이벤트 없음 → ensureBookingCalendarEventForRow_ 로 즉시 재생성(자가치유)
+   - 취소인데 이벤트 남음 → 삭제 재시도 (취소 경로가 실패 시 ID를 보존해 두므로 가능)
+   - 시간 불일치 → **보고만** 한다. 캘린더에서 손으로 옮긴 일정을 시트 시간으로 되돌리면
+     사장님의 의도적 이동을 시스템이 몰래 원위치시키는 꼴이라 자동 수정이 더 위험하다.
+   - 활성 예약끼리 시간 겹침 → 보고 (이미 성립한 이중예약을 잡는 마지막 그물)
+   시간미정 00:00 관행 행(MRT 가등록)은 이벤트/겹침 검사에서 제외한다. */
+function auditBookingCalendarConsistency_(){
+  const {bookingSheet}=ensureSheets_();
+  const rows=bookingSheet.getDataRange().getValues();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const horizon=new Date(); horizon.setDate(horizon.getDate()+60);
+  const horizonStr=Utilities.formatDate(horizon,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const CAP=10; // 브리핑 메일 크기 보호 — 목록은 10건까지, 초과분은 count 로만 (failures 포함)
+  const report={date:today,checked:0,healed:[],healedCount:0,missing:[],missingCount:0,
+                drifted:[],driftedCount:0,deleteRetried:[],deleteRetriedCount:0,
+                overlaps:[],overlapsCount:0,dupBoth:[],dupBothCount:0,
+                appleLinger:[],appleLingerCount:0,appleMovedCount:0,
+                orphans:[],orphansCount:0,
+                failures:[],failuresCount:0};
+  const push=function(listName,text){
+    report[listName+'Count']++;
+    if(report[listName].length<CAP) report[listName].push(text);
+  };
+  /* 애플 캘린더 대조 — 운영 관행: 확정 전에는 구글, 확정 후에는 애플 '사진 촬영' 캘린더로 이관
+     (2026-07-28 사장님 확인). 그래서 확정 예약이 구글에 없는 것은 **정상**이며, 무턱대고 재생성
+     하면 구글+애플 중복이 생긴다. 이름 포함 + 같은 날짜로 애플 쪽 존재를 확인한 뒤에만 '증발'로
+     판정한다. 애플 피드 자체가 실패하면 이번 회차의 재생성을 전부 보류한다(중복 폭탄 방지). */
+  let appleEvents=[];
+  try{
+    appleEvents=fetchAppleCalendarDetailedEvents_(new Date(today+'T00:00:00'),new Date(horizonStr+'T23:59:59'))||[];
+  }catch(e){ICLOUD_DETAIL_READ_FAILED_=true;}
+  const appleFeedFailed=ICLOUD_DETAIL_READ_FAILED_;
+  if(appleFeedFailed) push('failures','애플 캘린더 피드 확인 불가 — 이번 회차는 이벤트 재생성·이관 판정을 보류합니다');
+  const appleSameDayMatch=function(custName,dayStr){
+    if(!custName||custName==='(이름없음)'||!appleEvents.length) return null;
+    for(let k=0;k<appleEvents.length;k++){
+      const a=appleEvents[k];
+      const s=Number(a.start)||0;
+      if(!s) continue;
+      if(Utilities.formatDate(new Date(s),CONFIG.TIMEZONE,'yyyy-MM-dd')!==dayStr) continue;
+      if(String(a.title||'').indexOf(custName)>=0) return a;
+    }
+    return null;
+  };
+  const active=[];
+  const knownIds=new Set(); // 역방향 고아 탐지용 — 시트가 아는 모든 구글 이벤트 ID
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    if(!row[0]) continue;
+    // 창 밖 행이라도 캘린더ID는 수집해 둔다(먼 미래 예약 이벤트를 고아로 오판하지 않도록)
+    const anyId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+    if(anyId) knownIds.add(anyId);
+    const dtStr=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+    const day=dtStr.slice(0,10);
+    if(!day||day<today||day>horizonStr) continue;
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+    const name=String(row[BOOKING_COL['고객명']]||'').trim()||'(이름없음)';
+    if(isBookingCalendarInactiveStatus_(status)){
+      if(eventId){
+        try{
+          if(deleteBookingCalendarEventById_(eventId)){
+            bookingSheet.getRange(r+1,BOOKING_COL['캘린더ID']+1).setValue('');
+            bumpCalCacheVer_();
+            push('deleteRetried',name+' '+dtStr.slice(0,16));
+          }else{
+            push('failures','취소건 이벤트 삭제 재시도 실패: '+name+' '+dtStr.slice(0,16));
+          }
+        }catch(e){push('failures','취소건 정리 오류: '+name+' — '+String(e.message||'').slice(0,80));}
+      }
+      /* 취소됐는데 애플 캘린더에 일정이 남아 있으면 그 슬롯이 계속 막힌다(매출 손실).
+         시스템은 애플에 쓸 수 없으므로 보고만 — 사장님이 애플에서 직접 지워야 한다. */
+      if(!appleFeedFailed&&appleSameDayMatch(name,day)){
+        push('appleLinger',name+' '+dtStr.slice(0,16));
+      }
+      continue;
+    }
+    report.checked++;
+    /* MRT 시간미정 가등록 관행(00:00). 이벤트 재생성·겹침 검사에서만 제외한다 — 드리프트(장부
+       00:00 ↔ 캘린더 실시간) 보고는 의도적으로 남긴다: '캘린더엔 시간이 잡혔는데 장부가 시간미정'
+       이라는 상태 자체가 사장님이 시간을 확정해야 한다는 신호이고, 확정 전까지 매일 보이는 게 맞다. */
+    const isTbd=dtStr.slice(11,16)==='00:00';
+    let ev=null;
+    if(eventId){ try{ev=calendar.getEventById(eventId);}catch(e){ev=null;} }
+    const apple=isTbd?null:appleSameDayMatch(name,day);
+    if(!ev&&!isTbd){
+      if(apple){
+        // 확정 후 애플로 이관된 정상 상태 — 재생성하면 구글+애플 중복이 된다. 시간만 대조.
+        report.appleMovedCount++;
+        const aStart=Utilities.formatDate(new Date(Number(apple.start)),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+        if(aStart!==dtStr.slice(0,16)){
+          push('drifted',name+': 장부 '+dtStr.slice(0,16)+' ↔ 애플 '+aStart);
+        }
+      }else if(appleFeedFailed){
+        // 애플 피드를 못 읽는 동안은 '증발'인지 '이관'인지 알 수 없다 — 재생성 보류(중복 방지)
+      }else{
+        // 구글에도 애플에도 없다 — 이 순간 이 슬롯은 예약 페이지에 빈 시간으로 보인다. 즉시 재생성.
+        try{
+          const healedId=ensureBookingCalendarEventForRow_(bookingSheet,r+1,row);
+          if(healedId) push('healed',name+' '+dtStr.slice(0,16));
+          else push('missing',name+' '+dtStr.slice(0,16));
+        }catch(e){push('missing',name+' '+dtStr.slice(0,16)+' ('+String(e.message||'').slice(0,60)+')');}
+      }
+    }else if(ev){
+      const evStart=Utilities.formatDate(ev.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+      if(evStart!==dtStr.slice(0,16)){
+        push('drifted',name+': 장부 '+dtStr.slice(0,16)+' ↔ 캘린더 '+evStart);
+      }
+      // 구글에도 있고 애플에도 있다 — 이관 후 재생성됐거나 복사된 중복. 한쪽을 지워야 한다.
+      if(apple) push('dupBoth',name+' '+dtStr.slice(0,16));
+    }
+    if(!isTbd){
+      const startObj=parseDateSafe_(row[BOOKING_COL['예약일시']]).obj;
+      if(!isNaN(startObj.getTime())){
+        const dur=getBookingDurationMinFromRow_(row,60)||60;
+        active.push({name:name,dt:dtStr.slice(0,16),startMs:startObj.getTime(),endMs:startObj.getTime()+dur*60000});
+      }
+    }
+  }
+  // 활성 예약끼리 순수 시간 겹침 — 1인 스튜디오는 동시에 두 촬영이 물리적으로 불가능하다.
+  // 바로 앞 원소가 아니라 '지금까지 가장 늦게 끝나는 예약'과 비교해야 한다 — 긴 예약(A) 뒤에
+  // 짧은 B·C 가 오면 인접쌍 비교는 A↔C 겹침을 놓친다.
+  active.sort(function(a,b){return a.startMs-b.startMs;});
+  let maxEndIdx=-1;
+  for(let i=0;i<active.length;i++){
+    if(maxEndIdx>=0&&active[i].startMs<active[maxEndIdx].endMs){
+      push('overlaps',active[maxEndIdx].name+' '+active[maxEndIdx].dt+' ↔ '+active[i].name+' '+active[i].dt);
+    }
+    if(maxEndIdx<0||active[i].endMs>active[maxEndIdx].endMs) maxEndIdx=i;
+  }
+  /* 역방향 고아 탐지 — 시트엔 없는데 구글 캘린더엔 예약형 이벤트가 있는 경우. 생성 도중 실패나
+     삭제 실패로 남은 잔재이며, 슬롯을 영구히 막으면서 어떤 화면에도 안 잡혀 매출만 조용히 샌다.
+     자동 삭제는 위험(사장님이 손으로 넣은 일정일 수 있음) → 보고만 한다. 픽업·가예약·상주오픈·
+     종일 이벤트는 제외하고, 시트가 아는 ID도 제외한다. */
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    if(selSh&&SELECT_COL['픽업캘린더ID']!=null){
+      selSh.getDataRange().getValues().slice(1).forEach(function(sr){
+        const pid=String(sr[SELECT_COL['픽업캘린더ID']]||'').trim();
+        if(pid) knownIds.add(pid);
+      });
+    }
+  }catch(e){/* 픽업 ID 수집 실패는 고아 오탐만 늘릴 뿐 — 조용히 넘어간다 */}
+  try{
+    const qSh=ensureSheets_().quoteSheet;
+    if(qSh&&QUOTE_COL['가예약캘린더ID']!=null){
+      qSh.getDataRange().getValues().slice(1).forEach(function(qr){
+        String(qr[QUOTE_COL['가예약캘린더ID']]||'').split(',').forEach(function(t){
+          const id=String(t||'').trim(); if(id) knownIds.add(id);
+        });
+      });
+    }
+  }catch(e){/* 가예약 ID 수집 실패도 동일 */}
+  if(!CAL_READ_FAILED_&&calendar){
+    try{
+      const evs=calendar.getEvents(new Date(today+'T00:00:00'),new Date(horizonStr+'T23:59:59'));
+      for(let k=0;k<evs.length;k++){
+        const ev=evs[k];
+        if(ev.isAllDayEvent()) continue;
+        const id=ev.getId()||'';
+        if(knownIds.has(id)) continue;
+        const title=ev.getTitle()||'';
+        const loc=ev.getLocation()||'';
+        if(isStudioAutoOpenEventByFields_(title,loc,false)) continue; // 상주오픈
+        if(isSelectPickupEventTitle_(title)) continue;               // 픽업
+        if(/^\s*\[가예약\]/.test(title)) continue;                    // 견적 가예약
+        if(/^\s*\[상담/.test(title)) continue;                        // 상담(별도 관리, 예약 아님)
+        if(/^\s*Studio Open/i.test(title)) continue;
+        // 예약형으로 보이는가: 'A | B | C' 패턴 또는 예약 키워드. 개인 메모성 제목은 제외.
+        const looksBooking=title.indexOf('|')>=0||/여권|프로필|스튜디오|웨딩|스냅|가족|커플|Passfoto|Bewerbung|Shooting/i.test(title);
+        if(!looksBooking) continue;
+        push('orphans',Utilities.formatDate(ev.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')+' '+String(title).slice(0,40));
+      }
+    }catch(e){push('failures','역방향 고아 스캔 실패: '+String(e.message||'').slice(0,80));}
+  }
+  report.problemCount=report.overlapsCount+report.healedCount+report.missingCount
+    +report.driftedCount+report.deleteRetriedCount+report.dupBothCount
+    +report.appleLingerCount+report.orphansCount+report.failuresCount;
+  return report;
+}
+
+function auditBookingCalendarConsistencyAdmin(token){
+  assertAdmin_(token);
+  return auditBookingCalendarConsistency_();
+}
+
+/* 애플(iCloud) 연동 상태 진단 — '확정 후 애플 이관' 관행에서 애플 피드가 안 붙어 있으면
+   이관된 확정 예약이 슬롯을 전혀 못 막는다(이중예약 직행). 시크릿은 절대 반환하지 않는다:
+   설정 존재 여부(불리언)와 향후 30일 이벤트 개수·제목 앞 6자만. */
+function getIcloudFeedStatusAdmin(token){
+  assertAdmin_(token);
+  const props=PropertiesService.getScriptProperties().getProperties();
+  const keys=Object.keys(props);
+  const calUrlCount=keys.filter(function(k){return k==='ICLOUD_CAL_URL'||/^ICLOUD_CAL_URL_\d+$/.test(k);}).length;
+  const icsUrlCount=keys.filter(function(k){return k==='ICLOUD_ICS_URL'||/^ICLOUD_ICS_URL_\d+$/.test(k);}).length;
+  const hasAuth=!!(props.APPLE_ID&&props.APPLE_APP_PASSWORD);
+  let fetchOk=false,eventCount=0,sampleTitles=[],fetchFailed=false;
+  if(calUrlCount>0||icsUrlCount>0){
+    try{
+      const now=new Date();
+      const end=new Date(); end.setDate(end.getDate()+30);
+      const evs=fetchAppleCalendarDetailedEvents_(now,end)||[];
+      fetchFailed=ICLOUD_DETAIL_READ_FAILED_;
+      fetchOk=!fetchFailed;
+      eventCount=evs.length;
+      // 제목 앞 6자만 — 고객 전체 이름·개인정보 덤프 방지, 피드가 '어느 캘린더'인지 감만 잡는 용도
+      sampleTitles=evs.slice(0,5).map(function(e){return String(e.title||'').slice(0,6);});
+    }catch(e){fetchFailed=true;}
+  }
+  return{ok:true,calUrlCount:calUrlCount,icsUrlCount:icsUrlCount,hasAuth:hasAuth,
+         configured:(calUrlCount>0||icsUrlCount>0)&&hasAuth,
+         fetchOk:fetchOk,fetchFailed:fetchFailed,next30dEventCount:eventCount,sampleTitles:sampleTitles};
 }
 
 function getPromoConfig_(){
@@ -4787,6 +5046,10 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
     : getUnavailableDays(y,m,totalDur,itemGroup,true);
   const out={};
   out[key]={unavail:monthSummary.unavail||[],closed:monthSummary.closed||[],slotCounts:{},slotsByDate:{}};
+  /* 캘린더 읽기 실패로 '전 일자 마감'이 된 결과를 여기서 캐시하면, 아래층(getUnavailableDays)이
+     캐시를 안 심어도 이 래퍼가 30분간 굳힌다 — fail-open 을 막으려다 '한 달 전체 마감'을 굳히는
+     반대 극성 사고. 이 응답만 내보내고 캐시는 건너뛴다(warmupCacheTrigger 도 이 경로를 탄다). */
+  if(monthSummary&&monthSummary.calReadFailed) return out;
   try{cache.put(cacheKey,JSON.stringify(out),CONFIG.UNAVAIL_CACHE_TTL_SEC);}catch(e){}
   return out;
 }
@@ -4824,6 +5087,11 @@ function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
     return[];
   }
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  if(CAL_READ_FAILED_){
+    // 불완전한 이벤트 목록으로 계산한 '가용'은 거짓말이다. 빈 슬롯으로 응답하되 **캐시는 심지 않는다**
+    // — 캐시하면 캘린더가 몇 초 만에 회복돼도 TTL(최대 30분) 내내 거짓 화면이 굳는다.
+    return [];
+  }
   const slotStrings = computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
   const detailedEvents = (studioPresenceEvents && studioPresenceEvents.length)
     ? studioPresenceEvents
@@ -6232,12 +6500,25 @@ function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
  * Fetch calendar events for a time range.
  * Each event includes: start, end, type ('A'|'B'|'C'), location.
  */
+/* 캘린더 읽기 부분 실패 플래그 — getEventsForRange_ 는 배열을 반환해야 해서 예외를 못 던지고,
+   실패를 조용히 삼키면 '이벤트 0건 = 하루 종일 가용'이라는 fail-open 이 된다. 그 순간 화면 표시와
+   제출 가드(slotAvailable_)가 **동시에** 열려 이중예약으로 직행한다(둘 다 같은 함수를 읽으므로).
+   호출 직후 이 플래그를 확인해 가용성 판정만 fail-closed 로 바꾼다. 이중예약 한 건이 예약 페이지가
+   몇 분 닫히는 것보다 훨씬 비싸다. GAS 실행은 단일 스레드라 전역 플래그가 안전하다. */
+var CAL_READ_FAILED_=false;
+/* 애플 상세 피드(fetchAppleCalendarDetailedEvents_) 전용 실패 플래그 — 상세 피드는 가용성 코어가
+   아니라 정합 점검·상주 감지가 쓰므로 CAL_READ_FAILED_ 와 분리한다(섞으면 호출 순서에 따라
+   가용성 플래그가 엉뚱하게 오염된다). 정합 점검은 이 플래그가 서면 '재생성 보류'로 방어한다. */
+var ICLOUD_DETAIL_READ_FAILED_=false;
+
 function getEventsForRange_(start,end){
+  CAL_READ_FAILED_=false;
   const events=[];
   const titleTypeCache={};
   getBusyCalendarMeta_().forEach(m=>{
     try{
-      const cal=CalendarApp.getCalendarById(m.id);if(!cal)return;
+      const cal=CalendarApp.getCalendarById(m.id);
+      if(!cal){CAL_READ_FAILED_=true;Logger.log('캘린더 접근 불가(null): '+m.id);return;}
       const isPersonal=m.isPersonal;
       cal.getEvents(start,end).forEach(ev=>{
         if(ev.isAllDayEvent())return;
@@ -6249,7 +6530,7 @@ function getEventsForRange_(start,end){
         if(type===undefined){type=classifyEventType_(title,isPersonal,location);titleTypeCache[cacheKey]=type;}
         events.push({start:ev.getStartTime().getTime(),end:ev.getEndTime().getTime(),type,location,id:ev.getId()});
       });
-    }catch(e){Logger.log('캘린더 오류: '+e.message);}
+    }catch(e){CAL_READ_FAILED_=true;Logger.log('캘린더 오류: '+e.message);}
   });
   // Merge iCloud events (private CalDAV + public ICS feeds) if any URL is configured
   const _props=PropertiesService.getScriptProperties().getProperties();
@@ -6257,7 +6538,7 @@ function getEventsForRange_(start,end){
   if(_hasIcloud){
     try{
       fetchAppleCalendarEvents_(start,end).forEach(ev=>events.push(ev));
-    }catch(e){Logger.log('iCloud 통합 오류: '+e.message);}
+    }catch(e){CAL_READ_FAILED_=true;Logger.log('iCloud 통합 오류: '+e.message);}
   }
   // 정렬 (start 오름차순) — checkConflict_ 조기 종료 지원
   events.sort((a,b)=>a.start-b.start);
@@ -6485,6 +6766,9 @@ function fetchAppleCalendarEvents_(startDate,endDate){
         });
         const code=res.getResponseCode();
         if(code!==207){
+          /* ⚠ 확정 예약은 애플 캘린더로 이관되는 운영 관행(2026-07-28 사장님 확인) — 애플 피드가
+             조용히 빠지면 확정 예약 전체가 가용으로 보인다. 피드 단위 실패는 fail-closed 로 올린다. */
+          CAL_READ_FAILED_=true;
           Logger.log('iCloud REPORT failed ('+code+') for '+calUrl+': '+res.getContentText().slice(0,200));
           return;
         }
@@ -6505,27 +6789,29 @@ function fetchAppleCalendarEvents_(startDate,endDate){
             });
           }catch(e){Logger.log('iCloud event parse error: '+e.message);}
         });
-      }catch(e){Logger.log('iCloud fetch error for '+calUrl+': '+e.message);}
+      }catch(e){CAL_READ_FAILED_=true;Logger.log('iCloud fetch error for '+calUrl+': '+e.message);}
     });
     // Public ICS subscription feeds (webcal / published links)
     getIcloudIcsUrls_().forEach(icsUrl=>{
       try{
         fetchPublicIcsEvents_(icsUrl,startDate,endDate).forEach(ev=>allEvents.push(ev));
-      }catch(e){Logger.log('Public ICS error for '+icsUrl+': '+e.message);}
+      }catch(e){CAL_READ_FAILED_=true;Logger.log('Public ICS error for '+icsUrl+': '+e.message);}
     });
     Logger.log('iCloud total events fetched: '+allEvents.length+' (private CalDAV: '+calUrls.length+' cals)');
     return allEvents;
   }catch(e){
+    CAL_READ_FAILED_=true;
     Logger.log('fetchAppleCalendarEvents_ error: '+e.message);
     return[];
   }
 }
 
 function fetchAppleCalendarDetailedEvents_(startDate,endDate){
+  ICLOUD_DETAIL_READ_FAILED_=false;
   try{
     const auth=getIcloudBasicAuth_();
     const calUrls=getIcloudCalUrls_();
-    if(!calUrls||calUrls.length===0) return[];
+    if(!calUrls||calUrls.length===0) return[]; // 미설정은 실패가 아니다
     const fmt=d=>Utilities.formatDate(d,'UTC',"yyyyMMdd'T'HHmmss'Z'");
     const reportBody=
       '<?xml version="1.0" encoding="UTF-8"?>'+
@@ -6553,6 +6839,7 @@ function fetchAppleCalendarDetailedEvents_(startDate,endDate){
         });
         const code=res.getResponseCode();
         if(code!==207){
+          ICLOUD_DETAIL_READ_FAILED_=true;
           Logger.log('iCloud detailed REPORT failed ('+code+') for '+calUrl+': '+res.getContentText().slice(0,200));
           return;
         }
@@ -6578,15 +6865,16 @@ function fetchAppleCalendarDetailedEvents_(startDate,endDate){
             });
           }catch(e){Logger.log('iCloud detailed event parse error: '+e.message);}
         });
-      }catch(e){Logger.log('iCloud detailed fetch error for '+calUrl+': '+e.message);}
+      }catch(e){ICLOUD_DETAIL_READ_FAILED_=true;Logger.log('iCloud detailed fetch error for '+calUrl+': '+e.message);}
     });
     getIcloudIcsUrls_().forEach(icsUrl=>{
       try{
         fetchPublicIcsDetailedEvents_(icsUrl,startDate,endDate).forEach(ev=>allEvents.push(ev));
-      }catch(e){Logger.log('Public ICS detailed error for '+icsUrl+': '+e.message);}
+      }catch(e){ICLOUD_DETAIL_READ_FAILED_=true;Logger.log('Public ICS detailed error for '+icsUrl+': '+e.message);}
     });
     return allEvents;
   }catch(e){
+    ICLOUD_DETAIL_READ_FAILED_=true;
     Logger.log('fetchAppleCalendarDetailedEvents_ error: '+e.message);
     return[];
   }
@@ -7198,6 +7486,14 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
   const unavail=[],closed=[],slotCounts={},slotsByDate={},daysInMonth=new Date(year,month+1,0).getDate();
   const events=getEventsForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59));
+  if(CAL_READ_FAILED_){
+    /* 한 번의 월간 조회 실패가 한 달 전체를 '전부 가용'으로 오염시키고 30분 캐시로 굳는 게 최악의
+       경로였다. 못 읽었으면 전 일자 마감으로 응답하고 캐시(월간·일별 프리시드 모두)는 심지 않는다
+       — 다음 요청이 회복된 캘린더로 즉시 정상 계산한다. */
+    const allDays=[];
+    for(let d=1;d<=daysInMonth;d++){allDays.push(`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`);}
+    return {unavail:allDays,closed:[],slotCounts:{},slotsByDate:{},calReadFailed:true};
+  }
   const useStudioAutoOpen=isStudioAutoOpenEligibleGroup_(itemGroup);
   const detailedEvents=useStudioAutoOpen?getBusyEventsDetailedForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59)):[];
   const detailedEventsByDate={};
@@ -7262,6 +7558,7 @@ function getAvailableSlots(dateStr,totalDur,itemGroup){
   }
   if(isBeyondPublicBookingRange_(dateStr)||(isWeekendOrHolidayBlocked_(dateStr,itemGroup)&&!hasStudioAutoOpenBlocks)) return[];
   const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  if(CAL_READ_FAILED_) return []; // fail-closed: 불완전 목록으로 '가용'을 만들지 않는다 (캐시도 안 심음)
   const slots=computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
   try{cache.put(cacheKey,JSON.stringify(slots),getAvailabilityCacheTtlSec_(itemGroup));}catch(e){}
   return slots;
@@ -7284,7 +7581,27 @@ function slotAvailable_(dateStr,timeStr,totalDur,itemGroup,newLocation){
     return start>=bs&&end<=be;
   });
   if(!inBlock) return false;
-  return!checkConflict_(getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`)),start,end,itemGroup,newLocation||'');
+  const dayEvents=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  // 캘린더를 못 읽었으면 '비었는지 알 수 없음' = 예약 불가. 여기서 열어주면 이중예약 직행.
+  if(CAL_READ_FAILED_) return false;
+  return!checkConflict_(dayEvents,start,end,itemGroup,newLocation||'');
+}
+
+/* 쓰기 경로 공용 충돌검사 — 어드민/에이전트가 예약을 만들거나 옮기기 **직전**에 부른다.
+   공개 예약의 slotAvailable_ 와 달리 영업시간·리드타임·주말 규칙은 보지 않는다(사장님은 일요일
+   저녁에도 촬영을 잡는다) — '그 시간에 다른 일정과 물리적으로 겹치는가'만 본다(버퍼 규칙 포함).
+   excludeEventId: 일정 이동 시 자기 자신의 기존 이벤트는 충돌 상대에서 제외.
+   반환 {readFailed,conflict}. readFailed=true 는 캘린더 조회 실패 = 겹침 여부를 알 수 없는 상태 —
+   호출자는 이때 반드시 거부해야 한다(모르는 채 쓰면 fail-open). */
+function checkBookingTimeConflict_(dateStr,timeStr,durMin,itemGroup,location,excludeEventId){
+  const start=new Date(`${dateStr}T${timeStr}:00`).getTime();
+  if(isNaN(start)) return{readFailed:false,conflict:false};
+  const end=start+Math.max(15,Number(durMin)||60)*60000;
+  let events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  if(CAL_READ_FAILED_) return{readFailed:true,conflict:true};
+  const exId=String(excludeEventId||'').trim();
+  if(exId) events=events.filter(function(ev){return String(ev.id||'')!==exId;});
+  return{readFailed:false,conflict:checkConflict_(events,start,end,itemGroup,location||'')};
 }
 
 function isSelectPickupEventTitle_(title){
@@ -7950,7 +8267,11 @@ function processForm(data){
     if(quote.itemGroup==='promo' && !isPromoDateAllowed_(data.date)) throw new Error('프로모션 예약 가능 기간이 아닙니다.');
     const startTime=new Date(`${data.date}T${data.time}:00`);
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
-    if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,bookingLocation)) throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
+    if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,bookingLocation)){
+      // 캘린더 읽기 실패로 막힌 것이면 '마감'이 아니라 일시 오류다 — 고객이 재시도하도록 구분해서 알린다
+      if(CAL_READ_FAILED_) throw new Error('예약 시스템이 일정을 일시적으로 확인할 수 없습니다. 1분 후 다시 시도해 주세요.');
+      throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
+    }
     // skipCache=true — 제출 시점의 확정모드·추천상태는 캐시가 아니라 실시간 캘린더로 판정한다
     const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup, true);
     const matchedSlot = (publicSlotEntries || []).find(function(entry){
@@ -9266,8 +9587,11 @@ function cancelBooking(eventId){
     const row=data[idx+1];
     if(isBookingCancelledStatus_(row[1])) return HtmlService.createHtmlOutput('<h2>ℹ️ 이미 취소된 예약입니다.</h2>');
     sh.getRange(idx+2,2).setValue('취소됨');
-    deleteBookingCalendarEventById_(eventId);
-    if(BOOKING_COL['캘린더ID']!=null) sh.getRange(idx+2,BOOKING_COL['캘린더ID']+1).setValue('');
+    /* 삭제에 실패하면 ID를 지우지 않는다 — ID까지 지우면 살아있는 이벤트를 가리키는 포인터가
+       사라져 복구 불가(슬롯 영구 잠김). ID가 남아 있으면 아침 정합 점검이 삭제를 재시도한다. */
+    if(deleteBookingCalendarEventById_(eventId)){
+      if(BOOKING_COL['캘린더ID']!=null) sh.getRange(idx+2,BOOKING_COL['캘린더ID']+1).setValue('');
+    }
     const email=String(row[4]||'');const rowLang=String(row[5]||'ko').toLowerCase().trim();
     const TC=EMAIL_I18N[rowLang]||EMAIL_I18N.ko;const formattedDt=parseDateSafe_(row[0]).str||String(row[0]);
     const products=getCachedProducts_();const product=products.find(p=>p.nameKo===row[7]);
@@ -9437,7 +9761,10 @@ function doSubmit(){
   const note=document.getElementById('note').value.trim();
   document.getElementById('submitBtn').disabled=true;
   google.script.run
-    .withSuccessHandler(function(){document.getElementById('formCard').style.display='none';document.getElementById('doneCard').style.display='block';})
+    .withSuccessHandler(function(res){
+      if(res&&res.ok===false){alert(res.message||'${L.err}');document.getElementById('submitBtn').disabled=false;return;}
+      document.getElementById('formCard').style.display='none';document.getElementById('doneCard').style.display='block';
+    })
     .withFailureHandler(function(){alert('${L.err}');document.getElementById('submitBtn').disabled=false;})
     .submitRescheduleRequest(${bookingRefJs},pref,note);
 }
@@ -9472,11 +9799,30 @@ function submitRescheduleRequest(eventId,preferredDate,note){
   const dateStr=parseDateSafe_(row[0]).str||'';
   const phone=String(row[3]||'');
   const email=String(row[4]||'');
+  const newDate=new Date(preferredDate.replace(' ','T'));
+  /* 충돌 재검증 — 슬롯 목록을 받아둔 뒤 제출까지의 사이에 그 시간이 팔렸을 수 있다(경합).
+     쓰기 전에 확인하고, 겹치면 아무것도 기록하지 않은 채 되돌려 고객이 다른 시간을 고르게 한다. */
+  if(!isNaN(newDate.getTime())){
+    const prodR=getCachedProducts_().find(function(p){return p.nameKo===product;});
+    const durR=prodR?(prodR.d+(prodR.prep||0)):60;
+    const lang2=String(row[5]||'ko').toLowerCase().trim();
+    const cc=checkBookingTimeConflict_(
+      Utilities.formatDate(newDate,CONFIG.TIMEZONE,'yyyy-MM-dd'),
+      Utilities.formatDate(newDate,CONFIG.TIMEZONE,'HH:mm'),
+      durR,String(row[6]||''),'',String(row[16]||'').trim());
+    if(cc.readFailed||cc.conflict){
+      const msgs={
+        ko:'방금 그 시간에 다른 예약이 확정되어 선택하실 수 없습니다. 다른 시간을 골라 주세요.',
+        en:'That time was just booked by someone else. Please choose another slot.',
+        de:'Dieser Termin wurde soeben anderweitig vergeben. Bitte wählen Sie eine andere Zeit.'
+      };
+      return{ok:false,conflict:true,message:msgs[lang2]||msgs.ko};
+    }
+  }
   const reqText=`[${Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')}] 기존: ${dateStr} / 희망: ${preferredDate} / 사유: ${note||'-'} / 상태: ${status||'-'}`;
   sh.getRange(found.rowIndex,BOOKING_COL['변경요청']+1).setValue(reqText);
   // ✅ 캘린더 이벤트 자동 반영
   let calUpdated=false;
-  const newDate=new Date(preferredDate.replace(' ','T'));
   if(!isNaN(newDate.getTime())){
     try{
       const newFmt=Utilities.formatDate(newDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss");
@@ -9564,7 +9910,7 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
   sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
 }
 
-function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
+function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo,allowConflict){
   assertAdmin_(token);
   const {bookingSheet}=ensureSheets_();
   const data=bookingSheet.getDataRange().getValues();
@@ -9578,19 +9924,31 @@ function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
   const prod=products.find(p=>p.nameKo===String(row[7]||''));
   const durationMin=prod?(prod.d+(prod.prep||0)):60;
   const endDate=new Date(newDate.getTime()+durationMin*60000);
-  // 캘린더 이벤트 시간 수정
   const eventId=String(row[16]||'').trim();
+  /* 충돌 가드 — 옮겨 갈 시간이 이미 차 있는지 확인(자기 자신의 기존 이벤트는 제외). */
+  if(allowConflict!==true){
+    const cc=checkBookingTimeConflict_(
+      Utilities.formatDate(newDate,CONFIG.TIMEZONE,'yyyy-MM-dd'),
+      Utilities.formatDate(newDate,CONFIG.TIMEZONE,'HH:mm'),
+      durationMin,String(row[6]||''),parseBookingLocationFromRow_(row),eventId);
+    if(cc.readFailed) return{ok:false,calendarReadFailed:true,message:'캘린더를 확인할 수 없어 변경을 보류합니다. 잠시 후 다시 시도해 주세요.'};
+    if(cc.conflict) return{ok:false,conflict:true,message:'옮겨 갈 시간에 이미 다른 일정이 있습니다. 겹쳐도 변경하려면 확인 후 강행하세요.'};
+  }
+  // 캘린더 이벤트 시간 수정 — 실패·부재를 기록해 둔다(확정 후 애플 이관 건은 구글에 이벤트가 없다)
+  let googleEvMoved=false;
   if(eventId){
     try{
       const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
       const ev=cal.getEventById(eventId);
-      if(ev) ev.setTime(newDate,endDate);
+      if(ev){ev.setTime(newDate,endDate);googleEvMoved=true;}
     }catch(e){Logger.log('cal reschedule error: '+e.message);}
   }
   // 시트 업데이트: 예약일시(col1) + 변경요청 초기화(col25)
   const newFmt=Utilities.formatDate(newDate,CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss");
   bookingSheet.getRange(bookingRowIndex,1).setValue(newFmt);
   bookingSheet.getRange(bookingRowIndex,25).setValue('');
+  if(BOOKING_COL['shooting_date']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_date']+1).setValue(Utilities.formatDate(newDate,CONFIG.TIMEZONE,'yyyy-MM-dd'));
+  if(BOOKING_COL['shooting_time']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_time']+1).setValue(Utilities.formatDate(newDate,CONFIG.TIMEZONE,'HH:mm'));
   try{
     const rowAfter=bookingSheet.getRange(bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
     ensureBookingCalendarEventForRow_(bookingSheet,bookingRowIndex,rowAfter);
@@ -9604,7 +9962,13 @@ function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo){
     sendRescheduleDecisionEmail_(row,requestInfo,'approved',newDateDisplay,memo);
   }
   bumpCalCacheVer_();
-  return{ok:true,newDate:newFmt};
+  const res={ok:true,newDate:newFmt};
+  if(eventId&&!googleEvMoved){
+    // 구글에 원 이벤트가 없었다 = 애플로 이관됐을 가능성 — 새 시간 이벤트는 ensure 가 구글에 만들었지만
+    // 애플 쪽 옛 일정은 시스템이 못 지운다. 사장님이 직접 옮기거나 지워야 한다.
+    res.appleNote='기존 일정이 구글 캘린더에 없어 새 시간으로 이벤트를 새로 만들었습니다. 애플 캘린더에 옛 시간 일정이 남아 있다면 직접 옮기거나 지워주세요.';
+  }
+  return res;
 }
 
 /* ====== 보정본 승인 / 재수정 요청 ====== */
@@ -9941,8 +10305,13 @@ function getManualKrwQuoteAdmin(token,krwAmount){
 
 /* ====== 강화된 수기 등록 ====== */
 function addManualBookingAdmin(token, data) {
+  let __wlock=null;
   try {
     assertAdmin_(token);
+    /* 공개 예약(processForm)과 같은 스크립트 잠금 — 안 잡으면 고객 제출과 수기등록이 같은 슬롯을
+       동시에 통과한다(락 도메인이 달라 직렬화가 안 되던 실제 갭). */
+    __wlock=LockService.getScriptLock();
+    if(!__wlock.tryLock(10000)){__wlock=null;throw new Error('동시 예약 처리 중입니다. 잠시 후 다시 시도해 주세요.');}
     const sh = getDbSheet(), cal = CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID) || CalendarApp.getDefaultCalendar();
     const name=String(data.name||'').trim();
     const phone=normalizePhoneForLedger_(data.phone,data.phoneCountry||data.countryCode||'+49');
@@ -9980,6 +10349,21 @@ function addManualBookingAdmin(token, data) {
     const businessAddonKeys=(data.businessAddonKeys||[]).filter(Boolean);
     let durationMin=Number(data.duration)||((requestedProduct&&requestedProduct.d)||60);
     let quote=null;
+    /* 충돌 가드 — 지금까지 수기등록은 그 시간이 비었는지조차 확인하지 않았다(이중예약 실제 갭).
+       예외: 시간미정(00:00) 관행 행, MRT(이미 결제된 외부 예약 — 기록이 우선), allowConflict 강행.
+       강행/MRT 인데 실제로 겹치면 메모에 스탬프를 남겨 아침 정합점검·사장님 눈에 걸리게 한다. */
+    let conflictStamp='';
+    if(time!=='00:00'){ // 시간미정 관행 행은 검사 무의미(추후 booking-set-time 이 검사)
+      const isMrt=bookingSource==='마이리얼트립'||rawGroup==='마이리얼트립';
+      const forced=data.allowConflict===true||isMrt;
+      const cc=checkBookingTimeConflict_(date,time,durationMin,groupToSave,String(data.location||'').trim(),'');
+      if(!forced){
+        if(cc.readFailed) throw new Error('캘린더를 확인할 수 없어 등록을 보류합니다. 잠시 후 다시 시도해 주세요.');
+        if(cc.conflict) return {ok:false,conflict:true,message:'해당 시간에 이미 다른 일정이 있습니다 ('+date+' '+time+'). 겹쳐도 등록하려면 확인 후 강행하세요.'};
+      }else if(cc.conflict&&!cc.readFailed){
+        conflictStamp='[충돌확인필요] '+date+' '+time+' 등록 시점에 다른 일정과 겹침';
+      }
+    }
     if(requestedProduct){
       const quoteRequest={
         itemId:requestedProduct.id,
@@ -10081,6 +10465,7 @@ function addManualBookingAdmin(token, data) {
       data.portfolioPurpose?`포트폴리오목적: ${String(data.portfolioPurpose).trim()}`:''
     ].filter(Boolean);
     const memoParts=[
+      conflictStamp,
       String(data.memo||'').trim(),
       detailMemoParts.join('\n'),
       '수기등록: GDPR/AI 사용 안내 고지 및 동의 저장(Y)',
@@ -10282,6 +10667,8 @@ function addManualBookingAdmin(token, data) {
     };
   } catch(err) {
     return {ok: false, message: err.message};
+  } finally {
+    if(__wlock){try{__wlock.releaseLock();}catch(e){}}
   }
 }
 
@@ -10728,6 +11115,14 @@ function setBookingTimeForAgent_(token,payload){
   }
   const m=String(payload.dateTime||'').trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
   if(!m) throw new Error("dateTime 형식이 필요합니다: 'yyyy-MM-dd HH:mm'");
+  /* 충돌 가드 — MRT 시간 확정 등에서 겹치는 시간으로 옮기는 사고 방지. force:true 로 강행 가능. */
+  if(payload.force!==true&&m[2]!=='00:00'){
+    const prodT=getCachedProducts_().find(function(p){return p.nameKo===String(row[BOOKING_COL['상품']]||'');});
+    const durT=prodT?(prodT.d+(prodT.prep||0)):60;
+    const cc=checkBookingTimeConflict_(m[1],m[2],durT,String(row[BOOKING_COL['촬영종류']]||''),'',String(row[BOOKING_COL['캘린더ID']]||'').trim());
+    if(cc.readFailed) return{ok:false,calendarReadFailed:true,message:'캘린더를 확인할 수 없어 보류합니다. 잠시 후 재시도하거나 force:true 로 강행하세요.'};
+    if(cc.conflict) return{ok:false,conflict:true,message:'해당 시간('+m[1]+' '+m[2]+')에 다른 일정이 있습니다. 강행하려면 force:true 를 넘기세요.'};
+  }
   sh.getRange(rIdx,BOOKING_COL['예약일시']+1).setValue(m[1]+' '+m[2]);
   if(BOOKING_COL['shooting_date']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_date']+1).setValue(m[1]);
   if(BOOKING_COL['shooting_time']!=null) sh.getRange(rIdx,BOOKING_COL['shooting_time']+1).setValue(m[2]);
@@ -11035,6 +11430,32 @@ function searchCustomersForPrint(token,query){
   return results;
 }
 function deletePrintOrderAdmin(token,rowIdx){assertAdmin_(token);ensureSheets_().printSheet.deleteRow(rowIdx);return{ok:true};}
+
+/* 인화장부 행 삭제 (에이전트용) — 위의 deletePrintOrderAdmin 은 행번호만 받고 아무것도 확인하지
+   않는다. 행번호는 다른 삭제 한 번에 밀리므로, 자동화 경로에서 그대로 쓰면 멀쩡한 매출행을
+   지운다. 그래서 고객명 대조 + 명시적 confirm 을 요구하고, 지운 내용을 그대로 돌려준다. */
+function deletePrintRowForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rowIdx=parseInt(payload.rowIndex,10)||0;
+  const expectName=String(payload.expectName||'').trim();
+  if(!rowIdx) throw new Error('rowIndex 가 필요합니다.');
+  if(!expectName) throw new Error('expectName(고객명)이 필요합니다 — 행 밀림 사고 방지용입니다.');
+  if(String(payload.confirm||'')!=='DELETE') throw new Error("confirm:'DELETE' 가 필요합니다.");
+  const sh=ensureSheets_().printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  const rows=sh.getDataRange().getValues();
+  if(rowIdx<2||rowIdx>rows.length) throw new Error('잘못된 인화장부 행 번호: '+rowIdx);
+  const n=normalizePrintRow_(rows[rowIdx-1],rowIdx,colMap);
+  if(String(n.name||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행="'+n.name+'" / 기대="'+expectName+'"');
+  }
+  const snapshot={rowIndex:rowIdx,name:String(n.name||''),amount:roundCurrency_(Number(n.total)||0),
+    payMethod:String(n.payMethod||''),status:String(n.status||''),memo:String(n.memo||''),
+    salesDate:String(n.salesDate||''),items:String(n.items||''),retouchItems:String(n.retouchItems||'')};
+  sh.deleteRow(rowIdx);
+  return{ok:true,deleted:snapshot};
+}
 
 /* ====== 대시보드 ====== */
 function getLatestSelectStatusMapForDashboard_(ss){
@@ -11429,6 +11850,58 @@ function searchBookingsForAgent_(token,query){
 
    안전장치: ① expectName 이 행 고객명과 정확히 일치 ② confirm:'DELETE' 명시
    ③ 합성행 판별(이름에 검증/테스트 또는 스튜디오 자체 메일) — 실고객 행은 force:true 없인 거부. */
+/* 예약 행 삭제 후 참조 보정 — 행을 지우면 아래 행이 당겨져, 삭제행보다 큰 행번호를 저장해 둔
+   셀렉 예약장부행·출장장부 예약장부행·결제연결행이 전부 1씩 어긋난다(8건 오염 사고 전례).
+   여러 건 삭제 시 호출자는 행번호 큰 것부터 지우며 삭제 1건마다 이 함수를 불러야 한다.
+   정확히 삭제행을 가리키던 참조는 보정 불가 — 호출자가 먼저 정리하거나 감수한다. */
+function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
+  const rIdx=deletedRowIndex;
+  const sh=sheets.bookingSheet;
+  const fixed={select:0,travel:0,paymentLinks:0};
+  const fixColumn=function(sheet,colIdx){
+    const last=sheet.getLastRow();
+    if(last<2||colIdx==null) return 0;
+    const rng=sheet.getRange(2,colIdx+1,last-1,1);
+    const vals=rng.getValues();
+    let n=0;
+    for(let i=0;i<vals.length;i++){
+      const v=parseInt(vals[i][0],10);
+      if(isFinite(v)&&v>rIdx){vals[i][0]=v-1;n++;}
+    }
+    if(n) rng.setValues(vals);
+    return n;
+  };
+  try{
+    const selSh=ensureSelectSheet_(sheets.ss);
+    if(selSh) fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
+  }catch(e){Logger.log('row-delete select fix fail: '+e.message);}
+  try{
+    const tSh=sheets.ss.getSheetByName('출장장부');
+    if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
+  }catch(e){Logger.log('row-delete travel fix fail: '+e.message);}
+  // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정
+  try{
+    const last=sh.getLastRow();
+    if(last>1&&BOOKING_COL['결제연결행']!=null){
+      const rng=sh.getRange(2,BOOKING_COL['결제연결행']+1,last-1,1);
+      const vals=rng.getValues();
+      let n=0;
+      for(let i=0;i<vals.length;i++){
+        const raw=String(vals[i][0]||'').trim();
+        if(!raw) continue;
+        const out=raw.split(/([,\s]+)/).map(function(tok){
+          const v=parseInt(tok,10);
+          return (/^\d+$/.test(tok.trim())&&isFinite(v)&&v>rIdx)?String(v-1):tok;
+        }).join('');
+        if(out!==raw){vals[i][0]=out;n++;}
+      }
+      if(n) rng.setValues(vals);
+      fixed.paymentLinks=n;
+    }
+  }catch(e){Logger.log('row-delete paylink fix fail: '+e.message);}
+  return fixed;
+}
+
 function deleteBookingForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -11476,46 +11949,8 @@ function deleteBookingForAgent_(token,payload){
     selToDelete.sort(function(a,b){return b-a;}).forEach(function(rn){selSh.deleteRow(rn);});
     // ③ 예약 행 삭제
     sh.deleteRow(rIdx);
-    // ④ 참조 보정 — 삭제행보다 큰 행번호는 전부 1 당겨졌다
-    const fixed={select:0,travel:0,paymentLinks:0};
-    const fixColumn=function(sheet,colIdx){
-      const last=sheet.getLastRow();
-      if(last<2||colIdx==null) return 0;
-      const rng=sheet.getRange(2,colIdx+1,last-1,1);
-      const vals=rng.getValues();
-      let n=0;
-      for(let i=0;i<vals.length;i++){
-        const v=parseInt(vals[i][0],10);
-        if(isFinite(v)&&v>rIdx){vals[i][0]=v-1;n++;}
-      }
-      if(n) rng.setValues(vals);
-      return n;
-    };
-    fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
-    try{
-      const tSh=sheets.ss.getSheetByName('출장장부');
-      if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
-    }catch(e){Logger.log('booking-delete travel fix fail: '+e.message);}
-    // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정
-    try{
-      const last=sh.getLastRow();
-      if(last>1&&BOOKING_COL['결제연결행']!=null){
-        const rng=sh.getRange(2,BOOKING_COL['결제연결행']+1,last-1,1);
-        const vals=rng.getValues();
-        let n=0;
-        for(let i=0;i<vals.length;i++){
-          const raw=String(vals[i][0]||'').trim();
-          if(!raw) continue;
-          const out=raw.split(/([,\s]+)/).map(function(tok){
-            const v=parseInt(tok,10);
-            return (/^\d+$/.test(tok.trim())&&isFinite(v)&&v>rIdx)?String(v-1):tok;
-          }).join('');
-          if(out!==raw){vals[i][0]=out;n++;}
-        }
-        if(n) rng.setValues(vals);
-        fixed.paymentLinks=n;
-      }
-    }catch(e){Logger.log('booking-delete paylink fix fail: '+e.message);}
+    // ④ 참조 보정 — 공용 헬퍼 (일괄삭제 경로와 공유)
+    const fixed=repairRefsAfterBookingRowDelete_(sheets,rIdx);
     return{ok:true,deletedRow:rIdx,name:name,calendarDeleted:calDeleted,
            deletedSelectRows:selToDelete,refsFixed:fixed};
   } finally { try{lock.releaseLock();}catch(e){} }
@@ -11904,7 +12339,24 @@ function _buildDailyBriefingData_(){
       }
     }
   }catch(e){Logger.log('briefing extras fail: '+e.message);_briefFail_(sectionFailures,'셀렉 추가금',e);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
+  /* 추가금 미수 — 인화장부에 '미결제'로 남아 있는 금액. 매출·부가세는 이미 인식됐는데
+     수납 여부를 추적하는 곳이 없어 조용히 새던 항목이다(예약 잔금 미수와 별개 흐름). */
+  const extrasUnpaid={count:0,total:0,items:[],olderCount:0,olderTotal:0};
+  try{
+    /* 60일 롤링 윈도 — 이 기능이 생기기 전 인화장부 행은 **전부** '미결제'로 남아 있다.
+       윈도가 없으면 첫 브리핑이 몇 년치를 미수로 쏟아내고, 대부분은 현장에서 이미 받은 돈이라
+       영원히 줄지 않는다(= 브리핑 신뢰도 붕괴). 윈도 밖은 버리지 않고 합계만 따로 알린다. */
+    const up=listUnpaidSelectExtras_({limit:6,sinceDays:60});
+    extrasUnpaid.count=up.count; extrasUnpaid.total=up.total; extrasUnpaid.items=up.items;
+    extrasUnpaid.olderCount=up.olderCount; extrasUnpaid.olderTotal=up.olderTotal;
+  }catch(e){Logger.log('briefing extrasUnpaid fail: '+e.message);_briefFail_(sectionFailures,'추가금 미수',e);}
+  /* 캘린더 정합 점검 — 가용성은 캘린더만 보므로 활성 예약의 이벤트가 사라지면 그 슬롯이 다시
+     열린다(이중예약 직행). 매 브리핑마다 오늘~+60일을 전수 대조하고, 사라진 이벤트는 그 자리에서
+     재생성한다(자가치유). 실패하면 sectionFailures 로 올라가 '비어 보여도 믿지 마세요'가 뜬다. */
+  let calendarAudit=null;
+  try{ calendarAudit=auditBookingCalendarConsistency_(); }
+  catch(e){Logger.log('briefing calendarAudit fail: '+e.message);_briefFail_(sectionFailures,'캘린더 정합',e);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -11980,6 +12432,34 @@ function buildDailyBriefingEmailHtml_(b){
       actions.push(line(`&nbsp;&nbsp;· <b>${esc(x.name)}</b>님 · ${money(x.amount)} · 수령 ${esc(String(x.handedOverAt).slice(5,16))}${x.method?' ('+esc(x.method)+')':''}`));
     });
   }
+  /* 캘린더 정합 — 이중예약 의심이 최우선(빨강), 자가치유 결과는 그다음. 겹침은 이미 성립한
+     사고라 눈에 띄지 않으면 촬영 당일 현장에서 두 팀이 마주친다. */
+  if(b.calendarAudit&&b.calendarAudit.problemCount>0){
+    const ca=b.calendarAudit;
+    const over=(n,cap)=>n>cap?` 외 ${n-cap}건`:'';
+    (ca.overlaps||[]).forEach(function(o){actions.push(line(`🔴 <b>이중예약 의심</b> — ${esc(o)} · 같은 시간대 활성 예약 2건. <b>즉시 확인하세요.</b>`));});
+    if(ca.overlapsCount>(ca.overlaps||[]).length) actions.push(line(`&nbsp;&nbsp;· 이중예약 의심${over(ca.overlapsCount,(ca.overlaps||[]).length)}`));
+    (ca.healed||[]).forEach(function(h){actions.push(line(`🩹 캘린더 이벤트 자동 복구 — <b>${esc(h)}</b> · 장부엔 있는데 구글·애플 어디에도 일정이 없어 구글에 다시 만들었습니다 (그동안 이 슬롯이 예약 페이지에 열려 있었습니다)`));});
+    (ca.missing||[]).forEach(function(m){actions.push(line(`🔴 캘린더 이벤트 <b>재생성 실패</b> — ${esc(m)} · 이 시간이 지금도 빈 슬롯으로 보입니다. 수동 등록 필요`));});
+    (ca.drifted||[]).forEach(function(d){actions.push(line(`🟠 시간 불일치 — ${esc(d)} · 캘린더에서 손으로 옮기셨다면 장부·안내메일·리마인드는 아직 옛 시간입니다 (자동 수정하지 않음)`));});
+    (ca.deleteRetried||[]).forEach(function(x){actions.push(line(`🧹 취소건 캘린더 잔재 정리 — ${esc(x)} · 슬롯이 다시 열렸습니다`));});
+    (ca.dupBoth||[]).forEach(function(x){actions.push(line(`🟣 구글·애플 <b>양쪽에 일정</b> — ${esc(x)} · 애플이 진본이면 구글 쪽(자동 복구본일 수 있음)을 지워주세요`));});
+    (ca.appleLinger||[]).forEach(function(x){actions.push(line(`🟠 취소건인데 <b>애플 캘린더에 일정 잔존</b> — ${esc(x)} · 애플에서 직접 지워주세요 (그 시간이 계속 막혀 있습니다)`));});
+    (ca.orphans||[]).forEach(function(x){actions.push(line(`👻 <b>장부에 없는 캘린더 일정</b> — ${esc(x)} · 시트에 근거가 없습니다. 실수로 남은 것이면 구글 캘린더에서 지워주세요 (그 시간이 예약 페이지에서 막혀 있습니다)`));});
+    (ca.failures||[]).forEach(function(f){actions.push(line(`⚠️ 캘린더 정합 처리 실패 — ${esc(f)}`));});
+  }
+  /* 미청구(인보이스 없음)와 미수납(돈을 못 받음)은 다른 사건이다. 인보이스를 안 끊어도 현장에서
+     현금을 받았을 수 있고, 인보이스를 끊고도 못 받았을 수 있다. 그래서 줄을 따로 세운다. */
+  if(b.extrasUnpaid&&b.extrasUnpaid.count>0){
+    actions.push(line(`💶 인화/추가금 <b>미수납 ${b.extrasUnpaid.count}건</b> · 합계 <b style="color:#b91c1c;">${money(b.extrasUnpaid.total)}</b> — 인화장부에 '미결제'로 남아 있습니다 (어드민 셀렉탭 → 추가금 수납)`));
+    (b.extrasUnpaid.items||[]).forEach(function(x){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(x.name)}</b>님 · ${money(x.amount)} · 주문 ${esc(String(x.salesDate||'').slice(5))}${x.items?' · '+esc(String(x.items).slice(0,40)):''}`));
+    });
+    // 윈도 밖 잔량을 숨기면 '이게 전부'로 읽힌다 — 건수·합계만이라도 반드시 같이 보여준다
+    if(b.extrasUnpaid.olderCount>0){
+      actions.push(line(`&nbsp;&nbsp;<span style="color:#94a3b8;">· 60일 이전 미결제 ${b.extrasUnpaid.olderCount}건 (${money(b.extrasUnpaid.olderTotal)}) — 대부분 현장 수령분일 수 있어 브리핑에선 접어둡니다. 어드민에서 일괄 정리하세요.</span>`));
+    }
+  }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   if(b.consultations&&b.consultations.open>0){
     actions.push(line(`💼 미처리 상담 <b>${b.consultations.open}건</b> — Claude에게 "상담 견적 초안 만들어줘"`));
@@ -12039,6 +12519,8 @@ function briefingActionCount_(b){
     +((b.selectNotSent&&b.selectNotSent.count)||0)
     +((b.handoverPending&&b.handoverPending.count)||0)
     +((b.extrasUnbilled&&b.extrasUnbilled.count)||0)
+    +((b.extrasUnpaid&&b.extrasUnpaid.count)||0)
+    +((b.calendarAudit&&b.calendarAudit.problemCount)||0)
     +((b.sectionFailures&&b.sectionFailures.length)||0);
 }
 
@@ -12819,7 +13301,33 @@ function rejectRescheduleRequest(token,bookingRowIndex,memo){
 
 function batchUpdateAdvanced(token,list,type,val){
   assertAdmin_(token);const sh=getDbSheet();
-  if(type==='delete')list.sort((a,b)=>b.rowIndex-a.rowIndex).forEach(i=>sh.deleteRow(i.rowIndex));
+  if(type==='delete'){
+    /* 행만 지우면 캘린더 이벤트가 주인 없이 남아 그 슬롯을 영구히 막는다(시트에 근거가 없어
+       어떤 화면에도 안 잡힘). 행 삭제 전에 이벤트부터 정리하고, 슬롯이 풀렸으니 캐시도 무효화.
+       ⚠ 이벤트 삭제가 **실패**하면 그 행은 지우지 않는다 — 행이 유일한 포인터라, 행까지 지우면
+       미아 이벤트를 되찾을 방법이 없다(정합 점검은 시트 행 기준이라 못 본다). 남긴 행은 다음
+       시도에서 다시 지우면 된다. */
+    const skipped=[];
+    const sheetsForFix=ensureSheets_();
+    list.sort((a,b)=>b.rowIndex-a.rowIndex).forEach(i=>{
+      let evCleared=true;
+      try{
+        const evId=BOOKING_COL['캘린더ID']!=null?String(sh.getRange(i.rowIndex,BOOKING_COL['캘린더ID']+1).getValue()||'').trim():'';
+        if(evId) evCleared=deleteBookingCalendarEventById_(evId);
+      }catch(e){evCleared=false;Logger.log('batch delete calendar cleanup fail row '+i.rowIndex+': '+e.message);}
+      if(evCleared){
+        sh.deleteRow(i.rowIndex);
+        // 참조 보정 — booking-delete 와 동일한 규칙(셀렉/출장/결제연결행이 1씩 밀리는 사고 방지)
+        try{repairRefsAfterBookingRowDelete_(sheetsForFix,i.rowIndex);}
+        catch(e){Logger.log('batch delete ref repair fail row '+i.rowIndex+': '+e.message);}
+      }
+      else skipped.push(i.rowIndex);
+    });
+    bumpCalCacheVer_();
+    return skipped.length
+      ? {ok:true,skippedRows:skipped,message:'캘린더 이벤트 삭제 실패로 '+skipped.length+'개 행을 남겨두었습니다 (행: '+skipped.join(', ')+'). 잠시 후 다시 삭제해 주세요.'}
+      : {ok:true};
+  }
   else list.forEach(i=>{
     if(type==='status'){
       setBookingStatus_(sh,i.rowIndex,val);
@@ -12996,7 +13504,11 @@ function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt)
       note: normalized.memo,
       source: 'print',
       flow:'income',
-      rowIndex: r+1
+      rowIndex: r+1,
+      /* ⚠ 셀렉 추가금은 syncSelectPrintOrder_ 가 결제수단 '미결제'로 행을 만든다. 매출·부가세는
+         여기서 이미 인식되는데 openAmount 가 없어 **어떤 미수 리포트에도 잡히지 않았다** —
+         받았는지 안 받았는지 아무도 모르는 채 매출만 서던 구조. 예약 행과 같은 판정식을 준다. */
+      openAmount: isPrintRowUnpaid_(normalized) ? gross : 0
     });
   }
   _mark('printLoop');
@@ -13852,7 +14364,10 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
     if(!isCashPayMethod_(normalized.payMethod)) continue;
     const status=String(normalized.status||'').trim();
     if(/취소|환불|cancel/i.test(status)) continue;
-    const date=(parseDateSafe_(normalized.salesDate||normalized.dateStr).str||'').slice(0,10);
+    /* 현금 시재는 '돈이 언제 서랍에 들어왔나'다. 3월 주문을 7월에 현금으로 받으면 7월 시재가
+       늘어난다 — 주문일(매출날짜)로 잡으면 두 달치 시재가 모두 틀어진다. 수납 스탬프 우선. */
+    const paidDate=printRowPaidDate_(normalized.memo);
+    const date=paidDate||(parseDateSafe_(normalized.salesDate||normalized.dateStr).str||'').slice(0,10);
     const amount=parseMoneyValue_(normalized.total);
     if(amount<=0 || !inRange(date)) continue;
     entries.push(makeCashLedgerEntry_({
@@ -17409,30 +17924,81 @@ function buildSelectPhotocardHtml_(photocard){
   if(!photocard) return '';
   return `<ul style="margin:6px 0;padding-left:18px;"><li>${escapeHtml_(buildSelectPhotocardText_(photocard)).replace(/\n/g,'<br>')}</li></ul>`;
 }
+/* 메모 선두의 '셀렉:xxx' 태그만 뽑는다. 예전엔 메모 **전체**를 정확일치로 비교해서,
+   메모에 한 글자라도 덧붙으면(수납 스탬프 등) 같은 세션 행을 못 찾고 중복 행을 새로 만들었다. */
+function selectPrintMemoTag_(memo){
+  const m=String(memo||'').match(/^\s*셀렉\s*:\s*([A-Za-z0-9_-]+)/);
+  return m?m[1]:'';
+}
 function findSelectPrintOrderRow_(sh,sessionId){
   const colMap=getPrintSheetColMap_(sh);
   const memoIdx=colMap['메모'];
   if(memoIdx===undefined) return 0;
-  const candidates=new Set([`셀렉:${sessionId}`,`셀렉:${String(sessionId||'').slice(0,8)}`]);
+  const sid=String(sessionId||'').trim();
+  if(!sid) return 0;
+  const candidates=new Set([sid,sid.slice(0,8)]);
   const rows=sh.getDataRange().getValues();
   for(let i=1;i<rows.length;i+=1){
-    const memo=String(rows[i][memoIdx]||'').trim();
-    if(candidates.has(memo)) return i+1;
+    const tag=selectPrintMemoTag_(rows[i][memoIdx]);
+    if(tag&&candidates.has(tag)) return i+1;
   }
   return 0;
 }
 function syncSelectPrintOrder_(sh,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now,printUpgradeItems){
   const rowIdx=findSelectPrintOrderRow_(sh,sessionId);
+  const colMap=getPrintSheetColMap_(sh);
   if(totalExtra<=0){
-    if(rowIdx>1) sh.deleteRow(rowIdx);
+    if(rowIdx>1){
+      /* ⚠ 이미 받은 돈이 적힌 행은 지우지 않는다. 고객이 결제 후 셀렉을 다시 열어 추가분을 빼면
+         totalExtra 가 0이 되는데, 예전엔 그대로 행을 삭제해 **수납 기록·매출·부가세가 통째로
+         증발**했다(환불 결정을 내릴 근거조차 남지 않음). 미수 행일 때만 삭제한다. */
+      const prevRow=sh.getRange(rowIdx,1,1,Math.max(sh.getLastColumn(),CONFIG.PRINT_HEADERS.length)).getValues()[0];
+      const prev=normalizePrintRow_(prevRow,rowIdx,colMap);
+      if(isPrintRowUnpaid_(prev)||roundCurrency_(Number(prev.total)||0)<=0){
+        sh.deleteRow(rowIdx);
+      }else{
+        const keepMemo=String(prev.memo||'').trim();
+        const mark='[주문취소·기수납] 고객이 추가분을 취소했습니다 — 환불 여부 확인 필요';
+        if(keepMemo.indexOf('[주문취소·기수납]')<0){
+          sh.getRange(rowIdx,colMap['메모']+1).setValue(keepMemo?keepMemo+' '+mark:mark);
+        }
+      }
+    }
     return;
   }
-  const colMap=getPrintSheetColMap_(sh);
   const chargeablePrints=(printUpgradeItems||[]).concat(prints||[]);
   const printItems=chargeablePrints.map(p=>`${p.photoNum}번 ${p.label}×${p.qty||1}(${p.price}€)`).join(', ');
   const retouchItems=extraRetouch>0?`추가보정×${extraRetouch}(${retouchPrice}€)`:'';
   const totalQty=chargeablePrints.reduce((s,p)=>s+(Number(p.qty)||1),0)+extraRetouch;
-  const salesDate=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  /* 재동기화는 행 전체를 덮어쓴다. 예전엔 결제수단/상태/메모/매출날짜까지 무조건 초기값으로
+     되돌려서, 이미 수납한 추가금이 '미결제'로 되살아나고 매출날짜가 오늘로 밀려 분기를 넘나들었다.
+     → 기존 행이 있으면 수납 상태·메모·매출날짜를 보존한다. */
+  let payMethod='미결제';
+  let status='대기중';
+  let memoOut=`셀렉:${sessionId}`;
+  let salesDate=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(rowIdx>1){
+    const prevRow=sh.getRange(rowIdx,1,1,Math.max(sh.getLastColumn(),CONFIG.PRINT_HEADERS.length)).getValues()[0];
+    const prev=normalizePrintRow_(prevRow,rowIdx,colMap);
+    const prevMemo=String(prev.memo||'').trim();
+    if(selectPrintMemoTag_(prevMemo)) memoOut=prevMemo;
+    const prevSales=parseDateSafe_(prevRow[colMap['매출날짜']]||'').str.slice(0,10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(prevSales)) salesDate=prevSales;
+    if(!isPrintRowUnpaid_(prev)){
+      const prevAmt=roundCurrency_(Number(prev.total)||0);
+      const newAmt=roundCurrency_(Number(totalExtra)||0);
+      if(prevAmt===newAmt){
+        payMethod=String(prev.payMethod||'');
+        status=String(prev.status||'완료');
+      }else{
+        /* 수납 후 주문이 바뀐 경우: '수납됨'을 유지하면 차액을 영영 못 받는다. 미수로 되돌리고
+           흔적을 남긴다. 금액이 바뀐 시점이 곧 새 주문이므로 매출날짜도 오늘로 옮긴다 —
+           옛 날짜를 유지하면 이미 신고한 분기의 매출액이 조용히 달라진다. */
+        memoOut+=` [수납해제] €${prevAmt}→€${newAmt} 재주문 (기수납 ${String(prev.payMethod||'')})`;
+        salesDate=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      }
+    }
+  }
   const rowData=buildPrintSheetRow_(colMap,{
     '주문일시':now,
     '매출날짜':salesDate,
@@ -17442,15 +18008,131 @@ function syncSelectPrintOrder_(sh,sessionId,row,prints,extraRetouch,retouchPrice
     '보정항목':retouchItems||'-',
     '총수량':totalQty,
     '금액':totalExtra,
-    '결제수단':'미결제',
-    '메모':`셀렉:${sessionId}`,
-    '상태':'대기중'
+    '결제수단':payMethod,
+    '메모':memoOut,
+    '상태':status
   });
   if(rowIdx>1){
     sh.getRange(rowIdx,1,1,rowData.length).setValues([rowData]);
     return;
   }
   sh.appendRow(rowData);
+}
+
+/* ===== 셀렉 추가금 수납 =========================================================================
+   추가금 행은 syncSelectPrintOrder_ 가 '미결제/대기중'으로 만든다. 범용 행 편집
+   (updatePrintOrderAdmin / 인화내역 수정 모달)으로 결제수단을 고칠 수는 있었지만, 미수 집계·
+   수납일 기록·행 밀림 방어가 전혀 없어 셀렉 추가금 행은 사실상 '미결제'로 방치되고 있었다 —
+   매출·부가세만 인식되고 수납 여부는 아무도 추적하지 않던 지점. 여기가 전용 수납 경로다:
+   세션ID(셀렉:xxx 메모)로 행을 찾아 결제수단·상태·수납일 스탬프를 기록한다. */
+var PRINT_PAY_METHODS_=['현금','카드','계좌이체','미결제'];
+
+function listUnpaidSelectExtrasAdmin(token,payload){
+  assertAdmin_(token);
+  return listUnpaidSelectExtras_(payload);
+}
+
+/* 토큰 없이 도는 곳(D7 브리핑)도 같은 판정을 쓰도록 코어를 분리한다.
+   sinceDays: 매출날짜 기준 최근 N일만 집계(브리핑용). 그보다 오래된 건은 버리지 않고
+   olderCount/olderTotal 로 따로 돌려준다 — 조용히 사라지면 그게 또 다른 누수다. */
+function listUnpaidSelectExtras_(payload){
+  payload=payload||{};
+  const limit=Math.max(1,Math.min(100,parseInt(payload.limit,10)||30));
+  const sinceDays=parseInt(payload.sinceDays,10)||0;
+  let floor='';
+  if(sinceDays>0){
+    const f=new Date();
+    f.setDate(f.getDate()-sinceDays);
+    floor=Utilities.formatDate(f,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  }
+  const sheets=ensureSheets_();
+  const sh=sheets.printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  const rows=sh.getDataRange().getValues();
+  const all=[];
+  let total=0;
+  let olderCount=0;
+  let olderTotal=0;
+  for(let r=1;r<rows.length;r++){
+    const n=normalizePrintRow_(rows[r],r+1,colMap);
+    const amt=Number(n.total)||0;
+    if(amt<=0) continue;
+    if(/취소|환불|cancel/i.test(String(n.status||''))) continue;
+    if(!isPrintRowUnpaid_(n)) continue;
+    // 매출날짜 셀은 문자열일 수도 Date 객체일 수도 있다 — 시트가 자동 변환하기 때문
+    const salesRaw=colMap['매출날짜']!==undefined?rows[r][colMap['매출날짜']]:'';
+    const salesDate=(parseDateSafe_(salesRaw).str||parseDateSafe_(n.dateStr).str||'').slice(0,10);
+    if(floor&&salesDate&&salesDate<floor){olderCount++;olderTotal+=amt;continue;}
+    total+=amt;
+    all.push({rowIndex:r+1,name:String(n.name||'').trim()||'(이름없음)',
+      amount:roundCurrency_(amt),
+      salesDate:salesDate,
+      items:String(n.items||''),retouchItems:String(n.retouchItems||''),
+      status:String(n.status||''),sessionId:selectPrintMemoTag_(n.memo)});
+  }
+  // 정렬을 자르기 **전에** 해야 가장 오래된 건이 목록에 남는다(자른 뒤 정렬하면 시트 순서대로 잘림)
+  all.sort(function(a,b){return a.salesDate<b.salesDate?-1:(a.salesDate>b.salesDate?1:0);});
+  const items=all.slice(0,limit);
+  // count 는 미수 **전체** 건수. items 는 limit 로 잘린 목록이라 items.length 를 쓰면 축소 보고가 된다.
+  return{ok:true,count:all.length,shown:items.length,total:roundCurrency_(total),
+         olderCount:olderCount,olderTotal:roundCurrency_(olderTotal),items:items};
+}
+
+/* 수납 기록 — ref={sessionId} 우선, 없으면 {printRowIndex}. payMethod 는 화이트리스트.
+   행번호는 목록을 띄운 뒤 사용자가 프롬프트를 읽는 사이에도 밀릴 수 있다(다른 곳에서 행 삭제).
+   그래서 세션ID를 1순위로 쓰고, 행번호로 들어온 경우에도 expectName·expectAmount 로 되짚는다. */
+function markSelectExtraPaidAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const payMethod=PRINT_PAY_METHODS_.indexOf(String(payload.payMethod||'').trim())>=0
+    ? String(payload.payMethod).trim() : '현금';
+  if(payMethod==='미결제') throw new Error("수납 기록에는 '미결제'를 쓸 수 없습니다.");
+  const sheets=ensureSheets_();
+  const sh=sheets.printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  const sid=String(payload.sessionId||'').trim();
+  let rowIdx=0;
+  if(sid){
+    rowIdx=findSelectPrintOrderRow_(sh,sid);
+    if(!rowIdx) throw new Error('해당 세션의 추가금 행을 찾을 수 없습니다: '+sid);
+  }else{
+    rowIdx=parseInt(payload.printRowIndex,10)||0;
+    if(!rowIdx) throw new Error('sessionId 또는 printRowIndex 가 필요합니다.');
+  }
+  // 행을 확정한 **뒤에** 읽는다 — 찾기와 검증 사이에 시트가 바뀌면 엉뚱한 행을 검증하게 된다
+  const rows=sh.getDataRange().getValues();
+  if(rowIdx<2||rowIdx>rows.length) throw new Error('잘못된 인화장부 행 번호: '+rowIdx);
+  const n=normalizePrintRow_(rows[rowIdx-1],rowIdx,colMap);
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName&&String(n.name||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행="'+n.name+'" / 기대="'+expectName+'"');
+  }
+  /* 금액 확인 — 같은 고객이 추가금 행을 두 개 갖고 있을 때(예: 셀렉 2건) 이름만으로는
+     행이 밀린 걸 못 걸러낸다. 목록에서 본 금액과 다르면 멈춘다. */
+  const rowAmount=roundCurrency_(Number(n.total)||0);
+  if(payload.expectAmount!==undefined&&payload.expectAmount!==null&&payload.expectAmount!==''){
+    const want=roundCurrency_(Number(payload.expectAmount)||0);
+    if(Math.abs(want-rowAmount)>0.005){
+      throw new Error('행 금액 불일치: 행=€'+rowAmount.toFixed(2)+' / 기대=€'+want.toFixed(2)
+        +' (목록을 새로고침한 뒤 다시 시도하세요)');
+    }
+  }
+  if(!isPrintRowUnpaid_(n)){
+    return{ok:true,alreadyPaid:true,rowIndex:rowIdx,name:n.name,amount:rowAmount,
+           payMethod:String(n.payMethod||'')};
+  }
+  sh.getRange(rowIdx,colMap['결제수단']+1).setValue(payMethod);
+  // 상태는 '대기중'일 때만 완료로 올린다 — 출력완료 등 진행 상태를 되돌리지 않는다.
+  // (normalizePrintRow_ 는 빈 상태를 '완료'로 정규화하므로 st 가 빈 문자열이 되는 일은 없다)
+  const st=String(n.status||'').trim();
+  const raiseStatus=(st==='대기중');
+  if(raiseStatus) sh.getRange(rowIdx,colMap['상태']+1).setValue('완료');
+  const memoCell=String(rows[rowIdx-1][colMap['메모']]||'').trim();
+  const stamp='[수납] '+Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+' '+payMethod
+    +(payload.memo?(' · '+String(payload.memo).slice(0,60)):'');
+  sh.getRange(rowIdx,colMap['메모']+1).setValue(memoCell?memoCell+' '+stamp:stamp);
+  return{ok:true,rowIndex:rowIdx,name:String(n.name||''),amount:rowAmount,
+         payMethod:payMethod,statusWritten:raiseStatus?'완료':st};
 }
 
 function normalizeSelectMailAddress_(value){
@@ -23294,10 +23976,9 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
   if(isBookingCancelledStatus_(row[1])) return {ok:false, message:'이미 취소된 예약입니다.'};
   // 상태 변경
   bookingSheet.getRange(bookingRowIndex,2).setValue('취소됨');
-  // 캘린더 이벤트 삭제
+  // 캘린더 이벤트 삭제 — 실패 시 ID 보존(포인터가 있어야 아침 정합 점검이 재시도한다)
   const eventId=String(row[16]||'').trim();
-  if(eventId){
-    deleteBookingCalendarEventById_(eventId);
+  if(eventId&&deleteBookingCalendarEventById_(eventId)){
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
   // 취소 이메일 발송
@@ -23676,10 +24357,11 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
-  if(eventId){
-    deleteBookingCalendarEventById_(eventId);
+  if(eventId&&deleteBookingCalendarEventById_(eventId)){ // 실패 시 ID 보존 → 정합 점검이 재시도
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
+  // 슬롯이 풀렸다 — 캐시를 즉시 무효화해야 재예약 고객이 열린 시간을 본다 (이전엔 누락돼 최대 30분 지연)
+  bumpCalCacheVer_();
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(email && email.includes('@') && !email.includes('수기')){
     try{
@@ -25009,9 +25691,12 @@ function holdQuoteAdmin(token, number, payload){
       '※ 견적 전환/거절/만료/보류해제 시 자동 삭제됩니다.'
     ].filter(Boolean).join('\n');
     const eventIds=tentativeDates.map(function(d){
+      /* 종일(all-day) 이벤트는 getEventsForRange_ 가 isAllDayEvent() 로 건너뛴다 → 가예약해 둔 날에
+         일반 예약이 그대로 들어오던 갭. 시간 미지정 가예약은 '그날 전체를 덮는 시간 이벤트'로 만들어
+         모든 슬롯을 막는다(00:00~23:59). 시간 지정 가예약은 종전대로 해당 구간만. */
       const event=timeStr
         ? cal.createEvent(title,new Date(`${d}T${timeStr}:00`),new Date(new Date(`${d}T${timeStr}:00`).getTime()+durMin*60000),{description:desc})
-        : cal.createAllDayEvent(title,new Date(`${d}T00:00:00`),{description:desc});
+        : cal.createEvent(title,new Date(`${d}T00:00:00`),new Date(`${d}T23:59:59`),{description:desc});
       return event.getId();
     });
     const startLabel=timeStr?`${tentativeDates[0]} ${timeStr}`:tentativeDates.join(' ~ ');
@@ -25163,6 +25848,15 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   const bookingItemGroup=String(q.itemGroup||'biz').trim();
   const quoteMeetingLocation=String(o.location||o.shootingLocation||o.meetingLocation||extractBookingLocationFromText_(q.memo)||'').trim();
   const bookingLocation=quoteMeetingLocation||(_isExternalBookingItemGroup_(bookingItemGroup)?'':STUDIO_ADDRESS);
+  /* 이 견적의 가예약 이벤트를 **충돌 검사 전에** 먼저 지운다. 가예약은 이제 슬롯을 막는 시간
+     이벤트라, 안 지우고 검사하면 자기 자신의 가예약과 충돌로 잡혀 전환이 막힌다. */
+  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
+  /* 충돌 가드 — 견적전환은 지정 시간이 이미 차 있어도 그대로 이벤트를 만들던 경로였다. */
+  if(o.allowConflict!==true){
+    const cc=checkBookingTimeConflict_(dateStr,timeStr,durationMin,bookingItemGroup,bookingLocation,'');
+    if(cc.readFailed) throw new Error('캘린더를 확인할 수 없어 전환을 보류합니다. 잠시 후 다시 시도해 주세요.');
+    if(cc.conflict) return {ok:false,conflict:true,message:'해당 시간에 이미 다른 일정이 있습니다 ('+dateStr+' '+timeStr+'). 겹쳐도 전환하려면 확인 후 강행하세요.'};
+  }
   const descLines=[
     `이름=${displayName}`,
     `전화=${q.phone}`,
@@ -25181,8 +25875,7 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   if(q.vatId) descLines.push(`VAT: ${q.vatId}`);
   if(quoteMeetingLocation) descLines.push(`촬영장소=${quoteMeetingLocation}`);
   if(q.memo) descLines.push(`메모: ${q.memo}`);
-  // 가예약이 걸려 있었다면 실제 예약 이벤트로 대체되므로 먼저 삭제
-  _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
+  // 가예약은 위 충돌 검사 전에 이미 해제됨(자기 충돌 방지)
   const event=calendar.createEvent(
     `${productLabel} | ${displayName} | ${priceLabel}`,
     startTime,endTime,
