@@ -1578,6 +1578,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"></div>
       </div>
       <div class="form-group">
+        <label>추가 촬영일 (2일 이상 작업 — 한 줄에 하나: <code>날짜 시간 소요분</code>)</label>
+        <textarea id="m_extradays" rows="2" placeholder="예: 2026-08-13 09:00 480" style="font-family:monospace;font-size:12px;"></textarea>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">매출은 이 예약 한 건으로만 잡히고, 캘린더에 날짜별 이벤트가 생깁니다 ('캘린더 등록' 체크 시).</div>
+      </div>
+      <div class="form-group">
         <label>메모</label><textarea id="m_memo" rows="2"></textarea>
         <div style="margin-top:6px;">
           <span class="memo-tmpl" onclick="appendMemo('계약금 입금 확인됨')">계약금 확인됨</span>
@@ -1956,6 +1961,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           </select>
         </div>
         <div class="form-group"><label>추가 메모</label><input type="text" id="qcv_memo" placeholder="장부 요청사항에 덧붙임"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>추가 촬영일 (2일 이상 작업 — 한 줄에 하나: <code>날짜 시간 소요분</code>)</label>
+        <textarea id="qcv_extradays" rows="2" placeholder="예: 2026-08-13 09:00 480&#10;    2026-08-14 10:00 360" style="font-family:monospace;font-size:12px;"></textarea>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">매출은 이 예약 한 건으로만 잡히고, 캘린더에는 날짜별 이벤트가 생겨 그 시간들이 예약 페이지에서 막힙니다.</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <input type="checkbox" id="qcv_sendmail" style="width:auto;margin:0;">
@@ -8601,6 +8611,16 @@ function saveManual(){
     portfolioUsage: document.getElementById('m_portfolio_usage')?.value || '',
     portfolioPurpose: document.getElementById('m_portfolio_purpose')?.value || '',
     memo: document.getElementById('m_memo').value,
+    extraDays: (function(){
+      const lines=document.getElementById('m_extradays').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      const parsed=[];
+      for(const line of lines){
+        const m=line.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})(?:\s+(\d+))?$/);
+        if(!m) return {__invalid:line}; // 아래 검증에서 잡는다
+        parsed.push({date:m[1],time:m[2].length===4?'0'+m[2]:m[2],durationMin:parseInt(m[3],10)||480});
+      }
+      return parsed;
+    })(),
     addCalendar: document.getElementById('m_cal').checked,
     sendEmail: document.getElementById('m_send_email').checked,
     gdprConsent: true,
@@ -8613,6 +8633,11 @@ function saveManual(){
     alert('이름, 연락처, 날짜, 촬영종류, 상품명은 필수 항목입니다.');
     return;
   }
+  if(data.extraDays&&data.extraDays.__invalid){
+    alert('추가 촬영일 형식 오류: "'+data.extraDays.__invalid+'"\n예: 2026-08-13 09:00 480');
+    return;
+  }
+  if(Array.isArray(data.extraDays)&&!data.extraDays.length) delete data.extraDays;
   if((data.itemGroup==='portfolio'||selectedMeta.custom) && data.currencyMode!=='krw' && (String(data.price||'').trim()==='' || Number(data.price) < 0)){
     alert('직접 입력 상품은 총 금액을 입력해 주세요.');
     return;
@@ -8675,6 +8700,7 @@ function saveManual(){
       ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => document.getElementById(id).checked = false);
       resetManualProductSpecificFields();
       document.getElementById('m_memo').value = '';
+      document.getElementById('m_extradays').value = '';
       document.getElementById('m_cal').checked = true;
       document.getElementById('m_send_email').checked = false;
       currentWalkinRowIndexForManual = 0;
@@ -9502,6 +9528,10 @@ function renderSelectDeliveryCell(sel,rowIndex){
   const handoverBtn=(sel&&sel.submittedAt&&rowIndex&&(dm==='pickup'||dm==='mail')&&!String((sel&&sel.handoverAt)||'').trim())
     ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#065f46;border-color:#a7f3d0;" onclick="markSelHandover(${rowIndex})" title="${dm==='mail'?'우편 발송 완료 기록':'방문 수령 완료 기록'}">${dm==='mail'?'발송완료':'수령완료'}</button>`
     : '';
+  // 픽업 시간 수기 등록/변경 — 전화로 정한 시간을 사장님이 직접 기록 (고객 페이지와 같은 쓰기)
+  const pickupTimeBtn=(sel&&sel.sessionId&&rowIndex&&dm==='pickup'&&!String((sel&&sel.handoverAt)||'').trim())
+    ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#1d4ed8;border-color:#bfdbfe;" onclick="setSelPickupTime(${rowIndex})" title="픽업 시간 수기 등록/변경 (전화 합의분)">픽업시간</button>`
+    : '';
   // 수령 기록 되돌리기 — 아직 탭에 보이는 건(주로 우편발송)용. 마감돼 사라진 건은 툴바 '수령 되돌리기'로.
   const undoBtn=(sel&&sel.sessionId&&rowIndex&&String((sel&&sel.handoverAt)||'').trim())
     ? ` <button class="btn btn-outline btn-sm" style="margin-top:4px;font-size:10px;padding:1px 7px;color:#9a3412;border-color:#fed7aa;" onclick="undoSelHandover(${rowIndex})" title="수령/발송 기록 취소">되돌리기</button>`
@@ -9509,8 +9539,29 @@ function renderSelectDeliveryCell(sel,rowIndex){
   return `<div title="${escHtml(detailPlain)}" style="max-width:220px;">
     <span style="display:inline-block;${info.tone}padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;">${info.label}</span>
     <div style="margin-top:4px;font-size:10px;line-height:1.4;color:#64748b;max-width:220px;white-space:normal;overflow:visible;">${formatSelectDeliveryDetailHtml(detail)}</div>
-    ${switchBtn}${handoverBtn}${undoBtn}
+    ${switchBtn}${pickupTimeBtn}${handoverBtn}${undoBtn}
   </div>`;
+}
+
+/* 픽업 시간 수기 등록 — 전화로 합의한 시간을 기록. 고객 확인 메일은 물어보고 발송. */
+function setSelPickupTime(rowIndex){
+  const r=allSelectDashboard.find(x=>Number(x.rowIndex)===Number(rowIndex));
+  const sel=r&&r.sel;
+  if(!sel||!sel.sessionId){showToast('셀렉 세션이 없습니다.','warn');return;}
+  const cur=String(sel.pickupAt||'').trim();
+  const input=prompt(`${r.name}님 픽업 시간 (YYYY-MM-DD HH:MM)${cur?`\n현재: ${cur}`:''}`,cur||'');
+  if(input===null)return;
+  const m=String(input).trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})$/);
+  if(!m){showToast('형식: 2026-08-01 14:30','warn');return;}
+  const date=m[1], time=m[2].length===4?'0'+m[2]:m[2];
+  const notify=confirm('고객에게 픽업 확인 메일을 보낼까요?\n(확인=발송, 취소=기록만)');
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      showToast(`픽업 ${res.rescheduled?'변경':'등록'} — ${res.pickupAt}${res.mailSent?' · 메일 발송됨':''}`,'ok');
+      loadSelectHistory();
+    } else alert('실패: '+((res&&res.message)||'오류'));
+  }).withFailureHandler(e=>{if(isAdminSessionError(e)){handleApiError(e);return;}alert('오류: '+e.message);})
+  .adminRpc(adminToken,'setSelectPickupTime',{sessionId:sel.sessionId,expectName:String(r.name||'').trim(),date:date,time:time,notify:notify});
 }
 
 /* 수령 기록 되돌리기 — 서버가 수령직전상태로 소유권 확인 후 상태·예약장부까지 대칭 복구한다. */
@@ -13857,6 +13908,7 @@ function openQuoteConvertModal(number){
   document.getElementById('qcv_deposit').value=Number(q.depositAmount||0)>0?String(q.depositAmount):'';
   document.getElementById('qcv_status').value='확정됨';
   document.getElementById('qcv_memo').value='';
+  document.getElementById('qcv_extradays').value='';
   const mail=document.getElementById('qcv_sendmail');
   mail.disabled=false;
   mail.checked=false;
@@ -13894,10 +13946,22 @@ function confirmQuoteConvert(){
   if(String(depRaw).trim()!=='') o.depositAmount=parseAdminEuroInput(depRaw);
   const memo=document.getElementById('qcv_memo').value.trim();
   if(memo) o.memo=memo;
+  // 추가 촬영일 파싱 — "YYYY-MM-DD HH:MM [소요분]" 한 줄에 하나, 형식 오류는 여기서 막는다
+  const exLines=document.getElementById('qcv_extradays').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(exLines.length){
+    const parsed=[];
+    for(const line of exLines){
+      const m=line.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})(?:\s+(\d+))?$/);
+      if(!m){showToast('추가 촬영일 형식 오류: "'+line+'" — 예: 2026-08-13 09:00 480','warn');return;}
+      parsed.push({date:m[1],time:m[2].length===4?'0'+m[2]:m[2],durationMin:parseInt(m[3],10)||480});
+    }
+    o.extraDays=parsed;
+  }
   if(!o.date||!o.time){showToast('촬영 날짜와 시간을 지정해 주세요','warn');return;}
   if(o.sendEmail&&!confirm('전환 직후 고객에게 예약 확정 메일(계좌 안내 포함)이 발송됩니다. 계속할까요?'))return;
   const doneMsg=(r)=>`예약 전환 완료 (행 ${r.bookingRowIndex} · ${r.status||'확정됨'}`
-    +`${r.deposit>0?` · 계약금 €${Number(r.deposit).toFixed(2)}`:''}${r.mailSent?' · 확정메일 발송됨':''})`;
+    +`${r.deposit>0?` · 계약금 €${Number(r.deposit).toFixed(2)}`:''}${r.mailSent?' · 확정메일 발송됨':''}`
+    +`${Array.isArray(r.extraDays)&&r.extraDays.length?` · 추가일정 ${r.extraDays.length}일`:''})`;
   runExclusive('quote:convert:'+number, release=>{
     google.script.run
       .withSuccessHandler(res=>{

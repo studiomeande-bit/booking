@@ -57,10 +57,12 @@ const MODULE = [
      getTitle(){return this.t;} getLocation(){return this.l;}
      deleteEvent(){ if(this.throwOnDelete) throw new Error('delete fail'); this.deleted=true; }
    }
+   let __EVSEQ__=0;
    class FakeCalendar {
      constructor(id){ this.id=id; this.events=[]; this.throwOnGetEvents=false; }
      getEvents(s,e){ if(this.throwOnGetEvents) throw new Error('quota'); return this.events.filter(ev=>!ev.deleted&&ev.s<e.getTime()&&ev.e>s.getTime()); }
      getEventById(id){ if(this.throwOnGetById) throw new Error('api err'); const ev=this.events.find(x=>x.id===id&&!x.deleted); return ev||null; }
+     createEvent(title,s,e,opts){ const ev=new FakeEvent('new-'+(++__EVSEQ__),s.getTime(),e.getTime(),title); this.events.push(ev); return ev; }
    }
    const __CALS__={};
    const CalendarApp={ getCalendarById:(id)=>(__CALS__[id]&&__CALS__[id].nullOut)?null:(__CALS__[id]||null), getDefaultCalendar:()=>__CALS__['main-cal'] };`,
@@ -109,6 +111,8 @@ const MODULE = [
      if(__APPLE_FAIL__){ ICLOUD_DETAIL_READ_FAILED_=true; return []; }
      return __APPLE__;
    }`,
+  extractFn(gs, 'parseBookingExtraDays_'),
+  extractFn(gs, 'cleanupBookingExtraDayEvents_'),
   extractFn(gs, 'auditBookingCalendarConsistency_'),
   extractFn(gs, 'checkBookingTimeConflict_'),
   `export {FakeEvent,FakeCalendar,FakeSheet,__CALS__,getEventsForRange_,auditBookingCalendarConsistency_,
@@ -442,6 +446,43 @@ async function runScenarios(M, rec) {
     rec('고아: problemCount 에 반영', rep.problemCount >= 2, true);
   }
 
+  // ── 7) 다일정(추가 촬영일, 2026-07-29 휘슬러 건) — knownIds·취소 정리·증발 복구 ──
+  {
+    const t1 = dayOffset(4, '10:00');
+    const exDate = dayOffset(5, '09:00').slice(0, 10);
+    const exJson = JSON.stringify([{ date: exDate, time: '09:00', durationMin: 480, eventId: 'x1' }]);
+
+    // 7a) 활성행의 추가일정 이벤트는 고아가 아니다 (knownIds 수집)
+    M.resetCals(); M.resetEnsure(); M.setApple([], false);
+    const cal = new FakeCalendar('main-cal'); __CALS__['main-cal'] = cal;
+    const ms1 = Date.parse(t1.replace(' ', 'T') + ':00');
+    cal.events.push(new FakeEvent('d1', ms1, ms1 + 3600000, '행사 | 휘슬러 | 1000€'));
+    const msX = Date.parse(exDate + 'T09:00:00');
+    cal.events.push(new FakeEvent('x1', msX, msX + 3600000, '행사 | 휘슬러 | 1000€ (2/2일차)'));
+    M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t1, 상태: '확정됨', 고객명: '휘슬러', 캘린더ID: 'd1', 추가일정JSON: exJson })]));
+    let rep = M.auditBookingCalendarConsistency_();
+    rec('다일정: 추가 이벤트 고아 아님', rep.orphansCount, 0);
+    rec('다일정: 정상 상태 문제 0', rep.problemCount, 0);
+
+    // 7b) 취소행 → 추가 이벤트 정리
+    M.setSheet(new FakeSheet(H, [mkRow({ 예약일시: t1, 상태: '취소됨', 고객명: '휘슬러', 캘린더ID: '', 추가일정JSON: exJson })]));
+    rep = M.auditBookingCalendarConsistency_();
+    rec('다일정: 취소 시 추가 이벤트 삭제', cal.events.find(e => e.id === 'x1').deleted === true, true);
+    rec('다일정: 정리 집계(deleteRetried)', rep.deleteRetriedCount >= 1, true);
+
+    // 7c) 활성행 추가 이벤트 증발 → 재생성 + JSON eventId 갱신
+    M.resetCals(); M.resetEnsure();
+    const cal2 = new FakeCalendar('main-cal'); __CALS__['main-cal'] = cal2;
+    cal2.events.push(new FakeEvent('d1', ms1, ms1 + 3600000, '행사 | 휘슬러'));
+    const sh7 = new FakeSheet(H, [mkRow({ 예약일시: t1, 상태: '확정됨', 고객명: '휘슬러', 캘린더ID: 'd1', 추가일정JSON: JSON.stringify([{ date: exDate, time: '09:00', durationMin: 480, eventId: 'gone-x' }]) })]);
+    M.setSheet(sh7);
+    rep = M.auditBookingCalendarConsistency_();
+    rec('다일정: 증발 복구 healed', rep.healedCount, 1);
+    rec('다일정: 복구 이벤트 생성', cal2.events.some(e => String(e.t || '').indexOf('추가일정 복구') >= 0), true);
+    const savedJson = JSON.parse(String(sh7.rows[1][COL['추가일정JSON']] || '[]'));
+    rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
+  }
+
   // ── 4) CAP — 목록은 잘려도 count 는 전체 ─────────────────────────────────
   {
     M.resetCals(); M.resetEnsure('');
@@ -479,10 +520,10 @@ const STRUCTURAL = [
     /if\(eventId&&deleteBookingCalendarEventById_\(eventId\)\)\{ \/\/ 실패 시 ID 보존[\s\S]{0,300}bumpCalCacheVer_\(\);/],
   ['ensure 비활성 분기: 삭제 성공시에만 클리어',
     /const deletedOk=eventId\?deleteBookingCalendarEventById_\(eventId\):true;\n\s*if\(deletedOk&&eventCol!=null\)/],
-  ['일괄삭제: 이벤트 정리 성공시에만 행 삭제(실패 행 보존) + 참조보정 + 캐시 무효화',
-    /if\(evId\) evCleared=deleteBookingCalendarEventById_\(evId\);[\s\S]{0,220}if\(evCleared\)\{\n\s*sh\.deleteRow\(i\.rowIndex\);[\s\S]{0,200}repairRefsAfterBookingRowDelete_\(sheetsForFix,i\.rowIndex\);[\s\S]{0,160}else skipped\.push\(i\.rowIndex\);[\s\S]{0,80}bumpCalCacheVer_\(\);/],
-  ['수기등록: 충돌 가드 + MRT/시간미정 예외 + 강행 스탬프',
-    /if\(time!=='00:00'\)\{ \/\/ 시간미정 관행 행은 검사 무의미[\s\S]{0,700}conflictStamp='\[충돌확인필요\] '/],
+  ['일괄삭제: 이벤트 정리 성공시에만 행 삭제(실패 행 보존) + 다일정 정리 + 참조보정 + 캐시 무효화',
+    /if\(evId\) evCleared=deleteBookingCalendarEventById_\(evId\);[\s\S]{0,700}cleanupBookingExtraDayEvents_\(null,0,fakeRow\);[\s\S]{0,200}if\(evCleared\)\{\n\s*sh\.deleteRow\(i\.rowIndex\);[\s\S]{0,200}repairRefsAfterBookingRowDelete_\(sheetsForFix,i\.rowIndex\);[\s\S]{0,160}else skipped\.push\(i\.rowIndex\);[\s\S]{0,80}bumpCalCacheVer_\(\);/],
+  ['수기등록: 충돌 가드 + MRT/시간미정 예외 + 다일정 검사 + 강행 스탬프',
+    /if\(time!=='00:00'\)\{ \/\/ 시간미정 관행 행은 검사 무의미[\s\S]{0,1800}conflictStamp='\[충돌확인필요\] '/],
   ['수기등록: 스크립트 잠금(공개 예약과 직렬화)',
     /__wlock=LockService\.getScriptLock\(\);\n\s*if\(!__wlock\.tryLock\(10000\)\)/],
   ['견적전환: 충돌 가드',
@@ -579,6 +620,15 @@ const FAULTS = [
   ['구글·애플 중복 미탐지',
     /if\(apple\) push\('dupBoth',name/,
     "if(false) push('dupBoth',name"],
+  ['다일정 knownIds 수집 제거(추가 이벤트 매일 고아 오탐)',
+    /parseBookingExtraDays_\(row\)\.forEach\(function\(xd\)\{\n\s*const xid=String\(xd&&xd\.eventId\|\|''\)\.trim\(\);\n\s*if\(xid\) knownIds\.add\(xid\);\n\s*\}\);/,
+    ''],
+  ['다일정 취소 정리 제거(추가 날짜 영구 잠김)',
+    /const exClean=cleanupBookingExtraDayEvents_\(bookingSheet,r\+1,row\);/,
+    'const exClean={deleted:0,failed:0};'],
+  ['다일정 증발 복구 제거',
+    /if\(!isTbd&&BOOKING_COL\['추가일정JSON'\]!=null\)\{\n      const exDays=parseBookingExtraDays_\(row\);/,
+    "if(false){\n      const exDays=parseBookingExtraDays_(row);"],
 ];
 
 let caught = 0;

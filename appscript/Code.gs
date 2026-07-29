@@ -49,7 +49,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -358,6 +358,8 @@ function adminRpc(token, action, payload){
       return listRecentSelectHandoversAdmin(token, payload||{});
     case 'listUnpaidSelectExtras':
       return listUnpaidSelectExtrasAdmin(token, payload||{});
+    case 'setSelectPickupTime':
+      return setSelectPickupTimeAdmin(token, payload||{});
     case 'markSelectExtraPaid':
       return markSelectExtraPaidAdmin(token, payload||{});
     case 'getStudioPresenceState':
@@ -1234,6 +1236,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-pickup-reminder-run') return jsonOk_(runSelectPickupRemindersAdmin(token,payload));
         if(action==='select-add-reshoot') return jsonOk_(addSelectReshootForAgent_(token,payload));
         if(action==='select-extra-unpaid') return jsonOk_(listUnpaidSelectExtrasAdmin(token,payload));
+        if(action==='select-pickup-set') return jsonOk_(setSelectPickupTimeAdmin(token,payload));
         if(action==='select-extra-paid') return jsonOk_(markSelectExtraPaidAdmin(token,payload));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
         if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token));
@@ -4598,6 +4601,50 @@ function buildBookingCalendarTitleFromRow_(row){
 /* 반환 규약: '이벤트가 캘린더에 더 이상 없음이 보장되면' true. 이미 지워져 있어도 true 다 —
    '이미 없음'과 '삭제 실패'를 같은 false 로 뭉치면, 손으로 지운 이벤트의 취소행을 정합 점검이
    매일 "삭제 재시도 실패"로 오탐 보고하고 ID 도 영영 못 지운다. false = 진짜 실패(재시도 필요). */
+/* ===== 다일정(2일+ 작업) 지원 — 2026-07-29 휘슬러 건으로 도입 =========================
+   기업 행사처럼 여러 날에 걸치는 작업은 예약행 하나(매출 1회 인식) + 날짜별 캘린더 이벤트로
+   모델링한다. 추가 날짜들은 '추가일정JSON' 컬럼에 [{date,time,durationMin,eventId}] 로 저장 —
+   가용성은 이벤트가 자연히 막고, 정합점검 knownIds 가 이 ID들을 알아야 고아로 오인하지 않는다. */
+function parseBookingExtraDays_(row){
+  if(BOOKING_COL['추가일정JSON']==null) return [];
+  try{
+    const arr=JSON.parse(String(row[BOOKING_COL['추가일정JSON']]||'[]'));
+    return Array.isArray(arr)?arr.filter(function(d){return d&&d.date;}):[];
+  }catch(e){ return []; }
+}
+/* 추가 날짜 이벤트 생성/재생성 — extraDays [{date,time,durationMin}] 를 받아 이벤트를 만들고
+   eventId 를 채워 JSON 으로 되돌려준다(시트 쓰기는 호출자). titleBase 는 1일차 이벤트와 같은 제목. */
+function createBookingExtraDayEvents_(titleBase,description,location,extraDays){
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const total=extraDays.length+1; // 1일차 포함 총 일수
+  return extraDays.map(function(d,i){
+    const time=String(d.time||'09:00');
+    const dur=Math.max(30,parseInt(d.durationMin,10)||480);
+    const s=new Date(`${d.date}T${time}:00`);
+    const e=new Date(s.getTime()+dur*60000);
+    const ev=calendar.createEvent(`${titleBase} (${i+2}/${total}일차)`,s,e,{description:description,location:location||''});
+    return {date:String(d.date),time:time,durationMin:dur,eventId:ev.getId()};
+  });
+}
+/* 예약의 추가 날짜 이벤트 전부 삭제(멱등). row 를 주면 JSON 에서 읽고, 성공분은 eventId 를 비운다.
+   반환: {deleted,failed}. 시트 쓰기는 rowIndex 가 있을 때만(삭제 직전 행에는 불필요). */
+function cleanupBookingExtraDayEvents_(sheet,rowIndex,row){
+  const days=parseBookingExtraDays_(row);
+  if(!days.length) return {deleted:0,failed:0};
+  let deleted=0,failed=0,changed=false;
+  days.forEach(function(d){
+    const id=String(d.eventId||'').trim();
+    if(!id) return;
+    if(deleteBookingCalendarEventById_(id)){ d.eventId=''; deleted++; changed=true; }
+    else failed++;
+  });
+  if(changed&&sheet&&rowIndex&&BOOKING_COL['추가일정JSON']!=null){
+    try{ sheet.getRange(rowIndex,BOOKING_COL['추가일정JSON']+1).setValue(JSON.stringify(days)); }catch(e){}
+  }
+  if(deleted) bumpCalCacheVer_();
+  return {deleted:deleted,failed:failed};
+}
+
 function deleteBookingCalendarEventById_(eventId){
   const safeEventId=String(eventId||'').trim();
   if(!safeEventId) return true; // 지울 대상이 없으면 '없음 보장' 성립
@@ -4652,6 +4699,7 @@ function ensureBookingCalendarEventForRow_(sheet,rowIndex,row){
     // 삭제 실패 시 ID 보존 — 다음 ensure/정합 점검이 재시도할 수 있는 유일한 단서다
     const deletedOk=eventId?deleteBookingCalendarEventById_(eventId):true;
     if(deletedOk&&eventCol!=null) sheet.getRange(rowIndex,eventCol+1).setValue('');
+    try{ cleanupBookingExtraDayEvents_(sheet,rowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
     try{
       const rowForTravel=sheet.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
       upsertTravelLedgerForBooking_(rowIndex,rowForTravel);
@@ -4755,6 +4803,11 @@ function auditBookingCalendarConsistency_(){
     // 창 밖 행이라도 캘린더ID는 수집해 둔다(먼 미래 예약 이벤트를 고아로 오판하지 않도록)
     const anyId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
     if(anyId) knownIds.add(anyId);
+    // 다일정 추가 날짜 이벤트 ID 도 시트가 아는 ID 다 — 없으면 매일 고아로 오탐된다
+    parseBookingExtraDays_(row).forEach(function(xd){
+      const xid=String(xd&&xd.eventId||'').trim();
+      if(xid) knownIds.add(xid);
+    });
     const dtStr=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
     const day=dtStr.slice(0,10);
     if(!day||day<today||day>horizonStr) continue;
@@ -4773,6 +4826,12 @@ function auditBookingCalendarConsistency_(){
           }
         }catch(e){push('failures','취소건 정리 오류: '+name+' — '+String(e.message||'').slice(0,80));}
       }
+      // 다일정 추가 날짜 이벤트도 취소와 함께 정리(안 지우면 그 날들이 계속 막혀 있다)
+      try{
+        const exClean=cleanupBookingExtraDayEvents_(bookingSheet,r+1,row);
+        if(exClean.deleted) push('deleteRetried',name+' 추가일정 '+exClean.deleted+'건');
+        if(exClean.failed) push('failures','취소건 추가일정 삭제 실패: '+name+' ('+exClean.failed+'건)');
+      }catch(e){}
       /* 취소됐는데 애플 캘린더에 일정이 남아 있으면 그 슬롯이 계속 막힌다(매출 손실).
          시스템은 애플에 쓸 수 없으므로 보고만 — 사장님이 애플에서 직접 지워야 한다. */
       if(!appleFeedFailed&&appleSameDayMatch(name,day)){
@@ -4815,6 +4874,35 @@ function auditBookingCalendarConsistency_(){
          이 상태 = **양쪽 등록이 운영 관행(정상)**이다. 문제로 집계하지 않고 진단 필드로만 남긴다
          (양쪽 다 가용성을 막으므로 이중예약 위험 없음). */
       if(apple) push('dupBoth',name+' '+dtStr.slice(0,16));
+    }
+    /* 다일정 추가 날짜 — 이벤트가 증발하면 그 날 슬롯이 조용히 열린다(1일차와 같은 보호).
+       애플 사본이 있으면 정상(양쪽 등록 관행), 피드 실패 중엔 판정 보류. */
+    if(!isTbd&&BOOKING_COL['추가일정JSON']!=null){
+      const exDays=parseBookingExtraDays_(row);
+      let exChanged=false;
+      exDays.forEach(function(xd){
+        if(!xd||!xd.date||xd.date<today||xd.date>horizonStr) return;
+        let exEv=null;
+        const xid=String(xd.eventId||'').trim();
+        if(xid){ try{exEv=calendar.getEventById(xid);}catch(e){exEv=null;} }
+        if(exEv) return;
+        if(appleFeedFailed) return;
+        if(appleSameDayMatch(name,xd.date)) return;
+        try{
+          const xs=new Date(xd.date+'T'+(xd.time||'09:00')+':00');
+          const xe=new Date(xs.getTime()+Math.max(30,parseInt(xd.durationMin,10)||480)*60000);
+          const nev=calendar.createEvent(String(row[BOOKING_COL['상품']]||'예약')+' | '+name+' (추가일정 복구)',xs,xe,
+            {description:'다일정 자동 복구 — 예약장부 행 '+(r+1)});
+          xd.eventId=nev.getId();
+          knownIds.add(xd.eventId);
+          exChanged=true;
+          push('healed',name+' 추가일정 '+xd.date);
+        }catch(e){push('missing',name+' 추가일정 '+xd.date);}
+      });
+      if(exChanged){
+        try{bookingSheet.getRange(r+1,BOOKING_COL['추가일정JSON']+1).setValue(JSON.stringify(exDays));}catch(e){}
+        bumpCalCacheVer_();
+      }
     }
     if(!isTbd){
       const startObj=parseDateSafe_(row[BOOKING_COL['예약일시']]).obj;
@@ -9629,6 +9717,7 @@ function cancelBooking(eventId){
     if(deleteBookingCalendarEventById_(eventId)){
       if(BOOKING_COL['캘린더ID']!=null) sh.getRange(idx+2,BOOKING_COL['캘린더ID']+1).setValue('');
     }
+    try{ cleanupBookingExtraDayEvents_(sh,idx+2,row); }catch(e){} // 다일정 추가 날짜도 정리
     const email=String(row[4]||'');const rowLang=String(row[5]||'ko').toLowerCase().trim();
     const TC=EMAIL_I18N[rowLang]||EMAIL_I18N.ko;const formattedDt=parseDateSafe_(row[0]).str||String(row[0]);
     const products=getCachedProducts_();const product=products.find(p=>p.nameKo===row[7]);
@@ -10390,6 +10479,11 @@ function addManualBookingAdmin(token, data) {
        예외: 시간미정(00:00) 관행 행, MRT(이미 결제된 외부 예약 — 기록이 우선), allowConflict 강행.
        강행/MRT 인데 실제로 겹치면 메모에 스탬프를 남겨 아침 정합점검·사장님 눈에 걸리게 한다. */
     let conflictStamp='';
+    // 추가 촬영일(다일정 작업, 예: 2일 행사) — [{date,time,durationMin}], 1일차와 같은 날짜 무시
+    const extraDaysNorm=(Array.isArray(data.extraDays)?data.extraDays:[]).map(function(d){
+      return {date:String(d&&d.date||'').trim(),time:String(d&&d.time||'09:00').trim(),durationMin:Math.max(30,parseInt(d&&d.durationMin,10)||480)};
+    }).filter(function(d){return /^\d{4}-\d{2}-\d{2}$/.test(d.date)&&/^\d{2}:\d{2}$/.test(d.time)&&d.date!==date;});
+    let extraDaysSavedManual=[];
     if(time!=='00:00'){ // 시간미정 관행 행은 검사 무의미(추후 booking-set-time 이 검사)
       const isMrt=bookingSource==='마이리얼트립'||rawGroup==='마이리얼트립';
       const forced=data.allowConflict===true||isMrt;
@@ -10397,6 +10491,12 @@ function addManualBookingAdmin(token, data) {
       if(!forced){
         if(cc.readFailed) throw new Error('캘린더를 확인할 수 없어 등록을 보류합니다. 잠시 후 다시 시도해 주세요.');
         if(cc.conflict) return {ok:false,conflict:true,message:'해당 시간에 이미 다른 일정이 있습니다 ('+date+' '+time+'). 겹쳐도 등록하려면 확인 후 강행하세요.'};
+        for(let di=0;di<extraDaysNorm.length;di++){
+          const d=extraDaysNorm[di];
+          const cd=checkBookingTimeConflict_(d.date,d.time,d.durationMin,groupToSave,String(data.location||'').trim(),'');
+          if(cd.readFailed) throw new Error('캘린더를 확인할 수 없어 등록을 보류합니다. 잠시 후 다시 시도해 주세요.');
+          if(cd.conflict) return {ok:false,conflict:true,message:'추가 촬영일에 이미 다른 일정이 있습니다 ('+d.date+' '+d.time+'). 겹쳐도 등록하려면 확인 후 강행하세요.'};
+        }
       }else if(cc.conflict&&!cc.readFailed){
         conflictStamp='[충돌확인필요] '+date+' '+time+' 등록 시점에 다른 일정과 겹침';
       }
@@ -10598,6 +10698,14 @@ function addManualBookingAdmin(token, data) {
       });
       ev.setColor(CalendarApp.EventColor.PALE_GREEN);
       eventId = ev.getId();
+      // 추가 촬영일(다일정 작업) — 1일차와 같은 제목으로 날짜별 이벤트. 시트 기록은 append 후.
+      if(extraDaysNorm.length){
+        try{
+          extraDaysSavedManual=createBookingExtraDayEvents_(
+            `${String(data.calendarTitlePrefix||'')}[수기/확정] ${productName} | ${name} | ${peopleToSave}인 | ${priceLabel}`,
+            manualCalendarDescription.join('\n'),savedBookingLocation,extraDaysNorm);
+        }catch(e){Logger.log('수기등록 추가일정 이벤트 실패: '+e.message);}
+      }
     }
 
     const bookingRow = new Array(CONFIG.BOOKING_HEADERS.length).fill('');
@@ -10664,6 +10772,11 @@ function addManualBookingAdmin(token, data) {
       }
     }
     upsertTravelLedgerForBooking_(bookingRowIndex,bookingRow);
+    // 다일정: 만들어진 추가 날짜 이벤트 ID 를 행에 기록(정합점검 knownIds·취소 시 정리에 필수)
+    if(extraDaysSavedManual.length&&BOOKING_COL['추가일정JSON']!=null){
+      try{ sh.getRange(bookingRowIndex,BOOKING_COL['추가일정JSON']+1).setValue(JSON.stringify(extraDaysSavedManual)); }
+      catch(e){Logger.log('수기등록 추가일정 기록 실패: '+e.message);}
+    }
 
     bumpCalCacheVer_();
 
@@ -11984,6 +12097,8 @@ function deleteBookingForAgent_(token,payload){
       }
     }
     selToDelete.sort(function(a,b){return b-a;}).forEach(function(rn){selSh.deleteRow(rn);});
+    // ②b 다일정 추가 날짜 이벤트 정리 (행이 사라지기 전에 — 행이 유일한 포인터)
+    try{ cleanupBookingExtraDayEvents_(null,0,row); }catch(e){}
     // ③ 예약 행 삭제
     sh.deleteRow(rIdx);
     // ④ 참조 보정 — 공용 헬퍼 (일괄삭제 경로와 공유)
@@ -13400,6 +13515,12 @@ function batchUpdateAdvanced(token,list,type,val){
       try{
         const evId=BOOKING_COL['캘린더ID']!=null?String(sh.getRange(i.rowIndex,BOOKING_COL['캘린더ID']+1).getValue()||'').trim():'';
         if(evId) evCleared=deleteBookingCalendarEventById_(evId);
+        // 다일정 추가 날짜 이벤트 — 행 삭제 전에 정리(행이 유일한 포인터)
+        if(BOOKING_COL['추가일정JSON']!=null){
+          const fakeRow=[];
+          fakeRow[BOOKING_COL['추가일정JSON']]=sh.getRange(i.rowIndex,BOOKING_COL['추가일정JSON']+1).getValue();
+          cleanupBookingExtraDayEvents_(null,0,fakeRow);
+        }
       }catch(e){evCleared=false;Logger.log('batch delete calendar cleanup fail row '+i.rowIndex+': '+e.message);}
       if(evCleared){
         sh.deleteRow(i.rowIndex);
@@ -18428,6 +18549,59 @@ function scheduleSelectPickup_(sessionId,pickupDate,pickupTime){
       htmlBody:`<div style="font-family:-apple-system,sans-serif;font-size:14px;line-height:1.7;">📦 <b>${escapeHtml_(done.name)}</b>님이 픽업 시간을 ${done.prevPickupAt?'변경':'예약'}했습니다.<br>일시: <b>${date} ${time}</b>${done.prevPickupAt?`<br>이전: ${escapeHtml_(done.prevPickupAt)}`:''}<br>상품: ${escapeHtml_(done.product)}<br>세션: ${escapeHtml_(sid)}</div>`});
   }catch(e){}
   return{ok:true,pickupAt:`${date} ${time}`,rescheduled:!!done.prevPickupAt};
+}
+
+/* 픽업 일정 수기 등록 (어드민) — 전화로 시간을 정한 경우 사장님이 직접 기록한다.
+   고객 페이지(scheduleSelectPickup_)와 같은 쓰기(픽업일시+픽업캘린더ID+syncSelectPickupEvent_)를
+   쓰되, 고객용 가드 중 출력완료·슬롯가용·쿨다운은 건너뛴다(사장님 합의가 진실). 완료건·우편건은 막는다. */
+function setSelectPickupTimeAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const date=String(payload.date||'').trim();
+  const time=String(payload.time||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{2}:\d{2}$/.test(time)) throw new Error("date(YYYY-MM-DD)·time(HH:MM)이 필요합니다.");
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) throw new Error('처리 중입니다. 잠시 후 다시 시도해 주세요.');
+  let done=null;
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    if(!selSh) throw new Error('셀렉 시트를 열 수 없습니다.');
+    const rows=selSh.getDataRange().getValues();
+    let rowNum=0;
+    const sid=String(payload.sessionId||'').trim();
+    if(sid){
+      const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+      if(idx===-1) throw new Error('해당 세션을 찾을 수 없습니다: '+sid);
+      rowNum=idx+2;
+    }else{
+      rowNum=parseInt(payload.selectRowIndex,10)||0;
+      if(rowNum<2||rowNum>rows.length) throw new Error('sessionId 또는 유효한 selectRowIndex 가 필요합니다.');
+    }
+    const row=rows[rowNum-1];
+    const expectName=String(payload.expectName||'').trim();
+    if(expectName&&String(row[SELECT_COL['고객명']]||'').trim()!==expectName){
+      throw new Error('행 고객명 불일치: 행="'+String(row[SELECT_COL['고객명']]||'')+'" / 기대="'+expectName+'"');
+    }
+    if(isSelectFinalLockedStatus_(row[SELECT_COL['상태']])) throw new Error('이미 완료된 세션입니다.');
+    if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') throw new Error("픽업 수령 세션이 아닙니다. 먼저 수령방식을 픽업으로 전환해 주세요.");
+    if(!isSelectHandoverOpen_(row)) throw new Error('이미 수령이 완료된 주문입니다.');
+    const prevPickupAt=parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16);
+    const existingEventId=String(row[SELECT_COL['픽업캘린더ID']]||'').trim();
+    const eventId=syncSelectPickupEvent_(existingEventId,row,String(row[0]||''),{method:'pickup',pickupDate:date,pickupTime:time});
+    selSh.getRange(rowNum,SELECT_COL['픽업일시']+1).setValue(`${date} ${time}`);
+    selSh.getRange(rowNum,SELECT_COL['픽업캘린더ID']+1).setValue(eventId||'');
+    bumpCalCacheVer_();
+    done={sessionId:String(row[0]||''),name:String(row[SELECT_COL['고객명']]||''),
+          lang:String(row[SELECT_COL['언어']]||'ko'),email:String(row[SELECT_COL['이메일']]||'').trim(),
+          prevPickupAt:prevPickupAt};
+  }finally{ try{lock.releaseLock();}catch(e){} }
+  let mailSent=false;
+  if(payload.notify===true&&done.email&&done.email.indexOf('@')>0){
+    try{ _sendSelectPickupConfirmEmail_(done.email,done.name,done.lang,date,time,done.sessionId,!!done.prevPickupAt); mailSent=true; }
+    catch(e){Logger.log('admin pickup confirm mail fail: '+e.message);}
+  }
+  return{ok:true,name:done.name,pickupAt:`${date} ${time}`,prevPickupAt:done.prevPickupAt,
+         rescheduled:!!done.prevPickupAt,mailSent:mailSent};
 }
 
 // 픽업 예약/변경 확인 메일 — 일시·주소·변경 안내
@@ -24128,6 +24302,7 @@ function cancelBookingAdmin(token, bookingRowIndex, refundAmount, issueInvoice, 
   if(eventId&&deleteBookingCalendarEventById_(eventId)){
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
+  try{ cleanupBookingExtraDayEvents_(bookingSheet,bookingRowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
   // 취소 이메일 발송
   const email=String(row[4]||'');
   const lang=String(row[5]||'ko').toLowerCase().trim();
@@ -24507,6 +24682,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   if(eventId&&deleteBookingCalendarEventById_(eventId)){ // 실패 시 ID 보존 → 정합 점검이 재시도
     if(BOOKING_COL['캘린더ID']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['캘린더ID']+1).setValue('');
   }
+  try{ cleanupBookingExtraDayEvents_(bookingSheet,bookingRowIndex,row); }catch(e){} // 다일정 추가 날짜도 정리
   // 슬롯이 풀렸다 — 캐시를 즉시 무효화해야 재예약 고객이 열린 시간을 본다 (이전엔 누락돼 최대 30분 지연)
   bumpCalCacheVer_();
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
@@ -26015,11 +26191,21 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   /* 이 견적의 가예약 이벤트를 **충돌 검사 전에** 먼저 지운다. 가예약은 이제 슬롯을 막는 시간
      이벤트라, 안 지우고 검사하면 자기 자신의 가예약과 충돌로 잡혀 전환이 막힌다. */
   _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
-  /* 충돌 가드 — 견적전환은 지정 시간이 이미 차 있어도 그대로 이벤트를 만들던 경로였다. */
+  /* 추가 촬영일(다일정 작업) — [{date,time,durationMin}] 정규화. 1일차와 같은 날짜는 무시. */
+  const extraDays=(Array.isArray(o.extraDays)?o.extraDays:[]).map(function(d){
+    return {date:String(d&&d.date||'').trim(),time:String(d&&d.time||'09:00').trim(),durationMin:Math.max(30,parseInt(d&&d.durationMin,10)||480)};
+  }).filter(function(d){return /^\d{4}-\d{2}-\d{2}$/.test(d.date)&&/^\d{2}:\d{2}$/.test(d.time)&&d.date!==dateStr;});
+  /* 충돌 가드 — 견적전환은 지정 시간이 이미 차 있어도 그대로 이벤트를 만들던 경로였다. 추가 날짜도 검사. */
   if(o.allowConflict!==true){
     const cc=checkBookingTimeConflict_(dateStr,timeStr,durationMin,bookingItemGroup,bookingLocation,'');
     if(cc.readFailed) throw new Error('캘린더를 확인할 수 없어 전환을 보류합니다. 잠시 후 다시 시도해 주세요.');
     if(cc.conflict) return {ok:false,conflict:true,message:'해당 시간에 이미 다른 일정이 있습니다 ('+dateStr+' '+timeStr+'). 겹쳐도 전환하려면 확인 후 강행하세요.'};
+    for(let di=0;di<extraDays.length;di++){
+      const d=extraDays[di];
+      const cd=checkBookingTimeConflict_(d.date,d.time,d.durationMin,bookingItemGroup,bookingLocation,'');
+      if(cd.readFailed) throw new Error('캘린더를 확인할 수 없어 전환을 보류합니다. 잠시 후 다시 시도해 주세요.');
+      if(cd.conflict) return {ok:false,conflict:true,message:'추가 촬영일에 이미 다른 일정이 있습니다 ('+d.date+' '+d.time+'). 겹쳐도 전환하려면 확인 후 강행하세요.'};
+    }
   }
   const descLines=[
     `이름=${displayName}`,
@@ -26065,6 +26251,14 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   if(BOOKING_COL['selected_service']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['selected_service']+1).setValue(productLabel);
   if(BOOKING_COL['shooting_date']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_date']+1).setValue(dateStr);
   if(BOOKING_COL['shooting_time']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_time']+1).setValue(timeStr);
+  // 추가 촬영일 이벤트 — 매출은 이 행 하나, 캘린더는 날짜별로 막는다 (다일정 작업)
+  let extraDaysSaved=[];
+  if(extraDays.length&&BOOKING_COL['추가일정JSON']!=null){
+    try{
+      extraDaysSaved=createBookingExtraDayEvents_(`${productLabel} | ${displayName} | ${priceLabel}`,descLines.join('\n'),bookingLocation,extraDays);
+      bookingSheet.getRange(bookingRowIndex,BOOKING_COL['추가일정JSON']+1).setValue(JSON.stringify(extraDaysSaved));
+    }catch(e){Logger.log('견적전환 추가일정 이벤트 실패: '+e.message);}
+  }
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.CONVERTED);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['연결예약행']+1).setValue(bookingRowIndex);
   if(!q.acceptedAt) quoteSheet.getRange(found.rowIndex,QUOTE_COL['수락일시']+1).setValue(now);
@@ -26079,7 +26273,8 @@ function convertQuoteToBookingAdmin(token, number, overrides){
     }catch(e){Logger.log('견적전환 확정메일 실패: '+e.message);}
   }
   return {ok:true,bookingRowIndex,eventId:event.getId(),startAt:`${dateStr} ${timeStr}`,
-          status:bookingStatus,deposit:depositAmt,balance:balanceAmt,total:totalAmt,mailSent:mailSent};
+          status:bookingStatus,deposit:depositAmt,balance:balanceAmt,total:totalAmt,mailSent:mailSent,
+          extraDays:extraDaysSaved.map(function(d){return d.date+' '+d.time;})};
 }
 
 function _expireStaleQuotes_(){
