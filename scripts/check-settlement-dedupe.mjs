@@ -455,7 +455,10 @@ const STRUCTURE = [
   ['CSV 임포트가 findSettlementRow_ 로 찾는다', /const found=findSettlementRow_\(existingIndex,tx\);/],
   ['CSV 임포트가 append 후 등록한다', /sh\.appendRow\(rowValues\);\n[^\n]*\n\s*registerSettlementRow_\(existingIndex,tx,found\.refKey,sh\.getLastRow\(\)\);/],
   ['SumUp API 동기화가 seq/해시를 새 산식으로 만든다', /tx\.hash=buildSettlementHash_\('sumup',tx,raw,tx\.seq\);/],
-  ['SumUp API 동기화가 findSettlementRow_ 로 찾는다', /const found=findSettlementRow_\(existingIndex,tx\);[\s\S]{0,600}?registerSettlementRow_\(existingIndex,tx,found\.refKey,sh\.getLastRow\(\)\)/],
+  ['SumUp API 동기화가 findSettlementRow_ 로 찾는다', /const found=findSettlementRow_\(existingIndex,tx\);[\s\S]{0,2000}?registerSettlementRow_\(existingIndex,tx,found\.refKey,sh\.getLastRow\(\)\)/],
+  ['동기화 갱신이 기존 matched 를 review 로 강등하지 않는다', /if\(tx\.matchStatus==='review'\)\{\n\s*const prev=sh\.getRange\(found\.rowIndex,1,1,SETTLEMENT_HEADERS\.length\)\.getValues\(\)\[0\];[\s\S]{0,300}?prevStatus!=='review'/],
+  ['CSV 임포트도 ±14일 장부 창을 쓴다', /const ledgerWin=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const accounting=getAccountingLedger\(token,ledgerWin\.start,ledgerWin\.end,false,sheets\);/],
+  ['CSV 최종 재매칭도 같은 창을 쓴다', /\? getAccountingLedger\(token,ledgerWin\.start,ledgerWin\.end,false,sheets\)\n\s*: accounting;/],
   ['해시 base 에 사후값이 없다', /function buildSettlementHash_\(source,tx,raw,seq\)\{\n\s*return sha256Hex32_\(settlementIdentityKey_\(source,tx\)\+'\|'\+String\(seq\|\|0\)\);/],
   ['정체성 키에 payoutDate/fee/net 이 없다', (src) => {
     const body = extractFn(src, 'settlementIdentityKey_');
