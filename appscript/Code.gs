@@ -21850,20 +21850,20 @@ function syncRecentSumupTransactions_(options){
       tx.memo=match.memo||'';
       const found=findSettlementRow_(existingIndex,tx);
       if(found.rowIndex){
-        /* ⚠ 이 경로의 매칭은 장부 없이(2번째 인자 []) 돈다 — 장부로만 잡히는 건은 여기서 항상
-           review 다. 기존 행이 이미 matched 인데 review 로 **강등하면 재매칭 결과가 15분마다
-           뒤집힌다**(실사고: 재매칭 직후 동기화가 7월 3건을 도로 review 로). 결제·payout 데이터만
-           갱신하고, 판정은 더 좋아질 때(비 review)만 덮어쓴다. */
-        if(tx.matchStatus==='review'){
-          const prev=sh.getRange(found.rowIndex,1,1,SETTLEMENT_HEADERS.length).getValues()[0];
-          const prevStatus=String(prev[SETTLEMENT_COL['매칭상태']]||'').trim();
-          if(prevStatus && prevStatus!=='review'){
-            tx.matchStatus=prevStatus;
-            tx.matchTarget=String(prev[SETTLEMENT_COL['매칭대상']]||'');
-            tx.matchRow=String(prev[SETTLEMENT_COL['매칭행']]||'');
-            tx.accountingClass=String(prev[SETTLEMENT_COL['회계분류']]||'')||tx.accountingClass;
-            tx.memo=String(prev[SETTLEMENT_COL['메모']]||'');
-          }
+        /* ⚠ 기존 행의 매칭 판정은 **무조건 보존**한다. 이 루프의 매칭은 장부 없이(2번째 인자 [])
+           1:1 배정도 모른 채 돈다 — 강등(matched→review)이든 승격(review→matched)이든 여기서
+           손대면 아래 refreshSettlementMatchesForPeriod_(장부+claimedEntries)가 맞춰 둔 1:1 이 깨진다.
+           특히 created==0 틱(신규 거래 없음, 재매칭 미실행)에서 같은 금액 두 건이 같은 예약으로 다시
+           승격돼 이중매칭이 되살아나던 버그(2026-07-30 적대적 리뷰 발견). 결제·payout 데이터만
+           갱신하고, 매칭은 재매칭에 전담시킨다. */
+        const prev=sh.getRange(found.rowIndex,1,1,SETTLEMENT_HEADERS.length).getValues()[0];
+        const prevStatus=String(prev[SETTLEMENT_COL['매칭상태']]||'').trim();
+        if(prevStatus){
+          tx.matchStatus=prevStatus;
+          tx.matchTarget=String(prev[SETTLEMENT_COL['매칭대상']]||'');
+          tx.matchRow=String(prev[SETTLEMENT_COL['매칭행']]||'');
+          tx.accountingClass=String(prev[SETTLEMENT_COL['회계분류']]||'')||tx.accountingClass;
+          tx.memo=String(prev[SETTLEMENT_COL['메모']]||'');
         }
         const rowValues=buildSettlementSheetRow_(tx,importedAt);
         sh.getRange(found.rowIndex,1,1,rowValues.length).setValues([rowValues]);

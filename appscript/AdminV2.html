@@ -13886,14 +13886,37 @@ function deleteQuoteUI(number){
 
 let __qcvQuote=null; // 잔금 힌트·프리필용 (모달 열려있는 동안만 유효)
 // 견적 메모/품목에서 촬영 소요시간(분) 추출 — 긴 촬영을 120분 기본값으로 잡는 이중예약 구멍 방지.
-// 숫자가 단위 바로 앞에 붙은 경우만 잡아 "pro Stunde"(시간당 rate) 같은 오탐을 피한다.
+// ⚠ 순진하게 "첫 시간 표현"을 잡으면 **배송/전달/보정 시간**을 촬영시간으로 오인한다
+//   (예: "innerhalb von 24 Stunden"·"24시간 이내 전달"·"Lieferung 3 Stunden"). 그래서:
+//   ① 절(줄/불릿/세미콜론) 단위로 쪼개고 ② '촬영' 문맥이 있으면서 '배송/보정' 문구가 없는 절에서만
+//   ③ 12시간 이내로만 읽는다. 애매하면 안전하게 120분 기본값(짧게 잡아 이중예약 나느니 길게 안전).
+//   쉼표는 유럽식 소수점("1,5 Stunden")과 충돌하므로 절 구분자에서 제외한다.
 function extractQuoteDurationMin(q){
-  const text=String((q&&q.memo)||'')+' '+(((q&&q.items)||[]).map(it=>String((it&&it.description)||'')).join(' '));
-  let m=text.match(/(\d+(?:[.,]\d+)?)\s*(?:stunden?|시간|hours?\b|hrs?\b|std\.?)/i);
-  if(m){const h=parseFloat(String(m[1]).replace(',','.'));if(h>0&&h<=24)return Math.round(h*60);}
-  m=text.match(/(\d+)\s*(?:minuten?|분|mins?\b|min\b)/i);
-  if(m){const mn=parseInt(m[1],10);if(mn>=30&&mn<=1440)return mn;}
-  return 120;
+  const parts=[String((q&&q.memo)||'')].concat(((q&&q.items)||[]).map(it=>String((it&&it.description)||'')));
+  const clauses=parts.join('\n').split(/[\n;·•、]+/);
+  const DELIVERY=/(lieferung|lieferzeit|innerhalb|bearbeitung|retusche|turnaround|delivery|within|전달|납품|배송|이내|보정|편집|후보정)/i;
+  const SHOOT=/(shooting|shoot|aufnahme|fotoshoot|photoshoot|reportage|hochzeit|wedding|촬영|웨딩|결혼|스냅|snap)/i;
+  // ⚠ 단위 뒤 경계는 \b 대신 (?![a-z]) — 한글("시간"/"분")은 \w 가 아니라 \b 가 안 걸린다.
+  const HOUR=/(\d+(?:[.,]\d+)?)\s*(?:stunden?|std|시간|hours?|hrs?|h)(?![a-z])\.?(?:\s*(\d{1,2})\s*(?:minuten?|mins?|min|분)(?![a-z]))?/i;
+  const MIN=/(\d+)\s*(?:minuten?|mins?|min|분)(?![a-z])/i;
+  let best=0;
+  for(let i=0;i<clauses.length;i++){
+    const clause=clauses[i];
+    if(!SHOOT.test(clause)||DELIVERY.test(clause)) continue;
+    // "N시간 [M분]" / "N Stunden [M Minuten]" — 시(+선택 분). 유럽식 소수점 허용.
+    let m=clause.match(HOUR);
+    if(m){
+      const h=parseFloat(String(m[1]).replace(',','.'));
+      if(h>0&&h<=12){
+        const total=Math.round(h*60)+((m[2]&&+m[2]>0&&+m[2]<60)?+m[2]:0);
+        if(total>=30&&total<=720&&total>best) best=total;
+        continue;
+      }
+    }
+    m=clause.match(MIN);
+    if(m){const mn=parseInt(m[1],10);if(mn>=30&&mn<=720&&mn>best)best=mn;}
+  }
+  return best||120;
 }
 // 견적 메모에서 촬영 장소 추출 — 서버 extractBookingLocationFromText_ 와 동일 패턴(모달 미리채움용)
 function extractQuoteLocationText(text){

@@ -456,7 +456,14 @@ const STRUCTURE = [
   ['CSV 임포트가 append 후 등록한다', /sh\.appendRow\(rowValues\);\n[^\n]*\n\s*registerSettlementRow_\(existingIndex,tx,found\.refKey,sh\.getLastRow\(\)\);/],
   ['SumUp API 동기화가 seq/해시를 새 산식으로 만든다', /tx\.hash=buildSettlementHash_\('sumup',tx,raw,tx\.seq\);/],
   ['SumUp API 동기화가 findSettlementRow_ 로 찾는다', /const found=findSettlementRow_\(existingIndex,tx\);[\s\S]{0,2000}?registerSettlementRow_\(existingIndex,tx,found\.refKey,sh\.getLastRow\(\)\)/],
-  ['동기화 갱신이 기존 matched 를 review 로 강등하지 않는다', /if\(tx\.matchStatus==='review'\)\{\n\s*const prev=sh\.getRange\(found\.rowIndex,1,1,SETTLEMENT_HEADERS\.length\)\.getValues\(\)\[0\];[\s\S]{0,300}?prevStatus!=='review'/],
+  // 동기화의 기존-행 갱신은 매칭 컬럼을 **무조건 보존**해야 한다(강등도 승격도 금지). 그래야
+  // created==0 틱에서 claimless 매칭이 1:1 배정을 덮어써 이중매칭을 되살리지 못한다.
+  ['동기화가 기존 행의 매칭을 무조건 보존한다', () => {
+    const body = extractFn(gs, 'syncRecentSumupTransactions_');
+    // 조건부(review 일 때만) 보존이 아니라 prevStatus 존재 시 항상 보존하는 형태여야 한다
+    if (/if\(tx\.matchStatus==='review'\)\{\s*\n\s*const prev=/.test(body)) return false; // 옛 조건부 가드가 남아있으면 실패
+    return /if\(found\.rowIndex\)\{[\s\S]{0,900}?const prevStatus=String\(prev\[SETTLEMENT_COL\['매칭상태'\]\]\|\|''\)\.trim\(\);\s*\n\s*if\(prevStatus\)\{\s*\n\s*tx\.matchStatus=prevStatus;/.test(body);
+  }],
   ['CSV 임포트도 ±14일 장부 창을 쓴다', /const ledgerWin=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const accounting=getAccountingLedger\(token,ledgerWin\.start,ledgerWin\.end,false,sheets\);/],
   ['CSV 최종 재매칭도 같은 창을 쓴다', /\? getAccountingLedger\(token,ledgerWin\.start,ledgerWin\.end,false,sheets\)\n\s*: accounting;/],
   ['해시 base 에 사후값이 없다', /function buildSettlementHash_\(source,tx,raw,seq\)\{\n\s*return sha256Hex32_\(settlementIdentityKey_\(source,tx\)\+'\|'\+String\(seq\|\|0\)\);/],

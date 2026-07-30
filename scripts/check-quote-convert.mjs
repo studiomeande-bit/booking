@@ -85,17 +85,28 @@ async function runScenarios(M, rec) {
 
   // ── 소요시간 추출 ─────────────────────────────────────────────────────────
   const D = M.extractQuoteDurationMin;
-  // 라이브 AN-260006: "7 Stunden Hybrid..." + "pro Stunde"(시간당 rate 오탐 주의) → 420분
-  rec('소요: 7 Stunden → 420', D({ memo: '- 7 Stunden Hybrid-Foto- und Videoaufnahmen\n- 5 Fotos pro Stunde' }), 420);
-  rec('소요: pro Stunde 단독은 무시(기본 120)', D({ memo: '5 bearbeitete Fotos pro Stunde' }), 120);
-  rec('소요: 3시간 → 180', D({ memo: '촬영 3시간 진행' }), 180);
-  rec('소요: 30분 → 30', D({ memo: '촬영 시간 30분, 3명' }), 30);
-  rec('소요: 2 hours → 120', D({ memo: 'shoot for 2 hours' }), 120);
-  rec('소요: 품목에서도 추출', D({ memo: '', items: [{ description: 'Ganztages-Shooting 8 Stunden' }] }), 480);
+  // 라이브 AN-260006: 불릿 첫 줄 "7 Stunden ... Videoaufnahmen"(촬영), 다른 줄 "pro Stunde"(rate) → 420
+  rec('소요: 7 Stunden 촬영줄 → 420', D({ memo: '- 7 Stunden Hybrid-Foto- und Videoaufnahmen (Video mit B-Kamera)\n- 5 bearbeitete Fotos pro Stunde' }), 420);
+  rec('소요: pro Stunde 단독은 무시', D({ memo: '5 bearbeitete Fotos pro Stunde' }), 120);
+  rec('소요: 촬영 3시간 → 180', D({ memo: '촬영 3시간 진행' }), 180);
+  rec('소요: 촬영 30분 → 30', D({ memo: '촬영 시간 30분, 3명' }), 30);
+  rec('소요: shoot 2 hours → 120', D({ memo: 'shoot for 2 hours' }), 120);
+  rec('소요: 품목 Shooting 8 Stunden → 480', D({ memo: '', items: [{ description: 'Ganztages-Shooting 8 Stunden' }] }), 480);
   rec('소요: 인쇄크기 10 x 15 cm 오탐 없음', D({ memo: 'Druckgröße 10 x 15 cm, 35 Fotos' }), 120);
-  rec('소요: 없으면 120', D({ memo: 'Hochzeitsreportage komplett' }), 120);
-  rec('소요: 25시간(비현실) 무시', D({ memo: '25 Stunden' }), 120);
-  rec('소요: 20분(너무 짧음) 무시', D({ memo: '20분' }), 120);
+  rec('소요: 촬영어 없으면 120', D({ memo: 'Hochzeitsreportage komplett' }), 120);
+
+  // 리뷰어가 찾은 배송/전달 오탐 — 전부 안전한 120(또는 촬영값)으로 떨어져야 한다
+  rec('소요: innerhalb 24 Stunden(배송) 오탐 없음', D({ memo: 'Lieferung innerhalb von 24 Stunden' }), 120);
+  rec('소요: 24시간 이내 전달(배송) 오탐 없음', D({ memo: '보정본 24시간 이내 전달' }), 120);
+  rec('소요: 배송+촬영 별도 줄 → 촬영값', D({ memo: '보정본 24시간 이내 전달\n웨딩 촬영 5시간' }), 300);
+  rec('소요: Lieferung 3 Stunden(배송) → 120', D({ memo: 'Lieferung innerhalb von 3 Stunden' }), 120);
+  rec('소요: Bearbeitungszeit 48 Stunden → 120', D({ memo: 'Bearbeitungszeit ca. 48 Stunden' }), 120);
+  rec('소요: 촬영 1 Std 30 min 결합 → 90', D({ memo: '촬영 1 Std. 30 min' }), 90);
+  rec('소요: 촬영 1,5 Stunden(유럽 소수점) → 90', D({ memo: 'Fotoshooting 1,5 Stunden' }), 90);
+  rec('소요: 25 Stunden 촬영(>12h) 무시', D({ memo: 'Shooting 25 Stunden' }), 120);
+  rec('소요: 촬영 20분(너무 짧음) → 120', D({ memo: '촬영 20분' }), 120);
+  // 촬영·배송이 한 절에 섞이면 안전하게 120(잘못 크게 잡느니 기본값)
+  rec('소요: 한 절 혼재 → 안전 120', D({ memo: 'innerhalb von 24 Stunden Shooting' }), 120);
 }
 
 // ── 구조 검증 — 전환 본체와 모달이 이 규칙을 실제로 쓰는지 못박는다 ────────────
