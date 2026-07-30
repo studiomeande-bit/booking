@@ -46,7 +46,18 @@ const FNS = [
   'makeSettlementSeqCounter_', 'buildSettlementSheetRow_', 'dedupeSettlementRowsAdmin',
   'sumupFeeExpenseId_', 'sumupFeeExpenseDesc_', 'getSumupFeeExpenseMap_', 'findSumupFeeExpenseRow_',
   'upsertSumupFeeExpense_', 'parseDateSafe_', 'formatDateMinute_', '_canFormatDateFast_', 'formatDateMinuteFast_',
+  'settlementMatchLedgerWindow_',
+  'settlementEntryKey_', 'matchSettlementTransaction_', 'parseMoneyValue_', 'daysBetweenDates_', 'normalizeAccountingName_',
+  'parseDateOnly_',
 ];
+
+/* 매칭의 앞단(예약 결제기록 대조)은 예약시트를 훑는 별개 로직이라 여기선 무력화한다 —
+   이 검증기가 보는 건 **장부 대조 경로의 선점(1건:1건)** 이다. */
+const MATCH_STUBS = `
+function findSumupPayoutMatch_(){ return null; }
+function matchBankInBookingPayment_(){ return null; }
+function matchSumupBookingPayment_(){ return null; }
+`;
 
 const HARNESS = `
 class FakeSheet {
@@ -92,9 +103,13 @@ function assertAdmin_(){ return true; }
 const Utilities={
   DigestAlgorithm:{SHA_256:'SHA_256'},
   computeDigest(alg,base){ return __sha256Bytes(base); },
-  formatDate(d){
+  formatDate(d,tz,fmt){
     const p=function(n){return (n<10?'0':'')+n;};
-    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+    const day=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+    const f=String(fmt||'yyyy-MM-dd HH:mm');
+    if(f.indexOf('HH:mm:ss')>-1) return day+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+    if(f.indexOf('HH:mm')>-1) return day+' '+p(d.getHours())+':'+p(d.getMinutes());
+    return day;
   }
 };
 var _fastDateFmtOk_=null;
@@ -105,12 +120,14 @@ const MODULE = [
   HARNESS,
   SETTLEMENT_HEADERS_LINE,
   SETTLEMENT_COL_LINE,
-  `const CONFIG={ ${EXPENSE_HEADERS_LINE.trim().replace(/,$/, '')} };`,
+  `const CONFIG={ TIMEZONE:'Europe/Berlin', ${EXPENSE_HEADERS_LINE.trim().replace(/,$/, '')} };`,
+  MATCH_STUBS,
   ...FNS.map((n) => extractFn(gs, n)),
   `export { buildSettlementHash_, buildSettlementHashLegacy_, settlementIdentityKey_, settlementRefKey_,
     getSettlementIndex_, findSettlementRow_, registerSettlementRow_, makeSettlementSeqCounter_,
     buildSettlementSheetRow_, dedupeSettlementRowsAdmin, getSumupFeeExpenseMap_, upsertSumupFeeExpense_,
-    sumupFeeExpenseId_, findSumupFeeExpenseRow_ };`,
+    sumupFeeExpenseId_, findSumupFeeExpenseRow_, settlementMatchLedgerWindow_,
+    matchSettlementTransaction_, settlementEntryKey_ };`,
 ].join('\n\n');
 
 async function load(src) {
@@ -369,6 +386,68 @@ async function runScenarios(M, rec) {
   }
 }
 
+// ── 9) 매칭 후보 장부 창 — 결제일과 촬영일이 어긋난 건이 경계에서 새면 안 된다 ──
+async function runWindowScenarios(M, rec) {
+  const w = M.settlementMatchLedgerWindow_('2026-07-24', '2026-07-30');
+  rec('장부창: 시작 14일 앞', w.start, '2026-07-10');
+  rec('장부창: 끝 14일 뒤', w.end, '2026-08-13');
+  const empty = M.settlementMatchLedgerWindow_('', '');
+  rec('장부창: 빈 기간은 그대로', [empty.start, empty.end], ['', '']);
+  const dst = M.settlementMatchLedgerWindow_('2026-03-25', '2026-03-25');   // 서머타임 경계
+  rec('장부창: DST 경계도 14일', [dst.start, dst.end], ['2026-03-11', '2026-04-08']);
+}
+
+// ── 10) 장부 대조 선점 — 장부 건 1개는 거래 1개만 가져간다 ──────────────────
+/** refreshSettlementMatchesForPeriod_ 의 배정 루프를 그대로 옮긴 하네스(구조 검증이 원본을 못박는다) */
+function assignMatches(M, txs, entries) {
+  const claimed = {};
+  const prelim = txs.map((tx) => ({ tx, match: M.matchSettlementTransaction_(tx, entries, txs, {}) }))
+    .sort((a, b) => (Number(b.match && b.match.score || 0)) - (Number(a.match && a.match.score || 0)));
+  const out = [];
+  prelim.forEach((p) => {
+    let match = p.match;
+    if (match && match.entryKey && claimed[match.entryKey]) {
+      match = M.matchSettlementTransaction_(p.tx, entries, txs, { claimedEntries: claimed });
+    }
+    if (match && match.entryKey) claimed[match.entryKey] = true;
+    out.push({ ref: p.tx.paymentRef, status: match.status, row: match.rowIndex || '' });
+  });
+  return out;
+}
+
+async function runMatchScenarios(M, rec) {
+  const entry = (over) => Object.assign({
+    date: '2026-07-04', flow: 'income', gross: 30, payMethod: '카드', name: '김나윤',
+    type: '촬영예약', source: 'booking', rowIndex: 180, accountingClass: '여권/비자 매출',
+  }, over || {});
+  const tx = (over) => Object.assign({
+    source: 'sumup', date: '2026-07-04', gross: 30, counterparty: 'VISA', description: 'Zahlung',
+    paymentRef: 'T1',
+  }, over || {});
+
+  // 같은 금액 카드결제 2건 + 예약 1건 — 날짜가 딱 맞는 쪽이 가져가고 나머지는 review
+  {
+    const got = assignMatches(M, [tx({ date: '2026-07-03', paymentRef: 'T03' }), tx({ date: '2026-07-04', paymentRef: 'T04' })], [entry()]);
+    const byRef = Object.fromEntries(got.map((g) => [g.ref, g]));
+    rec('선점: 당일 거래가 예약을 가져간다', [byRef.T04.status, byRef.T04.row], ['matched', 180]);
+    rec('선점: 하루 어긋난 거래는 review', byRef.T03.status, 'review');
+  }
+  // 예약이 2건이면 둘 다 매칭되되 서로 다른 행을 문다
+  {
+    const got = assignMatches(M,
+      [tx({ date: '2026-07-03', paymentRef: 'T03' }), tx({ date: '2026-07-04', paymentRef: 'T04' })],
+      [entry(), entry({ date: '2026-07-03', rowIndex: 181, name: '다른손님' })]);
+    const rows = got.map((g) => g.row).sort();
+    rec('선점: 2건이면 1:1 배정', rows, [180, 181]);
+    rec('선점: 둘 다 matched', got.every((g) => g.status === 'matched'), true);
+  }
+  // 시트가 달라 행번호가 겹쳐도 서로 다른 건으로 본다
+  {
+    rec('장부키: source 포함', M.settlementEntryKey_({ source: 'expense', rowIndex: 180 }), 'expense|180');
+    rec('장부키: 예약과 지출이 안 겹침', M.settlementEntryKey_({ source: 'booking', rowIndex: 180 }) !== M.settlementEntryKey_({ source: 'expense', rowIndex: 180 }), true);
+  }
+}
+
 // ── 구조 검증 — 실제 임포트 루프가 같은 함수를 쓰는지 소스에서 못박는다 ──────
 const STRUCTURE = [
   ['CSV 임포트가 통합 인덱스를 쓴다', /const existingIndex=getSettlementIndex_\(sh\);/],
@@ -386,6 +465,19 @@ const STRUCTURE = [
   ['은행 지출 upsert 가 구 해시도 조회한다', /importMap\[expenseId\] \|\| importMap\['bank_out:'\+buildSettlementHashLegacy_\('deutschebank',tx\)\]/],
   ['정리 액션 기본이 dryRun', /const dryRun=opts\.dryRun!==false;/],
   ['에이전트 액션 등록', /action==='settlement-dedupe'/],
+  ['재매칭 에이전트 액션 등록', /action==='settlement-rematch'/],
+  ['15분 동기화가 신규행 발생 시 재매칭한다', /if\(created>0\)\{[\s\S]{0,600}?refreshSettlementMatchesForPeriod_\(sheets,startDate,endDate,ledger\)/],
+  ['재매칭 실패가 동기화를 죽이지 않는다', /rematched=\(refreshSettlementMatchesForPeriod_[\s\S]{0,200}?\}catch\(e\)\{/],
+  ['동기화 응답에 rematched 를 싣는다', /\n    rematched,\n/],
+  ['재매칭은 넓힌 장부 창을 쓴다', /const win=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const ledger=buildAccountingLedger_\(win\.start,win\.end,false,sheets\);/],
+  ['어드민 재매칭도 넓힌 창을 쓴다', /const win=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const accounting=buildAccountingLedger_\(win\.start,win\.end,false,sheets\);/],
+  ['배정 루프가 점수 내림차순으로 선점한다', /const prelim=txs\.map\(function\(tx\)\{[\s\S]{0,400}?\.sort\(function\(a,b\)\{\n\s*return \(Number\(b\.match&&b\.match\.score\|\|0\)\)-\(Number\(a\.match&&a\.match\.score\|\|0\)\);/],
+  ['선점당한 거래는 남은 후보로 재탐색한다', /if\(match&&match\.entryKey&&claimed\[match\.entryKey\]\)\{[\s\S]{0,300}?claimedEntries:claimed/],
+  ['배정 후 claimed 에 등록한다', /if\(match&&match\.entryKey\) claimed\[match\.entryKey\]=true;/],
+  ['카드 결제기록 경로도 선점을 지킨다', /function matchSumupBookingPayment_[\s\S]{0,900}?if\(opts\.claimedEntries && opts\.claimedEntries\['booking\|'\+String\(candidate\.rowIndex\|\|''\)\]\) return null;/],
+  ['은행 결제기록 경로도 선점을 지킨다', /function matchBankInBookingPayment_[\s\S]{0,1400}?if\(opts\.claimedEntries && opts\.claimedEntries\['booking\|'\+String\(candidate\.rowIndex\|\|''\)\]\) return null;/],
+  ['결제기록 매칭도 entryKey/score 를 낸다', /entryKey:'booking\|'\+String\(candidate\.rowIndex\|\|''\),\n\s*score:Number\(candidate\.score\|\|0\),/],
+  ['장부 본체가 무인증으로 분리됐다', /function getAccountingLedger\(token, startDate, endDate, forceRefresh, sheetsOpt\) \{\n\s*assertAdmin_\(token\);\n\s*return buildAccountingLedger_\(startDate, endDate, forceRefresh, sheetsOpt\);/],
 ];
 
 // ── 결함 주입 — 고친 지점을 되돌리면 반드시 시나리오가 깨져야 한다 ──────────
@@ -429,6 +521,15 @@ const FAULTS = [
   ['정리 액션이 정본을 payout 없는 행으로 선택',
     /if\(!!b\.payout!==!!a\.payout\) return b\.payout\?1:-1;/,
     'if(!!b.payout!==!!a.payout) return b.payout?-1:1;'],
+  ['장부 선점 제거(같은 금액 카드결제 2건이 같은 예약을 동시에 문다)',
+    /if\(claimedEntries && claimedEntries\[settlementEntryKey_\(entry\)\]\) return false;/,
+    ''],
+  ['장부키에서 source 제거(예약행과 지출행이 같은 건으로 취급)',
+    /return String\(entry&&entry\.source\|\|''\)\+'\|'\+String\(entry&&entry\.rowIndex\|\|''\);/,
+    "return String(entry&&entry.rowIndex||'');"],
+  ['장부 창 확대 제거(결제일·촬영일이 어긋난 경계 건이 영영 review)',
+    /return \{start:startDate\?shift\(startDate,-14\):'', end:endDate\?shift\(endDate,14\):''\};/,
+    "return {start:startDate,end:endDate};"],
   ['정리 후 rehash 생략(다음 동기화가 또 중복 생성)',
     /result\.settlement\.rehashed=rehash\.length;/,
     'result.settlement.rehashed=rehash.length; rehash.length=0;'],
@@ -438,13 +539,16 @@ const FAULTS = [
 let failures = 0;
 const { mod: M, dir } = await load(MODULE);
 let count = 0;
-await runScenarios(M, (name, actual, expected) => {
+const check = (name, actual, expected) => {
   count += 1;
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     failures += 1;
     console.error(`❌ ${name}\n   기대: ${JSON.stringify(expected)}\n   실제: ${JSON.stringify(actual)}`);
   }
-});
+};
+await runScenarios(M, check);
+await runWindowScenarios(M, check);
+await runMatchScenarios(M, check);
 rmSync(dir, { recursive: true, force: true });
 
 let structureCount = 0;
@@ -470,9 +574,12 @@ for (const [label, pattern, replacement] of FAULTS) {
   const { mod: bm, dir: bd } = await load(broken);
   const diffs = [];
   try {
-    await runScenarios(bm, (name, actual, expected) => {
+    const collect = (name, actual, expected) => {
       if (JSON.stringify(actual) !== JSON.stringify(expected)) diffs.push(name);
-    });
+    };
+    await runScenarios(bm, collect);
+    await runWindowScenarios(bm, collect);
+    await runMatchScenarios(bm, collect);
   } catch (e) { diffs.push('예외: ' + e.message); }
   rmSync(bd, { recursive: true, force: true });
   if (!diffs.length) {

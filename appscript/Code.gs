@@ -1166,6 +1166,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='expense-mail-collect') return jsonOk_({ok:true,saved:collectInvoiceEmailsDaily_()});
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
+        // 정산 재매칭 — 기간 내 카드/은행 거래를 장부와 다시 대조(월마감 대사 정리용)
+        if(action==='settlement-rematch') return jsonOk_(refreshSettlementMatchesAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
         // 정산·수수료 중복 정리 — 기본 dryRun, 실제 삭제는 dryRun:false 명시
         if(action==='settlement-dedupe') return jsonOk_(dedupeSettlementRowsAdmin(token,{
           // CLI 는 값을 문자열로 싣는다 — 'false' 를 참으로 읽으면 실행이 영원히 dryRun 에 갇힌다
@@ -13756,6 +13758,12 @@ function batchUpdateAdvanced(token,list,type,val){
 /* ====== 회계장부 ====== */
 function getAccountingLedger(token, startDate, endDate, forceRefresh, sheetsOpt) {
   assertAdmin_(token);
+  return buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt);
+}
+
+/* 인증 없는 본체 — 트리거(15분 SumUp 동기화 등)에서도 장부가 필요하다. 토큰을 위조해 넘기는 대신
+   권한 검사를 바깥 래퍼에 두고 본체를 내부 호출로 연다. 외부 진입점은 반드시 위 래퍼를 쓸 것. */
+function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
   const _t0=Date.now(); const _timing={};
   const _mark=function(k){_timing[k]=Date.now()-_t0;};
   const entries = [];
@@ -15089,10 +15097,23 @@ function getSettlementReportAdmin(token,startDate,endDate){
   };
 }
 
+/* 매칭 후보(장부)는 대상 기간보다 넓게 읽는다 — 카드결제일과 정산(촬영)일이 며칠 어긋나는 게 정상이라
+   기간을 딱 맞추면 경계에 걸친 건이 영영 review 로 남는다. 점수식이 14일까지만 근접 가산을 주므로
+   ±14일이면 충분하고, 그 이상 넓히면 금액만 같은 엉뚱한 건이 붙을 위험만 커진다. */
+function settlementMatchLedgerWindow_(startDate,endDate){
+  const shift=function(d,days){
+    const t=parseDateSafe_(String(d||'').slice(0,10)).obj;
+    if(isNaN(t.getTime())) return String(d||'');
+    return Utilities.formatDate(new Date(t.getTime()+days*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  };
+  return {start:startDate?shift(startDate,-14):'', end:endDate?shift(endDate,14):''};
+}
+
 function refreshSettlementMatchesAdmin(token,startDate,endDate){
   assertAdmin_(token);
   const sheets=ensureSheets_();
-  const accounting=getAccountingLedger(token,startDate,endDate,false,sheets);
+  const win=settlementMatchLedgerWindow_(startDate,endDate);
+  const accounting=buildAccountingLedger_(win.start,win.end,false,sheets);
   const refreshed=refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting);
   return {
     ok:true,
@@ -15176,10 +15197,27 @@ function refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting)
   const rows=sh.getRange(2,1,sh.getLastRow()-1,SETTLEMENT_HEADERS.length).getValues();
   const txs=getSettlementTransactions_(startDate,endDate,sh);
   let updated=0;
-  txs.forEach(function(tx){
+  const baseOpts={bookingSheet:sheets.bookingSheet,applyBankDeposits:false,applySumupPayments:false};
+  /* 장부 건 1개 : 거래 1개. 1차로 각 거래의 최선 후보를 뽑고, **점수 높은 순으로** 선점시킨다.
+     선점당한 거래는 남은 후보로 다시 찾는다 — 날짜가 딱 맞는 쪽이 이기고, 애매한 쪽이 review 로
+     남는 게 옳다(먼저 온 순서로 주면 하루 어긋난 거래가 정답 자리를 뺏는다). */
+  const claimed={};
+  const prelim=txs.map(function(tx){
+    return {tx:tx, match:matchSettlementTransaction_(tx,entries,txs,baseOpts)};
+  }).sort(function(a,b){
+    return (Number(b.match&&b.match.score||0))-(Number(a.match&&a.match.score||0));
+  });
+  prelim.forEach(function(p){
+    const tx=p.tx;
     const rowOffset=tx.rowIndex-2;
     if(rowOffset<0||rowOffset>=rows.length) return;
-    const match=matchSettlementTransaction_(tx,entries,txs,{bookingSheet:sheets.bookingSheet,applyBankDeposits:false,applySumupPayments:false});
+    let match=p.match;
+    if(match&&match.entryKey&&claimed[match.entryKey]){
+      match=matchSettlementTransaction_(tx,entries,txs,{
+        bookingSheet:baseOpts.bookingSheet,applyBankDeposits:false,applySumupPayments:false,claimedEntries:claimed
+      });
+    }
+    if(match&&match.entryKey) claimed[match.entryKey]=true;
     const nextStatus=match.status||'review';
     const nextTarget=match.target||'';
     const nextRow=match.rowIndex||'';
@@ -16338,6 +16376,11 @@ function getSettlementTransactions_(startDate,endDate,settlementSheetOpt){
   });
 }
 
+/* 장부 건의 신원 — 예약/인화/지출 시트가 각자 행번호를 쓰므로 source 를 붙여야 서로 안 겹친다 */
+function settlementEntryKey_(entry){
+  return String(entry&&entry.source||'')+'|'+String(entry&&entry.rowIndex||'');
+}
+
 function matchSettlementTransaction_(tx,entries,existingSettlements,options){
   const opts=options||{};
   if(tx.source==='deutschebank' && Number(tx.gross||0)>0){
@@ -16352,8 +16395,12 @@ function matchSettlementTransaction_(tx,entries,existingSettlements,options){
   }
   const targetFlow=(tx.source==='deutschebank' && Number(tx.gross||0)<0) ? 'expense' : 'income';
   const targetAmount=Math.abs(Number(tx.gross||0));
+  const claimedEntries=opts.claimedEntries||null;
   const candidates=(entries||[]).filter(function(entry){
     if((entry.flow||'income')!==targetFlow) return false;
+    // 이미 다른 거래가 가져간 장부 건은 후보에서 뺀다 — 없으면 같은 금액 카드결제 2건이 같은 예약을
+    // 동시에 물어 대사가 맞는 것처럼 보인다(2026-07 실측: 7/03·7/04 €30 이 둘 다 예약행 180 김나윤)
+    if(claimedEntries && claimedEntries[settlementEntryKey_(entry)]) return false;
     const gross=Math.abs(Number(entry.gross||0));
     const deposit=Math.abs(parseMoneyValue_(entry.depositPaidAmount));
     const balance=Math.abs(parseMoneyValue_(entry.balancePaidAmount));
@@ -16379,7 +16426,9 @@ function matchSettlementTransaction_(tx,entries,existingSettlements,options){
       target: targetFlow==='expense'?'지출장부':'예약/매출',
       rowIndex: best.entry.rowIndex||'',
       accountingClass: best.entry.accountingClass||'',
-      memo: `자동매칭 · ${best.entry.type||''} · ${best.entry.name||''}`
+      memo: `자동매칭 · ${best.entry.type||''} · ${best.entry.name||''}`,
+      entryKey: settlementEntryKey_(best.entry),
+      score: best.score
     };
   }
   return {
@@ -16458,6 +16507,8 @@ function matchBankInBookingPayment_(tx,options){
     if(stats) stats.review++;
     return null;
   }
+  // 같은 예약의 결제 자리는 이미 다른 거래가 채웠다면 여기서 물지 않는다(카드 경로와 같은 규칙)
+  if(opts.claimedEntries && opts.claimedEntries['booking|'+String(candidate.rowIndex||'')]) return null;
   const applied=opts.applyBankDeposits===false
     ? {updated:false,skipped:true,paidAt:candidate.paidAt}
     : applyBankInBookingPayment_(bookingSheet,candidate,tx,opts);
@@ -16474,6 +16525,8 @@ function matchBankInBookingPayment_(tx,options){
     status:'matched',
     target:label,
     rowIndex:candidate.rowIndex,
+    entryKey:'booking|'+String(candidate.rowIndex||''),
+    score:Number(candidate.score||0),
     accountingClass:classifyBookingAccounting_(candidate.group,candidate.product),
     memo:[
       '은행입금 자동매칭',
@@ -16683,6 +16736,9 @@ function matchSumupBookingPayment_(tx,options){
   if(/failed|cancel|refund|charge.?back|storniert|erstattet/i.test(statusText)) return null;
   const candidate=findSumupBookingPaymentCandidate_(tx,opts.bookingSheet);
   if(!candidate) return null;
+  /* 예약 1건의 같은 결제 자리는 거래 1건만 채운다 — 같은 날 같은 금액 카드결제 2건이 한 예약의
+     잔금을 동시에 물던 사고(2026-03 실측 4쌍). 선점된 예약이면 이 거래는 review 로 남긴다. */
+  if(opts.claimedEntries && opts.claimedEntries['booking|'+String(candidate.rowIndex||'')]) return null;
   const exactAmount=Number(candidate.amountDelta||0)<=0.05;
   const cardLike=/카드|sumup|card|karte/i.test(String(candidate.payMethod||''));
   const closePaymentDate=(Number(candidate.referenceDayGap||9999)<=10) ||
@@ -16713,6 +16769,8 @@ function matchSumupBookingPayment_(tx,options){
     status:'matched',
     target:label,
     rowIndex:candidate.rowIndex,
+    entryKey:'booking|'+String(candidate.rowIndex||''),
+    score:Number(candidate.score||0),
     accountingClass:classifyBookingAccounting_(candidate.group,candidate.product),
     memo:[
       'SumUp 카드 자동매칭',
@@ -21786,6 +21844,21 @@ function syncRecentSumupTransactions_(options){
     }
   });
   props.setProperty('SUMUP_LAST_SYNC_AT',importedAt);
+  /* 15분 동기화는 matchSettlementTransaction_ 에 **빈 장부**를 넘겨왔다(위 루프의 두 번째 인자 []) —
+     예약 결제기록으로 잡히는 건만 matched 가 되고 나머지는 전부 review 로 쌓였다. 실측 2026-07:
+     18건 중 13건 review, 반면 CSV 로 넣은 1~6월은 대부분 matched. 월마감 카드↔매출 대사가 노이즈에
+     묻힌 진짜 원인이다. 신규 행이 생긴 회차에만 장부(약 2초)를 읽어 기간 재매칭을 돌린다. */
+  let rematched=0;
+  if(created>0){
+    try{
+      const win=settlementMatchLedgerWindow_(startDate,endDate);
+      const ledger=buildAccountingLedger_(win.start,win.end,false,sheets);
+      rematched=(refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,ledger).updated)||0;
+    }catch(e){
+      // 재매칭 실패가 동기화 자체를 무너뜨리면 안 된다 — 거래는 이미 시트에 있고 다음 회차에 다시 시도된다
+      Logger.log('정산 재매칭 실패: '+String(e&&e.message||e));
+    }
+  }
   const periodTxs=getSettlementTransactions_(startDate,endDate,sh);
   const summary=summarizeSettlementImport_(periodTxs,'all');
   return {
@@ -21797,6 +21870,7 @@ function syncRecentSumupTransactions_(options){
     updated,
     matched,
     review,
+    rematched,
     skipped,
     errors,
     feeExpensesCreated:feesCreated,
