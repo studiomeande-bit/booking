@@ -1950,7 +1950,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>촬영 장소</label><input type="text" id="qcv_location" placeholder="비우면 견적 메모/스튜디오 주소"></div>
+        <div class="form-group"><label>촬영 장소 <span style="font-weight:400;color:#64748b;">(견적서에서 자동 채움)</span></label><input type="text" id="qcv_location" placeholder="견적 메모의 장소 / 비우면 스튜디오 주소"></div>
         <div class="form-group"><label>계약금 (€) <span id="qcv_balanceHint" style="font-weight:400;color:#64748b;"></span></label><input type="text" id="qcv_deposit" placeholder="견적서 계약금 그대로" oninput="updateQcvBalanceHint()"></div>
       </div>
       <div class="form-row">
@@ -1960,7 +1960,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
             <option value="대기중">대기중 (일정 미확정)</option>
           </select>
         </div>
-        <div class="form-group"><label>추가 메모</label><input type="text" id="qcv_memo" placeholder="장부 요청사항에 덧붙임"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>메모 (요청사항) <span style="font-weight:400;color:#64748b;">— 견적서 내용이 채워집니다. 필요하면 수정하세요</span></label>
+        <textarea id="qcv_memo" rows="3" placeholder="견적서 메모가 여기에 들어옵니다" style="font-size:12px;"></textarea>
       </div>
       <div class="form-group" style="margin-bottom:10px;">
         <label>추가 촬영일 (2일 이상 작업 — 한 줄에 하나: <code>날짜 시간 소요분</code>)</label>
@@ -13882,6 +13885,15 @@ function deleteQuoteUI(number){
 }
 
 let __qcvQuote=null; // 잔금 힌트·프리필용 (모달 열려있는 동안만 유효)
+// 견적 메모에서 촬영 장소 추출 — 서버 extractBookingLocationFromText_ 와 동일 패턴(모달 미리채움용)
+function extractQuoteLocationText(text){
+  const s=String(text||'');
+  let m=s.match(/\[촬영장소:([^\]]+)\]/);
+  if(m&&m[1]) return m[1].trim();
+  m=s.match(/(?:촬영장소|만나는\s*장소|장소|Location|Ort|Venue|Treffpunkt|Meeting\s*Point):\s*([^\n|]+)/i);
+  if(m&&m[1]) return m[1].trim();
+  return '';
+}
 function openQuoteConvertModal(number){
   const q=(allQuotes||[]).find(x=>x.number===number);
   if(!q){alert('견적서를 찾을 수 없습니다.');return;}
@@ -13904,10 +13916,11 @@ function openQuoteConvertModal(number){
   document.getElementById('qcv_people').value='1';
   document.getElementById('qcv_product').value=q.product||'';
   document.getElementById('qcv_group').value=['biz','wed','stud','prof','out','pass'].includes(String(q.itemGroup||'').trim())?String(q.itemGroup).trim():'biz';
-  document.getElementById('qcv_location').value='';
+  // 촬영 장소·메모 — 견적서 내용을 그대로 채워 넣는다(편집 가능). 장소는 견적 메모에서 추출.
+  document.getElementById('qcv_location').value=extractQuoteLocationText(q.memo);
   document.getElementById('qcv_deposit').value=Number(q.depositAmount||0)>0?String(q.depositAmount):'';
   document.getElementById('qcv_status').value='확정됨';
-  document.getElementById('qcv_memo').value='';
+  document.getElementById('qcv_memo').value=String(q.memo||'');
   document.getElementById('qcv_extradays').value='';
   const mail=document.getElementById('qcv_sendmail');
   mail.disabled=false;
@@ -13937,15 +13950,17 @@ function confirmQuoteConvert(){
     status:document.getElementById('qcv_status').value,
     sendEmail:document.getElementById('qcv_sendmail').checked
   };
-  // 비운 필드는 보내지 않는다 — 서버가 견적서 값을 그대로 쓴다 (기존 동작 유지)
+  // 상품명은 비우면 서버가 견적서 값 사용(기존 동작 유지)
   const prod=document.getElementById('qcv_product').value.trim();
   if(prod) o.product=prod;
-  const loc=document.getElementById('qcv_location').value.trim();
-  if(loc) o.location=loc;
   const depRaw=document.getElementById('qcv_deposit').value;
   if(String(depRaw).trim()!=='') o.depositAmount=parseAdminEuroInput(depRaw);
-  const memo=document.getElementById('qcv_memo').value.trim();
-  if(memo) o.memo=memo;
+  // 장소·메모는 모달이 견적서 값을 채워 보여준 필드다 — 편집 결과가 authority(비웠으면 '없음'으로 존중).
+  // 항상 보내고 플래그로 서버에 알린다. 메모는 memoReplace 로 견적 메모와의 중복을 막는다.
+  o.location=document.getElementById('qcv_location').value.trim();
+  o.locationProvided=true;
+  o.memo=document.getElementById('qcv_memo').value.trim();
+  o.memoReplace=true;
   // 추가 촬영일 파싱 — "YYYY-MM-DD HH:MM [소요분]" 한 줄에 하나, 형식 오류는 여기서 막는다
   const exLines=document.getElementById('qcv_extradays').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(exLines.length){

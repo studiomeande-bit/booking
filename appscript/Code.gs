@@ -26715,6 +26715,23 @@ function _quoteHoldDailyCheck_(){
   return due.length+stale.length+cooling.length;
 }
 
+/* 견적→예약 전환의 메모·촬영장소 확정 규칙 (순수 함수 — 검증기가 append/replace·장소 권한을 못박는다).
+   - 메모: 모달은 견적 메모를 채워 보여주고 편집한 **전체** 메모를 memoReplace:true 로 보낸다(중복 방지).
+     그 플래그가 없으면(에이전트/구경로) 견적 메모 + 추가 메모를 이어붙인다.
+   - 장소: 모달이 견적 메모에서 추출해 채워 보내면 locationProvided:true → 그 값이 authority(빈 값이면
+     '없음'으로 존중). 안 보내면 서버가 견적 메모에서 추출(기존 동작). */
+function resolveQuoteConvertMemoLocation_(q,o){
+  q=q||{}; o=o||{};
+  const memoOut=(o.memoReplace===true)
+    ? String(o.memo||'').trim()
+    : [String(q.memo||'').trim(),String(o.memo||'').trim()].filter(Boolean).join('\n');
+  const explicit=String(o.location||o.shootingLocation||o.meetingLocation||'').trim();
+  const location=(o.locationProvided===true)
+    ? explicit
+    : (explicit||String(extractBookingLocationFromText_(q.memo)||'').trim());
+  return {memoOut:memoOut,location:location};
+}
+
 function convertQuoteToBookingAdmin(token, number, overrides){
   assertAdmin_(token);
   const {quoteSheet,bookingSheet}=ensureSheets_();
@@ -26738,7 +26755,8 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   const productLabel=String(o.product||'').trim()||q.product||(q.items[0]&&q.items[0].description)||'맞춤 촬영';
   const priceLabel=Number(q.total||0).toFixed(0)+'€';
   const bookingItemGroup=String(o.itemGroup||q.itemGroup||'biz').trim();
-  const quoteMeetingLocation=String(o.location||o.shootingLocation||o.meetingLocation||extractBookingLocationFromText_(q.memo)||'').trim();
+  const resolved=resolveQuoteConvertMemoLocation_(q,o);
+  const quoteMeetingLocation=resolved.location;
   const bookingLocation=quoteMeetingLocation||(_isExternalBookingItemGroup_(bookingItemGroup)?'':STUDIO_ADDRESS);
   const totalAmt=roundCurrency_(Number(q.total)||0);
   let depositAmt=(o.depositAmount!==undefined&&o.depositAmount!==null&&String(o.depositAmount).trim()!=='')
@@ -26748,7 +26766,7 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   if(depositAmt>totalAmt) throw new Error('계약금(€'+depositAmt.toFixed(2)+')이 총액(€'+totalAmt.toFixed(2)+')을 초과합니다.');
   const balanceAmt=roundCurrency_(totalAmt-depositAmt);
   const bookingStatus=String(o.status||'').trim()==='대기중'?'대기중':'확정됨';
-  const memoOut=[String(q.memo||'').trim(),String(o.memo||'').trim()].filter(Boolean).join('\n');
+  const memoOut=resolved.memoOut;
   /* 이 견적의 가예약 이벤트를 **충돌 검사 전에** 먼저 지운다. 가예약은 이제 슬롯을 막는 시간
      이벤트라, 안 지우고 검사하면 자기 자신의 가예약과 충돌로 잡혀 전환이 막힌다. */
   _clearQuoteTentativeHold_(quoteSheet,found.rowIndex,q);
