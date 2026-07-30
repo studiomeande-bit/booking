@@ -1166,6 +1166,14 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='expense-mail-collect') return jsonOk_({ok:true,saved:collectInvoiceEmailsDaily_()});
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
+        // 정산·수수료 중복 정리 — 기본 dryRun, 실제 삭제는 dryRun:false 명시
+        if(action==='settlement-dedupe') return jsonOk_(dedupeSettlementRowsAdmin(token,{
+          // CLI 는 값을 문자열로 싣는다 — 'false' 를 참으로 읽으면 실행이 영원히 dryRun 에 갇힌다
+          dryRun:!/^(false|0|no)$/i.test(String(payload.dryRun==null?'':payload.dryRun).trim()),
+          source:payload.source||'sumup',
+          startDate:String(payload.startDate||''),
+          endDate:String(payload.endDate||'')
+        }));
         if(action==='bank-expense-sync') return jsonOk_(syncBankOutExpensesAdmin(token,String(payload.startDate||''),String(payload.endDate||''),{skipExcluded:payload.skipExcluded!==false}));
         // 예약
         if(action==='booking-create-manual') return jsonOk_(addManualBookingAdmin(token,payload.data||{}));
@@ -14942,7 +14950,8 @@ function importPaymentCsvAdmin(token, payload){
   const existingSettlements=getSettlementTransactions_(startDate,endDate,sheets.settlementSheet);
   const importedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const sh=sheets.settlementSheet;
-  const existingMap=getSettlementHashMap_(sh);
+  const existingIndex=getSettlementIndex_(sh);
+  const nextSeq=makeSettlementSeqCounter_();
   const transactions=[];
   const errors=[];
   const bankDepositResult={matched:0,updated:0,skipped:0,review:0,excluded:0,totalGross:0};
@@ -14956,7 +14965,10 @@ function importPaymentCsvAdmin(token, payload){
       if(endDate && tx.date>endDate) return;
       tx.source=source;
       tx.filename=filename;
-      tx.hash=buildSettlementHash_(source,tx,raw);
+      const seqInfo=nextSeq(source,tx);
+      tx.seq=seqInfo.seq;
+      tx.refSeq=seqInfo.refSeq;
+      tx.hash=buildSettlementHash_(source,tx,raw,tx.seq);
       const match=matchSettlementTransaction_(tx,accounting.entries||[],existingSettlements,{
         bookingSheet:sheets.bookingSheet,
         applyBankDeposits:createBankDeposits,
@@ -14981,13 +14993,15 @@ function importPaymentCsvAdmin(token, payload){
     : null;
   transactions.forEach(function(tx){
     const rowValues=buildSettlementSheetRow_(tx,importedAt);
-    const mapKey=tx.source+'|'+tx.hash;
-    const existingRow=existingMap[mapKey];
-    if(existingRow){
-      sh.getRange(existingRow,1,1,rowValues.length).setValues([rowValues]);
+    const found=findSettlementRow_(existingIndex,tx);
+    if(found.rowIndex){
+      sh.getRange(found.rowIndex,1,1,rowValues.length).setValues([rowValues]);
+      registerSettlementRow_(existingIndex,tx,found.refKey,found.rowIndex);
       updated++;
     }else{
       sh.appendRow(rowValues);
+      // 같은 배치 안의 후속 행이 이 행을 다시 찾도록 등록 — 없으면 같은 파일 한 번에 중복이 쌓인다
+      registerSettlementRow_(existingIndex,tx,found.refKey,sh.getLastRow());
       created++;
     }
     if(tx.matchStatus==='matched'||tx.matchStatus==='sumup_payout'||tx.matchStatus==='expense_matched') matched++;
@@ -16041,22 +16055,222 @@ function normalizeDeutscheBankCsvRow_(row,filename){
   };
 }
 
-function buildSettlementHash_(source,tx,raw){
-  const base=[source,tx.date,tx.payoutDate,tx.gross,tx.fee,tx.net,tx.paymentRef,tx.bankRef,tx.counterparty,tx.description].join('|');
+function sha256Hex32_(base){
   const digest=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,base);
   return digest.map(function(b){return ('0'+((b<0?b+256:b).toString(16))).slice(-2);}).join('').slice(0,32);
 }
 
-function getSettlementHashMap_(sh){
-  const out={};
+/* 거래 정체성 = 시간이 지나도 변하지 않는 값만. payoutDate/fee/net/matchStatus 는 **사후에 채워지는
+   상태값**이라 여기 들어오면 안 된다 — 같은 거래의 키가 동기화 회차마다 달라져 dedup 이 뚫린다
+   (2026-07 실사고: 결제 당일 1행 → payout 확정 후 또 1행 → 수수료 지출까지 이중계상). */
+function settlementIdentityKey_(source,tx){
+  return [
+    String(source||''),
+    String(tx&&tx.date||''),
+    Number(tx&&tx.gross||0).toFixed(2),
+    String(tx&&tx.paymentRef||''),
+    String(tx&&tx.bankRef||''),
+    String(tx&&tx.counterparty||''),
+    String(tx&&tx.description||'')
+  ].join('|');
+}
+
+function buildSettlementHash_(source,tx,raw,seq){
+  return sha256Hex32_(settlementIdentityKey_(source,tx)+'|'+String(seq||0));
+}
+
+/* 구버전(2026-07-30 이전) 해시 — **조회 폴백 전용, 절대 새로 쓰지 않는다.** 기존 시트 행들이
+   이 값을 들고 있어서, 이게 없으면 배포 직후 첫 동기화가 전부 신규 행으로 착각해 또 중복을 만든다.
+   CSV/은행 경로는 값이 파일에서 오므로 legacy 해시가 그대로 재현된다. */
+function buildSettlementHashLegacy_(source,tx){
+  return sha256Hex32_([source,tx.date,tx.payoutDate,tx.gross,tx.fee,tx.net,tx.paymentRef,tx.bankRef,tx.counterparty,tx.description].join('|'));
+}
+
+/* ⚠ 은행 CSV 의 결제참조는 Kundenreferenz/Mandatsreferenz/**IBAN** — 거래마다 고유하지 않다.
+   ref 키를 은행에 적용하면 같은 거래처의 서로 다른 입금이 한 행으로 뭉개진다(데이터 소실).
+   transaction_code 가 고유한 SumUp 에만 허용한다. */
+function settlementRefKey_(source,ref){
+  const s=String(source||'').trim();
+  if(s!=='sumup') return '';
+  const r=String(ref||'').trim();
+  return r ? s+'|ref|'+r : '';
+}
+
+function getSettlementIndex_(sh){
+  const out={byHash:{},byRef:{}};
   if(sh.getLastRow()<2) return out;
   const rows=sh.getRange(2,1,sh.getLastRow()-1,SETTLEMENT_HEADERS.length).getValues();
   rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
     const source=String(row[SETTLEMENT_COL['소스']]||'').trim();
+    if(!source) return;
     const hash=String(row[SETTLEMENT_COL['원본해시']]||'').trim();
-    if(source&&hash) out[source+'|'+hash]=idx+2;
+    if(hash && !out.byHash[source+'|'+hash]) out.byHash[source+'|'+hash]=rowIndex;
+    const refKey=settlementRefKey_(source,row[SETTLEMENT_COL['결제참조']]);
+    // 중복이 이미 있으면 **가장 오래된 행**을 정본으로 잡는다(정리 액션이 남기는 행과 같은 기준)
+    if(refKey && !out.byRef[refKey]) out.byRef[refKey]=rowIndex;
   });
   return out;
+}
+
+/* 조회 우선순위: ref(SumUp) → 신규 해시 → 구 해시. tx.refSeq>0 은 같은 배치 안에서 이미 같은 ref 가
+   나온 경우로, ref 키로 찾으면 서로 다른 행이 한 행으로 겹쳐 써진다 — 그땐 해시만 쓴다. */
+function findSettlementRow_(index,tx){
+  const refKey=Number(tx.refSeq||0)>0 ? '' : settlementRefKey_(tx.source,tx.paymentRef);
+  if(refKey && index.byRef[refKey]) return {rowIndex:index.byRef[refKey],refKey:refKey};
+  if(index.byHash[tx.source+'|'+tx.hash]) return {rowIndex:index.byHash[tx.source+'|'+tx.hash],refKey:refKey};
+  const legacy=tx.source+'|'+buildSettlementHashLegacy_(tx.source,tx);
+  if(index.byHash[legacy]) return {rowIndex:index.byHash[legacy],refKey:refKey};
+  return {rowIndex:0,refKey:refKey};
+}
+
+function registerSettlementRow_(index,tx,refKey,rowIndex){
+  index.byHash[tx.source+'|'+tx.hash]=rowIndex;
+  if(refKey) index.byRef[refKey]=rowIndex;
+}
+
+/* 같은 임포트 배치 안의 반복 카운터. 완전히 동일한 거래가 파일에 2줄 있으면(정상: 같은 금액 2건)
+   seq 로 구분해 2행을 유지하고, 같은 파일을 재임포트하면 같은 seq 가 나와 덮어쓰기된다. */
+function makeSettlementSeqCounter_(){
+  const idCount={}, refCount={};
+  return function(source,tx){
+    const idKey=settlementIdentityKey_(source,tx);
+    const seq=(idCount[idKey]=(idCount[idKey]||0)+1)-1;
+    const rk=settlementRefKey_(source,tx.paymentRef);
+    const refSeq=rk ? (refCount[rk]=(refCount[rk]||0)+1)-1 : 0;
+    return {seq:seq,refSeq:refSeq};
+  };
+}
+
+/* 이미 쌓인 팬텀 정리(one-off). 기본 dryRun — 실제 삭제는 dryRun:false 를 명시해야 한다.
+   대상은 **거래참조가 있는 SumUp 행만**: 은행 행은 같은 날 같은 금액의 서로 다른 이체가 실제로
+   존재할 수 있어 내용 기준으로 묶으면 진짜 거래를 지운다. */
+function dedupeSettlementRowsAdmin(token,opts){
+  assertAdmin_(token);
+  opts=opts||{};
+  const dryRun=opts.dryRun!==false;
+  const sourceFilter=String(opts.source||'sumup').trim();
+  const startDate=String(opts.startDate||'').slice(0,10);
+  const endDate=String(opts.endDate||'').slice(0,10);
+  const sheets=ensureSheets_();
+  const sh=sheets.settlementSheet;
+  const result={
+    ok:true,dryRun:dryRun,source:sourceFilter,
+    settlement:{scanned:0,groups:0,duplicateRows:0,duplicateGross:0,deleted:0,rehashed:0},
+    feeExpense:{scanned:0,groups:0,duplicateRows:0,duplicateGross:0,deleted:0},
+    samples:[]
+  };
+  const last=sh.getLastRow();
+  if(last>=2){
+    const rows=sh.getRange(2,1,last-1,SETTLEMENT_HEADERS.length).getValues();
+    const groups={};
+    const inScope=[];
+    rows.forEach(function(row,idx){
+      const source=String(row[SETTLEMENT_COL['소스']]||'').trim();
+      if(!source || (sourceFilter && source!==sourceFilter)) return;
+      const date=parseDateSafe_(row[SETTLEMENT_COL['거래일']]).str.slice(0,10);
+      if(startDate && date<startDate) return;
+      if(endDate && date>endDate) return;
+      result.settlement.scanned++;
+      const entry={
+        rowIndex:idx+2,
+        row:row,
+        source:source,
+        date:date,
+        gross:Math.round((Number(row[SETTLEMENT_COL['총액(Brutto)']])||0)*100)/100,
+        payout:String(row[SETTLEMENT_COL['입금예정일']]||'').trim(),
+        importedAt:String(row[SETTLEMENT_COL['가져온일시']]||'')
+      };
+      inScope.push(entry);
+      // 삭제 후보는 **참조 있는 행만** — 참조가 없으면 같은 날 같은 금액의 별개 거래일 수 있다
+      const refKey=settlementRefKey_(source,row[SETTLEMENT_COL['결제참조']]);
+      if(refKey) (groups[refKey]=groups[refKey]||[]).push(entry);
+    });
+    const deleteRows=[];
+    const deleteSet={};
+    Object.keys(groups).forEach(function(key){
+      const list=groups[key];
+      result.settlement.groups++;
+      if(list.length<2) return;
+      // 정본 = payoutDate 채워진 것 우선 → 가장 최근 가져온 것 → 아래쪽 행
+      const sorted=list.slice().sort(function(a,b){
+        if(!!b.payout!==!!a.payout) return b.payout?1:-1;
+        if(a.importedAt!==b.importedAt) return a.importedAt<b.importedAt?1:-1;
+        return b.rowIndex-a.rowIndex;
+      });
+      const keep=sorted[0];
+      sorted.slice(1).forEach(function(d){
+        result.settlement.duplicateRows++;
+        result.settlement.duplicateGross=Math.round((result.settlement.duplicateGross+d.gross)*100)/100;
+        deleteRows.push(d.rowIndex);
+        deleteSet[d.rowIndex]=true;
+        if(result.samples.length<12) result.samples.push({kind:'settlement',ref:key.split('|ref|')[1]||key,keepRow:keep.rowIndex,deleteRow:d.rowIndex,date:d.date,gross:d.gross});
+      });
+    });
+    /* 남는 행의 원본해시를 신규(불변) 산식으로 갱신. 참조 없는 행에 특히 중요하다 — 저장된 해시가
+       옛 산식이면 payout 이 채워지는 순간 legacy 폴백까지 어긋나 다음 임포트가 새 행을 만든다. */
+    const seqCount={};
+    const rehash=[];
+    inScope.slice().sort(function(a,b){return a.rowIndex-b.rowIndex;}).forEach(function(k){
+      if(deleteSet[k.rowIndex]) return;
+      const row=k.row;
+      const tx={
+        date:k.date,
+        gross:k.gross,
+        paymentRef:String(row[SETTLEMENT_COL['결제참조']]||''),
+        bankRef:String(row[SETTLEMENT_COL['은행참조']]||''),
+        counterparty:String(row[SETTLEMENT_COL['상대방']]||''),
+        description:String(row[SETTLEMENT_COL['설명']]||'')
+      };
+      const idKey=settlementIdentityKey_(k.source,tx);
+      const seq=(seqCount[idKey]=(seqCount[idKey]||0)+1)-1;
+      const next=buildSettlementHash_(k.source,tx,null,seq);
+      if(String(row[SETTLEMENT_COL['원본해시']]||'').trim()!==next) rehash.push({rowIndex:k.rowIndex,hash:next});
+    });
+    result.settlement.rehashed=rehash.length;
+    if(!dryRun){
+      rehash.forEach(function(r){ sh.getRange(r.rowIndex,SETTLEMENT_COL['원본해시']+1).setValue(r.hash); });
+      deleteRows.sort(function(a,b){return b-a;}).forEach(function(r){ sh.deleteRow(r); });
+      result.settlement.deleted=deleteRows.length;
+    }
+  }
+  // 수수료 지출 중복 — 설명(거래참조 포함)이 같은 행은 같은 수수료다
+  const esh=sheets.expenseSheet;
+  const elast=esh.getLastRow();
+  if(elast>=2){
+    const erows=esh.getRange(2,1,elast-1,CONFIG.EXPENSE_HEADERS.length).getValues();
+    const fgroups={};
+    erows.forEach(function(row,idx){
+      const desc=String(row[3]||'').trim();
+      if(desc.indexOf('SumUp Kartenprovision · ')!==0) return;
+      const date=parseDateSafe_(row[0]).str.slice(0,10);
+      if(startDate && date<startDate) return;
+      if(endDate && date>endDate) return;
+      result.feeExpense.scanned++;
+      (fgroups[desc]=fgroups[desc]||[]).push({rowIndex:idx+2,gross:Math.round((Number(row[4])||0)*100)/100,evidence:String(row[9]||'').trim()});
+    });
+    const feeDeletes=[];
+    Object.keys(fgroups).forEach(function(desc){
+      const list=fgroups[desc];
+      result.feeExpense.groups++;
+      if(list.length<2) return;
+      const sorted=list.slice().sort(function(a,b){
+        if(!!b.evidence!==!!a.evidence) return b.evidence?1:-1;   // 증빙 붙은 행 우선 보존
+        return a.rowIndex-b.rowIndex;
+      });
+      sorted.slice(1).forEach(function(d){
+        result.feeExpense.duplicateRows++;
+        result.feeExpense.duplicateGross=Math.round((result.feeExpense.duplicateGross+d.gross)*100)/100;
+        feeDeletes.push(d.rowIndex);
+        if(result.samples.length<24) result.samples.push({kind:'fee',desc:desc,keepRow:sorted[0].rowIndex,deleteRow:d.rowIndex,gross:d.gross});
+      });
+    });
+    if(!dryRun){
+      feeDeletes.sort(function(a,b){return b-a;}).forEach(function(r){ esh.deleteRow(r); });
+      result.feeExpense.deleted=feeDeletes.length;
+    }
+  }
+  return result;
 }
 
 function buildSettlementSheetRow_(tx,importedAt){
@@ -16660,36 +16874,55 @@ function minutesBetweenDateTimes_(a,b){
   return Math.abs(Math.round((pa.getTime()-pb.getTime())/60000));
 }
 
+function sumupFeeExpenseId_(tx){
+  /* 수수료 지출 ID 는 **거래참조 우선**. 예전엔 해시만 썼는데, 해시가 흔들리면(payout 확정 등)
+     같은 수수료가 지출장부에 새 행으로 또 들어가 비용이 이중계상된다(2026-07 실측 57행 €47). */
+  const ref=String(tx&&tx.paymentRef||'').trim();
+  if(ref) return 'sumup_fee:ref:'+ref;
+  return 'sumup_fee:'+String(tx&&tx.hash||'');
+}
+function sumupFeeExpenseDesc_(tx){
+  return 'SumUp Kartenprovision · '+(tx.paymentRef||tx.description||'');
+}
+
 function getSumupFeeExpenseMap_(expenseSheet){
   const sh=expenseSheet || ensureSheets_().expenseSheet;
-  const out={};
+  const out={byId:{},byDesc:{}};
   if(sh.getLastRow()<2) return out;
   const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.EXPENSE_HEADERS.length).getValues();
   rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
     const feeId=String(row[12]||'').trim();
-    if(feeId) out[feeId]=idx+2;
+    if(feeId && !out.byId[feeId]) out.byId[feeId]=rowIndex;
+    // 설명은 ID 와 무관하게 거래참조를 담고 있어, 구 ID 를 들고 있는 행도 찾아낸다(이관 없이 자가치유)
+    const desc=String(row[3]||'').trim();
+    if(desc.indexOf('SumUp Kartenprovision · ')===0 && !out.byDesc[desc]) out.byDesc[desc]=rowIndex;
   });
   return out;
 }
 
+function findSumupFeeExpenseRow_(tx,map){
+  if(!map) return 0;
+  const byDesc=Number(map.byDesc[sumupFeeExpenseDesc_(tx)]||0);
+  if(byDesc) return byDesc;
+  const byId=Number(map.byId[sumupFeeExpenseId_(tx)]||0);
+  if(byId) return byId;
+  return Number(map.byId['sumup_fee:'+String(tx.hash||'')]||0)
+      || Number(map.byId['sumup_fee:'+buildSettlementHashLegacy_('sumup',tx)]||0);
+}
+
 function upsertSumupFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
   const sh=expenseSheetOpt || ensureSheets_().expenseSheet;
-  const feeId='sumup_fee:'+tx.hash;
-  let existingRow=feeMapOpt ? Number(feeMapOpt[feeId]||0) : 0;
-  if(!feeMapOpt && sh.getLastRow()>1){
-    const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.EXPENSE_HEADERS.length).getValues();
-    rows.some(function(row,idx){
-      if(String(row[12]||'').trim()===feeId){ existingRow=idx+2; return true; }
-      return false;
-    });
-  }
+  const feeId=sumupFeeExpenseId_(tx);
+  const map=feeMapOpt || getSumupFeeExpenseMap_(sh);
+  const existingRow=findSumupFeeExpenseRow_(tx,map);
   const fee=Math.round((Number(tx.fee)||0)*100)/100;
   if(fee<=0) return {created:false,updated:false};
   const values=[
     tx.date,
     'SumUp',
     '결제수수료',
-    `SumUp Kartenprovision · ${tx.paymentRef||tx.description||''}`,
+    sumupFeeExpenseDesc_(tx),
     fee,
     fee,
     0,
@@ -16702,12 +16935,17 @@ function upsertSumupFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
     '미전송',
     ''
   ];
+  const registerFee=function(rowIndex){
+    map.byId[feeId]=rowIndex;
+    map.byDesc[sumupFeeExpenseDesc_(tx)]=rowIndex;
+  };
   if(existingRow){
     sh.getRange(existingRow,1,1,values.length).setValues([values]);
+    registerFee(existingRow);   // 구 ID 행이면 여기서 신규 ID 로 갈아탄다
     return {created:false,updated:true};
   }
   sh.appendRow(values);
-  if(feeMapOpt) feeMapOpt[feeId]=sh.getLastRow();
+  registerFee(sh.getLastRow());
   return {created:true,updated:false};
 }
 
@@ -16751,7 +16989,7 @@ function syncBankOutExpensesFromTransactions_(transactions,expenseSheetOpt,optio
 function upsertBankOutExpense_(tx,expenseSheetOpt,importMapOpt,options){
   const sh=expenseSheetOpt || ensureSheets_().expenseSheet;
   const opts=options||{};
-  const expenseId='bank_out:'+String(tx.hash||buildSettlementHash_('deutschebank',tx,{}));
+  const expenseId='bank_out:'+String(tx.hash||buildSettlementHash_('deutschebank',tx,{},tx&&tx.seq));
   const classified=classifyBankOutExpense_(tx);
   if(classified.exclude && opts.skipExcluded!==false){
     return {created:false,updated:false,skipped:true,excluded:true,status:'제외',gross:0};
@@ -16761,7 +16999,8 @@ function upsertBankOutExpense_(tx,expenseSheetOpt,importMapOpt,options){
   const tax=Math.round((gross*(Number(classified.taxRate||0)/(1+Number(classified.taxRate||0))))*100)/100;
   const net=Math.round((gross-tax)*100)/100;
   const importMap=importMapOpt || getExpenseImportIdMap_(sh,'bank_out:');
-  const existing=importMap[expenseId];
+  // 해시 산식이 바뀌었으므로 구 해시 ID 도 조회 — 없으면 재임포트가 기존 지출행을 전부 복제한다
+  const existing=importMap[expenseId] || importMap['bank_out:'+buildSettlementHashLegacy_('deutschebank',tx)];
   const vendor=classified.vendor || tx.counterparty || 'Deutsche Bank';
   const description=String(classified.description || tx.description || tx.counterparty || 'Deutsche Bank Bankausgang').slice(0,500);
   const note=[
@@ -21493,7 +21732,8 @@ function syncRecentSumupTransactions_(options){
   });
   const sheets=ensureSheets_();
   const sh=sheets.settlementSheet;
-  const existingMap=getSettlementHashMap_(sh);
+  const existingIndex=getSettlementIndex_(sh);
+  const nextSeq=makeSettlementSeqCounter_();
   const existingSettlements=getSettlementTransactions_(startDate,endDate,sh);
   const feeExpenseMap=getSumupFeeExpenseMap_(sheets.expenseSheet);
   const sumupPaymentResult={matched:0,updated:0,skipped:0,totalGross:0};
@@ -21508,7 +21748,10 @@ function syncRecentSumupTransactions_(options){
       tx.source='sumup';
       tx.filename='SumUp API';
       tx.raw=raw;
-      tx.hash=buildSettlementHash_('sumup',tx,raw);
+      const seqInfo=nextSeq('sumup',tx);
+      tx.seq=seqInfo.seq;
+      tx.refSeq=seqInfo.refSeq;
+      tx.hash=buildSettlementHash_('sumup',tx,raw,tx.seq);
       const match=matchSettlementTransaction_(tx,[],existingSettlements,{
         bookingSheet:sheets.bookingSheet,
         importedAt:importedAt,
@@ -21520,14 +21763,14 @@ function syncRecentSumupTransactions_(options){
       tx.accountingClass=match.accountingClass||tx.accountingClass||'';
       tx.memo=match.memo||'';
       const rowValues=buildSettlementSheetRow_(tx,importedAt);
-      const mapKey='sumup|'+tx.hash;
-      const existingRow=existingMap[mapKey];
-      if(existingRow){
-        sh.getRange(existingRow,1,1,rowValues.length).setValues([rowValues]);
+      const found=findSettlementRow_(existingIndex,tx);
+      if(found.rowIndex){
+        sh.getRange(found.rowIndex,1,1,rowValues.length).setValues([rowValues]);
+        registerSettlementRow_(existingIndex,tx,found.refKey,found.rowIndex);
         updated++;
       }else{
         sh.appendRow(rowValues);
-        existingMap[mapKey]=sh.getLastRow();
+        registerSettlementRow_(existingIndex,tx,found.refKey,sh.getLastRow());
         created++;
       }
       if(tx.matchStatus==='matched'||tx.matchStatus==='sumup_payout'||tx.matchStatus==='expense_matched') matched++;

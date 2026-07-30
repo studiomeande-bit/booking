@@ -1,5 +1,28 @@
 # 구현 프롬프트 — SumUp API 동기화 정산행 중복 생성 버그 픽스
 
+> ## ✅ 해결 완료 (2026-07-30, 배포 @696/@697)
+>
+> **원인 확정:** 해시 base 의 `payoutDate`·`fee`·`net` 이 payout 확정 전후로 값이 바뀌어 같은 거래의
+> dedup 키가 회차마다 달라졌다. 같은 해시를 **수수료 지출 ID(`sumup_fee:<hash>`)** 로도 써서
+> 지출장부까지 이중계상됐다(문서 작성 시점엔 미인지 — 실측 114행 중 57행 중복 €47.02).
+>
+> **적용한 픽스**
+> 1. `buildSettlementHash_` base = 불변 식별자만(`source·date·gross·paymentRef·bankRef·counterparty·description` + 배치 내 seq). 사후값 3개 제거
+> 2. `getSettlementIndex_`/`findSettlementRow_` — SumUp 은 `source|ref` 1차 키, 해시는 폴백.
+>    ⚠ **은행은 ref 키 금지**(결제참조가 IBAN/Mandatsreferenz 라 거래마다 고유하지 않다 — 적용하면 서로 다른 이체가 한 행으로 뭉개진다). 요구 2를 그대로 따르지 않은 유일한 지점
+> 3. CSV 재임포트: 배치 내 동일 정체성은 seq 번호로 구분(같은 내용 2줄 = 2건 유지), 같은 파일 재임포트는 같은 seq → 덮어쓰기. replace-by-filename 은 채택하지 않음(기본 파일명 `upload.csv` 충돌 시 남의 임포트를 지운다)
+> 4. `buildSettlementHashLegacy_` 조회 폴백 + 수수료 지출 설명(거래참조 포함) 인덱스 → **이관 작업 없이 자가치유**. 배포 직후 전량 신규행이 되는 사고를 막는다
+> 5. 수수료 지출 ID 를 `sumup_fee:ref:<거래참조>` 로 전환, 은행출금 ID 는 구 해시 폴백 조회 추가
+> 6. 정리 액션 `settlement-dedupe`(기본 dryRun, 참조 있는 SumUp 행만 삭제 후보 · 남는 행 전체 rehash)
+>
+> **실측 결과:** 정산 143→138행(팬텀 5행 €211 제거, SumUp gross 9,747→9,536) · 수수료 지출 114→57행
+> (€47.02 과다계상 해소) · 매출 총액 22,224.00 **불변** · 비용 12,569.82→12,522.80 · 이익 +47.02.
+> 회귀 테스트: 7일 lookback 동기화 2회 연속 `created=0/updated=5`, 재점검 시 중복 0·rehash 잔여 0.
+> 검증기 `scripts/check-settlement-dedupe.mjs` (시나리오 46 + 구조 12 + 결함주입 13/13).
+>
+> **주의(다음 사람용):** `erp-agent.mjs` CLI 는 `--json '{...}'` 만 파싱한다. `--dryRun false` 같은
+> 개별 플래그는 **조용히 무시**된다(이번에 30분 헤맴 — 액션 파라미터는 전부 `--json` 으로 넘길 것).
+
 > 발견: 2026-07-26 일일 회계 마감(`studio-mean-daily-close`). 근거 로그: `~/Desktop/Studio_mean/스튜디오자료/2026년 kontoauszug/02_원장_Ledgers/2026-07-일일마감로그.md` (2026-07-26 항목, 이상 4).
 > 이 파일을 reservation 레포에서 코딩 에이전트에게 그대로 주면 되는 자기완결 프롬프트다.
 
@@ -35,6 +58,22 @@ gross·ref·counterparty·description 전부 동일하고 **payoutDate와 해시
    ```
    → **`payoutDate`가 포함**되어 있다. 결제 시점에는 공백, payout 확정 후에는 날짜가 채워지므로 **같은 거래의 해시가 시간에 따라 변한다.** (`fee`/`net`도 payout 후 채워질 수 있어 같은 위험.)
 2. SumUp API 동기화 루프(≈L19597~19620)는 `getSettlementHashMap_`의 `'sumup|'+tx.hash` 키로만 기존 행을 찾는다. 해시가 바뀌면 dedup 미스 → `sh.appendRow(rowValues)`로 신규 행.
+
+### 추가 관측 (2026-07-27 일일 마감) — ⚠️ 위 "payoutDate만 다르다"는 부분 설명이다
+
+정리(cleanup)는 실행되어 SumUp 정산행이 235→139행으로 줄었고 6월은 중복 0이 됐다. **그러나 픽스가 배포되지 않아 정리 직후 동기화부터 다시 쌓인다** — 07-26 14:03 이후 ~24시간 동안 팬텀 3행 / €106 (약 3행/일):
+
+| 원거래 | 원본행 | 중복행 | 중복 생성 |
+|---|---|---|---|
+| TAAA4D7TKKY (07-24, €30) | 317 | 322 | 07-27 15:18 |
+| TAAA4EQ2BV6 (07-25, €43) | 318 | 320 | 07-27 22:03 |
+| TAAA4EPNCHC (07-25, €33) | 319 | 321 | 07-27 22:03 |
+
+**핵심:** 행 318과 행 320은 **payoutDate가 둘 다 `2026-07-26`인데 해시가 다르다** (`76caafa3…` vs `de31e56b…`). date·gross·fee·net·paymentRef·counterparty·description도 시트상 전부 동일하다. 같은 거래가 지금까지 최소 3개 해시를 만들었다: `797be35d`(payoutDate 공백) → `76caafa3` → `de31e56b`.
+
+즉 **payoutDate는 원인의 일부일 뿐**이고, 해시 base의 다른 사후값 필드도 회차마다 값이 바뀐다. 유력 후보는 `fee`/`net`의 **빈문자열 `''` → 숫자 `0`** 전이(payout 확정 전후) — 시트에 쓰고 읽으면 둘 다 `0`으로 보여 육안 대조로는 구분되지 않지만 `join('|')` 결과는 `…||43|…` vs `…|0|43|…`로 달라진다.
+
+→ **함의: payoutDate만 base에서 빼는 부분수정으로는 막히지 않는다.** 아래 요구 픽스 1(payoutDate·fee·net 3개 모두 제거)과 2(paymentRef 1차 dedup 키)를 **함께** 적용해야 한다. 회귀 테스트(요구 5)는 "payout 확정 전 상태로 1회 → 확정 후 상태로 1회 동기화해도 `created=0`"까지 확인할 것.
 
 ## 요구 픽스
 
