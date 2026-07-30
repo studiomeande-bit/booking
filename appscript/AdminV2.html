@@ -13885,6 +13885,16 @@ function deleteQuoteUI(number){
 }
 
 let __qcvQuote=null; // 잔금 힌트·프리필용 (모달 열려있는 동안만 유효)
+// 견적 메모/품목에서 촬영 소요시간(분) 추출 — 긴 촬영을 120분 기본값으로 잡는 이중예약 구멍 방지.
+// 숫자가 단위 바로 앞에 붙은 경우만 잡아 "pro Stunde"(시간당 rate) 같은 오탐을 피한다.
+function extractQuoteDurationMin(q){
+  const text=String((q&&q.memo)||'')+' '+(((q&&q.items)||[]).map(it=>String((it&&it.description)||'')).join(' '));
+  let m=text.match(/(\d+(?:[.,]\d+)?)\s*(?:stunden?|시간|hours?\b|hrs?\b|std\.?)/i);
+  if(m){const h=parseFloat(String(m[1]).replace(',','.'));if(h>0&&h<=24)return Math.round(h*60);}
+  m=text.match(/(\d+)\s*(?:minuten?|분|mins?\b|min\b)/i);
+  if(m){const mn=parseInt(m[1],10);if(mn>=30&&mn<=1440)return mn;}
+  return 120;
+}
 // 견적 메모에서 촬영 장소 추출 — 서버 extractBookingLocationFromText_ 와 동일 패턴(모달 미리채움용)
 function extractQuoteLocationText(text){
   const s=String(text||'');
@@ -13912,7 +13922,9 @@ function openQuoteConvertModal(number){
     +itemsHtml;
   document.getElementById('qcv_date').value=q.shootDate||'';
   document.getElementById('qcv_time').value='10:00';
-  document.getElementById('qcv_duration').value='120';
+  // 소요시간 — 견적 메모/품목에서 촬영 시간을 추출해 채운다(없으면 120). 편집 가능.
+  // 긴 촬영(예: 7시간 행사)을 120분으로 잡으면 캘린더가 나머지 시간을 안 막아 이중예약 구멍이 난다.
+  document.getElementById('qcv_duration').value=String(extractQuoteDurationMin(q));
   document.getElementById('qcv_people').value='1';
   document.getElementById('qcv_product').value=q.product||'';
   document.getElementById('qcv_group').value=['biz','wed','stud','prof','out','pass'].includes(String(q.itemGroup||'').trim())?String(q.itemGroup).trim():'biz';

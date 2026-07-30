@@ -32,10 +32,23 @@ function extractFn(src, name) {
   throw new Error(`${name} 본문 끝을 찾지 못했습니다.`);
 }
 
+// 모달의 소요시간 추출기(프런트 JS)를 HTML 에서 떼어내 같은 모듈에서 테스트한다
+function extractHtmlFn(src, name) {
+  const start = src.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`${name} (HTML) 을 찾지 못했습니다.`);
+  let depth = 0;
+  for (let i = src.indexOf('{', start); i < src.length; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') { depth -= 1; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  throw new Error(`${name} (HTML) 본문 끝을 찾지 못했습니다.`);
+}
+
 const MODULE = [
   extractFn(gs, 'extractBookingLocationFromText_'),
   extractFn(gs, 'resolveQuoteConvertMemoLocation_'),
-  'export { resolveQuoteConvertMemoLocation_, extractBookingLocationFromText_ };',
+  extractHtmlFn(html, 'extractQuoteDurationMin'),
+  'export { resolveQuoteConvertMemoLocation_, extractBookingLocationFromText_, extractQuoteDurationMin };',
 ].join('\n\n');
 
 async function load(src) {
@@ -69,6 +82,20 @@ async function runScenarios(M, rec) {
   rec('장소: 플래그 없어도 명시값 우선', R(quoteWithLoc, { location: '직접 지정' }).location, '직접 지정');
   rec('장소: 라벨형 메모도 추출', R({ memo: 'Location: Rooftop Bar' }, {}).location, 'Rooftop Bar');
   rec('장소: 없으면 빈값', R({ memo: '장소 정보 없음 문장' }, {}).location, '');
+
+  // ── 소요시간 추출 ─────────────────────────────────────────────────────────
+  const D = M.extractQuoteDurationMin;
+  // 라이브 AN-260006: "7 Stunden Hybrid..." + "pro Stunde"(시간당 rate 오탐 주의) → 420분
+  rec('소요: 7 Stunden → 420', D({ memo: '- 7 Stunden Hybrid-Foto- und Videoaufnahmen\n- 5 Fotos pro Stunde' }), 420);
+  rec('소요: pro Stunde 단독은 무시(기본 120)', D({ memo: '5 bearbeitete Fotos pro Stunde' }), 120);
+  rec('소요: 3시간 → 180', D({ memo: '촬영 3시간 진행' }), 180);
+  rec('소요: 30분 → 30', D({ memo: '촬영 시간 30분, 3명' }), 30);
+  rec('소요: 2 hours → 120', D({ memo: 'shoot for 2 hours' }), 120);
+  rec('소요: 품목에서도 추출', D({ memo: '', items: [{ description: 'Ganztages-Shooting 8 Stunden' }] }), 480);
+  rec('소요: 인쇄크기 10 x 15 cm 오탐 없음', D({ memo: 'Druckgröße 10 x 15 cm, 35 Fotos' }), 120);
+  rec('소요: 없으면 120', D({ memo: 'Hochzeitsreportage komplett' }), 120);
+  rec('소요: 25시간(비현실) 무시', D({ memo: '25 Stunden' }), 120);
+  rec('소요: 20분(너무 짧음) 무시', D({ memo: '20분' }), 120);
 }
 
 // ── 구조 검증 — 전환 본체와 모달이 이 규칙을 실제로 쓰는지 못박는다 ────────────
@@ -82,6 +109,7 @@ const STRUCTURE = [
   ['모달 submit 가 memoReplace 를 보낸다', () => /o\.memoReplace=true;/.test(html)],
   ['모달 submit 가 locationProvided 를 보낸다', () => /o\.locationProvided=true;/.test(html)],
   ['모달 메모가 textarea 로 노출된다', () => /<textarea id="qcv_memo"/.test(html)],
+  ['모달 opener 가 소요시간을 채운다', () => /qcv_duration'\)\.value=String\(extractQuoteDurationMin\(q\)\)/.test(html)],
 ];
 
 const FAULTS = [
