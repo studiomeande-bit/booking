@@ -12495,12 +12495,18 @@ function _buildDailyBriefingData_(){
         // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)까지 남은 일수 — 사장님이 개입할 마지막 시점
         daysToAutoCancel:(ageDays==null?null:Math.max(0,10-ageDays))});
     }
-    // 미수 잔금: 촬영은 끝났는데(과거 촬영일 + 진행 상태) 잔금이 남고 결제수단이 미결제인 건
+    /* 미수 잔금 — 판정은 **결제수단 문구**('' 또는 미결제/offen)다. 잔금결제여부 플래그가 아니다.
+       이 스튜디오의 운영 규칙: 현장 수납 후 결제수단(현금/카드/계좌이체)을 기록하는 것 자체가
+       수납 완료 표시이고, 플래그는 역사 행 다수에서 백필되지 않았다(2026-07-16 전수 정리에서
+       사장님이 "미수는 HSAD 1건뿐"으로 확정하며 이 관행을 승인 — 예: 박지은 행168 '계좌이체'
+       = 7/17 입금 확인 완료). 2026-07-30 플래그 기준으로 바꿔봤다가 이미 받은 68건 €5,700+ 가
+       미수로 쏟아지는 홍수를 실측하고 되돌렸다. 플래그 기준이 필요한 감사 시점엔 월마감
+       open_receivables(장부 openAmount)가 그 역할을 한다 — 두 규칙은 의도적으로 다르다. */
     if(d10&&d10<today&&['촬영완료','셀렉완료','작업완료'].indexOf(st)>-1){
       const balance=parseMoneyValue_(row[BOOKING_COL['잔금']])||0;
       const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
-      if(balance>0&&(payMethod===''||/미결제|unpaid|offen/i.test(payMethod))){ // 회계장부 openAmount와 동일 판정 (정확일치 → 정규식)
-        unpaidBalances.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),balance:balance});
+      if(balance>0&&(payMethod===''||/미결제|unpaid|offen/i.test(payMethod))){
+        unpaidBalances.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),balance:balance,payMethod:payMethod});
       }
     }
   }
@@ -12704,13 +12710,26 @@ function _buildDailyBriefingData_(){
     extrasUnpaid.count=up.count; extrasUnpaid.total=up.total; extrasUnpaid.items=up.items;
     extrasUnpaid.olderCount=up.olderCount; extrasUnpaid.olderTotal=up.olderTotal;
   }catch(e){Logger.log('briefing extrasUnpaid fail: '+e.message);_briefFail_(sectionFailures,'추가금 미수',e);}
+  /* 카드·은행 대사 검토 — 최근 14일 창의 review 만. 대사 신뢰 회복(@696~@701) 후 여기 뜨는 건
+     = 진짜 액션(워크인 매출 미기록, 미귀속 입금)이다. 과거 달의 역사적 review 는 월마감 트랙에서
+     보므로 창 밖은 싣지 않는다 — 브리핑이 몇 달치 잔재를 매일 반복하면 신뢰가 무너진다. */
+  let settlementReview={count:0,items:[]};
+  try{
+    const sinceStr=Utilities.formatDate(new Date(Date.now()-14*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    const stx=getSettlementTransactions_(sinceStr,today).filter(function(t){return String(t.matchStatus||'')==='review';});
+    settlementReview.count=stx.length;
+    settlementReview.items=getSettlementReviewItems_(stx).slice(0,5).map(function(it){
+      return {date:it.date,source:it.source,gross:it.gross,counterparty:it.counterparty,
+              reasonLabel:it.reasonLabel,actionHint:it.actionHint,severity:it.severity};
+    });
+  }catch(e){Logger.log('briefing settlement fail: '+e.message);_briefFail_(sectionFailures,'카드·은행 대사',e);}
   /* 캘린더 정합 점검 — 가용성은 캘린더만 보므로 활성 예약의 이벤트가 사라지면 그 슬롯이 다시
      열린다(이중예약 직행). 매 브리핑마다 오늘~+60일을 전수 대조하고, 사라진 이벤트는 그 자리에서
      재생성한다(자가치유). 실패하면 sectionFailures 로 올라가 '비어 보여도 믿지 마세요'가 뜬다. */
   let calendarAudit=null;
   try{ calendarAudit=auditBookingCalendarConsistency_(); }
   catch(e){Logger.log('briefing calendarAudit fail: '+e.message);_briefFail_(sectionFailures,'캘린더 정합',e);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -12829,6 +12848,13 @@ function buildDailyBriefingEmailHtml_(b){
       b.unpaidBalances.slice(0,8).map(function(u){
         return line(`<b>${esc(u.name)}</b>님 · ${esc(u.dateTime.slice(0,10))} ${esc(u.product)} — <b style="color:#b91c1c;">${money(u.balance)}</b> (${esc(u.status)})`);
       }).join('')+(b.unpaidBalances.length>8?line(`외 ${b.unpaidBalances.length-8}건`):'')));
+  }
+  // 3.5) 카드·은행 대사 검토 — 있을 때만 (0건이 정상 상태)
+  if(b.settlementReview&&b.settlementReview.count){
+    parts.push(section(`🧾 카드·은행 대사 검토 ${b.settlementReview.count}건 (최근 14일)`,
+      (b.settlementReview.items||[]).map(function(s){
+        return line(`${esc(s.date)} · ${esc(s.source==='sumup'?'카드':'은행')} <b>${money(Math.abs(Number(s.gross||0)))}</b> ${esc((s.counterparty||'').slice(0,20))} — ${esc(s.reasonLabel||'')}${s.actionHint?`<br>&nbsp;&nbsp;<span style="color:#64748b;">→ ${esc(s.actionHint)}</span>`:''}`);
+      }).join('')+(b.settlementReview.count>5?line(`외 ${b.settlementReview.count-5}건 — 어드민 회계 탭에서 확인`):'')));
   }
   // 4) 파이프라인 한 줄
   parts.push(section('📸 셀렉 파이프라인',line(`고객 셀렉 대기 <b>${b.select.waiting}</b> · 재수정 요청 <b>${b.select.revisionRequested}</b> · 제출완료(작업 대기) <b>${b.select.submitted}</b> · 보류 견적 <b>${b.quotes.holdTotal}</b>`)));
