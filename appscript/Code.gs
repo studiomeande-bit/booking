@@ -25206,14 +25206,15 @@ function warmupCacheTrigger(){
   for(let offset=0;offset<3;offset++){
     const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
     const y=d.getFullYear(),m=d.getMonth();
-    // 이 달 캘린더는 콤보와 무관하게 동일 — 워밍 필요한 콤보가 있으면 **딱 한 번** 읽어 재사용한다.
+    /* 월 요약(batch)은 트리거에서 데우지 **않는다** — getUnavailableDays 가 콤보(totalDur)마다 모든
+       busy 캘린더를 다시 읽어(콤보당 ~6읽기) 예산을 태워 month+2 슬롯이 굶었다(2026-07-30 실측 근본
+       원인). 월 그리드는 프런트가 이미 백그라운드로 프리패치하므로 무해. 트리거는 **슬롯만** 데운다
+       (고객 날짜클릭 13~21초 병목이자 프런트가 프리패치 안 하는 유일한 것). 슬롯은 달 1회 읽기 공유. */
     let bundle=null,bundleTried=false;
     for(let ci=0;ci<combos.length;ci++){
       if(Date.now()-startMs>BUDGET_MS) return;
       const c=combos[ci];
-      try{ getPublicCalendarBatch_(y,m,c.totalDur,c.itemGroup); }
-      catch(e){ Logger.log('warmup batch '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
-      /* 슬롯 워밍은 센티넬로 ~20분마다(또는 예약 발생으로 ver 바뀔 때)만 — 매 5분 전량 재계산 방지.
+      /* 센티넬로 ~20분마다(또는 예약으로 ver 바뀔 때)만 재계산 — 매 5분 전량 재계산 방지.
          ver 가 키에 있어 새 예약 시 센티넬·슬롯캐시 동시 무효화 → 다음 실행이 즉시 재워밍(자가치유). */
       const sentinel=`slots_warm_v1_${ver}_${y}_${m}_${c.itemGroup}_${c.totalDur}`;
       let warm=false; try{ warm=!!cache.get(sentinel); }catch(e){}
