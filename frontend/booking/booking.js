@@ -827,6 +827,8 @@ const COPY = {
     calendarPrompt: '상품을 먼저 선택하세요.',
     calendarEmpty: '상품 선택 후 달력을 불러옵니다.',
     calendarLoadedHint: '예약 가능 날짜를 선택해 주세요.',
+    calendarMonthEmpty: '이 달에는 예약 가능한 날짜가 없어요. 다른 달을 확인해 주세요.',
+    calendarMonthEmptyHint: '다른 달에서 예약 가능한 날짜를 선택해 주세요.',
     monthPrev: '이전 달',
     monthNext: '다음 달',
     slotPanelTitle: '예약 가능 시간',
@@ -1044,6 +1046,8 @@ const COPY = {
     calendarPrompt: 'Choose a package first.',
     calendarEmpty: 'Choose a package to load the calendar.',
     calendarLoadedHint: 'Choose an available date.',
+    calendarMonthEmpty: 'No open dates this month. Please check another month.',
+    calendarMonthEmptyHint: 'Choose an available date in another month.',
     monthPrev: 'Previous month',
     monthNext: 'Next month',
     slotPanelTitle: 'Available Times',
@@ -1261,6 +1265,8 @@ const COPY = {
     calendarPrompt: 'Bitte zuerst ein Paket wählen.',
     calendarEmpty: 'Bitte zuerst ein Paket wählen, um den Kalender zu laden.',
     calendarLoadedHint: 'Bitte wählen Sie ein verfügbares Datum.',
+    calendarMonthEmpty: 'In diesem Monat sind keine Termine frei. Bitte prüfen Sie einen anderen Monat.',
+    calendarMonthEmptyHint: 'Bitte wählen Sie einen freien Termin in einem anderen Monat.',
     monthPrev: 'Vorheriger Monat',
     monthNext: 'Nächster Monat',
     slotPanelTitle: 'Verfügbare Zeiten',
@@ -5650,10 +5656,16 @@ async function loadCalendar() {
   renderCalendar(batch);
   setCalendarBusy(false);
   updateMonthNavAvailability();
-  setBanner(getCopy().calendarLoaded, 'success');
-  if (!state.selectedDate) {
-    const nearestDate = getNearestAvailableDate(batch);
-    if (nearestDate) await selectDate(nearestDate, { auto: true });
+  const nearestDate = getNearestAvailableDate(batch);
+  if (!nearestDate && !state.selectedDate) {
+    // 이 달엔 예약 가능한 날짜가 하나도 없음 — '가능 날짜를 고르라'는 기본 안내는 오히려
+    // 없는 날짜를 찾아 헤매게 만든다. 명확히 '다른 달을 보라'고 안내한다.
+    setBanner(getCopy().calendarMonthEmpty, 'info');
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarMonthEmptyHint}`;
+  } else {
+    setBanner(getCopy().calendarLoaded, 'success');
+    els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
+    if (!state.selectedDate) await selectDate(nearestDate, { auto: true });
   }
   prefetchNextCalendarMonth();
 }
@@ -5843,16 +5855,18 @@ function renderCalendar(data) {
 function getNearestAvailableDate(data) {
   const safeData = data && typeof data === 'object' ? data : {};
   const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
+  const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
     if (dateKey < todayKey) continue;
-    if (unavail.has(dateKey)) continue;
+    if (closed.has(dateKey)) continue;   // 휴무/예약범위 밖 — 예약 불가라 자동선택 대상 아님
+    if (unavail.has(dateKey)) continue;  // 마감(full)
     return dateKey;
   }
-  return '';
+  return '';   // 이 달엔 예약 가능한 날짜가 하나도 없음(과거·휴무·마감뿐)
 }
 
 async function selectDate(dateKey, options = {}) {

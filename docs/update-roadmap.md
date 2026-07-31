@@ -34,7 +34,7 @@ Updated: 2026-07-16 Europe/Berlin
 - measure current month / next month / third month load gap
 - tune month-summary cache TTL
 - refine background prefetch order
-- reduce visual confusion while loading later months
+- ~~reduce visual confusion while loading later months~~ → 완료 (2026-07-31): 예약가능 날짜 0인 달 명확 안내(3개국어) + 자동선택 휴무일 제외 버그 픽스 + 크림톤 스켈레톤. 트랙 종료
 
 8. Select real-session verification
 - open existing session link
@@ -74,6 +74,16 @@ Updated: 2026-07-16 Europe/Berlin
 - otherwise keep those flows as local-ledger + summary export only
 
 ## Done Recently
+
+- **예약 캘린더 늦은 달 혼란 제거: 빈 달 안내 + 자동선택 휴무일 제외 + 크림톤 스켈레톤 (2026-07-31, 프런트 배포)** —
+  로드맵 #7 마지막 항목("reduce visual confusion while loading later months") 소진.
+  - **빈 달 안내**: 예약 가능한 날짜가 하나도 없는 달로 이동하면 기존엔 "예약 가능 날짜를 선택하세요"라는
+    **오해 유발** 안내가 그대로 떠 손님이 없는 날짜를 찾아 헤맸다. `getNearestAvailableDate`가 ''를
+    반환할 때 "이 달엔 예약 가능한 날짜가 없어요 · 다른 달을 확인해 주세요"(KO/EN/DE, `banner.info` 브라운톤)로 전환.
+  - **잠재버그 픽스**: `getNearestAvailableDate`가 `full`만 건너뛰고 `closed`(휴무·범위밖)는 건너뛰지 않아
+    **자동선택이 휴무일에 착지**해 빈 슬롯 패널이 뜨던 문제 해소. 이제 ''는 "진짜로 예약 가능 날짜 0"을 신뢰성 있게 의미.
+  - **스켈레톤 크림톤화**: 로딩 셔머가 쿨 슬레이트(#f8fafc/#cbd5e1)라 크림톤 디자인에서 이질적 → 따뜻한 크림(#f5efe6/#ece1cf)으로.
+  - 안전: 전부 표시 경로 프런트 변경. 서버 가드·가격·제출 흐름 무관. `node --check` 통과, min JS/CSS 재빌드 + stamp(?v= 갱신) 커밋.
 
 - **캘린더 근본 속도: 표시경로 월 이벤트 캐시 → 슬롯 계산 fresh 유지하며 4배 빠르게 (2026-07-30, 배포 @709)** —
   주력 그룹(pass/prof/stud) 슬롯의 진짜 병목은 **캘린더 다중읽기(~5s)**였다(슬롯 자체 TTL 120초라 캐시
