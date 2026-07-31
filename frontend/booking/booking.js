@@ -1364,6 +1364,7 @@ const state = {
   earliestSlotInfo: null,
   calendarCache: new Map(),
   slotCache: new Map(),
+  slotPrefetchInFlight: new Map(),
   gutschein: null,
   gutscheinDraftId: '',
   gutscheinTimer: null
@@ -5719,6 +5720,24 @@ async function prefetchNextCalendarMonth() {
   if (tasks.length) await warmCalendarRange(tasks);
 }
 
+/* 슬롯 프리페치 — 고객이 클릭하기 전에 그 날짜의 슬롯을 백그라운드로 당겨 slotCache 에 넣는다.
+   서버 슬롯 계산이 느린 그룹(스튜디오 자동오픈 ~8초)에서 클릭 지연을 숨긴다. loadSlotsForDate 가
+   캐시를 먼저 보므로, 프리페치된 날짜는 클릭 즉시 렌더된다. 이미 캐시/진행중이면 no-op(중복 방지).
+   실패는 조용히 무시 — 실제 클릭 시 loadSlotsForDate 가 다시 시도한다. 렌더/토큰은 건드리지 않음. */
+function prefetchSlotsForDate(dateKey) {
+  if (!state.selectedProduct || !dateKey) return null;
+  const duration = getCalendarDuration();
+  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
+  if (state.slotCache.has(slotKey)) return Promise.resolve(state.slotCache.get(slotKey));
+  const existing = state.slotPrefetchInFlight.get(slotKey);
+  if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
+  const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g })
+    .then((slots) => { if (!state.slotCache.has(slotKey)) state.slotCache.set(slotKey, slots); return slots; })
+    .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
+  state.slotPrefetchInFlight.set(slotKey, promise);
+  return promise;
+}
+
 async function loadSlotsForDate(dateKey) {
   const token = ++state.slotRequestToken;
   const duration = getCalendarDuration();
@@ -5736,7 +5755,14 @@ async function loadSlotsForDate(dateKey) {
   }
   let slots = [];
   try {
-    slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
+    // 프리페치(호버/터치)가 진행 중이면 그 요청에 올라타 중복 조회를 피한다. 실패 시 신선 재시도.
+    const inflight = state.slotPrefetchInFlight.get(slotKey);
+    if (inflight) {
+      try { slots = await inflight; }
+      catch (e) { slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g }); }
+    } else {
+      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
+    }
     if (token !== state.slotRequestToken) return;
     state.slotCache.set(slotKey, slots);
   } catch (error) {
@@ -5799,6 +5825,12 @@ function renderCalendar(data) {
   els.calendarGrid.innerHTML = cells.join('');
   els.calendarGrid.querySelectorAll('.calendar-cell[data-date]').forEach((button) => {
     button.addEventListener('click', () => selectDate(button.dataset.date));
+    // 예약 가능 날짜(마감/휴무/과거 아님)만 호버·터치 시 슬롯 프리페치 — 클릭 지연 숨김
+    if (!button.disabled && !button.dataset.full && !button.dataset.closed) {
+      const pf = () => prefetchSlotsForDate(button.dataset.date);
+      button.addEventListener('mouseenter', pf);
+      button.addEventListener('touchstart', pf, { passive: true });
+    }
   });
   const legendFull = document.getElementById('legendFullLabel');
   const legendClosed = document.getElementById('legendClosedLabel');
