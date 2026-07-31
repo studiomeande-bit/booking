@@ -1467,7 +1467,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
             <label><input type="radio" name="m_bookingType" value="기업"><span>기업</span></label>
           </div>
         </div>
-        <div class="form-group"><label>예약 채널</label><select id="m_source" onchange="onManualSourceChange()"><option value="direct">직접 예약</option><option value="myrealtrip">마이리얼트립</option></select></div>
+        <div class="form-group"><label>예약 채널</label><select id="m_source" onchange="onManualSourceChange()"><option value="direct">직접 예약</option><option value="consultation">상담 전환</option><option value="myrealtrip">마이리얼트립</option></select></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>통화</label><input type="text" id="m_currency_display" value="EUR 직접 입력" readonly style="background:#f8fafc;color:#64748b;"></div>
@@ -3250,6 +3250,7 @@ const STUDIO_BUSINESS_INFO={
 let invoiceEditReturnToValidation=false;
 let studioPresenceState=null;
 let currentWalkinRowIndexForManual=0;
+let currentConsultationRowIndexForManual=0;
 
 /* ===== 로그인 ===== */
 function doLogin(){
@@ -5163,7 +5164,7 @@ function renderConsultations(summary){
         <button class="btn btn-outline btn-sm" onclick="scheduleConsultation(${rowId})">${c.appointmentAt?'일정변경':'일정등록'}</button>
         ${c.appointmentAt||c.appointmentEventId?`<button class="btn btn-outline btn-sm" onclick="cancelConsultationSchedule(${rowId})">일정취소</button>`:''}
         <button class="btn btn-outline btn-sm" onclick="addConsultationMeeting(${rowId})">회의록</button>
-        <button class="btn btn-success btn-sm" onclick="convertConsultation(${rowId})"${c.bookingRowIndex?' disabled':''}>예약전환</button>
+        <button class="btn btn-success btn-sm" onclick="prefillManualFromConsultation(${rowId})"${c.bookingRowIndex?' disabled':''}>예약전환</button>
         <a class="btn btn-outline btn-sm" href="${escapeAdminHtml(safeEmail)}">메일</a>
         <a class="btn btn-outline btn-sm" href="${escapeAdminHtml(telHref)}">전화</a>
       </td>
@@ -5371,36 +5372,8 @@ function addConsultationMeeting(rowIndex){
     .addConsultationMeetingNoteAdmin(adminToken,rowIndex,note,nextAction||'');
 }
 
-function convertConsultation(rowIndex){
-  const c=(allConsultations||[]).find(x=>Number(x.rowIndex)===Number(rowIndex));
-  if(!c){alert('상담 정보를 찾을 수 없습니다.');return;}
-  const date=prompt('예약 날짜를 입력해 주세요. (YYYY-MM-DD)',String(c.shootDate||'').match(/^\d{4}-\d{2}-\d{2}/)?.[0]||new Date().toISOString().slice(0,10));
-  if(!date) return;
-  const time=prompt('예약 시간을 입력해 주세요. (HH:MM)','10:00');
-  if(!time) return;
-  const durationMin=prompt('촬영/상담 포함 소요 시간(분)',String((String(c.consultationType||'').toLowerCase().includes('wed')?180:120)));
-  if(durationMin===null) return;
-  const price=prompt('총 금액(€). 미정이면 0으로 저장됩니다.','0');
-  if(price===null) return;
-  const deposit=prompt('계약금(€). 없으면 0','0');
-  if(deposit===null) return;
-  const product=prompt('예약장부 상품명',c.consultationType||'상담 전환 예약');
-  if(!product) return;
-  const itemGroup=String(c.consultationType||'').toLowerCase().includes('wed')?'wed':'biz';
-  if(!confirm(`${c.name}님 상담을 ${date} ${time} 예약으로 전환할까요?`)) return;
-  google.script.run
-    .withSuccessHandler(function(res){
-      if(res&&res.ok){
-        showToast(`예약 전환 완료 (행 ${res.bookingRowIndex})`,'ok');
-        loadConsultations(true);
-        loadAll();
-      }else{
-        alert('예약 전환 실패');
-      }
-    })
-    .withFailureHandler(handleApiError)
-    .convertConsultationToBookingAdmin(adminToken,rowIndex,{date,time,durationMin,price,deposit,product,itemGroup,sendEmail:true});
-}
+// (구) 상담 전환 prompt 체인은 prefillManualFromConsultation(수기 폼 프리필)로 대체됨 — 2026-07-30.
+// 백엔드 convertConsultationToBookingAdmin 는 에이전트/호환용으로 유지.
 
 function findWalkinByRowIndex(rowIndex){
   const idx=Number(rowIndex||0);
@@ -5435,6 +5408,7 @@ function prefillManualFromWalkin(rowIndex){
   }
   switchTab('manual');
   currentWalkinRowIndexForManual=Number(w.rowIndex||0);
+  currentConsultationRowIndexForManual=0;   // 워크인 프리필이면 상담 출처는 비운다(교차 오염 방지)
   const setValue=function(id,value){
     const el=document.getElementById(id);
     if(!el) return;
@@ -5487,6 +5461,64 @@ function prefillManualFromWalkin(rowIndex){
     res.textContent=`워크인 접수 #${w.rowIndex} 정보를 수기 예약 폼에 불러왔습니다. 날짜, 시간, 상품, 금액을 확인한 뒤 등록해 주세요.`;
   }
   showToast('워크인 정보를 수기 예약 폼에 불러왔습니다.','ok');
+}
+
+// 상담 → 수기 예약 폼 프리필. 워크인과 같은 패턴 — 크루드한 prompt 체인 대신 상담 내용을 폼에 채워
+// 넣고(수정 가능), 등록 시 백엔드가 sourceConsultationRowIndex 로 상담을 예약전환 마감·연결한다.
+// 상담은 웨딩/기업 고액 건이라 충돌검사·계약금·금액 필드가 있는 정식 폼이 prompt 6개보다 안전하다.
+function prefillManualFromConsultation(rowIndex){
+  const c=(allConsultations||[]).find(x=>Number(x.rowIndex)===Number(rowIndex));
+  if(!c){showToast('상담 정보를 찾지 못했습니다. 새로고침 후 다시 확인해 주세요.','warn');return;}
+  if(c.bookingRowIndex){showToast('이미 예약으로 전환된 상담입니다.','warn');return;}
+  switchTab('manual');
+  currentConsultationRowIndexForManual=Number(c.rowIndex||0);
+  currentWalkinRowIndexForManual=0;   // 상담 프리필이면 워크인 출처는 비운다(교차 오염 방지)
+  const setValue=function(id,value){
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.value=value||'';
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+  setValue('m_name',c.name||'');
+  setValue('m_phone',c.phone||'');
+  setValue('m_email',c.email||'');
+  setValue('m_lang',c.lang||'ko');
+  setValue('m_source','consultation');
+  // 상담유형 → 촬영종류(웨딩이면 wed, 그 외 상담은 biz 기본). 커스텀 상품명은 상담유형 그대로.
+  const type=String(c.consultationType||'').toLowerCase();
+  const group=(type.indexOf('wed')>-1||type.indexOf('웨딩')>-1||type.indexOf('결혼')>-1)?'wed':'biz';
+  const groupEl=document.getElementById('m_group');
+  if(groupEl){groupEl.value=group;onManualGroupChange();}
+  // biz/wed 는 커스텀 상품 경로 — 상담유형을 상품명으로
+  const sel=document.getElementById('m_product');
+  const custom=document.getElementById('m_product_custom');
+  if(sel&&Array.from(sel.options).some(opt=>opt.value==='__custom__')) sel.value='__custom__';
+  if(custom) custom.value=String(c.consultationType||'상담 전환 예약').trim();
+  if(typeof syncManualCustomProductVisibility==='function') syncManualCustomProductVisibility();
+  if(typeof onManualProductChange==='function') onManualProductChange();
+  if(c.shootDate&&/^\d{4}-\d{2}-\d{2}/.test(String(c.shootDate))) setValue('m_date',String(c.shootDate).slice(0,10));
+  if(group==='wed') setValue('m_location_wed',c.location||'');
+  if(group==='biz') setValue('m_location_biz',c.location||'');
+  setBookingTypeToggle('m_bookingType',(c.company||group==='biz')?'기업':'개인');
+  // 예산이 숫자면 총액 힌트로 채운다(협의 금액이라 수정 전제)
+  const budgetNum=parseFloat(String(c.budget||'').replace(/[^0-9.]/g,''));
+  if(budgetNum>0) setValue('m_price',String(Math.round(budgetNum)));
+  // 메모 — 상담 ID·회사명·요약·최근 회의록. (수기 폼엔 회사명 입력칸이 없어 메모로 보존)
+  const lastNote=(Array.isArray(c.meetings)&&c.meetings.length)?String(c.meetings[c.meetings.length-1].note||'').trim():'';
+  setValue('m_memo',[
+    `[상담 전환] ${c.id||''}`.trim(),
+    c.company?('회사: '+c.company):'',
+    c.budget?('협의 예산: '+c.budget):'',
+    c.summary||'',
+    lastNote?('최근 상담기록: '+lastNote):''
+  ].filter(Boolean).join('\n'));
+  const res=document.getElementById('manualResult');
+  if(res){
+    res.style.color='#166534';
+    res.textContent=`상담 ${c.id||('#'+c.rowIndex)} 정보를 수기 예약 폼에 불러왔습니다. 날짜·시간·상품·금액·계약금을 확인한 뒤 등록해 주세요.`;
+  }
+  showToast('상담 정보를 수기 예약 폼에 불러왔습니다.','ok');
 }
 
 function matchesAdminOpsFilter(c,key){
@@ -8584,6 +8616,7 @@ function saveManual(){
     bookingType: getBookingTypeToggle('m_bookingType'),
     bookingSource: document.getElementById('m_source').value,
     sourceWalkinRowIndex: currentWalkinRowIndexForManual || '',
+    sourceConsultationRowIndex: currentConsultationRowIndexForManual || '',
     currencyMode: isManualMyRealTripMode() ? 'krw' : 'eur',
     krwTotal: document.getElementById('m_krw_total').value,
     price: document.getElementById('m_price').value,
@@ -8707,6 +8740,7 @@ function saveManual(){
       document.getElementById('m_cal').checked = true;
       document.getElementById('m_send_email').checked = false;
       currentWalkinRowIndexForManual = 0;
+      currentConsultationRowIndexForManual = 0;
       refreshManualCurrencyState();
       loadAll();
     } else {

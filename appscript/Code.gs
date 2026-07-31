@@ -10972,6 +10972,23 @@ function addManualBookingAdmin(token, data) {
         Logger.log('워크인 접수 연결 업데이트 실패: '+e.message);
       }
     }
+    /* 상담 → 예약 연결 — 워크인과 동일 패턴. 상담 전환도 이제 수기 예약 폼에 채워 넣고 등록하므로
+       (크루드한 prompt 체인 폐기), 여기서 상담 행을 예약전환으로 마감하고 예약행을 연결한다.
+       convertConsultationToBookingAdmin 와 같은 컬럼을 찍어 브리핑/파이프라인 집계가 일치한다. */
+    const sourceConsultationRowIndex=parseInt(data.sourceConsultationRowIndex,10)||0;
+    if(sourceConsultationRowIndex>1){
+      try{
+        const consultSh=ensureSheets_().consultationSheet;
+        if(consultSh&&sourceConsultationRowIndex<=consultSh.getLastRow()){
+          consultSh.getRange(sourceConsultationRowIndex,CONSULTATION_COL['상태']+1).setValue('예약전환');
+          consultSh.getRange(sourceConsultationRowIndex,CONSULTATION_COL['연결예약행']+1).setValue(bookingRowIndex);
+          consultSh.getRange(sourceConsultationRowIndex,CONSULTATION_COL['예약전환일시']+1).setValue(nowStr);
+          consultSh.getRange(sourceConsultationRowIndex,CONSULTATION_COL['최근관리일시']+1).setValue(nowStr);
+        }
+      }catch(e){
+        Logger.log('상담 접수 연결 업데이트 실패: '+e.message);
+      }
+    }
     upsertTravelLedgerForBooking_(bookingRowIndex,bookingRow);
     // 다일정: 만들어진 추가 날짜 이벤트 ID 를 행에 기록(정합점검 knownIds·취소 시 정리에 필수)
     if(extraDaysSavedManual.length&&BOOKING_COL['추가일정JSON']!=null){
