@@ -1166,6 +1166,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='expense-mail-collect') return jsonOk_({ok:true,saved:collectInvoiceEmailsDaily_()});
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
+        // 캘린더 프리워밍 정합 검증 — 워밍 자동화 전에 시드==라이브(mismatch 0) 확인용
+        if(action==='calendar-warm-verify') return jsonOk_(verifyPublicSlotWarmAdmin(token,{months:Number(payload.months)||2}));
         // 정산 재매칭 — 기간 내 카드/은행 거래를 장부와 다시 대조(월마감 대사 정리용)
         if(action==='settlement-rematch') return jsonOk_(refreshSettlementMatchesAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
         // 정산·수수료 중복 정리 — 기본 dryRun, 실제 삭제는 dryRun:false 명시
@@ -5387,6 +5389,105 @@ function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
     // 스튜디오 자동오픈 그룹은 상주 일정에 따라 자주 바뀌므로 짧은 TTL(기존 규칙 재사용)
     try{cache.put(cacheKey,JSON.stringify(out),getAvailabilityCacheTtlSec_(itemGroup));}catch(e){}
   }
+  return out;
+}
+
+/* 워밍 대상 (그룹, totalDur) 콤보 — **실제 상품에서 파생**한다. 프런트가 캐시키에 쓰는 totalDur 는
+   d+prep(booking.js). 하드코딩 60/45/30 은 어떤 상품과도 안 맞아 워밍이 유령키만 데우고 실고객은
+   늘 콜드였다(2026-07-30 실측: 실상품 stud 45/75/105·pass 15·biz 75~195 인데 워밍은 60/45/30). */
+function getBookingWarmupCombos_(){
+  const seen={},out=[];
+  getCustomerProducts_().forEach(function(p){
+    const g=String(p&&p.g||'').trim();
+    if(!g||g==='promo') return;                 // promo 는 날짜 규칙이 달라 제외
+    const totalDur=(Number(p.d)||0)+(Number(p.prep)||0);   // 프런트(booking.js 4842)와 정확히 동일
+    if(totalDur<=0) return;
+    const key=g+'_'+totalDur;
+    if(seen[key]) return; seen[key]=true;
+    out.push({itemGroup:g,totalDur:totalDur});
+  });
+  return out;
+}
+
+/* 슬롯 캐시(public_slots_v1_) 프리워밍 — getPublicSlots_ 를 날짜마다 부르면 날짜당 캘린더를 다시
+   읽어 트리거가 죽는다. 여기선 **월 이벤트를 딱 한 번** 읽어 그 위에서 날짜별 슬롯을 계산·시딩한다.
+   ⚠ 반드시 getPublicSlots_ 와 **동일한 결과**를 만들어야 한다(다르면 캐시가 잘못된 가용성을 굳혀
+   이중예약). 그래서 computeSlots_·buildPublicSlotEntries_·닫힘판정을 그대로 미러링하고, detailed
+   이벤트는 '해당 날짜와 겹치는' 것으로 분할한다(getPublicSlots_ 의 당일 조회와 일치). 검증기가
+   시드==라이브를 못박는다. 캘린더 읽기 실패 시 아무것도 시딩하지 않는다(거짓 가용성 굳힘 방지). */
+function warmPublicSlotsForMonth_(year,month,totalDur,itemGroup,dryRun){
+  if(!isPublicBookingItemGroup_(itemGroup)||itemGroup==='promo') return {seeded:0,skipped:'group',entries:{}};
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const monthStart=new Date(year,month,1),monthEnd=new Date(year,month,daysInMonth,23,59,59);
+  const events=getEventsForRange_(monthStart,monthEnd);
+  if(CAL_READ_FAILED_) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  const detailed=getBusyEventsDetailedForRange_(monthStart,monthEnd);
+  if(CAL_READ_FAILED_) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  const cache=CacheService.getScriptCache();
+  const ver=getCalCacheVer_();
+  const ttl=getAvailabilityCacheTtlSec_(itemGroup);
+  const useStudioAutoOpen=isStudioAutoOpenEligibleGroup_(itemGroup);
+  const entries={};   // dryRun: 캐시에 쓰지 않고 계산 결과만 반환(검증이 라이브 캐시를 오염시키지 않게)
+  let seeded=0;
+  for(let d=1;d<=daysInMonth;d++){
+    const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
+    const dayStart=new Date(`${dStr}T00:00:00`).getTime(),dayEnd=new Date(`${dStr}T23:59:59`).getTime();
+    // 당일과 겹치는 detailed 이벤트(getPublicSlots_ 의 당일 조회 의미와 동일). 시작일 기준 분할이 아님.
+    const dayDetailed=detailed.filter(function(ev){return ev.start<dayEnd&&ev.end>dayStart;});
+    const studioPresenceEvents=useStudioAutoOpen?dayDetailed:[];
+    const hasStudioAutoOpenBlocks=useStudioAutoOpen&&getStudioAutoOpenBlocksForDate_(dStr,studioPresenceEvents).length>0;
+    const cacheKey=`public_slots_v1_${ver}_${dStr}_${itemGroup}_${totalDur}`;
+    let payload;
+    if(isBeyondPublicBookingRange_(dStr)||(isWeekendOrHolidayBlocked_(dStr,itemGroup)&&!hasStudioAutoOpenBlocks)){
+      payload='[]';
+    }else{
+      const slotStrings=computeSlots_(dStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+      payload=JSON.stringify(buildPublicSlotEntries_(dStr,slotStrings,totalDur,dayDetailed,itemGroup));
+    }
+    entries[dStr]=payload;
+    if(dryRun!==true){ try{cache.put(cacheKey,payload,ttl);seeded++;}catch(e){} }
+  }
+  return {seeded:dryRun===true?0:seeded,skipped:'',entries:entries};
+}
+
+/* 프리워밍 정합 검증 — warmPublicSlotsForMonth_(월 1회 읽기 시딩)이 getPublicSlots_(라이브,
+   날짜별 읽기)와 **바이트 동일**한지 실데이터로 확인한다. 워밍을 자동화하기 전에 이걸로 mismatch 0
+   을 확인한다(다르면 캐시가 잘못된 가용성을 굳혀 이중예약). 에이전트 액션 calendar-warm-verify. */
+function verifyPublicSlotWarmAdmin(token,opts){
+  assertAdmin_(token);
+  opts=opts||{};
+  const combos=getBookingWarmupCombos_();
+  const now=new Date();
+  const monthsAhead=Math.max(1,Math.min(3,Number(opts.months)||2));
+  const out={ok:true,checkedCombos:0,checkedDates:0,mismatches:[],combos:[]};
+  for(let mi=0;mi<monthsAhead;mi++){
+    const dref=new Date(now.getFullYear(),now.getMonth()+mi,1);
+    const y=dref.getFullYear(),m=dref.getMonth();
+    const daysInMonth=new Date(y,m+1,0).getDate();
+    combos.forEach(function(combo){
+      // dryRun 으로 캐시를 건드리지 않고 계산본만 받아, 라이브 getPublicSlots_(skipCache=true)와 비교
+      const dry=warmPublicSlotsForMonth_(y,m,combo.totalDur,combo.itemGroup,true);
+      out.checkedCombos++;
+      let comboMismatch=0;
+      for(let d=1;d<=daysInMonth;d++){
+        const dStr=`${y}-${('0'+(m+1)).slice(-2)}-${('0'+d).slice(-2)}`;
+        const seeded=(dry.entries&&dry.entries[dStr]!==undefined)?dry.entries[dStr]:null;
+        const truth=JSON.stringify(getPublicSlots_(dStr,combo.totalDur,combo.itemGroup,true));
+        out.checkedDates++;
+        if(seeded===null){
+          if(truth!=='[]'){ comboMismatch++; if(out.mismatches.length<20) out.mismatches.push({date:dStr,group:combo.itemGroup,dur:combo.totalDur,reason:'not_computed',truthLen:truth.length}); }
+          continue;
+        }
+        if(seeded!==truth){
+          comboMismatch++;
+          if(out.mismatches.length<20) out.mismatches.push({date:dStr,group:combo.itemGroup,dur:combo.totalDur,reason:'diff',seeded:seeded.slice(0,80),truth:truth.slice(0,80)});
+        }
+      }
+      out.combos.push({group:combo.itemGroup,dur:combo.totalDur,mismatch:comboMismatch});
+      if(comboMismatch) out.ok=false;
+    });
+  }
+  out.mismatchCount=out.mismatches.length;
   return out;
 }
 
@@ -25077,22 +25178,37 @@ function installDailyTrigger(){
 
 /* ====== B2A: 캘린더 캐시 웜업 트리거 ====== */
 function warmupCacheTrigger(){
-  const targets=[
-    {itemGroup:'stud',totalDur:60},
-    {itemGroup:'prof',totalDur:45},
-    {itemGroup:'pass',totalDur:30}
-  ];
+  /* 캐시 프리워밍 — **실제 상품 콤보**(그룹, d+prep)를 데운다. 예전엔 stud/60·prof/45·pass/30 하드코딩
+     이라 어떤 상품과도 안 맞아 실고객은 늘 콜드였다(2026-07-30 규명). 월 요약(getPublicCalendarBatch_)
+     + **날짜별 슬롯(public_slots_v1_)** 을 함께 데워, 고객의 날짜 클릭(과거 9.6초 병목)도 웜캐시가 되게
+     한다. 슬롯 워밍은 computeSlots_ 로 가용성이 라이브와 동일하고(검증됨) 캘린더 실패 시 시딩 안 함. */
+  let combos=[];
+  try{ combos=getBookingWarmupCombos_(); }catch(e){ Logger.log('warmup combos: '+e.message); }
+  if(!combos.length) combos=[{itemGroup:'stud',totalDur:60},{itemGroup:'prof',totalDur:45},{itemGroup:'pass',totalDur:30}];
   const now=new Date();
-  targets.forEach(function(target){
-    for(let offset=0;offset<2;offset++){
-      const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
-      try{
-        getPublicCalendarBatch_(d.getFullYear(),d.getMonth(),target.totalDur,target.itemGroup);
-      }catch(e){
-        Logger.log('warmupCacheTrigger '+target.itemGroup+' '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message);
+  const cache=CacheService.getScriptCache();
+  const ver=getCalCacheVer_();
+  const startMs=Date.now();
+  const BUDGET_MS=270000;   // 4.5분 — GAS 6분 한도 안전여유. 초과 시 중단, 다음 5분 실행이 이어감
+  // 프런트가 현재+다음+다다음(3개월)을 로딩/프리패치하므로 3개월 전부 데운다(month+2 콜드 제거).
+  for(let offset=0;offset<3;offset++){
+    const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
+    const y=d.getFullYear(),m=d.getMonth();
+    for(let ci=0;ci<combos.length;ci++){
+      if(Date.now()-startMs>BUDGET_MS) return;
+      const c=combos[ci];
+      try{ getPublicCalendarBatch_(y,m,c.totalDur,c.itemGroup); }
+      catch(e){ Logger.log('warmup batch '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
+      /* 슬롯 워밍은 센티넬로 ~20분마다(또는 예약 발생으로 ver 바뀔 때)만 — 매 5분 전량 재계산 방지.
+         ver 가 키에 있어 새 예약 시 센티넬·슬롯캐시 동시 무효화 → 다음 실행이 즉시 재워밍(자가치유). */
+      const sentinel=`slots_warm_v1_${ver}_${y}_${m}_${c.itemGroup}_${c.totalDur}`;
+      let warm=false; try{ warm=!!cache.get(sentinel); }catch(e){}
+      if(!warm){
+        try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup); cache.put(sentinel,'1',1200); }
+        catch(e){ Logger.log('warmup slots '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
       }
     }
-  });
+  }
 }
 
 function setupWarmupTrigger(){
