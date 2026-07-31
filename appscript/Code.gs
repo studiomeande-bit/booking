@@ -5415,14 +5415,26 @@ function getBookingWarmupCombos_(){
    이중예약). 그래서 computeSlots_·buildPublicSlotEntries_·닫힘판정을 그대로 미러링하고, detailed
    이벤트는 '해당 날짜와 겹치는' 것으로 분할한다(getPublicSlots_ 의 당일 조회와 일치). 검증기가
    시드==라이브를 못박는다. 캘린더 읽기 실패 시 아무것도 시딩하지 않는다(거짓 가용성 굳힘 방지). */
-function warmPublicSlotsForMonth_(year,month,totalDur,itemGroup,dryRun){
-  if(!isPublicBookingItemGroup_(itemGroup)||itemGroup==='promo') return {seeded:0,skipped:'group',entries:{}};
+/* 월 캘린더를 한 번만 읽어 반환 — 같은 달의 여러 콤보(totalDur)가 **동일 이벤트**를 공유하므로
+   콤보마다 다시 읽으면 33회 중복 읽기로 트리거 예산이 터진다(2026-07-30: month+2 가 굶어 콜드).
+   워밍 루프는 달마다 이걸 한 번 호출해 events/detailed 를 모든 콤보에 재사용한다. */
+function readMonthCalendarForWarm_(year,month){
   const daysInMonth=new Date(year,month+1,0).getDate();
   const monthStart=new Date(year,month,1),monthEnd=new Date(year,month,daysInMonth,23,59,59);
   const events=getEventsForRange_(monthStart,monthEnd);
-  if(CAL_READ_FAILED_) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  if(CAL_READ_FAILED_) return null;
   const detailed=getBusyEventsDetailedForRange_(monthStart,monthEnd);
-  if(CAL_READ_FAILED_) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  if(CAL_READ_FAILED_) return null;
+  return {events:events,detailed:detailed,daysInMonth:daysInMonth};
+}
+
+function warmPublicSlotsForMonth_(year,month,totalDur,itemGroup,dryRun,preRead){
+  if(!isPublicBookingItemGroup_(itemGroup)||itemGroup==='promo') return {seeded:0,skipped:'group',entries:{}};
+  const bundle=preRead||readMonthCalendarForWarm_(year,month);   // preRead 있으면 재사용(중복 읽기 방지)
+  if(!bundle) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  const daysInMonth=bundle.daysInMonth;
+  const events=bundle.events;
+  const detailed=bundle.detailed;
   const cache=CacheService.getScriptCache();
   const ver=getCalCacheVer_();
   const ttl=getAvailabilityCacheTtlSec_(itemGroup);
@@ -25194,6 +25206,8 @@ function warmupCacheTrigger(){
   for(let offset=0;offset<3;offset++){
     const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
     const y=d.getFullYear(),m=d.getMonth();
+    // 이 달 캘린더는 콤보와 무관하게 동일 — 워밍 필요한 콤보가 있으면 **딱 한 번** 읽어 재사용한다.
+    let bundle=null,bundleTried=false;
     for(let ci=0;ci<combos.length;ci++){
       if(Date.now()-startMs>BUDGET_MS) return;
       const c=combos[ci];
@@ -25203,10 +25217,11 @@ function warmupCacheTrigger(){
          ver 가 키에 있어 새 예약 시 센티넬·슬롯캐시 동시 무효화 → 다음 실행이 즉시 재워밍(자가치유). */
       const sentinel=`slots_warm_v1_${ver}_${y}_${m}_${c.itemGroup}_${c.totalDur}`;
       let warm=false; try{ warm=!!cache.get(sentinel); }catch(e){}
-      if(!warm){
-        try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup); cache.put(sentinel,'1',1200); }
-        catch(e){ Logger.log('warmup slots '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
-      }
+      if(warm) continue;
+      if(!bundleTried){ try{ bundle=readMonthCalendarForWarm_(y,m); }catch(e){ bundle=null; } bundleTried=true; }
+      if(!bundle) continue;   // 캘린더 읽기 실패 — 이 달은 시딩하지 않음(거짓 가용성 굳힘 방지)
+      try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup,false,bundle); cache.put(sentinel,'1',1200); }
+      catch(e){ Logger.log('warmup slots '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
     }
   }
 }
