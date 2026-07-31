@@ -5349,6 +5349,31 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
    ⚠ skipCache: 예약 제출의 서버 재검증(submitBooking)은 반드시 실시간으로 읽어야 한다.
      실제 예약 가드는 slotAvailable_ 이지만, 이 함수의 결과가 확정모드·추천상태 메타데이터를
      결정하므로 캐시된 값으로 라벨이 잘못 붙는 것을 막는다. */
+/* 월 이벤트 캐시 — 슬롯 계산의 진짜 병목은 캘린더 다중읽기(~5s)다. 이벤트는 totalDur 와 무관하므로
+   달당 한 번 읽어 캐시하면 **모든 콤보·모든 날짜**의 슬롯을 그 위에서 fresh 하게(슬롯 자체는 캐시 아님)
+   빠르게 계산한다. ⚠ **표시 경로 전용**(getPublicSlots_·getUnavailableDays). 예약 가드(slotAvailable_·
+   checkBookingTimeConflict_ 등 제출 경로)는 절대 이걸 쓰지 않고 getEventsForRange_ 를 직접 fresh 읽어
+   이중예약을 막는다. TTL 120초 = 기존 슬롯캐시와 동일 신선도(추가 staleness 없음). ver 키라 예약 시 즉시
+   무효화. 상세(detailed)는 가용성 비필수(추천 라벨용)라 실패해도 캐시. 이벤트는 실패 시 캐시 안 함. */
+function getCachedMonthEvents_(year,month,wantDetailed){
+  const ver=getCalCacheVer_();
+  const cache=CacheService.getScriptCache();
+  const key=`month_evt_${wantDetailed?'d':'e'}_v2_${ver}_${year}_${month}`;
+  try{
+    const h=cache.get(key);
+    if(h){ const p=JSON.parse(h); if(Array.isArray(p)){ if(!wantDetailed) CAL_READ_FAILED_=false; return p; } }
+  }catch(e){}
+  const dim=new Date(year,month+1,0).getDate();
+  const start=new Date(year,month,1),end=new Date(year,month,dim,23,59,59);
+  const events=wantDetailed
+    ? getBusyEventsDetailedForRange_(start,end)
+    : getEventsForRange_(start,end);
+  if(wantDetailed||!CAL_READ_FAILED_){
+    try{ const j=JSON.stringify(events); if(j.length<95000) cache.put(key,j,120); }catch(e){}
+  }
+  return events;
+}
+
 function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
   if(!isPublicBookingItemGroup_(itemGroup)) return [];
   if(itemGroup==='promo'&&!isPromoDateAllowed_(dateStr)) return[];
@@ -5363,10 +5388,20 @@ function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
       }
     }catch(e){}
   }
+  const y=parseInt(dateStr.slice(0,4),10),mo=parseInt(dateStr.slice(5,7),10)-1;
+  const dayStartMs=new Date(`${dateStr}T00:00:00`).getTime(),dayEndMs=new Date(`${dateStr}T23:59:59`).getTime();
+  /* 표시 경로는 월 캐시에서 당일 이벤트를 잘라 쓰고(빠름), skipCache(제출 메타 재계산)는 신선 조회.
+     computeSlots_ 는 당일 시간창만 보므로 월 이벤트를 넘겨도 당일 결과가 동일하다(다른 날 이벤트는
+     겹치지 않음). 상세는 추천 라벨용(가용성 비필수). */
+  const getDayDetailed=function(){
+    return (skipCache===true)
+      ? getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`))
+      : getCachedMonthEvents_(y,mo,true).filter(function(ev){return ev.start<dayEndMs&&ev.end>dayStartMs;});
+  };
   let studioPresenceEvents=[];
   let hasStudioAutoOpenBlocks=false;
   if(isStudioAutoOpenEligibleGroup_(itemGroup)){
-    studioPresenceEvents=getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+    studioPresenceEvents=getDayDetailed();
     hasStudioAutoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents).length>0;
   }
   // 닫힌 날짜도 빈 배열을 캐시한다 — 캐시 안 하면 '닫힘' 응답마다 캘린더를 다시 훑는다
@@ -5374,16 +5409,17 @@ function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
     if(skipCache!==true){ try{cache.put(cacheKey,'[]',getAvailabilityCacheTtlSec_(itemGroup));}catch(e){} }
     return[];
   }
-  const events=getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+  const events=(skipCache===true)
+    ? getEventsForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`))
+    : getCachedMonthEvents_(y,mo,false);
   if(CAL_READ_FAILED_){
-    // 불완전한 이벤트 목록으로 계산한 '가용'은 거짓말이다. 빈 슬롯으로 응답하되 **캐시는 심지 않는다**
-    // — 캐시하면 캘린더가 몇 초 만에 회복돼도 TTL(최대 30분) 내내 거짓 화면이 굳는다.
+    // 불완전한 이벤트 목록으로 계산한 '가용'은 거짓말이다. 빈 슬롯으로 응답하되 **캐시는 심지 않는다**.
     return [];
   }
   const slotStrings = computeSlots_(dateStr,events,totalDur,itemGroup,'',studioPresenceEvents);
   const detailedEvents = (studioPresenceEvents && studioPresenceEvents.length)
     ? studioPresenceEvents
-    : getBusyEventsDetailedForRange_(new Date(`${dateStr}T00:00:00`),new Date(`${dateStr}T23:59:59`));
+    : getDayDetailed();
   const out = buildPublicSlotEntries_(dateStr, slotStrings, totalDur, detailedEvents, itemGroup);
   if(skipCache!==true){
     // 스튜디오 자동오픈 그룹은 상주 일정에 따라 자주 바뀌므로 짧은 TTL(기존 규칙 재사용)
@@ -7915,7 +7951,7 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
   const cache=CacheService.getScriptCache();
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
   const unavail=[],closed=[],slotCounts={},slotsByDate={},daysInMonth=new Date(year,month+1,0).getDate();
-  const events=getEventsForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59));
+  const events=getCachedMonthEvents_(year,month,false);   // 표시 경로 — 월 이벤트 캐시(가드 아님, 신선도 동일)
   if(CAL_READ_FAILED_){
     /* 한 번의 월간 조회 실패가 한 달 전체를 '전부 가용'으로 오염시키고 30분 캐시로 굳는 게 최악의
        경로였다. 못 읽었으면 전 일자 마감으로 응답하고 캐시(월간·일별 프리시드 모두)는 심지 않는다
@@ -7925,7 +7961,7 @@ function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
     return {unavail:allDays,closed:[],slotCounts:{},slotsByDate:{},calReadFailed:true};
   }
   const useStudioAutoOpen=isStudioAutoOpenEligibleGroup_(itemGroup);
-  const detailedEvents=useStudioAutoOpen?getBusyEventsDetailedForRange_(new Date(year,month,1),new Date(year,month,daysInMonth,23,59,59)):[];
+  const detailedEvents=useStudioAutoOpen?getCachedMonthEvents_(year,month,true):[];   // 표시 경로 — 캐시 재사용
   const detailedEventsByDate={};
   if(useStudioAutoOpen){
     detailedEvents.forEach(ev=>{
@@ -25190,37 +25226,18 @@ function installDailyTrigger(){
 
 /* ====== B2A: 캘린더 캐시 웜업 트리거 ====== */
 function warmupCacheTrigger(){
-  /* 캐시 프리워밍 — **실제 상품 콤보**(그룹, d+prep)를 데운다. 예전엔 stud/60·prof/45·pass/30 하드코딩
-     이라 어떤 상품과도 안 맞아 실고객은 늘 콜드였다(2026-07-30 규명). 월 요약(getPublicCalendarBatch_)
-     + **날짜별 슬롯(public_slots_v1_)** 을 함께 데워, 고객의 날짜 클릭(과거 9.6초 병목)도 웜캐시가 되게
-     한다. 슬롯 워밍은 computeSlots_ 로 가용성이 라이브와 동일하고(검증됨) 캘린더 실패 시 시딩 안 함. */
-  let combos=[];
-  try{ combos=getBookingWarmupCombos_(); }catch(e){ Logger.log('warmup combos: '+e.message); }
-  if(!combos.length) combos=[{itemGroup:'stud',totalDur:60},{itemGroup:'prof',totalDur:45},{itemGroup:'pass',totalDur:30}];
+  /* **이벤트 캐시** 프리워밍 — 슬롯의 진짜 병목은 캘린더 다중읽기(~5s)다. 이벤트는 totalDur 무관이라
+     달당 한 번만 데우면 **모든 콤보·모든 날짜**의 슬롯이 그 위에서 fresh 하게 빠르게 계산된다
+     (getCachedMonthEvents_). 3개월 × (이벤트+상세) = 6읽기로 끝 — 예전 콤보별 슬롯 워밍(~200읽기)이
+     예산 터뜨려 month+2 굶던 문제가 원천 해소. 세션 내 다중 날짜 클릭은 첫 조회가 이미 캐시를 채워 항상
+     빠름. 트리거 5분·이벤트 TTL 120초라 첫 클릭 커버는 부분적이지만, 캐시 자체가 다중날짜를 커버한다. */
   const now=new Date();
-  const startMs=Date.now();
-  const BUDGET_MS=270000;   // 4.5분 — GAS 6분 한도 안전여유. 초과 시 중단, 다음 5분 실행이 이어감
-  // 프런트가 현재+다음+다다음(3개월)을 로딩/프리패치하므로 3개월 전부 데운다(month+2 콜드 제거).
   for(let offset=0;offset<3;offset++){
     const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
-    const y=d.getFullYear(),m=d.getMonth();
-    /* 월 요약(batch)은 트리거에서 데우지 **않는다** — getUnavailableDays 가 콤보(totalDur)마다 모든
-       busy 캘린더를 다시 읽어(콤보당 ~6읽기) 예산을 태워 month+2 슬롯이 굶었다(2026-07-30 실측 근본
-       원인). 월 그리드는 프런트가 이미 백그라운드로 프리패치하므로 무해. 트리거는 **슬롯만** 데운다
-       (고객 날짜클릭 13~21초 병목이자 프런트가 프리패치 안 하는 유일한 것). 슬롯은 달 1회 읽기 공유. */
-    /* 센티넬 없이 **매 실행 재워밍**한다 — 슬롯 캐시 TTL 이 pass/prof/stud(스튜디오 자동오픈)는
-       120초라, 예전 20분 센티넬이 만료된 캐시를 "웜"으로 착각해 18분간 재워밍을 막았다(실측 원인).
-       달 읽기 공유로 재워밍이 싸졌으니(달당 1회) 매번 데운다. biz(30분 TTL)는 항상 웜, 2분 TTL 그룹은
-       베스트에포트(5분 주기 한계). ⚠ 2분 TTL 그룹은 프리시딩만으론 상시 웜 불가 — freshness 설계상 한계. */
-    let bundle=null,bundleTried=false;
-    for(let ci=0;ci<combos.length;ci++){
-      if(Date.now()-startMs>BUDGET_MS) return;
-      const c=combos[ci];
-      if(!bundleTried){ try{ bundle=readMonthCalendarForWarm_(y,m); }catch(e){ bundle=null; } bundleTried=true; }
-      if(!bundle) break;   // 캘린더 읽기 실패 — 이 달은 시딩하지 않음(거짓 가용성 굳힘 방지)
-      try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup,false,bundle); }
-      catch(e){ Logger.log('warmup slots '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
-    }
+    try{
+      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),false);
+      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),true);
+    }catch(e){ Logger.log('warmup events '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message); }
   }
 }
 
