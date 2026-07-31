@@ -25198,8 +25198,6 @@ function warmupCacheTrigger(){
   try{ combos=getBookingWarmupCombos_(); }catch(e){ Logger.log('warmup combos: '+e.message); }
   if(!combos.length) combos=[{itemGroup:'stud',totalDur:60},{itemGroup:'prof',totalDur:45},{itemGroup:'pass',totalDur:30}];
   const now=new Date();
-  const cache=CacheService.getScriptCache();
-  const ver=getCalCacheVer_();
   const startMs=Date.now();
   const BUDGET_MS=270000;   // 4.5분 — GAS 6분 한도 안전여유. 초과 시 중단, 다음 5분 실행이 이어감
   // 프런트가 현재+다음+다다음(3개월)을 로딩/프리패치하므로 3개월 전부 데운다(month+2 콜드 제거).
@@ -25210,18 +25208,17 @@ function warmupCacheTrigger(){
        busy 캘린더를 다시 읽어(콤보당 ~6읽기) 예산을 태워 month+2 슬롯이 굶었다(2026-07-30 실측 근본
        원인). 월 그리드는 프런트가 이미 백그라운드로 프리패치하므로 무해. 트리거는 **슬롯만** 데운다
        (고객 날짜클릭 13~21초 병목이자 프런트가 프리패치 안 하는 유일한 것). 슬롯은 달 1회 읽기 공유. */
+    /* 센티넬 없이 **매 실행 재워밍**한다 — 슬롯 캐시 TTL 이 pass/prof/stud(스튜디오 자동오픈)는
+       120초라, 예전 20분 센티넬이 만료된 캐시를 "웜"으로 착각해 18분간 재워밍을 막았다(실측 원인).
+       달 읽기 공유로 재워밍이 싸졌으니(달당 1회) 매번 데운다. biz(30분 TTL)는 항상 웜, 2분 TTL 그룹은
+       베스트에포트(5분 주기 한계). ⚠ 2분 TTL 그룹은 프리시딩만으론 상시 웜 불가 — freshness 설계상 한계. */
     let bundle=null,bundleTried=false;
     for(let ci=0;ci<combos.length;ci++){
       if(Date.now()-startMs>BUDGET_MS) return;
       const c=combos[ci];
-      /* 센티넬로 ~20분마다(또는 예약으로 ver 바뀔 때)만 재계산 — 매 5분 전량 재계산 방지.
-         ver 가 키에 있어 새 예약 시 센티넬·슬롯캐시 동시 무효화 → 다음 실행이 즉시 재워밍(자가치유). */
-      const sentinel=`slots_warm_v1_${ver}_${y}_${m}_${c.itemGroup}_${c.totalDur}`;
-      let warm=false; try{ warm=!!cache.get(sentinel); }catch(e){}
-      if(warm) continue;
       if(!bundleTried){ try{ bundle=readMonthCalendarForWarm_(y,m); }catch(e){ bundle=null; } bundleTried=true; }
-      if(!bundle) continue;   // 캘린더 읽기 실패 — 이 달은 시딩하지 않음(거짓 가용성 굳힘 방지)
-      try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup,false,bundle); cache.put(sentinel,'1',1200); }
+      if(!bundle) break;   // 캘린더 읽기 실패 — 이 달은 시딩하지 않음(거짓 가용성 굳힘 방지)
+      try{ warmPublicSlotsForMonth_(y,m,c.totalDur,c.itemGroup,false,bundle); }
       catch(e){ Logger.log('warmup slots '+c.itemGroup+'/'+c.totalDur+' '+y+'-'+(m+1)+': '+e.message); }
     }
   }

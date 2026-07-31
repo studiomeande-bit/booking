@@ -75,21 +75,23 @@ Updated: 2026-07-16 Europe/Berlin
 
 ## Done Recently
 
-- **캘린더 프리워밍이 유령키만 데우던 근본버그 수정 → 날짜클릭 13~21초→3.5초 (2026-07-30, HEAD push)** —
+- **캘린더 프리워밍 유령키 버그 수정 + 근본 한계 규명 (2026-07-30, HEAD push) — 부분 성과** —
   **근본원인**: 캐시키에 totalDur 가 들어가는데 warmupCacheTrigger 는 stud/60·prof/45·pass/30 하드코딩.
-  실제 상품은 stud 45/75/105·prof 30/45/75·pass 15·biz 75~195 라 **어떤 상품과도 안 맞아** 워밍이
-  유령키만 데우고 실고객은 늘 콜드. 실측 베이스라인: stud/45 12.9s·pass/15 21.4s·prof/75 13.4s(날짜클릭).
-  - **수정**: `getBookingWarmupCombos_`(상품에서 실콤보 파생) + `warmPublicSlotsForMonth_`(월 1회 읽기로
-    날짜별 슬롯을 public_slots_v1_ 에 시딩 — getPublicSlots_ 와 동일 결과). 워밍을 3개월(현재+2)로 확대,
-    시간예산 4.5분·센티넬 20분(매5분 재계산 방지)·ver 무효화 자가치유
-  - **안전**: computeSlots_ 가용성은 월/일 이벤트 무관 동일(시간창 기반, 검증), buildPublicSlotEntries_ 는
-    슬롯을 지우지 않고 추천라벨만 부착 → 최악도 라벨 오차뿐 **이중예약 불가**. calReadFailed 시 시딩 안 함.
-    정합검증 액션 `calendar-warm-verify`(dryRun, 시드==라이브 바이트비교) 추가
-  - **실측 확인**: 워밍 후 stud/75 8월 3.53s(콜드 ~12s 대비). 트리거는 HEAD 코드 실행이라 **push 만으로
-    반영**(배포 불필요) — 아래 200버전 한도 우회
-  - ⚠ **GAS 200 버전 한도 도달**: 이번 세션 @695~@708 배포로 200개 참. `clasp deploy`(웹앱 /exec) 불가 →
-    **Apps Script 에디터 → 프로젝트 기록에서 옛 버전 삭제 필요**(에러가 명시). 트리거 기반 변경은 push 로
-    우회되지만, 어드민 UI·에이전트 액션 등 /exec 변경은 버전 정리 전까지 배포 대기
+  실상품은 stud 45/75/105·prof 30/45/75·pass 15·biz 75~195 라 **어떤 상품과도 안 맞아** 워밍이 유령키만
+  데우고 실고객은 늘 콜드. 실측 날짜클릭 12.9~21.4s.
+  - **수정**: `getBookingWarmupCombos_`(상품에서 실콤보) + `warmPublicSlotsForMonth_`(달 1회 읽기 공유로
+    날짜별 슬롯을 public_slots_v1_ 시딩, getPublicSlots_ 동일결과). 트리거는 슬롯만 데움(월그리드는 프런트
+    프리패치), 3개월·시간예산 4.5분. 여러 삽질(콤보별 중복읽기·배치워밍·센티넬>TTL)을 거쳐 최종형
+  - **안전**: computeSlots_ 가용성은 월/일 이벤트 무관 동일(검증), buildPublicSlotEntries_ 는 슬롯을 안
+    지우고 라벨만 부착 → 최악도 라벨오차, **이중예약 불가**. calReadFailed 시 시딩 안 함. 검증액션
+    `calendar-warm-verify`
+  - ⚠ **근본 한계 (핵심 발견)**: pass/prof/stud(주력 3그룹)는 **studio-auto-open 이라 슬롯 TTL 이 120초**
+    (상주일정 민감, freshness 설계). 5분 트리거로는 상시 웜 불가 — 프리워밍은 **biz(30분 TTL)만 실효**
+    (biz/105 3.53s 확인). 주력 그룹 날짜클릭(~8s)은 **캐시로 못 줄임 — 컴퓨트(getEventsForRange_ 다중
+    캘린더 읽기 ~5s)가 병목**. 진짜 개선책은 ① 120초 TTL 상향(사장님 freshness/속도 절충 결정) 또는
+    ② **원시 이벤트 캐시**(슬롯은 fresh 계산하되 캘린더 읽기를 캐시) — 별도 과제. **사장님 방향 결정 필요**
+  - ⚠ **GAS 200 버전 한도 도달**: `clasp deploy`(/exec) 불가 → 에디터 프로젝트 기록에서 옛 버전 삭제 필요.
+    트리거 변경은 push 우회되지만 어드민 UI·에이전트 액션 배포는 버전 정리 후
 
 - **상담 → 예약 전환을 수기 예약 폼 프리필로 통일 (2026-07-30, 배포 @708)** —
   상담 전환만 유일하게 크루드한 **prompt 6개 체인**(날짜·시간·소요·금액·계약금·상품)이었다 —
