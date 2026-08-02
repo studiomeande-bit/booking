@@ -1,20 +1,21 @@
 @import "../shared/tokens.css";
 
 :root {
-  color-scheme: dark;
-  --bg: var(--sm-dark-bg);
-  --bg-soft: var(--sm-dark-bg-soft);
-  --panel: var(--sm-dark-panel);
-  --panel-strong: var(--sm-dark-panel-strong);
-  --line: var(--sm-dark-line);
-  --text: var(--sm-dark-text);
-  --muted: var(--sm-dark-muted);
-  --accent: var(--sm-dark-accent);
-  --sage: var(--sm-dark-sage);
-  --copper: var(--sm-dark-copper);
-  --ink: var(--sm-dark-bg-soft);
+  color-scheme: light;
+  /* 라이트 갤러리 — 웜뉴트럴(크림) 팔레트, booking 브랜드와 통일 */
+  --bg: #faf6f0;
+  --bg-soft: #f2ece2;
+  --panel: #fffdf9;
+  --panel-strong: #f6f1e9;
+  --line: #e7e0d5;
+  --text: #211d17;
+  --muted: #6c665e;
+  --accent: #b04a2b;
+  --sage: #5f6d57;
+  --copper: #b0714a;
+  --ink: #1a1611;
   --radius: 8px;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --shadow: 0 22px 60px rgba(66, 46, 30, 0.10);
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-display: "Cormorant Garamond", Georgia, serif;
 }
@@ -64,14 +65,14 @@ img {
   gap: 20px;
   padding: 18px 0;
   backdrop-filter: blur(18px);
-  background: linear-gradient(to bottom, rgba(9, 9, 9, 0.94), rgba(9, 9, 9, 0.62), rgba(9, 9, 9, 0));
+  background: linear-gradient(to bottom, rgba(250, 246, 240, 0.94), rgba(250, 246, 240, 0.72), rgba(250, 246, 240, 0));
 }
 
 .brand-logo,
 .footer-logo {
+  /* 로고 SVG는 원래 다크(#201c1f) — 라이트 배경엔 필터 없이 원본 그대로 노출 */
   width: min(220px, 48vw);
   height: auto;
-  filter: brightness(0) invert(1) opacity(0.96);
 }
 
 .site-nav {
@@ -278,7 +279,7 @@ html[lang="en"] .hero-copy h1 {
 .hero-visual-placeholder {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #181916;
+  background: #efe9df;
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -477,7 +478,7 @@ html[lang="ko"] .success-card h1 {
   margin: 0;
   width: 100%;
   min-height: 0;
-  background: #171719;
+  background: #efe9df;
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
@@ -487,7 +488,7 @@ html[lang="ko"] .success-card h1 {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: linear-gradient(180deg, #222225 0%, #161618 100%);
+  background: linear-gradient(180deg, #f3ede3 0%, #e9e2d6 100%);
   transition: transform 0.6s ease, opacity 0.25s ease;
 }
 
@@ -612,7 +613,7 @@ html[lang="ko"] .success-card h1 {
   min-height: 0;
   border: 0;
   padding: 0;
-  background: #101010;
+  background: #eee8de;
   border-radius: 0;
   color: inherit;
   font: inherit;
@@ -630,7 +631,7 @@ html[lang="ko"] .success-card h1 {
   height: 100%;
   object-fit: cover;
   object-position: var(--image-position, 50% 45%);
-  background: linear-gradient(180deg, #222225 0%, #161618 100%);
+  background: linear-gradient(180deg, #f3ede3 0%, #e9e2d6 100%);
   transition: transform 0.6s ease, opacity 0.25s ease;
 }
 
@@ -681,7 +682,7 @@ html[lang="ko"] .success-card h1 {
 .portfolio-card.is-broken {
   min-height: 260px;
   border: 0;
-  background: linear-gradient(180deg, #1a1a1c 0%, #111112 100%);
+  background: linear-gradient(180deg, #f0eae0 0%, #e6ded2 100%);
 }
 
 .portfolio-card.is-broken::before {
