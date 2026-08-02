@@ -1132,6 +1132,15 @@ function handlePublicApiRequest_(route,method,e){
       const token=createAdminSessionToken_();
       try{
         try{logMessage_({channel:'erp-agent',direction:'inbound',type:'agent',subject:'erp-agent:'+action,status:'요청',meta:{action}});}catch(logErr){}
+        if(action==='actions-list'){
+          // 자기서술 원장 — 이 디스패치의 소스에서 등록 액션명을 그대로 추출한다 (별도 목록 없음 → 문서 드리프트 불가).
+          // 시작 마커는 첫 등장(1124행의 라우트 체크), 끝 마커는 마지막 등장(맨 아래 INVALID_ACTION) — 이 핸들러 자신의 문자열이 앞쪽에 끼어도 안전.
+          const alSrc=handlePublicApiRequest_.toString();
+          const alBlock=alSrc.slice(alSrc.indexOf("route==='erp-agent'"),alSrc.lastIndexOf('Unknown erp-agent action'));
+          const alRe=/action==='([a-z0-9-]+)'/g;const alNames=[];let alM;
+          while((alM=alRe.exec(alBlock))) if(alNames.indexOf(alM[1])===-1) alNames.push(alM[1]);
+          return jsonOk_({ok:true,count:alNames.length,actions:alNames.sort()});
+        }
         if(action==='quote-list') return jsonOk_(listQuotesAdmin(token,payload.filters||{}));
         if(action==='quote-get') return jsonOk_(getQuoteAdmin(token,String(payload.number||'')));
         if(action==='quote-create') return jsonOk_(createQuoteAdmin(token,payload.data||{}));
@@ -1141,6 +1150,30 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='quote-snooze') return jsonOk_(snoozeQuoteHoldAdmin(token,String(payload.number||''),String(payload.followUpDate||'')));
         if(action==='quote-release-hold') return jsonOk_(releaseQuoteHoldAdmin(token,String(payload.number||'')));
         if(action==='quote-extend') return jsonOk_(extendQuoteValidityAdmin(token,String(payload.number||''),payload.validDays));
+        // 견적·상담 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑
+        if(action==='quote-reject'){
+          // 거절 처리 + 가예약 캘린더 해제. 고객 메일 없음.
+          const qjNum=String(payload.number||'').trim();
+          if(!qjNum) throw new Error('number(견적번호)가 필요합니다.');
+          return jsonOk_(markQuoteRejectedAdmin(token,qjNum,String(payload.reason||'')));
+        }
+        if(action==='quote-convert-booking'){
+          // 견적→예약 전환(예약행+캘린더 생성). 메일은 sendEmail 이 참일 때만 — 문자열 'false' 오발사 방지 정규화.
+          const qbNum=String(payload.number||'').trim();
+          if(!qbNum) throw new Error('number(견적번호)가 필요합니다.');
+          const qbOv=Object.assign({},payload.data||payload);
+          qbOv.sendEmail=agentBoolFlag_(qbOv.sendEmail);
+          qbOv.allowConflict=agentBoolFlag_(qbOv.allowConflict);
+          return jsonOk_(convertQuoteToBookingAdmin(token,qbNum,qbOv));
+        }
+        if(action==='consult-convert-booking'){
+          // 상담→예약 전환(수기등록 경로 재사용, 캘린더 생성). 메일은 sendEmail 이 참일 때만.
+          const cbIdx=parseInt(payload.rowIndex,10);
+          if(!cbIdx||cbIdx<2) throw new Error('rowIndex가 필요합니다 (consult-list의 rowIndex).');
+          const cbOv=Object.assign({},payload.data||payload);
+          cbOv.sendEmail=agentBoolFlag_(cbOv.sendEmail);
+          return jsonOk_(convertConsultationToBookingAdmin(token,cbIdx,cbOv));
+        }
         if(action==='invoice-list') return jsonOk_(getInvoiceList(token));
         if(action==='invoice-create'){
           // data 객체가 있으면 전체 페이로드 패스스루 (수기/마이그레이션: customerName·items·issuedAt·customInvNumber 등)
@@ -1272,6 +1305,44 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
+        // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
+        if(action==='booking-confirm-deposit'){
+          // ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 함수 내부에서 무조건 나간다(payload 억제 불가, 이미 입금완료면 스킵).
+          const bdIdx=parseInt(payload.rowIndex,10);
+          if(!bdIdx||bdIdx<2||bdIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
+          assertBookingRowName_(bdIdx,payload.expectName);
+          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount));
+        }
+        if(action==='booking-cancel'){
+          // ⚠️외부발송: 취소 안내 메일 + 해당 날짜 대기자 알림 메일 자동. 캘린더 삭제·환불 이벤트 기록, issueInvoice 참이면 취소/환불 인보이스(연번 소모).
+          const bcIdx=parseInt(payload.rowIndex,10);
+          if(!bcIdx||bcIdx<2) throw new Error('rowIndex가 필요합니다.');
+          assertBookingRowName_(bcIdx,payload.expectName);
+          return jsonOk_(cancelBookingAdmin(token,bcIdx,payload.refundAmount||0,agentBoolFlag_(payload.issueInvoice),String(payload.memo||'')));
+        }
+        if(action==='booking-reschedule'){
+          // ⚠️외부발송: 일정변경 안내 메일 자동. 캘린더 이벤트 이동(충돌 가드, allowConflict 로 강행).
+          const brIdx=parseInt(payload.rowIndex,10);
+          if(!brIdx||brIdx<2) throw new Error('rowIndex가 필요합니다.');
+          const brWhen=String(payload.newDateTime||payload.dateTime||'').trim();
+          if(!brWhen) throw new Error('newDateTime(YYYY-MM-DD HH:MM)이 필요합니다.');
+          assertBookingRowName_(brIdx,payload.expectName);
+          return jsonOk_(rescheduleBookingAdmin(token,brIdx,brWhen,String(payload.memo||''),agentBoolFlag_(payload.allowConflict)));
+        }
+        if(action==='booking-restore-autocancel'){
+          // 자동취소 복구(상태 확정됨 + 캘린더 재생성). 고객 메일 없음.
+          const baIdx=parseInt(payload.rowIndex,10);
+          if(!baIdx||baIdx<2||baIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
+          assertBookingRowName_(baIdx,payload.expectName);
+          return jsonOk_(restoreAutoCancelledBookingAdmin(token,baIdx,String(payload.note||'')));
+        }
+        if(action==='pass-photos-send'){
+          // ⚠️외부발송: 여권사진 전달 메일 + Drive 폴더 링크 권한 부여. 여권 계열 예약만 허용(함수 내 검증).
+          const ppIdx=parseInt(payload.rowIndex,10);
+          if(!ppIdx||ppIdx<2||ppIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
+          assertBookingRowName_(ppIdx,payload.expectName);
+          return jsonOk_(sendPassportPhotosAdmin(token,ppIdx,payload));
+        }
         if(action==='mrt-api-test') return jsonOk_(mrtApiTestAdmin(token));
         if(action==='mrt-api-reconcile') return jsonOk_(mrtApiReconcileAdmin(token));
         if(action==='quote-accept'){
@@ -1345,7 +1416,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token));
         if(action==='morning-report-install-trigger') return jsonOk_(installMorningReportTriggerAdmin(token));
         if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
-        return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action);
+        return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action+' — 사용 가능한 액션 목록은 actions-list 액션으로 확인하세요');
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
       }
@@ -11729,6 +11800,18 @@ function setBookingAmountForAgent_(token,payload){
  * 가격은 반드시 calculateQuote_(수기등록과 동일한 견적엔진) 재사용 — 별도 가격 계산 금지.
  * 총액/계약금/잔금/상품라벨/촬영종류/소요시간을 견적으로 재산출해 예약행+캘린더에 반영한다.
  * 고객 메일은 발송하지 않는다(변경 통지는 booking-confirm-mail 로 사장님이 별도). */
+// CLI(erp-agent.mjs) payload 는 문자열로 올 수 있다 — 'false' 문자열이 참으로 읽히면 메일·인보이스가 오발사된다
+// (settlement-dedupe dryRun 관용구의 공용화). true/'true'/'1'/'yes' 만 참.
+function agentBoolFlag_(v){return v===true||/^(true|1|yes)$/i.test(String(v==null?'':v).trim());}
+
+// 행 밀림 사고 방지 — expectName 이 오면 예약행 고객명과 대조 (booking-set-time 등 기존 관용구의 공용화)
+function assertBookingRowName_(rIdx,expectName){
+  const en=String(expectName||'').trim();
+  if(!en) return;
+  const nm=String(getDbSheet().getRange(rIdx,BOOKING_COL['고객명']+1).getValue()||'').trim();
+  if(nm!==en) throw new Error('행 고객명 불일치: 행='+nm+' / 기대='+en);
+}
+
 function changeBookingProductForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
