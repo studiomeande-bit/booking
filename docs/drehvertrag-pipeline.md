@@ -31,6 +31,16 @@
 - ✅ **아침 브리핑 노출** — `_buildDailyBriefingData_`에 `contractPending` 섹션(집계실패 가드 포함) + 브리핑 메일 "액션 필요"에 📝 계약서 필요 라인. 라이브 3건 검출 확인.
 - ✅ **견적 수락 자동 초안** — `quote-accept` 시 B2B 또는 €500+ 견적이면 활성 계약 부재 시 초안 자동 생성(메일 없음), 응답에 `contractDraft{contractId,pdfUrl}` 포함.
 
+## 어드민 UI (AdminV2, @723)
+
+예약 상세 모달에 **📝 촬영 계약서** 패널 — 문의 스레드 패널 바로 아래.
+
+- 계약 목록: 계약ID·상태칩(초안/발송/서명완료/취소)·금액·언어·저작권귀속·서명자, 버튼 `PDF` / `발송·재발송`(확인 다이얼로그) / `취소`(사유 프롬프트)
+- 초안 생성 폼: 언어(자동/ko/de/en) · 저작권귀속(스튜디오·라이선스 / 고객·전부양도) · 업무내용 · 목적물 · 특약. **생성 시 메일 없음**
+- 배지·자동 펼침: 계약 대상(B2B·본식·€500+)인데 활성 계약이 없으면 `계약서 필요` 배지 + 패널 자동 오픈, 서명완료면 초록 배지
+- 백엔드는 에이전트 함수 재사용(`getBookingContractsAdmin`/`createBookingContractAdmin`/`sendBookingContractAdmin`/`cancelBookingContractAdmin` = assertAdmin_ + 위임, 새 로직 없음)
+- 검증: Code.gs·AdminV2 인라인 JS 구문검사, 4개 함수 백엔드↔프런트 배선 대조, 실예약 228(Alice 본식 €1,300) 기준 생성→목록→pending 상태전이(없음→초안)→취소→pending 복귀 왕복 확인. 화면 조작은 PIN 잠금이라 사장님 몫
+
 ## 테스트 기록
 
 - 계약서 시트 행2 `DV-260802-BDM2`(서명완료) = E2E 검증 기록 유지, 행3 `DV-260802-6BYD`(취소) = de 렌더 검증

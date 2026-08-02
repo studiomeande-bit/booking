@@ -29299,6 +29299,53 @@ function listContractPendingForAgent_(){
   return {ok:true,pending:out};
 }
 
+/* ===== 어드민(AdminV2) 래퍼 — 에이전트 함수 재사용, 인증만 추가 ===== */
+function getBookingContractsAdmin(token,bookingRowIndex){
+  assertAdmin_(token);
+  const bri=parseInt(bookingRowIndex,10);
+  if(!bri||bri<2) return {ok:false,message:'잘못된 예약행'};
+  const sheet=getContractSheet_();
+  const last=sheet.getLastRow();
+  const contracts=[];
+  if(last>1){
+    sheet.getRange(2,1,last-1,CONTRACT_HEADERS.length).getValues().forEach(function(r,i){
+      if((parseInt(r[CONTRACT_COL['연결예약행']],10)||0)!==bri) return;
+      const c=contractRowToObject_(r,i+2);
+      contracts.push({contractId:c.contractId,status:c.status,lang:c.lang,total:c.total,deposit:c.deposit,
+        createdAt:c.createdAt,sentAt:c.sentAt,signedAt:c.signedAt,signerName:c.signerName,pdfUrl:c.pdfUrl,
+        copyrightOwner:c.copyrightOwner,quoteNumber:c.quoteNumber});
+    });
+  }
+  const bSh=getDbSheet();
+  let needsContract=false;
+  try{
+    if(bri<=bSh.getLastRow()){
+      needsContract=_bookingNeedsContract_(bSh.getRange(bri,1,1,bSh.getLastColumn()).getValues()[0]);
+    }
+  }catch(e){}
+  return {ok:true,contracts:contracts.reverse(),needsContract:needsContract};
+}
+function createBookingContractAdmin(token,bookingRowIndex,data){
+  assertAdmin_(token);
+  const bri=parseInt(bookingRowIndex,10);
+  if(!bri||bri<2) return {ok:false,message:'잘못된 예약행'};
+  try{
+    return createContractForAgent_({bookingRowIndex:bri,data:data||{}});
+  }catch(e){return {ok:false,message:e.message};}
+}
+function sendBookingContractAdmin(token,contractId){
+  assertAdmin_(token);
+  try{
+    return sendContractForAgent_({contractId:contractId});
+  }catch(e){return {ok:false,message:e.message};}
+}
+function cancelBookingContractAdmin(token,contractId,reason){
+  assertAdmin_(token);
+  try{
+    return cancelContractForAgent_({contractId:contractId,reason:reason||''});
+  }catch(e){return {ok:false,message:e.message};}
+}
+
 /* 서명 페이지 + 제출 (handleActionRoute_ 'contract_sign') */
 function contractSignPage_(contractId,p){
   const sheet=getContractSheet_();
