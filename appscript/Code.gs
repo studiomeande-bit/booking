@@ -1478,6 +1478,10 @@ function normalizePhoneForLedger_(phone, defaultCountryCode){
   const country=String(defaultCountryCode||'+49').trim().replace(/[^\d+]/g,'')||'+49';
   if(value.charAt(0)!=='+'){
     if(value.charAt(0)==='0') value=country+value.slice(1);
+    // 국가코드 셀렉(+49)과 별개로 입력칸에 "49 176 …" 처럼 국가코드까지 적는 고객이 많다.
+    // 그대로 country 를 또 붙이면 +49 49… 이중 부착 (실측: 최근 12건 중 6건).
+    // 국가코드 digits 로 시작하고 전체 자릿수가 로컬번호로 보기 힘든 길이(11+)면 이미 국가코드 포함으로 간주.
+    else if(value.indexOf(country.slice(1))===0 && value.length>=11) value='+'+value;
     else value=country+value;
   }
   const knownCodes=['+358','+352','+351','+386','+385','+421','+420','+371','+370','+359','+353','+372','+49','+82','+44','+33','+31','+43','+41','+34','+39','+32','+45','+46','+47','+48','+36','+40','+30','+1'];
@@ -1526,8 +1530,11 @@ function _addressComponent_(components,type,shortName){
 function neutralizeFormula_(v){
   if(typeof v!=='string' || !v) return v;
   const first=v.charAt(0);
-  if(first==='=') return "'"+v;                                            // 명시적 수식 =...
-  if((first==='+'||first==='-'||first==='@') && /\(/.test(v)) return "'"+v; // +/-/@ 로 시작하는 함수호출형 수식
+  // =/+/-/@ 선두는 괄호 유무와 무관하게 전부 텍스트로 강제한다.
+  // (기존의 "괄호 있을 때만" 조건은 함수호출형 수식만 노렸지만, 시트는 괄호 없어도
+  //  "+49 176 …" 같은 전화번호를 수식/숫자로 파싱한다 — 실측: 상담시트 #ERROR!,
+  //  예약시트 4917660939400 으로 + 소실. 2026-08-02 릴리스 게이트 테스트에서 발견)
+  if(first==='='||first==='+'||first==='-'||first==='@') return "'"+v;
   if(first==='\t'||first==='\r'||first==='\n') return "'"+v;                // 제어문자 선두
   return v;
 }
@@ -13653,7 +13660,7 @@ function updateBookingAdmin(token,rIdx,d){
   if(String(d.status||'').trim()==='셀렉완료' && !bookingHasSubmittedSelect_(rIdx)) throw new Error('사진셀렉 제출 기록이 없어 예약 상태를 셀렉완료로 변경할 수 없습니다. 셀렉 링크를 다시 발송하거나 수기 셀렉 데이터를 먼저 저장해 주세요.');
   w(2,d.status);
   if(String(d.status||'').trim()==='확정됨' && String(rowBefore[1]||'')!=='확정됨' && BOOKING_COL['확정일시']!=null) w(BOOKING_COL['확정일시']+1, Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
-  w(3,d.name); w(4,normalizedPhone);
+  w(3,d.name); w(4,neutralizeFormula_(normalizedPhone)); // '+' 선두 전화번호 시트 파싱 방어 (수기예약 경로와 동일 관용구)
   if(d.email!==undefined){
     const email=normalizeEmailAddress_(d.email);
     if(email&&email.indexOf('@')===-1&&email.indexOf('수기등록')===-1) throw new Error('이메일 주소 형식이 올바르지 않습니다.');
