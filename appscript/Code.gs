@@ -1388,7 +1388,15 @@ function handlePublicApiRequest_(route,method,e){
               memoCell.setValue((curMemo?curMemo+'\n':'')+acceptNote);
             }
           }
-          return jsonOk_(Object.assign({},acceptRes,{number:acceptNumber,noteAppended:!!acceptNote}));
+          // Drehvertrag 자동 초안 — B2B 또는 €500+ 수락 견적에 활성 계약이 없으면 초안만 생성 (메일 없음, 발송은 contract-send)
+          let contractDraft=null;
+          try{
+            const acceptedQ=getQuoteByNumberForContract_(acceptNumber);
+            if(acceptedQ&&(String(acceptedQ.itemGroup||'')==='biz'||Number(acceptedQ.total||0)>=CONTRACT_MIN_TOTAL)&&!_hasActiveContractForQuote_(acceptNumber)){
+              contractDraft=createContractForAgent_({quoteNumber:acceptNumber});
+            }
+          }catch(cErr){Logger.log('quote-accept 계약 초안 생성 실패 ('+acceptNumber+'): '+cErr.message);}
+          return jsonOk_(Object.assign({},acceptRes,{number:acceptNumber,noteAppended:!!acceptNote},contractDraft?{contractDraft:{contractId:contractDraft.contractId,pdfUrl:contractDraft.pdfUrl}}:{}));
         }
         // 상담 (B2B 파이프라인: 접수 → 견적 드래프트)
         if(action==='consult-list') return jsonOk_(listConsultationsAdmin(token,payload.limit||60));
@@ -13100,7 +13108,14 @@ function _buildDailyBriefingData_(){
   let calendarAudit=null;
   try{ calendarAudit=auditBookingCalendarConsistency_(); }
   catch(e){Logger.log('briefing calendarAudit fail: '+e.message);_briefFail_(sectionFailures,'캘린더 정합',e);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,sectionFailures:sectionFailures};
+  /* 계약서 대기 — B2B·본식·€500+ 인데 서명완료 Drehvertrag 가 없는 예약 */
+  let contractPending={count:0,items:[]};
+  try{
+    const cp=(listContractPendingForAgent_().pending)||[];
+    contractPending.count=cp.length;
+    contractPending.items=cp.slice(0,6);
+  }catch(e){Logger.log('briefing contract fail: '+e.message);_briefFail_(sectionFailures,'계약서',e);}
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -13144,6 +13159,12 @@ function buildDailyBriefingEmailHtml_(b){
   });
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
+  if(b.contractPending&&b.contractPending.count>0){
+    (b.contractPending.items||[]).forEach(function(c){
+      actions.push(line(`📝 계약서 필요 — <b>${esc(c.name)}</b>님 ${esc(c.product)} (${money(c.total)}, ${esc(c.date)} 촬영)${c.contractStatus&&c.contractStatus!=='없음'?' · '+esc(c.contractStatus)+' 상태':''}`));
+    });
+    if(b.contractPending.count>6) actions.push(line(`📝 계약서 필요 외 ${b.contractPending.count-6}건`));
+  }
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
   if(b.printPending&&b.printPending.count>0){
     actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b> — 인화앱에서 세션 불러와 자동출력`));
@@ -28911,53 +28932,151 @@ function ensureContractFolder_(){
   return it.hasNext()?it.next():root.createFolder('StudioMean_Contracts');
 }
 
-/* 계약서 본문 HTML (ko, 12조) — 서명 페이지와 PDF가 공유 */
+/* 계약서 언어 정규화 — ko / de / en (그 외·복합 언어는 ko) */
+function normalizeContractLang_(lang){
+  const l=String(lang||'').toLowerCase().slice(0,2);
+  return (l==='de'||l==='en')?l:'ko';
+}
+
+/* 계약서 본문 HTML (ko/de/en, 12조) — 서명 페이지와 PDF가 공유 */
 function buildDrehvertragBodyHtml_(c){
-  const party=c.companyName?`${escapeHtml_(c.companyName)} (담당: ${escapeHtml_(c.name)})`:escapeHtml_(c.name);
+  const L=normalizeContractLang_(c.lang);
   const money=v=>'€ '+formatEuroAmount_(v);
   const copyrightStudio=String(c.copyrightOwner||'스튜디오')!=='고객';
-  const art7=copyrightStudio
-    ? `본 목적물의 저작재산권 일체는 "을"(Studio mean)에게 귀속되며, "갑"은 제3조의 사용범위(${escapeHtml_(c.usageScope||'웹사이트·SNS·사내 용도')}) 내에서 목적물을 사용할 수 있는 라이선스를 갖는다. 유료 광고 집행 등 사용범위 외 이용은 사전 별도 협의로 한다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.`
-    : `본 목적물에 대한 저작재산권(복제권·공연권·공중송신권·전시권·배포권·2차적저작물작성권·편집저작권 포함) 일체는 "갑"에게 귀속된다. "을"은 "갑"으로부터 제공받은 자료를 선량한 관리자의 주의로 보관·관리하며, 사전 서면 동의 없이 계약 목적 외로 사용하지 않는다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.`;
+  const usage=String(c.usageScope||'').trim();
+  const T={
+    ko:{
+      title:'영상·사진 촬영 대행 계약서 (Drehvertrag)',
+      partyClient:'갑',partyStudio:'을',
+      parties:(party)=>`${party} (이하 "갑")와(과) <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (이하 "을")은 아래와 같이 촬영 대행 계약을 체결한다.`,
+      contact:(n)=>`담당: ${n}`,
+      a1t:'제 1 조 (목적)',a1:'본 계약은 "갑"이 "을"에게 의뢰한 촬영 및 제작 업무(이하 \'목적물\')의 위탁에 관한 기본 사항과 양 당사자의 책임·의무를 규정함을 목적으로 한다. "을"은 최종 목적물을 완전한 형태로 "갑"에게 인도한다.',
+      a2t:'제 2 조 (계약의 기간)',a2:(end)=>`본 계약의 유효기간은 계약 체결일로부터 ${end}까지로 하며, 기간 내 납품이 완료되면 계약이 완료된 것으로 본다.`,
+      endDefault:'목적물 납품 완료일',
+      a3t:'제 3 조 (업무의 범위)',
+      rowLabels:{scope:'업무내용',schedule:'촬영일정',deliverables:'목 적 물',format:'납품형식',deadline:'납품기한',usage:'사용범위'},
+      deadlineDefault:'촬영 종료 후 10일 이내 (교정 1회 포함)',
+      usageDefault:'웹사이트·SNS·사내 용도 (유료 광고는 사전 별도 협의)',usageShort:'웹사이트·SNS·사내 용도',
+      a4t:'제 4 조 (제작금 및 지급방식)',
+      payLabels:{net:'제작 금액 (순액)',vat:'부가가치세 (MwSt. 19%)',total:'총 금액',deposit:'계약금',balance:'잔금'},
+      payTermsDefault:(dep,bal)=>`계약금 ${dep}은 계약 체결 후 "을"의 인보이스 수령일 기준 14일 이내, 잔금 ${bal}은 최종 목적물 납품 후 "을"의 인보이스 수령일 기준 14일 이내 지급한다.`,
+      bank:'"을"은 독일 부가가치세법에 따라 19% 부가가치세를 적용하며(USt-IdNr. DE440009941), 각 지급분에 대한 인보이스(Rechnung)를 발행한다.',
+      a5t:'제 5 조 (검수 및 수정)',a5:'납품 범위에는 교정 1회가 포함된다. 사전 협의된 편집 방향을 근거로 한 타당한 수정 요구에 "을"은 성실히 임하며, 사전 협의 범위를 벗어나는 요구는 별도의 추가 제작으로 간주하고 비용을 상호 합의하여 정한다.',
+      a6t:'제 6 조 (정보제공)',a6:'"을"은 업무 수행에 필요한 자료를 "갑"에게 요청할 수 있으며, "갑"은 특별한 사유가 없는 한 이에 응한다.',
+      a7t:'제 7 조 (자료관리 및 저작권)',
+      a7studio:(u)=>`본 목적물의 저작재산권 일체는 "을"(Studio mean)에게 귀속되며, "갑"은 제3조의 사용범위(${u}) 내에서 목적물을 사용할 수 있는 라이선스를 갖는다. 유료 광고 집행 등 사용범위 외 이용은 사전 별도 협의로 한다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.`,
+      a7client:'본 목적물에 대한 저작재산권(복제권·공연권·공중송신권·전시권·배포권·2차적저작물작성권·편집저작권 포함) 일체는 "갑"에게 귀속된다. "을"은 "갑"으로부터 제공받은 자료를 선량한 관리자의 주의로 보관·관리하며, 사전 서면 동의 없이 계약 목적 외로 사용하지 않는다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.',
+      a8t:'제 8 조 (양도 금지)',a8:'양 당사자는 상대방의 서면 동의 없이 본 계약상의 권리·의무를 제3자에게 양도하지 못한다.',
+      a9t:'제 9 조 (비밀유지)',a9:'양 당사자는 계약의 체결·이행 과정에서 취득한 상대방의 영업비밀 등 일체의 정보를 계약 목적 외로 사용하거나 제3자에게 누설하지 않는다. 본 의무는 계약 종료 후에도 유효하다.',
+      a10t:'제 10 조 (계약의 해지)',a10:'일방에게 압류·파산·영업정지 등 계약 이행이 곤란한 사유가 발생한 경우 상대방은 계약의 전부 또는 일부를 해제·해지할 수 있다. 일방이 본 계약의 중요한 규정을 위반하고 서면 최고 후 상당 기간 내 시정하지 않는 경우에도 같다. 해제·해지는 손해배상 청구에 영향을 미치지 않는다. 고객 사유의 촬영 취소 시 환불은 "을"의 취소·환불 규정(예약 시 고지)을 따른다.',
+      a11t:'제 11 조 (손해배상)',a11:'당사자는 상대방의 계약 위반 또는 불법행위로 인한 손해에 대해 배상을 청구할 수 있다.',
+      a12t:'제 12 조 (분쟁해결)',a12:'본 계약은 독일법을 준거법으로 하며, 분쟁은 상호 합의로 해결함을 원칙으로 한다. 합의가 이루어지지 않을 경우 관할 법원은 "을"의 소재지 관할 법원으로 한다.',
+      specialT:'특약사항'
+    },
+    de:{
+      title:'Vertrag über Foto- und Videoproduktion (Drehvertrag)',
+      partyClient:'Auftraggeber',partyStudio:'Auftragnehmer',
+      parties:(party)=>`${party} (nachfolgend „Auftraggeber“) und <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (nachfolgend „Auftragnehmer“) schließen den folgenden Vertrag über Foto- und Videoproduktionsleistungen.`,
+      contact:(n)=>`Ansprechpartner: ${n}`,
+      a1t:'§ 1 Vertragsgegenstand',a1:'Dieser Vertrag regelt die Grundlagen sowie die Rechte und Pflichten beider Parteien für die vom Auftraggeber beauftragten Aufnahme- und Produktionsleistungen (nachfolgend „Werk“). Der Auftragnehmer übergibt das fertiggestellte Werk in vollständiger Form an den Auftraggeber.',
+      a2t:'§ 2 Laufzeit',a2:(end)=>`Dieser Vertrag gilt vom Tag des Vertragsschlusses bis ${end}. Mit vollständiger Lieferung des Werks innerhalb der Laufzeit gilt der Vertrag als erfüllt.`,
+      endDefault:'zur vollständigen Lieferung des Werks',
+      a3t:'§ 3 Leistungsumfang',
+      rowLabels:{scope:'Leistung',schedule:'Termin',deliverables:'Lieferumfang',format:'Lieferformat',deadline:'Lieferfrist',usage:'Nutzungsumfang'},
+      deadlineDefault:'innerhalb von 10 Tagen nach Abschluss der Aufnahmen (inkl. einer Korrekturschleife)',
+      usageDefault:'Website, Social Media und interne Zwecke (bezahlte Werbung nur nach gesonderter Vereinbarung)',usageShort:'Website, Social Media und interne Zwecke',
+      a4t:'§ 4 Vergütung und Zahlung',
+      payLabels:{net:'Nettobetrag',vat:'Umsatzsteuer (19 %)',total:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restbetrag'},
+      payTermsDefault:(dep,bal)=>`Die Anzahlung in Höhe von ${dep} ist innerhalb von 14 Tagen nach Vertragsschluss und Rechnungserhalt fällig, der Restbetrag in Höhe von ${bal} innerhalb von 14 Tagen nach Lieferung des Werks und Rechnungserhalt.`,
+      bank:'Der Auftragnehmer weist die gesetzliche Umsatzsteuer von 19 % aus (USt-IdNr. DE440009941) und stellt für jede Zahlung eine Rechnung aus.',
+      a5t:'§ 5 Abnahme und Korrekturen',a5:'Im Lieferumfang ist eine Korrekturschleife enthalten. Angemessene Korrekturwünsche auf Grundlage der zuvor abgestimmten Richtung setzt der Auftragnehmer sorgfältig um. Darüber hinausgehende Wünsche gelten als zusätzliche Beauftragung; die Vergütung hierfür wird einvernehmlich festgelegt.',
+      a6t:'§ 6 Mitwirkung des Auftraggebers',a6:'Der Auftragnehmer kann die für die Leistungserbringung erforderlichen Informationen und Materialien anfordern; der Auftraggeber stellt diese rechtzeitig zur Verfügung.',
+      a7t:'§ 7 Nutzungsrechte und Urheberrecht',
+      a7studio:(u)=>`Sämtliche Urheber- und Leistungsschutzrechte am Werk verbleiben beim Auftragnehmer. Der Auftraggeber erhält ein einfaches Nutzungsrecht im Umfang gemäß § 3 (${u}); eine Nutzung für bezahlte Werbung bedarf einer gesonderten Vereinbarung. Rohmaterial und finale Masterdateien werden längstens ein Jahr aufbewahrt; über eine frühere Löschung wird der Auftraggeber informiert.`,
+      a7client:'Die ausschließlichen Nutzungsrechte am Werk (einschließlich Vervielfältigung, öffentlicher Wiedergabe und Zugänglichmachung, Ausstellung, Verbreitung, Bearbeitung sowie Aufnahme in Sammelwerke) werden vollständig auf den Auftraggeber übertragen. Vom Auftraggeber bereitgestellte Unterlagen verwahrt der Auftragnehmer sorgfältig und nutzt sie ohne vorherige schriftliche Zustimmung nicht für vertragsfremde Zwecke. Rohmaterial und finale Masterdateien werden längstens ein Jahr aufbewahrt; über eine frühere Löschung wird der Auftraggeber informiert.',
+      a8t:'§ 8 Abtretung',a8:'Rechte und Pflichten aus diesem Vertrag dürfen ohne schriftliche Zustimmung der jeweils anderen Partei nicht auf Dritte übertragen werden.',
+      a9t:'§ 9 Vertraulichkeit',a9:'Beide Parteien behandeln sämtliche im Zusammenhang mit Abschluss und Durchführung dieses Vertrags erlangten Geschäftsgeheimnisse und Informationen der jeweils anderen Partei vertraulich und nutzen sie nicht für vertragsfremde Zwecke. Diese Pflicht besteht nach Vertragsende fort.',
+      a10t:'§ 10 Kündigung',a10:'Treten bei einer Partei Umstände ein, die die Vertragserfüllung ernsthaft gefährden (z. B. Zwangsvollstreckung, Insolvenz, Geschäftsaufgabe), kann die andere Partei den Vertrag ganz oder teilweise beenden. Gleiches gilt, wenn eine Partei wesentliche Vertragspflichten verletzt und trotz schriftlicher Fristsetzung nicht nachbessert. Die Beendigung lässt Schadensersatzansprüche unberührt. Bei Stornierung durch den Auftraggeber gelten die bei der Buchung mitgeteilten Storno- und Erstattungsregeln des Auftragnehmers.',
+      a11t:'§ 11 Haftung',a11:'Jede Partei kann bei Vertragsverletzung oder unerlaubter Handlung der anderen Partei Ersatz des daraus entstandenen Schadens verlangen.',
+      a12t:'§ 12 Anwendbares Recht und Gerichtsstand',a12:'Es gilt das Recht der Bundesrepublik Deutschland. Streitigkeiten werden vorrangig einvernehmlich beigelegt; gelingt dies nicht, ist Gerichtsstand der Sitz des Auftragnehmers.',
+      specialT:'Besondere Vereinbarungen'
+    },
+    en:{
+      title:'Photography & Videography Production Agreement (Drehvertrag)',
+      partyClient:'Client',partyStudio:'Contractor',
+      parties:(party)=>`${party} (hereinafter the “Client”) and <b>Studio mean (Owner: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel, Germany (hereinafter the “Contractor”) enter into the following agreement for photography and videography production services.`,
+      contact:(n)=>`Contact: ${n}`,
+      a1t:'Article 1 (Subject)',a1:'This agreement sets out the basic terms and the rights and obligations of both parties regarding the production services commissioned by the Client (the “Work”). The Contractor shall deliver the completed Work to the Client in full.',
+      a2t:'Article 2 (Term)',a2:(end)=>`This agreement is effective from the date of signing until ${end}. The agreement is deemed fulfilled upon complete delivery of the Work within the term.`,
+      endDefault:'complete delivery of the Work',
+      a3t:'Article 3 (Scope of Services)',
+      rowLabels:{scope:'Services',schedule:'Schedule',deliverables:'Deliverables',format:'Delivery format',deadline:'Delivery deadline',usage:'Scope of use'},
+      deadlineDefault:'within 10 days after the shoot (incl. one round of revisions)',
+      usageDefault:'website, social media and internal use (paid advertising subject to separate agreement)',usageShort:'website, social media and internal use',
+      a4t:'Article 4 (Fees and Payment)',
+      payLabels:{net:'Net amount',vat:'VAT (19%)',total:'Total',deposit:'Deposit',balance:'Balance'},
+      payTermsDefault:(dep,bal)=>`The deposit of ${dep} is due within 14 days of signing and receipt of the Contractor's invoice; the balance of ${bal} is due within 14 days of delivery of the Work and receipt of the invoice.`,
+      bank:'The Contractor applies German VAT of 19% (VAT ID DE440009941) and issues an invoice for each payment.',
+      a5t:'Article 5 (Review and Revisions)',a5:'One round of revisions is included. The Contractor will diligently implement reasonable revision requests based on the direction agreed in advance. Requests beyond that scope are treated as additional work, with fees agreed mutually.',
+      a6t:'Article 6 (Client Cooperation)',a6:'The Contractor may request information and materials required for the services; the Client shall provide them in a timely manner.',
+      a7t:'Article 7 (Rights and Copyright)',
+      a7studio:(u)=>`All copyright and related rights in the Work remain with the Contractor. The Client receives a non-exclusive licence to use the Work within the scope set out in Article 3 (${u}); use for paid advertising requires a separate agreement. Raw material and final masters are retained for a maximum of one year; the Client will be informed before earlier deletion.`,
+      a7client:'All economic rights in the Work (including reproduction, public communication, exhibition, distribution, adaptation and inclusion in compilations) are fully assigned to the Client. Materials provided by the Client are kept with due care and are not used for purposes outside this agreement without prior written consent. Raw material and final masters are retained for a maximum of one year; the Client will be informed before earlier deletion.',
+      a8t:'Article 8 (No Assignment)',a8:'Neither party may transfer rights or obligations under this agreement to third parties without the other party\'s written consent.',
+      a9t:'Article 9 (Confidentiality)',a9:'Both parties shall keep confidential all business secrets and information of the other party obtained in connection with this agreement and shall not use them for purposes outside the agreement. This obligation survives termination.',
+      a10t:'Article 10 (Termination)',a10:'If circumstances arise that seriously endanger performance (e.g. enforcement measures, insolvency, cessation of business), the other party may terminate this agreement in whole or in part. The same applies if a party materially breaches this agreement and fails to remedy the breach within a reasonable period after written notice. Termination does not affect claims for damages. If the Client cancels the shoot, the Contractor\'s cancellation and refund policy communicated at booking applies.',
+      a11t:'Article 11 (Damages)',a11:'Each party may claim compensation for damage caused by the other party\'s breach of contract or unlawful act.',
+      a12t:'Article 12 (Governing Law and Jurisdiction)',a12:'This agreement is governed by German law. Disputes shall primarily be settled amicably; failing that, the courts at the Contractor\'s seat have jurisdiction.',
+      specialT:'Special Terms'
+    }
+  }[L];
+  const party=c.companyName?`${escapeHtml_(c.companyName)} (${escapeHtml_(T.contact(c.name))})`:escapeHtml_(c.name);
+  const art7=copyrightStudio?T.a7studio(escapeHtml_(usage||T.usageShort)):T.a7client;
   const rows=[
-    ['업무내용',c.scopeText],['촬영일정',c.schedule],['목 적 물',c.deliverables],
-    ['납품형식',c.deliveryFormat],['납품기한',c.deliveryDeadline||'촬영 종료 후 10일 이내 (교정 1회 포함)'],
-    ['사용범위',c.usageScope||'웹사이트·SNS·사내 용도 (유료 광고는 사전 별도 협의)']
+    [T.rowLabels.scope,c.scopeText],[T.rowLabels.schedule,c.schedule],[T.rowLabels.deliverables,c.deliverables],
+    [T.rowLabels.format,c.deliveryFormat],[T.rowLabels.deadline,c.deliveryDeadline||T.deadlineDefault],
+    [T.rowLabels.usage,usage||T.usageDefault]
   ].filter(r=>String(r[1]||'').trim())
    .map(r=>`<tr><td class="k">${escapeHtml_(r[0])}</td><td>${escapeHtml_(r[1]).replace(/\n/g,'<br>')}</td></tr>`).join('');
-  const payTerms=c.paymentTerms||`계약금 ${money(c.deposit)}은 계약 체결 후 "을"의 인보이스 수령일 기준 14일 이내, 잔금 ${money(c.balance)}은 최종 목적물 납품 후 "을"의 인보이스 수령일 기준 14일 이내 지급한다.`;
+  const payTerms=c.paymentTerms||T.payTermsDefault(money(c.deposit),money(c.balance));
   return `
-<h1>영상·사진 촬영 대행 계약서 (Drehvertrag)</h1>
-<p class="parties">${party} (이하 "갑")와(과) <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (이하 "을")은 아래와 같이 촬영 대행 계약을 체결한다.</p>
-<h2>제 1 조 (목적)</h2><p>본 계약은 "갑"이 "을"에게 의뢰한 촬영 및 제작 업무(이하 '목적물')의 위탁에 관한 기본 사항과 양 당사자의 책임·의무를 규정함을 목적으로 한다. "을"은 최종 목적물을 완전한 형태로 "갑"에게 인도한다.</p>
-<h2>제 2 조 (계약의 기간)</h2><p>본 계약의 유효기간은 계약 체결일로부터 ${escapeHtml_(c.contractEnd||'목적물 납품 완료일')}까지로 하며, 기간 내 납품이 완료되면 계약이 완료된 것으로 본다.</p>
-<h2>제 3 조 (업무의 범위)</h2><table class="scope">${rows}</table>
-<h2>제 4 조 (제작금 및 지급방식)</h2>
-<table class="pay"><tr><td class="k">제작 금액 (순액)</td><td>${money(c.net)}</td></tr>
-<tr><td class="k">부가가치세 (MwSt. 19%)</td><td>${money(c.vat)}</td></tr>
-<tr><td class="k"><b>총 금액</b></td><td><b>${money(c.total)}</b></td></tr>
-${c.deposit>0?`<tr><td class="k">계약금</td><td>${money(c.deposit)}</td></tr><tr><td class="k">잔금</td><td>${money(c.balance)}</td></tr>`:''}</table>
+<h1>${T.title}</h1>
+<p class="parties">${T.parties(party)}</p>
+<h2>${T.a1t}</h2><p>${T.a1}</p>
+<h2>${T.a2t}</h2><p>${T.a2(escapeHtml_(c.contractEnd||T.endDefault))}</p>
+<h2>${T.a3t}</h2><table class="scope">${rows}</table>
+<h2>${T.a4t}</h2>
+<table class="pay"><tr><td class="k">${T.payLabels.net}</td><td>${money(c.net)}</td></tr>
+<tr><td class="k">${T.payLabels.vat}</td><td>${money(c.vat)}</td></tr>
+<tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
+${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>"을"은 독일 부가가치세법에 따라 19% 부가가치세를 적용하며(USt-IdNr. DE440009941), 각 지급분에 대한 인보이스(Rechnung)를 발행한다.</p>
-<h2>제 5 조 (검수 및 수정)</h2><p>납품 범위에는 교정 1회가 포함된다. 사전 협의된 편집 방향을 근거로 한 타당한 수정 요구에 "을"은 성실히 임하며, 사전 협의 범위를 벗어나는 요구는 별도의 추가 제작으로 간주하고 비용을 상호 합의하여 정한다.</p>
-<h2>제 6 조 (정보제공)</h2><p>"을"은 업무 수행에 필요한 자료를 "갑"에게 요청할 수 있으며, "갑"은 특별한 사유가 없는 한 이에 응한다.</p>
-<h2>제 7 조 (자료관리 및 저작권)</h2><p>${art7}</p>
-<h2>제 8 조 (양도 금지)</h2><p>양 당사자는 상대방의 서면 동의 없이 본 계약상의 권리·의무를 제3자에게 양도하지 못한다.</p>
-<h2>제 9 조 (비밀유지)</h2><p>양 당사자는 계약의 체결·이행 과정에서 취득한 상대방의 영업비밀 등 일체의 정보를 계약 목적 외로 사용하거나 제3자에게 누설하지 않는다. 본 의무는 계약 종료 후에도 유효하다.</p>
-<h2>제 10 조 (계약의 해지)</h2><p>일방에게 압류·파산·영업정지 등 계약 이행이 곤란한 사유가 발생한 경우 상대방은 계약의 전부 또는 일부를 해제·해지할 수 있다. 일방이 본 계약의 중요한 규정을 위반하고 서면 최고 후 상당 기간 내 시정하지 않는 경우에도 같다. 해제·해지는 손해배상 청구에 영향을 미치지 않는다. 고객 사유의 촬영 취소 시 환불은 "을"의 취소·환불 규정(예약 시 고지)을 따른다.</p>
-<h2>제 11 조 (손해배상)</h2><p>당사자는 상대방의 계약 위반 또는 불법행위로 인한 손해에 대해 배상을 청구할 수 있다.</p>
-<h2>제 12 조 (분쟁해결)</h2><p>본 계약은 독일법을 준거법으로 하며, 분쟁은 상호 합의로 해결함을 원칙으로 한다. 합의가 이루어지지 않을 경우 관할 법원은 "을"의 소재지 관할 법원으로 한다.</p>
-${c.specialTerms?`<h2>특약사항</h2><p>${escapeHtml_(c.specialTerms).replace(/\n/g,'<br>')}</p>`:''}`;
+<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${T.bank}</p>
+<h2>${T.a5t}</h2><p>${T.a5}</p>
+<h2>${T.a6t}</h2><p>${T.a6}</p>
+<h2>${T.a7t}</h2><p>${art7}</p>
+<h2>${T.a8t}</h2><p>${T.a8}</p>
+<h2>${T.a9t}</h2><p>${T.a9}</p>
+<h2>${T.a10t}</h2><p>${T.a10}</p>
+<h2>${T.a11t}</h2><p>${T.a11}</p>
+<h2>${T.a12t}</h2><p>${T.a12}</p>
+${c.specialTerms?`<h2>${T.specialT}</h2><p>${escapeHtml_(c.specialTerms).replace(/\n/g,'<br>')}</p>`:''}`;
 }
 
 function buildDrehvertragHtml_(c){
   const body=buildDrehvertragBodyHtml_(c);
+  const L=normalizeContractLang_(c.lang);
+  const S={
+    ko:{studio:'"을" Studio mean',client:(n)=>`"갑" ${n}`,esig:'전자서명',esigNote:'온라인 단순전자서명',blank:'서명란 (온라인 서명 링크로 서명)'},
+    de:{studio:'Auftragnehmer — Studio mean',client:(n)=>`Auftraggeber — ${n}`,esig:'Elektronische Signatur',esigNote:'einfache elektronische Signatur (online)',blank:'Unterschrift (über den Online-Signaturlink)'},
+    en:{studio:'Contractor — Studio mean',client:(n)=>`Client — ${n}`,esig:'Electronic signature',esigNote:'simple electronic signature (online)',blank:'Signature (via the online signing link)'}
+  }[L];
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const signBlock=c.signedAt
-    ? `<div class="sig-row"><div><b>"을" Studio mean</b><br>Taewoong Min<br><span class="muted">${escapeHtml_(String(c.sentAt||c.createdAt||today).slice(0,10))}</span></div>
-       <div><b>"갑" ${escapeHtml_(c.companyName||c.name)}</b><br>전자서명: <b>${escapeHtml_(c.signerName)}</b><br><span class="muted">${escapeHtml_(c.signedAt)} · 온라인 단순전자서명</span></div></div>`
-    : `<div class="sig-row"><div><b>"을" Studio mean</b><br>Taewoong Min<br><span class="muted">${today}</span></div>
-       <div><b>"갑" ${escapeHtml_(c.companyName||c.name)}</b><br><br><span class="muted">서명란 (온라인 서명 링크로 서명)</span></div></div>`;
+    ? `<div class="sig-row"><div><b>${S.studio}</b><br>Taewoong Min<br><span class="muted">${escapeHtml_(String(c.sentAt||c.createdAt||today).slice(0,10))}</span></div>
+       <div><b>${S.client(escapeHtml_(c.companyName||c.name))}</b><br>${S.esig}: <b>${escapeHtml_(c.signerName)}</b><br><span class="muted">${escapeHtml_(c.signedAt)} · ${S.esigNote}</span></div></div>`
+    : `<div class="sig-row"><div><b>${S.studio}</b><br>Taewoong Min<br><span class="muted">${today}</span></div>
+       <div><b>${S.client(escapeHtml_(c.companyName||c.name))}</b><br><br><span class="muted">${S.blank}</span></div></div>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml_(c.contractId)}</title><style>
 @page{size:A4;margin:18mm 16mm}body{font-family:'Noto Sans KR',Arial,sans-serif;font-size:10.5pt;line-height:1.65;color:#1c1917;margin:0}
 h1{font-size:16pt;text-align:center;margin:0 0 4mm}h2{font-size:11pt;margin:5mm 0 1.5mm}p{margin:0 0 2mm}
@@ -29013,7 +29132,7 @@ function createContractForAgent_(payload){
     const q=getQuoteByNumberForContract_(payload.quoteNumber);
     if(!q) throw new Error('견적을 찾을 수 없습니다: '+payload.quoteNumber);
     base={quoteNumber:q.number,name:q.name,companyName:q.companyName,email:q.email,phone:q.phone,
-      customerAddress:q.customerAddress,vatId:q.vatId,lang:'ko',
+      customerAddress:q.customerAddress,vatId:q.vatId,lang:normalizeContractLang_(q.lang),
       schedule:q.shootDate||'',scopeText:q.product||'',deliverables:(q.items||[]).map(i=>String(i.description||'').split('\n')[0]).filter(Boolean).join('\n'),
       net:q.netto,vat:q.vat,total:q.total,deposit:q.depositAmount,balance:roundCurrency_((q.total||0)-(q.depositAmount||0)),
       bookingRowIndex:q.linkedBookingRow||0};
@@ -29028,7 +29147,7 @@ function createContractForAgent_(payload){
     const dep=parseMoneyValue_(row[BOOKING_COL['계약금']]);
     base={bookingRowIndex:bri,name:String(row[BOOKING_COL['고객명']]||''),email:String(row[BOOKING_COL['이메일']]||''),
       phone:String(row[BOOKING_COL['연락처']]||''),customerAddress:String(row[BOOKING_COL['고객주소']]||''),
-      companyName:String(row[BOOKING_COL['사업자명']]||''),vatId:String(row[BOOKING_COL['사업자VAT번호']]||''),lang:'ko',
+      companyName:String(row[BOOKING_COL['사업자명']]||''),vatId:String(row[BOOKING_COL['사업자VAT번호']]||''),lang:normalizeContractLang_(row[BOOKING_COL['언어']]),
       schedule:parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16),
       scopeText:String(row[BOOKING_COL['상품']]||''),
       net:net,vat:roundCurrency_(gross-net),total:gross,deposit:dep,balance:roundCurrency_(gross-dep)};
@@ -29046,7 +29165,7 @@ function createContractForAgent_(payload){
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const rowArr=new Array(CONTRACT_HEADERS.length).fill('');
   const set=(h,v)=>{if(CONTRACT_COL[h]!=null)rowArr[CONTRACT_COL[h]]=v==null?'':v;};
-  set('계약ID',c.contractId);set('생성일시',now);set('상태',c.status);set('언어',c.lang||'ko');set('계약종류',c.contractType||'촬영대행');
+  set('계약ID',c.contractId);set('생성일시',now);set('상태',c.status);set('언어',normalizeContractLang_(c.lang));set('계약종류',c.contractType||'촬영대행');
   set('고객명',c.name);set('회사명',c.companyName||'');set('이메일',c.email||'');set('연락처',c.phone||'');
   set('고객주소',c.customerAddress||'');set('VAT번호',c.vatId||'');set('연결견적번호',c.quoteNumber||'');set('연결예약행',c.bookingRowIndex||'');
   set('촬영일정',c.schedule||'');set('업무내용',c.scopeText||'');set('목적물',c.deliverables||'');set('납품형식',c.deliveryFormat||'');
@@ -29059,6 +29178,18 @@ function createContractForAgent_(payload){
   const pdf=_persistContractPdf_(sheet,rowIndex,c);
   return {ok:true,contractId:c.contractId,rowIndex:rowIndex,total:c.total,deposit:c.deposit,pdfUrl:pdf.url,status:c.status};
 }
+/* 견적에 연결된 활성(미취소) 계약 존재 여부 — quote-accept 자동 초안의 중복 방지 */
+function _hasActiveContractForQuote_(quoteNumber){
+  const num=String(quoteNumber||'').trim().toUpperCase();
+  if(!num) return false;
+  const sheet=getContractSheet_();
+  const last=sheet.getLastRow();
+  if(last<2) return false;
+  const rows=sheet.getRange(2,1,last-1,CONTRACT_HEADERS.length).getValues();
+  return rows.some(r=>String(r[CONTRACT_COL['연결견적번호']]||'').trim().toUpperCase()===num
+    &&String(r[CONTRACT_COL['상태']]||'').trim()!==CONTRACT_STATUS.CANCELLED);
+}
+
 function getQuoteByNumberForContract_(number){
   const sh=ensureSheets_().quoteSheet;
   const last=sh.getLastRow();
@@ -29095,15 +29226,30 @@ function sendContractForAgent_(payload){
   const signUrl=createActionLink_('contract_sign',c.contractId);
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const pdfFile=c.pdfFileId?DriveApp.getFileById(c.pdfFileId):null;
-  const subject=`[Studio mean] 촬영 계약서 (${c.contractId}) — 검토 및 서명 요청`;
+  const ML=normalizeContractLang_(c.lang);
+  const M={
+    ko:{subject:`[Studio mean] 촬영 계약서 (${c.contractId}) — 검토 및 서명 요청`,greet:'안녕하세요,',
+      intro:'진행 예정인 촬영의 계약서를 보내드립니다. 첨부 PDF로 내용을 검토하신 후, 아래 버튼에서 온라인으로 서명해 주세요.',
+      lNo:'계약번호',lShoot:'촬영',lTotal:'총액',lDep:'계약금',btn:'✍️ 계약서 확인·서명하기',
+      note:'서명 링크는 14일간 유효합니다. 내용 관련 문의는 이 메일에 회신해 주세요.'},
+    de:{subject:`[Studio mean] Ihr Vertrag (${c.contractId}) — Prüfung und Unterschrift`,greet:'Guten Tag,',
+      intro:'anbei erhalten Sie den Vertrag für Ihr geplantes Shooting. Bitte prüfen Sie die angehängte PDF und unterzeichnen Sie anschließend online über die Schaltfläche unten.',
+      lNo:'Vertragsnummer',lShoot:'Leistung',lTotal:'Gesamt',lDep:'Anzahlung',btn:'✍️ Vertrag ansehen & unterzeichnen',
+      note:'Der Signaturlink ist 14 Tage gültig. Bei Fragen antworten Sie einfach auf diese E-Mail.'},
+    en:{subject:`[Studio mean] Your contract (${c.contractId}) — review & signature`,greet:'Hello,',
+      intro:'please find attached the contract for your upcoming shoot. Review the PDF and sign online using the button below.',
+      lNo:'Contract no.',lShoot:'Services',lTotal:'Total',lDep:'Deposit',btn:'✍️ Review & sign contract',
+      note:'The signing link is valid for 14 days. If you have questions, simply reply to this email.'}
+  }[ML];
+  const subject=M.subject;
   const htmlBody=`<div style="font-family:-apple-system,'Noto Sans KR',sans-serif;max-width:600px;">
-<p>안녕하세요, <b>${escapeHtml_(c.companyName||c.name)}</b>님,</p>
-<p>진행 예정인 촬영의 계약서를 보내드립니다. 첨부 PDF로 내용을 검토하신 후, 아래 버튼에서 온라인으로 서명해 주세요.</p>
-<table style="border-collapse:collapse;font-size:13px;margin:12px 0;"><tr><td style="padding:4px 12px 4px 0;color:#64748b;">계약번호</td><td><b>${escapeHtml_(c.contractId)}</b></td></tr>
-<tr><td style="padding:4px 12px 4px 0;color:#64748b;">촬영</td><td>${escapeHtml_(c.scopeText||'')}</td></tr>
-<tr><td style="padding:4px 12px 4px 0;color:#64748b;">총액</td><td>€ ${formatEuroAmount_(c.total)}${c.deposit>0?` (계약금 € ${formatEuroAmount_(c.deposit)})`:''}</td></tr></table>
-<p style="margin:18px 0;"><a href="${signUrl.replace(/&/g,'&amp;')}" style="display:inline-block;padding:13px 26px;background:#2D2A26;color:#fff;border-radius:9px;text-decoration:none;font-weight:700;">✍️ 계약서 확인·서명하기</a></p>
-<p style="font-size:12px;color:#94a3b8;">서명 링크는 14일간 유효합니다. 내용 관련 문의는 이 메일에 회신해 주세요.</p>
+<p>${M.greet} <b>${escapeHtml_(c.companyName||c.name)}</b>${ML==='ko'?'님,':','}</p>
+<p>${M.intro}</p>
+<table style="border-collapse:collapse;font-size:13px;margin:12px 0;"><tr><td style="padding:4px 12px 4px 0;color:#64748b;">${M.lNo}</td><td><b>${escapeHtml_(c.contractId)}</b></td></tr>
+<tr><td style="padding:4px 12px 4px 0;color:#64748b;">${M.lShoot}</td><td>${escapeHtml_(c.scopeText||'')}</td></tr>
+<tr><td style="padding:4px 12px 4px 0;color:#64748b;">${M.lTotal}</td><td>€ ${formatEuroAmount_(c.total)}${c.deposit>0?` (${M.lDep} € ${formatEuroAmount_(c.deposit)})`:''}</td></tr></table>
+<p style="margin:18px 0;"><a href="${signUrl.replace(/&/g,'&amp;')}" style="display:inline-block;padding:13px 26px;background:#2D2A26;color:#fff;border-radius:9px;text-decoration:none;font-weight:700;">${M.btn}</a></p>
+<p style="font-size:12px;color:#94a3b8;">${M.note}</p>
 ${_getSignatureHtml()}</div>`;
   const mailOpts={to:c.email,subject:subject,htmlBody:htmlBody};
   if(pdfFile) mailOpts.attachments=[pdfFile.getAs(MimeType.PDF)];
@@ -29162,8 +29308,23 @@ function contractSignPage_(contractId,p){
   if(c.status===CONTRACT_STATUS.CANCELLED) return HtmlService.createHtmlOutput('<h2>ℹ️ 취소된 계약입니다. 문의: studio.mean.de@gmail.com</h2>');
   const alreadySigned=c.status===CONTRACT_STATUS.SIGNED;
   const body=buildDrehvertragBodyHtml_(c);
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>계약서 서명 — Studio mean</title><style>
+  const L=normalizeContractLang_(c.lang);
+  const P={
+    ko:{pageTitle:'계약서 서명 — Studio mean',signH:'✍️ 전자서명',sub:'아래에 성명을 정확히 입력하고 동의 후 서명을 완료해 주세요. 서명 시각과 함께 기록되며, 서명된 계약서 PDF가 이메일로 발송됩니다.',
+      ph:(n)=>`성명 (예: ${n})`,chk:'본인은 위 계약서의 전 조항을 읽고 이해하였으며, 이에 동의하고 전자적으로 서명합니다.',btn:'서명 완료하기',busy:'서명 처리 중…',
+      done:'✅ 서명이 완료되었습니다. 서명된 계약서가 이메일로 발송됩니다.',signedNote:'✅ 이미 서명이 완료된 계약입니다.',
+      errName:'성명을 입력해 주세요.',errAgree:'동의 체크박스를 선택해 주세요.',errFail:'처리에 실패했습니다. 다시 시도해 주세요.',errNet:'네트워크 오류가 발생했습니다. 다시 시도해 주세요.'},
+    de:{pageTitle:'Vertrag unterzeichnen — Studio mean',signH:'✍️ Elektronische Signatur',sub:'Bitte geben Sie unten Ihren vollständigen Namen ein, bestätigen Sie Ihr Einverständnis und schließen Sie die Signatur ab. Zeitpunkt und Name werden gespeichert; den unterzeichneten Vertrag erhalten Sie als PDF per E-Mail.',
+      ph:(n)=>`Vollständiger Name (z. B. ${n})`,chk:'Ich habe den vorstehenden Vertrag vollständig gelesen und verstanden, stimme ihm zu und unterzeichne elektronisch.',btn:'Signatur abschließen',busy:'Wird verarbeitet…',
+      done:'✅ Vielen Dank! Der unterzeichnete Vertrag wird Ihnen per E-Mail zugesandt.',signedNote:'✅ Dieser Vertrag wurde bereits unterzeichnet.',
+      errName:'Bitte geben Sie Ihren Namen ein.',errAgree:'Bitte bestätigen Sie das Einverständnis.',errFail:'Verarbeitung fehlgeschlagen. Bitte erneut versuchen.',errNet:'Netzwerkfehler. Bitte erneut versuchen.'},
+    en:{pageTitle:'Sign contract — Studio mean',signH:'✍️ Electronic signature',sub:'Enter your full name below, confirm your consent and complete the signature. Your name and the time are recorded; the signed contract will be emailed to you as a PDF.',
+      ph:(n)=>`Full name (e.g. ${n})`,chk:'I have read and understood the above agreement, I agree to it and sign electronically.',btn:'Complete signature',busy:'Processing…',
+      done:'✅ Thank you! The signed contract will be emailed to you.',signedNote:'✅ This contract has already been signed.',
+      errName:'Please enter your name.',errAgree:'Please confirm your consent.',errFail:'Processing failed. Please try again.',errNet:'Network error. Please try again.'}
+  }[L];
+  const html=`<!DOCTYPE html><html lang="${L}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${P.pageTitle}</title><style>
 *{box-sizing:border-box}body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#f8fafc;margin:0;padding:16px;color:#1c1917;}
 .wrap{max-width:760px;margin:0 auto;}
 .contract{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:28px;line-height:1.7;font-size:14px;}
@@ -29185,27 +29346,28 @@ button:disabled{background:#9ca3af}
 <div class="contract">${body}</div>
 <div class="sign-card">
 ${alreadySigned
-  ? `<div class="signed-note">✅ 이미 서명이 완료된 계약입니다.<br><span style="font-weight:400;font-size:12.5px;">${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</span></div>`
-  : `<h3>✍️ 전자서명</h3>
-<div class="sub">아래에 성명을 정확히 입력하고 동의 후 서명을 완료해 주세요. 서명 시각과 함께 기록되며, 서명된 계약서 PDF가 이메일로 발송됩니다.</div>
-<input type="text" id="signerName" placeholder="성명 (예: ${escapeHtml_(c.name)})" autocomplete="name">
-<label class="chk"><input type="checkbox" id="agree"> 본인은 위 계약서의 전 조항을 읽고 이해하였으며, 이에 동의하고 전자적으로 서명합니다.</label>
-<button id="signBtn" onclick="doSign()">서명 완료하기</button>
+  ? `<div class="signed-note">${P.signedNote}<br><span style="font-weight:400;font-size:12.5px;">${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</span></div>`
+  : `<h3>${P.signH}</h3>
+<div class="sub">${P.sub}</div>
+<input type="text" id="signerName" placeholder="${P.ph(escapeHtml_(c.name))}" autocomplete="name">
+<label class="chk"><input type="checkbox" id="agree"> ${P.chk}</label>
+<button id="signBtn" onclick="doSign()">${P.btn}</button>
 <div class="err" id="errBox"></div>
-<div class="done" id="doneBox">✅ 서명이 완료되었습니다. 서명된 계약서가 이메일로 발송됩니다.</div>`}
+<div class="done" id="doneBox">${P.done}</div>`}
 </div>
 <div class="foot">${escapeHtml_(c.contractId)} · ${escapeHtml_(c.clauseVersion)} · Studio mean, Oberursel</div>
 </div>
 <script>
+var SIGN_MSG={name:${JSON.stringify(P.errName)},agree:${JSON.stringify(P.errAgree)},fail:${JSON.stringify(P.errFail)},net:${JSON.stringify(P.errNet)},busy:${JSON.stringify(P.busy)},btn:${JSON.stringify(P.btn)}};
 function doSign(){
   var name=document.getElementById('signerName').value.trim();
   var agree=document.getElementById('agree').checked;
   var err=document.getElementById('errBox');
   err.style.display='none';
-  if(!name){err.textContent='성명을 입력해 주세요.';err.style.display='block';return;}
-  if(!agree){err.textContent='동의 체크박스를 선택해 주세요.';err.style.display='block';return;}
+  if(!name){err.textContent=SIGN_MSG.name;err.style.display='block';return;}
+  if(!agree){err.textContent=SIGN_MSG.agree;err.style.display='block';return;}
   var btn=document.getElementById('signBtn');
-  btn.disabled=true;btn.textContent='서명 처리 중…';
+  btn.disabled=true;btn.textContent=SIGN_MSG.busy;
   // google.script.run 대신 공개 API fetch — 카카오톡 등 인앱 브라우저의 GAS RPC 실패 회피
   fetch(${JSON.stringify(ScriptApp.getService().getUrl()+'?api=contract-sign-submit')},{
     method:'POST',
@@ -29222,12 +29384,12 @@ function doSign(){
       document.getElementById('signerName').disabled=true;
       document.getElementById('agree').disabled=true;
     }else{
-      btn.disabled=false;btn.textContent='서명 완료하기';
-      err.textContent=(res&&res.message)||(resp&&resp.error&&resp.error.message)||'처리에 실패했습니다. 다시 시도해 주세요.';err.style.display='block';
+      btn.disabled=false;btn.textContent=SIGN_MSG.btn;
+      err.textContent=(res&&res.message)||(resp&&resp.error&&resp.error.message)||SIGN_MSG.fail;err.style.display='block';
     }
   }).catch(function(){
-    btn.disabled=false;btn.textContent='서명 완료하기';
-    err.textContent='네트워크 오류가 발생했습니다. 다시 시도해 주세요.';err.style.display='block';
+    btn.disabled=false;btn.textContent=SIGN_MSG.btn;
+    err.textContent=SIGN_MSG.net;err.style.display='block';
   });
 }
 </script></body></html>`;
@@ -29262,8 +29424,14 @@ function submitContractSignaturePublic(contractId,exp,sig,signerName,userAgent){
         const file=DriveApp.getFileById(pdf.fileId);
         const attach=[file.getAs(MimeType.PDF)];
         if(c.email&&c.email.indexOf('@')>-1){
-          sendTrackedEmail_({to:c.email,subject:`[Studio mean] 서명 완료된 계약서 (${c.contractId})`,
-            htmlBody:`<div style="font-family:-apple-system,'Noto Sans KR',sans-serif;max-width:600px;"><p>안녕하세요, <b>${escapeHtml_(c.companyName||c.name)}</b>님,</p><p>계약서 서명이 완료되었습니다. 서명된 계약서 PDF를 첨부해 드립니다. 감사합니다.</p><p style="font-size:12px;color:#94a3b8;">서명: ${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</p>${_getSignatureHtml()}</div>`,
+          const SL=normalizeContractLang_(c.lang);
+          const SM={
+            ko:{subject:`[Studio mean] 서명 완료된 계약서 (${c.contractId})`,greet:`안녕하세요, <b>${escapeHtml_(c.companyName||c.name)}</b>님,`,body:'계약서 서명이 완료되었습니다. 서명된 계약서 PDF를 첨부해 드립니다. 감사합니다.',sig:'서명'},
+            de:{subject:`[Studio mean] Unterzeichneter Vertrag (${c.contractId})`,greet:`Guten Tag, <b>${escapeHtml_(c.companyName||c.name)}</b>,`,body:'Ihr Vertrag wurde erfolgreich unterzeichnet. Den unterzeichneten Vertrag finden Sie als PDF im Anhang. Vielen Dank!',sig:'Signatur'},
+            en:{subject:`[Studio mean] Signed contract (${c.contractId})`,greet:`Hello <b>${escapeHtml_(c.companyName||c.name)}</b>,`,body:'Your contract has been signed successfully. The signed contract is attached as a PDF. Thank you!',sig:'Signature'}
+          }[SL];
+          sendTrackedEmail_({to:c.email,subject:SM.subject,
+            htmlBody:`<div style="font-family:-apple-system,'Noto Sans KR',sans-serif;max-width:600px;"><p>${SM.greet}</p><p>${SM.body}</p><p style="font-size:12px;color:#94a3b8;">${SM.sig}: ${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</p>${_getSignatureHtml()}</div>`,
             attachments:attach},{type:'계약서',customerName:c.name,email:c.email,ref:c.contractId,bookingRowIndex:c.bookingRowIndex||''});
         }
         sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[계약서명] ${c.companyName||c.name} — ${c.contractId} 서명 완료`,
