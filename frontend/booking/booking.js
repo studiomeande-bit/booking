@@ -6825,13 +6825,15 @@ function getSuccessGuideHtml(payload) {
     `);
   }
 
+  // 무료 돌상은 프로필 프로페셔널(€130)부터 — 스튜디오/스냅은 전 상품 해당, 프로필은 pp만
+  const dolTableFree = product.g !== 'prof' || product.id === 'pp';
   if (hasBabyBirthday && (product.g === 'stud' || product.g === 'snap' || product.g === 'prof')) {
     sections.push(`
       <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? '🎂 돌상 무료 셋팅 안내' : 'Baby / Birthday Setup Guide'}</h4>
+        <h4 class="result-guide-title">${isKo ? (dolTableFree ? '🎂 돌상 무료 셋팅 안내' : '🎂 돌상 셋팅 안내') : 'Dol Table Setup'}</h4>
         <div class="result-guide-body">
           ${isKo ? `
-            <p>돌상은 기본 구성으로 무료 셋팅해 드립니다. 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.</p>
+            <p>${dolTableFree ? '돌상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상을 원하시면 프로페셔널 이상으로 예약해 주세요.'} 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.</p>
             <h5>포함 항목</h5>
             <ul>
               <li>돌상 테이블 기본 구성 및 소품 연출</li>
@@ -6851,7 +6853,7 @@ function getSuccessGuideHtml(payload) {
               <li>셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.</li>
             </ul>
           ` : `
-            <p>A simple birthday setup is included for baby / birthday sessions. Please share reference images in advance if you have a specific theme in mind.</p>
+            <p>${dolTableFree ? 'A simple dol (birthday) table setup is included for free.' : 'The free dol table setup is included from <b>Profile Professional (€130)</b> and up — it is not part of your current package, so please book Professional or higher if you would like it.'} Please share reference images in advance if you have a specific theme in mind.</p>
           `}
         </div>
       </section>
