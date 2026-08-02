@@ -1271,6 +1271,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
+        if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         if(action==='mrt-api-test') return jsonOk_(mrtApiTestAdmin(token));
         if(action==='mrt-api-reconcile') return jsonOk_(mrtApiReconcileAdmin(token));
         if(action==='quote-accept'){
@@ -8419,9 +8420,9 @@ function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
       ? `<b>👶 영유아 여권 / 비자사진 촬영 조건 안내</b><br>• 아기를 눕힌 상태에서 밝은 단색 배경으로 촬영합니다.<br>• 얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자가 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.<br>• 영유아는 성인보다 규정이 일부 완화 적용되며 한국 여권과 독일 비자에 함께 사용할 수 있도록 촬영합니다.`
       : `<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.`;
   }
-  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• 한복 시: 흰색 이너 필수<br>• ⭐ 돌상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
-  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• Hanbok: white inner required<br>• ⭐ Free dol table (Profile Professional €130 & up)`:'';
-  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• Hanbok: weißes Innenteil erforderlich<br>• ⭐ Kostenloser Dol-Tisch (ab Profil Professional €130)`:'';
+  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• 한복 시: 흰색 이너 필수<br>• ⭐ 돌상/백일상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
+  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• Hanbok: white inner required<br>• ⭐ Free dol / 100-day table (Profile Professional €130 & up)`:'';
+  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• Hanbok: weißes Innenteil erforderlich<br>• ⭐ Kostenloser Dol-/100-Tage-Tisch (ab Profil Professional €130)`:'';
   if(itemGroup==='prof'){
     if(L==='en')return`<b>📸 Profile Shoot Guide</b><br>1) Share purpose (LinkedIn/CV/SNS) and mood. Send 1-3 reference images.<br>2) Solid colour tops (white/navy/black/beige). No large logos. Bring 1-2 options.<br>3) Arrive 5-10 min early.${bEn}`;
     if(L==='de')return`<b>📸 Profil-Shooting Hinweise</b><br>1) Zweck (LinkedIn/Lebenslauf/SNS) und Stimmung mitteilen. 1-3 Referenzbilder senden.<br>2) Einfarbige Oberteile. Keine großen Logos. 1-2 Optionen mitbringen.<br>3) 5-10 Minuten früher ankommen.${bDe}`;
@@ -11715,6 +11716,90 @@ function setBookingAmountForAgent_(token,payload){
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
     previousTotal:prevTotal,newTotal:newTotal,
     previousBalance:prevBalance,newBalance:newBalance,recomputeBalance:recomputeBalance,auditLine:auditLine};
+}
+
+/* 예약 상품 변경(재견적) — 어드민에서만 가능하던 프로필 Business→Professional 같은 상품 교체를 CLI로.
+ * 가격은 반드시 calculateQuote_(수기등록과 동일한 견적엔진) 재사용 — 별도 가격 계산 금지.
+ * 총액/계약금/잔금/상품라벨/촬영종류/소요시간을 견적으로 재산출해 예약행+캘린더에 반영한다.
+ * 고객 메일은 발송하지 않는다(변경 통지는 booking-confirm-mail 로 사장님이 별도). */
+function changeBookingProductForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const itemId=String(payload.itemId||'').trim();
+  if(!itemId) throw new Error("itemId(새 상품 ID)가 필요합니다. 예: {\"rowIndex\":218,\"itemId\":\"pp\"}");
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])){
+    throw new Error('취소/자동취소 상태의 예약은 상품을 변경할 수 없습니다.');
+  }
+  // 인원: payload 우선, 없으면 기존 행 인원(그룹가·소요시간 계산 유지)
+  const peopleForQuote=(payload.people!=null&&String(payload.people).trim()!=='')
+    ? (parseInt(payload.people,10)||1)
+    : (parseInt(row[BOOKING_COL['인원']],10)||1);
+  const optionKeys=Array.isArray(payload.optionKeys)?payload.optionKeys.filter(Boolean):[];
+  const passAddon=!!payload.passAddon;
+  const passAddonPeople=parseInt(payload.passAddonPeople,10)||1;
+  const dateStr=String((parseDateSafe_(row[BOOKING_COL['예약일시']])||{}).str||'').slice(0,10); // 주말할증 등 날짜 반영
+  // 가격 계산은 반드시 calculateQuote_ 재사용
+  const quote=calculateQuote_({
+    itemId:itemId, people:peopleForQuote, date:dateStr, optionKeys:optionKeys,
+    passAddon:passAddon, passAddonPeople:passAddonPeople
+  });
+  if(quote.isQuoteOnly||!(quote.totalPrice>0)){
+    throw new Error('상담견적/커스텀(총액 0) 상품은 이 액션으로 바꿀 수 없습니다. 금액은 booking-set-amount 로 정정하세요.');
+  }
+  const prevProduct=String(row[BOOKING_COL['상품']]||'').trim();
+  const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const newProduct=String(quote.productLabelKo||'').trim();
+  const newTotal=roundCurrency_(quote.totalPrice);
+  const newDeposit=roundCurrency_(quote.depositAmount);
+  const newBalance=roundCurrency_(quote.balanceAmount);
+
+  // 예약행 갱신 (촬영종류/상품/인원/옵션/총결제액/계약금/잔금 + 브루토 미러)
+  sh.getRange(rIdx,BOOKING_COL['촬영종류']+1).setValue(quote.itemGroup);
+  sh.getRange(rIdx,BOOKING_COL['상품']+1).setValue(newProduct);
+  sh.getRange(rIdx,BOOKING_COL['인원']+1).setValue(quote.people);
+  if(BOOKING_COL['옵션']!=null) sh.getRange(rIdx,BOOKING_COL['옵션']+1).setValue(optionKeys.join('|'));
+  sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
+  sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(formatInvoiceBookingDepositCell_(row,newDeposit)); // 입금여부 보존
+  sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(newBalance);
+  if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
+  if(BOOKING_COL['deposit_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['deposit_price_brutto']+1).setValue(newDeposit);
+  if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+
+  // 여권콤보 소요시간 근거 — 예약 생성부와 동일한 [여권콤보:N명] 토큰을 요청사항에 남긴다.
+  // getBookingDurationMinFromRow_ 가 이 토큰을 읽어 캘린더 duration 에 콤보분을 합산한다(인보이스도 동일 토큰).
+  // ponytail: 콤보 해제(passAddon 미지정) 시 기존 토큰은 그대로 남는다 — 필요 시 사장님이 요청사항에서 제거.
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const passMarker=passAddon?`[여권콤보:${passAddonPeople}명]`:'';
+  const auditLine=`[상품변경 ${stamp}] ${prevProduct||'?'}→${newProduct}, ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€ (agent)`;
+  const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+  const memoParts=[curMemo];
+  if(passMarker && curMemo.indexOf('여권콤보')===-1) memoParts.push(passMarker);
+  memoParts.push(auditLine);
+  sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memoParts.filter(Boolean).join('\n'));
+
+  // 캘린더 이벤트가 있으면 제목/시간(소요시간) 동기화 — 없으면 skip. 기존 sync 엔진 재사용(무발송).
+  try{
+    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    if(String(rowAfter[BOOKING_COL['캘린더ID']]||'').trim()){
+      ensureBookingCalendarEventForRow_(sh,rIdx,rowAfter);
+    }
+  }catch(e){Logger.log('changeBookingProductForAgent_ calendar sync skipped: '+e.message);}
+  bumpCalCacheVer_();
+
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
+    product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
+    previousProduct:prevProduct,previousTotal:prevTotal,
+    total:newTotal,deposit:newDeposit,balance:newBalance,
+    durationMin:quote.totalDuration,passAddon:passAddon,mailSent:false,auditLine:auditLine};
 }
 
 /* ===== MRT Open API (마케팅파트너 API, partner-ext-api.myrealtrip.com) =====

@@ -9,7 +9,7 @@
  *   quote-list | quote-get | quote-create | quote-update | quote-send
  *   quote-hold | quote-snooze | quote-release-hold | quote-extend
  *   invoice-list | invoice-create | invoice-send
- *   booking-search | booking-get | booking-set-time | booking-set-amount
+ *   booking-search | booking-get | booking-set-time | booking-set-amount | booking-change-product
  *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
  *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
  *   booking-refund-quote: 취소 환불 규정 제안액(실수령·기환불 포함) 조회
@@ -18,6 +18,12 @@
  * booking-set-amount: 예약 총결제액 정정(매출 소급 정정). 회계장부 gross는 총결제액에서 파생.
  *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'
  *   옵션: recomputeBalance(기본 true, 잔금=총결제액−계약금), expectName(행 고객명 안전확인).
+ *
+ * booking-change-product: 예약 상품 교체 + 재견적(총액·계약금·잔금·소요시간·캘린더 자동 반영). 고객 메일 미발송.
+ *   가격은 calculateQuote_(수기등록과 동일 엔진) 재사용 — 별도 계산 없음.
+ *   node scripts/erp-agent.mjs booking-change-product --json '{"rowIndex":218,"itemId":"pp","passAddon":true}'
+ *   payload: itemId(필수), passAddon/passAddonPeople, people, optionKeys[], expectName(안전확인).
+ *   변경 통지가 필요하면 이어서 booking-confirm-mail 로 사장님이 별도 발송.
  *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)
