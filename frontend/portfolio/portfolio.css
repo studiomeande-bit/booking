@@ -13,7 +13,12 @@
   --accent: #b04a2b;
   --sage: #5f6d57;
   --copper: #b0714a;
-  --ink: #1a1611;
+  /* 어두운 면(다크 버튼) 위에 얹는 글자색. 다크테마 시절 --ink(=어두운 바닥)를
+     그대로 물려받아 팔레트 플립 후 near-black on near-black 이 됐던 자리 */
+  --on-dark: #faf6f0;
+  /* 라이트 배경용 hover/active 표시 — 예전 rgba(255,255,255,·) 를 잉크 톤으로 뒤집음 */
+  --hover-line: rgba(33, 29, 23, 0.28);
+  --hover-fill: rgba(33, 29, 23, 0.05);
   --radius: 8px;
   --shadow: 0 22px 60px rgba(66, 46, 30, 0.10);
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -582,8 +587,8 @@ html[lang="ko"] .success-card h1 {
 .control-btn.active,
 .control-btn:hover {
   color: var(--text);
-  border-color: rgba(255,255,255,0.24);
-  background: rgba(255,255,255,0.05);
+  border-color: var(--hover-line);
+  background: var(--hover-fill);
 }
 
 .portfolio-status {
@@ -1046,7 +1051,7 @@ html[lang="ko"] .success-card h1 {
 .field textarea {
   width: 100%;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,0.03);
+  background: var(--panel);
   color: var(--text);
   font: inherit;
   padding: 14px 14px 15px;
@@ -1062,8 +1067,8 @@ html[lang="ko"] .success-card h1 {
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  border-color: rgba(255,255,255,0.24);
-  background: rgba(255,255,255,0.05);
+  border-color: var(--accent);
+  background: var(--panel);
 }
 
 .checkbox-line {
@@ -1103,7 +1108,7 @@ html[lang="ko"] .success-card h1 {
 
 .button-dark {
   background: var(--text);
-  color: var(--ink);
+  color: var(--on-dark);
 }
 
 .button-ghost {
@@ -1113,7 +1118,7 @@ html[lang="ko"] .success-card h1 {
 
 .button-dark:hover,
 .button-ghost:hover {
-  border-color: rgba(255,255,255,0.24);
+  border-color: var(--hover-line);
 }
 
 .contact-rail {
