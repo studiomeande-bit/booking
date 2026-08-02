@@ -22,7 +22,11 @@
   --radius: 8px;
   --shadow: 0 22px 60px rgba(66, 46, 30, 0.10);
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Cormorant Garamond", Georgia, serif;
+  /* 세리프 정리 (2026-08-02 사장님): Cormorant 는 한글 글리프가 없어 KO 페이지 제목이
+     시스템 명조로 폴백돼 어긋나 보임 — booking/promo 와 동일하게 산세리프 통일.
+     변수 한 줄이라 24페이지(인라인 lp-hero 포함) 동시 적용. 되돌리기: 아래를
+     "Cormorant Garamond", Georgia, serif 로 복원 */
+  --font-display: var(--font-sans);
 }
 
 * { box-sizing: border-box; }
