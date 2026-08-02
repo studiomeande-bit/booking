@@ -1228,6 +1228,20 @@ function handlePublicApiRequest_(route,method,e){
           const wOut=wRows.map(function(r,i){return{rowIndex:i+2,submittedAt:String(r[WALKIN_COL['접수일시']]||''),status:String(r[WALKIN_COL['상태']]||''),name:String(r[WALKIN_COL['고객명']]||''),phone:String(r[WALKIN_COL['연락처']]||''),service:String(r[WALKIN_COL['서비스표시명']]||r[WALKIN_COL['서비스분류']]||''),linkedBookingRow:String(r[WALKIN_COL['연결예약행']]||''),memo:String(r[WALKIN_COL['관리메모']]||'')};});
           return jsonOk_({ok:true,walkins:wOut.reverse()});
         }
+        if(action==='gutschein-list'){
+          const gSh=getGutscheinSheet_();
+          const gRows=gSh.getLastRow()>1?gSh.getDataRange().getValues().slice(1):[];
+          const gOut=gRows.map(function(r,i){
+            const cell=function(h){return GUTSCHEIN_COL[h]!=null?String(r[GUTSCHEIN_COL[h]]==null?'':r[GUTSCHEIN_COL[h]]):'';};
+            return{rowIndex:i+2,code:cell('코드'),type:cell('타입'),status:cell('상태'),
+              amount:parseMoneyValue_(r[GUTSCHEIN_COL['발행금액(€)']]),issuedAt:cell('발행일'),validUntil:cell('유효기한'),
+              saleRegisteredAt:cell('판매등록일'),buyerRegistered:cell('구매자등록여부'),purchaserName:cell('구매자명'),
+              used:cell('사용여부'),usedAt:cell('사용일시'),usedAmount:parseMoneyValue_(r[GUTSCHEIN_COL['사용금액(€)']]),
+              linkedBookingRow:cell('연결예약행'),taxType:cell('세무분류'),taxRecognition:cell('과세시점'),
+              saleChannel:cell('판매채널'),payMethod:cell('결제수단'),issueMode:cell('발행방식'),adminMemo:cell('관리메모')};
+          });
+          return jsonOk_({ok:true,gutscheins:gOut.reverse()});
+        }
         if(action==='walkin-update-status'){
           const wIdx=parseInt(payload.rowIndex,10);
           const wStatus=String(payload.status||'').trim();
@@ -14255,6 +14269,49 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
     });
   }
   _mark('bookLoop');
+  /* ===== 굿샤인 매출 — 과세시점 기준(UStG §3 Abs.14/15, docs/gutschein-tax-memo.md) =====
+     SPV(상품권)=판매/구매자등록 시점에 발행금액 과세, MPV(금액권)=사용 시점에 사용금액 과세.
+     예약행 총결제액은 굿샤인 차감 후 금액이므로 이 패스가 없으면 굿샤인 대금이 장부에서 통째로 누락된다.
+     ponytail: 판매 후 취소/환불의 소급 정정 엔트리는 미구현(취소 상태 행 제외만) — 발생 시 수기 정정 */
+  try{
+    const gutSh=getGutscheinSheet_();
+    if(gutSh.getLastRow()>1){
+      // getDataRange: 시트 실제 폭이 GUTSCHEIN_HEADERS보다 좁아도(구버전 시트) out-of-bounds 없이 읽는다
+      const gutData=gutSh.getDataRange().getValues().slice(1);
+      gutData.forEach(function(gRow,gi){
+        const gStatus=String(gRow[GUTSCHEIN_COL['상태']]||'').trim();
+        if(gStatus===GUTSCHEIN_STATUS.STOCK||gStatus===GUTSCHEIN_STATUS.CANCELLED) return;
+        const gType=normalizeGutscheinType_(gRow[GUTSCHEIN_COL['타입']]);
+        const taxType=_normalizeGutscheinTaxType_(gRow[GUTSCHEIN_COL['세무분류']],gType);
+        const recognition=_normalizeGutscheinTaxRecognition_(gRow[GUTSCHEIN_COL['과세시점']],taxType);
+        let gDate='',gGross=0,gLabel='';
+        if(recognition==='issue'){
+          const sold=String(gRow[GUTSCHEIN_COL['구매자등록여부']]||'').trim()==='Y'||String(gRow[GUTSCHEIN_COL['판매등록일']]||'').trim();
+          if(!sold) return;
+          gDate=(parseDateSafe_(gRow[GUTSCHEIN_COL['판매등록일']]||gRow[GUTSCHEIN_COL['발행일']]).str||'').slice(0,10);
+          gGross=roundCurrency_(parseMoneyValue_(gRow[GUTSCHEIN_COL['발행금액(€)']]));
+          gLabel='굿샤인판매';
+        }else{
+          if(String(gRow[GUTSCHEIN_COL['사용여부']]||'').trim()!=='Y') return;
+          gDate=(parseDateSafe_(gRow[GUTSCHEIN_COL['사용일시']]).str||'').slice(0,10);
+          gGross=roundCurrency_(parseMoneyValue_(gRow[GUTSCHEIN_COL['사용금액(€)']]));
+          gLabel='굿샤인사용';
+        }
+        if(!gDate||gGross<=0) return;
+        if(startDate&&gDate<startDate) return;
+        if(endDate&&gDate>endDate) return;
+        const gNet=Math.round((gGross/1.19)*100)/100;
+        entries.push({date:gDate,dateStr:gDate,type:'굿샤인',category:gLabel,
+          accountingClass:'굿샤인 매출',name:String(gRow[GUTSCHEIN_COL['구매자명']]||''),
+          description:`Gutschein ${String(gRow[GUTSCHEIN_COL['코드']]||'')} ${gLabel==='굿샤인판매'?'판매':'사용'} (${taxType})`,
+          gross:gGross,net:gNet,tax:roundCurrency_(gGross-gNet),
+          payMethod:String(gRow[GUTSCHEIN_COL['결제수단']]||''),status:'완료',invoice:'',
+          note:String(gRow[GUTSCHEIN_COL['상품명스냅샷']]||''),
+          source:'gutschein',flow:'income',rowIndex:gi+2,openAmount:0});
+      });
+    }
+  }catch(e){Logger.log('굿샤인 장부 패스 오류: '+e.message);}
+  _mark('gutscheinLoop');
   const printSh = sheets.printSheet;
   const printColMap = getPrintSheetColMap_(printSh);
   const printData = printSh.getDataRange().getValues();
@@ -27663,7 +27720,8 @@ body{width:105mm;margin:0 auto;background:#fff}
 .back .layout{grid-template-rows:auto 1fr;gap:4mm}
 .meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.2pt;line-height:1.2;color:var(--muted);letter-spacing:.05em}
 .polaroid{width:100%;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;gap:3mm}
-.film-window{width:100%;min-height:68mm;background:var(--panel);border:1px solid var(--panel-line)}
+.film-window{width:100%;min-height:68mm;background:var(--panel);border:1px solid var(--panel-line);display:flex;align-items:center;justify-content:center}
+.film-window img{width:42%;height:auto;opacity:.16}
 .polaroid-caption{display:grid;grid-template-columns:1fr 24mm;align-items:end;gap:3mm}
 .caption-copy{display:grid;gap:1.4mm}
 .script-title{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:18.5pt;line-height:.98;letter-spacing:-.03em;color:var(--ink);white-space:pre-line;max-width:100%}
@@ -27692,7 +27750,7 @@ body{width:105mm;margin:0 auto;background:#fff}
       <div>${t.valid} : ${validLabel}</div>
     </div>
     <div class="polaroid">
-      <div class="film-window"></div>
+      <div class="film-window">${logoDataUri?`<img src="${logoDataUri}" alt="">`:''}</div>
       <div class="polaroid-caption">
         <div class="caption-copy">
           <div class="script-title">${t.title}</div>
@@ -27710,7 +27768,8 @@ body{width:105mm;margin:0 auto;background:#fff}
       <ul class="notes">
         <li>${escapeHtml_('Gültig für Studio_mean Fotografie Dienstleistungen.')}</li>
         <li>${escapeHtml_('3 Jahre gültig, nur nach Terminvereinbarung einlösbar.')}</li>
-        <li>${escapeHtml_('Nicht kombinierbar und nicht rückerstattbar.')}</li>
+        <li>${escapeHtml_('Nicht mit anderen Aktionen kombinierbar, keine Barauszahlung.')}</li>
+        ${isProduct?'':`<li>${escapeHtml_('Restguthaben wird bei Teileinlösung als neuer Gutscheincode übertragen.')}</li>`}
         <li>${escapeHtml_(taxNotice)}</li>
       </ul>
       <div class="logo-footer">
@@ -28214,6 +28273,20 @@ function _applyGutscheinToBookingCore_(bookingRowIndex, rawCode, method){
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold토큰']+1).setValue('');
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['hold만료일시']+1).setValue('');
     gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['최종사용확정일시']+1).setValue(appliedAt);
+    // MPV 금액권 잔액 이월 — 사용액 < 발행액이면 차액을 새 코드로 발급해 소멸을 막는다.
+    // SPV는 발행 시 이미 전액 과세라 이월분을 다시 만들면 이중과세 → 대상 아님.
+    let residual=null;
+    const appliedTaxType=_normalizeGutscheinTaxType_(g.taxType,g.voucherType);
+    const residualAmount=Math.max(0,roundCurrency_((Number(g.amount)||0)-preview.calculations.discountAmount));
+    if(appliedTaxType==='MPV'&&residualAmount>=0.01){
+      try{
+        residual=_issueResidualGutschein_(gutscheinSheet,g,residualAmount,bookingRowIndex,appliedAt);
+        const memoAfter=String(bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).getValue()||'');
+        bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(memoAfter+`\n[${appliedAt}] 굿샤인 잔액 €${residualAmount} → 새 코드 ${residual.code} 이월`);
+        const parentMemo=String(gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).getValue()||'').trim();
+        gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue((parentMemo?parentMemo+' ':'')+`잔액 €${residualAmount} → ${residual.code} 이월`);
+      }catch(e){Logger.log('굿샤인 잔액 이월 실패 ('+preview.code+'): '+e.message);}
+    }
     return {
       ok:true,
       code:preview.code,
@@ -28221,8 +28294,42 @@ function _applyGutscheinToBookingCore_(bookingRowIndex, rawCode, method){
       adjustedTotal:preview.calculations.adjustedTotal,
       adjustedDeposit:preview.calculations.adjustedDeposit,
       finalBalance:preview.calculations.finalBalance,
+      residualCode:residual?residual.code:'',
+      residualAmount:residual?residual.amount:0,
       appliedAt
     };
+}
+
+/* 부분 사용 잔액을 새 굿샤인 행으로 이월 (MPV 전용). PDF/메일은 만들지 않는다 —
+ * 모바일 티켓 URL(QR값)로 즉시 사용 가능하고, 필요 시 어드민에서 PDF 재생성. */
+function _issueResidualGutschein_(gutscheinSheet,parent,amount,bookingRowIndex,appliedAt){
+  const code=generateGutscheinCode_();
+  const today=String(appliedAt||'').slice(0,10)||Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const row=new Array(GUTSCHEIN_HEADERS.length).fill('');
+  const set=function(h,v){if(GUTSCHEIN_COL[h]!=null)row[GUTSCHEIN_COL[h]]=v;};
+  set('코드',code);
+  set('타입','amount');
+  set('상품명스냅샷','잔액 이월 Gutschein');
+  set('구매자명',parent.purchaserName||'');
+  set('구매자이메일',parent.purchaserEmail||'');
+  set('받는분명',parent.recipientName||'');
+  set('발행금액(€)',amount);
+  set('발행일',today);
+  set('유효기한',parent.validUntil||_buildDefaultGutscheinValidUntil_(today));
+  set('상태',GUTSCHEIN_STATUS.SOLD);
+  set('구매자등록여부','Y');
+  set('발행방식','residual');
+  set('QR값',buildGutscheinTicketUrl_(code));
+  set('언어',parent.lang||'de');
+  set('결제수단',parent.paymentMethod||'');
+  set('판매채널','잔액이월');
+  set('세무분류','MPV');
+  set('과세시점','redeem');
+  set('발행시점세율',19);
+  set('세무판단근거',`상위 ${parent.code} 부분사용 잔액 이월 (MPV·사용 시점 과세, 판매대금은 상위 코드에 귀속)`);
+  set('관리메모',`상위 굿샤인 ${parent.code} · 예약행 ${bookingRowIndex} 부분사용 잔액`);
+  gutscheinSheet.appendRow(row);
+  return {code:code,amount:amount,rowIndex:gutscheinSheet.getLastRow()};
 }
 
 /* ===== Gutschein V2: 고객 예약 시 코드 사용 (hold → finalize) ===== */
