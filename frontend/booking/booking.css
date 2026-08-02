@@ -548,7 +548,8 @@ h1 {
   font-size: clamp(28px, 4vw, 42px);
   letter-spacing: -.035em;
   font-weight: 700;
-  font-family: var(--font-display);
+  /* 스텝 제목("3. 날짜 및 시간")은 display 폰트를 안 쓴다 — 한글은 Cormorant 에 글리프가
+     없어 Noto Sans 로 폴백되는데 숫자만 Cormorant 세리프로 렌더돼 어긋나 보임 (2026-08-02 사장님) */
 }
 .panel-head p {
   margin: 10px 0 0;
