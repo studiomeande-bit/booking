@@ -230,7 +230,7 @@ html[lang="en"] .hero-copy h1 {
   font-size: 11px;
   letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--sage);
+  color: var(--accent);  /* 웜 테라코타 브랜드 포인트(작은 라벨에만) */
 }
 
 .hero-text,
@@ -239,7 +239,7 @@ html[lang="en"] .hero-copy h1 {
   max-width: 62ch;
   font-size: 17px;
   line-height: 1.76;
-  color: var(--accent);
+  color: #4a4139;  /* 리드 문단은 부드러운 웜 다크 — 원본 다크테마의 '연한 리드' 의도 복원(테라코타 과함 방지) */
   text-wrap: pretty;
 }
 
@@ -729,7 +729,7 @@ html[lang="ko"] .success-card h1 {
 .services-intro p {
   margin: 0;
   max-width: 64ch;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 17px;
   line-height: 1.72;
   text-wrap: pretty;
@@ -770,7 +770,7 @@ html[lang="ko"] .success-card h1 {
 .service-card p {
   margin: 12px 0 0;
   max-width: 42ch;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 15px;
   line-height: 1.68;
   text-wrap: pretty;
@@ -804,7 +804,7 @@ html[lang="ko"] .success-card h1 {
 .seo-copy p {
   margin: 14px 0 0;
   max-width: 68ch;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 16px;
   line-height: 1.72;
   text-wrap: pretty;
@@ -940,7 +940,7 @@ html[lang="ko"] .success-card h1 {
 .page-header p {
   margin: 18px 0 0;
   max-width: 70ch;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 17px;
   line-height: 1.74;
   text-wrap: pretty;
@@ -974,7 +974,7 @@ html[lang="ko"] .success-card h1 {
 .page-panel p,
 .page-panel li {
   max-width: 68ch;
-  color: var(--accent);
+  color: #4a4139;
   line-height: 1.72;
   text-wrap: pretty;
 }
@@ -1070,7 +1070,7 @@ html[lang="ko"] .success-card h1 {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 14px;
 }
 
@@ -1256,7 +1256,7 @@ html[lang="ko"] .success-card h1 {
 
 .success-card p {
   margin: 18px 0 0;
-  color: var(--accent);
+  color: #4a4139;
   font-size: 17px;
 }
 
