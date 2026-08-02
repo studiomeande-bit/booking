@@ -45,10 +45,10 @@ Updated: 2026-07-16 Europe/Berlin
 - ~~서비스컷이 v2에 미구현이던 버그~~ → v2 포팅 완료 (2026-07-15, 8f166ab): 무료 보정 슬롯+안내+복원+제출 왕복. **오너 확인 필요**: 어드민에서 serviceCutCount N 설정한 v2 세션 열어 서비스컷 N슬롯 표시 확인
 - 서비스컷 perk 결정 대기: v1의 "서비스컷당 기본 10×15 인화 무료(차액청구)"는 v2 디커플드 모델상 미이식(v2 보너스도 인화 미포함) — 원하면 백엔드 작업으로 추가 가능
 
-9. Mail content cleanup
-- reduce repeated text across pending / confirmed / follow-up mails
-- unify Korean / English / German tone
-- verify pre-wedding / passport infant / dol guide content balance
+9. Mail content cleanup — **완료 (2026-08-02 검수)**
+- ~~reduce repeated text across pending / confirmed / follow-up mails~~ → 1B 접수메일 다이어트(여권만 풀가이드)·결제블록 dedupe·팔로우업 3종 `_followupCommonHtml_` 공용화 (7/15)
+- ~~unify Korean / English / German tone~~ → 인사말·움라우트·제목 통일 (7/15), 감사/돌추천/기념일(B5) 3개국어 톤 일관 확인 (8/2)
+- ~~verify pre-wedding / passport infant / dol guide content balance~~ → wed/pass 가이드 패리티 (7/15), 돌상 무료조건 문구는 Professional €130 조건으로 갱신 (8/2)
 - ~~보정 요청 가이드 예시가 "자연스럽게"(가이드가 경계하는 바로 그 모호어)를 사용~~ → 구체 문구로 재작성 완료 (2026-07-15, 8f166ab): 부위+방향+원본유지 경계. v1/v2 가이드·placeholder 5곳, BAD 예시는 의도적 유지
 
 ## Later
@@ -68,10 +68,7 @@ Updated: 2026-07-16 Europe/Berlin
 
 12. ~~Ops checklist refresh~~ → docs/ops-checklist.md 작성 완료 (2026-07-15: 배포 절차·주의사항·회귀 체크리스트)
 
-13. Optional finance expansion
-- decide whether instant card sales also create Lexware documents
-- if needed, add SumUp or bank CSV import path
-- otherwise keep those flows as local-ledger + summary export only
+13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
 
