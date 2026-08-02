@@ -236,7 +236,7 @@ function doGet(e) {
   e = e||{parameter:{}}; const p = e.parameter||{};
   const apiRoute=getPublicApiRoute_(e);
   if(apiRoute) return handlePublicApiRequest_(apiRoute,'get',e);
-  if (p.action==='confirm'||p.action==='cancel'||p.action==='customer_cancel'||p.action==='approve_retouch'||p.action==='revise_retouch'||p.action==='customer_reschedule') return handleActionRoute_(p);
+  if (p.action==='confirm'||p.action==='cancel'||p.action==='customer_cancel'||p.action==='approve_retouch'||p.action==='revise_retouch'||p.action==='customer_reschedule'||p.action==='contract_sign') return handleActionRoute_(p);
   const page = (p.p||'admin').toLowerCase();
   if(page==='index') return renderFrontendMovedPage_('booking', p);
   if(page==='select'||page==='select_preview') return renderFrontendMovedPage_('select', p);
@@ -925,6 +925,16 @@ function handlePublicApiRequest_(route,method,e){
       if(!result||!result.ok) return jsonError_('MESSAGE_SEND_FAILED',(result&&result.message)||'Message send failed');
       return jsonOk_(result);
     }
+    if(route==='contract-sign-submit'){
+      if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/contract-sign-submit');
+      const request=getPublicPayloadFromRequest_(e);
+      const body=request.body||{};
+      const payload=request.payload||{};
+      assertPublicRequestId_((body&&body.requestId)||(payload&&payload.requestId));
+      // HMAC(exp/sig) 재검증은 submitContractSignaturePublic 내부에서 수행
+      const result=submitContractSignaturePublic(String(payload.contractId||''),String(payload.exp||''),String(payload.sig||''),String(payload.signerName||''),String(payload.userAgent||''));
+      return jsonOk_(result);
+    }
     if(route==='booking-status-resend'){
       if(method!=='post' && method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/booking-status-resend');
       const request=getPublicPayloadFromRequest_(e);
@@ -1242,6 +1252,11 @@ function handlePublicApiRequest_(route,method,e){
           });
           return jsonOk_({ok:true,gutscheins:gOut.reverse()});
         }
+        if(action==='contract-create') return jsonOk_(createContractForAgent_(payload));
+        if(action==='contract-list') return jsonOk_(listContractsForAgent_());
+        if(action==='contract-send') return jsonOk_(sendContractForAgent_(payload));
+        if(action==='contract-cancel') return jsonOk_(cancelContractForAgent_(payload));
+        if(action==='contract-pending') return jsonOk_(listContractPendingForAgent_());
         if(action==='walkin-update-status'){
           const wIdx=parseInt(payload.rowIndex,10);
           const wStatus=String(payload.status||'').trim();
@@ -9722,6 +9737,7 @@ function handleActionRoute_(p){
     if(p.action==='cancel') return cancelBooking(rawId);
     if(p.action==='customer_cancel') return customerCancelRequest_(rawId);
     if(p.action==='customer_reschedule') return customerRescheduleForm_(rawId);
+    if(p.action==='contract_sign') return contractSignPage_(rawId,p);
     if(p.action==='approve_retouch') return approveRetouch_(rawId,p);
     if(p.action==='revise_retouch') return reviseRetouch_(rawId,p);
     return HtmlService.createHtmlOutput('<h2>❌ 알 수 없는 액션입니다.</h2>');
@@ -28830,4 +28846,441 @@ function _formatBookingDate_(v){
     if(v instanceof Date) return Utilities.formatDate(v,CONFIG.TZ||'Europe/Berlin','yyyy-MM-dd HH:mm');
     return String(v||'');
   }catch(e){return String(v||'');}
+}
+
+/* ====== Drehvertrag 계약 파이프라인 (Update 5) ======
+ * 대상: B2B·웨딩본식 등 €500 이상 건. 흐름: contract-create(초안+PDF) → contract-send(메일+서명링크)
+ * → 고객 온라인 단순전자서명 → 서명 PDF 재생성 + 양측 메일. 조항은 계약서/2026 draft(12조) 기반 v1.
+ * MVP는 한국어 계약서만 (de/en 후속). 저작권귀속 기본 '스튜디오'(사용범위 라이선스), 전부양도는 '고객'. */
+const CONTRACT_SHEET_NAME='계약서';
+const CONTRACT_HEADERS=['계약ID','생성일시','상태','언어','계약종류','고객명','회사명','이메일','연락처','고객주소','VAT번호','연결견적번호','연결예약행','촬영일정','업무내용','목적물','납품형식','납품기한','사용범위','저작권귀속','순액(€)','부가세(€)','총액(€)','계약금(€)','잔금(€)','지급조건','계약기간종료','특약메모','PDF파일ID','PDF링크','발송일시','서명자명','서명일시','서명UA','조항버전','조항해시','메모'];
+const CONTRACT_COL=CONTRACT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+const CONTRACT_STATUS={DRAFT:'초안',SENT:'발송',SIGNED:'서명완료',CANCELLED:'취소'};
+const CONTRACT_CLAUSE_VERSION='DV-v1 (2026-08-02)';
+const CONTRACT_MIN_TOTAL=500;
+
+function getContractSheet_(){
+  return ensureHeaderSheet_(ensureSheets_().ss,CONTRACT_SHEET_NAME,CONTRACT_HEADERS,'#fee2e2');
+}
+function generateContractId_(){
+  const d=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyMMdd');
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const idx=_secureRandomIndices_(4,chars.length);
+  return 'DV-'+d+'-'+idx.map(i=>chars[i]).join('');
+}
+function _findContractRow_(sheet,contractId){
+  const id=String(contractId||'').trim().toUpperCase();
+  if(!id) return {rowIndex:-1};
+  const last=sheet.getLastRow();
+  if(last<2) return {rowIndex:-1};
+  const codes=sheet.getRange(2,1,last-1,1).getValues();
+  for(let i=0;i<codes.length;i++){
+    if(String(codes[i][0]||'').trim().toUpperCase()===id){
+      return {rowIndex:i+2,row:sheet.getRange(i+2,1,1,sheet.getLastColumn()).getValues()[0]};
+    }
+  }
+  return {rowIndex:-1};
+}
+function contractRowToObject_(row,rowIndex){
+  // 시트가 '2026-09-01 10:00' 같은 문자열을 Date로 재해석하는 경우 원시 Date 문자열 노출 방지
+  const cell=h=>{
+    if(CONTRACT_COL[h]==null) return '';
+    const v=row[CONTRACT_COL[h]];
+    if(v==null) return '';
+    if(v instanceof Date) return Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm').replace(/ 00:00$/,'');
+    return String(v).trim();
+  };
+  const money=h=>roundCurrency_(parseMoneyValue_(row[CONTRACT_COL[h]]));
+  return {
+    rowIndex:rowIndex||0,contractId:cell('계약ID'),createdAt:cell('생성일시'),status:cell('상태'),lang:cell('언어')||'ko',
+    contractType:cell('계약종류')||'촬영대행',name:cell('고객명'),companyName:cell('회사명'),email:cell('이메일'),phone:cell('연락처'),
+    customerAddress:cell('고객주소'),vatId:cell('VAT번호'),quoteNumber:cell('연결견적번호'),
+    bookingRowIndex:parseInt(row[CONTRACT_COL['연결예약행']],10)||0,
+    schedule:cell('촬영일정'),scopeText:cell('업무내용'),deliverables:cell('목적물'),deliveryFormat:cell('납품형식'),
+    deliveryDeadline:cell('납품기한'),usageScope:cell('사용범위'),copyrightOwner:cell('저작권귀속')||'스튜디오',
+    net:money('순액(€)'),vat:money('부가세(€)'),total:money('총액(€)'),deposit:money('계약금(€)'),balance:money('잔금(€)'),
+    paymentTerms:cell('지급조건'),contractEnd:cell('계약기간종료'),specialTerms:cell('특약메모'),
+    pdfFileId:cell('PDF파일ID'),pdfUrl:ensurePublicDriveFileUrl_(cell('PDF파일ID'))||cell('PDF링크'),
+    sentAt:cell('발송일시'),signerName:cell('서명자명'),signedAt:cell('서명일시'),
+    clauseVersion:cell('조항버전')||CONTRACT_CLAUSE_VERSION,clauseHash:cell('조항해시'),memo:cell('메모')
+  };
+}
+function ensureContractFolder_(){
+  const root=DriveApp.getRootFolder();
+  const it=DriveApp.getFoldersByName('StudioMean_Contracts');
+  return it.hasNext()?it.next():root.createFolder('StudioMean_Contracts');
+}
+
+/* 계약서 본문 HTML (ko, 12조) — 서명 페이지와 PDF가 공유 */
+function buildDrehvertragBodyHtml_(c){
+  const party=c.companyName?`${escapeHtml_(c.companyName)} (담당: ${escapeHtml_(c.name)})`:escapeHtml_(c.name);
+  const money=v=>'€ '+formatEuroAmount_(v);
+  const copyrightStudio=String(c.copyrightOwner||'스튜디오')!=='고객';
+  const art7=copyrightStudio
+    ? `본 목적물의 저작재산권 일체는 "을"(Studio mean)에게 귀속되며, "갑"은 제3조의 사용범위(${escapeHtml_(c.usageScope||'웹사이트·SNS·사내 용도')}) 내에서 목적물을 사용할 수 있는 라이선스를 갖는다. 유료 광고 집행 등 사용범위 외 이용은 사전 별도 협의로 한다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.`
+    : `본 목적물에 대한 저작재산권(복제권·공연권·공중송신권·전시권·배포권·2차적저작물작성권·편집저작권 포함) 일체는 "갑"에게 귀속된다. "을"은 "갑"으로부터 제공받은 자료를 선량한 관리자의 주의로 보관·관리하며, 사전 서면 동의 없이 계약 목적 외로 사용하지 않는다. "을"의 촬영원본·최종 마스터의 보존기간은 최대 1년이며, 그 이전 삭제 시 "갑"에게 알린다.`;
+  const rows=[
+    ['업무내용',c.scopeText],['촬영일정',c.schedule],['목 적 물',c.deliverables],
+    ['납품형식',c.deliveryFormat],['납품기한',c.deliveryDeadline||'촬영 종료 후 10일 이내 (교정 1회 포함)'],
+    ['사용범위',c.usageScope||'웹사이트·SNS·사내 용도 (유료 광고는 사전 별도 협의)']
+  ].filter(r=>String(r[1]||'').trim())
+   .map(r=>`<tr><td class="k">${escapeHtml_(r[0])}</td><td>${escapeHtml_(r[1]).replace(/\n/g,'<br>')}</td></tr>`).join('');
+  const payTerms=c.paymentTerms||`계약금 ${money(c.deposit)}은 계약 체결 후 "을"의 인보이스 수령일 기준 14일 이내, 잔금 ${money(c.balance)}은 최종 목적물 납품 후 "을"의 인보이스 수령일 기준 14일 이내 지급한다.`;
+  return `
+<h1>영상·사진 촬영 대행 계약서 (Drehvertrag)</h1>
+<p class="parties">${party} (이하 "갑")와(과) <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (이하 "을")은 아래와 같이 촬영 대행 계약을 체결한다.</p>
+<h2>제 1 조 (목적)</h2><p>본 계약은 "갑"이 "을"에게 의뢰한 촬영 및 제작 업무(이하 '목적물')의 위탁에 관한 기본 사항과 양 당사자의 책임·의무를 규정함을 목적으로 한다. "을"은 최종 목적물을 완전한 형태로 "갑"에게 인도한다.</p>
+<h2>제 2 조 (계약의 기간)</h2><p>본 계약의 유효기간은 계약 체결일로부터 ${escapeHtml_(c.contractEnd||'목적물 납품 완료일')}까지로 하며, 기간 내 납품이 완료되면 계약이 완료된 것으로 본다.</p>
+<h2>제 3 조 (업무의 범위)</h2><table class="scope">${rows}</table>
+<h2>제 4 조 (제작금 및 지급방식)</h2>
+<table class="pay"><tr><td class="k">제작 금액 (순액)</td><td>${money(c.net)}</td></tr>
+<tr><td class="k">부가가치세 (MwSt. 19%)</td><td>${money(c.vat)}</td></tr>
+<tr><td class="k"><b>총 금액</b></td><td><b>${money(c.total)}</b></td></tr>
+${c.deposit>0?`<tr><td class="k">계약금</td><td>${money(c.deposit)}</td></tr><tr><td class="k">잔금</td><td>${money(c.balance)}</td></tr>`:''}</table>
+<p>${escapeHtml_(payTerms)}</p>
+<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>"을"은 독일 부가가치세법에 따라 19% 부가가치세를 적용하며(USt-IdNr. DE440009941), 각 지급분에 대한 인보이스(Rechnung)를 발행한다.</p>
+<h2>제 5 조 (검수 및 수정)</h2><p>납품 범위에는 교정 1회가 포함된다. 사전 협의된 편집 방향을 근거로 한 타당한 수정 요구에 "을"은 성실히 임하며, 사전 협의 범위를 벗어나는 요구는 별도의 추가 제작으로 간주하고 비용을 상호 합의하여 정한다.</p>
+<h2>제 6 조 (정보제공)</h2><p>"을"은 업무 수행에 필요한 자료를 "갑"에게 요청할 수 있으며, "갑"은 특별한 사유가 없는 한 이에 응한다.</p>
+<h2>제 7 조 (자료관리 및 저작권)</h2><p>${art7}</p>
+<h2>제 8 조 (양도 금지)</h2><p>양 당사자는 상대방의 서면 동의 없이 본 계약상의 권리·의무를 제3자에게 양도하지 못한다.</p>
+<h2>제 9 조 (비밀유지)</h2><p>양 당사자는 계약의 체결·이행 과정에서 취득한 상대방의 영업비밀 등 일체의 정보를 계약 목적 외로 사용하거나 제3자에게 누설하지 않는다. 본 의무는 계약 종료 후에도 유효하다.</p>
+<h2>제 10 조 (계약의 해지)</h2><p>일방에게 압류·파산·영업정지 등 계약 이행이 곤란한 사유가 발생한 경우 상대방은 계약의 전부 또는 일부를 해제·해지할 수 있다. 일방이 본 계약의 중요한 규정을 위반하고 서면 최고 후 상당 기간 내 시정하지 않는 경우에도 같다. 해제·해지는 손해배상 청구에 영향을 미치지 않는다. 고객 사유의 촬영 취소 시 환불은 "을"의 취소·환불 규정(예약 시 고지)을 따른다.</p>
+<h2>제 11 조 (손해배상)</h2><p>당사자는 상대방의 계약 위반 또는 불법행위로 인한 손해에 대해 배상을 청구할 수 있다.</p>
+<h2>제 12 조 (분쟁해결)</h2><p>본 계약은 독일법을 준거법으로 하며, 분쟁은 상호 합의로 해결함을 원칙으로 한다. 합의가 이루어지지 않을 경우 관할 법원은 "을"의 소재지 관할 법원으로 한다.</p>
+${c.specialTerms?`<h2>특약사항</h2><p>${escapeHtml_(c.specialTerms).replace(/\n/g,'<br>')}</p>`:''}`;
+}
+
+function buildDrehvertragHtml_(c){
+  const body=buildDrehvertragBodyHtml_(c);
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const signBlock=c.signedAt
+    ? `<div class="sig-row"><div><b>"을" Studio mean</b><br>Taewoong Min<br><span class="muted">${escapeHtml_(String(c.sentAt||c.createdAt||today).slice(0,10))}</span></div>
+       <div><b>"갑" ${escapeHtml_(c.companyName||c.name)}</b><br>전자서명: <b>${escapeHtml_(c.signerName)}</b><br><span class="muted">${escapeHtml_(c.signedAt)} · 온라인 단순전자서명</span></div></div>`
+    : `<div class="sig-row"><div><b>"을" Studio mean</b><br>Taewoong Min<br><span class="muted">${today}</span></div>
+       <div><b>"갑" ${escapeHtml_(c.companyName||c.name)}</b><br><br><span class="muted">서명란 (온라인 서명 링크로 서명)</span></div></div>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml_(c.contractId)}</title><style>
+@page{size:A4;margin:18mm 16mm}body{font-family:'Noto Sans KR',Arial,sans-serif;font-size:10.5pt;line-height:1.65;color:#1c1917;margin:0}
+h1{font-size:16pt;text-align:center;margin:0 0 4mm}h2{font-size:11pt;margin:5mm 0 1.5mm}p{margin:0 0 2mm}
+table{width:100%;border-collapse:collapse;margin:2mm 0}td{border:1px solid #d6d3d1;padding:1.6mm 2.4mm;vertical-align:top}
+td.k{width:30mm;background:#fafaf9;font-weight:700;white-space:nowrap}
+.parties{margin-bottom:3mm}.bank{font-size:9pt;color:#57534e}.muted{color:#78716c;font-size:9pt}
+.sig-row{display:flex;justify-content:space-between;gap:10mm;margin-top:10mm;padding-top:5mm;border-top:1px solid #d6d3d1}
+.sig-row>div{flex:1}
+.foot{margin-top:8mm;font-size:8pt;color:#a8a29e;text-align:center}
+</style></head><body>${body}${signBlock}
+<div class="foot">${escapeHtml_(c.contractId)} · ${escapeHtml_(c.clauseVersion||CONTRACT_CLAUSE_VERSION)}${c.clauseHash?' · '+escapeHtml_(c.clauseHash):''} · Studio mean, Holzweg-Passage 3, 61440 Oberursel</div>
+</body></html>`;
+}
+function _contractClauseHash_(c){
+  const raw=buildDrehvertragBodyHtml_(c);
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,raw,Utilities.Charset.UTF_8)
+    .map(b=>((b&0xff)+0x100).toString(16).slice(1)).join('').slice(0,10);
+}
+function createContractPdf_(c){
+  const folder=ensureContractFolder_();
+  const safeName=String(c.companyName||c.name||'customer').replace(/\s+/g,'').replace(/[^a-zA-Z0-9가-힣]/g,'');
+  const fileName=`Studiomean_${String(c.contractId).replace(/-/g,'_')}_${safeName}${c.signedAt?'_signed':''}.pdf`;
+  const blob=HtmlService.createHtmlOutput(buildDrehvertragHtml_(c)).getBlob().getAs(MimeType.PDF).setName(fileName);
+  const file=folder.createFile(blob);
+  try{file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(e){}
+  return {fileId:file.getId(),url:file.getUrl()};
+}
+function _persistContractPdf_(sheet,rowIndex,c){
+  const pdf=createContractPdf_(c);
+  sheet.getRange(rowIndex,CONTRACT_COL['PDF파일ID']+1).setValue(pdf.fileId);
+  sheet.getRange(rowIndex,CONTRACT_COL['PDF링크']+1).setValue(pdf.url);
+  return pdf;
+}
+
+/* 대상 판정: B2B(biz)·웨딩본식·€500+ */
+function _bookingNeedsContract_(row){
+  const status=String(row[BOOKING_COL['상태']]||'').trim();
+  if(['대기중','확정됨'].indexOf(status)===-1) return false;
+  const group=String(row[BOOKING_COL['촬영종류']]||'').trim();
+  const blob=(String(row[BOOKING_COL['상품']]||'')+' '+String(row[BOOKING_COL['추가항목']]||'')).toLowerCase();
+  const total=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
+  const isBiz=group==='biz'||String(row[BOOKING_COL['예약유형']]||'').trim()==='기업';
+  const isCeremony=/본식|결혼식|암트|standesamt|hochzeit/i.test(blob);
+  return isBiz||isCeremony||total>=CONTRACT_MIN_TOTAL;
+}
+
+function createContractForAgent_(payload){
+  payload=payload||{};
+  const data=payload.data||{};
+  const sheet=getContractSheet_();
+  let base={};
+  if(payload.quoteNumber){
+    const q=getQuoteByNumberForContract_(payload.quoteNumber);
+    if(!q) throw new Error('견적을 찾을 수 없습니다: '+payload.quoteNumber);
+    base={quoteNumber:q.number,name:q.name,companyName:q.companyName,email:q.email,phone:q.phone,
+      customerAddress:q.customerAddress,vatId:q.vatId,lang:'ko',
+      schedule:q.shootDate||'',scopeText:q.product||'',deliverables:(q.items||[]).map(i=>String(i.description||'').split('\n')[0]).filter(Boolean).join('\n'),
+      net:q.netto,vat:q.vat,total:q.total,deposit:q.depositAmount,balance:roundCurrency_((q.total||0)-(q.depositAmount||0)),
+      bookingRowIndex:q.linkedBookingRow||0};
+  }else if(payload.bookingRowIndex){
+    const bri=parseInt(payload.bookingRowIndex,10);
+    const bSh=getDbSheet();
+    if(!bri||bri<2||bri>bSh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+payload.bookingRowIndex);
+    const row=bSh.getRange(bri,1,1,bSh.getLastColumn()).getValues()[0];
+    if(payload.expectName&&String(row[BOOKING_COL['고객명']]||'').trim()!==String(payload.expectName).trim()) throw new Error('expectName 불일치: 행 '+bri+' = '+row[BOOKING_COL['고객명']]);
+    const gross=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
+    const net=Math.round((gross/1.19)*100)/100;
+    const dep=parseMoneyValue_(row[BOOKING_COL['계약금']]);
+    base={bookingRowIndex:bri,name:String(row[BOOKING_COL['고객명']]||''),email:String(row[BOOKING_COL['이메일']]||''),
+      phone:String(row[BOOKING_COL['연락처']]||''),customerAddress:String(row[BOOKING_COL['고객주소']]||''),
+      companyName:String(row[BOOKING_COL['사업자명']]||''),vatId:String(row[BOOKING_COL['사업자VAT번호']]||''),lang:'ko',
+      schedule:parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16),
+      scopeText:String(row[BOOKING_COL['상품']]||''),
+      net:net,vat:roundCurrency_(gross-net),total:gross,deposit:dep,balance:roundCurrency_(gross-dep)};
+  }
+  const c=Object.assign({},base,data);
+  if(!c.name) throw new Error('고객명이 필요합니다.');
+  if(!(parseMoneyValue_(c.total)>0)) throw new Error('총액이 필요합니다.');
+  c.contractId=generateContractId_();
+  c.status=CONTRACT_STATUS.DRAFT;
+  c.clauseVersion=CONTRACT_CLAUSE_VERSION;
+  c.copyrightOwner=c.copyrightOwner||'스튜디오';
+  c.net=parseMoneyValue_(c.net);c.vat=parseMoneyValue_(c.vat);c.total=parseMoneyValue_(c.total);
+  c.deposit=parseMoneyValue_(c.deposit);c.balance=parseMoneyValue_(c.balance||(c.total-c.deposit));
+  c.clauseHash=_contractClauseHash_(c);
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const rowArr=new Array(CONTRACT_HEADERS.length).fill('');
+  const set=(h,v)=>{if(CONTRACT_COL[h]!=null)rowArr[CONTRACT_COL[h]]=v==null?'':v;};
+  set('계약ID',c.contractId);set('생성일시',now);set('상태',c.status);set('언어',c.lang||'ko');set('계약종류',c.contractType||'촬영대행');
+  set('고객명',c.name);set('회사명',c.companyName||'');set('이메일',c.email||'');set('연락처',c.phone||'');
+  set('고객주소',c.customerAddress||'');set('VAT번호',c.vatId||'');set('연결견적번호',c.quoteNumber||'');set('연결예약행',c.bookingRowIndex||'');
+  set('촬영일정',c.schedule||'');set('업무내용',c.scopeText||'');set('목적물',c.deliverables||'');set('납품형식',c.deliveryFormat||'');
+  set('납품기한',c.deliveryDeadline||'');set('사용범위',c.usageScope||'');set('저작권귀속',c.copyrightOwner);
+  set('순액(€)',c.net);set('부가세(€)',c.vat);set('총액(€)',c.total);set('계약금(€)',c.deposit);set('잔금(€)',c.balance);
+  set('지급조건',c.paymentTerms||'');set('계약기간종료',c.contractEnd||'');set('특약메모',c.specialTerms||'');
+  set('조항버전',c.clauseVersion);set('조항해시',c.clauseHash);set('메모',c.memo||'');
+  sheet.appendRow(rowArr);
+  const rowIndex=sheet.getLastRow();
+  const pdf=_persistContractPdf_(sheet,rowIndex,c);
+  return {ok:true,contractId:c.contractId,rowIndex:rowIndex,total:c.total,deposit:c.deposit,pdfUrl:pdf.url,status:c.status};
+}
+function getQuoteByNumberForContract_(number){
+  const sh=ensureSheets_().quoteSheet;
+  const last=sh.getLastRow();
+  if(last<2) return null;
+  const rows=sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+  const idx=rows.findIndex(r=>String(r[QUOTE_COL['견적번호']]||'').trim().toUpperCase()===String(number||'').trim().toUpperCase());
+  if(idx===-1) return null;
+  return quoteRowToObject_(rows[idx],idx+2);
+}
+
+function listContractsForAgent_(){
+  const sheet=getContractSheet_();
+  const last=sheet.getLastRow();
+  if(last<2) return {ok:true,contracts:[]};
+  const rows=sheet.getRange(2,1,last-1,CONTRACT_HEADERS.length).getValues();
+  return {ok:true,contracts:rows.map((r,i)=>{
+    const c=contractRowToObject_(r,i+2);
+    return {rowIndex:c.rowIndex,contractId:c.contractId,status:c.status,name:c.name,companyName:c.companyName,
+      total:c.total,deposit:c.deposit,quoteNumber:c.quoteNumber,bookingRowIndex:c.bookingRowIndex,
+      createdAt:c.createdAt,sentAt:c.sentAt,signedAt:c.signedAt,signerName:c.signerName,pdfUrl:c.pdfUrl};
+  }).reverse()};
+}
+function sendContractForAgent_(payload){
+  const contractId=String((payload||{}).contractId||'').trim();
+  if(!contractId) throw new Error('contractId가 필요합니다.');
+  const sheet=getContractSheet_();
+  const found=_findContractRow_(sheet,contractId);
+  if(found.rowIndex===-1) throw new Error('계약을 찾을 수 없습니다: '+contractId);
+  const c=contractRowToObject_(found.row,found.rowIndex);
+  if(c.status===CONTRACT_STATUS.SIGNED) throw new Error('이미 서명 완료된 계약입니다.');
+  if(c.status===CONTRACT_STATUS.CANCELLED) throw new Error('취소된 계약입니다.');
+  if(!c.email||c.email.indexOf('@')<0) throw new Error('고객 이메일이 없습니다.');
+  if(!c.pdfFileId) _persistContractPdf_(sheet,found.rowIndex,c);
+  const signUrl=createActionLink_('contract_sign',c.contractId);
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  const pdfFile=c.pdfFileId?DriveApp.getFileById(c.pdfFileId):null;
+  const subject=`[Studio mean] 촬영 계약서 (${c.contractId}) — 검토 및 서명 요청`;
+  const htmlBody=`<div style="font-family:-apple-system,'Noto Sans KR',sans-serif;max-width:600px;">
+<p>안녕하세요, <b>${escapeHtml_(c.companyName||c.name)}</b>님,</p>
+<p>진행 예정인 촬영의 계약서를 보내드립니다. 첨부 PDF로 내용을 검토하신 후, 아래 버튼에서 온라인으로 서명해 주세요.</p>
+<table style="border-collapse:collapse;font-size:13px;margin:12px 0;"><tr><td style="padding:4px 12px 4px 0;color:#64748b;">계약번호</td><td><b>${escapeHtml_(c.contractId)}</b></td></tr>
+<tr><td style="padding:4px 12px 4px 0;color:#64748b;">촬영</td><td>${escapeHtml_(c.scopeText||'')}</td></tr>
+<tr><td style="padding:4px 12px 4px 0;color:#64748b;">총액</td><td>€ ${formatEuroAmount_(c.total)}${c.deposit>0?` (계약금 € ${formatEuroAmount_(c.deposit)})`:''}</td></tr></table>
+<p style="margin:18px 0;"><a href="${signUrl.replace(/&/g,'&amp;')}" style="display:inline-block;padding:13px 26px;background:#2D2A26;color:#fff;border-radius:9px;text-decoration:none;font-weight:700;">✍️ 계약서 확인·서명하기</a></p>
+<p style="font-size:12px;color:#94a3b8;">서명 링크는 14일간 유효합니다. 내용 관련 문의는 이 메일에 회신해 주세요.</p>
+${_getSignatureHtml()}</div>`;
+  const mailOpts={to:c.email,subject:subject,htmlBody:htmlBody};
+  if(pdfFile) mailOpts.attachments=[pdfFile.getAs(MimeType.PDF)];
+  sendTrackedEmail_(mailOpts,{type:'계약서',customerName:c.name,email:c.email,ref:c.contractId,bookingRowIndex:c.bookingRowIndex||''});
+  sheet.getRange(found.rowIndex,CONTRACT_COL['상태']+1).setValue(CONTRACT_STATUS.SENT);
+  sheet.getRange(found.rowIndex,CONTRACT_COL['발송일시']+1).setValue(now);
+  return {ok:true,contractId:c.contractId,to:c.email,signUrl:signUrl,status:CONTRACT_STATUS.SENT};
+}
+function cancelContractForAgent_(payload){
+  const contractId=String((payload||{}).contractId||'').trim();
+  const sheet=getContractSheet_();
+  const found=_findContractRow_(sheet,contractId);
+  if(found.rowIndex===-1) throw new Error('계약을 찾을 수 없습니다: '+contractId);
+  const c=contractRowToObject_(found.row,found.rowIndex);
+  if(c.status===CONTRACT_STATUS.SIGNED) throw new Error('서명 완료된 계약은 취소할 수 없습니다. (양측 합의 후 수동 처리)');
+  sheet.getRange(found.rowIndex,CONTRACT_COL['상태']+1).setValue(CONTRACT_STATUS.CANCELLED);
+  if((payload||{}).reason){
+    const memo=String(found.row[CONTRACT_COL['메모']]||'').trim();
+    sheet.getRange(found.rowIndex,CONTRACT_COL['메모']+1).setValue((memo?memo+' ':'')+'[취소] '+String(payload.reason));
+  }
+  return {ok:true,contractId:c.contractId,status:CONTRACT_STATUS.CANCELLED};
+}
+function listContractPendingForAgent_(){
+  const bSh=getDbSheet();
+  const data=bSh.getDataRange().getValues();
+  const cSheet=getContractSheet_();
+  const cLast=cSheet.getLastRow();
+  const linked={};
+  if(cLast>1){
+    cSheet.getRange(2,1,cLast-1,CONTRACT_HEADERS.length).getValues().forEach(r=>{
+      const bri=parseInt(r[CONTRACT_COL['연결예약행']],10)||0;
+      const st=String(r[CONTRACT_COL['상태']]||'').trim();
+      if(bri&&st!==CONTRACT_STATUS.CANCELLED) linked[bri]=st;
+    });
+  }
+  const out=[];
+  for(let r=1;r<data.length;r++){
+    const row=data[r];
+    if(!row[0]) continue;
+    if(!_bookingNeedsContract_(row)) continue;
+    const bri=r+1;
+    if(linked[bri]===CONTRACT_STATUS.SIGNED) continue;
+    out.push({bookingRowIndex:bri,name:String(row[BOOKING_COL['고객명']]||''),status:String(row[BOOKING_COL['상태']]||''),
+      product:String(row[BOOKING_COL['상품']]||''),date:parseDateSafe_(row[0]).str.slice(0,10),
+      total:parseMoneyValue_(row[BOOKING_COL['총결제액']]),contractStatus:linked[bri]||'없음'});
+  }
+  return {ok:true,pending:out};
+}
+
+/* 서명 페이지 + 제출 (handleActionRoute_ 'contract_sign') */
+function contractSignPage_(contractId,p){
+  const sheet=getContractSheet_();
+  const found=_findContractRow_(sheet,contractId);
+  if(found.rowIndex===-1) return HtmlService.createHtmlOutput('<h2>❌ 계약을 찾을 수 없습니다.</h2>');
+  const c=contractRowToObject_(found.row,found.rowIndex);
+  if(c.status===CONTRACT_STATUS.CANCELLED) return HtmlService.createHtmlOutput('<h2>ℹ️ 취소된 계약입니다. 문의: studio.mean.de@gmail.com</h2>');
+  const alreadySigned=c.status===CONTRACT_STATUS.SIGNED;
+  const body=buildDrehvertragBodyHtml_(c);
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>계약서 서명 — Studio mean</title><style>
+*{box-sizing:border-box}body{font-family:-apple-system,'Noto Sans KR',sans-serif;background:#f8fafc;margin:0;padding:16px;color:#1c1917;}
+.wrap{max-width:760px;margin:0 auto;}
+.contract{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:28px;line-height:1.7;font-size:14px;}
+.contract h1{font-size:20px;text-align:center;margin:0 0 14px}.contract h2{font-size:15px;margin:18px 0 6px}
+.contract table{width:100%;border-collapse:collapse;margin:8px 0}.contract td{border:1px solid #e7e5e4;padding:6px 10px;vertical-align:top;font-size:13px}
+.contract td.k{width:92px;background:#fafaf9;font-weight:700;white-space:nowrap}
+.bank{font-size:12px;color:#57534e}
+.sign-card{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:24px;margin-top:14px;}
+.sign-card h3{margin:0 0 4px;font-size:16px}.sub{color:#64748b;font-size:12.5px;margin-bottom:14px}
+input[type=text]{width:100%;border:1.5px solid #d6d3d1;border-radius:9px;padding:11px 12px;font-size:15px;margin-bottom:12px;font-family:inherit}
+label.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:16px;color:#374151}
+button{width:100%;padding:13px;background:#2D2A26;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}
+button:disabled{background:#9ca3af}
+.done{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:14px;text-align:center;font-weight:700;display:none;margin-top:10px}
+.err{color:#dc2626;font-size:13px;margin-top:8px;display:none}
+.signed-note{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:14px;text-align:center;font-weight:700}
+.foot{text-align:center;color:#a8a29e;font-size:11px;margin:16px 0}
+</style></head><body><div class="wrap">
+<div class="contract">${body}</div>
+<div class="sign-card">
+${alreadySigned
+  ? `<div class="signed-note">✅ 이미 서명이 완료된 계약입니다.<br><span style="font-weight:400;font-size:12.5px;">${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</span></div>`
+  : `<h3>✍️ 전자서명</h3>
+<div class="sub">아래에 성명을 정확히 입력하고 동의 후 서명을 완료해 주세요. 서명 시각과 함께 기록되며, 서명된 계약서 PDF가 이메일로 발송됩니다.</div>
+<input type="text" id="signerName" placeholder="성명 (예: ${escapeHtml_(c.name)})" autocomplete="name">
+<label class="chk"><input type="checkbox" id="agree"> 본인은 위 계약서의 전 조항을 읽고 이해하였으며, 이에 동의하고 전자적으로 서명합니다.</label>
+<button id="signBtn" onclick="doSign()">서명 완료하기</button>
+<div class="err" id="errBox"></div>
+<div class="done" id="doneBox">✅ 서명이 완료되었습니다. 서명된 계약서가 이메일로 발송됩니다.</div>`}
+</div>
+<div class="foot">${escapeHtml_(c.contractId)} · ${escapeHtml_(c.clauseVersion)} · Studio mean, Oberursel</div>
+</div>
+<script>
+function doSign(){
+  var name=document.getElementById('signerName').value.trim();
+  var agree=document.getElementById('agree').checked;
+  var err=document.getElementById('errBox');
+  err.style.display='none';
+  if(!name){err.textContent='성명을 입력해 주세요.';err.style.display='block';return;}
+  if(!agree){err.textContent='동의 체크박스를 선택해 주세요.';err.style.display='block';return;}
+  var btn=document.getElementById('signBtn');
+  btn.disabled=true;btn.textContent='서명 처리 중…';
+  // google.script.run 대신 공개 API fetch — 카카오톡 등 인앱 브라우저의 GAS RPC 실패 회피
+  fetch(${JSON.stringify(ScriptApp.getService().getUrl()+'?api=contract-sign-submit')},{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({requestId:'sig_'+Date.now()+'_'+Math.random().toString(36).slice(2,10),data:{
+      contractId:${JSON.stringify(String(contractId))},exp:${JSON.stringify(String((p&&p.exp)||''))},sig:${JSON.stringify(String((p&&p.sig)||''))},
+      signerName:name,userAgent:navigator.userAgent||''
+    }})
+  }).then(function(r){return r.json();}).then(function(resp){
+    var res=resp&&(resp.data||resp);
+    if(res&&res.ok){
+      document.getElementById('doneBox').style.display='block';
+      btn.style.display='none';
+      document.getElementById('signerName').disabled=true;
+      document.getElementById('agree').disabled=true;
+    }else{
+      btn.disabled=false;btn.textContent='서명 완료하기';
+      err.textContent=(res&&res.message)||(resp&&resp.error&&resp.error.message)||'처리에 실패했습니다. 다시 시도해 주세요.';err.style.display='block';
+    }
+  }).catch(function(){
+    btn.disabled=false;btn.textContent='서명 완료하기';
+    err.textContent='네트워크 오류가 발생했습니다. 다시 시도해 주세요.';err.style.display='block';
+  });
+}
+</script></body></html>`;
+  return HtmlService.createHtmlOutput(html).setTitle('계약서 서명 — Studio mean');
+}
+
+function submitContractSignaturePublic(contractId,exp,sig,signerName,userAgent){
+  try{
+    // 서명 링크의 HMAC를 재검증 — google.script.run 직접 호출 방어
+    if(!contractId||!exp||!sig) return {ok:false,message:'유효하지 않은 요청입니다.'};
+    if(Number(exp)<Math.floor(Date.now()/1000)) return {ok:false,message:'서명 링크가 만료되었습니다. 스튜디오에 재발송을 요청해 주세요.'};
+    if(signAction_('contract_sign',String(contractId),Number(exp))!==String(sig)) return {ok:false,message:'유효하지 않은 서명 링크입니다.'};
+    const name=String(signerName||'').trim();
+    if(!name||name.length<2) return {ok:false,message:'성명을 입력해 주세요.'};
+    const lock=LockService.getScriptLock();
+    if(!lock.tryLock(10000)) return {ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+    try{
+      const sheet=getContractSheet_();
+      const found=_findContractRow_(sheet,contractId);
+      if(found.rowIndex===-1) return {ok:false,message:'계약을 찾을 수 없습니다.'};
+      let c=contractRowToObject_(found.row,found.rowIndex);
+      if(c.status===CONTRACT_STATUS.SIGNED) return {ok:true,alreadySigned:true};
+      if(c.status===CONTRACT_STATUS.CANCELLED) return {ok:false,message:'취소된 계약입니다.'};
+      const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+      sheet.getRange(found.rowIndex,CONTRACT_COL['상태']+1).setValue(CONTRACT_STATUS.SIGNED);
+      sheet.getRange(found.rowIndex,CONTRACT_COL['서명자명']+1).setValue(name);
+      sheet.getRange(found.rowIndex,CONTRACT_COL['서명일시']+1).setValue(now);
+      sheet.getRange(found.rowIndex,CONTRACT_COL['서명UA']+1).setValue(String(userAgent||'').slice(0,180));
+      c=contractRowToObject_(sheet.getRange(found.rowIndex,1,1,sheet.getLastColumn()).getValues()[0],found.rowIndex);
+      const pdf=_persistContractPdf_(sheet,found.rowIndex,c);
+      try{
+        const file=DriveApp.getFileById(pdf.fileId);
+        const attach=[file.getAs(MimeType.PDF)];
+        if(c.email&&c.email.indexOf('@')>-1){
+          sendTrackedEmail_({to:c.email,subject:`[Studio mean] 서명 완료된 계약서 (${c.contractId})`,
+            htmlBody:`<div style="font-family:-apple-system,'Noto Sans KR',sans-serif;max-width:600px;"><p>안녕하세요, <b>${escapeHtml_(c.companyName||c.name)}</b>님,</p><p>계약서 서명이 완료되었습니다. 서명된 계약서 PDF를 첨부해 드립니다. 감사합니다.</p><p style="font-size:12px;color:#94a3b8;">서명: ${escapeHtml_(c.signerName)} · ${escapeHtml_(c.signedAt)}</p>${_getSignatureHtml()}</div>`,
+            attachments:attach},{type:'계약서',customerName:c.name,email:c.email,ref:c.contractId,bookingRowIndex:c.bookingRowIndex||''});
+        }
+        sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[계약서명] ${c.companyName||c.name} — ${c.contractId} 서명 완료`,
+          htmlBody:`<p><b>${escapeHtml_(c.companyName||c.name)}</b> (${escapeHtml_(c.signerName)}) 님이 계약서에 서명했습니다.</p><p>계약: ${escapeHtml_(c.contractId)} · 총액 € ${formatEuroAmount_(c.total)}${c.bookingRowIndex?' · 예약행 '+c.bookingRowIndex:''}</p><p><a href="${pdf.url}">서명된 PDF 열기</a></p>`,
+          attachments:attach},{type:'계약서',customerName:c.name,ref:c.contractId});
+      }catch(mailErr){Logger.log('contract signed mail 실패: '+mailErr.message);}
+      if(c.bookingRowIndex&&c.bookingRowIndex>=2){
+        try{
+          const bSh=getDbSheet();
+          const memo=String(bSh.getRange(c.bookingRowIndex,BOOKING_COL['요청사항']+1).getValue()||'');
+          bSh.getRange(c.bookingRowIndex,BOOKING_COL['요청사항']+1).setValue((memo?memo+'\n':'')+`[${now}] 계약서 서명완료 ${c.contractId} (${name})`);
+        }catch(e){}
+      }
+      return {ok:true};
+    }finally{try{lock.releaseLock();}catch(e){}}
+  }catch(err){
+    Logger.log('submitContractSignaturePublic 오류: '+err.message);
+    return {ok:false,message:'처리 중 오류가 발생했습니다.'};
+  }
 }
