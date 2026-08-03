@@ -1,19 +1,11 @@
 # Update Roadmap
 
-Updated: 2026-07-16 Europe/Berlin
+Updated: 2026-08-03 Europe/Berlin
 
 ## Immediate
 
-1. Booking end-to-end verification
-- Apps Script production deploy is pending version cleanup because the project reached the 200-version limit
-- run Admin booking E2E diagnostics before a real customer-flow test
-- Netlify booking submit
-- Google Sheets row creation
-- Google Calendar event creation
-- Apple Calendar reflection check
-- customer mail delivery
-- admin notification mail
-- admin edit / reschedule / cancel
+1. ~~Booking end-to-end verification~~ → **완료 (2026-08-02, Update 4 릴리스 게이트)**: 라이브 합성 예약 1건으로 Netlify 제출→시트행→캘린더(버퍼 슬롯 차단 실증)→고객·관리자 메일까지 통과, 정리(booking-delete)·슬롯 원복까지 확인. 상세는 `docs/update-4-plan.md`
+- 잔여(오너): Apps Script 200버전 한도 정리 — 배포 자체는 계속 가능한 상태
 
 2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
@@ -24,24 +16,20 @@ Updated: 2026-07-16 Europe/Berlin
 - ~~Sae-Jin Choi €210(카드 7/11)~~ → 사장님 확인(2026-07-16): GIROCARD €230 = 잔금 €210 + **팁 €20** — 잔금결제금액 230으로 확정(@606). 팁 €20은 사장님 지시로 수기 매출 행213 "Trinkgeld (카드결제 팁)"로 별도 등록(작업완료·sumup 증거) — 사업자 본인 수령 팁 과세 매출 처리 선례
 - **미수는 HSAD €892.50 1건뿐 (2026-07-17 사장님 확인: "이것 외 미수 없음")**. STMIN-260013, payMethod "미결제(offen)" — daily-briefing/회계 openAmount 집계에도 유일 미수로 확인됨.
   - ~~사장님 확인 4건~~ → 전부 입금 완료로 종결(2026-07-17): 장진욱(행17 현금)·송영미(행9 카드)·조재연(행4 카드, 잔금 이미 €0)·박지은(행168 계좌이체) — 결제수단이 이미 찍혀 있어 **시스템 미수 집계에 애초 미포함**. SumUp 4~5월/은행 CSV 자동매칭 증거만 없던 것 → 사장님 확인으로 대체, 백필 불요. 장부 수정 없음(이미 결제 처리 상태)
-- 정산(settlement) 리뷰 큐 140건 정리는 별도 트랙
+- 정산(settlement) 리뷰 큐 140건 정리는 별도 트랙 → **소진 (2026-08-03 확인)**: 최근 14일 review 0건, 미수는 2건 €330(정다은·박지은, 둘 다 잔금)뿐. 트랙 종료
 
 ## Next
 
 6. ~~Gutschein V2 customer redemption design~~ → 전항목 배포 완료 (2026-07-14, Done Recently 참조). 실전 코드 적용 1회 확인만 남음
 
-7. Calendar performance follow-up
-- measure current month / next month / third month load gap
-- tune month-summary cache TTL
-- refine background prefetch order
+7. ~~Calendar performance follow-up~~ → **트랙 종료 (2026-07-31)**
+- ~~measure current month / next month / third month load gap~~ → 월 이벤트 캐시(@709)로 4s 검증, 프런트 프리페치 적용
+- ~~tune month-summary cache TTL~~ → getCachedMonthEvents_ 120초 확정
+- ~~refine background prefetch order~~ → 현재 달 우선 + 다음 2달 백그라운드
 - ~~reduce visual confusion while loading later months~~ → 완료 (2026-07-31): 예약가능 날짜 0인 달 명확 안내(3개국어) + 자동선택 휴무일 제외 버그 픽스 + 크림톤 스켈레톤. 트랙 종료
 
-8. Select real-session verification
-- open existing session link
-- restore existing submission
-- submit update flow
-- extra prints / extra retouch totals
-- success screen / invoice number / drive link confirmation
+8. ~~Select real-session verification~~ → **완료 (2026-08-02 게이트)**: 실세션(차수진 KJHYDb8…)에서 링크 열기·복원·서비스컷 렌더 확인, 조회 경로는 읽기 전용
+- ~~open existing session link / restore existing submission / submit update flow / extra prints / success screen~~ → 게이트 통과
 - ~~서비스컷이 v2에 미구현이던 버그~~ → v2 포팅 완료 (2026-07-15, 8f166ab): 무료 보정 슬롯+안내+복원+제출 왕복. **오너 확인 필요**: 어드민에서 serviceCutCount N 설정한 v2 세션 열어 서비스컷 N슬롯 표시 확인
 - 서비스컷 perk 결정 대기: v1의 "서비스컷당 기본 10×15 인화 무료(차액청구)"는 v2 디커플드 모델상 미이식(v2 보너스도 인화 미포함) — 원하면 백엔드 작업으로 추가 가능
 
@@ -67,6 +55,8 @@ Updated: 2026-07-16 Europe/Berlin
 - ~~mobile safe-area and in-app browser polish~~ → select viewport-fit=cover + safe-area insets 적용 완료
 
 12. ~~Ops checklist refresh~~ → docs/ops-checklist.md 작성 완료 (2026-07-15: 배포 절차·주의사항·회귀 체크리스트)
+
+14. 은행 데이터 공백 감지 → **배포 완료 (2026-08-03, @724)**: `docs/bank-data-gap-detection.md` — 7월 지출 0건(은행 CSV 미임포트) 사고에서 출발. 브리핑 21일 공백 경고 + 월마감 blocker 2종(은행거래·지출). **오너 액션: 7월 이후 은행 CSV 임포트 필요**
 
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 

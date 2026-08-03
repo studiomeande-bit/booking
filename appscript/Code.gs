@@ -13108,6 +13108,18 @@ function _buildDailyBriefingData_(){
   let calendarAudit=null;
   try{ calendarAudit=auditBookingCalendarConsistency_(); }
   catch(e){Logger.log('briefing calendarAudit fail: '+e.message);_briefFail_(sectionFailures,'캘린더 정합',e);}
+  /* 은행 데이터 공백 — Deutsche Bank CSV 는 수동 임포트라 잊으면 지출·매입세액이 통째로 빈다.
+     2026-07 실제 사고: 한 달 내내 지출 0건인 채로 아무도 눈치채지 못했다. 마지막 은행 거래일이
+     오래됐으면 매일 아침 경고한다(임대료 등 고정 출금이 매월 있으므로 정상이면 공백이 길지 않다). */
+  let bankGap=null;
+  try{
+    const bankSince=Utilities.formatDate(new Date(Date.now()-120*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    const bankTxs=getSettlementTransactions_(bankSince,today).filter(function(t){return String(t.source||'')==='deutschebank';});
+    let lastDate='';
+    bankTxs.forEach(function(t){const d=String(t.date||'').slice(0,10);if(d>lastDate)lastDate=d;});
+    const days=lastDate?Math.floor((new Date(today+'T00:00:00')-new Date(lastDate+'T00:00:00'))/86400000):null;
+    if(!lastDate||days>=21) bankGap={lastDate:lastDate,days:days,count:bankTxs.length};
+  }catch(e){Logger.log('briefing bankGap fail: '+e.message);_briefFail_(sectionFailures,'은행 데이터',e);}
   /* 계약서 대기 — B2B·본식·€500+ 인데 서명완료 Drehvertrag 가 없는 예약 */
   let contractPending={count:0,items:[]};
   try{
@@ -13115,7 +13127,7 @@ function _buildDailyBriefingData_(){
     contractPending.count=cp.length;
     contractPending.items=cp.slice(0,6);
   }catch(e){Logger.log('briefing contract fail: '+e.message);_briefFail_(sectionFailures,'계약서',e);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,sectionFailures:sectionFailures};
+  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -13159,6 +13171,11 @@ function buildDailyBriefingEmailHtml_(b){
   });
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
+  if(b.bankGap){
+    actions.push(line(`🏦 <b style="color:#b91c1c;">은행 거래가 ${b.bankGap.lastDate?`${b.bankGap.days}일째 없습니다`:'최근 4개월간 없습니다'}</b>`
+      +`${b.bankGap.lastDate?` (마지막 ${esc(b.bankGap.lastDate)})`:''} — Deutsche Bank CSV를 가져와 주세요. `
+      +`<b>지출·매입세액이 빠진 채로 마감하면 세금을 과납합니다.</b>`));
+  }
   if(b.contractPending&&b.contractPending.count>0){
     (b.contractPending.items||[]).forEach(function(c){
       actions.push(line(`📝 계약서 필요 — <b>${esc(c.name)}</b>님 ${esc(c.product)} (${money(c.total)}, ${esc(c.date)} 촬영)${c.contractStatus&&c.contractStatus!=='없음'?' · '+esc(c.contractStatus)+' 상태':''}`));
@@ -16025,6 +16042,36 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     'settlement',
     {},
     '대조 현황'
+  );
+  /* 은행 데이터 커버리지 — 임대료 등 매월 고정 은행 출금이 반드시 있으므로, 기간 내 은행 거래가
+     0이면 Deutsche Bank CSV 미임포트다. 2026-07 실제 사고: 7월 CSV를 넣지 않아 지출 0건·매입세액
+     전액 누락 상태로 한 달이 지나갔다(브리핑에도 안 잡힘). 지출 0건은 blocker 로 세운다. */
+  const bankTxCount=settlementTxs.filter(function(tx){return String(tx.source||'')==='deutschebank';}).length;
+  addCheck(
+    'bank_coverage',
+    '은행 거래 반영',
+    bankTxCount?'ok':'fail',
+    bankTxCount,
+    (settlementSummary.bankIn||0)+(settlementSummary.bankOut||0),
+    bankTxCount
+      ? `은행 거래 ${bankTxCount}건 (입금 €${(settlementSummary.bankIn||0).toFixed(2)} / 출금 €${(settlementSummary.bankOut||0).toFixed(2)})이 반영됐습니다.`
+      : '이 기간의 은행 거래가 없습니다 — Deutsche Bank CSV를 아직 가져오지 않았을 가능성이 큽니다. 지출·매입세액이 누락된 상태로 마감하면 세금을 과납합니다.',
+    'settlement',
+    {},
+    '대조 현황'
+  );
+  addCheck(
+    'expense_recorded',
+    '지출 기록',
+    expenseRows.length?'ok':'fail',
+    expenseRows.length,
+    expenseRows.reduce(function(s,e){return s+Math.abs(Number(e.gross||0)||0);},0),
+    expenseRows.length
+      ? `지출 ${expenseRows.length}건이 기록됐습니다.`
+      : '이 기간에 기록된 지출이 한 건도 없습니다. 임대료·소모품 등 정기 지출이 빠졌는지 확인해 주세요 (매입세액 공제 누락).',
+    'accounting',
+    {flow:'expense'},
+    '지출 보기'
   );
   addCheck(
     'settlement_review',
