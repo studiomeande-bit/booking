@@ -291,6 +291,52 @@ h1 {
   font-size: 13px;
   line-height: 1.7;
 }
+/* 한국 일정 휴무 공지 — 예약 첫 화면 최상단. 경고가 아니라 안내 톤(웜 아이보리 + copper 액센트). */
+.closure-banner {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 18px;
+  padding: 18px 22px;
+  background: #f8f3eb;
+  border: 1px solid rgba(197, 141, 102, .32);
+  border-radius: 2px;
+  width: 100%;
+}
+.closure-banner-mark {
+  flex: 0 0 3px;
+  border-radius: 2px;
+  background: #c58d66;
+}
+.closure-banner-copy { min-width: 0; }
+.closure-banner-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -.01em;
+  color: #201c1f;
+}
+.closure-banner-body {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #201c1f;
+  max-width: 680px;
+}
+.closure-banner-meta {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: #6a5a4c;
+  max-width: 680px;
+}
+@media (max-width: 640px) {
+  .closure-banner { padding: 16px; gap: 12px; border-radius: 0; }
+  .closure-banner-title { font-size: 14px; }
+  .closure-banner-body { font-size: 13.5px; }
+  .closure-banner-meta { font-size: 12.5px; }
+}
+
 .notice-panel {
   margin-top: 18px;
   padding: 18px 22px;
@@ -479,6 +525,7 @@ h1 {
       "top lang"
       "title lang"
       "lead lang"
+      "closure closure"
       "consult consult"
       "banner banner"
       "notice notice"
@@ -504,6 +551,7 @@ h1 {
     width: 100%;
   }
   .banner { grid-area: banner; justify-self: start; }
+  .closure-banner { grid-area: closure; }
   .notice-panel { grid-area: notice; }
   .promo-highlight { grid-area: promo; }
 }
