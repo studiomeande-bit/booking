@@ -37,12 +37,56 @@ CSV 임포트는 수동이므로 잊는 것을 전제하고, 시스템이 스스
 - 7월 월마감: `ready:false`, blockers 2 (은행 거래 반영 FAIL / 지출 기록 FAIL)
 - **6월 회귀**: 두 체크 모두 OK (은행 38건 €3,042.27/€3,399.47, 지출 24건) — 거짓 양성 없음
 
-## ⚠️ 오너 액션 (시스템이 못 하는 부분)
+## 해소 경과 (2026-08-05)
 
-**Deutsche Bank에서 7월 이후 CSV(Kontoumsätze)를 내려받아 임포트해야 합니다.** 은행 로그인은 자동화 대상이 아닙니다.
-1. 온라인뱅킹 → Umsätze → 기간 2026-07-01~ → CSV 내보내기
-2. `스튜디오자료/2026년 kontoauszug/01_은행_Bank/2026/`에 저장
-3. 어드민 회계 탭에서 CSV 가져오기 (또는 `bank-expense-sync`)
-4. 임포트 후 7월 월마감 재실행 — blocker 2건이 풀리는지 확인
+사장님이 6~7월 CSV 2종을 제공 → 세션에서 임포트 가능하도록 **`payment-csv-import` 에이전트 액션 신설**(Phase 2 선행분, @726 배포).
 
-임포트 전까지 브리핑에 매일 경고가 뜹니다(의도된 동작).
+- `importPaymentCsvAdmin` 래핑 + `fileBase64`(CLI `--upload`) 디코드 지원. 독일 은행 CSV는 UTF-8(BOM) 기본이라 charset 기본값 UTF-8, BOM은 `parseCsvText_`가 제거.
+- **은행 CSV 임포트 완료**: `Kontoumsaetze_..._20260803_215632.csv` (6/1~7/31) → 파싱 80행 / 임포트 79건, 생성 47·갱신 32, 자동매칭 40건(지출매칭 25건 포함), bankIn €6,516.72 / bankOut €6,234.65.
+- **SumUp CSV 임포트 완료** (2026-08-05 재시도): `Verkaufsbericht-2026-06-01_2026-07-31.csv` → 33행 전부 임포트, 자동매칭 30건·검토 3건. `created:0/updated:33` = 최초 시도가 `ECONNRESET`로 끊겼어도 **서버는 이미 처리**했고 원본해시 dedup 덕에 중복 없이 갱신만 됨.
+
+### CLI 함정 (재발 주의)
+
+`erp-agent.mjs`는 인자를 **순서대로** 처리하는데 `--json`이 payload를 **통째로 교체**한다.
+`--upload A --json B` 순서면 `--json`이 `fileBase64`를 날려 "csvText 또는 fileBase64가 필요합니다" 오류가 난다.
+→ **`--file <payload.json>`으로 base64까지 한 파일에 담아 넘기는 방식이 안전** (커맨드라인 길이 제한도 회피). 은행 CSV는 이 방식으로 성공.
+
+## 결과 (2026-08-05)
+
+7월 지출 공백 **완전 해소** — 월마감 blocker 2건(`bank_coverage`·`expense_recorded`) 모두 ✅.
+
+| 기간 | 임포트 전 | 임포트 후 |
+|---|---|---|
+| 2026-07 수입 | 30건 €3,900.00 | 32건 €5,566.00 |
+| 2026-07 지출 | **0건 €0.00** | **20건 €2,212.18** |
+
+### ⚠️ 매입세액은 아직 0 — 영수증 정리 필요
+
+`vatPayable = 매출세액 − 매입세액` 계산 자체는 정상이나, **은행 CSV에는 세액 정보가 없어** 자동 생성된 지출 20건의 `tax` 가 전부 0이다. 그래서 7월 부가세가 €888.70(매출세액 전액)으로 잡힌다.
+
+영수증을 증빙으로 붙여 세액을 확정해야 공제가 반영된다. 다만 지출 20건에는 **매입세액이 없는 항목이 섞여 있어** 단순 19% 환산(€353.21)은 과대추정이다:
+- `Q2` €586.60 = Finanzamt 부가세 납부 (비용도 매입세액도 아님)
+- €200.00 = 대표자 이체로 보이는 건
+- 임대료 €1,041.25 = 상업임대 옵션과세 여부 확인 필요
+
+→ 실제 공제 대상은 IKEA·Amazon·Deutsche Post·VST 등 소액 비용 위주. **지출 분류 점검이 선행돼야 한다**(아래 오너 확인 사항 참조).
+
+## ⚠️ 남은 오너 확인 사항
+
+
+1. ~~SumUp CSV 재임포트~~ → **완료 (2026-08-05)**. 참고 명령:
+   ```bash
+   cd ~/Desktop/Studio_mean/스튜디오자료/website/reservation
+   python3 - <<'EOF'
+   import json,base64
+   raw=open('/Users/taewoongmin/Downloads/Verkaufsbericht-2026-06-01_2026-07-31.csv','rb').read()
+   json.dump({'source':'sumup','filename':'Verkaufsbericht-2026-06-01_2026-07-31.csv',
+              'startDate':'2026-06-01','endDate':'2026-07-31',
+              'fileBase64':base64.b64encode(raw).decode()}, open('/tmp/sumup_import.json','w'))
+   EOF
+   node scripts/erp-agent.mjs payment-csv-import --file /tmp/sumup_import.json
+   ```
+   임포트는 dedup(원본해시)이 있어 재실행해도 중복 행이 생기지 않는다.
+2. ~~7월 월마감 재검증~~ → **완료**: blocker 2건 해소. 남은 blocker는 `settlement_review` 24건(신규 임포트분 자동매칭 잔여 — 정상 후속 작업).
+3. ~~git 커밋~~ → **완료 (2026-08-05)**.
+4. **지출 분류 점검** — 위 "매입세액" 항목대로 세금납부·대표자이체가 비용으로 잡혀 있는지 확인하고, 영수증 증빙을 붙여 매입세액을 확정할 것. 그래야 7월 부가세가 실제 금액으로 내려간다.

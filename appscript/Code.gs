@@ -1209,6 +1209,17 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='expense-mail-collect') return jsonOk_({ok:true,saved:collectInvoiceEmailsDaily_()});
         // 회계 — 동기화
         if(action==='sumup-sync') return jsonOk_(syncRecentSumupTransactionsAdmin(token,Number(payload.lookbackDays)||3));
+        if(action==='payment-csv-import'){
+          /* 은행/SumUp CSV 수기 임포트 — CLI 는 --upload 로 base64 를 보낸다(커맨드라인 길이 제한 회피).
+             csvText 직접 전달도 허용. 독일 은행 CSV 는 UTF-8(BOM) 이 기본이라 charset 기본값도 UTF-8. */
+          let csvText=String(payload.csvText||payload.csv||'');
+          if(!csvText && payload.fileBase64){
+            const blob=Utilities.newBlob(Utilities.base64Decode(String(payload.fileBase64)));
+            csvText=blob.getDataAsString(String(payload.charset||'UTF-8')).replace(/^﻿/,'');
+          }
+          if(!csvText.trim()) throw new Error('csvText 또는 fileBase64(--upload)가 필요합니다.');
+          return jsonOk_(importPaymentCsvAdmin(token,Object.assign({},payload,{csvText:csvText})));
+        }
         // 캘린더 프리워밍 정합 검증 — 워밍 자동화 전에 시드==라이브(mismatch 0) 확인용
         if(action==='calendar-warm-verify') return jsonOk_(verifyPublicSlotWarmAdmin(token,{months:Number(payload.months)||2}));
         // 정산 재매칭 — 기간 내 카드/은행 거래를 장부와 다시 대조(월마감 대사 정리용)
