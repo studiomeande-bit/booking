@@ -7665,17 +7665,21 @@ function getPublicHolidayDatesForYear_(year){
   }).sort();
 }
 function isWeekendOrHolidayBlocked_(dateStr,itemGroup){
-  if(itemGroup==='wed'||itemGroup==='biz') return false;
   const settings=getSettingsMap_();
   const holidayOpenDates=parseDateListSetting_(settings.public_holiday_open_dates||'');
   const isOpenOverride=holidayOpenDates.indexOf(dateStr)>-1;
+  /* 사장님이 지정한 휴무일(custom_holidays)은 **전 상품** 차단 — 부재중(예: 한국 일정)이면
+     웨딩·기업 촬영도 불가능하다. 아래 주말/공휴일 정기휴무의 wed/biz 예외와 구분해야 한다:
+     그건 "본식은 주말에 한다"는 정책이지 부재 사유가 아니다. */
+  if(!isOpenOverride && parseDateListSetting_(settings.custom_holidays||'').indexOf(dateStr)>-1) return true;
+  if(itemGroup==='wed'||itemGroup==='biz') return false;
   const year=new Date(`${dateStr}T00:00:00`).getFullYear();
   const isPublicHoliday=getPublicHolidayDatesForYear_(year).indexOf(dateStr)>-1;
   if(isOpenOverride && isPublicHoliday) return false;
   const day=new Date(`${dateStr}T00:00:00`).getDay();
   if(day===0||day===1) return true;
   if(isPublicHoliday) return true;
-  return !isOpenOverride && parseDateListSetting_(settings.custom_holidays||'').indexOf(dateStr)>-1;
+  return false;   // custom_holidays 는 위에서 이미 판정됨 (전 상품 공통)
 }
 
 function parseTimeBlock_(raw){
