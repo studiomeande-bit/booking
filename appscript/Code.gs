@@ -1220,6 +1220,21 @@ function handlePublicApiRequest_(route,method,e){
           });
           return jsonOk_({ok:true,count:eOut.length,expenses:eOut});
         }
+        /* ── Phase 2: 회계 운영 완결 — 아침 "결제 검토 N건"을 세션에서 끝내기 위한 래퍼들 ── */
+        if(action==='settlement-match-board'){
+          return jsonOk_(getSettlementMatchBoardAdmin(token,String(payload.startDate||''),String(payload.endDate||''),
+            String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
+        }
+        if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-refresh') return jsonOk_(refreshSettlementMatchesAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
+        if(action==='cash-delete') return jsonOk_(deleteCashLedgerManualEntryAdmin(token,payload.rowIndex));
+        if(action==='deposit-bulk-confirm'){
+          /* ⚠️ 미입금→입금 전환 건마다 고객에게 입금확인 메일이 나간다(억제 불가).
+             오발사 방지: confirm:'CONFIRM' 을 명시해야 실행한다. */
+          if(String(payload.confirm||'')!=='CONFIRM') throw new Error("confirm:'CONFIRM' 이 필요합니다 — 대상 건마다 고객 입금확인 메일이 발송됩니다.");
+          return jsonOk_(bulkConfirmAllPendingDepositsAdmin(token));
+        }
+        if(action==='invoice-preview') return jsonOk_(previewInvoicePricingAdmin(token,payload));
         if(action==='settlement-delete'){
           /* 결제대조 행 영구 삭제 — 중복/오파싱 잔재 정리용. expect 3종 + confirm 이중 가드.
              ⚠️ 은행은 같은 날 같은 금액의 **진짜 별개 거래**가 존재하므로, 호출 전에 반드시
