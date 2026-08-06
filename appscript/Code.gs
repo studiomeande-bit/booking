@@ -16664,6 +16664,16 @@ function sha256Hex32_(base){
 /* 거래 정체성 = 시간이 지나도 변하지 않는 값만. payoutDate/fee/net/matchStatus 는 **사후에 채워지는
    상태값**이라 여기 들어오면 안 된다 — 같은 거래의 키가 동기화 회차마다 달라져 dedup 이 뚫린다
    (2026-07 실사고: 결제 당일 1행 → payout 확정 후 또 1행 → 수수료 지출까지 이중계상). */
+/* 은행 tx 는 Verwendungszweck 이 비면 `description` 을 **파일명으로 폴백**한다(표시용).
+   그 값이 신원키에 들어가면 같은 거래를 다른 파일명으로 재임포트할 때 해시가 달라져 중복 행이 생긴다.
+   ⚠️ 2026-08-05 실측: 용도가 빈 대표자 이체 3건이 6/30자·8/3자 CSV 로 각각 들어와 6월 지출 €800 과다.
+   → 신원 계산에서만 파일명형 설명을 무력화한다(시트 표시값은 그대로 둔다). */
+function settlementDescriptionForKey_(desc){
+  const d=String(desc||'').trim();
+  if(!d) return '';
+  return (/\.csv$/i.test(d) || /^kontoumsaetze/i.test(d) || /^kontoums(ä|ae)tze/i.test(d)) ? '' : d;
+}
+
 function settlementIdentityKey_(source,tx){
   return [
     String(source||''),
@@ -16672,7 +16682,7 @@ function settlementIdentityKey_(source,tx){
     String(tx&&tx.paymentRef||''),
     String(tx&&tx.bankRef||''),
     String(tx&&tx.counterparty||''),
-    String(tx&&tx.description||'')
+    settlementDescriptionForKey_(tx&&tx.description)
   ].join('|');
 }
 
@@ -16698,9 +16708,10 @@ function settlementRefKey_(source,ref){
 }
 
 function getSettlementIndex_(sh){
-  const out={byHash:{},byRef:{}};
+  const out={byHash:{},byRef:{},byIdentity:{}};
   if(sh.getLastRow()<2) return out;
   const rows=sh.getRange(2,1,sh.getLastRow()-1,SETTLEMENT_HEADERS.length).getValues();
+  const idSeen={};
   rows.forEach(function(row,idx){
     const rowIndex=idx+2;
     const source=String(row[SETTLEMENT_COL['소스']]||'').trim();
@@ -16710,6 +16721,21 @@ function getSettlementIndex_(sh){
     const refKey=settlementRefKey_(source,row[SETTLEMENT_COL['결제참조']]);
     // 중복이 이미 있으면 **가장 오래된 행**을 정본으로 잡는다(정리 액션이 남기는 행과 같은 기준)
     if(refKey && !out.byRef[refKey]) out.byRef[refKey]=rowIndex;
+    /* 신원키 인덱스 — 저장된 해시가 옛 산식(파일명 포함)이어도 행을 찾게 하는 폴백.
+       행 값에서 신원키를 재구성하고, 같은 키가 여러 행이면 시트 순서대로 seq 를 매겨
+       tx 쪽 seq(같은 배치 내 반복 카운터)와 1:1로 대응시킨다 — 같은 날 같은 금액의
+       **진짜 별개 거래**를 한 행으로 뭉개지 않기 위함. */
+    const idKey=settlementIdentityKey_(source,{
+      date:parseDateSafe_(row[SETTLEMENT_COL['거래일']]).str.slice(0,10),
+      gross:parseMoneyValue_(row[SETTLEMENT_COL['총액(Brutto)']]),
+      paymentRef:row[SETTLEMENT_COL['결제참조']],
+      bankRef:row[SETTLEMENT_COL['은행참조']],
+      counterparty:row[SETTLEMENT_COL['상대방']],
+      description:row[SETTLEMENT_COL['설명']]
+    });
+    const seq=(idSeen[idKey]=(idSeen[idKey]||0)+1)-1;
+    const slot=idKey+'|'+seq;
+    if(!out.byIdentity[slot]) out.byIdentity[slot]=rowIndex;
   });
   return out;
 }
@@ -16722,12 +16748,20 @@ function findSettlementRow_(index,tx){
   if(index.byHash[tx.source+'|'+tx.hash]) return {rowIndex:index.byHash[tx.source+'|'+tx.hash],refKey:refKey};
   const legacy=tx.source+'|'+buildSettlementHashLegacy_(tx.source,tx);
   if(index.byHash[legacy]) return {rowIndex:index.byHash[legacy],refKey:refKey};
+  // 신원키 폴백 — 저장 해시가 옛 산식(파일명 포함)이라 위에서 못 찾은 기존 행을 잡는다
+  const slot=settlementIdentitySlot_(tx);
+  if(index.byIdentity[slot]) return {rowIndex:index.byIdentity[slot],refKey:refKey};
   return {rowIndex:0,refKey:refKey};
+}
+
+function settlementIdentitySlot_(tx){
+  return settlementIdentityKey_(tx&&tx.source,tx)+'|'+String((tx&&tx.seq)||0);
 }
 
 function registerSettlementRow_(index,tx,refKey,rowIndex){
   index.byHash[tx.source+'|'+tx.hash]=rowIndex;
   if(refKey) index.byRef[refKey]=rowIndex;
+  index.byIdentity[settlementIdentitySlot_(tx)]=rowIndex;
 }
 
 /* 같은 임포트 배치 안의 반복 카운터. 완전히 동일한 거래가 파일에 2줄 있으면(정상: 같은 금액 2건)
