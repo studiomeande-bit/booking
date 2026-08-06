@@ -1200,6 +1200,44 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='cash-list') return jsonOk_(getCashLedgerAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||{}));
         // 회계 — 기록
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='expense-list'){
+          // 지출장부 조회 — rowIndex 포함(삭제·정정 대상 특정용)
+          const eSh=ensureSheets_().expenseSheet;
+          const eLast=eSh.getLastRow();
+          const eRows=eLast>1?eSh.getRange(2,1,eLast-1,CONFIG.EXPENSE_HEADERS.length).getValues():[];
+          const eFrom=String(payload.startDate||'').slice(0,10), eTo=String(payload.endDate||'').slice(0,10);
+          const eKw=String(payload.keyword||'').toLowerCase().trim();
+          const eOut=[];
+          eRows.forEach(function(r,i){
+            const d=parseDateSafe_(r[0]).str.slice(0,10);
+            if(eFrom&&d<eFrom) return;
+            if(eTo&&d>eTo) return;
+            const blob=(String(r[1])+' '+String(r[3])+' '+String(r[8])+' '+String(r[11])).toLowerCase();
+            if(eKw&&blob.indexOf(eKw)===-1) return;
+            eOut.push({rowIndex:i+2,date:d,vendor:String(r[1]||''),category:String(r[2]||''),description:String(r[3]||'').slice(0,120),
+              gross:parseMoneyValue_(r[4]),tax:parseMoneyValue_(r[6]),payMethod:String(r[7]||''),memo:String(r[8]||'').slice(0,120),
+              status:String(r[10]||''),accountingClass:String(r[11]||'')});
+          });
+          return jsonOk_({ok:true,count:eOut.length,expenses:eOut});
+        }
+        if(action==='expense-delete'){
+          // 지출 행 영구 삭제 — 잘못 계상된 행 정정용. expect 필드 + confirm:'DELETE' 이중 가드(행 밀림·오삭제 방지)
+          const delIdx=parseInt(payload.rowIndex,10);
+          if(!delIdx||delIdx<2) throw new Error('rowIndex가 필요합니다 (expense-list의 rowIndex).');
+          if(String(payload.confirm||'')!=='DELETE') throw new Error("confirm:'DELETE' 가 필요합니다.");
+          const delSh=ensureSheets_().expenseSheet;
+          if(delIdx>delSh.getLastRow()) throw new Error('지출 행을 찾을 수 없습니다: '+delIdx);
+          const delRow=delSh.getRange(delIdx,1,1,CONFIG.EXPENSE_HEADERS.length).getValues()[0];
+          const curVendor=String(delRow[1]||'').trim();
+          const curGross=parseMoneyValue_(delRow[4]);
+          if(payload.expectVendor!=null&&curVendor!==String(payload.expectVendor).trim())
+            throw new Error('expectVendor 불일치: 행 '+delIdx+' = '+curVendor);
+          if(payload.expectGross!=null&&Math.abs(curGross-parseMoneyValue_(payload.expectGross))>0.01)
+            throw new Error('expectGross 불일치: 행 '+delIdx+' = '+curGross);
+          delSh.deleteRow(delIdx);
+          return jsonOk_({ok:true,deletedRowIndex:delIdx,vendor:curVendor,gross:curGross,
+            date:parseDateSafe_(delRow[0]).str.slice(0,10),description:String(delRow[3]||'').slice(0,120)});
+        }
         if(action==='cash-add') return jsonOk_(saveCashLedgerManualEntryAdmin(token,payload.data||{}));
         // 회계 — 증빙 인제스트
         if(action==='expense-evidence-upload') return jsonOk_(uploadExpenseEvidenceForAgent_(token,payload));
