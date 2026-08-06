@@ -1480,7 +1480,7 @@ function handlePublicApiRequest_(route,method,e){
           const bdIdx=parseInt(payload.rowIndex,10);
           if(!bdIdx||bdIdx<2||bdIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
           assertBookingRowName_(bdIdx,payload.expectName);
-          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount));
+          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount,{paidDate:payload.paidDate}));
         }
         if(action==='booking-cancel'){
           // ⚠️외부발송: 취소 안내 메일 + 해당 날짜 대기자 알림 메일 자동. 캘린더 삭제·환불 이벤트 기록, issueInvoice 참이면 취소/환불 인보이스(연번 소모).
@@ -13647,8 +13647,9 @@ function confirmBookingBalanceAdmin(token,rIdx,payload){
   return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod};
 }
 
-function confirmBookingDepositAdmin(token,rIdx,amount){
+function confirmBookingDepositAdmin(token,rIdx,amount,options){
   assertAdmin_(token);
+  const opts=options||{};
   const sh=getDbSheet();
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const deposit=getEffectiveBookingDeposit_(row);
@@ -13658,10 +13659,21 @@ function confirmBookingDepositAdmin(token,rIdx,amount){
   const paidAmount=parseMoneyValue_(amount)||deposit;
   const currentDepositMethod=String(row[BOOKING_COL['계약금수단']]||'').trim();
   const now=new Date();
-  const paidAt=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  /* 입금일은 **실제 입금일**을 쓸 수 있어야 한다 — 은행 CSV 를 나중에 대조하면 확인 시점과
+     실제 입금일이 며칠 어긋나고, 분기 귀속이 흔들린다(2026-08-06 실측: 7/28·7/30 입금을
+     8/6 에 확인해 그날짜로 기록됨). paidDate 미지정이면 기존대로 오늘. */
+  const paidDateRaw=String(opts.paidDate||'').slice(0,10);
+  const paidAt=/^\d{4}-\d{2}-\d{2}$/.test(paidDateRaw)
+    ? paidDateRaw
+    : Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
   sh.getRange(rIdx,BOOKING_COL['계약금입금여부']+1).setValue('Y');
   sh.getRange(rIdx,BOOKING_COL['계약금입금일']+1).setValue(paidAt);
   sh.getRange(rIdx,BOOKING_COL['계약금입금금액']+1).setValue(paidAmount);
+  /* 표시용 계약금 셀이 `입금전(50€)` 문자열로 남아 있으면 입금 완료인데도 화면상 미입금으로 보인다
+     (플래그와 별개 필드 — 2026-08-06 실측 혼동). 입금 확인 시 실제 금액으로 정리한다. */
+  if(BOOKING_COL['계약금']!=null && /입금전/.test(String(row[BOOKING_COL['계약금']]||''))){
+    sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(paidAmount);
+  }
   if(BOOKING_COL['계약금수단']!=null && currentDepositMethod===DEPOSIT_ONSITE_EXCEPTION_MARKER){
     sh.getRange(rIdx,BOOKING_COL['계약금수단']+1).setValue('현장결제');
   }
@@ -16217,20 +16229,41 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     {flow:'expense'},
     '지출 보기'
   );
+  /* 결제대조 검토 — review 를 전부 blocker 로 세우면 **회계상 무해한 대조 미연결**까지 마감을 막는다.
+     2026-08-06 실측(7월 review 12건 전수 확인): 6건은 대표자 사적 인출(매칭할 예약이 애초에 없음),
+     4건은 이미 잔금 결제 완료된 카드결제(돈은 받았고 장부에도 있음 — 대조 표시만 미연결),
+     2건만 실제 미반영이었다. 그래서 분류해서 판정한다:
+       · 사적 인출 출금 → 카운트에서 제외(액션 대상 아님)
+       · 나머지가 있어도 **미수가 0이면 warn**(돈은 다 들어왔으니 마감 가능)
+       · 미수가 남아 있으면 fail — 미매칭 입금이 그 미수일 수 있어 진짜 돈 문제다 */
+  const reviewOwnerTransfers=settlementReviews.filter(function(it){
+    if(Number(it.gross||0)>=0) return false;
+    try{ return !!classifyBankOutExpense_({counterparty:it.counterparty,description:it.description}).exclude; }
+    catch(e){ return false; }
+  });
+  const reviewActionable=settlementReviews.filter(function(it){return reviewOwnerTransfers.indexOf(it)===-1;});
+  const hasOpenReceivable=openRows.length>0;
+  const reviewStatus=!reviewActionable.length ? 'ok' : (hasOpenReceivable ? 'fail' : 'warn');
+  const reviewDetail=!reviewActionable.length
+    ? (reviewOwnerTransfers.length
+        ? `검토 필요 거래가 없습니다. (대표자 사적 인출 ${reviewOwnerTransfers.length}건은 매칭 대상이 아니라 제외)`
+        : '검토 필요 거래가 없습니다.')
+    : (hasOpenReceivable
+        ? `미매칭 거래 ${reviewActionable.length}건 + 미수 ${openRows.length}건 — 입금이 그 미수일 수 있어 대조가 필요합니다.`
+        : `미매칭 거래 ${reviewActionable.length}건이 있으나 **미수는 0건**입니다. 돈은 모두 수납됐고 대조 표시만 미연결이라 마감을 막지 않습니다.`);
   addCheck(
     'settlement_review',
     '결제대조 검토',
-    settlementSummary.review?'fail':'ok',
-    settlementReviews,
-    settlementReviews.reduce(function(sum,item){return sum+Math.abs(Number(item.gross||0)||0);},0),
-    settlementSummary.review
-      ? `자동매칭이 끝나지 않은 거래 ${settlementSummary.review}건이 있습니다.`
-      : '검토 필요 거래가 없습니다.',
+    reviewStatus,
+    reviewActionable,
+    reviewActionable.reduce(function(sum,item){return sum+Math.abs(Number(item.gross||0)||0);},0),
+    reviewDetail,
     'settlement',
     {},
     '검토 보기'
   );
-  checks[checks.length-1].count=settlementSummary.review||settlementReviews.length;
+  checks[checks.length-1].count=reviewActionable.length;
+  checks[checks.length-1].ownerTransferCount=reviewOwnerTransfers.length;
   addCheck(
     'payment_mismatch',
     '결제 불일치',
