@@ -72,7 +72,11 @@ confirm 없이 호출 시 차단(메일 대량발송 방지) / `cash-delete`·`s
 `gutschein-list/get/create/update/cancel/apply/apply-preview/send(⚠️)/release-hold`
 ← listGutscheinsAdmin, getGutscheinAdmin, createGutscheinAdmin, updateGutscheinAdmin, cancelGutscheinAdmin, applyGutscheinToBookingAdmin, previewGutscheinApplyAdmin, sendGutscheinEmailAdmin, releaseGutscheinHoldAdmin. (deleteGutscheinAdmin은 미노출 유지)
 
-### Phase 4 — 고객 이력·커뮤니케이션 (~반나절)
+### Phase 4 — 고객 이력·커뮤니케이션 ✅ 완료 2026-08-06 (@735, 10종)
+
+라이브 프로브: `automation-health` 17종 전부 성공 / `contact-history` 실고객(노유경) 조회 성공
+— **email+phone 둘 다 필요**(개인정보 보호 설계, 하나만으론 `{found:false}`) /
+`message-log` 응답은 `rows` 키 / `portfolio-lead-list` 1건 / `booking-thread-list` 0건(실제 없음).
 | 신규 액션 | 래핑 함수 | 비고 |
 |---|---|---|
 | `message-log` | getMessageLogAdmin | "그 메일 나갔나?" 발송 이력 검증 |
@@ -81,7 +85,7 @@ confirm 없이 호출 시 차단(메일 대량발송 방지) / `cash-delete`·`s
 | `consult-appointment-set/cancel/note` | scheduleConsultationAppointmentAdmin 등 | 상담 통화 일정 |
 | `portfolio-lead-list/update` | listPortfolioLeadsAdmin/updatePortfolioLeadStatusAdmin | |
 
-### Phase 5 — 모니터링 (~2시간)
+### Phase 5 — 모니터링 ✅ 완료 2026-08-06 (@735, 3종)
 `automation-health`(getAutomationHealthAdmin) · `ops-checklist`(getOperationsChecklistAdmin) · `ops-log`(getOperationsLogAdmin) → 브리핑에서 "자동화 죽었나"를 세션이 직접 진단.
 
 ## 4. 페이즈별 공통 완료 조건

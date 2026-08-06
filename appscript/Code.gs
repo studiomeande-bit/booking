@@ -1220,6 +1220,24 @@ function handlePublicApiRequest_(route,method,e){
           });
           return jsonOk_({ok:true,count:eOut.length,expenses:eOut});
         }
+        /* ── Phase 5: 모니터링 — "자동화 죽었나"를 세션이 직접 진단 ── */
+        if(action==='automation-health') return jsonOk_(getAutomationHealthAdmin(token,payload||{}));
+        if(action==='ops-checklist') return jsonOk_(getOperationsChecklistAdmin(token,payload||{}));
+        if(action==='ops-log') return jsonOk_(getOperationsLogAdmin(token,payload.limit||50));
+        /* ── Phase 4: 고객 이력·커뮤니케이션 — "그 메일 나갔나?"를 세션에서 확인 ── */
+        if(action==='message-log') return jsonOk_(getMessageLogAdmin(token,payload||{}));
+        if(action==='contact-history') return jsonOk_(lookupContactHistoryAdmin(token,payload||{}));
+        if(action==='booking-thread-list') return jsonOk_(listBookingThreadsAdmin(token));
+        if(action==='booking-thread-get') return jsonOk_(getBookingThreadAdmin(token,payload.bookingRowIndex));
+        if(action==='booking-thread-reply'){
+          // ⚠️외부발송: 고객에게 답장 메일(포털 링크 포함)이 나간다
+          return jsonOk_(replyBookingThreadAdmin(token,payload.bookingRowIndex,String(payload.message||'')));
+        }
+        if(action==='consult-appointment-set') return jsonOk_(scheduleConsultationAppointmentAdmin(token,payload.rowIndex,payload));
+        if(action==='consult-appointment-cancel') return jsonOk_(cancelConsultationAppointmentAdmin(token,payload.rowIndex,payload));
+        if(action==='consult-note') return jsonOk_(addConsultationMeetingNoteAdmin(token,payload.rowIndex,String(payload.note||''),String(payload.nextAction||'')));
+        if(action==='portfolio-lead-list') return jsonOk_(listPortfolioLeadsAdmin(token,payload.limit||60));
+        if(action==='portfolio-lead-update') return jsonOk_(updatePortfolioLeadStatusAdmin(token,payload.rowIndex,String(payload.status||''),String(payload.note||'')));
         /* ── Phase 3: Gutschein 도메인 (deleteGutscheinAdmin 은 의도적으로 미노출 — 취소로 충분) ── */
         if(action==='gutschein-get') return jsonOk_(getGutscheinAdmin(token,String(payload.code||'')));
         if(action==='gutschein-create') return jsonOk_(createGutscheinAdmin(token,payload.data||payload));
