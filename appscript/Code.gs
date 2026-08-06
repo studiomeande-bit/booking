@@ -16653,9 +16653,13 @@ function normalizeSumupCsvRow_(row,filename){
   const fee=Math.abs(parseLocaleMoney_(pickCsvValue_(row,['Fee','Fees','Gebuehr','Gebühr','Transaction fee','Service fee','SumUp fee'])));
   let net=parseLocaleMoney_(pickCsvValue_(row,['Net amount','Net','Netto','Payout amount','Auszahlungsbetrag','Paid out','Auszahlung']));
   if(!net && gross) net=Math.round((gross-(gross<0?-fee:fee))*100)/100;
-  const ref=String(pickCsvValue_(row,['Transaction ID','Transaction id','Transaktions-ID','Transaktionsid','Transaction Code','Payment ID','ID','Receipt no'])||'').trim();
-  const type=String(pickCsvValue_(row,['Type','Art','Transaction type','Transaktionstyp','Status'])||'Kartenzahlung').trim();
-  const counterparty=String(pickCsvValue_(row,['Card type','Kartentyp','Payment method','Zahlungsart','Customer','Kunde'])||'SumUp').trim();
+  /* ⚠️ SumUp 은 이미 API 로 15분마다 동기화된다(syncRecentSumupTransactionsTrigger).
+     Verkaufsbericht CSV 를 또 임포트하면 **같은 거래가 두 번** 들어간다 — 게다가 CSV 는 아이템 단위,
+     API 는 거래 단위라 건수도 어긋난다(2026-08-05 실측: 6~7월 33행 €2,802 중복). CSV 임포트는
+     API 공백 기간을 메울 때만 쓰고, 그때 dedup 이 걸리도록 거래번호를 반드시 읽어야 한다. */
+  const ref=String(pickCsvValue_(row,['Transaction ID','Transaction id','Transaktions-ID','Transaktionsid','Transaktionsnummer','Transaction Code','Payment ID','ID','Receipt no','Beleg-Nr'])||'').trim();
+  const type=String(pickCsvValue_(row,['Type','Typ','Art','Transaction type','Transaktionstyp','Status'])||'Kartenzahlung').trim();
+  const counterparty=String(pickCsvValue_(row,['Card type','Kartentyp','Payment method','Zahlungsmethode','Zahlungsart','Customer','Kunde'])||'SumUp').trim();
   const desc=[type,ref].filter(Boolean).join(' · ')||filename;
   return {
     date,

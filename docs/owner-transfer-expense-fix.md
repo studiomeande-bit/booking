@@ -157,3 +157,32 @@ function settlementDescriptionForKey_(desc){
 | 불일치 조합 | 0건 | | ✅ |
 
 지출 장부: 6월 22건 €1,921.47 / 7월 19건 €2,012.18, 대표자 이체 잔존 0건, 중복 0건.
+
+## 결함 4 — SumUp CSV 이중 유입 (✅ 정리 + 파서 수정 @732)
+
+**SumUp 은 이미 API 로 15분마다 자동 동기화된다**(`syncRecentSumupTransactionsTrigger`).
+2026-08-05 에 `Verkaufsbericht` CSV 를 추가로 임포트하면서 같은 거래가 두 번 들어갔다.
+
+게다가 파서가 이 CSV 의 컬럼을 못 읽고 있었다:
+
+| 필요한 값 | CSV 컬럼 | 기존 후보 목록 | 결과 |
+|---|---|---|---|
+| 거래번호 | `Transaktionsnummer` | 없음 | **ref 공란 → SumUp 유일의 dedup 키가 무력화** |
+| 결제수단 | `Zahlungsmethode` | 없음 | counterparty 가 `Verkauf`(=Typ 값) 로 들어감 |
+
+→ ref 가 없으니 API 분과 대조되지 않아 33행 €2,802.00 이 통째로 중복됐다.
+
+**정리**: `settlement-delete` 로 CSV 임포트분(ref 공란) 33행 삭제. API 분 32건 €2,802.00 이 정본
+(합계 동일 — CSV 는 **아이템 단위**, API 는 **거래 단위**라 건수만 다르다.
+예: 7/4 TAAA3ZGKQ7T 는 CSV 에서 €30+€45 두 줄, API 에서 €75 한 건).
+
+**파서 수정**: ref 후보에 `Transaktionsnummer`·`Beleg-Nr`, type 에 `Typ`, counterparty 에 `Zahlungsmethode` 추가.
+이제 CSV 를 다시 넣어도 ref 로 dedup 된다. 다만 **SumUp CSV 임포트는 원칙적으로 불필요** —
+API 공백 기간을 메울 때만 쓸 것(코드 주석에도 명시).
+
+### 정산 최종 상태 (6~7월)
+
+| | 시트 | 원본 | |
+|---|---|---|---|
+| 은행 | 79건 | 79건 | ✅ |
+| SumUp | 32건 €2,802.00 (API 분) | CSV 33행(아이템 단위) | ✅ 잔재 0 |
