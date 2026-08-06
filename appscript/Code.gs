@@ -429,6 +429,10 @@ function adminRpc(token, action, payload){
       return getOperationsChecklistAdmin(token, payload||{});
     case 'getAccountingMonthCloseChecklist':
       return getAccountingMonthCloseChecklistAdmin(token, String(payload&&payload.startDate||''), String(payload&&payload.endDate||''));
+    case 'recordAccountingMonthClose':
+      return recordAccountingMonthCloseAdmin(token, String(payload&&payload.startDate||''), String(payload&&payload.endDate||''), (payload&&payload.options)||payload||{});
+    case 'listAccountingMonthCloses':
+      return listAccountingMonthClosesAdmin(token, (payload&&payload.limit)||24);
     case 'syncTravelLedgerFromBookings':
       return syncTravelLedgerFromBookingsAdmin(token);
     case 'lookupAddress':
@@ -1197,8 +1201,11 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='accounting-ledger') return jsonOk_(getAccountingLedger(token,String(payload.startDate||''),String(payload.endDate||''),!!payload.forceRefresh));
         if(action==='accounting-settlement') return jsonOk_(getSettlementReportAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
         if(action==='accounting-month-close') return jsonOk_(getAccountingMonthCloseChecklistAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
+        if(action==='accounting-month-close-history') return jsonOk_(listAccountingMonthClosesAdmin(token,payload.limit||24));
         if(action==='cash-list') return jsonOk_(getCashLedgerAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||{}));
         // 회계 — 기록
+        // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
+        if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
         if(action==='expense-list'){
           // 지출장부 조회 — rowIndex 포함(삭제·정정 대상 특정용)
@@ -13264,6 +13271,18 @@ function _buildDailyBriefingData_(){
     const days=lastDate?Math.floor((new Date(today+'T00:00:00')-new Date(lastDate+'T00:00:00'))/86400000):null;
     if(!lastDate||days>=21) bankGap={lastDate:lastDate,days:days,count:bankTxs.length};
   }catch(e){Logger.log('briefing bankGap fail: '+e.message);_briefFail_(sectionFailures,'은행 데이터',e);}
+  /* 지난달 회계 마감 — 마감 기록이 없으면 리마인드. 분기 마감(ELSTER) 리마인더는 분기당 한 번뿐이라
+     그 사이 달들은 아무도 챙기지 않았다. 마감 시트만 읽어 판정하므로 장부 재계산 없음(비용 0에 가까움).
+     창은 5~25일 — 1~4일은 아직 정산이 덜 들어오고, 26일 이후는 분기 리마인더와 겹친다. */
+  let monthCloseDue=null;
+  try{
+    const dd=now.getDate();
+    if(dd>=5&&dd<=25){
+      const ps=Utilities.formatDate(new Date(now.getFullYear(),now.getMonth()-1,1),tz,'yyyy-MM')+'-01';
+      const pe=Utilities.formatDate(new Date(now.getFullYear(),now.getMonth(),0),tz,'yyyy-MM-dd');
+      if(findAccountingCloseRow_(getAccountingCloseSheet_(),ps,pe).rowIndex<0) monthCloseDue={startDate:ps,endDate:pe,label:ps.slice(0,7)};
+    }
+  }catch(e){Logger.log('briefing monthCloseDue fail: '+e.message);_briefFail_(sectionFailures,'월마감',e);}
   /* 계약서 대기 — B2B·본식·€500+ 인데 서명완료 Drehvertrag 가 없는 예약 */
   let contractPending={count:0,items:[]};
   try{
@@ -13271,7 +13290,7 @@ function _buildDailyBriefingData_(){
     contractPending.count=cp.length;
     contractPending.items=cp.slice(0,6);
   }catch(e){Logger.log('briefing contract fail: '+e.message);_briefFail_(sectionFailures,'계약서',e);}
-  return {ok:true,date:today,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
+  return {ok:true,date:today,monthCloseDue:monthCloseDue,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -13319,6 +13338,10 @@ function buildDailyBriefingEmailHtml_(b){
     actions.push(line(`🏦 <b style="color:#b91c1c;">은행 거래가 ${b.bankGap.lastDate?`${b.bankGap.days}일째 없습니다`:'최근 4개월간 없습니다'}</b>`
       +`${b.bankGap.lastDate?` (마지막 ${esc(b.bankGap.lastDate)})`:''} — Deutsche Bank CSV를 가져와 주세요. `
       +`<b>지출·매입세액이 빠진 채로 마감하면 세금을 과납합니다.</b>`));
+  }
+  if(b.monthCloseDue){
+    actions.push(line(`📕 <b>${esc(b.monthCloseDue.label)} 회계 마감 기록이 없습니다</b> — 어드민 회계 탭에서 월마감 체크 후 <b>마감 기록</b>을 눌러주세요. `
+      +`마감해 두면 이후 그 달 숫자가 바뀔 때 자동으로 잡힙니다.`));
   }
   if(b.contractPending&&b.contractPending.count>0){
     (b.contractPending.items||[]).forEach(function(c){
@@ -16329,12 +16352,48 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     {},
     '장부 보기'
   );
+  /* 마감 후 변동 — 마감 기록이 있는 기간만 추가되는 체크. 마감 당시 스냅샷과 지금을 대조해
+     신고 후 소급 변경을 잡는다. 실제 사례(2026-08-06): 7/28·7/30 입금을 8/6에 소급 기록해
+     7월 숫자가 뒤늦게 움직였다 — 마감·신고가 끝난 뒤였다면 조용히 어긋났을 것이다. */
+  const closeSnapshot=accountingCloseSnapshot_({
+    incomeGross:ledger.totalGross||0,
+    expenseGross:ledger.totalExpenseGross||0,
+    profitGross:ledger.profitGross||0,
+    vatPayable:ledger.vatPayable||0,
+    entryCount:entries.length,
+    incomeCount:incomeRows.length,
+    expenseCount:expenseRows.length
+  });
+  let closeRecord=null,closeDrift=[];
+  try{
+    const found=findAccountingCloseRow_(getAccountingCloseSheet_(),sd,ed);
+    if(found.rowIndex>0){
+      closeRecord=accountingCloseRowToObject_(found.row,found.rowIndex);
+      closeDrift=diffAccountingCloseSnapshot_(closeRecord.snapshot,closeSnapshot);
+      addCheck(
+        'close_drift',
+        '마감 후 변동',
+        closeDrift.length?'fail':'ok',
+        closeDrift.length,
+        closeDrift.reduce(function(s,d){return s+(d.money?Math.abs(d.delta):0);},0),
+        closeDrift.length
+          ? `${closeRecord.closedAt} 마감 이후 ${closeDrift.map(function(d){return d.label+' '+d.text;}).join(' · ')} — 신고를 마쳤다면 정정신고 대상입니다. 확인 후 다시 마감 기록해 주세요.`
+          : `${closeRecord.closedAt} 마감 기록과 현재 숫자가 일치합니다.`,
+        'accounting',
+        {},
+        '장부 보기'
+      );
+    }
+  }catch(e){Logger.log('month close record lookup skipped: '+e.message);}
   const blockers=checks.filter(function(c){return c.status==='fail';}).length;
   const warnings=checks.filter(function(c){return c.status==='warn';}).length;
   return {
     ok:true,
     period:{startDate:sd,endDate:ed},
     ready:blockers===0,
+    snapshot:closeSnapshot,
+    closeRecord:closeRecord,
+    closeDrift:closeDrift,
     summary:{
       status:blockers?'blocked':(warnings?'review':'ready'),
       blockers:blockers,
@@ -16353,6 +16412,149 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     reviewItems:settlementReviews,
     checks:checks
   };
+}
+
+/* ====== 회계 월마감 기록 (2026-08-06) ======
+ * 월마감 체크리스트는 읽기 전용이라 "마감했다"는 사실이 어디에도 남지 않았다. 그래서
+ *   · 지난달을 실제로 마감했는지 아무도 모르고(브리핑에도 신호 없음),
+ *   · 마감·ELSTER 신고 후 그 달 숫자가 바뀌어도 조용히 어긋난다.
+ * 마감 시점의 숫자를 스냅샷으로 남기고, 이후 체크리스트가 그 스냅샷과 현재를 대조한다.
+ * 기간(시작·종료)당 한 행 — 재마감하면 덮어써서 최신 스냅샷이 정본이 된다. */
+const ACCOUNTING_CLOSE_SHEET_NAME='회계마감';
+const ACCOUNTING_CLOSE_HEADERS=['기간시작','기간종료','마감일시','수입총액','지출총액','손익','납부부가세','회계건수','수입건수','지출건수','경고수','강제마감','메모'];
+const ACCOUNTING_CLOSE_COL=ACCOUNTING_CLOSE_HEADERS.reduce(function(acc,h,i){acc[h]=i;return acc;},{});
+// 마감 스냅샷 비교 대상 — 신고 숫자에 직접 들어가는 값만. 나머지(검토건수 등)는 변동이 정상이라 뺀다.
+const ACCOUNTING_CLOSE_FIELDS=[
+  {key:'incomeGross',label:'수입',money:true},
+  {key:'expenseGross',label:'지출',money:true},
+  {key:'profitGross',label:'손익',money:true},
+  {key:'vatPayable',label:'납부 부가세',money:true},
+  {key:'entryCount',label:'회계건수',money:false},
+  {key:'incomeCount',label:'수입건수',money:false},
+  {key:'expenseCount',label:'지출건수',money:false}
+];
+
+function getAccountingCloseSheet_(){
+  return ensureHeaderSheet_(ensureSheets_().ss,ACCOUNTING_CLOSE_SHEET_NAME,ACCOUNTING_CLOSE_HEADERS,'#e0e7ff');
+}
+function accountingCloseSnapshot_(src){
+  const s=src||{},out={};
+  ACCOUNTING_CLOSE_FIELDS.forEach(function(f){
+    out[f.key]=f.money?roundCurrency_(Number(s[f.key]||0)||0):(Number(s[f.key]||0)||0);
+  });
+  return out;
+}
+function findAccountingCloseRow_(sheet,startDate,endDate){
+  const sd=String(startDate||'').slice(0,10),ed=String(endDate||'').slice(0,10);
+  const last=sheet.getLastRow();
+  if(last<2||!sd||!ed) return {rowIndex:-1};
+  const width=ACCOUNTING_CLOSE_HEADERS.length;
+  const rows=sheet.getRange(2,1,last-1,width).getValues();
+  for(let i=0;i<rows.length;i++){
+    // 시트가 날짜 문자열을 Date 로 재해석하는 경우가 있어 parseDateSafe_ 로 정규화 후 비교
+    const rs=parseDateSafe_(rows[i][ACCOUNTING_CLOSE_COL['기간시작']]).str.slice(0,10);
+    const re=parseDateSafe_(rows[i][ACCOUNTING_CLOSE_COL['기간종료']]).str.slice(0,10);
+    if(rs===sd&&re===ed) return {rowIndex:i+2,row:rows[i]};
+  }
+  return {rowIndex:-1};
+}
+function accountingCloseRowToObject_(row,rowIndex){
+  const cell=function(h){
+    const v=row[ACCOUNTING_CLOSE_COL[h]];
+    if(v==null) return '';
+    if(v instanceof Date) return Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm').replace(/ 00:00$/,'');
+    return String(v).trim();
+  };
+  return {
+    rowIndex:rowIndex||0,
+    startDate:parseDateSafe_(row[ACCOUNTING_CLOSE_COL['기간시작']]).str.slice(0,10),
+    endDate:parseDateSafe_(row[ACCOUNTING_CLOSE_COL['기간종료']]).str.slice(0,10),
+    closedAt:cell('마감일시'),
+    warnings:Number(row[ACCOUNTING_CLOSE_COL['경고수']]||0)||0,
+    forced:/^y/i.test(cell('강제마감')),
+    memo:cell('메모'),
+    snapshot:accountingCloseSnapshot_({
+      incomeGross:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['수입총액']]),
+      expenseGross:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['지출총액']]),
+      profitGross:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['손익']]),
+      vatPayable:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['납부부가세']]),
+      entryCount:row[ACCOUNTING_CLOSE_COL['회계건수']],
+      incomeCount:row[ACCOUNTING_CLOSE_COL['수입건수']],
+      expenseCount:row[ACCOUNTING_CLOSE_COL['지출건수']]
+    })
+  };
+}
+/* 돈은 **정수 센트로 환산해 정확히** 비교한다. 부동소수 뺄셈에 허용오차를 걸면
+   (abs(delta)<=0.01) 딱 1센트 변동이 방향에 따라 잡히기도 안 잡히기도 한다 —
+   라이브 검증에서 실제로 지출 +0.01 은 놓치고 손익 -0.01 은 잡혔다. 센트 반올림 후
+   정수 비교면 서브센트 잡음은 반올림이 흡수하고 진짜 1센트 변동은 항상 잡힌다. */
+function diffAccountingCloseSnapshot_(closed,current){
+  const a=closed||{},b=current||{},out=[];
+  ACCOUNTING_CLOSE_FIELDS.forEach(function(f){
+    const was=Number(a[f.key]||0)||0,now=Number(b[f.key]||0)||0;
+    const wasU=f.money?Math.round(was*100):was, nowU=f.money?Math.round(now*100):now;
+    if(wasU===nowU) return;
+    const delta=f.money?(nowU-wasU)/100:(nowU-wasU);
+    out.push({
+      key:f.key,label:f.label,money:!!f.money,
+      closed:f.money?wasU/100:was,
+      current:f.money?nowU/100:now,
+      delta:delta,
+      text:f.money
+        ? `€${was.toFixed(2)} → €${now.toFixed(2)} (${delta>0?'+':''}${delta.toFixed(2)})`
+        : `${was}건 → ${now}건 (${delta>0?'+':''}${delta})`
+    });
+  });
+  return out;
+}
+
+/* 마감 기록 — 체크리스트를 직접 돌려 blocker 가 남아 있으면 거부한다(force 로만 강행).
+   close_drift 는 gate 에서 제외 — 재마감이 바로 그 drift 를 해소하는 정상 경로다. */
+function recordAccountingMonthCloseAdmin(token,startDate,endDate,options){
+  assertAdmin_(token);
+  const opts=options||{};
+  const sd=String(startDate||'').slice(0,10),ed=String(endDate||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(sd)||!/^\d{4}-\d{2}-\d{2}$/.test(ed)) throw new Error('기간(startDate·endDate)은 YYYY-MM-DD 형식이어야 합니다.');
+  if(ed<sd) throw new Error('종료일이 시작일보다 빠릅니다.');
+  const checklist=getAccountingMonthCloseChecklistAdmin(token,sd,ed);
+  const blockers=(checklist.checks||[]).filter(function(c){return c.status==='fail'&&c.key!=='close_drift';});
+  const force=!!opts.force;
+  if(blockers.length&&!force){
+    throw new Error('마감 보류 — 필수 처리 '+blockers.length+'건: '+blockers.map(function(c){return c.label;}).join(', ')+' (그래도 마감하려면 force:true)');
+  }
+  const snap=checklist.snapshot||{};
+  const sheet=getAccountingCloseSheet_();
+  const found=findAccountingCloseRow_(sheet,sd,ed);
+  const closedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  const values=[sd,ed,closedAt,snap.incomeGross,snap.expenseGross,snap.profitGross,snap.vatPayable,
+    snap.entryCount,snap.incomeCount,snap.expenseCount,
+    Number(checklist.summary&&checklist.summary.warnings||0),
+    (force&&blockers.length)?'Y':'',String(opts.memo||'').slice(0,300)];
+  let rowIndex;
+  const reclosed=found.rowIndex>0;
+  if(reclosed){rowIndex=found.rowIndex;sheet.getRange(rowIndex,1,1,values.length).setValues([values]);}
+  else{sheet.appendRow(values);rowIndex=sheet.getLastRow();}
+  return {
+    ok:true,period:{startDate:sd,endDate:ed},rowIndex:rowIndex,closedAt:closedAt,
+    reclosed:reclosed,forced:force&&blockers.length>0,
+    blockerLabels:blockers.map(function(c){return c.label;}),
+    warnings:Number(checklist.summary&&checklist.summary.warnings||0),
+    resolvedDrift:(checklist.closeDrift||[]).length,
+    snapshot:snap,memo:String(opts.memo||'')
+  };
+}
+
+function listAccountingMonthClosesAdmin(token,limit){
+  assertAdmin_(token);
+  const sheet=getAccountingCloseSheet_();
+  const last=sheet.getLastRow();
+  if(last<2) return {ok:true,count:0,items:[]};
+  const rows=sheet.getRange(2,1,last-1,ACCOUNTING_CLOSE_HEADERS.length).getValues();
+  const items=rows.map(function(r,i){return accountingCloseRowToObject_(r,i+2);})
+    .filter(function(it){return !!it.startDate;})
+    .sort(function(a,b){return a.startDate<b.startDate?1:(a.startDate>b.startDate?-1:0);});
+  const n=Math.max(1,Math.min(120,Number(limit||24)||24));
+  return {ok:true,count:items.length,items:items.slice(0,n)};
 }
 
 function settlementCandidateKindLabel_(kind){

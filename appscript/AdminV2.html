@@ -6971,6 +6971,46 @@ function loadMonthCloseChecklistUi(){
     );
 }
 
+// 마감 기록 상태 줄 — 마감했는지, 마감 후 숫자가 움직였는지. 기록이 없으면 아무것도 그리지 않는다.
+function renderMonthCloseRecordLine(res){
+  const rec=res&&res.closeRecord;
+  if(!rec) return '';
+  const drift=Array.isArray(res&&res.closeDrift)?res.closeDrift:[];
+  const tone=drift.length
+    ? {bg:'#fef2f2',border:'#fecaca',color:'#b91c1c'}
+    : {bg:'#ecfdf5',border:'#bbf7d0',color:'#047857'};
+  const head=drift.length
+    ? `⚠️ ${escHtml(rec.closedAt)} 마감 이후 숫자가 바뀌었습니다`
+    : `✅ ${escHtml(rec.closedAt)} 마감 기록됨`;
+  const body=drift.length
+    ? `<div style="margin-top:4px;font-size:11px;line-height:1.7;">${drift.map(d=>`<div>· <b>${escHtml(d.label)}</b> ${escHtml(d.text)}</div>`).join('')}<div style="margin-top:4px;">신고를 마친 기간이면 정정신고 대상입니다. 확인 후 <b>다시 마감 기록</b>을 눌러 스냅샷을 갱신하세요.</div></div>`
+    : '';
+  const meta=[rec.forced?'강제 마감':'',rec.memo?escHtml(rec.memo):''].filter(Boolean).join(' · ');
+  return `<div style="background:${tone.bg};border:1px solid ${tone.border};border-radius:8px;padding:8px 10px;color:${tone.color};font-size:12px;font-weight:800;">
+    ${head}${meta?`<span style="font-weight:600;"> · ${meta}</span>`:''}${body}
+  </div>`;
+}
+
+function recordMonthCloseUi(){
+  const sd=document.getElementById('acc_startDate').value, ed=document.getElementById('acc_endDate').value;
+  if(!sd||!ed){alert('회계 기간(시작일·종료일)을 먼저 지정해 주세요.');return;}
+  if(!confirm(`${sd} ~ ${ed} 기간을 마감 기록하시겠습니까?\n\n현재 수입·지출·손익·부가세 숫자가 스냅샷으로 저장됩니다.\n이후 이 기간 숫자가 바뀌면 '마감 후 변동'으로 표시됩니다.\n\n필수 처리 항목이 남아 있으면 기록되지 않습니다.`))return;
+  const memo=prompt('메모 (선택) — 예: Q3 UStVA 신고 완료','')||'';
+  const box=document.getElementById('monthClosePanel')||document.getElementById('settlementImportResult');
+  if(box){box.style.display='block';box.innerHTML='<span class="spinner"></span> 마감 기록 중입니다...';}
+  google.script.run
+    .withSuccessHandler(res=>{
+      const r=res||{};
+      alert(`${r.reclosed?'마감 기록을 갱신했습니다':'마감 기록을 저장했습니다'}.\n\n${sd} ~ ${ed}\n마감일시 ${r.closedAt||''}\n수입 ${formatAdminCurrency((r.snapshot||{}).incomeGross||0)} · 지출 ${formatAdminCurrency((r.snapshot||{}).expenseGross||0)} · 부가세 ${formatAdminCurrency((r.snapshot||{}).vatPayable||0)}`);
+      loadMonthCloseChecklistUi();
+    })
+    .withFailureHandler(e=>{
+      alert('마감 기록 실패\n\n'+((e&&e.message)||e));
+      loadMonthCloseChecklistUi();
+    })
+    .recordAccountingMonthCloseAdmin(adminToken,sd,ed,{memo:memo});
+}
+
 function renderMonthCloseStatusBadge(status){
   const s=String(status||'review');
   const map={
@@ -7002,9 +7042,11 @@ function renderMonthCloseChecklist(res){
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-outline btn-sm" onclick="loadMonthCloseChecklistUi()">새로고침</button>
+          <button class="btn btn-outline btn-sm" onclick="recordMonthCloseUi()">${res&&res.closeRecord?'다시 마감 기록':'마감 기록'}</button>
           <button class="btn btn-outline btn-sm" onclick="exportQuarterTaxPackageCSV()">세무 패키지 CSV</button>
         </div>
       </div>
+      ${renderMonthCloseRecordLine(res)}
       <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#475569;">
         <span><b>수입</b> ${formatAdminCurrency(summary.incomeGross||0)}</span>
         <span><b>지출</b> ${formatAdminCurrency(summary.expenseGross||0)}</span>
