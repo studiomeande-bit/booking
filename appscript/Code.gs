@@ -1220,6 +1220,26 @@ function handlePublicApiRequest_(route,method,e){
           });
           return jsonOk_({ok:true,count:eOut.length,expenses:eOut});
         }
+        /* ── Phase 3: Gutschein 도메인 (deleteGutscheinAdmin 은 의도적으로 미노출 — 취소로 충분) ── */
+        if(action==='gutschein-get') return jsonOk_(getGutscheinAdmin(token,String(payload.code||'')));
+        if(action==='gutschein-create') return jsonOk_(createGutscheinAdmin(token,payload.data||payload));
+        if(action==='gutschein-update') return jsonOk_(updateGutscheinAdmin(token,String(payload.code||''),payload.data||payload));
+        if(action==='gutschein-cancel') return jsonOk_(cancelGutscheinAdmin(token,String(payload.code||''),String(payload.reason||'')));
+        if(action==='gutschein-apply-preview'){
+          // 적용 전 미리보기 — 차감액·적용후 총액·잔금을 시트 변경 없이 계산
+          return jsonOk_(previewGutscheinApplyAdmin(token,payload.bookingRowIndex,String(payload.code||'')));
+        }
+        if(action==='gutschein-apply'){
+          /* 예약에 굿샤인 적용 — 총액·계약금·잔금이 실제로 바뀐다. 오적용 방지로 expectName 지원. */
+          const gaIdx=parseInt(payload.bookingRowIndex,10);
+          if(payload.expectName!=null) assertBookingRowName_(gaIdx,payload.expectName);
+          return jsonOk_(applyGutscheinToBookingAdmin(token,gaIdx,String(payload.code||''),String(payload.method||'manual')));
+        }
+        if(action==='gutschein-send'){
+          // ⚠️외부발송: 구매자에게 굿샤인 메일(PDF/티켓 링크) 발송
+          return jsonOk_(sendGutscheinEmailAdmin(token,String(payload.code||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||payload.lang||'')));
+        }
+        if(action==='gutschein-release-hold') return jsonOk_(releaseGutscheinHoldAdmin(token,String(payload.code||'')));
         /* ── Phase 2: 회계 운영 완결 — 아침 "결제 검토 N건"을 세션에서 끝내기 위한 래퍼들 ── */
         if(action==='settlement-match-board'){
           return jsonOk_(getSettlementMatchBoardAdmin(token,String(payload.startDate||''),String(payload.endDate||''),

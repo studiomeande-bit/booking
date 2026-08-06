@@ -62,7 +62,13 @@ confirm 없이 호출 시 차단(메일 대량발송 방지) / `cash-delete`·`s
 | `deposit-bulk-confirm` | bulkConfirmAllPendingDepositsAdmin | 계약금 일괄 확인 |
 | `invoice-preview` | previewInvoicePricingAdmin | **STMIN 연번 소모 전 미리보기** — 번호 낭비 리스크 제거 |
 
-### Phase 3 — Gutschein 도메인 (통째로 미노출 · ~반나절)
+### Phase 3 — Gutschein 도메인 ✅ 완료 2026-08-06 (@734, 8종 신규 + 기존 gutschein-list)
+
+라이브 프로브: 가드 3종(없는 코드/금액 0/없는 예약행) 정확한 유효성 에러 /
+**쓰기 왕복 검증** — 합성 굿샤인 생성(`KPDF-UJHA-9WGX`, €30) → `gutschein-get` 으로
+`MPV`·`redeem`·세율 19·유효기한 2029-08-06(36개월) 자동 분류 확인 → 취소 →
+**회계 장부에서 제외되는 것까지 확인**(8월 굿샤인 엔트리 0건).
+`deleteGutscheinAdmin` 은 계획대로 **미노출 유지**(취소로 충분).
 `gutschein-list/get/create/update/cancel/apply/apply-preview/send(⚠️)/release-hold`
 ← listGutscheinsAdmin, getGutscheinAdmin, createGutscheinAdmin, updateGutscheinAdmin, cancelGutscheinAdmin, applyGutscheinToBookingAdmin, previewGutscheinApplyAdmin, sendGutscheinEmailAdmin, releaseGutscheinHoldAdmin. (deleteGutscheinAdmin은 미노출 유지)
 
