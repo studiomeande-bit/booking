@@ -17656,7 +17656,12 @@ function classifyBankOutExpense_(tx){
       note:note||base.note
     });
   }
-  if(/iban de98100110012627135089|taewoong min hyeda eun/i.test(counterparty+' '+description)){
+  /* 대표자 사적 인출(Privatentnahme) — 비용이 아니다.
+     ⚠️ 2026-08-05 실측 사고: 기존 패턴이 풀네임 `taewoong min hyeda eun` 과 `iban ...` 접두어 형태만
+     잡아서, 은행 CSV 의 `Taewoong Min` 단독 이체 4건(6~7월 €1,000)이 비용으로 잘못 계상됐다.
+     (Verwendungszweck 이 비어 description 에 IBAN 도 이름도 실리지 않는 케이스가 있다.)
+     → 이름은 `taewoong min` 부분매칭, IBAN 은 접두어 없이 번호 자체로 매칭한다. */
+  if(/de98100110012627135089|de62512500000000440760|taewoong\s*min|hyeda\s*eun/i.test(counterparty+' '+description+' '+String(tx&&tx.bankRef||''))){
     return Object.assign({},base,{
       category:'대표자 인출/이체',
       accountingClass:'비용제외',
