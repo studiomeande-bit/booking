@@ -1220,6 +1220,29 @@ function handlePublicApiRequest_(route,method,e){
           });
           return jsonOk_({ok:true,count:eOut.length,expenses:eOut});
         }
+        if(action==='settlement-delete'){
+          /* 결제대조 행 영구 삭제 — 중복/오파싱 잔재 정리용. expect 3종 + confirm 이중 가드.
+             ⚠️ 은행은 같은 날 같은 금액의 **진짜 별개 거래**가 존재하므로, 호출 전에 반드시
+             원본 CSV 건수와 대조해 초과분만 지목할 것(행 번호는 큰 것부터 삭제해 밀림 방지). */
+          const sdIdx=parseInt(payload.rowIndex,10);
+          if(!sdIdx||sdIdx<2) throw new Error('rowIndex가 필요합니다.');
+          if(String(payload.confirm||'')!=='DELETE') throw new Error("confirm:'DELETE' 가 필요합니다.");
+          const sdSh=ensureSheets_().settlementSheet;
+          if(sdIdx>sdSh.getLastRow()) throw new Error('결제대조 행을 찾을 수 없습니다: '+sdIdx);
+          const sdRow=sdSh.getRange(sdIdx,1,1,SETTLEMENT_HEADERS.length).getValues()[0];
+          const sdDate=parseDateSafe_(sdRow[SETTLEMENT_COL['거래일']]).str.slice(0,10);
+          const sdGross=parseMoneyValue_(sdRow[SETTLEMENT_COL['총액(Brutto)']]);
+          const sdParty=String(sdRow[SETTLEMENT_COL['상대방']]||'').trim();
+          if(payload.expectDate!=null&&sdDate!==String(payload.expectDate).slice(0,10))
+            throw new Error('expectDate 불일치: 행 '+sdIdx+' = '+sdDate);
+          if(payload.expectGross!=null&&Math.abs(sdGross-parseMoneyValue_(payload.expectGross))>0.01)
+            throw new Error('expectGross 불일치: 행 '+sdIdx+' = '+sdGross);
+          if(payload.expectCounterparty!=null&&sdParty.toUpperCase()!==String(payload.expectCounterparty).trim().toUpperCase())
+            throw new Error('expectCounterparty 불일치: 행 '+sdIdx+' = '+sdParty);
+          sdSh.deleteRow(sdIdx);
+          return jsonOk_({ok:true,deletedRowIndex:sdIdx,date:sdDate,gross:sdGross,counterparty:sdParty,
+            source:String(sdRow[SETTLEMENT_COL['소스']]||'')});
+        }
         if(action==='expense-delete'){
           // 지출 행 영구 삭제 — 잘못 계상된 행 정정용. expect 필드 + confirm:'DELETE' 이중 가드(행 밀림·오삭제 방지)
           const delIdx=parseInt(payload.rowIndex,10);
@@ -1239,6 +1262,21 @@ function handlePublicApiRequest_(route,method,e){
             date:parseDateSafe_(delRow[0]).str.slice(0,10),description:String(delRow[3]||'').slice(0,120)});
         }
         if(action==='cash-add') return jsonOk_(saveCashLedgerManualEntryAdmin(token,payload.data||{}));
+        if(action==='cash-delete'){
+          /* 수기 현금행 삭제(상태='삭제' 표기, 행 자체는 보존). `id` 또는 `rowIndex` 로 지정.
+             ⚠️ 예약장부에서 자동생성된 행(id 가 `booking-balance-*`)은 수기행이 아니므로 대상이 아니다 —
+             그 경우는 예약 쪽(잔금확인 취소)에서 풀어야 한다. 중복 계상 정리 시 남길 쪽을 먼저 확정할 것. */
+          const cdSh=ensureSheets_().cashSheet;
+          let cdIdx=parseInt(payload.rowIndex,10)||0;
+          if(!cdIdx && payload.id){
+            const cdVals=cdSh.getDataRange().getValues();
+            for(let i=1;i<cdVals.length;i++){
+              if(String(cdVals[i][CASH_COL['ID']]||'').trim()===String(payload.id).trim()){ cdIdx=i+1; break; }
+            }
+          }
+          if(!cdIdx) throw new Error('삭제할 수기 현금 항목을 찾지 못했습니다: '+(payload.id||payload.rowIndex||''));
+          return jsonOk_(deleteCashLedgerManualEntryAdmin(token,cdIdx));
+        }
         // 회계 — 증빙 인제스트
         if(action==='expense-evidence-upload') return jsonOk_(uploadExpenseEvidenceForAgent_(token,payload));
         if(action==='expense-inbox-list') return jsonOk_(listExpenseInboxForAgent_(token));
@@ -16591,6 +16629,15 @@ function parseLocaleMoney_(value){
   }else if(lastComma>-1){
     const decimals=s.length-lastComma-1;
     s=decimals>0 && decimals<=2 ? s.replace(',','.') : s.replace(/,/g,'');
+  }else if(lastDot>-1){
+    /* 점만 있는 경우 — 독일식 천단위 구분자일 수 있다.
+       ⚠️ 2026-08-06 실측: 은행 CSV 의 `1.428`(=€1,428)이 1.43 으로, `-1.000`(=€-1,000)이 -1 로 파싱됐다.
+       (독일 은행은 소수점을 쉼표로 쓰므로, 점 뒤가 정확히 3자리면 소수가 아니라 천단위다.)
+       점이 2개 이상이면 무조건 천단위(1.234.567). 1개면 뒤 3자리일 때만 천단위로 본다 —
+       `12.34`(소수 2자리) 같은 영어권 표기는 그대로 소수점으로 남긴다. */
+    const dotCount=(s.match(/\./g)||[]).length;
+    const decimals=s.length-lastDot-1;
+    if(dotCount>1 || decimals===3) s=s.replace(/\./g,'');
   }
   const n=Number(s)||0;
   return Math.round((negative?-n:n)*100)/100;
