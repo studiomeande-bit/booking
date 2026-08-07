@@ -1338,6 +1338,56 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_(deleteCashLedgerManualEntryAdmin(token,cdIdx));
         }
         // 회계 — 증빙 인제스트
+        if(action==='expense-update'){
+          /* 기존 지출 행 정정 — saveExpenseAdmin 은 append 전용이라 증빙을 붙여도 세액을 쓸 수 없었다.
+             영수증 기장의 본체가 바로 이 작업이다(세액 확정 + 증빙링크 연결).
+             삭제와 같은 expect 가드를 쓰되 confirm 은 요구하지 않는다 — 되돌릴 수 있는 수정이라서.
+             금액(gross)은 넘긴 경우에만 바꾸고, 그때도 expectGross 로 현재값을 확인시킨다. */
+          const upIdx=parseInt(payload.rowIndex,10);
+          if(!upIdx||upIdx<2) throw new Error('rowIndex가 필요합니다 (expense-list의 rowIndex).');
+          const upSh=ensureSheets_().expenseSheet;
+          if(upIdx>upSh.getLastRow()) throw new Error('지출 행을 찾을 수 없습니다: '+upIdx);
+          const upRange=upSh.getRange(upIdx,1,1,CONFIG.EXPENSE_HEADERS.length);
+          const upRow=upRange.getValues()[0];
+          const upVendor=String(upRow[1]||'').trim();
+          const upGross=parseMoneyValue_(upRow[4]);
+          if(payload.expectVendor!=null&&upVendor!==String(payload.expectVendor).trim())
+            throw new Error('expectVendor 불일치: 행 '+upIdx+' = '+upVendor);
+          if(payload.expectGross!=null&&Math.abs(upGross-parseMoneyValue_(payload.expectGross))>0.01)
+            throw new Error('expectGross 불일치: 행 '+upIdx+' = '+upGross);
+          if(payload.expectDate!=null&&parseDateSafe_(upRow[0]).str.slice(0,10)!==String(payload.expectDate).slice(0,10))
+            throw new Error('expectDate 불일치: 행 '+upIdx+' = '+parseDateSafe_(upRow[0]).str.slice(0,10));
+          const upData=payload.data||payload;
+          const before={gross:upGross,net:parseMoneyValue_(upRow[5]),tax:parseMoneyValue_(upRow[6]),
+            category:String(upRow[2]||''),description:String(upRow[3]||''),payMethod:String(upRow[7]||''),
+            memo:String(upRow[8]||''),evidenceLink:String(upRow[9]||''),status:String(upRow[10]||''),
+            accountingClass:String(upRow[11]||'')};
+          const setCell=function(i,v){upRow[i]=v;};
+          if(upData.gross!==undefined&&upData.gross!=='') setCell(4,Math.max(0,roundCurrency_(parseMoneyValue_(upData.gross))));
+          const upGrossNow=parseMoneyValue_(upRow[4]);
+          if(upData.tax!==undefined&&upData.tax!==''){
+            const t=Math.max(0,roundCurrency_(parseMoneyValue_(upData.tax)));
+            if(t>upGrossNow+0.01) throw new Error('부가세('+t+')가 총액('+upGrossNow+')보다 큽니다.');
+            setCell(6,t);
+            // net 을 따로 안 주면 총액에서 역산 — 세액만 채우는 게 기장의 표준 동작이라서
+            if(upData.net===undefined||upData.net==='') setCell(5,roundCurrency_(upGrossNow-t));
+          }
+          if(upData.net!==undefined&&upData.net!=='') setCell(5,Math.max(0,roundCurrency_(parseMoneyValue_(upData.net))));
+          if(upData.category!==undefined) setCell(2,String(upData.category).trim());
+          if(upData.description!==undefined) setCell(3,String(upData.description).trim());
+          if(upData.payMethod!==undefined) setCell(7,String(upData.payMethod).trim());
+          if(upData.memo!==undefined||upData.note!==undefined) setCell(8,String(upData.memo!==undefined?upData.memo:upData.note).trim());
+          if(upData.evidenceLink!==undefined) setCell(9,String(upData.evidenceLink).trim());
+          if(upData.status!==undefined) setCell(10,String(upData.status).trim());
+          if(upData.accountingClass!==undefined) setCell(11,String(upData.accountingClass).trim());
+          upRange.setValues([upRow]);
+          return jsonOk_({ok:true,rowIndex:upIdx,vendor:upVendor,
+            date:parseDateSafe_(upRow[0]).str.slice(0,10),before:before,
+            after:{gross:parseMoneyValue_(upRow[4]),net:parseMoneyValue_(upRow[5]),tax:parseMoneyValue_(upRow[6]),
+              category:String(upRow[2]||''),description:String(upRow[3]||''),payMethod:String(upRow[7]||''),
+              memo:String(upRow[8]||''),evidenceLink:String(upRow[9]||''),status:String(upRow[10]||''),
+              accountingClass:String(upRow[11]||'')}});
+        }
         if(action==='expense-evidence-upload') return jsonOk_(uploadExpenseEvidenceForAgent_(token,payload));
         if(action==='expense-inbox-list') return jsonOk_(listExpenseInboxForAgent_(token));
         if(action==='expense-inbox-file') return jsonOk_(getExpenseInboxFileForAgent_(token,payload.fileId));
