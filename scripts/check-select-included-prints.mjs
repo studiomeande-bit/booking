@@ -79,16 +79,19 @@ const fnSrc = (() => {
   throw new Error('중괄호 불균형');
 })();
 
-function runSeed({ productId, photos, editMode = false, prints = [], hasOutput = true, seeded = false }) {
-  const state = { editMode, prints: [...prints], printsSeeded: seeded, photos };
+function runSeed({ productId, photos, editMode = false, prints = [], hasOutput = true, seeded = false, marketing = 'Y' }) {
+  const state = { editMode, prints: [...prints], printsSeeded: seeded, photos, marketing };
   const seed = new Function(
-    'state', 'sessionHasIncludedDeliveryOutput', 'getSessionIncludedPrintQuota',
+    'state', 'sessionHasIncludedDeliveryOutput', 'getSessionIncludedPrintQuota', 'BASIC_10X15_ID',
     `${fnSrc}; return seedIncludedPrints;`
-  )(state, () => hasOutput, () => sessionQuota(productId));
+  )(state, () => hasOutput, () => sessionQuota(productId), 'basic_10x15');
   seed();
   return state;
 }
 const photosOf = (n) => Array.from({ length: n }, (_, i) => ({ num: `IMG_${1000 + i}` }));
+// 서비스 슬롯은 실제로 isBonus 도 true 로 만들어진다 — 그 상태를 그대로 재현한다
+const bonusPhoto = (n) => ({ num: n, isBonus: true, source: 'bonus' });
+const servicePhoto = (n) => ({ num: n, isBonus: true, isService: true, source: 'service' });
 
 {
   // 사고 재현 대상: 스튜디오 Basic — A4 1장 + 10×15 2장, 보정 3장
@@ -123,6 +126,43 @@ const photosOf = (n) => Array.from({ length: n }, (_, i) => ({ num: `IMG_${1000 
   t('프리웨딩 Plus = A3 1 + A4 2 + 10×15 3 (6행)',
     s.prints.map((p) => p.printId).join(',') === 'premium_a3,basic_a4,basic_a4,basic_10x15,basic_10x15,basic_10x15',
     JSON.stringify(s.prints.map((p) => p.printId)));
+}
+
+console.log('\n── 무료 컷도 10×15 포함 (사장님 확정 2026-08-07) ──');
+{
+  // 스튜디오 Basic(A4 1 + 10×15 2) + 보너스 2 + 서비스 1 = 6행
+  const s = runSeed({
+    productId: 'sb',
+    photos: [...photosOf(3), bonusPhoto('BON1'), bonusPhoto('BON2'), servicePhoto('SVC1')]
+  });
+  t('총 6행 (쿼터 3 + 서비스 1 + 보너스 2)', s.prints.length === 6, `${s.prints.length}행`);
+  t('쿼터는 일반 보정본에만 배정 (무료 컷이 A4 를 삼키지 않음)',
+    s.prints.slice(0, 3).map((p) => p.photoNum).join(',') === 'IMG_1000,IMG_1001,IMG_1002',
+    JSON.stringify(s.prints.slice(0, 3).map((p) => p.photoNum)));
+  const free = s.prints.slice(3);
+  t('무료 컷 3행 전부 10×15', free.every((p) => p.printId === 'basic_10x15'), JSON.stringify(free));
+  t('서비스가 보너스보다 먼저 (서버 크레딧 소진 순서와 일치)',
+    free.map((p) => p.photoNum).join(',') === 'SVC1,BON1,BON2', JSON.stringify(free.map((p) => p.photoNum)));
+}
+{
+  // 마케팅 미동의면 보너스 행을 만들지 않는다 (서버도 크레딧을 안 준다)
+  const s = runSeed({
+    productId: 'pb',
+    photos: [...photosOf(1), bonusPhoto('BON1')],
+    marketing: 'N'
+  });
+  t('미동의 시 보너스 행 없음 (쿼터 1행만)', s.prints.length === 1, JSON.stringify(s.prints));
+}
+{
+  // 번호가 아직 빈 무료 슬롯은 건너뛴다 — 크레딧이 사진번호로 붙기 때문
+  const s = runSeed({ productId: 'pb', photos: [...photosOf(1), bonusPhoto(''), servicePhoto('')] });
+  t('번호 없는 무료 슬롯은 행 생성 안 함', s.prints.length === 1, JSON.stringify(s.prints));
+}
+{
+  // 쿼터가 없어도(야외 Plus 이전 상태 같은 경우) 무료 컷 인화는 나가야 한다
+  const s = runSeed({ productId: 'pass', photos: [bonusPhoto('BON1'), servicePhoto('SVC1')] });
+  t('쿼터 없어도 무료 컷 2행은 생성', s.prints.length === 2 && s.prints.every((p) => p.printId === 'basic_10x15'),
+    JSON.stringify(s.prints));
 }
 
 console.log('\n  — 안 채워야 하는 경우 —');

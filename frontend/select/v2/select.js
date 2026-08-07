@@ -8,6 +8,7 @@ import {
   updateSelectSession
 } from '../../shared/api-select.js';
 import {
+  BASIC_10X15_ID,
   PRINT_NONE_ID,
   getProductDeliveryLines,
   getProductIncludedPrintQuota,
@@ -104,6 +105,16 @@ function computePrintAnnotations() {
     if (k) serviceCredit[k] = (serviceCredit[k] || 0) + 1;
   });
   let serviceCreditsRemaining = getServiceCutCount();
+  /* 마케팅 동의 보너스 컷도 시그니처 10×15 인화 포함 (사장님 확정 2026-08-07).
+     서버 computeSelectDecoupledPrints_ 와 같은 규칙 — 서비스 컷과 겹치지 않게 isService 를 뺀다
+     (서비스 슬롯은 isBonus 도 true 라 안 빼면 한 장이 크레딧을 두 번 받는다). */
+  const bonusCredit = {};
+  state.photos.forEach((p) => {
+    if (!p?.isBonus || p?.isService) return;
+    const k = printNumKey(p.num);
+    if (k) bonusCredit[k] = (bonusCredit[k] || 0) + 1;
+  });
+  let bonusCreditsRemaining = state.marketing === 'Y' ? getMarketingBonusCount() : 0;
   const basicPrintCredit = Number(getPrintOption('basic_10x15').retouched) || 0;
   /* 쿼터 배정은 행 순서와 무관해야 한다 — 서버 computeSelectDecoupledPrints_ 와 **동일한 2-pass**.
      그리디로 행마다 처리하면 같은 주문이 입력 순서에 따라 총액이 달라진다(파인아트10×15 가 A4 쿼터를 먼저 삼킴).
@@ -148,8 +159,11 @@ function computePrintAnnotations() {
       if (best) { best.qty -= 1; u.credit = Math.max(0, bestCredit); u.matched = true; }
     });
 
-  const acc = rows.map(() => ({ includedQty: 0, quotaDiffQty: 0, quotaCredit: 0, amount: 0, serviceDiscount: 0, serviceCreditUnits: 0 }));
-  // 서비스 컷 크레딧은 서버와 같은 순서(행→장)로 적용해야 결과가 일치한다.
+  const acc = rows.map(() => ({
+    includedQty: 0, quotaDiffQty: 0, quotaCredit: 0, amount: 0,
+    serviceDiscount: 0, serviceCreditUnits: 0, bonusDiscount: 0, bonusCreditUnits: 0
+  }));
+  // 서비스/보너스 크레딧은 서버와 같은 순서(행→장, 서비스 먼저)로 적용해야 결과가 일치한다.
   units.forEach((u) => {
     const r = rows[u.rowIndex];
     const a = acc[u.rowIndex];
@@ -168,6 +182,16 @@ function computePrintAnnotations() {
         serviceCreditsRemaining -= 1;
       }
     }
+    if (unitCharge > 0 && r.numKey && bonusCredit[r.numKey] > 0 && bonusCreditsRemaining > 0) {
+      const disc = Math.min(unitCharge, basicPrintCredit);
+      if (disc > 0) {
+        unitCharge = Math.max(0, unitCharge - disc);
+        a.bonusDiscount += disc;
+        a.bonusCreditUnits += 1;
+        bonusCredit[r.numKey] -= 1;
+        bonusCreditsRemaining -= 1;
+      }
+    }
     a.amount += unitCharge;
   });
 
@@ -177,7 +201,8 @@ function computePrintAnnotations() {
       option: r.option, qty: r.qty, isRetouched: r.isRetouched, unit: r.unit,
       includedQty: a.includedQty, chargedQty: r.qty - a.includedQty,
       quotaDiffQty: a.quotaDiffQty, quotaCredit: a.quotaCredit,
-      amount: a.amount, serviceDiscount: a.serviceDiscount, serviceCreditUnits: a.serviceCreditUnits
+      amount: a.amount, serviceDiscount: a.serviceDiscount, serviceCreditUnits: a.serviceCreditUnits,
+      bonusDiscount: a.bonusDiscount, bonusCreditUnits: a.bonusCreditUnits
     };
   });
 }
@@ -2429,23 +2454,30 @@ function seedIncludedPrints() {
   if (state.prints.length) { state.printsSeeded = true; return; }
   // 마이리얼트립·디지털 전용 등 실물 산출이 없는 세션엔 채우지 않는다
   if (!sessionHasIncludedDeliveryOutput()) return;
+  const numOf = (photo) => String(photo?.num || '').trim();
+  /* 상품 포함 쿼터는 **일반 보정본**에만 배정한다. 보너스·서비스 컷은 각자 10×15 를 따로 받으므로
+     (사장님 확정 2026-08-07) 여기서 섞으면 쿼터 한 장을 공짜 컷이 삼켜 일반 보정본이 밀린다. */
+  const regularNums = state.photos.filter((p) => !p?.isBonus && !p?.isService).map(numOf).filter(Boolean);
+  const bonusNums = state.photos.filter((p) => p?.isBonus && !p?.isService).map(numOf).filter(Boolean);
+  const serviceNums = state.photos.filter((p) => p?.isService).map(numOf).filter(Boolean);
+
   const quota = getSessionIncludedPrintQuota();
-  if (!quota.length) return;
-  const nums = state.photos
-    .map((photo) => String(photo?.num || '').trim())
-    .filter(Boolean);
+  const seeded = [];
   let cursor = 0;
   quota.forEach((item) => {
     for (let i = 0; i < (Number(item.qty) || 0); i += 1) {
-      state.prints.push({
-        photoNum: nums[cursor] || '',   // 보정본이 모자라면 빈칸 — 고객이 고르게 둔다
-        printId: item.id,
-        qty: 1,
-        finish: 'full'
-      });
+      // 보정본이 모자라면 빈칸 — 고객이 고르게 둔다(임의 배정 금지)
+      seeded.push({ photoNum: regularNums[cursor] || '', printId: item.id, qty: 1, finish: 'full' });
       cursor += 1;
     }
   });
+  // 서비스 컷 / 마케팅 보너스 컷: 슬롯마다 시그니처 10×15 1장 (번호가 아직 비면 건너뛴다 — 크레딧은 번호로 붙는다)
+  serviceNums.forEach((num) => seeded.push({ photoNum: num, printId: BASIC_10X15_ID, qty: 1, finish: 'full' }));
+  if (state.marketing === 'Y') {
+    bonusNums.forEach((num) => seeded.push({ photoNum: num, printId: BASIC_10X15_ID, qty: 1, finish: 'full' }));
+  }
+  if (!seeded.length) return;
+  state.prints.push(...seeded);
   state.printsSeeded = true;
 }
 

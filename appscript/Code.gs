@@ -19465,8 +19465,20 @@ function buildSelectServiceCutNums_(photos){
   });
   return nums;
 }
-// 서비스 컷: 채워진 서비스 슬롯 번호 1개당 시그니처 10×15 인화 크레딧(€3). 큰 사이즈는 차액만.
-function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
+/* 마케팅 동의 보너스 컷 번호 — 서비스 컷과 **겹치지 않게** isService 를 뺀다.
+   (서비스 슬롯은 isBonus 도 true 라 안 빼면 한 장이 크레딧을 두 번 받는다) */
+function buildSelectMarketingBonusNums_(photos){
+  const nums=[];
+  (photos||[]).forEach(function(p){
+    const isService=!!(p&&(p.isService||String(p.source||'')==='service'));
+    const isBonus=!!(p&&(p.isBonus||String(p.source||'')==='bonus'));
+    const key=selectPhotoNumKey_(p&&p.num);
+    if(isBonus&&!isService&&key) nums.push(key);
+  });
+  return nums;
+}
+// 서비스 컷·마케팅 보너스: 채워진 슬롯 번호 1개당 시그니처 10×15 인화 크레딧(€3). 큰 사이즈는 차액만.
+function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums,bonusNums){
   const itemGroup=row&&row[SELECT_COL['촬영종류']];
   const productName=row&&row[SELECT_COL['상품']];
   const quota=(getSelectIncludedPrintQuota_(itemGroup,productName)||[]).map(function(item){
@@ -19476,6 +19488,13 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
   (serviceNums||[]).forEach(function(n){const k=selectPhotoNumKey_(n);if(k)serviceCredit[k]=(serviceCredit[k]||0)+1;});
   // 총 크레딧 상한: 어드민이 설정한 서비스컷수 (클라이언트 isService 플래그만 신뢰하지 않도록 서버에서 캡)
   let serviceCreditsRemaining=Math.max(0,parseInt((row&&row[SELECT_COL['서비스컷수']]),10)||0);
+  /* 마케팅 동의 보너스 컷도 10×15 시그니처 인화 포함 (사장님 확정 2026-08-07).
+     상한은 마케팅보너스수. 동의 여부는 호출부가 판정해 bonusNums 를 비워 보내므로 여기선 캡만 건다
+     (제출 시점에 시트 '마케팅동의' 가 아직 갱신 전일 수 있어 행 값을 믿지 않는다). */
+  const bonusCredit={};
+  (bonusNums||[]).forEach(function(n){const k=selectPhotoNumKey_(n);if(k)bonusCredit[k]=(bonusCredit[k]||0)+1;});
+  let bonusCreditsRemaining=Math.max(0,parseInt(normalizeSelectMarketingBonusCount_(
+    row&&row[SELECT_COL['마케팅보너스수']],row&&row[SELECT_COL['촬영종류']],row&&row[SELECT_COL['상품']]),10)||0);
   const basicPrintCredit=Number((getPrintInfo_('basic_10x15')||{}).retouchedPrice||0);
   const chargeable=[];
   const included=[];
@@ -19561,6 +19580,22 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums){
       }
     }
   });
+  /* 마케팅 보너스 크레딧 — 서비스 컷과 같은 규칙, 같은 순서. 서비스 크레딧을 먼저 소진한 뒤라
+     한 장이 두 크레딧을 받는 일은 없다(번호 맵도 isService 를 빼서 애초에 겹치지 않는다). */
+  chargeable.forEach(function(item){
+    const k=selectPhotoNumKey_(item.photoNum);
+    if(k&&bonusCredit[k]>0&&bonusCreditsRemaining>0&&Number(item.price)>0){
+      const disc=Math.min(Number(item.price),basicPrintCredit);
+      if(disc>0){
+        item.price=Math.max(0,Number(item.price)-disc);
+        item.bonusCredit=disc;
+        item.source='bonus_print';
+        item.label=String(item.label||'')+(item.price>0?' (보너스 컷 차액)':' (보너스 컷 무료)');
+        bonusCredit[k]-=1;
+        bonusCreditsRemaining-=1;
+      }
+    }
+  });
   const items=mergeSelectPrintItems_(chargeable);
   return{
     items:items,
@@ -19582,7 +19617,12 @@ function priceSelectPrints_(sub,row,decoupled){
     const rawPrints=(sub&&sub.prints)||[];
     const retouchSet=buildRetouchNumSet_((sub&&sub.photos)||[]);
     const serviceNums=buildSelectServiceCutNums_((sub&&sub.photos)||[]);
-    const pc=computeSelectDecoupledPrints_(rawPrints,row,retouchSet,serviceNums);
+    /* 보너스 인화는 마케팅 동의가 전제다. 제출값을 우선 보고(시트는 아직 갱신 전일 수 있다),
+       둘 다 없으면 크레딧을 주지 않는다 — 동의 안 한 세션이 isBonus 만 보내와도 막힌다. */
+    const agreedMarketing=/^y/i.test(String((sub&&sub.marketing)||'').trim())
+      || (!(sub&&sub.marketing) && /^y/i.test(String((row&&row[SELECT_COL['마케팅동의']])||'').trim()));
+    const bonusNums=agreedMarketing?buildSelectMarketingBonusNums_((sub&&sub.photos)||[]):[];
+    const pc=computeSelectDecoupledPrints_(rawPrints,row,retouchSet,serviceNums,bonusNums);
     // 제작할 전체 출력물(무료 포함분 included:true/price:0) = 작업 지시서.
     // 셀렉 시트에는 이 형태로 저장하고, 인화주문/인보이스에는 과금 항목(pc.items)만 사용.
     const allPrints=(pc.includedItems||[]).concat(pc.items||[]);
