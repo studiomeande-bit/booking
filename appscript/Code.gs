@@ -16414,21 +16414,34 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     incomeCount:incomeRows.length,
     expenseCount:expenseRows.length
   });
-  let closeRecord=null,closeDrift=[];
+  const closeRowFp=buildAccountingRowFp_(entries);
+  let closeRecord=null,closeDrift=[],closeRowDrift={available:false,truncated:false,changes:[]};
   try{
     const found=findAccountingCloseRow_(getAccountingCloseSheet_(),sd,ed);
     if(found.rowIndex>0){
       closeRecord=accountingCloseRowToObject_(found.row,found.rowIndex);
       closeDrift=diffAccountingCloseSnapshot_(closeRecord.snapshot,closeSnapshot);
+      closeRowDrift=diffAccountingRowFp_(closeRecord.rowFp,entries);
+      // 합계는 그대로인데 행끼리 상쇄된 경우도 있다(A -100, B +100) — 행 변동만 있어도 알린다
+      const rowLines=closeRowDrift.changes.slice(0,8).map(function(c){
+        return (c.date?c.date+' ':'')+(c.label||c.key)+' '+c.text;
+      });
+      const rowTail=closeRowDrift.changes.length>8?` 외 ${closeRowDrift.changes.length-8}건`:'';
+      const drifted=closeDrift.length>0||closeRowDrift.changes.length>0;
       addCheck(
         'close_drift',
         '마감 후 변동',
-        closeDrift.length?'fail':'ok',
-        closeDrift.length,
+        drifted?'fail':'ok',
+        closeDrift.length||closeRowDrift.changes.length,
         closeDrift.reduce(function(s,d){return s+(d.money?Math.abs(d.delta):0);},0),
-        closeDrift.length
-          ? `${closeRecord.closedAt} 마감 이후 ${closeDrift.map(function(d){return d.label+' '+d.text;}).join(' · ')} — 신고를 마쳤다면 정정신고 대상입니다. 확인 후 다시 마감 기록해 주세요.`
-          : `${closeRecord.closedAt} 마감 기록과 현재 숫자가 일치합니다.`,
+        drifted
+          ? `${closeRecord.closedAt} 마감 이후 `
+            +(closeDrift.length?closeDrift.map(function(d){return d.label+' '+d.text;}).join(' · '):'합계는 동일하나 행 변동 있음')
+            +(rowLines.length?` — 변동 행: ${rowLines.join(' / ')}${rowTail}`:'')
+            +(closeRowDrift.available?'':' (이 마감 기록엔 행 지문이 없어 행 특정 불가 — 다시 마감 기록하면 다음부터 짚어줍니다)')
+            +' — 신고를 마쳤다면 정정신고 대상입니다.'
+          : `${closeRecord.closedAt} 마감 기록과 현재 숫자가 일치합니다.`
+            +(closeRowDrift.available?'':' (행 지문 없음 — 합계만 대조)'),
         'accounting',
         {},
         '장부 보기'
@@ -16442,8 +16455,10 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
     period:{startDate:sd,endDate:ed},
     ready:blockers===0,
     snapshot:closeSnapshot,
+    rowFp:closeRowFp,
     closeRecord:closeRecord,
     closeDrift:closeDrift,
+    closeRowDrift:closeRowDrift,
     summary:{
       status:blockers?'blocked':(warnings?'review':'ready'),
       blockers:blockers,
@@ -16471,7 +16486,7 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
  * 마감 시점의 숫자를 스냅샷으로 남기고, 이후 체크리스트가 그 스냅샷과 현재를 대조한다.
  * 기간(시작·종료)당 한 행 — 재마감하면 덮어써서 최신 스냅샷이 정본이 된다. */
 const ACCOUNTING_CLOSE_SHEET_NAME='회계마감';
-const ACCOUNTING_CLOSE_HEADERS=['기간시작','기간종료','마감일시','수입총액','지출총액','손익','납부부가세','회계건수','수입건수','지출건수','경고수','강제마감','메모'];
+const ACCOUNTING_CLOSE_HEADERS=['기간시작','기간종료','마감일시','수입총액','지출총액','손익','납부부가세','회계건수','수입건수','지출건수','경고수','강제마감','메모','행지문'];
 const ACCOUNTING_CLOSE_COL=ACCOUNTING_CLOSE_HEADERS.reduce(function(acc,h,i){acc[h]=i;return acc;},{});
 // 마감 스냅샷 비교 대상 — 신고 숫자에 직접 들어가는 값만. 나머지(검토건수 등)는 변동이 정상이라 뺀다.
 const ACCOUNTING_CLOSE_FIELDS=[
@@ -16486,6 +16501,83 @@ const ACCOUNTING_CLOSE_FIELDS=[
 
 function getAccountingCloseSheet_(){
   return ensureHeaderSheet_(ensureSheets_().ss,ACCOUNTING_CLOSE_SHEET_NAME,ACCOUNTING_CLOSE_HEADERS,'#e0e7ff');
+}
+
+/* ====== 행 지문 — drift 가 "어느 행"인지 짚게 만든다 ======
+ * 합계만 저장하면 "7월 수입이 €5.35 늘었다"까지만 알 수 있고 범인을 찾는 건 손품이다.
+ * 2026-08-07 에 실제로 그 상황을 만났다(수입 +€5.35, 32건 그대로 → 기존 행 하나가 변한 것인데
+ * 어느 행인지 특정 불가). 그래서 마감 시점의 행별 금액을 압축 문자열로 남긴다.
+ *
+ * 형식:  <소스코드><행번호>:<총액센트>[:<세액센트>]  를 ';' 로 이어붙임
+ *   예)  b4:24000;b9:21500;e68:5450:870
+ * 센트 정수라 부동소수 표기 흔들림이 없고, 행당 ~12자라 100행이어도 1.2KB (셀 5만자 한도에 여유).
+ */
+const ACCOUNTING_FP_CODE_={booking:'b','booking-refund':'r',gutschein:'g',print:'p',invoice:'v',cash:'c'};
+const ACCOUNTING_FP_MAX_=45000;
+
+function accountingRowFpKey_(e){
+  if(String(e.flow||'')==='expense') return 'e'+(e.rowIndex||0);
+  const src=String(e.source||'x');
+  return (ACCOUNTING_FP_CODE_[src]||src.replace(/[^a-z]/g,'').slice(0,2)||'x')+(e.rowIndex||0);
+}
+function buildAccountingRowFp_(entries){
+  const parts=(entries||[]).map(function(e){
+    const g=Math.round((Number(e.gross)||0)*100);
+    const isExp=String(e.flow||'')==='expense';
+    return accountingRowFpKey_(e)+':'+g+(isExp?':'+Math.round((Number(e.tax)||0)*100):'');
+  });
+  const s=parts.join(';');
+  // 셀 한도 방어 — 넘치면 잘라내고 표식을 남긴다(부분 지문임을 diff 가 알 수 있게)
+  return s.length>ACCOUNTING_FP_MAX_ ? s.slice(0,ACCOUNTING_FP_MAX_).replace(/;[^;]*$/,'')+';~TRUNC' : s;
+}
+function parseAccountingRowFp_(str){
+  const out={rows:{},truncated:false};
+  String(str||'').split(';').forEach(function(tok){
+    if(!tok) return;
+    if(tok==='~TRUNC'){out.truncated=true;return;}
+    const bits=tok.split(':');
+    if(bits.length<2) return;
+    out.rows[bits[0]]={gross:(Number(bits[1])||0)/100, tax:bits.length>2?(Number(bits[2])||0)/100:null};
+  });
+  return out;
+}
+/* 마감 당시 지문 vs 현재 엔트리 → 행 단위 변동 목록. 설명은 현재 엔트리에서 가져온다
+   (지문에 이름까지 넣으면 용량이 터지고, 어차피 사라진 행은 금액만 알면 추적 가능하다). */
+function diffAccountingRowFp_(fpStr,entries){
+  const old=parseAccountingRowFp_(fpStr);
+  if(!Object.keys(old.rows).length) return {available:false,truncated:old.truncated,changes:[]};
+  const cur={};
+  (entries||[]).forEach(function(e){cur[accountingRowFpKey_(e)]=e;});
+  const changes=[];
+  const money=function(v){return '€'+(Number(v)||0).toFixed(2);};
+  Object.keys(old.rows).forEach(function(k){
+    const o=old.rows[k],e=cur[k];
+    if(!e){
+      changes.push({key:k,kind:'removed',label:'사라짐',text:money(o.gross)+' 행이 기간에서 빠졌습니다'});
+      return;
+    }
+    const gNow=Math.round((Number(e.gross)||0)*100),gWas=Math.round(o.gross*100);
+    if(gNow!==gWas){
+      changes.push({key:k,kind:'changed',label:String(e.name||e.description||'').slice(0,40)||k,
+        date:e.date||'',text:'금액 '+money(o.gross)+' → '+money(e.gross)+
+        ' ('+(gNow>gWas?'+':'')+((gNow-gWas)/100).toFixed(2)+')'});
+    }
+    if(o.tax!=null){
+      const tNow=Math.round((Number(e.tax)||0)*100),tWas=Math.round(o.tax*100);
+      if(tNow!==tWas){
+        changes.push({key:k,kind:'changed',label:String(e.name||e.description||'').slice(0,40)||k,
+          date:e.date||'',text:'세액 '+money(o.tax)+' → '+money(e.tax)+
+          ' ('+(tNow>tWas?'+':'')+((tNow-tWas)/100).toFixed(2)+')'});
+      }
+    }
+  });
+  Object.keys(cur).forEach(function(k){
+    if(old.rows[k]) return;
+    const e=cur[k];
+    changes.push({key:k,kind:'added',label:String(e.name||e.description||'').slice(0,40)||k,
+      date:e.date||'',text:'신규 '+money(e.gross)});
+  });
+  return {available:true,truncated:old.truncated,changes:changes};
 }
 function accountingCloseSnapshot_(src){
   const s=src||{},out={};
@@ -16523,6 +16615,7 @@ function accountingCloseRowToObject_(row,rowIndex){
     warnings:Number(row[ACCOUNTING_CLOSE_COL['경고수']]||0)||0,
     forced:/^y/i.test(cell('강제마감')),
     memo:cell('메모'),
+    rowFp:cell('행지문'),
     snapshot:accountingCloseSnapshot_({
       incomeGross:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['수입총액']]),
       expenseGross:parseMoneyValue_(row[ACCOUNTING_CLOSE_COL['지출총액']]),
@@ -16579,7 +16672,8 @@ function recordAccountingMonthCloseAdmin(token,startDate,endDate,options){
   const values=[sd,ed,closedAt,snap.incomeGross,snap.expenseGross,snap.profitGross,snap.vatPayable,
     snap.entryCount,snap.incomeCount,snap.expenseCount,
     Number(checklist.summary&&checklist.summary.warnings||0),
-    (force&&blockers.length)?'Y':'',String(opts.memo||'').slice(0,300)];
+    (force&&blockers.length)?'Y':'',String(opts.memo||'').slice(0,300),
+    String(checklist.rowFp||'')];   // 행 지문 — 다음 drift 가 어느 행인지 짚을 수 있게
   let rowIndex;
   const reclosed=found.rowIndex>0;
   if(reclosed){rowIndex=found.rowIndex;sheet.getRange(rowIndex,1,1,values.length).setValues([values]);}
@@ -16590,6 +16684,8 @@ function recordAccountingMonthCloseAdmin(token,startDate,endDate,options){
     blockerLabels:blockers.map(function(c){return c.label;}),
     warnings:Number(checklist.summary&&checklist.summary.warnings||0),
     resolvedDrift:(checklist.closeDrift||[]).length,
+    resolvedRowDrift:((checklist.closeRowDrift||{}).changes||[]).length,
+    fingerprintRows:String(checklist.rowFp||'').split(';').filter(Boolean).length,
     snapshot:snap,memo:String(opts.memo||'')
   };
 }

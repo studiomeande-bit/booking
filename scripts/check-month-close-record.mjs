@@ -65,20 +65,28 @@ const pieces = [
   grab('ACCOUNTING_CLOSE_HEADERS', 'const'),
   grab('ACCOUNTING_CLOSE_COL', 'const'),
   grab('ACCOUNTING_CLOSE_FIELDS', 'const'),
+  grab('ACCOUNTING_FP_CODE_', 'const'),
+  grab('ACCOUNTING_FP_MAX_', 'const'),
   grab('accountingCloseSnapshot_'),
   grab('findAccountingCloseRow_'),
   grab('accountingCloseRowToObject_'),
   grab('diffAccountingCloseSnapshot_'),
+  grab('accountingRowFpKey_'),
+  grab('buildAccountingRowFp_'),
+  grab('parseAccountingRowFp_'),
+  grab('diffAccountingRowFp_'),
 ];
 const loaded = new Function(
   ...Object.keys(ctx),
   `${pieces.join('\n')}
-   return {ACCOUNTING_CLOSE_HEADERS,ACCOUNTING_CLOSE_COL,accountingCloseSnapshot_,findAccountingCloseRow_,accountingCloseRowToObject_,diffAccountingCloseSnapshot_};`
+   return {ACCOUNTING_CLOSE_HEADERS,ACCOUNTING_CLOSE_COL,accountingCloseSnapshot_,findAccountingCloseRow_,accountingCloseRowToObject_,diffAccountingCloseSnapshot_,
+           accountingRowFpKey_,buildAccountingRowFp_,parseAccountingRowFp_,diffAccountingRowFp_,ACCOUNTING_FP_MAX_};`
 )(...Object.values(ctx));
 
 const {
   ACCOUNTING_CLOSE_HEADERS, ACCOUNTING_CLOSE_COL,
   accountingCloseSnapshot_, findAccountingCloseRow_, accountingCloseRowToObject_, diffAccountingCloseSnapshot_,
+  accountingRowFpKey_, buildAccountingRowFp_, parseAccountingRowFp_, diffAccountingRowFp_, ACCOUNTING_FP_MAX_,
 } = loaded;
 
 // 시트 스텁 — getLastRow / getRange(...).getValues()
@@ -99,10 +107,11 @@ const JULY = {
   incomeGross: 5566, expenseGross: 2012.18, profitGross: 3553.82,
   vatPayable: 888.7, entryCount: 51, incomeCount: 32, expenseCount: 19,
 };
-const rowFor = (period, snap, closedAt = '2026-08-06 21:00', warnings = 3, forced = '', memo = '') => ([
+const rowFor = (period, snap, closedAt = '2026-08-06 21:00', warnings = 3, forced = '', memo = '',
+                fp = 'b4:24000;e172:4109:656') => ([
   period[0], period[1], closedAt,
   snap.incomeGross, snap.expenseGross, snap.profitGross, snap.vatPayable,
-  snap.entryCount, snap.incomeCount, snap.expenseCount, warnings, forced, memo,
+  snap.entryCount, snap.incomeCount, snap.expenseCount, warnings, forced, memo, fp,
 ]);
 
 console.log('\n── 스냅샷 정규화 ──');
@@ -122,6 +131,7 @@ console.log('\n── 행 왕복 ──');
   t('스냅샷 원복', JSON.stringify(obj.snapshot) === JSON.stringify(accountingCloseSnapshot_(JULY)), JSON.stringify(obj.snapshot));
   t('메모·경고수 보존', obj.memo === 'Q3 준비' && obj.warnings === 3);
   t('강제마감 플래그 off', obj.forced === false);
+  t('행 지문 원복', obj.rowFp === 'b4:24000;e172:4109:656', obj.rowFp);
   t('헤더 수 = 행 길이', ACCOUNTING_CLOSE_HEADERS.length === rows[0].length);
 }
 {
@@ -179,6 +189,65 @@ console.log('\n── drift 대조 ──');
   // 감소 방향
   const down = diffAccountingCloseSnapshot_(accountingCloseSnapshot_(JULY), accountingCloseSnapshot_({ ...JULY, expenseGross: 1812.18 }));
   t('지출 감소도 부호 정확', down.length === 1 && down[0].delta === -200 && down[0].text.includes('(-200.00)'), JSON.stringify(down));
+}
+
+console.log('\n── 행 지문 (어느 행이 바뀌었나) ──');
+{
+  const E = (source, flow, rowIndex, gross, tax, name, date) =>
+    ({ source, flow, rowIndex, gross, tax, name, date });
+  const base = [
+    E('booking', 'income', 4, 240, 38.32, '조재연', '2026-04-18'),
+    E('booking', 'income', 215, 149.94, 23.94, '쪼울', '2026-07-30'),
+    E('print', 'income', 12, 30, 4.79, '인화', '2026-07-05'),
+    E('expense', 'expense', 172, 41.09, 0, 'AMAZON EU', '2026-07-15'),
+  ];
+  const fp = buildAccountingRowFp_(base);
+
+  t('키가 소스별로 구분됨', accountingRowFpKey_(base[0]) === 'b4'
+    && accountingRowFpKey_(base[2]) === 'p12' && accountingRowFpKey_(base[3]) === 'e172',
+    [base[0], base[2], base[3]].map(accountingRowFpKey_).join(','));
+  t('예약행4 와 지출행4 가 충돌하지 않음',
+    accountingRowFpKey_(E('booking', 'income', 4)) !== accountingRowFpKey_(E('expense', 'expense', 4)));
+  t('지출만 세액 포함', fp.includes('e172:4109:0') && fp.includes('b4:24000') && !fp.includes('b4:24000:'));
+  t('변동 없으면 0건', diffAccountingRowFp_(fp, base).changes.length === 0);
+
+  // 오늘 실제로 겪은 사건: 합계 +€5.35, 건수 그대로 → 어느 행인지 특정 불가였다
+  const moved = base.map(e => e.rowIndex === 215 ? { ...e, gross: 155.29 } : e);
+  const d = diffAccountingRowFp_(fp, moved);
+  t('금액 바뀐 행 1건 지목', d.changes.length === 1 && d.changes[0].key === 'b215', JSON.stringify(d.changes));
+  t('지목된 행에 이름·날짜 포함', d.changes[0].label === '쪼울' && d.changes[0].date === '2026-07-30');
+  t('변동폭 표기 정확', d.changes[0].text === '금액 €149.94 → €155.29 (+5.35)', d.changes[0].text);
+
+  // 오늘 기장한 매입세액 — 지출은 총액 그대로인데 세액만 움직인다
+  const taxed = base.map(e => e.rowIndex === 172 && e.flow === 'expense' ? { ...e, tax: 6.56 } : e);
+  const dt = diffAccountingRowFp_(fp, taxed).changes;
+  t('총액 동일·세액만 변동도 검출', dt.length === 1 && dt[0].text === '세액 €0.00 → €6.56 (+6.56)', JSON.stringify(dt));
+
+  // 합계가 상쇄돼 0인 경우 — 이게 합계 대조만으로는 절대 안 잡히는 케이스
+  const offset = base.map(e => e.rowIndex === 4 ? { ...e, gross: 140 }
+    : e.rowIndex === 215 ? { ...e, gross: 249.94 } : e);
+  const off = diffAccountingRowFp_(fp, offset);
+  const sumBefore = base.reduce((s, e) => s + e.gross, 0);
+  const sumAfter = offset.reduce((s, e) => s + e.gross, 0);
+  t('합계 상쇄(총액 동일)인데 행 변동 2건 검출',
+    Math.abs(sumBefore - sumAfter) < 0.01 && off.changes.length === 2, `${sumBefore}/${sumAfter}`);
+
+  const added = diffAccountingRowFp_(fp, [...base, E('booking', 'income', 999, 50, 7.98, '신규', '2026-07-31')]).changes;
+  t('신규 행 검출', added.length === 1 && added[0].kind === 'added' && added[0].key === 'b999');
+  const removed = diffAccountingRowFp_(fp, base.filter(e => e.rowIndex !== 12)).changes;
+  t('사라진 행 검출', removed.length === 1 && removed[0].kind === 'removed' && removed[0].key === 'p12');
+
+  t('센트 왕복 정확(부동소수 흔들림 없음)',
+    parseAccountingRowFp_(buildAccountingRowFp_([E('booking', 'income', 1, 1234.56)])).rows.b1.gross === 1234.56);
+  t('지문 없으면 available=false', diffAccountingRowFp_('', base).available === false);
+
+  // 셀 5만자 한도 방어
+  const many = Array.from({ length: 8000 }, (_, i) => E('booking', 'income', i, 100 + i));
+  const big = buildAccountingRowFp_(many);
+  t('한도 초과 시 잘리고 표식', big.length <= ACCOUNTING_FP_MAX_ + 8 && big.endsWith(';~TRUNC'), `len=${big.length}`);
+  t('잘린 지문도 파싱되고 truncated 표시', parseAccountingRowFp_(big).truncated === true);
+  t('100행 지문은 2KB 미만',
+    buildAccountingRowFp_(Array.from({ length: 100 }, (_, i) => E('booking', 'income', i, 199.99))).length < 2048);
 }
 
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed\n`);

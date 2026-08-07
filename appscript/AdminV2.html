@@ -6976,14 +6976,27 @@ function renderMonthCloseRecordLine(res){
   const rec=res&&res.closeRecord;
   if(!rec) return '';
   const drift=Array.isArray(res&&res.closeDrift)?res.closeDrift:[];
-  const tone=drift.length
+  const rowDrift=(res&&res.closeRowDrift)||{};
+  const rowChanges=Array.isArray(rowDrift.changes)?rowDrift.changes:[];
+  // 합계가 그대로여도 행끼리 상쇄됐을 수 있다(A -100 / B +100) — 행 변동만 있어도 경고색
+  const dirty=drift.length>0||rowChanges.length>0;
+  const tone=dirty
     ? {bg:'#fef2f2',border:'#fecaca',color:'#b91c1c'}
     : {bg:'#ecfdf5',border:'#bbf7d0',color:'#047857'};
-  const head=drift.length
-    ? `⚠️ ${escHtml(rec.closedAt)} 마감 이후 숫자가 바뀌었습니다`
+  const head=dirty
+    ? `⚠️ ${escHtml(rec.closedAt)} 마감 이후 ${drift.length?'숫자가 바뀌었습니다':'행 구성이 바뀌었습니다(합계는 동일)'}`
     : `✅ ${escHtml(rec.closedAt)} 마감 기록됨`;
-  const body=drift.length
-    ? `<div style="margin-top:4px;font-size:11px;line-height:1.7;">${drift.map(d=>`<div>· <b>${escHtml(d.label)}</b> ${escHtml(d.text)}</div>`).join('')}<div style="margin-top:4px;">신고를 마친 기간이면 정정신고 대상입니다. 확인 후 <b>다시 마감 기록</b>을 눌러 스냅샷을 갱신하세요.</div></div>`
+  const rowBlock=rowChanges.length
+    ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed currentColor;font-size:11px;line-height:1.7;">`
+      +`<b>변동 행 ${rowChanges.length}건</b>`
+      +rowChanges.slice(0,12).map(c=>`<div>· ${c.date?escHtml(c.date)+' ':''}<b>${escHtml(c.label||c.key)}</b> <span style="opacity:.7;">(${escHtml(c.key)})</span> ${escHtml(c.text)}</div>`).join('')
+      +(rowChanges.length>12?`<div>… 외 ${rowChanges.length-12}건</div>`:'')
+      +`</div>`
+    : (dirty&&!rowDrift.available
+        ? `<div style="margin-top:6px;font-size:11px;opacity:.85;">이 마감 기록엔 행 지문이 없어 어느 행인지 특정할 수 없습니다 — <b>다시 마감 기록</b>하면 다음부터 짚어줍니다.</div>`
+        : '');
+  const body=dirty
+    ? `<div style="margin-top:4px;font-size:11px;line-height:1.7;">${drift.map(d=>`<div>· <b>${escHtml(d.label)}</b> ${escHtml(d.text)}</div>`).join('')}${rowBlock}<div style="margin-top:4px;">신고를 마친 기간이면 정정신고 대상입니다. 확인 후 <b>다시 마감 기록</b>을 눌러 스냅샷을 갱신하세요.</div></div>`
     : '';
   const meta=[rec.forced?'강제 마감':'',rec.memo?escHtml(rec.memo):''].filter(Boolean).join(' · ');
   return `<div style="background:${tone.bg};border:1px solid ${tone.border};border-radius:8px;padding:8px 10px;color:${tone.color};font-size:12px;font-weight:800;">
