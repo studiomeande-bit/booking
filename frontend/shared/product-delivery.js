@@ -141,7 +141,7 @@ export const PRODUCT_DELIVERY_SPECS = [
     aliases: ['야외/홈스냅 plus', 'outdoor/home plus'],
     originals: ORIGINALS_COPY.colorCloud,
     retouchCount: 10,
-    prints: []
+    prints: [{ id: BASIC_10X15_ID, qty: 7, label: PRINT_SIZE_LABELS.basic10x15 }]
   },
   {
     id: 'oprm',
@@ -149,7 +149,7 @@ export const PRODUCT_DELIVERY_SPECS = [
     aliases: ['야외/홈스냅 premium', 'outdoor/home premium'],
     originals: ORIGINALS_COPY.colorCloud,
     retouchCount: 20,
-    prints: []
+    prints: [{ id: BASIC_10X15_ID, qty: 10, label: PRINT_SIZE_LABELS.basic10x15 }]
   },
   {
     id: 'wp',

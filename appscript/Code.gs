@@ -18677,8 +18677,8 @@ const SELECT_INCLUDED_PRINT_QUOTA_BY_PRODUCT_={
   sp:[{id:'basic_a4',qty:1},{id:'basic_10x15',qty:4}],
   sprm:[{id:'basic_a4',qty:1},{id:'basic_10x15',qty:6}],
   ob:[{id:'basic_10x15',qty:5}],
-  op:[],
-  oprm:[],
+  op:[{id:'basic_10x15',qty:7}],       // 2026-08-07 사장님 확정 (이전 빈값 → 포함 인화 없음으로 취급됐다)
+  oprm:[{id:'basic_10x15',qty:10}],    // 〃
   wp:[{id:'premium_a3',qty:1},{id:'basic_a4',qty:2},{id:'basic_10x15',qty:3}],
   wprm:[{id:'premium_a3',qty:1},{id:'basic_a4',qty:2},{id:'basic_10x15',qty:3}],
   amtp:[{id:'basic_10x15',qty:15}]

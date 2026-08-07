@@ -242,6 +242,7 @@ const state = {
   mailAddress: '',
   editMode: false,
   studioA4Dismissed: false,
+  printsSeeded: false,
   step: 0,
   submitted: false,
   gallery: {
@@ -660,6 +661,7 @@ function hydrateSession(session) {
     state.pickupDate = pickupDate;
     state.pickupTime = pickupTime;
   }
+  state.printsSeeded = false;
   state.pickupEventId = session.existingPickupEventId || '';
   state.mailName = String(session.existingMailName || session.name || '').trim();
   state.mailAddress = normalizeMailAddressText(session.existingMailAddress || session.bookingAddress || '');
@@ -2413,6 +2415,40 @@ function addPrintRow() {
   updateReview();
 }
 
+/* 포함 인화 미리 채우기 (2026-08-07)
+ * 포함 쿼터는 '할인 근거'로만 쓰이고 주문으로는 변환되지 않았다. 그래서 고객이 손으로
+ * 넣지 않으면 포함분이 통째로 소실됐다 — 실제 사고: 스튜디오 Basic(A4 1 + 10×15 2) 세션에서
+ * A4 1장만 넘어옴(고객이 인화를 한 줄만 추가했고, 그 줄의 기본값이 쿼터 첫 항목인 A4 였다).
+ * 출력 단계 진입 시 쿼터를 행으로 펼치고, 보정 리스트 순서대로 사진번호까지 배정한다
+ * ('보정본은 출력 선택이 없어도 기본 인화' 규칙을 여기서 실현).
+ * 고객이 지운 건 지운 대로 둔다 — 한 세션에 한 번만 채운다. */
+function seedIncludedPrints() {
+  if (state.printsSeeded) return;
+  // 수정 모드는 기존 제출분이 복원돼 있다 — 덮어쓰면 고객이 지웠던 항목이 되살아난다
+  if (state.editMode) { state.printsSeeded = true; return; }
+  if (state.prints.length) { state.printsSeeded = true; return; }
+  // 마이리얼트립·디지털 전용 등 실물 산출이 없는 세션엔 채우지 않는다
+  if (!sessionHasIncludedDeliveryOutput()) return;
+  const quota = getSessionIncludedPrintQuota();
+  if (!quota.length) return;
+  const nums = state.photos
+    .map((photo) => String(photo?.num || '').trim())
+    .filter(Boolean);
+  let cursor = 0;
+  quota.forEach((item) => {
+    for (let i = 0; i < (Number(item.qty) || 0); i += 1) {
+      state.prints.push({
+        photoNum: nums[cursor] || '',   // 보정본이 모자라면 빈칸 — 고객이 고르게 둔다
+        printId: item.id,
+        qty: 1,
+        finish: 'full'
+      });
+      cursor += 1;
+    }
+  });
+  state.printsSeeded = true;
+}
+
 function renderServiceCutPrintNote() {
   const total = getServiceCutCount();
   if (total <= 0) return '';
@@ -2845,7 +2881,11 @@ function goStep(step) {
     dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
-  if (step === 3) renderPrints(); // 보정 리스트 기준 포함 쿼터/단가 최신화
+  if (step === 3) {
+    seedIncludedPrints();          // 포함 인화를 주문 행으로 미리 채운다(보정 리스트 확정 후라야 번호 배정 가능)
+    renderPrints();                // 보정 리스트 기준 포함 쿼터/단가 최신화
+    updateSubmitState();           // 채워진 행이 제출 가드/배송 필요 여부에 즉시 반영되게
+  }
   if (step === 4) updateReview();
   globalThis.scrollTo({ top: 0, behavior: 'smooth' });
 }
