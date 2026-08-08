@@ -2769,9 +2769,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
     </div>
     <div class="form-row"><div class="form-group"><label>연락처</label><input type="text" id="edit_phone"></div><div class="form-group"><label>이메일</label><input type="email" id="edit_email" placeholder="customer@example.com"></div></div>
-    <div class="form-group"><label>총금액 (€)</label><input type="text" id="edit_price"></div>
+    <div class="form-group"><label>총금액 (€)</label><input type="text" id="edit_price" oninput="syncEditAmounts('price')"></div>
     <div class="form-group"><label>고객 주소</label><textarea id="edit_address" rows="2" placeholder="Straße, Hausnummer, PLZ, Stadt"></textarea></div>
-    <div class="form-row"><div class="form-group"><label>계약금</label><input type="text" id="edit_deposit"></div><div class="form-group"><label>잔금</label><input type="text" id="edit_balance"></div></div>
+    <div class="form-row"><div class="form-group"><label>계약금</label><input type="text" id="edit_deposit" oninput="syncEditAmounts('deposit')"></div><div class="form-group"><label>잔금</label><input type="text" id="edit_balance" oninput="syncEditAmounts('balance')"></div></div>
+    <div id="edit_amountHint" style="font-size:12px;margin:-6px 0 12px;line-height:1.5;"></div>
     <div class="form-row">
       <div class="form-group"><label>결제 수단</label><select id="edit_payMethod"><option>미결제</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select></div>
       <div class="form-group"><label>계약금 결제수단</label><select id="edit_depPayMethod"><option>-</option><option>현금</option><option>카드</option><option>계좌이체</option><option>마이리얼트립</option></select></div>
@@ -6325,6 +6326,7 @@ function previewEditPricing(){
       document.getElementById('edit_price').value=q.isQuoteOnly?'':q.totalPrice;
       document.getElementById('edit_deposit').value=q.isQuoteOnly?'':q.depositAmount;
       document.getElementById('edit_balance').value=q.isQuoteOnly?'':q.balanceAmount;
+      syncEditAmounts('');
       if(res.itemGroup&&document.getElementById('edit_itemGroup')) document.getElementById('edit_itemGroup').value=res.itemGroup;
       if(res.productName&&document.getElementById('edit_productCustom')&&document.getElementById('edit_product')?.value==='__custom__') document.getElementById('edit_productCustom').value=res.productName;
       editPricingDirty=false;
@@ -6530,6 +6532,7 @@ function openEdit(rowIndex){
   if(document.getElementById('edit_price')) document.getElementById('edit_price').value=c.price||'';
   if(document.getElementById('edit_deposit')) document.getElementById('edit_deposit').value=c.depositRaw||'';
   if(document.getElementById('edit_balance')) document.getElementById('edit_balance').value=c.balance||'';
+  syncEditAmounts('');   // 값은 그대로 두고 합계 일치 여부만 표시(열자마자 데이터가 바뀌면 안 된다)
   if(document.getElementById('edit_payMethod')) document.getElementById('edit_payMethod').value=c.payMethod||'미결제';
   if(document.getElementById('edit_depPayMethod')) document.getElementById('edit_depPayMethod').value=c.depPayMethod||'-';
   if(document.getElementById('edit_paymentLinkType')) document.getElementById('edit_paymentLinkType').value=c.paymentLinkType||'';
@@ -10646,33 +10649,92 @@ function doResend(rowIndex,btn){
 
 /* 샘플 링크 발송 — 여는 즉시 dryRun 으로 폴더를 조회해 "무엇을 몇 장" 보내는지 보여주고,
    확인되기 전까지 발송 버튼을 잠근다. 메일은 되돌릴 수 없어서 미리보기를 게이트로 둔다. */
+/* ⚠️ 이 핸들러는 절대 조용히 죽으면 안 된다. inline onclick 에서 예외가 나면 화면에 아무 일도
+   안 일어나 "버튼이 안 먹는다"로만 보이고 원인을 찾을 수 없다(2026-08-08 실제로 그렇게 됐다).
+   그래서 ① 전체를 try/catch 로 감싸 예외를 눈에 보이게 하고
+        ② 로컬 캐시(allCustomers) 의존을 없앤다 — 대상 정보는 서버 dryRun 응답으로 채운다.
+           캐시가 비었거나 rowIndex 타입이 어긋나도 창은 열리고 서버가 진실을 알려준다. */
+/* ===== 금액 3칸 동기화: 계약금 + 잔금 = 총금액 =====
+ * 계약금/잔금을 고치면 총금액이 따라 오르내리고, 총금액을 고치면 잔금이 맞춰진다.
+ * ⚠️ 계약금 칸에는 '입금전(50€)' 같은 표시 문자열이 들어있는 행이 있다 — 숫자만 뽑아 계산하고
+ *    사용자가 타이핑 중인 칸은 절대 덮어쓰지 않는다(커서가 튀고 입력이 지워진다).
+ * ⚠️ 모달을 열 때 자동 보정하지 않는다 — 기존 불일치 행을 열기만 해도 값이 바뀌면 사고다.
+ *    대신 경고만 띄우고, 고치는 건 사장님이 한 칸이라도 건드릴 때부터. */
+function parseAdminAmount(v){
+  const s=String(v==null?'':v).replace(/[^\d.,-]/g,'').trim();
+  if(!s||!/\d/.test(s)) return null;
+  const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
+  let n=s;
+  if(lastComma>-1&&lastComma>lastDot) n=s.replace(/\./g,'').replace(',','.');   // 1.234,56 (독일식)
+  else n=s.replace(/,/g,'');
+  const out=Number(n);
+  return isFinite(out)?out:null;
+}
+function fmtAdminAmount(n){
+  return (Math.round((Number(n)||0)*100)/100).toFixed(2).replace(/\.00$/,'');
+}
+function syncEditAmounts(source){
+  const $=id=>document.getElementById(id);
+  const pEl=$('edit_price'),dEl=$('edit_deposit'),bEl=$('edit_balance'),hint=$('edit_amountHint');
+  if(!pEl||!dEl||!bEl) return;
+  const p=parseAdminAmount(pEl.value),d=parseAdminAmount(dEl.value),b=parseAdminAmount(bEl.value);
+  if(source==='deposit'||source==='balance'){
+    // 계약금·잔금 중 하나라도 비어 있으면 총액을 함부로 만들지 않는다(입력 중일 수 있다)
+    if(d!=null&&b!=null) pEl.value=fmtAdminAmount(d+b);
+  }else if(source==='price'){
+    if(p!=null&&d!=null) bEl.value=fmtAdminAmount(Math.max(0,p-d));
+  }
+  if(hint){
+    const np=parseAdminAmount(pEl.value),nd=parseAdminAmount(dEl.value),nb=parseAdminAmount(bEl.value);
+    if(np==null||nd==null||nb==null){hint.textContent='';return;}
+    const gap=Math.round((np-(nd+nb))*100)/100;
+    hint.innerHTML=gap===0
+      ? `<span style="color:#059669;">계약금 ${fmtAdminAmount(nd)}€ + 잔금 ${fmtAdminAmount(nb)}€ = 총금액 ${fmtAdminAmount(np)}€</span>`
+      : `<span style="color:#b45309;">⚠️ 합계가 ${gap>0?'':'−'}${fmtAdminAmount(Math.abs(gap))}€ 어긋납니다 (계약금 ${fmtAdminAmount(nd)} + 잔금 ${fmtAdminAmount(nb)} ≠ 총금액 ${fmtAdminAmount(np)})</span>`;
+  }
+}
+
 function openSampleSendModal(rowIndex){
-  const c=allCustomers.find(x=>x.rowIndex===rowIndex);
-  if(!c){alert('예약 정보를 찾을 수 없습니다.');return;}
-  document.getElementById('sample_rowIndex').value=rowIndex;
-  document.getElementById('sample_custInfo').innerHTML=`<b>${escHtml(c.name)}</b> · ${escHtml(c.email||'이메일 없음')}<br><span style="font-size:12px;color:#64748b;">${escHtml(c.dateStr||'')} · ${escHtml(c.product||'')}</span>`;
-  document.getElementById('sample_message').value='';
-  document.getElementById('sample_sendStatus').textContent='';
-  const prev=document.getElementById('sample_preview');
-  prev.innerHTML='<span class="spinner"></span> 샘플 폴더 확인 중...';
-  const btn=document.getElementById('sample_sendBtn');
-  if(btn){btn.disabled=true;btn.textContent='메일 발송';}
-  document.getElementById('sampleSendModal').classList.add('open');
-  google.script.run.withSuccessHandler(res=>{
-    if(res&&res.ok){
-      const f=res.folder||{};
-      const already=String(c.sampleSentAt||'').trim();
-      prev.innerHTML=`<div class="modal-section-title">보낼 내용</div>`
-        +`📁 <b>${escHtml(f.name||'')}</b><br>사진 <b>${Number(res.photoCount||0)}장</b> · 언어 ${escHtml(res.lang||'ko')}`
-        +`<div style="margin-top:6px;"><a href="${escHtml(f.url||'')}" target="_blank" rel="noopener">폴더 열어보기 →</a></div>`
-        +(already?`<div style="margin-top:8px;color:#b45309;">⚠️ 이미 ${escHtml(already)}에 보냈습니다. 다시 보내면 재발송됩니다.</div>`:'');
-      if(btn) btn.disabled=false;
-    }else{
-      prev.innerHTML=`<span style="color:#ef4444;">${escHtml((res&&res.message)||'폴더 확인 실패')}</span>`;
-    }
-  }).withFailureHandler(e=>{
-    prev.innerHTML=`<span style="color:#ef4444;">${escHtml(e.message||e)}</span>`;
-  }).sendBookingSampleAdmin(adminToken,rowIndex,{dryRun:true});
+  try{
+    const idx=Number(rowIndex)||0;
+    if(!idx){alert('예약 행 번호를 확인할 수 없습니다.');return;}
+    const c=(typeof allCustomers!=='undefined'&&Array.isArray(allCustomers))
+      ? allCustomers.find(x=>Number(x&&x.rowIndex)===idx) : null;
+    const $=id=>document.getElementById(id);
+    if($('sample_rowIndex')) $('sample_rowIndex').value=idx;
+    if($('sample_custInfo')) $('sample_custInfo').innerHTML=c
+      ? `<b>${escHtml(c.name||'')}</b> · ${escHtml(c.email||'이메일 없음')}<br><span style="font-size:12px;color:#64748b;">${escHtml(c.dateStr||'')} · ${escHtml(c.product||'')}</span>`
+      : `<span style="color:#64748b;">행 ${idx} · 불러오는 중…</span>`;
+    if($('sample_message')) $('sample_message').value='';
+    if($('sample_sendStatus')) $('sample_sendStatus').textContent='';
+    const prev=$('sample_preview');
+    if(prev) prev.innerHTML='<span class="spinner"></span> 샘플 폴더 확인 중...';
+    const btn=$('sample_sendBtn');
+    if(btn){btn.disabled=true;btn.textContent='메일 발송';}
+    const modal=$('sampleSendModal');
+    if(!modal){alert('샘플 발송 창을 찾을 수 없습니다. 어드민을 새로고침해 주세요.');return;}
+    modal.classList.add('open');
+    google.script.run.withSuccessHandler(res=>{
+      if(res&&res.ok){
+        const f=res.folder||{};
+        const already=String(res.alreadySentAt||(c&&c.sampleSentAt)||'').trim();
+        // 대상 정보는 서버 응답이 정본 — 캐시가 없어도 여기서 채워진다
+        if($('sample_custInfo')) $('sample_custInfo').innerHTML=
+          `<b>${escHtml(res.name||'')}</b> · ${escHtml(res.email||'')}<br><span style="font-size:12px;color:#64748b;">행 ${idx} · 언어 ${escHtml(res.lang||'ko')}</span>`;
+        if(prev) prev.innerHTML=`<div class="modal-section-title">보낼 내용</div>`
+          +`📁 <b>${escHtml(f.name||'')}</b><br>사진 <b>${Number(res.photoCount||0)}장</b>`
+          +`<div style="margin-top:6px;"><a href="${escHtml(f.url||'')}" target="_blank" rel="noopener">폴더 열어보기 →</a></div>`
+          +(already?`<div style="margin-top:8px;color:#b45309;">⚠️ 이미 ${escHtml(already)}에 보냈습니다. 다시 보내면 재발송됩니다.</div>`:'');
+        if(btn) btn.disabled=false;
+      }else{
+        if(prev) prev.innerHTML=`<span style="color:#ef4444;">${escHtml((res&&res.message)||'폴더 확인 실패')}</span>`;
+      }
+    }).withFailureHandler(e=>{
+      if(prev) prev.innerHTML=`<span style="color:#ef4444;">${escHtml((e&&e.message)||e)}</span>`;
+    }).sendBookingSampleAdmin(adminToken,idx,{dryRun:true});
+  }catch(err){
+    alert('샘플 발송 창을 열지 못했습니다: '+((err&&err.message)||err));
+  }
 }
 
 function closeSampleSendModal(){
@@ -14405,6 +14467,7 @@ function applyPassportAffiliateDiscount(rowIndex,btn){
         if(modalRow===rowIndex){
           if(document.getElementById('edit_price')) document.getElementById('edit_price').value=res.newTotal;
           if(document.getElementById('edit_balance')) document.getElementById('edit_balance').value=res.newBalance;
+          syncEditAmounts('');
           if(document.getElementById('edit_memo')) document.getElementById('edit_memo').value=c&&c.memo?c.memo:document.getElementById('edit_memo').value;
         }
         showToast(`제휴사 할인 적용 완료: ${res.previousTotal}€ → ${res.newTotal}€`,'ok');

@@ -22538,8 +22538,9 @@ function sendBookingSampleAdmin(token,rowIndex,options){
   const msgHtml=buildRetouchExtraMessageHtml_(message,lang);
 
   if(opts.dryRun){
+    // alreadySentAt: 어드민 모달이 재발송 경고를 띄우는 근거 — 로컬 캐시에 의존하지 않게 서버가 알려준다
     return {ok:true,dryRun:true,rowIndex:rIdx,name:name,email:email,lang:lang,
-      folder:folder,photoCount:photoCount,message:message};
+      folder:folder,photoCount:photoCount,message:message,alreadySentAt:sentAt};
   }
 
   // 링크 공유 설정 — 안 하면 고객이 '권한 요청' 화면을 본다
