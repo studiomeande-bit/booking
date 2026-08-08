@@ -9120,7 +9120,8 @@ function processForm(data){
     bookingRow[BOOKING_COL['옵션']] = (data.optionKeys||[]).join(',')+(quote.passCountries.length?' | '+[...quote.passCountries,...(quote.otherCountry?[quote.otherCountry]:[])]:'' );
     bookingRow[BOOKING_COL['인원']] = quote.people;
     bookingRow[BOOKING_COL['총결제액']] = quote.totalPrice;
-    bookingRow[BOOKING_COL['계약금']] = quote.isDeposit?`입금전(${quote.depositAmount}€)`:'0';
+    // 계약금 셀은 **숫자만** — 입금 여부는 계약금입금여부/일/금액 3열이 정본이다(2026-08-08 분리).
+    bookingRow[BOOKING_COL['계약금']] = quote.isDeposit?roundCurrency_(quote.depositAmount):0;
     bookingRow[BOOKING_COL['잔금']] = quote.balanceAmount;
     bookingRow[BOOKING_COL['결제수단']] = '미결제';
     bookingRow[BOOKING_COL['분위기']] = surveyStr||'해당없음';
@@ -11261,9 +11262,8 @@ function addManualBookingAdmin(token, data) {
     const countryText=(quote&&quote.itemType==='passport') ? `국가 ${passCountryCount}개/인` : '';
     const optionsStr = [optionKeys.join('|'), countryText].filter(Boolean).join(' | ');
     const depositReceived = depositAmt > 0 && ['계좌이체','현금','카드','마이리얼트립'].indexOf(depPayMethod) > -1;
-    const depositCell = depositAmt > 0
-      ? (depositReceived ? depositAmt : `입금전(${formatEuroAmount_(depositAmt)}€)`)
-      : '0';
+    // 금액 셀에 상태를 섞지 않는다 — 섞으면 시트 SUM 이 깨진다. depositReceived 는 아래 입금여부 열로 간다.
+    const depositCell = depositAmt > 0 ? roundCurrency_(depositAmt) : 0;
     const detailMemoParts=[
       data.passportMemo?`여권메모: ${String(data.passportMemo).trim()}`:'',
       data.snapRoute?`동선: ${String(data.snapRoute).trim()}`:'',
@@ -25350,11 +25350,12 @@ function getInvoiceBookingSyncDepositAmount_(group,total,row,payloadDeposit){
   return 50;
 }
 
+/* 계약금 셀은 숫자만 쓴다(2026-08-08). 입금 여부는 계약금입금여부 열이 정본이라
+   여기서 상태 문자열을 만들 이유가 없다 — 예전엔 '입금전(50€)' 를 써서 시트 합계가 깨졌다.
+   row 인자는 호출부 호환을 위해 남긴다. */
 function formatInvoiceBookingDepositCell_(row,depositAmount){
   const amount=roundCurrency_(depositAmount);
-  if(amount<=0) return '0';
-  const paid=String(row&&row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
-  return paid?amount:`입금전(${formatEuroAmount_(amount)}€)`;
+  return amount>0?amount:0;
 }
 
 function buildInvoiceBookingSyncOptionText_(bookingUpdate,preview){
@@ -28081,7 +28082,7 @@ function convertQuoteToBookingAdmin(token, number, overrides){
     `${dateStr} ${timeStr}`, bookingStatus, q.name||q.companyName, q.phone, q.email, q.lang,
     bookingItemGroup, productLabel,
     (q.items[0]&&q.items[0].description)||'', Number(o.people||1),
-    totalAmt, depositAmt>0?`입금전(${depositAmt}€)`:'0', balanceAmt,
+    totalAmt, depositAmt>0?roundCurrency_(depositAmt):0, balanceAmt,   // 계약금은 숫자만(입금여부는 별도 열)
     '미결제', '', memoOut, event.getId(), depositAmt>0?'계좌이체':'-',
     extraItem, q.companyName?'기업':'신규', '',
     'Y', 'N', now, '', 'N', q.customerAddress||q.billingAddress||'',
@@ -29088,10 +29089,8 @@ function _previewGutscheinApplyCore_(bookingRowIndex, rawCode){
 }
 
 function _formatBookingDepositCellAfterGutschein_(row, adjustedDeposit){
-  if(adjustedDeposit<=0) return '0';
-  const paid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
-  if(paid) return adjustedDeposit;
-  return `입금전(${adjustedDeposit}€)`;
+  // 숫자만 — 입금 여부는 계약금입금여부 열이 정본 (2026-08-08 분리)
+  return adjustedDeposit>0?roundCurrency_(adjustedDeposit):0;
 }
 
 function applyGutscheinToBookingAdmin(token, bookingRowIndex, rawCode, method){
