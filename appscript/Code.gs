@@ -22505,8 +22505,9 @@ function sendBookingSampleAdmin(token,rowIndex,options){
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(!email||email.indexOf('@')===-1||/수기/.test(email)) throw new Error('발송 가능한 이메일이 없습니다: '+(email||'(없음)'));
 
-  const sentAt=String(row[BOOKING_COL['샘플발송일시']]||'').trim();
-  if(sentAt&&!opts.force) throw new Error('이미 샘플을 보냈습니다 ('+sentAt+'). 다시 보내려면 force:true');
+  /* 시트가 '2026-08-08 20:01' 을 Date 로 재해석해 두는 경우가 있어 원시 Date 문자열이 그대로
+     노출됐다(계약서에서 겪은 것과 같은 함정). 표시·비교 모두 정규화된 문자열로 한다. */
+  const sentAt=parseDateSafe_(row[BOOKING_COL['샘플발송일시']]).str.slice(0,16);
 
   const shootDate=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
   // folderUrl 을 직접 주면 탐색을 건너뛴다(폴더명이 규칙을 벗어난 경우 수동 지정)
@@ -22537,11 +22538,15 @@ function sendBookingSampleAdmin(token,rowIndex,options){
   if(message.length>2000) throw new Error('메시지는 2000자 이하로 입력해 주세요.');
   const msgHtml=buildRetouchExtraMessageHtml_(message,lang);
 
+  /* ⚠️ 미리보기(dryRun)는 재발송 가드보다 **먼저** 반환한다. 가드를 앞에 두면 한 번 보낸 예약은
+     어드민 모달이 영영 미리보기를 못 띄우고 빨간 오류만 뜬다(2026-08-08 실제로 그랬다).
+     보내지 않는 조회를 막을 이유가 없다 — 막아야 할 건 발송뿐이다. */
   if(opts.dryRun){
     // alreadySentAt: 어드민 모달이 재발송 경고를 띄우는 근거 — 로컬 캐시에 의존하지 않게 서버가 알려준다
     return {ok:true,dryRun:true,rowIndex:rIdx,name:name,email:email,lang:lang,
       folder:folder,photoCount:photoCount,message:message,alreadySentAt:sentAt};
   }
+  if(sentAt&&!opts.force) throw new Error('이미 샘플을 보냈습니다 ('+sentAt+'). 다시 보내려면 force:true');
 
   // 링크 공유 설정 — 안 하면 고객이 '권한 요청' 화면을 본다
   try{ DriveApp.getFolderById(folder.id).setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW); }
