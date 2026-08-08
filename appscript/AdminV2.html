@@ -2619,6 +2619,32 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   </div>
 </div>
 
+<!-- 촬영 직후 샘플 링크 발송 모달 -->
+<div class="modal-overlay" id="sampleSendModal">
+  <div class="modal">
+    <div class="modal-title">샘플 링크 발송</div>
+    <input type="hidden" id="sample_rowIndex">
+    <div class="modal-body">
+      <div class="modal-panel modal-copy">
+        <div class="modal-section-title">발송 대상</div>
+        <div id="sample_custInfo" style="font-size:14px;"></div>
+      </div>
+      <!-- 보내기 전에 어느 폴더를 몇 장 보내는지 먼저 보여준다 — 빈 폴더·엉뚱한 폴더 발송 사고 방지 -->
+      <div class="modal-panel modal-copy" id="sample_preview" style="font-size:13px;"></div>
+      <div class="form-group">
+        <label for="sample_message">함께 보낼 메시지 (선택)</label>
+        <textarea id="sample_message" rows="5" maxlength="2000" placeholder="예: 오늘 촬영 즐거웠습니다! 고르신 컨셉이 특히 잘 나왔어요. 보정본은 다음 주 중 안내드릴게요."></textarea>
+        <div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.45;">비워두면 기본 안내문만 발송됩니다. 메일에는 <b>보정 전 미리보기</b>라는 안내가 항상 들어갑니다.</div>
+      </div>
+      <div id="sample_sendStatus" class="modal-copy" style="font-size:13px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeSampleSendModal()">취소</button>
+      <button class="btn btn-success" id="sample_sendBtn" onclick="sendSampleFromModal(this)" disabled>메일 발송</button>
+    </div>
+  </div>
+</div>
+
 <!-- 사진셀렉 Drive 재연결 모달 -->
 <div class="modal-overlay" id="selectDriveRelinkModal">
   <div class="modal">
@@ -6434,6 +6460,13 @@ function renderBookingQuickActions(c){
   }
   if(isAdminDepositPending(c)){
     buttons.push(`<button class="btn btn-outline btn-sm" onclick="confirmBookingDeposit(${row})">입금확인</button>`);
+  }
+  /* 촬영 직후 샘플 링크 — 드라이브 'YYMMDD_고객명_샘플' 폴더를 찾아 보낸다.
+     셀렉 세션보다 먼저 나가는 경우가 많아 예약 기준으로 노출한다(촬영일 이후 + 메일 있음). */
+  if(hasAdminValidEmail(c)&&!['취소됨','촬영연기'].includes(String(c.status||''))
+     &&String(c.dateStr||'').slice(0,10)<=new Date().toISOString().slice(0,10)){
+    const sentMark=String(c.sampleSentAt||'').trim()?' ✓':'';
+    buttons.push(`<button class="btn btn-outline btn-sm" onclick="openSampleSendModal(${row})">샘플 발송${sentMark}</button>`);
   }
   buttons.push(`<button class="btn btn-outline btn-sm" onclick="openInvIssueModal(${row})">인보이스</button>`);
   // 환불: 취소와 무관한 결제 이벤트(촬영 후 불만, 부분 환불 등). 서버가 실수령·기환불 상한을 검증한다.
@@ -10609,6 +10642,67 @@ function doResend(rowIndex,btn){
     if(btn){btn.disabled=false;btn.textContent=originalText||'재발송';}
     alert('오류: '+e.message);
   }).resendSelectLinkAdmin(adminToken,rowIndex);
+}
+
+/* 샘플 링크 발송 — 여는 즉시 dryRun 으로 폴더를 조회해 "무엇을 몇 장" 보내는지 보여주고,
+   확인되기 전까지 발송 버튼을 잠근다. 메일은 되돌릴 수 없어서 미리보기를 게이트로 둔다. */
+function openSampleSendModal(rowIndex){
+  const c=allCustomers.find(x=>x.rowIndex===rowIndex);
+  if(!c){alert('예약 정보를 찾을 수 없습니다.');return;}
+  document.getElementById('sample_rowIndex').value=rowIndex;
+  document.getElementById('sample_custInfo').innerHTML=`<b>${escHtml(c.name)}</b> · ${escHtml(c.email||'이메일 없음')}<br><span style="font-size:12px;color:#64748b;">${escHtml(c.dateStr||'')} · ${escHtml(c.product||'')}</span>`;
+  document.getElementById('sample_message').value='';
+  document.getElementById('sample_sendStatus').textContent='';
+  const prev=document.getElementById('sample_preview');
+  prev.innerHTML='<span class="spinner"></span> 샘플 폴더 확인 중...';
+  const btn=document.getElementById('sample_sendBtn');
+  if(btn){btn.disabled=true;btn.textContent='메일 발송';}
+  document.getElementById('sampleSendModal').classList.add('open');
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      const f=res.folder||{};
+      const already=String(c.sampleSentAt||'').trim();
+      prev.innerHTML=`<div class="modal-section-title">보낼 내용</div>`
+        +`📁 <b>${escHtml(f.name||'')}</b><br>사진 <b>${Number(res.photoCount||0)}장</b> · 언어 ${escHtml(res.lang||'ko')}`
+        +`<div style="margin-top:6px;"><a href="${escHtml(f.url||'')}" target="_blank" rel="noopener">폴더 열어보기 →</a></div>`
+        +(already?`<div style="margin-top:8px;color:#b45309;">⚠️ 이미 ${escHtml(already)}에 보냈습니다. 다시 보내면 재발송됩니다.</div>`:'');
+      if(btn) btn.disabled=false;
+    }else{
+      prev.innerHTML=`<span style="color:#ef4444;">${escHtml((res&&res.message)||'폴더 확인 실패')}</span>`;
+    }
+  }).withFailureHandler(e=>{
+    prev.innerHTML=`<span style="color:#ef4444;">${escHtml(e.message||e)}</span>`;
+  }).sendBookingSampleAdmin(adminToken,rowIndex,{dryRun:true});
+}
+
+function closeSampleSendModal(){
+  document.getElementById('sampleSendModal').classList.remove('open');
+}
+
+function sendSampleFromModal(btn){
+  const rowIndex=parseInt(document.getElementById('sample_rowIndex').value,10)||0;
+  const message=String(document.getElementById('sample_message').value||'').trim();
+  const statusDiv=document.getElementById('sample_sendStatus');
+  if(!rowIndex){showToast('예약 정보를 찾을 수 없습니다.','warn');return;}
+  if(!confirm('샘플 링크 메일을 고객에게 발송하시겠습니까?'))return;
+  if(btn){btn.disabled=true;btn.textContent='발송 중...';}
+  statusDiv.style.color='#64748b';
+  statusDiv.innerHTML='<span class="spinner"></span> 메일 발송 중...';
+  google.script.run.withSuccessHandler(res=>{
+    if(btn){btn.disabled=false;btn.textContent='메일 발송';}
+    if(res&&res.ok){
+      statusDiv.style.color='#10b981';
+      statusDiv.textContent=`발송 완료 — 사진 ${Number(res.photoCount||0)}장 (${res.sentAt||''})`;
+      setTimeout(()=>{closeSampleSendModal();loadCustomers();},1200);
+    }else{
+      statusDiv.style.color='#ef4444';
+      statusDiv.textContent='오류: '+(res&&res.message||'실패');
+    }
+  }).withFailureHandler(e=>{
+    if(btn){btn.disabled=false;btn.textContent='메일 발송';}
+    statusDiv.style.color='#ef4444';
+    statusDiv.textContent='오류: '+(e.message||e);
+  }).sendBookingSampleAdmin(adminToken,rowIndex,{message:message,force:true});
 }
 
 function openRetouchSendModal(rowIndex){

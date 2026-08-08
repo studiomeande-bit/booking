@@ -49,7 +49,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -1495,6 +1495,9 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
         if(action==='customer-print-order-status') return jsonOk_(setCustomerPrintOrderStatusForAgent_(token,payload||{}));
         if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
+        /* 촬영 직후 샘플 링크 메일 — 드라이브 'YYMMDD_고객명_샘플' 폴더를 찾아 공유 후 발송.
+           dryRun:true 면 폴더·수신자만 확인하고 보내지 않는다(발송 전 점검용). */
+        if(action==='booking-sample-send') return jsonOk_(sendBookingSampleAdmin(token,payload.rowIndex,payload));
         if(action==='select-update-status'){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
           return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
@@ -12595,6 +12598,7 @@ function getDashboardData_(){
       payMethod:payStr,depPayMethod:row[17],extraItem:row[18],memo:row[15],location:parseBookingLocationFromRow_(row),isReturn:String(row[19]||'')==='재방문',
       balanceDate:bDate,rescheduleReq,address:String(row[26]||''),
       marketingConsent:String(row[BOOKING_COL['마케팅동의']]||''),
+      sampleSentAt:String(row[BOOKING_COL['샘플발송일시']]||''),   // 어드민 '샘플 발송' 버튼의 재발송 경고용
       payerName:String(row[BOOKING_COL['입금자명']]||''),
       businessInvoiceNeeded:String(row[BOOKING_COL['사업자송장필요']]||'')==='Y',
       businessCompanyName:String(row[BOOKING_COL['사업자명']]||''),
@@ -18885,6 +18889,81 @@ function buildDriveFolderDateTokens_(dateStr){
   return tokens;
 }
 
+/* ====== 촬영 직후 샘플 링크 발송 (2026-08-08) ======
+ * 일부 촬영은 당일 샘플 몇 장을 먼저 보낸다. 드라이브 규칙: 세션 폴더와 **형제**로
+ *   YYMMDD_고객명_샘플   (예: 260808_류진주_샘플)
+ * 정규 세션 폴더보다 먼저 생기는 경우가 많아(촬영 직후) 셀렉 세션 존재를 전제하지 않는다.
+ * 예약 행만 있으면 동작한다.
+ */
+const SAMPLE_FOLDER_SUFFIX_='_샘플';
+
+/* 촬영 폴더가 사는 공유 드라이브 루트('Studio_mean').
+   ⚠️ 이 상수는 원래 코드에 **참조만 있고 정의가 없었다**(22382행 부근). try/catch 에 삼켜져
+   조용히 실패하고 있었다 — 셀렉 재발송 시 드라이브 링크 자동 부착이 그래서 안 됐다.
+   ⚠️ 공유 드라이브라 DriveApp.getFoldersByName / getFolders 전역 검색으로는 **안 잡힌다**.
+   반드시 루트를 ID 로 연 뒤 그 folder.getFoldersByName 을 쓸 것(ID 접근은 공유 드라이브도 동작). */
+const DRIVE_ROOT_FOLDER_ID=(function(){
+  try{
+    const v=PropertiesService.getScriptProperties().getProperty('DRIVE_ROOT_FOLDER_ID');
+    if(v&&String(v).trim()) return String(v).trim();
+  }catch(e){}
+  return '1CV_nsQe8-f4bshUVtaH_2efWlNQw15If';
+})();
+
+function findSampleDriveFolder_(customerName,dateStr,diag){
+  const note=function(m){ if(Array.isArray(diag)) diag.push(String(m)); };
+  const customer=String(customerName||'').trim();
+  if(!customer){ note('고객명 없음'); return null; }
+  const tokens=buildDriveFolderDateTokens_(dateStr);   // [YYMMDD, YYYYMMDD]
+  if(!tokens.length){ note('촬영일에서 날짜 토큰을 못 만듦: '+dateStr); return null; }
+  /* ⚠️ 한글 정규화 — 드라이브가 돌려주는 폴더명은 **NFD(자모 분리)** 인 경우가 있다(macOS 업로드분).
+     NFC 리터럴 '샘플' 로 비교하면 눈에 똑같이 보이는데도 매치가 안 된다(실측: 511개 스캔 후 0건).
+     읽는 쪽은 NFC 로 접고, 조회 이름은 두 형태 모두 시도한다. */
+  const nfc=function(s){ try{ return String(s||'').normalize('NFC'); }catch(e){ return String(s||''); } };
+  const nfd=function(s){ try{ return String(s||'').normalize('NFD'); }catch(e){ return String(s||''); } };
+  note('찾는 이름: '+tokens[0]+'_'+customer+SAMPLE_FOLDER_SUFFIX_);
+  let root=null;
+  try{ root=DriveApp.getFolderById(DRIVE_ROOT_FOLDER_ID); note('루트 열기 OK: '+root.getName()); }
+  catch(e){ note('루트 열기 실패('+DRIVE_ROOT_FOLDER_ID+'): '+e.message); Logger.log('drive root open fail: '+e.message); return null; }
+
+  // ① 정확한 이름 — 루트 하위 조회라 공유 드라이브에서도 동작하고 전체 순회보다 훨씬 싸다
+  const names=[];
+  tokens.forEach(function(token){
+    ['_',' ','-',''].forEach(function(sep){
+      const base=token+sep+customer+SAMPLE_FOLDER_SUFFIX_;
+      [nfc(base),nfd(base)].forEach(function(n){ if(names.indexOf(n)===-1) names.push(n); });
+    });
+  });
+  for(let i=0;i<names.length;i++){
+    try{
+      const it=root.getFoldersByName(names[i]);
+      if(it.hasNext()){
+        const f=it.next();
+        return {id:f.getId(),name:f.getName(),url:f.getUrl(),match:'exact'};
+      }
+    }catch(e){}
+  }
+  // ② 폴백 — 루트 하위만 훑어 '날짜 + 이름 + 샘플' 을 만족하는 것을 고른다(이름에 공백·오탈자가 있어도 잡히게).
+  try{
+    const nameNorm=normalizeDriveFolderSearchText_(customer);
+    const it=root.getFolders();
+    let scanned=0,sampleSeen=0;
+    while(it.hasNext()&&scanned<3000){
+      const f=it.next(); scanned++;
+      const n=nfc(f.getName());   // NFD 로 오면 아래 '샘플' 리터럴과 절대 안 맞는다
+      if(!/샘플\s*$/.test(n)) continue;
+      sampleSeen++;
+      const norm=normalizeDriveFolderSearchText_(n);
+      const dateHit=tokens.some(function(tk){return tk&&n.indexOf(tk)===0;});
+      if(dateHit&&nameNorm&&norm.indexOf(nameNorm)>=0){
+        return {id:f.getId(),name:n,url:f.getUrl(),match:'fallback'};
+      }
+    }
+    note('루트 하위 '+scanned+'개 스캔, 샘플 폴더 '+sampleSeen+'개 — 일치 없음');
+  }catch(e){note('폴백 스캔 실패: '+e.message);Logger.log('sample folder fallback fail: '+e.message);}
+  return null;
+}
+
 function findDriveFoldersForCustomerDate_(customerName,dateStr){
   const dateTokens=buildDriveFolderDateTokens_(dateStr);
   const ymd=dateTokens[0]||'';
@@ -22405,6 +22484,95 @@ function buildRetouchExtraMessageHtml_(message,lang){
     de:'Zusatzhinweis'
   }[lang]||'추가 안내';
   return `<div style="border-left:4px solid #2D2A26;background:#f8fafc;padding:12px 14px;margin:18px 0;border-radius:8px;font-size:14px;line-height:1.75;"><b>${title}</b><br>${escapeHtml_(clean).replace(/\n/g,'<br>')}</div>`;
+}
+
+/* 샘플 링크 메일 — 촬영 직후 몇 장 먼저 보내는 용도. 짧게, 기대치를 정확히 잡는 게 핵심:
+   "미리보기이고 보정 전이며 최종 결과물은 따로 간다"를 3개국어 모두에 명시한다.
+   그래야 고객이 이걸 최종본으로 오해하고 실망하거나 재촬영을 요구하는 일이 없다. */
+function sendBookingSampleAdmin(token,rowIndex,options){
+  assertAdmin_(token);
+  const opts=options||{};
+  const rIdx=parseInt(rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const name=String(row[BOOKING_COL['고객명']]||'').trim();
+  if(!name) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
+  if(opts.expectName!=null&&name!==String(opts.expectName).trim())
+    throw new Error('expectName 불일치: 행 '+rIdx+' = '+name);
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약에는 발송하지 않습니다.');
+
+  const email=String(row[BOOKING_COL['이메일']]||'').trim();
+  if(!email||email.indexOf('@')===-1||/수기/.test(email)) throw new Error('발송 가능한 이메일이 없습니다: '+(email||'(없음)'));
+
+  const sentAt=String(row[BOOKING_COL['샘플발송일시']]||'').trim();
+  if(sentAt&&!opts.force) throw new Error('이미 샘플을 보냈습니다 ('+sentAt+'). 다시 보내려면 force:true');
+
+  const shootDate=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
+  // folderUrl 을 직접 주면 탐색을 건너뛴다(폴더명이 규칙을 벗어난 경우 수동 지정)
+  const diag=[];
+  let folder=null;
+  const manualUrl=String(opts.folderUrl||'').trim();
+  if(manualUrl){
+    const fid=manualUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+    if(!fid) throw new Error('folderUrl 형식이 올바르지 않습니다(드라이브 폴더 URL 필요).');
+    const f=DriveApp.getFolderById(fid[1]);
+    folder={id:f.getId(),name:f.getName(),url:f.getUrl(),match:'manual'};
+  }else{
+    folder=findSampleDriveFolder_(name,shootDate,diag);
+  }
+  if(!folder) throw new Error('샘플 폴더를 찾지 못했습니다 — '+(shootDate?shootDate.replace(/-/g,'').slice(2):'??')+'_'+name+SAMPLE_FOLDER_SUFFIX_
+    +' 형식인지 확인하거나 folderUrl 로 지정해 주세요. [진단] '+diag.join(' | '));
+
+  // 사진 수 확인 — 빈 폴더 링크를 보내는 사고 방지
+  let photoCount=0;
+  try{
+    const files=DriveApp.getFolderById(folder.id).getFiles();
+    while(files.hasNext()&&photoCount<500){files.next();photoCount++;}
+  }catch(e){Logger.log('sample count fail: '+e.message);}
+  if(photoCount===0&&!opts.allowEmpty) throw new Error('샘플 폴더가 비어 있습니다: '+folder.name+' (그래도 보내려면 allowEmpty:true)');
+
+  const lang=String(opts.lang||row[BOOKING_COL['언어']]||'ko').toLowerCase().trim();
+  const message=String(opts.message!=null?opts.message:'').replace(/\r\n/g,'\n').trim();
+  if(message.length>2000) throw new Error('메시지는 2000자 이하로 입력해 주세요.');
+  const msgHtml=buildRetouchExtraMessageHtml_(message,lang);
+
+  if(opts.dryRun){
+    return {ok:true,dryRun:true,rowIndex:rIdx,name:name,email:email,lang:lang,
+      folder:folder,photoCount:photoCount,message:message};
+  }
+
+  // 링크 공유 설정 — 안 하면 고객이 '권한 요청' 화면을 본다
+  try{ DriveApp.getFolderById(folder.id).setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW); }
+  catch(e){ Logger.log('sample folder share fail: '+e.message); }
+
+  const subj={
+    ko:`[Studio mean] 촬영 미리보기 샘플을 보내드립니다 — ${name}님`,
+    en:`[Studio mean] A first look at your photos — ${name}`,
+    de:`[Studio mean] Ein erster Blick auf Ihre Bilder — ${name}`
+  };
+  const btn=`<div style="margin:22px 0;"><a href="${folder.url}" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;font-size:15px;">`;
+  const body={
+    ko:`안녕하세요, ${name}님.<br><br>오늘 촬영 감사합니다. 촬영본 중 몇 장을 먼저 보내드립니다.<br><br>`
+      +`${btn}샘플 사진 보기</a></div>`
+      +`<div style="font-size:13px;color:#6b6560;line-height:1.75;">※ <b>보정 전 미리보기</b>입니다. 색감·피부·디테일 보정은 아직 들어가지 않았어요.<br>※ 최종 결과물은 사진 선택 안내와 함께 따로 보내드립니다.</div>`
+      +`${msgHtml}<br>${_getSignatureHtml()}`,
+    en:`Hello ${name},<br><br>Thank you for today's session. Here are a few photos from the shoot as a first look.<br><br>`
+      +`${btn}View sample photos</a></div>`
+      +`<div style="font-size:13px;color:#6b6560;line-height:1.75;">※ These are <b>unretouched previews</b> — colour, skin and detail work has not been applied yet.<br>※ Your final images will follow separately, together with the photo selection guide.</div>`
+      +`${msgHtml}<br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${name},<br><br>vielen Dank für das heutige Shooting. Hier sind vorab einige Aufnahmen für einen ersten Eindruck.<br><br>`
+      +`${btn}Beispielbilder ansehen</a></div>`
+      +`<div style="font-size:13px;color:#6b6560;line-height:1.75;">※ Dies sind <b>unbearbeitete Vorschaubilder</b> — Farb-, Haut- und Detailbearbeitung erfolgt noch.<br>※ Die fertigen Bilder erhalten Sie separat zusammen mit der Bildauswahl.</div>`
+      +`${msgHtml}<br>${_getSignatureHtml()}`
+  };
+
+  const mail=sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  sh.getRange(rIdx,BOOKING_COL['샘플링크']+1).setValue(folder.url);
+  sh.getRange(rIdx,BOOKING_COL['샘플발송일시']+1).setValue(now);
+  return {ok:true,rowIndex:rIdx,name:name,email:email,lang:lang,sentAt:now,
+    folder:folder,photoCount:photoCount,resent:!!sentAt,message:message,mail:mail};
 }
 
 function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
