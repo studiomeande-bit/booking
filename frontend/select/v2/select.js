@@ -3021,9 +3021,10 @@ function validateStep1() {
     setBanner(copy().errPickMarketing, 'error');
     return false;
   }
-  // 갤러리: 최소 1장은 별점을 주거나 직접 추가돼 있어야 다음으로 이동 가능
+  // 별점(찜) 1장 이상이면 진행 — 보정 담기는 2단계 픽커에서 한다(자동 채움 제거, 2026-08-09).
+  // canProceedStep1 과 반드시 같은 조건이어야 한다: 버튼만 켜지고 클릭이 튕기면 "고장"으로 보인다.
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  if (regularCount < 1) {
+  if (state.gallery.ratings.size < 1 && regularCount < 1) {
     setBanner(copy().errRateAtLeastOne, 'error');
     return false;
   }
