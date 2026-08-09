@@ -1099,13 +1099,27 @@ function printTierCardsHtml() {
 }
 
 function renderPriceGuide() {
+  /* 가격표는 전용 그리드로 그린다 (2026-08-09 정리). 이전엔 .review-item 재사용이라
+     모바일 스택 규칙(column)에 말려 라벨/가격이 세로로 흩어졌다. 그리고 원본가 하나만
+     보여줬는데 모든 SKU 는 보정본가/원본가 2개다 — 반쪽 정보는 문의만 만든다. */
+  const c = copy();
   const priceRows = getSelectablePrintOptions().map((opt) => `
-    <div class="review-item">
-      <span>${escapeHtml(opt.label)}</span>
-      <strong>€${opt.additional}</strong>
+    <div class="price-guide-row">
+      <span class="pg-name">${escapeHtml(opt.label)}</span>
+      <span class="pg-price">€${opt.retouched}</span>
+      <span class="pg-price">€${opt.additional}</span>
     </div>
   `).join('');
-  els.printPriceGuide.innerHTML = printTierCardsHtml() + priceRows;
+  const table = `
+    <div class="price-guide-table">
+      <div class="price-guide-row price-guide-head">
+        <span class="pg-name">${escapeHtml(c.priceGuideHeadItem)}</span>
+        <span class="pg-price">${escapeHtml(c.priceGuideHeadRetouched)}</span>
+        <span class="pg-price">${escapeHtml(c.priceGuideHeadOriginal)}</span>
+      </div>
+      ${priceRows}
+    </div>`;
+  els.printPriceGuide.innerHTML = printTierCardsHtml() + table;
   // Step 3 안내 문장은 정적 HTML 에 박지 않고 모듈에서 주입한다 — 카피가 개정되면 여기 한 곳만 바뀐다.
   const tierNote = document.getElementById('printStepTierNote');
   if (tierNote) tierNote.textContent = getPrintMicrocopy('selectStepNote', state.lang);
