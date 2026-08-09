@@ -580,6 +580,13 @@ function wireEvents() {
       renderGallery();
     });
   });
+  // 출력용 사진 픽커 — 닫기 · 검색 · 오버레이 바깥 클릭
+  const ppClose = document.getElementById('printPickerClose');
+  if (ppClose) ppClose.addEventListener('click', closePrintPicker);
+  const ppSearch = document.getElementById('printPickerSearch');
+  if (ppSearch) ppSearch.addEventListener('input', renderPrintPicker);
+  const ppOverlay = document.getElementById('printPicker');
+  if (ppOverlay) ppOverlay.addEventListener('click', (ev) => { if (ev.target === ppOverlay) closePrintPicker(); });
   wireLightboxOnce();
   wireGalleryKeyboard();
   wireHoverPreview();
@@ -2179,6 +2186,79 @@ function addPhotoRow() {
   updateReview();
 }
 
+/* ===== 출력용 사진 픽커 (2026-08-09) =====
+ * 고객 문의(김지훈님): "별점을 주면 전부 보정으로 분류되고, 별점 없는 사진은 출력 단계에서
+ * 읽지를 못 한다." — 둘 다 사실이었다. 별점은 보정 선택 전용이고, 출력 단계는 번호
+ * 자유입력뿐이라 갤러리를 다시 볼 방법이 없었다. 여기서 갤러리를 픽커로 다시 연다.
+ * 별점 조작은 픽커에서 막는다 — 여기서 별을 바꾸면 보정 리스트가 바뀌어 버린다. */
+let printPickerTarget = -1;
+
+function openPrintPicker(index) {
+  printPickerTarget = Number(index);
+  const overlay = document.getElementById('printPicker');
+  if (!overlay) return;
+  const search = document.getElementById('printPickerSearch');
+  if (search) search.value = '';
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden', 'false');
+  // 갤러리가 아직 안 불렸으면(직접 링크로 3단계 진입 등) 지금 불러온다
+  if (!state.gallery.loaded && !state.gallery.loading) {
+    try { loadGallery(); } catch (e) {}
+  }
+  renderPrintPicker();
+}
+
+function closePrintPicker() {
+  const overlay = document.getElementById('printPicker');
+  if (overlay) { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true'); }
+  printPickerTarget = -1;
+}
+
+function renderPrintPicker() {
+  const grid = document.getElementById('printPickerGrid');
+  if (!grid) return;
+  const c = copy();
+  if (!state.gallery.loaded) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.galleryLoadingHint)}</div>`;
+    // 로드가 끝나면 자동 갱신 — loadGallery 완료 콜백을 건드리지 않고 폴링(픽커가 열려 있는 동안만)
+    setTimeout(() => {
+      const ov = document.getElementById('printPicker');
+      if (ov && ov.classList.contains('open')) renderPrintPicker();
+    }, 700);
+    return;
+  }
+  const term = String(document.getElementById('printPickerSearch')?.value || '').toLowerCase().trim();
+  let list = state.gallery.photos;
+  if (term) list = list.filter((p) => String(p.name || '').toLowerCase().includes(term));
+  const current = printNumKey(state.prints[printPickerTarget]?.photoNum);
+  // 픽커는 전량 렌더하지 않고 상위 N + 더보기 (갤러리와 같은 예산 감각, 검색이 주 탐색 수단)
+  const visible = list.slice(0, 120);
+  grid.innerHTML = visible.map((p) => {
+    const key = stripExt(p.name);
+    const star = getStarOf(key);
+    const isCurrent = current && printNumKey(key) === current;
+    return `<div class="gallery-cell${star > 0 ? ' has-star' : ''}${isCurrent ? ' is-current' : ''}" title="${escapeHtml(p.name)}">
+        <img src="${escapeHtml(p.thumb)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+        ${star > 0 ? `<div class="cell-star-badge">${escapeHtml(c.starBadge(star))}</div>` : ''}
+        <div class="gallery-name">${escapeHtml(p.name)}</div>
+        <button type="button" class="print-picker-cell-pick" data-pick-key="${escapeHtml(key)}" aria-label="${escapeHtml(p.name)}"></button>
+      </div>`;
+  }).join('') + (list.length > visible.length
+    ? `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.printPickerMore(list.length - visible.length))}</div>`
+    : (visible.length ? '' : `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.galleryNoPhotos)}</div>`));
+  grid.querySelectorAll('[data-pick-key]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.pickKey || '';
+      if (printPickerTarget >= 0 && state.prints[printPickerTarget]) {
+        state.prints[printPickerTarget].photoNum = key;
+      }
+      closePrintPicker();
+      renderPrints();   // 단가(보정본/원본) 재판정 포함
+      updateReview();
+    });
+  });
+}
+
 function thumbHtmlForNum(num) {
   const key = stripExt(num);
   const c = copy();
@@ -2549,6 +2629,7 @@ function renderPrints() {
           <div class="field">
             <label>${escapeHtml(c.printPhotoNum)}</label>
             <input data-print-photo="${index}" value="${escapeHtml(print.photoNum || '')}" placeholder="${escapeHtml(c.printPhotoNumPlaceholder)}">
+            <button type="button" class="ghost-btn" style="margin-top:6px;width:100%;" data-print-pick="${index}">${escapeHtml(c.printPickFromGallery)}</button>
             ${thumbHtmlForNum(print.photoNum || '')}
           </div>
           <div class="field">
@@ -2588,6 +2669,9 @@ function renderPrints() {
     });
     // 입력을 마치면 보정본/원본 단가 판정을 반영해 행을 다시 그린다 (타이핑 중 포커스 유지)
     input.addEventListener('change', () => { renderPrints(); updateReview(); });
+  });
+  els.printList.querySelectorAll('[data-print-pick]').forEach((btn) => {
+    btn.addEventListener('click', () => openPrintPicker(Number(btn.dataset.printPick)));
   });
   els.printList.querySelectorAll('[data-print-qty]').forEach((input) => {
     input.addEventListener('input', () => {

@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=446909d107" as="style">
+  <link rel="preload" href="./select.min.css?v=935b3d78e8" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=446909d107">
+  <link rel="stylesheet" href="./select.min.css?v=935b3d78e8">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -424,6 +424,20 @@
   </div>
 
   <!-- 라이트박스 (크게보기) -->
+  <!-- 출력용 사진 픽커: 출력 단계에서 갤러리를 다시 열어 번호 타이핑 없이 고른다.
+       (고객 문의 2026-08-09: 별점 없는 사진은 출력 단계에서 "읽지를 못 한다" — 자유입력밖에 없었다) -->
+  <div id="printPicker" class="lightbox print-picker" role="dialog" aria-hidden="true">
+    <div class="print-picker-panel">
+      <div class="print-picker-head">
+        <div class="print-picker-title" data-i18n="printPickerTitle">출력할 사진 선택</div>
+        <input id="printPickerSearch" type="search" data-i18n-attr="placeholder:printPickerSearch" placeholder="파일명 검색">
+        <button type="button" class="lightbox-btn lightbox-btn-close" id="printPickerClose" data-i18n-attr="aria-label:lbClose" aria-label="닫기">✕</button>
+      </div>
+      <div class="print-picker-hint" data-i18n="printPickerHint">별점(보정 선택)과 상관없이 모든 촬영본에서 고를 수 있어요.</div>
+      <div id="printPickerGrid" class="gallery-grid print-picker-grid"></div>
+    </div>
+  </div>
+
   <div id="lightbox" class="lightbox" role="dialog" aria-hidden="true">
     <div class="lightbox-bar">
       <div class="lightbox-name" id="lb-name"></div>
@@ -442,6 +456,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=b71ea6dcfd"></script>
+  <script src="./select.min.js?v=8b72e21037"></script>
 </body>
 </html>
