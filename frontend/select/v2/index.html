@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=935b3d78e8" as="style">
+  <link rel="preload" href="./select.min.css?v=eb4ac1ccae" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=935b3d78e8">
+  <link rel="stylesheet" href="./select.min.css?v=eb4ac1ccae">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -433,7 +433,8 @@
         <input id="printPickerSearch" type="search" data-i18n-attr="placeholder:printPickerSearch" placeholder="파일명 검색">
         <button type="button" class="lightbox-btn lightbox-btn-close" id="printPickerClose" data-i18n-attr="aria-label:lbClose" aria-label="닫기">✕</button>
       </div>
-      <div class="print-picker-hint" data-i18n="printPickerHint">별점(보정 선택)과 상관없이 모든 촬영본에서 고를 수 있어요.</div>
+      <div class="print-picker-hint" data-i18n="printPickerHint">별점(1차 셀렉) 사진이 먼저 보여요. 별점 없는 사진도 모두 고를 수 있습니다.</div>
+      <div id="printPickerChips" class="print-picker-chips"></div>
       <div id="printPickerGrid" class="gallery-grid print-picker-grid"></div>
     </div>
   </div>
@@ -456,6 +457,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=8b72e21037"></script>
+  <script src="./select.min.js?v=5d1b34a9fa"></script>
 </body>
 </html>

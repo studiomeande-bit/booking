@@ -2394,3 +2394,4 @@ h1 {
   .print-picker-panel { width: 100vw; max-height: 94vh; border-radius: 14px 14px 0 0; }
   .print-picker { align-items: flex-end; padding: 0; }
 }
+.print-picker-chips { display: flex; gap: 8px; padding: 8px 16px 0; }

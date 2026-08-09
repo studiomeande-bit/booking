@@ -1675,11 +1675,14 @@ function setStarFor(photoKey, star) {
   updateReview();
 }
 
-// 별점 변경 시 보정 사진 목록(state.photos)을 동기화.
-// - 신규 별점 → state.photos에 해당 사진 항목 추가 (보너스 슬롯 앞에 삽입)
-// - 별점 0 → state.photos에서 해당 항목 제거 (보너스 제외)
+/* 별점 변경 시 보정 사진 목록(state.photos)을 동기화.
+ * - **새** 별점(0→n) → state.photos에 추가 (보너스 슬롯 앞에 삽입)
+ * - 별점 0 → state.photos에서 제거 (보너스 제외)
+ * 별점 조정(3→4 등)은 보정 목록을 건드리지 않는다 — 별점은 1차 셀렉(찜)이고,
+ * 보정에서 뺀 사진의 점수를 고쳤다고 보정 목록에 되살아나면 안 된다 (2026-08-09 모델 정리). */
 function syncPhotosFromRatings(photoKey, prev, next) {
   const existingIdx = state.photos.findIndex((p) => !p.isBonus && stripExt(p.num) === photoKey);
+  if (next > 0 && prev > 0) return;   // 점수 조정만 — 목록 변경 없음
   if (next > 0 && existingIdx < 0) {
     const bonusIndex = state.photos.findIndex((p) => p.isBonus);
     const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
@@ -2192,9 +2195,11 @@ function addPhotoRow() {
  * 자유입력뿐이라 갤러리를 다시 볼 방법이 없었다. 여기서 갤러리를 픽커로 다시 연다.
  * 별점 조작은 픽커에서 막는다 — 여기서 별을 바꾸면 보정 리스트가 바뀌어 버린다. */
 let printPickerTarget = -1;
+let printPickerFilter = 'all';   // 'all' | 'starred' — 열 때마다 all 로 리셋
 
 function openPrintPicker(index) {
   printPickerTarget = Number(index);
+  printPickerFilter = 'all';
   const overlay = document.getElementById('printPicker');
   if (!overlay) return;
   const search = document.getElementById('printPickerSearch');
@@ -2230,6 +2235,23 @@ function renderPrintPicker() {
   const term = String(document.getElementById('printPickerSearch')?.value || '').toLowerCase().trim();
   let list = state.gallery.photos;
   if (term) list = list.filter((p) => String(p.name || '').toLowerCase().includes(term));
+  if (printPickerFilter === 'starred') list = list.filter((p) => getStarOf(stripExt(p.name)) > 0);
+  /* 별점(1차 셀렉) 사진 우선 정렬 — 점수 높은 순, 같은 점수면 원래 순서. 찜해 둔 사진을
+     맨 위에서 바로 보고 고르라는 취지(사장님 확정 2026-08-09). 별점 없는 사진도 뒤에 그대로. */
+  list = list.map((p, i) => ({ p, i, star: getStarOf(stripExt(p.name)) }))
+    .sort((a, b) => (b.star - a.star) || (a.i - b.i))
+    .map((x) => x.p);
+  const starredCount = state.gallery.photos.reduce((n, p) => n + (getStarOf(stripExt(p.name)) > 0 ? 1 : 0), 0);
+  const chips = document.getElementById('printPickerChips');
+  if (chips) {
+    chips.innerHTML = [
+      `<button type="button" class="star-filter${printPickerFilter === 'all' ? ' active' : ''}" data-pp-filter="all">${escapeHtml(c.printPickerFilterAll)}</button>`,
+      `<button type="button" class="star-filter${printPickerFilter === 'starred' ? ' active' : ''}" data-pp-filter="starred">${escapeHtml(c.printPickerFilterStarred(starredCount))}</button>`
+    ].join('');
+    chips.querySelectorAll('[data-pp-filter]').forEach((b) => {
+      b.addEventListener('click', () => { printPickerFilter = b.dataset.ppFilter; renderPrintPicker(); });
+    });
+  }
   const current = printNumKey(state.prints[printPickerTarget]?.photoNum);
   // 픽커는 전량 렌더하지 않고 상위 N + 더보기 (갤러리와 같은 예산 감각, 검색이 주 탐색 수단)
   const visible = list.slice(0, 120);
@@ -2460,15 +2482,9 @@ function renderPhotos() {
   els.photoList.querySelectorAll('[data-remove-photo]').forEach((button) => {
     button.addEventListener('click', () => {
       const i = Number(button.dataset.removePhoto);
-      const removed = state.photos[i];
-      // 갤러리 별점도 해제
-      if (removed && !removed.isBonus) {
-        const k = stripExt(removed.num);
-        if (k && state.gallery.ratings.has(k)) {
-          state.gallery.ratings.delete(k);
-          if (state.step === 1 || state.gallery.loaded) renderGallery();
-        }
-      }
+      /* 별점은 유지한다 — 별점은 1차 셀렉(찜)이고 보정은 그중 일부다. 예전엔 여기서 별점까지
+         지워서, "13장 찜 → 보정 3장만" 으로 정리하는 순간 찜 목록이 파괴됐다(김지훈님 사례).
+         남은 별점은 출력 픽커에서 우선 표시되어 인화 선택의 기준이 된다. */
       state.photos.splice(i, 1);
       renderPhotos();
       updatePhotoCounter();
