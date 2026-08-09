@@ -45,6 +45,7 @@ const ctx = {
   SELECT_COL,
   PRINT_LABELS,
   roundCurrency_: (n) => Math.round((Number(n) || 0) * 100) / 100,
+  getSettingsMap_: () => (globalThis.__SETTINGS__ || {}),   // 볼륨 할인 tiers 설정 스텁
 };
 // getSelectIncludedPrintQuota_ 는 테스트별 쿼터로 엔진 안에서 선언한다(상품 조회 체인은 스텁)
 
@@ -52,13 +53,15 @@ function buildEngine(quota) {
   const names = ['selectPhotoNumKey_', 'buildRetouchNumSet_', 'buildSelectServiceCutNums_',
     'buildSelectMarketingBonusNums_', 'selectQuotaCredit_', 'getPrintInfo_',
     'mergeSelectPrintItems_', 'normalizeSelectMarketingBonusCount_',
-    'getDefaultSelectMarketingBonusCount_', 'computeSelectDecoupledPrints_'];
-  const body = names.map(grabFn).join('\n');
+    'getDefaultSelectMarketingBonusCount_', 'computeSelectDecoupledPrints_',
+    'getSelectVolumeTiers_', 'computeSelectVolumeDiscount_'];
+  const defaults = src.match(/const SELECT_VOLUME_TIER_DEFAULTS_=\{.*?\};/s)[0];
+  const body = defaults + '\n' + names.map(grabFn).join('\n');
   const keys = Object.keys(ctx);
   return new Function(...keys, 'QUOTA',
     `const getSelectIncludedPrintQuota_ = () => QUOTA.map(q => ({...q}));
      ${body}
-     return {computeSelectDecoupledPrints_, buildSelectServiceCutNums_, buildSelectMarketingBonusNums_, buildRetouchNumSet_};`
+     return {computeSelectDecoupledPrints_, buildSelectServiceCutNums_, buildSelectMarketingBonusNums_, buildRetouchNumSet_, getSelectVolumeTiers_, computeSelectVolumeDiscount_};`
   )(...keys.map((k) => ctx[k]), quota);
 }
 
@@ -155,6 +158,63 @@ console.log('\n── 상품 쿼터와 함께 (스튜디오 Basic + 보너스 2 
   const photos = [P('B1', { isBonus: true }), P('S1', { isService: true, isBonus: true })];
   const r = price({ quota: [], photos, prints: [PR('B1'), PR('S1')], bonusCount: 1, serviceCutCount: 1 });
   t('쿼터 없어도 보너스·서비스 인화는 무료', r.amount === 0, `€${r.amount}`);
+}
+
+console.log('\n── 기본 출력물 · 차액 적용 검증 (2026-08-09 사장님 확인 요청) ──');
+{
+  // 쿼터와 정확히 같은 SKU = 무료
+  const quota = [{ id: 'basic_a4', qty: 1 }, { id: 'basic_10x15', qty: 2 }];
+  const photos = [P('R1'), P('R2'), P('R3')];
+  const exact = price({ quota, photos, prints: [PR('R1', 'basic_a4'), PR('R2'), PR('R3')] });
+  t('쿼터 정확 일치 3장 전부 무료', exact.amount === 0, `€${exact.amount}`);
+
+  // 쿼터 SKU 보다 상위 등급 선택 → 차액만 (파인아트10×15 보정본 €6 − 시그니처10×15 크레딧 €3 = €3)
+  const up1 = price({ quota, photos, prints: [PR('R1', 'basic_a4'), PR('R2', 'premium_10x15'), PR('R3')] });
+  t('10×15 파인아트 업그레이드 차액 €3', up1.amount === 3, `€${up1.amount}`);
+  t('차액 라벨 표기', up1.items.some((i) => /포함 차액/.test(i.label)), JSON.stringify(up1.items.map((i) => i.label)));
+
+  // A4 쿼터에 A3 선택 → 차액 (A3 보정본 €35 − A4 보정본 크레딧 €10 = €25)
+  const up2 = price({ quota, photos, prints: [PR('R1', 'premium_a3'), PR('R2'), PR('R3')] });
+  t('A4→A3 업그레이드 차액 €25', up2.amount === 25, `€${up2.amount}`);
+
+  // 입력 순서 무관 (2-pass 보증) — 같은 주문 역순
+  const up2r = price({ quota, photos, prints: [PR('R3'), PR('R2'), PR('R1', 'premium_a3')] });
+  t('순서 뒤집어도 같은 금액', up2r.amount === up2.amount, `€${up2r.amount}`);
+
+  // 쿼터 초과분은 정가 (보정본 단가)
+  const over = price({ quota, photos, prints: [PR('R1', 'basic_a4'), PR('R2'), PR('R3'), PR('R1'), PR('R2')] });
+  t('쿼터 초과 2장 정가 €6 (보정본 3€×2)', over.amount === 6, `€${over.amount}`);
+}
+
+console.log('\n── 볼륨 할인 (computeSelectVolumeDiscount_) ──');
+{
+  const eng = buildEngine([]);
+  delete globalThis.__SETTINGS__;
+  const d = (kind, count, amount) => eng.computeSelectVolumeDiscount_(kind, count, amount);
+
+  t('보정 4장 = 할인 없음', d('retouch', 4, 40).discount === 0);
+  t('보정 5장 = 10% (€50→-€5)', d('retouch', 5, 50).discount === 5, JSON.stringify(d('retouch', 5, 50)));
+  t('보정 10장 = 15% (€100→-€15)', d('retouch', 10, 100).discount === 15);
+  t('보정 20장 = 20% (€200→-€40)', d('retouch', 20, 200).discount === 40);
+  t('인화 9장 = 할인 없음 + 다음 구간 안내(1장 남음, 10%)',
+    d('print', 9, 50).discount === 0 && d('print', 9, 50).remainToNext === 1 && d('print', 9, 50).nextPercent === 10,
+    JSON.stringify(d('print', 9, 50)));
+  t('인화 10장 = 10%', d('print', 10, 60).discount === 6);
+  t('인화 30장 = 20% (최고 구간)', d('print', 30, 300).discount === 60);
+  t('최고 구간에선 다음 안내 없음', d('print', 35, 300).remainToNext === 0);
+  t('센트 반올림 (€33 의 10% = €3.30)', d('print', 10, 33).discount === 3.3, d('print', 10, 33).discount);
+  t('금액 0 이면 할인 0', d('retouch', 8, 0).discount === 0);
+
+  // 설정 오버라이드 + 오타 방어
+  globalThis.__SETTINGS__ = { select_volume_discount_retouch: '3:5,6:12' };
+  const eng2 = buildEngine([]);
+  t('설정 구간 적용 (3장=5%)', eng2.computeSelectVolumeDiscount_('retouch', 3, 30).discount === 1.5,
+    JSON.stringify(eng2.computeSelectVolumeDiscount_('retouch', 3, 30)));
+  globalThis.__SETTINGS__ = { select_volume_discount_retouch: '5:90' };   // 90% 오타 → 기본값 폴백? 아니, 해당 항목만 무시
+  const eng3 = buildEngine([]);
+  t('퍼센트 50 초과 항목은 무시(오타 방어)', eng3.computeSelectVolumeDiscount_('retouch', 5, 50).discount === 0,
+    JSON.stringify(eng3.getSelectVolumeTiers_('retouch')));
+  delete globalThis.__SETTINGS__;
 }
 
 console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed\n`);

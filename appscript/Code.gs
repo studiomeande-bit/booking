@@ -19356,6 +19356,7 @@ function getSelectSession(sessionId){
       productDescription:productDescription,
       baseRetouchCount:parseInt(row[SELECT_COL['기본보정수']])||0,
       retouchPrice:parseInt(row[SELECT_COL['리터칭단가']])||10,
+      volumeTiers:{retouch:getSelectVolumeTiers_('retouch'),print:getSelectVolumeTiers_('print')},
       marketingBonusCount:normalizeSelectMarketingBonusCount_(row[SELECT_COL['마케팅보너스수']],row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
       serviceCutCount:Math.max(0,parseInt(row[SELECT_COL['서비스컷수']],10)||0),
       lang:row[SELECT_COL['언어']]||'ko',
@@ -19456,6 +19457,53 @@ function enrichSelectPhoto_(photo){
     printTypeLabel:String(raw.printTypeLabel||info.label||'')
   };
 }
+/* ====== 셀렉 볼륨 할인 (2026-08-09 사장님 지시: 많이 담을수록 할인 → 객단가 상승 유도) ======
+ * 구간은 설정 시트로 조정 가능(형식 "장수:퍼센트,장수:퍼센트,..."), 없으면 아래 기본값.
+ *   select_volume_discount_retouch  기본 5:10,10:15,20:20  (유료 추가 보정 장수 기준)
+ *   select_volume_discount_print    기본 10:10,20:15,30:20 (유료 인화 장수 기준 — 무료 포함분 제외)
+ * 서버가 청구 정본이고 클라이언트는 표시 미러. 세션 페이로드에 tiers 를 실어 프런트와 어긋나지 않게 한다. */
+const SELECT_VOLUME_TIER_DEFAULTS_={retouch:'5:10,10:15,20:20',print:'10:10,20:15,30:20'};
+
+function getSelectVolumeTiers_(kind){
+  const key='select_volume_discount_'+String(kind||'');
+  let raw='';
+  try{ raw=String(getSettingsMap_()[key]||'').trim(); }catch(e){}
+  if(!raw) raw=SELECT_VOLUME_TIER_DEFAULTS_[kind]||'';
+  const tiers=[];
+  raw.split(',').forEach(function(tok){
+    const m=String(tok||'').trim().match(/^(\d+)\s*:\s*(\d+)$/);
+    if(!m) return;
+    const count=parseInt(m[1],10),pct=parseInt(m[2],10);
+    // 퍼센트 상한 50 — 설정 오타(예: 10:90)가 매출을 반토막 내지 않게 방어
+    if(count>0&&pct>0&&pct<=50) tiers.push({count:count,percent:pct});
+  });
+  tiers.sort(function(a,b){return a.count-b.count;});
+  return tiers;
+}
+
+/* count(유료 장수)·amount(유료 금액)에 대해 적용 구간과 할인액을 계산.
+   next* 는 "n장 더 담으면 x% 할인" 업셀 안내용 — 클라이언트가 그대로 표시한다. */
+function computeSelectVolumeDiscount_(kind,count,amount){
+  const tiers=getSelectVolumeTiers_(kind);
+  const c=Math.max(0,parseInt(count,10)||0);
+  const amt=Math.max(0,Number(amount)||0);
+  let applied=null,next=null;
+  for(let i=0;i<tiers.length;i++){
+    if(c>=tiers[i].count) applied=tiers[i];
+    else if(!next) next=tiers[i];
+  }
+  const percent=applied?applied.percent:0;
+  const discount=percent>0?Math.round(amt*percent)/100:0;   // 센트 반올림(amt*pct/100)
+  return {
+    kind:kind,count:c,percent:percent,
+    discount:roundCurrency_(discount),
+    tierCount:applied?applied.count:0,
+    nextCount:next?next.count:0,
+    nextPercent:next?next.percent:0,
+    remainToNext:next?Math.max(0,next.count-c):0
+  };
+}
+
 // 추가 보정(유료) 수 계산 - 프론트 getRetouchExtraCount()와 일치
 // - isBonus=true (마케팅 보너스) 는 항상 무료, 카운트 제외
 // - 갤러리 별점 선택과 직접 추가 모두 기본 포함 장수를 초과하면 유료로 카운트
@@ -21477,14 +21525,22 @@ function submitPhotoSelection(sessionId,sub){
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
     const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
-    const extraRetouchAmt=extraRetouch*retouchPrice;
+    const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
     const printUpgrade=priced.printUpgrade;
     const printsToStore=priced.printsToStore;
     const displayPrints=priced.allPrints||priced.prints;
-    const extraPrintsAmt=priced.amount;
-    const totalExtra=extraRetouchAmt+extraPrintsAmt;
+    const extraPrintsAmtRaw=priced.amount;
+    /* 볼륨 할인 (2026-08-09) — 유료 장수 기준. 인화는 price>0 인 청구 항목의 장수만 센다
+       (포함 무료분·서비스컷 무료분은 이미 0원이라 할인 근거도, 대상도 아니다). */
+    const chargedPrintUnits=(prints||[]).concat((printUpgrade&&printUpgrade.items)||[])
+      .reduce(function(s,p){return s+((Number(p.price)||0)>0?Math.max(1,parseInt(p.qty,10)||1):0);},0);
+    const retouchVd=computeSelectVolumeDiscount_('retouch',extraRetouch,extraRetouchAmtRaw);
+    const printVd=computeSelectVolumeDiscount_('print',chargedPrintUnits,extraPrintsAmtRaw);
+    const extraRetouchAmt=roundCurrency_(extraRetouchAmtRaw-retouchVd.discount);
+    const extraPrintsAmt=roundCurrency_(extraPrintsAmtRaw-printVd.discount);
+    const totalExtra=roundCurrency_(extraRetouchAmt+extraPrintsAmt);
     const delivery=validateSelectDelivery_(sub,row[SELECT_COL['픽업캘린더ID']],row,prints,photocard,priced.deliveryDriverItems);
     const rowNum=idx+2;
     const pickupEventId=syncSelectPickupEvent_(row[SELECT_COL['픽업캘린더ID']],row,sessionId,delivery);
@@ -21536,7 +21592,8 @@ function submitPhotoSelection(sessionId,sub){
         try{
           const items=[];
           if(extraRetouch>0){
-            items.push({description:`추가 보정 ${extraRetouch}장`,qty:1,unitGross:extraRetouchAmt});
+            // 단가는 정가로 싣고 볼륨 할인은 아래 별도 음수 라인 — 인보이스에 할인 근거가 명시돼야 한다
+            items.push({description:`추가 보정 ${extraRetouch}장`,qty:1,unitGross:extraRetouchAmtRaw});
           }
           (printUpgrade.items||[]).forEach(p=>{
             items.push({description:`${p.photoNum}번 ${p.label}`,qty:Number(p.qty)||1,unitGross:Number(p.price)||0});
@@ -21544,6 +21601,8 @@ function submitPhotoSelection(sessionId,sub){
           prints.forEach(p=>{
             items.push({description:`${p.photoNum}번 ${p.label}`,qty:Number(p.qty)||1,unitGross:Number(p.price)||0});
           });
+          if(retouchVd.discount>0) items.push({description:`볼륨 할인 — 추가 보정 ${extraRetouch}장 (-${retouchVd.percent}%)`,qty:1,unitGross:-retouchVd.discount,isDiscount:true});
+          if(printVd.discount>0) items.push({description:`볼륨 할인 — 인화 ${chargedPrintUnits}장 (-${printVd.percent}%)`,qty:1,unitGross:-printVd.discount,isDiscount:true});
           const res=createInvoiceRecord_({
             bookingRowIndex:bookingRow||'',
             type:'셀렉추가금',
@@ -21576,9 +21635,9 @@ function submitPhotoSelection(sessionId,sub){
       }catch(e){}
     }
     bumpCalCacheVer_();
-    _sendSelectSubmitAlert(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[]);
+    _sendSelectSubmitAlert(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});
     if(!sub.suppressCustomerEmail){
-      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[]);}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
     }
     return{
       ok:true,
@@ -21586,6 +21645,7 @@ function submitPhotoSelection(sessionId,sub){
       extraRetouch,
       extraRetouchAmt,
       extraPrintsAmt,
+      volumeDiscount:{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)},
       invoiceNumber:extraInvoiceNumber||'',
       deliveryMethod:delivery.method,
 	      pickupAt:delivery.pickupDate&&delivery.pickupTime?`${delivery.pickupDate} ${delivery.pickupTime}`:'',
@@ -21681,7 +21741,7 @@ function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchA
     : '';
   const photocardListHtml=photocard?buildSelectPhotocardHtml_(photocard):'';
   const deliveryLine=getSelectDeliveryCustomerLine_(delivery,lang);
-  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}건 (${extraPrintsAmt}€)<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
+  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}건 (${extraPrintsAmt}€)<br>`:''}${(volumeDiscount&&volumeDiscount.total>0)?`• <b style="color:#0e7a4f;">${lang==='ko'?'볼륨 할인':lang==='de'?'Mengenrabatt':'Volume discount'}: -${volumeDiscount.total}€</b>${volumeDiscount.retouch&&volumeDiscount.retouch.discount>0?` · ${lang==='ko'?'보정':'Retouch'} -${volumeDiscount.retouch.percent}%`:''}${volumeDiscount.print&&volumeDiscount.print.discount>0?` · ${lang==='ko'?'인화':lang==='de'?'Druck':'Prints'} -${volumeDiscount.print.percent}%`:''}<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
   sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
 }
@@ -21737,14 +21797,22 @@ function updatePhotoSelection(sessionId,sub){
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
     const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
-    const extraRetouchAmt=extraRetouch*retouchPrice;
+    const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
     const printUpgrade=priced.printUpgrade;
     const printsToStore=priced.printsToStore;
     const displayPrints=priced.allPrints||priced.prints;
-    const extraPrintsAmt=priced.amount;
-    const totalExtra=extraRetouchAmt+extraPrintsAmt;
+    const extraPrintsAmtRaw=priced.amount;
+    /* 볼륨 할인 (2026-08-09) — 유료 장수 기준. 인화는 price>0 인 청구 항목의 장수만 센다
+       (포함 무료분·서비스컷 무료분은 이미 0원이라 할인 근거도, 대상도 아니다). */
+    const chargedPrintUnits=(prints||[]).concat((printUpgrade&&printUpgrade.items)||[])
+      .reduce(function(s,p){return s+((Number(p.price)||0)>0?Math.max(1,parseInt(p.qty,10)||1):0);},0);
+    const retouchVd=computeSelectVolumeDiscount_('retouch',extraRetouch,extraRetouchAmtRaw);
+    const printVd=computeSelectVolumeDiscount_('print',chargedPrintUnits,extraPrintsAmtRaw);
+    const extraRetouchAmt=roundCurrency_(extraRetouchAmtRaw-retouchVd.discount);
+    const extraPrintsAmt=roundCurrency_(extraPrintsAmtRaw-printVd.discount);
+    const totalExtra=roundCurrency_(extraRetouchAmt+extraPrintsAmt);
     const delivery=validateSelectDelivery_(sub,row[SELECT_COL['픽업캘린더ID']],row,prints,photocard,priced.deliveryDriverItems);
     const rowNum=idx+2;
     const pickupEventId=syncSelectPickupEvent_(row[SELECT_COL['픽업캘린더ID']],row,sessionId,delivery);
@@ -24864,7 +24932,9 @@ function normalizeInvoiceItemForStorage_(item, fallbackMode){
     qty:Math.max(1,parseInt(item&&item.qty,10)||1),
     unitGross:roundCurrency_(unitGross),
     unitNet:roundCurrency_(unitNet),
-    priceInputMode:mode
+    priceInputMode:mode,
+    // 볼륨 할인 등 음수 라인 허용 표식 — 아래 저장 필터가 이 플래그 없는 음수는 계속 걸러낸다
+    isDiscount:!!(item&&item.isDiscount)
   };
 }
 
@@ -25496,7 +25566,7 @@ function _createInvoiceRecordCore_(payload){
   const priceInputMode=getInvoiceItemPriceMode_({priceInputMode:payload.priceInputMode},'brutto');
   let items=(payload.items||[])
     .map(item=>normalizeInvoiceItemForStorage_(item,priceInputMode))
-    .filter(item=>item.description&&item.unitGross>=0);
+    .filter(item=>item.description&&(item.unitGross>=0||item.isDiscount===true));
   const dateStr=normalizeInvoiceDateTimeText_(payload.dateStr||payload.shootDate||(row?row[0]:''));
   if(row){
     items=applyBookingDetailDescriptionsToInvoiceItems_(items,{

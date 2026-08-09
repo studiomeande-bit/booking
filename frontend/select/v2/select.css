@@ -2419,3 +2419,10 @@ h1 {
   letter-spacing: .02em; text-align: right;
 }
 .price-guide-head .pg-name { text-align: left; }
+.volume-hint {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: #eef7f1; border: 1px solid #cfe8da;
+  font-size: 13px; color: #1f5c40; line-height: 1.6;
+}
+.review-item.volume-line { color: #0e7a4f; }
+.review-item.volume-line strong { color: #0e7a4f; }

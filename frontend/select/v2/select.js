@@ -163,6 +163,7 @@ function computePrintAnnotations() {
     includedQty: 0, quotaDiffQty: 0, quotaCredit: 0, amount: 0,
     serviceDiscount: 0, serviceCreditUnits: 0, bonusDiscount: 0, bonusCreditUnits: 0
   }));
+  let chargedUnits = 0;
   // 서비스/보너스 크레딧은 서버와 같은 순서(행→장, 서비스 먼저)로 적용해야 결과가 일치한다.
   units.forEach((u) => {
     const r = rows[u.rowIndex];
@@ -192,10 +193,11 @@ function computePrintAnnotations() {
         bonusCreditsRemaining -= 1;
       }
     }
+    if (unitCharge > 0) chargedUnits += 1;   // 볼륨 할인 기준 장수 — 최종적으로 돈이 붙는 장만 (서버와 동일)
     a.amount += unitCharge;
   });
 
-  return rows.map((r, idx) => {
+  const result = rows.map((r, idx) => {
     const a = acc[idx];
     return {
       option: r.option, qty: r.qty, isRetouched: r.isRetouched, unit: r.unit,
@@ -205,6 +207,8 @@ function computePrintAnnotations() {
       bonusDiscount: a.bonusDiscount, bonusCreditUnits: a.bonusCreditUnits
     };
   });
+  result.chargedUnits = chargedUnits;   // 배열에 부착 — 호출부가 볼륨 할인 계산에 쓴다
+  return result;
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
 function getPrintQuotaSummary() {
@@ -1389,10 +1393,53 @@ function isPhotoPaid(photo, photoIndex) {
   return nonBonusPosition > included;
 }
 
+/* ===== 볼륨 할인 (2026-08-09) — 서버 computeSelectVolumeDiscount_ 미러 =====
+ * 구간은 세션 페이로드(session.volumeTiers)로 내려온다(설정 시트가 정본이라 드리프트 방지).
+ * 페이로드가 없으면(구 세션·프리뷰) 서버 기본값과 동일한 아래 상수를 쓴다. */
+const VOLUME_TIER_DEFAULTS = {
+  retouch: [{ count: 5, percent: 10 }, { count: 10, percent: 15 }, { count: 20, percent: 20 }],
+  print: [{ count: 10, percent: 10 }, { count: 20, percent: 15 }, { count: 30, percent: 20 }]
+};
+function getVolumeTiers(kind) {
+  const fromSession = state.session?.volumeTiers?.[kind];
+  const tiers = Array.isArray(fromSession) && fromSession.length ? fromSession : VOLUME_TIER_DEFAULTS[kind] || [];
+  return tiers
+    .map((t) => ({ count: Number(t.count) || 0, percent: Number(t.percent) || 0 }))
+    .filter((t) => t.count > 0 && t.percent > 0 && t.percent <= 50)
+    .sort((a, b) => a.count - b.count);
+}
+function computeVolumeDiscount(kind, count, amount) {
+  const tiers = getVolumeTiers(kind);
+  const c = Math.max(0, Number(count) || 0);
+  const amt = Math.max(0, Number(amount) || 0);
+  let applied = null, next = null;
+  tiers.forEach((t) => { if (c >= t.count) applied = t; else if (!next) next = t; });
+  const percent = applied ? applied.percent : 0;
+  return {
+    count: c, percent,
+    discount: Math.round(amt * percent) / 100,   // 서버와 동일한 반올림(amt*pct/100 센트)
+    nextCount: next ? next.count : 0,
+    nextPercent: next ? next.percent : 0,
+    remainToNext: next ? Math.max(0, next.count - c) : 0
+  };
+}
+const money2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+
+function calcRetouchDiscount() {
+  const count = getRetouchExtraCount();
+  const raw = count * Number(state.session?.retouchPrice || 0);
+  return { count, raw, vd: computeVolumeDiscount('retouch', count, raw) };
+}
+function calcPrintDiscount(annotations = computePrintAnnotations()) {
+  const raw = annotations.reduce((sum, ann) => sum + ann.amount, 0);
+  const units = Number(annotations.chargedUnits) || 0;
+  return { units, raw, vd: computeVolumeDiscount('print', units, raw) };
+}
+
 function calcTotal() {
-  const extraRetouch = getRetouchExtraCount() * Number(state.session?.retouchPrice || 0);
-  const printCharge = computePrintAnnotations().reduce((sum, ann) => sum + ann.amount, 0);
-  return extraRetouch + printCharge;
+  const r = calcRetouchDiscount();
+  const p = calcPrintDiscount();
+  return money2((r.raw - r.vd.discount) + (p.raw - p.vd.discount));
 }
 
 /* ========================================================================
@@ -2585,9 +2632,14 @@ function updatePhotoCounter() {
   els.photoCounterSub.textContent = parts.length
     ? parts.join(' · ') + (extra > 0 ? c.counterOverBase(base) : c.counterNoExtra)
     : c.counterEmpty;
-  els.extraCost.textContent = extra > 0
+  // 볼륨 할인 반영 + "n장 더 담으면 x%" 업셀 넛지 (2026-08-09)
+  const rvd = computeVolumeDiscount('retouch', extra, extra * retouchPrice);
+  let extraLine = extra > 0
     ? c.extraCostLine(extra, retouchPrice, extra * retouchPrice)
     : c.extraCostNone;
+  if (rvd.discount > 0) extraLine += ' ' + c.vdApplied(rvd.percent, money2(extra * retouchPrice - rvd.discount));
+  if (extra > 0 && rvd.remainToNext > 0) extraLine += ' ' + c.vdNudge(rvd.remainToNext, rvd.nextPercent);
+  els.extraCost.textContent = extraLine;
 }
 
 /* ========================================================================
@@ -2733,6 +2785,17 @@ function renderPrints() {
       </div>
     `;
   }).join('');
+
+  // 인화 볼륨 할인 상태 + 업셀 넛지 — 유료 장수·금액 기준 (2026-08-09)
+  {
+    const pd = calcPrintDiscount(annotations);
+    if (pd.raw > 0 || pd.vd.remainToNext > 0) {
+      const bits = [];
+      if (pd.vd.discount > 0) bits.push(`<b style="color:#0e7a4f;">${escapeHtml(c.vdPrintApplied(pd.units, pd.vd.percent, money2(pd.raw - pd.vd.discount)))}</b>`);
+      if (pd.units > 0 && pd.vd.remainToNext > 0) bits.push(escapeHtml(c.vdPrintNudge(pd.vd.remainToNext, pd.vd.nextPercent)));
+      if (bits.length) els.printList.innerHTML += `<div class="volume-hint">${bits.join(' · ')}</div>`;
+    }
+  }
 
   els.printList.querySelectorAll('[data-print-photo]').forEach((input) => {
     input.addEventListener('input', () => {
@@ -2991,6 +3054,12 @@ function updateReview() {
         `;
       }).join('')
     : `<div class="empty-state">${escapeHtml(c.reviewNoRetouch)}</div>`;
+  {
+    const r = calcRetouchDiscount();
+    if (r.vd.discount > 0) {
+      els.reviewPhotos.innerHTML += `<div class="review-item volume-line"><span>${escapeHtml(c.vdReviewRetouch(r.count, r.vd.percent))}</span><strong>-€${r.vd.discount}</strong></div>`;
+    }
+  }
 
   const printAnnotations = computePrintAnnotations();
   els.reviewPrints.innerHTML = state.prints.length
@@ -3011,6 +3080,12 @@ function updateReview() {
         `;
       }).join('')
     : `<div class="empty-state">${escapeHtml(c.reviewNoPrints)}</div>`;
+  {
+    const pDisc = calcPrintDiscount(printAnnotations);
+    if (pDisc.vd.discount > 0) {
+      els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-item volume-line"><span>${escapeHtml(c.vdReviewPrint(pDisc.units, pDisc.vd.percent))}</span><strong>-€${pDisc.vd.discount}</strong></div>`);
+    }
+  }
   // 출력이 전부 시그니처일 때만 되돌아가는 방법을 한 줄로 안내(버튼·강조 없음).
   if (state.prints.length && state.prints.every((print) => getPrintTier(normalizePrintTypeId(print.printId)) === 'signature')) {
     els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-note">${getPrintMicrocopy('reviewBackNote', state.lang)}</div>`);
