@@ -562,6 +562,8 @@ async function boot() {
 function wireEvents() {
   els.startBtn.addEventListener('click', () => goStep(1));
   els.addPhotoBtn.addEventListener('click', addPhotoRow);
+  const pickRetouchBtn = document.getElementById('pickRetouchBtn');
+  if (pickRetouchBtn) pickRetouchBtn.addEventListener('click', openRetouchPicker);
   if (els.gallerySearch) {
     els.gallerySearch.addEventListener('input', (ev) => {
       state.gallery.filter = String(ev.target.value || '').trim().toLowerCase();
@@ -1675,24 +1677,34 @@ function setStarFor(photoKey, star) {
   updateReview();
 }
 
-/* 별점 변경 시 보정 사진 목록(state.photos)을 동기화.
- * - **새** 별점(0→n) → state.photos에 추가 (보너스 슬롯 앞에 삽입)
- * - 별점 0 → state.photos에서 제거 (보너스 제외)
- * 별점 조정(3→4 등)은 보정 목록을 건드리지 않는다 — 별점은 1차 셀렉(찜)이고,
- * 보정에서 뺀 사진의 점수를 고쳤다고 보정 목록에 되살아나면 안 된다 (2026-08-09 모델 정리). */
+/* 별점 = 찜 목록 저장 **만** 한다 (사장님 확정 2026-08-09: "미리 보정으로 셋팅하지 말것").
+ * 보정 목록(state.photos)은 보정 단계에서 찜 목록을 보고 직접 골라 담는다(togglePhotoInRetouch).
+ * 여기서 하는 유일한 동기화: 찜 해제(별점 0) 시 보정 목록에서도 제거 — 찜에서 뺀 사진이
+ * 보정에 남아 있으면 "찜에서 고른다"는 모델이 깨진다. */
 function syncPhotosFromRatings(photoKey, prev, next) {
+  if (next !== 0) return;   // 별점 부여/조정은 보정 목록 무변화 — 찜 저장일 뿐
   const existingIdx = state.photos.findIndex((p) => !p.isBonus && stripExt(p.num) === photoKey);
-  if (next > 0 && prev > 0) return;   // 점수 조정만 — 목록 변경 없음
-  if (next > 0 && existingIdx < 0) {
+  if (existingIdx >= 0) state.photos.splice(existingIdx, 1);
+}
+
+/* 보정 목록 담기/빼기 — 픽커(보정 모드)에서 호출. 삽입 위치는 보너스 슬롯 앞(기존 규칙 유지). */
+function togglePhotoInRetouch(photoKey) {
+  const key = stripExt(photoKey);
+  if (!key) return;
+  const existingIdx = state.photos.findIndex((p) => !p.isBonus && stripExt(p.num) === key);
+  if (existingIdx >= 0) {
+    state.photos.splice(existingIdx, 1);
+  } else {
     const bonusIndex = state.photos.findIndex((p) => p.isBonus);
     const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
-    // 갤러리에서 선택한 사진. 기본 수량 초과 여부는 전체 보정 선택 순서로 계산된다.
-    const entry = { num: photoKey, note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'gallery' };
+    const entry = { num: key, note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'gallery' };
     if (bonusIndex >= 0) state.photos.splice(bonusIndex, 0, entry);
     else state.photos.push(entry);
-  } else if (next === 0 && existingIdx >= 0) {
-    state.photos.splice(existingIdx, 1);
   }
+}
+function isPhotoInRetouch(photoKey) {
+  const key = stripExt(photoKey);
+  return !!key && state.photos.some((p) => !p.isBonus && stripExt(p.num) === key);
 }
 
 function renderGallery() {
@@ -2195,28 +2207,53 @@ function addPhotoRow() {
  * 자유입력뿐이라 갤러리를 다시 볼 방법이 없었다. 여기서 갤러리를 픽커로 다시 연다.
  * 별점 조작은 픽커에서 막는다 — 여기서 별을 바꾸면 보정 리스트가 바뀌어 버린다. */
 let printPickerTarget = -1;
-let printPickerFilter = 'all';   // 'all' | 'starred' — 열 때마다 all 로 리셋
+let printPickerFilter = 'all';   // 'all' | 'starred' — 열 때마다 리셋
+let printPickerMode = 'print';   // 'print'(출력행 1개 채움·닫힘) | 'retouch'(보정 담기 토글·유지)
 
-function openPrintPicker(index) {
-  printPickerTarget = Number(index);
-  printPickerFilter = 'all';
+function openPickerShared() {
   const overlay = document.getElementById('printPicker');
-  if (!overlay) return;
+  if (!overlay) return false;
   const search = document.getElementById('printPickerSearch');
   if (search) search.value = '';
   overlay.classList.add('open');
   overlay.setAttribute('aria-hidden', 'false');
-  // 갤러리가 아직 안 불렸으면(직접 링크로 3단계 진입 등) 지금 불러온다
+  // 갤러리가 아직 안 불렸으면(직접 링크 진입 등) 지금 불러온다
   if (!state.gallery.loaded && !state.gallery.loading) {
     try { loadGallery(); } catch (e) {}
   }
   renderPrintPicker();
+  return true;
+}
+
+function openPrintPicker(index) {
+  printPickerMode = 'print';
+  printPickerTarget = Number(index);
+  printPickerFilter = 'all';
+  openPickerShared();
+}
+
+/* 보정 단계용 — 찜(별점) 사진에서 보정할 사진을 담는다. 토글식 다중 선택이라 픽커가 닫히지 않는다.
+   기본 필터는 '별점만'(찜에서 고르는 게 모델), 찜이 없으면 전체. */
+function openRetouchPicker() {
+  printPickerMode = 'retouch';
+  printPickerTarget = -1;
+  const starred = state.gallery.photos.some((p) => getStarOf(stripExt(p.name)) > 0)
+    || state.gallery.ratings.size > 0;
+  printPickerFilter = starred ? 'starred' : 'all';
+  openPickerShared();
 }
 
 function closePrintPicker() {
   const overlay = document.getElementById('printPicker');
   if (overlay) { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true'); }
+  const wasRetouch = printPickerMode === 'retouch';
   printPickerTarget = -1;
+  printPickerMode = 'print';
+  if (wasRetouch) {   // 보정 담기 결과를 목록·요약·진행 가드에 반영
+    renderPhotos();
+    updateReview();
+    updateSubmitState();
+  }
 }
 
 function renderPrintPicker() {
@@ -2252,16 +2289,24 @@ function renderPrintPicker() {
       b.addEventListener('click', () => { printPickerFilter = b.dataset.ppFilter; renderPrintPicker(); });
     });
   }
+  // 모드별 헤더 — 보정 모드는 담긴 장수를 제목에 실시간 표시
+  const retouchMode = printPickerMode === 'retouch';
+  const titleEl = document.getElementById('printPickerTitleText');
+  const hintEl = document.getElementById('printPickerHintText');
+  const pickedCount = state.photos.filter((p) => !p.isBonus).length;
+  if (titleEl) titleEl.textContent = retouchMode ? c.retouchPickerTitle(pickedCount) : c.printPickerTitle;
+  if (hintEl) hintEl.textContent = retouchMode ? c.retouchPickerHint : c.printPickerHint;
   const current = printNumKey(state.prints[printPickerTarget]?.photoNum);
   // 픽커는 전량 렌더하지 않고 상위 N + 더보기 (갤러리와 같은 예산 감각, 검색이 주 탐색 수단)
   const visible = list.slice(0, 120);
   grid.innerHTML = visible.map((p) => {
     const key = stripExt(p.name);
     const star = getStarOf(key);
-    const isCurrent = current && printNumKey(key) === current;
-    return `<div class="gallery-cell${star > 0 ? ' has-star' : ''}${isCurrent ? ' is-current' : ''}" title="${escapeHtml(p.name)}">
+    const marked = retouchMode ? isPhotoInRetouch(key) : (current && printNumKey(key) === current);
+    return `<div class="gallery-cell${star > 0 ? ' has-star' : ''}${marked ? ' is-current' : ''}" title="${escapeHtml(p.name)}">
         <img src="${escapeHtml(p.thumb)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
         ${star > 0 ? `<div class="cell-star-badge">${escapeHtml(c.starBadge(star))}</div>` : ''}
+        ${retouchMode && marked ? `<div class="picker-picked-badge">✓ ${escapeHtml(c.retouchPickedBadge)}</div>` : ''}
         <div class="gallery-name">${escapeHtml(p.name)}</div>
         <button type="button" class="print-picker-cell-pick" data-pick-key="${escapeHtml(key)}" aria-label="${escapeHtml(p.name)}"></button>
       </div>`;
@@ -2271,6 +2316,12 @@ function renderPrintPicker() {
   grid.querySelectorAll('[data-pick-key]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.pickKey || '';
+      if (printPickerMode === 'retouch') {
+        // 토글 다중 선택 — 픽커를 닫지 않고 배지·제목 카운트만 갱신 (반영은 닫을 때 일괄)
+        togglePhotoInRetouch(key);
+        renderPrintPicker();
+        return;
+      }
       if (printPickerTarget >= 0 && state.prints[printPickerTarget]) {
         state.prints[printPickerTarget].photoNum = key;
       }
@@ -3048,8 +3099,9 @@ function updateSubmitState() {
 
 function canProceedStep1() {
   if (!state.marketing) return false;
+  // 별점(찜) 1장 이상이면 진행 — 보정 담기는 다음 단계에서 한다. 수정 모드는 복원된 보정 목록으로도 통과
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  return regularCount >= 1;
+  return state.gallery.ratings.size >= 1 || regularCount >= 1;
 }
 
 function canProceedStep2() {

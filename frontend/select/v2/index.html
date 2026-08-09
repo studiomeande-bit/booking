@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=eb4ac1ccae" as="style">
+  <link rel="preload" href="./select.min.css?v=ccdb911bee" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=eb4ac1ccae">
+  <link rel="stylesheet" href="./select.min.css?v=ccdb911bee">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -231,6 +231,7 @@
         <div id="retouchScopeBox2" class="retouch-scope-box hidden"></div>
         <div id="photoList" class="list-wrap"></div>
         <div id="photocardBox" class="detail-box photocard-select-box hidden"></div>
+        <button id="pickRetouchBtn" type="button" class="primary-btn" style="width:100%;margin-bottom:8px;" data-i18n="pickRetouchBtn">📷 찜 목록에서 보정할 사진 고르기</button>
         <button id="addPhotoBtn" type="button" class="ghost-btn"><span data-i18n="addPhotoBtn">＋ 사진 항목 직접 추가</span> <small style="font-weight:400;" data-i18n="addPhotoBtnNote">(기본 장수 초과 시 유료)</small></button>
         <div class="nav-row">
           <button class="ghost-btn" type="button" data-go="1" data-i18n="navBackGallery">← 갤러리로</button>
@@ -429,11 +430,11 @@
   <div id="printPicker" class="lightbox print-picker" role="dialog" aria-hidden="true">
     <div class="print-picker-panel">
       <div class="print-picker-head">
-        <div class="print-picker-title" data-i18n="printPickerTitle">출력할 사진 선택</div>
+        <div class="print-picker-title" id="printPickerTitleText" data-i18n="printPickerTitle">출력할 사진 선택</div>
         <input id="printPickerSearch" type="search" data-i18n-attr="placeholder:printPickerSearch" placeholder="파일명 검색">
         <button type="button" class="lightbox-btn lightbox-btn-close" id="printPickerClose" data-i18n-attr="aria-label:lbClose" aria-label="닫기">✕</button>
       </div>
-      <div class="print-picker-hint" data-i18n="printPickerHint">별점(1차 셀렉) 사진이 먼저 보여요. 별점 없는 사진도 모두 고를 수 있습니다.</div>
+      <div class="print-picker-hint" id="printPickerHintText" data-i18n="printPickerHint">별점(1차 셀렉) 사진이 먼저 보여요. 별점 없는 사진도 모두 고를 수 있습니다.</div>
       <div id="printPickerChips" class="print-picker-chips"></div>
       <div id="printPickerGrid" class="gallery-grid print-picker-grid"></div>
     </div>
@@ -457,6 +458,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=5d1b34a9fa"></script>
+  <script src="./select.min.js?v=09ac06f5ad"></script>
 </body>
 </html>
