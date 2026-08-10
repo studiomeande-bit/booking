@@ -22878,9 +22878,13 @@ function updateSelectManualAdmin(token,bookingRowIndex,manualData){
     const retouchPrice=parseInt(selRow[9])||10;
     const totalPhotos=parseInt(manualData.totalPhotos)||0;
     const extraRetouch=Math.max(0,totalPhotos-baseCount);
-    const extraRetouchAmt=extraRetouch*retouchPrice;
+    /* 볼륨 할인은 수기 경로에도 동일 적용 (2026-08-10) — 같은 12장 추가 보정이 셀프 제출이면
+       15% 할인이고 수기 입력이면 정가라면 고객 간 형평이 깨진다. 단, 수기 인화 금액은
+       사장님이 직접 정한 최종 숫자라 손대지 않는다(장수 정보도 없어 구간 판정 불가). */
+    const manualVd=computeSelectVolumeDiscount_('retouch',extraRetouch,extraRetouch*retouchPrice);
+    const extraRetouchAmt=roundCurrency_(extraRetouch*retouchPrice-manualVd.discount);
     const extraPrintsAmt=parseInt(manualData.extraPrintsAmt)||0;
-    const totalExtra=extraRetouchAmt+extraPrintsAmt;
+    const totalExtra=roundCurrency_(extraRetouchAmt+extraPrintsAmt);
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
     const photos=Array.from({length:totalPhotos},(_,i)=>({num:i+1,note:''}));
     selSh.getRange(selRowIdx,14,1,9).setValues([[now,JSON.stringify(photos),extraRetouch,extraRetouchAmt,'[]',extraPrintsAmt,manualData.marketing||'N',totalExtra,'제출완료']]);
