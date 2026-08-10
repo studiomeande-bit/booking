@@ -56,6 +56,11 @@ export async function fetchSelectSession(sessionId) {
   throw new Error(payload.error?.message || payload.message || 'API request failed');
 }
 
+// 별점(찜) 영속화 — 디바운스 저장. 실패해도 조용히(다음 변경 때 재시도), 찜은 UX 보조 데이터다.
+export async function saveSelectRatings(sessionId, ratings) {
+  return postPayload('select-ratings-save', { sessionId, ratings });
+}
+
 export async function submitSelectSession(sessionId, submission, requestId) {
   return assertSelectMutationResult(
     await postPayload('select-submit', { sessionId, submission }, { requestId }),

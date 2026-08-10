@@ -4,6 +4,7 @@ import {
   fetchSelectPickupCalendar,
   fetchSelectPickupSlots,
   fetchSelectSession,
+  saveSelectRatings,
   submitSelectSession,
   updateSelectSession
 } from '../../shared/api-select.js';
@@ -700,6 +701,17 @@ function hydrateSession(session) {
     state.pickupTime = pickupTime;
   }
   state.printsSeeded = false;
+  /* 별점(찜) 복원 (2026-08-10) — 서버에 디바운스 저장된 찜 목록. 재진입·제출 후 수정 모두
+     전체 찜이 돌아온다(이전엔 보정 선택분만 5점으로 백필됐다). */
+  state.gallery.ratings = new Map();
+  const storedRatings = session.existingRatings;
+  if (storedRatings && typeof storedRatings === 'object') {
+    Object.keys(storedRatings).forEach((k) => {
+      const star = Number(storedRatings[k]);
+      const key = stripExt(String(k || '')).trim().toLowerCase();
+      if (key && star >= 1 && star <= 5) state.gallery.ratings.set(key, Math.floor(star));
+    });
+  }
   state.pickupEventId = session.existingPickupEventId || '';
   state.mailName = String(session.existingMailName || session.name || '').trim();
   state.mailAddress = normalizeMailAddressText(session.existingMailAddress || session.bookingAddress || '');
@@ -1719,6 +1731,34 @@ function scheduleGalleryWarmup() {
   }
 }
 
+/* ===== 별점(찜) 영속화 (2026-08-10) =====
+ * 별점 변경 2초 후 서버에 저장(연타 병합). 단계 이동·탭 숨김 시 즉시 플러시.
+ * 실패는 조용히 둔다 — 다음 변경이 자연 재시도이고, 찜은 UX 보조 데이터라 사용자를 막으면 안 된다.
+ * 프리뷰 모드는 세션이 없으므로 저장하지 않는다. */
+let ratingsSaveTimer = 0;
+let ratingsSaveDirty = false;
+
+function ratingsSnapshot() {
+  const out = {};
+  state.gallery.ratings.forEach((star, key) => { out[key] = star; });
+  return out;
+}
+function scheduleRatingsSave() {
+  if (state.previewMode || !state.sessionId) return;
+  ratingsSaveDirty = true;
+  clearTimeout(ratingsSaveTimer);
+  ratingsSaveTimer = setTimeout(flushRatingsSave, 2000);
+}
+function flushRatingsSave() {
+  if (!ratingsSaveDirty || state.previewMode || !state.sessionId) return;
+  ratingsSaveDirty = false;
+  clearTimeout(ratingsSaveTimer);
+  saveSelectRatings(state.sessionId, ratingsSnapshot()).catch(() => { ratingsSaveDirty = true; });
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushRatingsSave();
+});
+
 function getStarOf(photoKey) {
   return state.gallery.ratings.get(photoKey) || 0;
 }
@@ -1730,6 +1770,7 @@ function setStarFor(photoKey, star) {
   if (s === 0) state.gallery.ratings.delete(photoKey);
   else state.gallery.ratings.set(photoKey, s);
   syncPhotosFromRatings(photoKey, prev, s);
+  scheduleRatingsSave();
   renderGalleryCell(photoKey);
   renderGalleryCounts();
   renderPhotos();
@@ -3142,6 +3183,7 @@ function validateStep3() {
 }
 
 function goStep(step) {
+  flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
   if (step === 2 && !validateStep1()) return;
   if (step === 3 && !validateStep2()) return;
   if (step === 4 && !validateStep3()) return;

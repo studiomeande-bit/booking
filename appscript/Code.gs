@@ -958,6 +958,15 @@ function handlePublicApiRequest_(route,method,e){
       assertPublicWalkinPayload_(payload,body);
       return jsonOk_(submitWalkinIntake_(payload));
     }
+    if(route==='select-ratings-save'){
+      /* 별점(찜) 영속화 (2026-08-10) — 별점=찜 모델 전환으로 별점이 순수 로컬 상태가 되어
+         탭을 닫으면 찜 전체가 증발한다. 별점 변경을 디바운스 저장해 재진입 시 복원한다.
+         인증은 다른 셀렉 공개 라우트와 동일: sessionId 자체가 비밀(무작위 세션 토큰). */
+      if(method!=='post') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/select-ratings-save');
+      const request=getPublicPayloadFromRequest_(e);
+      const payload=request.payload||{};
+      return jsonOk_(saveSelectRatings_(String(payload.sessionId||''),payload.ratings));
+    }
     if(route==='select-session'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/select-session');
       const p=(e&&e.parameter)||{};
@@ -18268,7 +18277,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 // ⚠ SELECT_HEADERS 는 append-only. 중간 삽입은 SELECT_COL 이 상수에서 파생되므로 기존 전 행이 조용히 어긋난다.
@@ -19357,6 +19366,13 @@ function getSelectSession(sessionId){
       baseRetouchCount:parseInt(row[SELECT_COL['기본보정수']])||0,
       retouchPrice:parseInt(row[SELECT_COL['리터칭단가']])||10,
       volumeTiers:{retouch:getSelectVolumeTiers_('retouch'),print:getSelectVolumeTiers_('print')},
+      existingRatings:(function(){
+        try{
+          if(SELECT_COL['별점JSON']==null) return {};
+          const parsed=JSON.parse(String(row[SELECT_COL['별점JSON']]||'{}'));
+          return (parsed&&typeof parsed==='object'&&!Array.isArray(parsed))?parsed:{};
+        }catch(e){return {};}
+      })(),
       marketingBonusCount:normalizeSelectMarketingBonusCount_(row[SELECT_COL['마케팅보너스수']],row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
       serviceCutCount:Math.max(0,parseInt(row[SELECT_COL['서비스컷수']],10)||0),
       lang:row[SELECT_COL['언어']]||'ko',
@@ -21397,6 +21413,40 @@ function markSelectPrintDone_(sessionId,info){
     inviteSent=maybeSendSelectPickupInvite_(selSh,rows[idx+1],rowNum,sid);
   }catch(e){ Logger.log('pickup invite fail: '+e.message); }
   return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent,reopened:reopened};
+}
+
+/* 별점(찜) 저장 — 셀렉 페이지가 별점 변경 후 디바운스 호출. 값 검증을 서버가 다시 한다:
+   키는 selectPhotoNumKey_ 정규화, 점수는 1~5 정수만, 2000장·40KB 상한(셀 5만자 한도 방어). */
+function saveSelectRatings_(sessionId,ratings){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
+  if(!ratings||typeof ratings!=='object'||Array.isArray(ratings)) return{ok:false,message:'별점 데이터가 없습니다.'};
+  const clean={};
+  let count=0;
+  for(const k in ratings){
+    if(!Object.prototype.hasOwnProperty.call(ratings,k)) continue;
+    const key=selectPhotoNumKey_(k);
+    const star=parseInt(ratings[k],10);
+    if(!key||!(star>=1&&star<=5)) continue;
+    clean[key]=star;
+    count+=1;
+    if(count>=2000) break;
+  }
+  const json=JSON.stringify(clean);
+  if(json.length>40000) return{ok:false,message:'별점 데이터가 너무 큽니다.'};
+  const sheets=ensureSheets_();
+  const selSh=sheets.ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!selSh||SELECT_COL['별점JSON']==null) return{ok:false,message:'시스템 오류'};
+  const last=selSh.getLastRow();
+  if(last<2) return{ok:false,message:'유효하지 않은 링크입니다.'};
+  const ids=selSh.getRange(2,1,last-1,1).getValues();
+  for(let i=0;i<ids.length;i++){
+    if(String(ids[i][0])===sid){
+      selSh.getRange(i+2,SELECT_COL['별점JSON']+1).setValue(neutralizeFormula_(json));
+      return{ok:true,saved:count};
+    }
+  }
+  return{ok:false,message:'유효하지 않은 링크입니다.'};
 }
 
 function submitCustomerPrintOrder_(sessionId,order){
