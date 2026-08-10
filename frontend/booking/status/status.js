@@ -39,6 +39,18 @@
       selectTitle: '📷 사진 선택', selectIntro: '촬영하신 사진 중 보정할 컷을 선택해 주세요.',
       selectIntroDone: '이미 사진을 선택하셨어요. 필요하면 선택 내용을 확인·수정할 수 있어요.',
       selectGo: '사진 선택하러 가기', selectEdit: '선택 확인·수정',
+      progSteps: ['사진 선택', '보정 작업', '보정본 발송', '출력 준비', '수령'],
+      progStepsDigital: ['사진 선택', '보정 작업', '보정본 발송'],
+      progNoteSelecting: (dl) => dl ? '셀렉 마감일: ' + dl : '사진 선택을 기다리고 있어요.',
+      progNoteRetouching: '보정 작업 중이에요. 통상 2~3주 정도 걸립니다.',
+      progNoteRevision: '재수정 작업 중이에요. 완료되면 다시 안내드립니다.',
+      progNoteRetouchSent: '보정본을 보내드렸어요. 메일에서 확인해 주세요.',
+      progNotePrinting: '출력물을 준비하고 있어요.',
+      progNotePickupBooked: (at) => '픽업 예약: ' + at,
+      progNotePickupInvite: '출력이 끝나면 픽업 시간 예약 링크를 메일로 보내드려요.',
+      progNoteReadyPickup: '출력이 완료됐어요. 픽업 시간을 예약해 주세요(안내 메일 참조).',
+      progNoteMailed: '우편으로 발송되었습니다.',
+      progNoteDone: '모든 작업이 완료되었습니다. 감사합니다!',
       prepTitle: '✅ 촬영 준비 체크리스트', prepIntro: '촬영 전에 아래 내용을 확인하시면 더 좋은 결과를 얻을 수 있어요.'
     },
     en: {
@@ -69,6 +81,18 @@
       selectTitle: '📷 Photo selection', selectIntro: 'Choose the shots you’d like retouched from your session.',
       selectIntroDone: 'You’ve already selected your photos. You can review or adjust them if needed.',
       selectGo: 'Select photos', selectEdit: 'Review / edit selection',
+      progSteps: ['Selection', 'Retouching', 'Retouch delivery', 'Printing', 'Handover'],
+      progStepsDigital: ['Selection', 'Retouching', 'Retouch delivery'],
+      progNoteSelecting: (dl) => dl ? 'Selection deadline: ' + dl : 'Waiting for your photo selection.',
+      progNoteRetouching: 'Retouching in progress — usually 2–3 weeks.',
+      progNoteRevision: 'Revision in progress. We will notify you when it is ready.',
+      progNoteRetouchSent: 'Your retouched photos have been sent — please check your email.',
+      progNotePrinting: 'Your prints are being prepared.',
+      progNotePickupBooked: (at) => 'Pickup booked: ' + at,
+      progNotePickupInvite: 'Once printing is done, we will email you a pickup booking link.',
+      progNoteReadyPickup: 'Printing is done — please book your pickup time (see email).',
+      progNoteMailed: 'Shipped by post.',
+      progNoteDone: 'Everything is complete. Thank you!',
       prepTitle: '✅ Shoot preparation checklist', prepIntro: 'A quick check before your shoot helps us get the best results.'
     },
     de: {
@@ -99,6 +123,18 @@
       selectTitle: '📷 Fotoauswahl', selectIntro: 'Wählen Sie die Aufnahmen aus, die retuschiert werden sollen.',
       selectIntroDone: 'Sie haben Ihre Fotos bereits ausgewählt. Bei Bedarf können Sie die Auswahl prüfen oder ändern.',
       selectGo: 'Fotos auswählen', selectEdit: 'Auswahl prüfen / ändern',
+      progSteps: ['Auswahl', 'Retusche', 'Retusche-Versand', 'Druck', 'Übergabe'],
+      progStepsDigital: ['Auswahl', 'Retusche', 'Retusche-Versand'],
+      progNoteSelecting: (dl) => dl ? 'Auswahlfrist: ' + dl : 'Wir warten auf Ihre Fotoauswahl.',
+      progNoteRetouching: 'Retusche läuft — in der Regel 2–3 Wochen.',
+      progNoteRevision: 'Korrektur in Arbeit. Wir melden uns, sobald sie fertig ist.',
+      progNoteRetouchSent: 'Ihre retuschierten Fotos wurden gesendet — bitte prüfen Sie Ihre E-Mail.',
+      progNotePrinting: 'Ihre Drucke werden vorbereitet.',
+      progNotePickupBooked: (at) => 'Abholung gebucht: ' + at,
+      progNotePickupInvite: 'Nach dem Druck senden wir Ihnen einen Link zur Abholbuchung.',
+      progNoteReadyPickup: 'Druck abgeschlossen — bitte buchen Sie Ihre Abholzeit (siehe E-Mail).',
+      progNoteMailed: 'Per Post versendet.',
+      progNoteDone: 'Alles erledigt. Vielen Dank!',
       prepTitle: '✅ Checkliste zur Vorbereitung', prepIntro: 'Eine kurze Kontrolle vor dem Shooting sorgt für beste Ergebnisse.'
     }
   };
@@ -287,18 +323,59 @@
       $('manageBtns').innerHTML = '';
     }
 
-    // 사진 선택(셀렉) 링크
+    // 사진 선택(셀렉) 링크 + 작업 진행률 (2026-08-10)
     if (data.selectUrl) {
       $('selectTitle').textContent = t.selectTitle;
       $('selectIntro').textContent = data.selectSubmitted ? t.selectIntroDone : t.selectIntro;
       var selBtn = $('selectBtn');
       selBtn.textContent = data.selectSubmitted ? t.selectEdit : t.selectGo;
       selBtn.href = data.selectUrl;
+      renderSelectProgress(data.selectProgress, t);
       show('selectCard');
     } else { hide('selectCard'); }
 
     // 촬영 준비 체크리스트
     renderPrep();
+
+    /* 작업 진행률 스테퍼 — "내 사진 어디까지 왔나" (실제 문의가 오는 질문).
+       단계 판정만 여기서 하고 원시 시각은 서버가 준다. 디지털 전용(수령방식 없음)은 3단계로 축약. */
+    function renderSelectProgress(pg, t) {
+      var box = $('selectProgress');
+      if (!box) return;
+      if (!pg || !pg.submittedAt) {
+        // 미제출: 스테퍼 대신 마감일 한 줄만
+        box.innerHTML = pg && pg.deadline
+          ? '<p class="muted small" style="margin:10px 0 0;">' + esc(t.progNoteSelecting(pg.deadline)) + '</p>'
+          : '';
+        return;
+      }
+      var hasPhysical = !!(pg.deliveryMethod || pg.printDoneAt || pg.mailed);
+      var steps = hasPhysical ? t.progSteps : t.progStepsDigital;
+      // current 단계 index (0-based): 제출됨=1(보정 작업 중)부터 시작
+      var done = pg.handoverAt || pg.status === '최종작업완료';
+      var idx;
+      var note;
+      if (done) { idx = steps.length; note = t.progNoteDone; }
+      else if (pg.mailed) { idx = steps.length - 1; note = t.progNoteMailed; }
+      else if (hasPhysical && pg.printDoneAt) {
+        idx = 4; // 수령 대기
+        note = pg.deliveryMethod === 'pickup'
+          ? (pg.pickupAt ? t.progNotePickupBooked(pg.pickupAt) : t.progNoteReadyPickup)
+          : t.progNotePrinting;   // 우편: 출력 완료 후 발송 준비 중
+      }
+      else if (pg.retouchSentAt && pg.revisionRequested) { idx = 1; note = t.progNoteRevision; }
+      else if (pg.retouchSentAt) { idx = hasPhysical ? 3 : 2; note = hasPhysical ? (pg.deliveryMethod === 'pickup' ? t.progNotePickupInvite : t.progNotePrinting) : t.progNoteRetouchSent; }
+      else { idx = 1; note = t.progNoteRetouching; }
+      if (idx > steps.length) idx = steps.length;
+      var html = '<div class="prog-steps">';
+      for (var i = 0; i < steps.length; i++) {
+        var cls = i < idx ? 'done' : (i === idx ? 'active' : '');
+        html += '<div class="prog-step ' + cls + '"><span class="prog-dot">' + (i < idx ? '✓' : (i + 1)) + '</span><span class="prog-label">' + esc(steps[i]) + '</span></div>';
+      }
+      html += '</div>';
+      if (note) html += '<p class="muted small prog-note">' + esc(note) + '</p>';
+      box.innerHTML = html;
+    }
 
     // 1:1 문의 스레드
     $('threadTitle').textContent = '💬 ' + t.thread;

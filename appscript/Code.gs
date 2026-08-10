@@ -1479,6 +1479,17 @@ function handlePublicApiRequest_(route,method,e){
         }
         if(action==='booking-search') return jsonOk_(searchBookingsForAgent_(token,payload.query||payload.filters||{}));
         if(action==='booking-get') return jsonOk_(getBookingForAgent_(token,payload.rowIndex));
+        if(action==='booking-portal-link'){
+          // 고객 포털 링크 조회 — 고객이 메일을 못 찾을 때 재전달용 (서명 ref 포함, 어드민 인증 필수)
+          const plIdx=parseInt(payload.rowIndex,10);
+          if(!plIdx||plIdx<2) throw new Error('rowIndex가 필요합니다.');
+          const plSh=getDbSheet();
+          const plRow=plSh.getRange(plIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+          if(!plRow||!plRow[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다: '+plIdx);
+          const plRef=`row:${plIdx}:${bookingRowActionToken_(plRow)}`;
+          return jsonOk_({ok:true,rowIndex:plIdx,name:String(plRow[BOOKING_COL['고객명']]||''),
+            url:'https://booking.studio-mean.com/status/?ref='+encodeURIComponent(plRef)});
+        }
         if(action==='booking-update-status') return jsonOk_(updateBookingStatusForAgent_(token,payload.rowIndex,String(payload.status||'')));
         if(action==='booking-delete') return jsonOk_(deleteBookingForAgent_(token,payload));
         if(action==='booking-refund') return jsonOk_(Object.assign({},recordBookingRefundAdmin(token,payload.rowIndex,Object.assign({},payload,{source:'agent'})),{}));
@@ -10058,10 +10069,10 @@ function getBookingStatusForCustomer_(ref){
   // 확정된 예약만 안내 메일 재발송 허용(계약금 계좌·.ics·오시는 길 포함)
   const canResend=status==='확정됨' && hasValidEmail;
   // 셀렉 링크가 있으면 포털에서 바로 이어가도록 노출
-  let selectUrl='',selectSubmitted=false;
+  let selectUrl='',selectSubmitted=false,selectProgress=null;
   try{
     const sel=findSelectSessionForBookingRow_(found.sheet.getParent(),found.rowIndex);
-    if(sel){selectUrl=sel.url;selectSubmitted=sel.submitted;}
+    if(sel){selectUrl=sel.url;selectSubmitted=sel.submitted;selectProgress=sel.progress||null;}
   }catch(e){Logger.log('portal select lookup 실패: '+e.message);}
   return {
     ok:true,
@@ -10083,6 +10094,7 @@ function getBookingStatusForCustomer_(ref){
     canResend,
     selectUrl,
     selectSubmitted,
+    selectProgress,
     rescheduleUrl:(canManage&&eventId)?createActionLink_('customer_reschedule',eventId):'',
     cancelUrl:(canManage&&eventId)?createActionLink_('customer_cancel',eventId):'',
     mapUrl:MAP_URL,
@@ -10110,9 +10122,26 @@ function findSelectSessionForBookingRow_(ss,bookingRowIndex){
     if(parseInt(r[SELECT_COL['예약장부행']],10)!==bri) continue;
     const sid=String(r[SELECT_COL['세션ID']]||'').trim();
     if(!sid) continue;
+    /* 진행률(2026-08-10) — 고객 포털의 "내 사진 어디까지 왔나" 표시용.
+       실제 문의가 오는 질문이라(차수진님 "저희 출력이 한장인가요?" 류) 상태를 그대로 노출한다.
+       단계 판정은 클라이언트가 하고 서버는 원시 시각·상태만 준다(표시 로직 이원화 방지). */
+    const selStatus=String(r[SELECT_COL['상태']]||'').trim();
+    const cell=function(col){return SELECT_COL[col]!=null?parseDateSafe_(r[SELECT_COL[col]]).str.slice(0,16):'';};
     return {
       url:buildSelectSessionUrl_(sid,r[SELECT_COL['페이지버전']]),
-      submitted:!!String(r[SELECT_COL['제출일시']]||'').trim()
+      submitted:!!String(r[SELECT_COL['제출일시']]||'').trim(),
+      progress:{
+        status:selStatus,
+        submittedAt:cell('제출일시'),
+        retouchSentAt:cell('보정본발송일시'),
+        printDoneAt:cell('출력완료일시'),
+        handoverAt:cell('수령완료일시'),
+        pickupAt:cell('픽업일시'),
+        deadline:String(r[SELECT_COL['셀렉마감일']]||'').toString().slice(0,10),
+        deliveryMethod:SELECT_COL['수령방식']!=null?String(r[SELECT_COL['수령방식']]||'').trim():'',
+        revisionRequested:selStatus==='재수정요청',
+        mailed:selStatus==='우편발송'
+      }
     };
   }
   return null;
