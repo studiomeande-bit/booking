@@ -10137,7 +10137,7 @@ function findSelectSessionForBookingRow_(ss,bookingRowIndex){
         printDoneAt:cell('출력완료일시'),
         handoverAt:cell('수령완료일시'),
         pickupAt:cell('픽업일시'),
-        deadline:String(r[SELECT_COL['셀렉마감일']]||'').toString().slice(0,10),
+        deadline:parseDateSafe_(r[SELECT_COL['셀렉마감일']]).str.slice(0,10),   // 시트 Date 재해석 정규화
         deliveryMethod:SELECT_COL['수령방식']!=null?String(r[SELECT_COL['수령방식']]||'').trim():'',
         revisionRequested:selStatus==='재수정요청',
         mailed:selStatus==='우편발송'
