@@ -9979,7 +9979,32 @@ function handleActionRoute_(p){
 function createActionLink_(action,eventId,ttlSec){const exp=Math.floor(Date.now()/1000)+(Number(ttlSec)>0?Number(ttlSec):CONFIG.ACTION_LINK_TTL_SEC);const sig=signAction_(action,eventId,exp);return`${ScriptApp.getService().getUrl()}?action=${encodeURIComponent(action)}&eventId=${encodeURIComponent(eventId)}&exp=${exp}&sig=${encodeURIComponent(sig)}`;}
 function createHtmlActionLink_(action,eventId,ttlSec){return createActionLink_(action,eventId,ttlSec).replace(/&/g,'&amp;');}
 function signAction_(action,eventId,exp){const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET');return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(`${action}|${eventId}|${exp}`,secret)).replace(/=+$/g,'');}
+/* ⚠️ 시드에 Date 셀(동의시각)이 들어간다. String(Date) 는 **GAS 인스턴스의 시간대 설정에 따라
+   문자열이 달라질 수 있어**, 같은 링크가 어느 서버에 걸리느냐로 유효/무효가 갈렸다
+   (2026-08-10 실측: 동일 ref 가 Node 경로에선 OK, 브라우저 경로에선 BOOKING_NOT_FOUND —
+   서버가 받은 ref 는 바이트 단위로 동일함을 에코로 확인). 날짜는 스크립트 TZ 로 명시 포맷한다.
+   기존 발송 링크는 아래 legacy 산식 폴백으로 최대한 살린다. */
+function bookingRowActionSeedPart_(v){
+  if(Object.prototype.toString.call(v)==='[object Date]') return Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  return String(v==null?'':v).trim();
+}
+function bookingRowActionTokenFromSeed_(seed){
+  const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET')||'studio-mean-action';
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(seed,secret)).replace(/=+$/g,'').slice(0,18);
+}
 function bookingRowActionToken_(row){
+  const seed=[
+    bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['이메일']]).toLowerCase(),
+    bookingRowActionSeedPart_(row[BOOKING_COL['상품']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['동의시각']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['총결제액']])
+  ].join('|');
+  return bookingRowActionTokenFromSeed_(seed);
+}
+// 구 산식 — String(Date) 그대로. 이 인스턴스의 TZ 렌더링과 일치하는 옛 링크만 맞는다(최선 노력 폴백).
+function bookingRowActionTokenLegacy_(row){
   const seed=[
     String(row[BOOKING_COL['고객명']]||'').trim(),
     String(row[BOOKING_COL['연락처']]||'').trim(),
@@ -9988,8 +10013,7 @@ function bookingRowActionToken_(row){
     String(row[BOOKING_COL['동의시각']]||'').trim(),
     String(row[BOOKING_COL['총결제액']]||'').trim()
   ].join('|');
-  const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET')||'studio-mean-action';
-  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(seed,secret)).replace(/=+$/g,'').slice(0,18);
+  return bookingRowActionTokenFromSeed_(seed);
 }
 function createBookingRowActionRef_(rowIndex,row){
   return `row:${rowIndex}:${bookingRowActionToken_(row)}`;
@@ -10003,10 +10027,10 @@ function findBookingRowByActionRef_(ref){
     const token=rowRef[2];
     if(rowIndex>=2&&rowIndex<=data.length){
       const row=data[rowIndex-1];
-      if(bookingRowActionToken_(row)===token) return{sheet:sh,rowIndex,row,data};
+      if(bookingRowActionToken_(row)===token||bookingRowActionTokenLegacy_(row)===token) return{sheet:sh,rowIndex,row,data};
     }
     for(let i=1;i<data.length;i++){
-      if(bookingRowActionToken_(data[i])===token) return{sheet:sh,rowIndex:i+1,row:data[i],data};
+      if(bookingRowActionToken_(data[i])===token||bookingRowActionTokenLegacy_(data[i])===token) return{sheet:sh,rowIndex:i+1,row:data[i],data};
     }
     return null;
   }
@@ -18642,9 +18666,18 @@ function listRecentRawSelectSessionsForAgent_(token,options){
     const submitted=parseDateSafe_(row[SELECT_COL['제출일시']]);
     if(submitted.obj&&!isNaN(submitted.obj.getTime())&&submitted.obj<cutoff) continue;
     let nums=[];
+    const numSet={};
+    const addNum=function(v){const k=selectPhotoNumKey_(v);if(k&&!numSet[k]){numSet[k]=true;nums.push(k);}};
     try{
       const arr=JSON.parse(String(row[SELECT_COL['선택사진']]||'[]'));
-      if(Array.isArray(arr)) nums=arr.map(function(p){return selectPhotoNumKey_(p&&p.num);}).filter(Boolean);
+      if(Array.isArray(arr)) arr.forEach(function(p){addNum(p&&p.num);});
+    }catch(e){}
+    /* 원본 출력만 요청한 사진도 셀렉으로 취급 (사장님 지시 2026-08-10, 김지훈 사례:
+       보정 3장 + 원본 인화 10장 — 인화 번호가 빠지면 RAW Selects/ 분류·'셀렉' 추출에서 10장이 누락된다).
+       추가인화 JSON 의 photoNum 을 합집합으로 포함(중복 제거). */
+    try{
+      const parr=JSON.parse(String(row[SELECT_COL['추가인화']]||'[]'));
+      if(Array.isArray(parr)) parr.forEach(function(p){addNum(p&&p.photoNum);});
     }catch(e){}
     if(!nums.length) continue;
     out.push({
