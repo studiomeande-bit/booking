@@ -2426,3 +2426,5 @@ h1 {
 }
 .review-item.volume-line { color: #0e7a4f; }
 .review-item.volume-line strong { color: #0e7a4f; }
+.unused-quota-warn { color: #92400e; background: #fef3c7; border: 1px solid #f0d060; border-radius: 8px; padding: 9px 11px; margin-top: 8px; line-height: 1.6; }
+.unused-quota-warn .linklike { border: 0; background: none; color: #92400e; font-weight: 800; text-decoration: underline; cursor: pointer; padding: 0; font-size: inherit; }

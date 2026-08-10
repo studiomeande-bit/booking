@@ -3127,6 +3127,18 @@ function updateReview() {
       els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-item volume-line"><span>${escapeHtml(c.vdReviewPrint(pDisc.units, pDisc.vd.percent))}</span><strong>-€${pDisc.vd.discount}</strong></div>`);
     }
   }
+  /* 포함 인화 미사용 경고 (2026-08-10) — 무료 포함분을 안 담고 제출하면 조용히 소실된다.
+     제출을 막지는 않는다(적게 받는 것도 고객 선택) — 다만 몰랐을 가능성이 커서 리뷰에서 알린다. */
+  {
+    const unusedQuota = getPrintQuotaSummary().filter((q) => q.remaining > 0);
+    if (unusedQuota.length) {
+      const detail = unusedQuota.map((q) => `${q.label} ×${q.remaining}`).join(' · ');
+      els.reviewPrints.insertAdjacentHTML('beforeend',
+        `<div class="review-note unused-quota-warn">⚠️ ${escapeHtml(c.unusedQuotaWarn(detail))} <button type="button" class="linklike" data-go-print-step>${escapeHtml(c.unusedQuotaGoBtn)}</button></div>`);
+      const goBtn = els.reviewPrints.querySelector('[data-go-print-step]');
+      if (goBtn) goBtn.addEventListener('click', () => goStep(3));
+    }
+  }
   // 출력이 전부 시그니처일 때만 되돌아가는 방법을 한 줄로 안내(버튼·강조 없음).
   if (state.prints.length && state.prints.every((print) => getPrintTier(normalizePrintTypeId(print.printId)) === 'signature')) {
     els.reviewPrints.insertAdjacentHTML('beforeend', `<div class="review-note">${getPrintMicrocopy('reviewBackNote', state.lang)}</div>`);

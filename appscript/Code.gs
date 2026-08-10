@@ -13334,6 +13334,19 @@ function _buildDailyBriefingData_(){
     const days=lastDate?Math.floor((new Date(today+'T00:00:00')-new Date(lastDate+'T00:00:00'))/86400000):null;
     if(!lastDate||days>=21) bankGap={lastDate:lastDate,days:days,count:bankTxs.length};
   }catch(e){Logger.log('briefing bankGap fail: '+e.message);_briefFail_(sectionFailures,'은행 데이터',e);}
+  /* 아마존 전자 인보이스 미도착 감시 (2026-08-10) — ZUGFeRD 메일 수신을 켰지만(8/8) VAT 검증이
+     조용히 멈춰 있으면 인보이스가 영영 안 오고, D8 은 매일 '성공·0건'만 남긴다(그래서 아무도 모른다 —
+     아마존 첨부 부재를 몇 달 놓친 8/7 사고의 재발 방지). 판정: 최근 14일 내 아마존 주문 메일이
+     있는데 그 기간 증빙 수집이 0건이면 경고. 주문이 없으면 조용 — 구매 없는 달의 거짓 경보 방지. */
+  let invoiceMailGap=null;
+  try{
+    const orderThreads=GmailApp.search('from:bestellbestaetigung@amazon.de newer_than:14d',0,3);
+    if(orderThreads.length>0){
+      const lastSaved=String(PropertiesService.getScriptProperties().getProperty('EXPENSE_MAIL_LAST_SAVED')||'');
+      const cutoff=Utilities.formatDate(new Date(Date.now()-14*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      if(!lastSaved||lastSaved<cutoff) invoiceMailGap={orderCount:orderThreads.length,lastSaved:lastSaved||''};
+    }
+  }catch(e){Logger.log('briefing invoiceMailGap fail: '+e.message);_briefFail_(sectionFailures,'인보이스 메일',e);}
   /* 지난달 회계 마감 — 마감 기록이 없으면 리마인드. 분기 마감(ELSTER) 리마인더는 분기당 한 번뿐이라
      그 사이 달들은 아무도 챙기지 않았다. 마감 시트만 읽어 판정하므로 장부 재계산 없음(비용 0에 가까움).
      창은 5~25일 — 1~4일은 아직 정산이 덜 들어오고, 26일 이후는 분기 리마인더와 겹친다. */
@@ -13353,7 +13366,7 @@ function _buildDailyBriefingData_(){
     contractPending.count=cp.length;
     contractPending.items=cp.slice(0,6);
   }catch(e){Logger.log('briefing contract fail: '+e.message);_briefFail_(sectionFailures,'계약서',e);}
-  return {ok:true,date:today,monthCloseDue:monthCloseDue,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
+  return {ok:true,date:today,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -13401,6 +13414,10 @@ function buildDailyBriefingEmailHtml_(b){
     actions.push(line(`🏦 <b style="color:#b91c1c;">은행 거래가 ${b.bankGap.lastDate?`${b.bankGap.days}일째 없습니다`:'최근 4개월간 없습니다'}</b>`
       +`${b.bankGap.lastDate?` (마지막 ${esc(b.bankGap.lastDate)})`:''} — Deutsche Bank CSV를 가져와 주세요. `
       +`<b>지출·매입세액이 빠진 채로 마감하면 세금을 과납합니다.</b>`));
+  }
+  if(b.invoiceMailGap){
+    actions.push(line(`📨 <b style="color:#b91c1c;">아마존 주문은 있는데 전자 인보이스가 안 들어옵니다</b> — 최근 14일 주문 메일 ${b.invoiceMailGap.orderCount}건, 증빙 수집 ${b.invoiceMailGap.lastSaved?`마지막 ${esc(b.invoiceMailGap.lastSaved)}`:'기록 없음'}. `
+      +`Amazon Business → Tax information 에서 <b>VAT 검증 상태</b>를 확인해 주세요. 인보이스가 없으면 매입세액 공제를 놓칩니다.`));
   }
   if(b.monthCloseDue){
     actions.push(line(`📕 <b>${esc(b.monthCloseDue.label)} 회계 마감 기록이 없습니다</b> — 어드민 회계 탭에서 월마감 체크 후 <b>마감 기록</b>을 눌러주세요. `
@@ -15312,6 +15329,10 @@ function collectInvoiceEmailsDaily_(){
   // 최근 800개만 유지 (Properties 9KB 한도)
   const newSeen=Array.from(seenSet).slice(-800);
   try{props.setProperty('EXPENSE_MAIL_SEEN',JSON.stringify(newSeen));}catch(e){Logger.log('EXPENSE_MAIL_SEEN save fail: '+e.message);}
+  // 마지막으로 증빙을 실제 수집한 날 — 브리핑의 '인보이스 미도착' 감시가 이 값을 본다 (2026-08-10)
+  if(saved>0){
+    try{props.setProperty('EXPENSE_MAIL_LAST_SAVED',Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd'));}catch(e){}
+  }
   if(saved>0){
     try{
       sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[회계 인박스] 인보이스 메일 ${saved}건 수집됨`,htmlBody:`<p>메일에서 증빙 ${saved}건을 Drive '회계증빙/인박스'에 저장했습니다.<br>Claude에게 "영수증 정리해줘"라고 하면 내용을 읽고 경비 장부에 기장합니다.</p>`});
