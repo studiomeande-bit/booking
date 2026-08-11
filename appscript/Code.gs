@@ -12864,6 +12864,8 @@ function _bookingRowToAgentObject_(row,rowIndex){
     companyName:String(row[BOOKING_COL['사업자명']]||''),
     businessInvoiceNeeded:String(row[BOOKING_COL['사업자송장필요']]||'')==='Y',
     gutscheinCode:String(row[BOOKING_COL['굿샤인코드']]||''),
+    // 매출 세액 판정을 바꾸는 값이라 반드시 읽어볼 수 있어야 한다(booking-update 후 확인용)
+    vatMode:normalizeVatMode_(row[BOOKING_COL['부가세모드']]),
     memo:String(row[BOOKING_COL['요청사항']]||'').slice(0,300)
   };
 }
