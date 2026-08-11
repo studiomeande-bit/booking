@@ -62,6 +62,21 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
+- **국외 B2B 부가세 미부과(§3a Abs.2 UStG) 지원 — 견적·인보이스·회계장부 (2026-08-11)** —
+  휘슬러 코리아(한국 법인) 건에서 드러난 구멍: 시스템이 부가세 19%를 강제해 **EU 역외 사업자에게 보낼 문서를
+  만들 수 없었다**(합의액 netto €2,800인데 PDF는 3,332). `vatMode` 필드 신설(`standard` | `exempt_third_country`).
+  - **숫자 의미는 그대로**: `unitGross`는 여전히 brutto, netto 산식도 `brutto/1.19` 그대로. 면제일 때만
+    **부가세 0 · 총액 = netto**. 기존 견적·인보이스와 의미가 어긋나지 않는다. 값이 빈 기존 행은 전부 `standard`.
+  - 견적 PDF: 상단 부가세 문구 → **면제 사유 문구**(ko/de/en, 선택 언어 전 페이지). `vatExemptCountry`는
+    `//` 줄로 언어별 국가명 지정 가능. 인보이스 PDF: 총계 아래 면제 사유 인쇄 — **§14 Abs.4 Nr.8 UStG 필수 기재**.
+  - **회계**: 예약행에 `부가세모드` 승계(`quote-convert-booking`) → 장부가 `net=gross·tax=0`, 분류 `… (국외 비과세)`,
+    요약에 `nonTaxableGross`/`taxableGross` 추가. ELSTER **nicht steuerbare Umsätze(Kz.45)** 로 분리 신고용.
+    대시보드 net/tax 타일도 비과세분을 19% 환산에서 제외. `invoice-create`는 예약행에서 모드를 상속(재발 방지).
+  - 노출: `quote-create`/`quote-update`/`invoice-create` payload + `booking-update`의 `vatMode`. studio-erp SKILL.md 갱신.
+  - 검증: `scripts/check-vat-exempt.mjs`(신규) + AN-260010 실데이터 로컬 렌더 — 면제 `2,800/0.00/2,800`,
+    **표준 견적·인보이스 HTML은 변경 전과 바이트 동일**(미사용 CSS 1줄 제외).
+  - ⚠️ 어드민 UI에는 토글 없음 — 현재는 에이전트/CLI 경로 전용.
+
 - **예약 캘린더 늦은 달 혼란 제거: 빈 달 안내 + 자동선택 휴무일 제외 + 크림톤 스켈레톤 (2026-07-31, 프런트 배포)** —
   로드맵 #7 마지막 항목("reduce visual confusion while loading later months") 소진.
   - **빈 달 안내**: 예약 가능한 날짜가 하나도 없는 달로 이동하면 기존엔 "예약 가능 날짜를 선택하세요"라는

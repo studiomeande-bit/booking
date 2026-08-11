@@ -49,7 +49,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
@@ -114,7 +114,7 @@ const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
-const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조','언어'];
+const INVOICE_HEADERS=['인보이스번호','발행일','타입','예약행번호','고객명','이메일','연락처','촬영일시','촬영종류','상품','총금액(€)','계약금(€)','환불금액(€)','메모','상태','고객주소','품목JSON','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','LexwareContactId','LexwareInvoiceId','LexwareVoucherNumber','LexwareSyncStatus','LexwarePaymentStatus','LexwareOpenAmount','LexwarePaidAt','LexwareSyncedAt','사업자송장필요','사업자명','사업자VAT번호','사업자송장이메일','사업자송장참조','언어','부가세모드','면세국가'];
 const INVOICE_COL=INVOICE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MESSAGE_LOG_HEADERS=['일시','채널','방향','유형','대상','제목','상태','예약행','고객명','이메일','참조','오류','메타JSON'];
 const MESSAGE_LOG_COL=MESSAGE_LOG_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -139,9 +139,48 @@ const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬
 const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
-const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON','보류사유','재확인예정일','보류전환일시','가예약시작','가예약소요분','가예약캘린더ID'];
+const QUOTE_HEADERS=['견적번호','발행일','유효기한','상태','언어','고객명','이메일','연락처','고객주소','회사명','VAT번호','청구지','촬영종류','상품','촬영예정일','품목JSON','소계(€)','할인(€)','순액(€)','부가세(€)','총액(€)','계약금(€)','계약금비율','메모','조건','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','수락일시','거절사유','연결예약행','작성자','수정일시','표시옵션JSON','보류사유','재확인예정일','보류전환일시','가예약시작','가예약소요분','가예약캘린더ID','부가세모드','면세국가'];
 const QUOTE_COL=QUOTE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const QUOTE_STATUS={DRAFT:'초안',SENT:'발송',HOLD:'보류',ACCEPTED:'수락',REJECTED:'거절',EXPIRED:'만료',CONVERTED:'전환'};
+
+/* ===== 부가세 모드 — 국외 B2B(제3국) 비과세 =====
+   'standard'(기본, 빈값 포함) = 독일 부가세 19%. 기존 행은 값이 없으므로 전부 standard 로 동작한다.
+   'exempt_third_country' = §3a Abs.2 UStG 상 용역 공급지가 국외 → 독일 부가세 미부과.
+   ⚠ 품목 단가(unitGross)의 의미는 바꾸지 않는다 — 언제나 19% 포함 brutto 로 저장하고 netto 는
+     지금까지와 같은 식(brutto/1.19)으로 뽑는다. 면제일 때 부가세=0 · 총액=netto 로만 맞춘다.
+     (기존 견적·인보이스와 숫자 의미가 어긋나지 않게 하기 위함) */
+const VAT_MODE_STANDARD='standard';
+const VAT_MODE_EXEMPT_THIRD_COUNTRY='exempt_third_country';
+function normalizeVatMode_(value){
+  const s=String(value==null?'':value).trim().toLowerCase();
+  if(!s) return VAT_MODE_STANDARD;
+  if(s===VAT_MODE_EXEMPT_THIRD_COUNTRY||s==='exempt'||s==='drittland'||s==='nicht_steuerbar'||s==='true'||s==='y') return VAT_MODE_EXEMPT_THIRD_COUNTRY;
+  return VAT_MODE_STANDARD;
+}
+function isVatExempt_(value){ return normalizeVatMode_(value)===VAT_MODE_EXEMPT_THIRD_COUNTRY; }
+/* payload 에서 부가세 모드 읽기 — vatMode 우선, 편의상 vatExempt(boolean) 도 허용.
+   둘 다 없으면 fallback(기존 행 값)을 그대로 유지한다(부분 수정에서 모드가 날아가지 않게). */
+function readVatModeFromPayload_(payload,fallback){
+  const p=payload||{};
+  if(p.vatMode!=null&&String(p.vatMode).trim()!=='') return normalizeVatMode_(p.vatMode);
+  if(p.vatExempt!=null&&String(p.vatExempt).trim()!==''){
+    const raw=String(p.vatExempt).trim().toLowerCase();
+    return (p.vatExempt===false||raw==='false'||raw==='0'||raw==='n')?VAT_MODE_STANDARD:VAT_MODE_EXEMPT_THIRD_COUNTRY;
+  }
+  return normalizeVatMode_(fallback);
+}
+/* 면세 사유 문구. 인보이스에는 §14 Abs.4 Nr.8 UStG 상 **필수** 기재 항목이다.
+   국가명은 하드코딩하지 않고 vatExemptCountry 값으로 채운다(없으면 일반 문구). */
+function vatExemptNoteText_(lang,docKind,country){
+  const c=String(country||'').trim();
+  const isInv=docKind==='invoice';
+  const map={
+    ko:`본 ${isInv?'인보이스':'견적'}의 고객사는 ${c?c+'(EU 역외)':'EU 역외 국가'} 소재 사업자로, 독일 부가가치세법 §3a Abs. 2 UStG에 따라 용역의 공급지가 국외에 해당하여 독일 부가가치세가 부과되지 않습니다. 표기 금액이 최종 금액입니다.`,
+    de:`Nicht steuerbare sonstige Leistung — Leistungsort im Drittland${c?' ('+c+')':''} gem. §3a Abs. 2 UStG. Es wird keine deutsche Umsatzsteuer berechnet.`,
+    en:`Not subject to German VAT — place of supply outside Germany${c?' ('+c+')':''} pursuant to Sec. 3a (2) German VAT Act (UStG). The amounts shown are final.`
+  };
+  return map[String(lang||'de').slice(0,2)]||map.de;
+}
 const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
@@ -4090,6 +4129,10 @@ function ensureQuoteSheet_(ss){
   } else {
     const lastCol=sh.getLastColumn();
     if(lastCol<QUOTE_HEADERS.length){
+      // 그리드가 모자라면 먼저 넓힌다 — 안 넓히면 getRange 가 throw 하고 ensureSheets_ 가 통째로 죽는다
+      // (예약 시트에서 이미 겪은 함정과 동일)
+      const need=QUOTE_HEADERS.length-sh.getMaxColumns();
+      if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
       sh.getRange(1,lastCol+1,1,QUOTE_HEADERS.length-lastCol).setValues([QUOTE_HEADERS.slice(lastCol)]);
     }
   }
@@ -4235,6 +4278,9 @@ function ensureInvoiceSheet_(ss) {
   } else {
     const lastCol=sh.getLastColumn();
     if(lastCol<INVOICE_HEADERS.length){
+      // 그리드 폭 먼저 확보 (ensureQuoteSheet_ 와 같은 이유)
+      const need=INVOICE_HEADERS.length-sh.getMaxColumns();
+      if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
       sh.getRange(1,lastCol+1,1,INVOICE_HEADERS.length-lastCol).setValues([INVOICE_HEADERS.slice(lastCol)]);
     }
   }
@@ -4273,6 +4319,13 @@ function classifyBookingAccounting_(group, productName) {
 
 function classifyPrintAccounting_() {
   return '추가 인화/보정 매출';
+}
+
+/* 국외 비과세 매출은 과세매출과 같은 분류에 섞이면 안 된다 — ELSTER 에서
+   nicht steuerbare Umsätze 로 따로 신고되기 때문(Kz 45). 라벨을 분리해 집계에서 구분한다. */
+function applyVatExemptAccountingClass_(label, isExempt){
+  const base=String(label||'미분류');
+  return isExempt ? base+' (국외 비과세)' : base;
 }
 
 function classifyExpenseAccounting_(row) {
@@ -12611,7 +12664,7 @@ function getDashboardData_(){
   const selectStatusMap=getLatestSelectStatusMapForDashboard_(sh.getParent());
   const productsForDashboard=getCachedProducts_().concat(getPromoProducts_());
   for(let m=1;m<=12;m++) monthly[m]={revenue:0,count:0};
-  let totReal=0,totExp=0;const pay={cash:0,card:0,transfer:0,myreal:0,none:0};const prod={};const nowDate=new Date();const now=nowDate.getTime();
+  let totReal=0,totExp=0,totNonTaxable=0;const pay={cash:0,card:0,transfer:0,myreal:0,none:0};const prod={};const nowDate=new Date();const now=nowDate.getTime();
   const todayStart=new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate());
   const dow=todayStart.getDay();
   const weekStart=new Date(todayStart);weekStart.setDate(todayStart.getDate()-(dow===0?6:dow-1));
@@ -12717,7 +12770,7 @@ function getDashboardData_(){
     }
     // 환불 누계는 대시보드 통계에서도 차감(예약 월 기준 근사 — 세무 숫자는 매출장부의 지급일 귀속이 기준)
     const refundedTotal=bookingRefundTotal_(row);
-    if(isBookingRevenueStatus_(status)&&bookingTime<=now){totReal+=price-refundedTotal;monthly[m].revenue+=price-refundedTotal;monthly[m].count++;prod[g]=(prod[g]||0)+price;if(payStr.includes('현금'))pay.cash+=price;else if(payStr.includes('카드'))pay.card+=price;else if(payStr.includes('계좌이체'))pay.transfer+=price;else if(payStr.includes('마이리얼트립'))pay.myreal+=price;else pay.none+=price;}
+    if(isBookingRevenueStatus_(status)&&bookingTime<=now){totReal+=price-refundedTotal;if(BOOKING_COL['부가세모드']!=null&&isVatExempt_(row[BOOKING_COL['부가세모드']]))totNonTaxable+=price-refundedTotal;monthly[m].revenue+=price-refundedTotal;monthly[m].count++;prod[g]=(prod[g]||0)+price;if(payStr.includes('현금'))pay.cash+=price;else if(payStr.includes('카드'))pay.card+=price;else if(payStr.includes('계좌이체'))pay.transfer+=price;else if(payStr.includes('마이리얼트립'))pay.myreal+=price;else pay.none+=price;}
     else if(!inactive&&bookingTime>now) totExp+=price;
   }
   ['week','month'].forEach(function(key){
@@ -12744,7 +12797,10 @@ function getDashboardData_(){
       memo:c.memo||''
     }));
   const walkins=getRecentWalkinIntakeRows_(sh.getParent());
-  return{totalRealizedRevenue:totReal,totalExpectedRevenue:totExp,totalNet:Math.round(totReal/1.19),totalTax:totReal-Math.round(totReal/1.19),periodRevenue:periodRevenue,monthlyStats:monthly,payStats:pay,prodStats:prod,customers,recentAutoCancelled,walkins};
+  // 국외 비과세분은 세액 0·순액=총액이라 19% 환산 대상에서 빼고 순액에 그대로 더한다
+  const taxableReal=totReal-totNonTaxable;
+  const taxableNet=Math.round(taxableReal/1.19);
+  return{totalRealizedRevenue:totReal,totalExpectedRevenue:totExp,totalNet:taxableNet+totNonTaxable,totalTax:taxableReal-taxableNet,totalNonTaxable:totNonTaxable,periodRevenue:periodRevenue,monthlyStats:monthly,payStats:pay,prodStats:prod,customers,recentAutoCancelled,walkins};
 }
 
 function sendTestSelectEmail(token){
@@ -14247,7 +14303,7 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time','address'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode'];
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   // '무조건 덮어쓰기' 칸은 현재 값으로 시드(미지정 시 소실 방지). 화이트리스트 필드는 있으면 얹는다.
@@ -14275,6 +14331,10 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   // 빈 인원(값 없음)일 땐 시드하지 않아 1로 바뀌는 부작용을 피한다.
   if(merged.people===undefined && row[9]!=='' && row[9]!=null) merged.people=row[9];
   const res=updateBookingAdmin(token,rIdx,merged);
+  // 부가세 모드는 updateBookingAdmin 이 모르는 칸이라 행 재작성 **후에** 직접 쓴다(선반영 시 덮어써짐)
+  if(d.vatMode!==undefined&&BOOKING_COL['부가세모드']!=null){
+    sh.getRange(rIdx,BOOKING_COL['부가세모드']+1).setValue(normalizeVatMode_(d.vatMode));
+  }
   return Object.assign({ok:true},res,{rowIndex:rIdx,updated:Object.keys(d)});
 }
 
@@ -14530,8 +14590,11 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
     if(!['촬영완료','셀렉완료','작업완료'].includes(String(row[1]))) continue;
     const gross = parseMoneyValue_(row[10]);
     if(gross===0) continue;
-    const net = Math.round((gross/1.19)*100)/100;
-    const tax = Math.round((gross-net)*100)/100;
+    /* 국외 비과세(§3a Abs.2) 예약은 독일 부가세 대상이 아니다 — 총액이 곧 순액, 세액 0.
+       ELSTER 에서 nicht steuerbare Umsätze 로 따로 잡히므로 accountingClass 도 분리한다. */
+    const rowVatExempt = BOOKING_COL['부가세모드']!=null && isVatExempt_(row[BOOKING_COL['부가세모드']]);
+    const net = rowVatExempt ? gross : Math.round((gross/1.19)*100)/100;
+    const tax = rowVatExempt ? 0 : Math.round((gross-net)*100)/100;
     const payMethod = String(row[13]||'');
     const depositDue = getEffectiveBookingDeposit_(row);
     const localDepositPaid = isPaymentConfirmedValue_(row[BOOKING_COL['계약금입금여부']]);
@@ -14563,7 +14626,8 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
       dateStr: dStr,
       type: '촬영예약',
       category: String(row[6]||''),
-      accountingClass: classifyBookingAccounting_(row[6], row[7]),
+      accountingClass: applyVatExemptAccountingClass_(classifyBookingAccounting_(row[6], row[7]), rowVatExempt),
+      taxClass: rowVatExempt ? 'nicht_steuerbar' : 'standard',
       name:String(row[2]||''),
       description: `${row[7]||''} - ${row[2]||''}`,
       gross,
@@ -14601,15 +14665,17 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
     const st=String(row[1]||'').trim();
     if(!['촬영완료','셀렉완료','작업완료'].includes(st)&&!isBookingCancelledStatus_(st)) continue;
     const name=String(row[2]||'');
+    const refundVatExempt=BOOKING_COL['부가세모드']!=null&&isVatExempt_(row[BOOKING_COL['부가세모드']]);
     if(isBookingCancelledStatus_(st)){
       const pay=getEffectiveBookingPayment_(row);
       if(pay.paid>0.01){
         const recvDate=(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||parseDateSafe_(row[0]).str).slice(0,10);
         if((!startDate||recvDate>=startDate)&&(!endDate||recvDate<=endDate)){
           const g=roundCurrency_(pay.paid);
-          const n=Math.round((g/1.19)*100)/100;
+          const n=refundVatExempt?g:Math.round((g/1.19)*100)/100;
           entries.push({date:recvDate,dateStr:recvDate,type:'촬영예약',category:String(row[6]||''),
-            accountingClass:classifyBookingAccounting_(row[6],row[7]),name:name,
+            accountingClass:applyVatExemptAccountingClass_(classifyBookingAccounting_(row[6],row[7]),refundVatExempt),
+            taxClass:refundVatExempt?'nicht_steuerbar':'standard',name:name,
             description:`${row[7]||''} - ${name} (취소 보유금)`,gross:g,net:n,tax:roundCurrency_(g-n),
             payMethod:String(row[13]||''),status:'취소보유금',invoice:'',note:String(row[15]||''),
             source:'booking',flow:'income',rowIndex:r+1,openAmount:0});
@@ -14625,9 +14691,10 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
       if(startDate&&d<startDate) return;
       if(endDate&&d>endDate) return;
       const g=-amt;
-      const n=Math.round((g/1.19)*100)/100;
+      const n=refundVatExempt?g:Math.round((g/1.19)*100)/100;
       entries.push({date:d,dateStr:d,type:'환불',category:String(row[6]||''),
-        accountingClass:classifyBookingAccounting_(row[6],row[7]),name:name,
+        accountingClass:applyVatExemptAccountingClass_(classifyBookingAccounting_(row[6],row[7]),refundVatExempt),
+        taxClass:refundVatExempt?'nicht_steuerbar':'standard',name:name,
         description:(`${row[7]||''} - ${name} 환불`+(ev.reason?` (${ev.reason})`:'')).trim(),
         gross:g,net:n,tax:roundCurrency_(g-n),
         payMethod:String(ev.method||''),status:'환불',invoice:String(ev.invoiceNo||''),note:String(ev.memo||''),
@@ -14770,6 +14837,11 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
   const totalGross = incomeEntries.reduce((s,e)=>s+e.gross,0);
   const totalNet = incomeEntries.reduce((s,e)=>s+e.net,0);
   const totalTax = incomeEntries.reduce((s,e)=>s+e.tax,0);
+  /* ELSTER 분리 집계 — 국외 비과세(nicht steuerbare Umsätze, UStVA Kz 45)는 과세매출과 따로 신고한다.
+     세액은 이미 0으로 들어와 vatPayable 에 영향이 없고, 여기서는 신고서에 적을 금액만 뽑는다. */
+  const nonTaxableEntries = incomeEntries.filter(e=>e.taxClass==='nicht_steuerbar');
+  const nonTaxableGross = nonTaxableEntries.reduce((s,e)=>s+e.gross,0);
+  const taxableGross = totalGross - nonTaxableGross;
   const totalExpenseGross = expenseEntries.reduce((s,e)=>s+e.gross,0);
   const totalExpenseNet = expenseEntries.reduce((s,e)=>s+e.net,0);
   const totalExpenseTax = expenseEntries.reduce((s,e)=>s+e.tax,0);
@@ -14838,6 +14910,9 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
     totalGross: Math.round(totalGross*100)/100,
     totalNet: Math.round(totalNet*100)/100,
     totalTax: Math.round(totalTax*100)/100,
+    taxableGross: Math.round(taxableGross*100)/100,
+    nonTaxableGross: Math.round(nonTaxableGross*100)/100,
+    nonTaxableCount: nonTaxableEntries.length,
     totalExpenseGross: Math.round(totalExpenseGross*100)/100,
     totalExpenseNet: Math.round(totalExpenseNet*100)/100,
     totalExpenseTax: Math.round(totalExpenseTax*100)/100,
@@ -25118,6 +25193,16 @@ function getInvoiceGrossTotalForOutput_(inv){
   return Math.round(Math.max(0,Number(inv&&inv.total||0))*100)/100;
 }
 
+/* 고객에게 보이는 청구 합계 — 표준은 brutto, 국외 비과세는 netto 가 최종 금액이다.
+   시트의 총금액(€)는 어느 모드든 brutto 로 남는다(품목 단가 의미 유지). */
+function getInvoiceOutputTotal_(inv){
+  const gross=getInvoiceGrossTotalForOutput_(inv);
+  if(!isVatExempt_(inv&&inv.vatMode)) return gross;
+  const items=(inv&&inv.items&&inv.items.length)?inv.items:[];
+  const net=getInvoiceItemsNetTotal_(items);
+  return net>0?net:Math.round((gross/1.19)*100)/100;
+}
+
 function buildInvoiceEmailDefaults_(inv, lang){
   const L=resolveInvoiceLang_(lang||inv.lang, inv.bookingRowIndex);
   const rawName=normalizeInvoiceCustomerName_(String(inv.businessCompanyName||inv.name||'').trim());
@@ -25130,9 +25215,9 @@ function buildInvoiceEmailDefaults_(inv, lang){
     de:`[Studio mean] Rechnung ${inv.number}`
   };
   const bodyMap={
-    ko:`안녕하세요 ${koName}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${inv.number}\n총 금액: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`,
-    en:`Hello ${enName},\n\nPlease find your invoice attached.\nInvoice number: ${inv.number}\nTotal amount: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\nIf you have any questions, please contact us.\nStudio mean`,
-    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${getInvoiceGrossTotalForOutput_(inv).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
+    ko:`안녕하세요 ${koName}님,\n\n첨부드린 인보이스를 확인해 주세요.\n인보이스 번호: ${inv.number}\n총 금액: €${getInvoiceOutputTotal_(inv).toFixed(2)}\n\n문의사항이 있으시면 언제든 연락 주세요.\nStudio mean`,
+    en:`Hello ${enName},\n\nPlease find your invoice attached.\nInvoice number: ${inv.number}\nTotal amount: €${getInvoiceOutputTotal_(inv).toFixed(2)}\n\nIf you have any questions, please contact us.\nStudio mean`,
+    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen Ihre Rechnung.\nRechnungsnummer: ${inv.number}\nGesamtbetrag: €${getInvoiceOutputTotal_(inv).toFixed(2)}\n\nBei Fragen melden Sie sich gerne bei uns.\nStudio mean`
   };
   return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
 }
@@ -25155,17 +25240,20 @@ function buildInvoiceHtml_(inv, lang){
   const brutto=getInvoiceGrossTotalForOutput_(Object.assign({},inv,{items:items}));
   const itemNet=getInvoiceItemsNetTotal_(items);
   const netto=itemNet>0?itemNet:Math.round((brutto/1.19)*100)/100;
-  const vat=Math.round((brutto-netto)*100)/100;
+  // 국외 비과세(§3a Abs.2): 부가세 0 · 청구 기준액 = netto. netto 산식 자체는 바뀌지 않는다.
+  const vatExempt=isVatExempt_(inv.vatMode);
+  const vat=vatExempt?0:Math.round((brutto-netto)*100)/100;
+  const chargeBase=vatExempt?netto:brutto;
   const refund=parseFloat(inv.refund)||0;
-  const finalAmt=isRefund&&refund>0?Math.round((brutto-refund)*100)/100:brutto;
+  const finalAmt=isRefund&&refund>0?Math.round((chargeBase-refund)*100)/100:chargeBase;
   const displayCustomerName=normalizeInvoiceCustomerName_(inv.name||'');
   const dtParts=(inv.issuedAt||'').split('-');
   const fmtDate=dtParts.length===3?`${dtParts[2]}/${dtParts[1]}/${dtParts[0]}`:(inv.issuedAt||'');
   const serviceDate=formatInvoiceDateForInvoiceMeta_(inv.dateStr);
   const T={
-    de:{invLabel:'Rechnungsnummer',dateLabel:'Rechnungsdatum',serviceDate:'Leistungsdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
-    ko:{invLabel:'인보이스 번호',dateLabel:'발행일',serviceDate:'촬영일시',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',net:'공급가액',mwst:'부가세 19%',end:'최종 금액',dep:'계약금 (기납부)',ref:'환불 금액',notes:'기타사항'},
-    en:{invLabel:'Invoice No.',dateLabel:'Invoice Date',serviceDate:'Service Date',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',net:'Net Total',mwst:'VAT 19%',end:'Total Amount',dep:'Deposit (already paid)',ref:'Refund',notes:'Notes'}
+    de:{invLabel:'Rechnungsnummer',dateLabel:'Rechnungsdatum',serviceDate:'Leistungsdatum',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',net:'Netto-Summe',mwst:'MwSt. 19%',mwstExempt:'MwSt.',end:'Endbetrag',dep:'Anzahlung (bereits bezahlt)',ref:'Rückerstattung',notes:'Sonstiges'},
+    ko:{invLabel:'인보이스 번호',dateLabel:'발행일',serviceDate:'촬영일시',pos:'번호',bez:'항목',qty:'수량',ep:'단가(세전)',gp:'합계(세전)',net:'공급가액',mwst:'부가세 19%',mwstExempt:'부가세',end:'최종 금액',dep:'계약금 (기납부)',ref:'환불 금액',notes:'기타사항'},
+    en:{invLabel:'Invoice No.',dateLabel:'Invoice Date',serviceDate:'Service Date',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (net)',net:'Net Total',mwst:'VAT 19%',mwstExempt:'VAT',end:'Total Amount',dep:'Deposit (already paid)',ref:'Refund',notes:'Notes'}
   };
   const t=T[L]||T.de;
   return `<!DOCTYPE html>
@@ -25205,6 +25293,8 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:1
 .t-end{font-weight:bold;font-size:12px;border-top:1px solid #1a1a1a;margin-top:5px;padding-top:6px;}
 .memo-block{margin:18px 0 0 auto;width:360px;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;color:#555;}
 .memo-title{font-weight:700;color:#1f2937;margin-bottom:4px;}
+/* 면세 사유 — §14 Abs.4 Nr.8 UStG 필수 기재. 총계 아래 본문 폭으로 확실히 보이게 둔다. */
+.vat-note-exempt{margin:18px 0 0;font-size:10.5px;line-height:1.6;color:#333;border-left:2px solid #999;padding-left:8px;}
 .footer{margin-top:auto;padding-top:18px;}
 .footer-sep{border-top:1px solid #999;padding-top:5px;font-size:10px;color:#555;margin-bottom:10px;}
 .footer-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:10px;line-height:1.8;}
@@ -25235,10 +25325,11 @@ ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="
 </tbody></table>
 <div class="totals">
   <div class="t-row"><span>${t.net}</span><span>€${netto.toFixed(2)}</span></div>
-  <div class="t-row"><span>${t.mwst}</span><span>€${vat.toFixed(2)}</span></div>
+  <div class="t-row"><span>${vatExempt?t.mwstExempt:t.mwst}</span><span>€${vat.toFixed(2)}</span></div>
   ${isRefund&&refund>0?`<div class="t-row" style="color:#c00;"><span>${t.ref}</span><span>-€${refund.toFixed(2)}</span></div>`:''}
   <div class="t-row t-end"><span>${t.end}</span><span>€${finalAmt.toFixed(2)}</span></div>
 </div>
+${vatExempt?`<div class="vat-note-exempt">${escapeHtml_(vatExemptNoteText_(L,'invoice',inv.vatExemptCountry))}</div>`:''}
 ${inv.memo?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div>${escapeHtml_(inv.memo)}</div></div>`:''}
 <div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
 </div></body></html>`;
@@ -25371,7 +25462,9 @@ function invoiceRowToObject_(row,rowIndex){
     businessVatId:String(row[INVOICE_COL['사업자VAT번호']]||''),
     businessInvoiceEmail:String(row[INVOICE_COL['사업자송장이메일']]||''),
     businessInvoiceRef:String(row[INVOICE_COL['사업자송장참조']]||''),
-    lang:resolveInvoiceLang_(row[INVOICE_COL['언어']], parseInt(row[INVOICE_COL['예약행번호']],10)||0)
+    lang:resolveInvoiceLang_(row[INVOICE_COL['언어']], parseInt(row[INVOICE_COL['예약행번호']],10)||0),
+    vatMode:normalizeVatMode_(row[INVOICE_COL['부가세모드']]),
+    vatExemptCountry:String(row[INVOICE_COL['면세국가']]||'').trim()
   };
 }
 
@@ -25729,13 +25822,20 @@ function _createInvoiceRecordCore_(payload){
   const customerAddress=String(payload.customerAddress|| (bookingBusinessMeta.needed?bookingBusinessMeta.companyAddress:'') || (row?row[26]:'') || '').trim();
   const invoiceBusinessMeta=mergeInvoiceBusinessMeta_(bookingBusinessMeta,payloadBusinessMeta,customerName,customerEmail);
   const invoiceMemo=String(payload.memo|| buildBookingBusinessInvoiceMemo_(invoiceBusinessMeta) || '').trim();
+  /* 부가세 모드 — payload 미지정 시 연결 예약행에서 상속한다. 견적이 국외 비과세로 전환된 예약이면
+     나중에 인보이스를 뽑아도 자동으로 비과세로 나온다(같은 문제 재발 방지). */
+  const bookingVatMode=(row&&BOOKING_COL['부가세모드']!=null)?normalizeVatMode_(row[BOOKING_COL['부가세모드']]):VAT_MODE_STANDARD;
+  const vatMode=readVatModeFromPayload_(payload,bookingVatMode);
+  const vatExemptCountry=String(payload.vatExemptCountry||'').trim();
   const mailLang='de';
   if(!customerName) throw new Error('고객명을 입력해 주세요.');
   if(!product&&!items.length) throw new Error('인보이스 항목을 입력해 주세요.');
   const defaults=buildInvoiceEmailDefaults_({
     number:invNo,
     name:customerName,
-    total:price
+    total:price,
+    items:items,
+    vatMode:vatMode
   },mailLang);
   const mailSubject=String(defaults.subject||'').trim();
   const mailBody=String(defaults.body||'').trim();
@@ -25749,7 +25849,8 @@ function _createInvoiceRecordCore_(payload){
     invoiceBusinessMeta.vatId,
     invoiceBusinessMeta.invoiceEmail,
     invoiceBusinessMeta.reference,
-    mailLang
+    mailLang,
+    vatMode, vatExemptCountry
   ]);
   const newRowIndex=invoiceSheet.getLastRow();
   const inv={
@@ -25776,7 +25877,9 @@ function _createInvoiceRecordCore_(payload){
     businessCompanyName:invoiceBusinessMeta.companyName,
     businessVatId:invoiceBusinessMeta.vatId,
     businessInvoiceEmail:invoiceBusinessMeta.invoiceEmail,
-    businessInvoiceRef:invoiceBusinessMeta.reference
+    businessInvoiceRef:invoiceBusinessMeta.reference,
+    vatMode,
+    vatExemptCountry
   };
   let pdf={fileId:'',url:''};
   try{
@@ -27453,12 +27556,14 @@ function _normalizeQuotePdfOptions_(raw){
   return opts;
 }
 
-function _calcQuoteTotals_(items,discountAmt){
+function _calcQuoteTotals_(items,discountAmt,vatMode){
   const brutto=items.reduce(function(s,it){return s+(it.qty*it.unitGross);},0);
   const discount=Math.max(0,Number(discountAmt)||0);
   const subtotal=Math.round(brutto*100)/100;
   const afterDisc=Math.max(0,subtotal-discount);
   const netto=Math.round((afterDisc/(1+CONFIG.QUOTE_VAT_RATE))*100)/100;
+  // 국외 비과세(§3a Abs.2): netto 산식은 그대로, 부가세 0 · 총액=netto 로만 맞춘다
+  if(isVatExempt_(vatMode)) return {subtotal,discount,netto,vat:0,total:netto};
   const vat=Math.round((afterDisc-netto)*100)/100;
   const total=Math.round(afterDisc*100)/100;
   return {subtotal,discount,netto,vat,total};
@@ -27510,7 +27615,9 @@ function quoteRowToObject_(row,rowIndex){
     heldAt:_quoteCellToDateString_(row[QUOTE_COL['보류전환일시']],'yyyy-MM-dd HH:mm'),
     tentativeStart:_quoteCellToDateString_(row[QUOTE_COL['가예약시작']],'yyyy-MM-dd HH:mm'),
     tentativeDurationMin:parseInt(row[QUOTE_COL['가예약소요분']],10)||0,
-    tentativeEventId:String(row[QUOTE_COL['가예약캘린더ID']]||'').trim()
+    tentativeEventId:String(row[QUOTE_COL['가예약캘린더ID']]||'').trim(),
+    vatMode:normalizeVatMode_(row[QUOTE_COL['부가세모드']]),
+    vatExemptCountry:String(row[QUOTE_COL['면세국가']]||'').trim()
   };
 }
 
@@ -27550,15 +27657,19 @@ function buildQuoteEmailDefaults_(q){
   const enName=nameRaw||'Customer';
   const deName=nameRaw||'Kundin/Kunde';
   const total=Number(q.total||0).toFixed(2);
+  const exempt=isVatExempt_(q.vatMode);
+  const totalLabel={ko:exempt?'총 금액(부가세 미부과)':'총 금액(부가세 포함)',
+                    en:exempt?'Total (no VAT charged)':'Total (incl. VAT)',
+                    de:exempt?'Gesamtbetrag (ohne USt.)':'Gesamtbetrag (inkl. MwSt.)'};
   const subjectMap={
     ko:`[Studio mean] 견적서 ${q.number}`,
     en:`[Studio mean] Quotation ${q.number}`,
     de:`[Studio mean] Angebot ${q.number}`
   };
   const bodyMap={
-    ko:`안녕하세요 ${koName}님,\n\n요청 주신 내용을 바탕으로 견적서를 첨부드립니다.\n• 견적번호: ${q.number}\n• 총 금액(부가세 포함): €${total}\n• 유효기한: ${q.validUntil}\n\n내용 확인 후 진행 의사를 회신 주시면 빠르게 일정 확정을 도와드리겠습니다. 문의사항은 언제든 편하게 연락 주세요.\n\nStudio mean`,
-    en:`Hello ${enName},\n\nPlease find our quotation attached based on your request.\n• Quotation No.: ${q.number}\n• Total (incl. VAT): €${total}\n• Valid until: ${q.validUntil}\n\nIf you wish to proceed, a short reply is all we need — we will arrange the schedule right away. Feel free to reach out with any questions.\n\nBest regards,\nStudio mean`,
-    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen unser Angebot gemäß Ihrer Anfrage.\n• Angebotsnummer: ${q.number}\n• Gesamtbetrag (inkl. MwSt.): €${total}\n• Gültig bis: ${q.validUntil}\n\nFür eine Beauftragung genügt eine kurze Rückmeldung — wir stimmen den Termin dann umgehend mit Ihnen ab. Bei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nStudio mean`
+    ko:`안녕하세요 ${koName}님,\n\n요청 주신 내용을 바탕으로 견적서를 첨부드립니다.\n• 견적번호: ${q.number}\n• ${totalLabel.ko}: €${total}\n• 유효기한: ${q.validUntil}\n\n내용 확인 후 진행 의사를 회신 주시면 빠르게 일정 확정을 도와드리겠습니다. 문의사항은 언제든 편하게 연락 주세요.\n\nStudio mean`,
+    en:`Hello ${enName},\n\nPlease find our quotation attached based on your request.\n• Quotation No.: ${q.number}\n• ${totalLabel.en}: €${total}\n• Valid until: ${q.validUntil}\n\nIf you wish to proceed, a short reply is all we need — we will arrange the schedule right away. Feel free to reach out with any questions.\n\nBest regards,\nStudio mean`,
+    de:`Guten Tag, ${deName},\n\nanbei senden wir Ihnen unser Angebot gemäß Ihrer Anfrage.\n• Angebotsnummer: ${q.number}\n• ${totalLabel.de}: €${total}\n• Gültig bis: ${q.validUntil}\n\nFür eine Beauftragung genügt eine kurze Rückmeldung — wir stimmen den Termin dann umgehend mit Ihnen ab. Bei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nStudio mean`
   };
   return {subject:subjectMap[L]||subjectMap.de, body:bodyMap[L]||bodyMap.de};
 }
@@ -27570,15 +27681,16 @@ function buildQuoteHtml_(q){
   const opt=_normalizeQuotePdfOptions_(q.pdfOptions);
   const items=(q.items&&q.items.length)?q.items:[{description:q.product||'-',qty:1,unitGross:parseFloat(q.total)||0}];
   // 표시 옵션은 렌더링만 제어 — 금액 계산은 항상 할인 포함 (시트/메일 총액과 일치 유지)
-  const totals=_calcQuoteTotals_(items,q.discount);
+  const vatExempt=isVatExempt_(q.vatMode);
+  const totals=_calcQuoteTotals_(items,q.discount,q.vatMode);
   const fmtD=s=>{const p=String(s||'').split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(s||'');};
   const fmtDate=fmtD(q.issuedAt);
   const fmtValid=fmtD(q.validUntil);
   const fmtShoot=fmtD(q.shootDate);
   const T={
-    de:{invLabel:'Angebotnummer',dateLabel:'Angebotdatum',validLabel:'Gültig bis',shootLabel:'Geplanter Termin',vatNote:'Alle Preise verstehen sich netto zzgl. der gesetzlichen Mehrwertsteuer (19%).',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',subtotal:'Zwischensumme (brutto)',disc:'Rabatt',net:'Netto-Summe',mwst:'MwSt. 19%',end:'Endbetrag',dep:'Anzahlung'},
-    ko:{invLabel:'견적번호',dateLabel:'발행일',validLabel:'유효기한',shootLabel:'촬영예정일',vatNote:'모든 금액은 세전(Netto) 기준이며, 법정 부가가치세 19%가 별도 가산됩니다.',pos:'번호',bez:'항목',qty:'수량',ep:'단가',gp:'합계(세전)',subtotal:'소계(세후)',disc:'할인',net:'공급가액',mwst:'부가세 19%',end:'총 금액',dep:'계약금'},
-    en:{invLabel:'Quotation No.',dateLabel:'Quotation Date',validLabel:'Valid Until',shootLabel:'Planned Date',vatNote:'All prices are net; statutory VAT (19%) will be added.',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (Net)',subtotal:'Subtotal (gross)',disc:'Discount',net:'Net',mwst:'VAT 19%',end:'Total',dep:'Deposit'}
+    de:{invLabel:'Angebotnummer',dateLabel:'Angebotdatum',validLabel:'Gültig bis',shootLabel:'Geplanter Termin',vatNote:'Alle Preise verstehen sich netto zzgl. der gesetzlichen Mehrwertsteuer (19%).',pos:'Pos.',bez:'Bezeichnung',qty:'Menge',ep:'Einzelpreis',gp:'Gesamt (netto)',subtotal:'Zwischensumme (brutto)',disc:'Rabatt',net:'Netto-Summe',mwst:'MwSt. 19%',mwstExempt:'MwSt.',end:'Endbetrag',dep:'Anzahlung'},
+    ko:{invLabel:'견적번호',dateLabel:'발행일',validLabel:'유효기한',shootLabel:'촬영예정일',vatNote:'모든 금액은 세전(Netto) 기준이며, 법정 부가가치세 19%가 별도 가산됩니다.',pos:'번호',bez:'항목',qty:'수량',ep:'단가',gp:'합계(세전)',subtotal:'소계(세후)',disc:'할인',net:'공급가액',mwst:'부가세 19%',mwstExempt:'부가세',end:'총 금액',dep:'계약금'},
+    en:{invLabel:'Quotation No.',dateLabel:'Quotation Date',validLabel:'Valid Until',shootLabel:'Planned Date',vatNote:'All prices are net; statutory VAT (19%) will be added.',pos:'Pos.',bez:'Description',qty:'Qty',ep:'Unit Price',gp:'Total (Net)',subtotal:'Subtotal (gross)',disc:'Discount',net:'Net',mwst:'VAT 19%',mwstExempt:'VAT',end:'Total',dep:'Deposit'}
   };
   const customerName=escapeHtml_(q.companyName||q.name||'');
   const customerSub=q.companyName&&q.name?`<div>${escapeHtml_(q.name)}</div>`:'';
@@ -27625,7 +27737,7 @@ function buildQuoteHtml_(q){
   ${(opt.showValidUntil&&fmtValid)?`<div class="inv-meta-row"><span class="inv-meta-label-sm">${t.validLabel}</span><span class="inv-meta-colon-sm">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtValid)}</span></div>`:''}
   ${(opt.showShootDate&&fmtShoot)?`<div class="inv-meta-row"><span class="inv-meta-label-sm">${t.shootLabel}</span><span class="inv-meta-colon-sm">:</span><span class="inv-meta-value-sm">${escapeHtml_(fmtShoot)}</span></div>`:''}
 </div>
-<div class="vat-note">${t.vatNote}</div>
+<div class="vat-note${vatExempt?' vat-note-exempt':''}">${escapeHtml_(vatExempt?vatExemptNoteText_(L,'quote',_pickQuoteLangText_(String(q.vatExemptCountry||''),langIdx)):t.vatNote)}</div>
 <table class="invoice-table"><thead><tr><th style="width:36px;">${t.pos}</th><th>${t.bez}</th><th style="width:36px;text-align:center;">${t.qty}</th><th style="width:110px;text-align:right;">${t.ep}</th><th style="width:140px;text-align:right;">${t.gp}</th></tr></thead><tbody>
 ${rowsHtml}
 </tbody></table>
@@ -27634,7 +27746,7 @@ ${rowsHtml}
   <div class="t-row" style="color:#c00;"><span>${t.disc}</span><span>-€${totals.discount.toFixed(2)}</span></div>
   <div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`
   :`<div class="t-row"><span>${t.net}</span><span>€${totals.netto.toFixed(2)}</span></div>`}
-  <div class="t-row"><span>${t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
+  <div class="t-row"><span>${vatExempt?t.mwstExempt:t.mwst}</span><span>€${totals.vat.toFixed(2)}</span></div>
   <div class="t-row t-end"><span>${t.end}</span><span>€${totals.total.toFixed(2)}</span></div>
   ${showDepositRow?`<div class="t-row t-dep"><span>${t.dep}${q.depositRate>0?' ('+q.depositRate+'%)':''}</span><span>€${Number(q.depositAmount).toFixed(2)}</span></div>`:''}
 </div>
@@ -27675,6 +27787,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:1
 .inv-meta-value{font-size:17px;font-weight:700;white-space:nowrap;}
 .inv-meta-value-sm{font-size:11px;white-space:nowrap;}
 .vat-note{text-align:right;font-size:10.5px;margin:8px 0 0;}
+.vat-note-exempt{text-align:left;line-height:1.6;color:#333;border-left:2px solid #999;padding-left:8px;}
 .invoice-table{width:100%;border-collapse:collapse;margin-top:16px;}
 .invoice-table thead tr{border-top:1px solid #bbb;border-bottom:1px solid #bbb;}
 .invoice-table th{padding:7px 10px;text-align:left;font-size:11px;font-weight:normal;background:#fff;}
@@ -27736,7 +27849,8 @@ function _buildQuotePayloadFromRequest_(payload,existing){
   const lang=normalizeQuoteLang_(payload.lang||base.lang);
   const items=_parseQuoteItems_(payload.items!=null?payload.items:base.items||[]);
   const discount=Math.max(0,Number(payload.discount!=null?payload.discount:base.discount)||0);
-  const totals=_calcQuoteTotals_(items,discount);
+  const vatMode=readVatModeFromPayload_(payload,base.vatMode);
+  const totals=_calcQuoteTotals_(items,discount,vatMode);
   const depositRate=Math.max(0,Math.min(100,Number(payload.depositRate!=null?payload.depositRate:base.depositRate)||0));
   const depositAmount=(payload.depositAmount!=null&&payload.depositAmount!=='')
     ? Math.max(0,Number(payload.depositAmount)||0)
@@ -27746,6 +27860,8 @@ function _buildQuotePayloadFromRequest_(payload,existing){
     items,
     discount,
     totals,
+    vatMode,
+    vatExemptCountry:String(payload.vatExemptCountry!=null?payload.vatExemptCountry:(base.vatExemptCountry||'')).trim(),
     depositAmount:Math.round(depositAmount*100)/100,
     depositRate,
     name:String(payload.name!=null?payload.name:(base.name||'')).trim(),
@@ -27793,7 +27909,7 @@ function createQuoteAdmin(token, payload){
     const status=String(input.status||QUOTE_STATUS.DRAFT);
     const author=String((session&&session.email)||CONFIG.ADMIN_EMAIL);
     const terms=data.terms||_defaultQuoteTerms_(data.lang);
-    const defaults=buildQuoteEmailDefaults_({number,lang:data.lang,name:data.name,companyName:data.companyName,total:data.totals.total,validUntil});
+    const defaults=buildQuoteEmailDefaults_({number,lang:data.lang,name:data.name,companyName:data.companyName,total:data.totals.total,validUntil,vatMode:data.vatMode});
     const mailSubject=data.mailSubject||defaults.subject;
     const mailBody=data.mailBody||defaults.body;
     quoteSheet.appendRow([
@@ -27810,8 +27926,12 @@ function createQuoteAdmin(token, payload){
       JSON.stringify(data.pdfOptions)
     ]);
     const rowIndex=quoteSheet.getLastRow();
+    // appendRow 는 헤더 뒤쪽 칸(보류/가예약 등)을 비워두므로 부가세 칸은 열 인덱스로 직접 쓴다
+    quoteSheet.getRange(rowIndex,QUOTE_COL['부가세모드']+1).setValue(data.vatMode);
+    quoteSheet.getRange(rowIndex,QUOTE_COL['면세국가']+1).setValue(data.vatExemptCountry);
     const quoteObj={
       number,issuedAt,validUntil,status,lang:data.lang,
+      vatMode:data.vatMode,vatExemptCountry:data.vatExemptCountry,
       name:data.name,email:data.email,phone:data.phone,customerAddress:data.customerAddress,
       companyName:data.companyName,vatId:data.vatId,billingAddress:data.billingAddress,
       itemGroup:data.itemGroup,product:data.product,shootDate:data.shootDate,
@@ -27858,6 +27978,7 @@ function updateQuoteAdmin(token, number, payload){
   set('계약금(€)',data.depositAmount);set('계약금비율',data.depositRate);
   set('메모',data.memo);set('조건',data.terms||_defaultQuoteTerms_(data.lang));
   set('표시옵션JSON',JSON.stringify(data.pdfOptions));
+  set('부가세모드',data.vatMode);set('면세국가',data.vatExemptCountry);
   // 마이그레이션/정정용 발행일·유효기한 직접 수정 (YYYY-MM-DD일 때만)
   if(/^\d{4}-\d{2}-\d{2}$/.test(String(payload&&payload.issuedAt||''))){set('발행일',String(payload.issuedAt).slice(0,10));existing.issuedAt=String(payload.issuedAt).slice(0,10);}
   if(/^\d{4}-\d{2}-\d{2}$/.test(String(payload&&payload.validUntil||''))){set('유효기한',String(payload.validUntil).slice(0,10));existing.validUntil=String(payload.validUntil).slice(0,10);}
@@ -27870,7 +27991,7 @@ function updateQuoteAdmin(token, number, payload){
     itemGroup:data.itemGroup,product:data.product,shootDate:data.shootDate,
     items:data.items,subtotal:data.totals.subtotal,discount:data.totals.discount,netto:data.totals.netto,vat:data.totals.vat,total:data.totals.total,
     depositAmount:data.depositAmount,depositRate:data.depositRate,memo:data.memo,terms:data.terms||_defaultQuoteTerms_(data.lang),
-    pdfOptions:data.pdfOptions
+    pdfOptions:data.pdfOptions,vatMode:data.vatMode,vatExemptCountry:data.vatExemptCountry
   });
   _persistQuotePdfToRow_(quoteSheet,rowIndex,merged);
   return {ok:true,number:existing.number};
@@ -28308,6 +28429,8 @@ function convertQuoteToBookingAdmin(token, number, overrides){
   if(BOOKING_COL['selected_service']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['selected_service']+1).setValue(productLabel);
   if(BOOKING_COL['shooting_date']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_date']+1).setValue(dateStr);
   if(BOOKING_COL['shooting_time']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['shooting_time']+1).setValue(timeStr);
+  // 부가세 모드 승계 — 국외 비과세 견적이 예약이 되면 장부·인보이스도 비과세로 따라간다
+  if(BOOKING_COL['부가세모드']!=null) bookingSheet.getRange(bookingRowIndex,BOOKING_COL['부가세모드']+1).setValue(normalizeVatMode_(q.vatMode));
   // 추가 촬영일 이벤트 — 매출은 이 행 하나, 캘린더는 날짜별로 막는다 (다일정 작업)
   let extraDaysSaved=[];
   if(extraDays.length&&BOOKING_COL['추가일정JSON']!=null){

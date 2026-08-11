@@ -9,6 +9,11 @@
  *   quote-list | quote-get | quote-create | quote-update | quote-send
  *   quote-hold | quote-snooze | quote-release-hold | quote-extend
  *   invoice-list | invoice-create | invoice-send
+ *
+ * 국외 B2B 부가세 미부과(§3a Abs.2 UStG): quote-create/quote-update/invoice-create 의 data 에
+ *   {"vatMode":"exempt_third_country","vatExemptCountry":"대한민국\n//\nRepublic of Korea"}
+ *   단가(unitGross)는 그대로 brutto 로 넣는다 — 부가세 0 · 총액=netto 로 문서가 닫힌다.
+ *   미지정/빈값은 'standard'(19%) — 기존 견적 전부 종전과 동일. 상세는 studio-erp SKILL.md.
  *   booking-search | booking-get | booking-set-time | booking-set-amount | booking-change-product
  *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
  *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
