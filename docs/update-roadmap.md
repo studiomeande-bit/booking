@@ -62,7 +62,7 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
-- **국외 B2B 부가세 미부과(§3a Abs.2 UStG) 지원 — 견적·인보이스·회계장부 (2026-08-11)** —
+- **국외 B2B 부가세 미부과(§3a Abs.2 UStG) 지원 — 견적·인보이스·회계장부 (2026-08-11, 배포 @761~@763)** —
   휘슬러 코리아(한국 법인) 건에서 드러난 구멍: 시스템이 부가세 19%를 강제해 **EU 역외 사업자에게 보낼 문서를
   만들 수 없었다**(합의액 netto €2,800인데 PDF는 3,332). `vatMode` 필드 신설(`standard` | `exempt_third_country`).
   - **숫자 의미는 그대로**: `unitGross`는 여전히 brutto, netto 산식도 `brutto/1.19` 그대로. 면제일 때만
@@ -74,8 +74,18 @@ Updated: 2026-08-03 Europe/Berlin
     대시보드 net/tax 타일도 비과세분을 19% 환산에서 제외. `invoice-create`는 예약행에서 모드를 상속(재발 방지).
   - 노출: `quote-create`/`quote-update`/`invoice-create` payload + `booking-update`의 `vatMode`. studio-erp SKILL.md 갱신.
   - 검증: `scripts/check-vat-exempt.mjs`(신규) + AN-260010 실데이터 로컬 렌더 — 면제 `2,800/0.00/2,800`,
-    **표준 견적·인보이스 HTML은 변경 전과 바이트 동일**(미사용 CSS 1줄 제외).
+    **표준 견적·인보이스 HTML은 변경 전과 바이트 동일**(미사용 CSS 1줄 제외). 라이브 적용 후
+    AN-260010 `2,800/0/2,800` · row227 `vatMode=exempt_third_country` · 7월 장부 `nonTaxableGross 0`(무변화) 확인.
+  - **딸려 나온 결함 2건 동반 수정** (@762~@763):
+    - `_sendQuoteEmailInternal_` 이 시트 저장 본문을 defaults 보다 우선해(`body||q.mailBody||defaults.body`)
+      **quote-update 로 금액이 바뀌어도 옛 금액이 그대로 고객에게 메일로 나가던** 문제 →
+      `_refreshQuoteAutoMailText_` 로 quote-update·quote-extend 양쪽에서 자동 문안만 갱신(손편집 본문은 보존).
+    - `booking-get` 에 `vatMode` 노출 — 세액 판정을 바꾸는 플래그가 쓰기 전용이라 적용 확인이 불가능했다.
+  - `ensureQuoteSheet_`/`ensureInvoiceSheet_` 에 헤더 확장 전 그리드 폭 확보 가드 추가
+    (예약 시트에만 있던 가드 — 없었으면 이번 열 추가로 `ensureSheets_` 전체가 죽을 수 있었다).
   - ⚠️ 어드민 UI에는 토글 없음 — 현재는 에이전트/CLI 경로 전용.
+  - ⚠️ 회계장부 비과세 경로는 **row227이 촬영완료로 바뀌는 10월에 처음 실집계**된다(장부는 완료 상태만 인식).
+    그때 `accounting-ledger` 의 `nonTaxableGross ≈ 2,800` · `totalTax` 미포함을 확인할 것.
 
 - **예약 캘린더 늦은 달 혼란 제거: 빈 달 안내 + 자동선택 휴무일 제외 + 크림톤 스켈레톤 (2026-07-31, 프런트 배포)** —
   로드맵 #7 마지막 항목("reduce visual confusion while loading later months") 소진.
