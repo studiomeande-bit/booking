@@ -27844,6 +27844,28 @@ function _persistQuotePdfToRow_(quoteSh,rowIndex,q){
   }
 }
 
+/* 시트에 저장된 '자동 문안' 메일 제목·본문을 새 값 기준으로 갱신한다.
+   _sendQuoteEmailInternal_ 은 저장본을 defaults 보다 우선하므로(`body||q.mailBody||defaults.body`),
+   금액·부가세모드·유효기한이 바뀐 뒤 갱신하지 않으면 **옛 숫자가 그대로 고객에게 메일로 나간다**
+   (예: 국외 비과세로 바꿨는데 "총 금액(부가세 포함): €3332").
+   손으로 고친 문안은 옛 기본문안과 달라 비교에서 걸러지므로 절대 덮어쓰지 않는다.
+   반환값은 호출부의 merged 에 얹을 변경분(없으면 빈 객체). */
+function _refreshQuoteAutoMailText_(quoteSh,rowIndex,before,after,opts){
+  const o=opts||{};
+  const oldD=buildQuoteEmailDefaults_(before);
+  const newD=buildQuoteEmailDefaults_(after);
+  const out={};
+  if(!o.explicitSubject&&String(before.mailSubject||'').trim()===String(oldD.subject||'').trim()&&newD.subject!==oldD.subject){
+    quoteSh.getRange(rowIndex,QUOTE_COL['메일제목']+1).setValue(newD.subject);
+    out.mailSubject=newD.subject;
+  }
+  if(!o.explicitBody&&String(before.mailBody||'').trim()===String(oldD.body||'').trim()&&newD.body!==oldD.body){
+    quoteSh.getRange(rowIndex,QUOTE_COL['메일본문']+1).setValue(newD.body);
+    out.mailBody=newD.body;
+  }
+  return out;
+}
+
 function _buildQuotePayloadFromRequest_(payload,existing){
   const base=existing||{};
   const lang=normalizeQuoteLang_(payload.lang||base.lang);
@@ -27993,6 +28015,11 @@ function updateQuoteAdmin(token, number, payload){
     depositAmount:data.depositAmount,depositRate:data.depositRate,memo:data.memo,terms:data.terms||_defaultQuoteTerms_(data.lang),
     pdfOptions:data.pdfOptions,vatMode:data.vatMode,vatExemptCountry:data.vatExemptCountry
   });
+  const rawPayload=payload||{};
+  Object.assign(merged,_refreshQuoteAutoMailText_(quoteSheet,rowIndex,existing,merged,{
+    explicitSubject:rawPayload.mailSubject!=null&&String(rawPayload.mailSubject).trim()!=='',
+    explicitBody:rawPayload.mailBody!=null&&String(rawPayload.mailBody).trim()!==''
+  }));
   _persistQuotePdfToRow_(quoteSheet,rowIndex,merged);
   return {ok:true,number:existing.number};
 }
@@ -28258,6 +28285,8 @@ function extendQuoteValidityAdmin(token, number, validDays){
   if(q.status===QUOTE_STATUS.EXPIRED) quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['수정일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   const merged=Object.assign({},q,{validUntil,status:q.status===QUOTE_STATUS.EXPIRED?QUOTE_STATUS.SENT:q.status});
+  // 유효기한도 자동 메일 문안에 박혀 있다 — 저장본이 기본문안 그대로면 새 날짜로 갱신
+  Object.assign(merged,_refreshQuoteAutoMailText_(quoteSheet,found.rowIndex,q,merged,{}));
   const pdf=_persistQuotePdfToRow_(quoteSheet,found.rowIndex,merged);
   return {ok:true,validUntil,pdfUrl:pdf.url||''};
 }
