@@ -1207,7 +1207,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='quote-get') return jsonOk_(getQuoteAdmin(token,String(payload.number||'')));
         if(action==='quote-create') return jsonOk_(createQuoteAdmin(token,payload.data||{}));
         if(action==='quote-update') return jsonOk_(updateQuoteAdmin(token,String(payload.number||''),payload.data||{}));
-        if(action==='quote-send') return jsonOk_(sendQuoteEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        if(action==='quote-send') return jsonOk_(sendQuoteEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),{force:payload.force===true||payload.force==='true'}));
         if(action==='quote-hold') return jsonOk_(holdQuoteAdmin(token,String(payload.number||''),payload.data||{}));
         if(action==='quote-snooze') return jsonOk_(snoozeQuoteHoldAdmin(token,String(payload.number||''),String(payload.followUpDate||'')));
         if(action==='quote-release-hold') return jsonOk_(releaseQuoteHoldAdmin(token,String(payload.number||'')));
@@ -1242,7 +1242,7 @@ function handlePublicApiRequest_(route,method,e){
           if(payload.data&&typeof payload.data==='object') return jsonOk_(createInvoiceAdmin(token,payload.data));
           return jsonOk_(createInvoiceAdmin(token,payload.bookingRowIndex||'',String(payload.type||'일반'),payload.refundAmount||0,String(payload.memo||''),payload.customAmount,String(payload.customProduct||''),String(payload.customInvNumber||'')));
         }
-        if(action==='invoice-send') return jsonOk_(sendInvoiceEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||'')));
+        if(action==='invoice-send') return jsonOk_(sendInvoiceEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||''),{force:payload.force===true||payload.force==='true'}));
         // 인보이스 수정(고객명/주소/메모 등) — 마지막에 PDF 재생성 포함. 금액/품목은 수정 불가(연번 규정).
         if(action==='invoice-update') return jsonOk_(updateInvoiceAdmin(token,payload.data||payload));
         // 회계 — 조회
@@ -1310,7 +1310,7 @@ function handlePublicApiRequest_(route,method,e){
         }
         if(action==='gutschein-send'){
           // ⚠️외부발송: 구매자에게 굿샤인 메일(PDF/티켓 링크) 발송
-          return jsonOk_(sendGutscheinEmailAdmin(token,String(payload.code||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||payload.lang||'')));
+          return jsonOk_(sendGutscheinEmailAdmin(token,String(payload.code||''),String(payload.subject||''),String(payload.body||''),String(payload.mailLang||payload.lang||''),{force:payload.force===true||payload.force==='true'}));
         }
         if(action==='gutschein-release-hold') return jsonOk_(releaseGutscheinHoldAdmin(token,String(payload.code||'')));
         /* ── Phase 2: 회계 운영 완결 — 아침 "결제 검토 N건"을 세션에서 끝내기 위한 래퍼들 ── */
@@ -5995,10 +5995,25 @@ function syncSelectMarketingConsentToBooking_(bookingSheet, bookingRowIndex, val
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['마케팅동의']+1).setValue(normalizeMarketingConsentValue_(raw));
 }
 
-function isMarketingScheduleEligibleBooking_(row){
+function getSelectRetouchDoneIndex_(selSh){
+  // 보정본 발송일시가 찍힌 셀렉 = 보정 완료 (사장님 2026-08-13: "보정이 완료되면 마케팅으로 잡히면 돼")
+  const out={};
+  if(!selSh || selSh.getLastRow()<2) return out;
+  const rows=selSh.getRange(2,1,selSh.getLastRow()-1,SELECT_HEADERS.length).getValues();
+  rows.forEach(function(row){
+    const bookingRow=Number(row[SELECT_COL['예약장부행']]||0);
+    if(!bookingRow || bookingRow<2) return;
+    if(String(row[SELECT_COL['보정본발송일시']]||'').trim()) out[String(bookingRow)]=true;
+  });
+  return out;
+}
+
+function isMarketingScheduleEligibleBooking_(row, retouchDone){
   if(!row) return false;
   const status=normalizeBookingStatus_(row[BOOKING_COL['상태']]);
-  return status==='작업완료' && isMarketingConsentYes_(row[BOOKING_COL['마케팅동의']]);
+  // 작업완료 전이라도 보정본이 나갔으면 후보. 동의(Y) 조건은 어떤 경우에도 유지.
+  const stageOk = status==='작업완료' || (!!retouchDone && status==='셀렉완료');
+  return stageOk && isMarketingConsentYes_(row[BOOKING_COL['마케팅동의']]);
 }
 
 function getMarketingScheduleIndex_(sheet){
@@ -6085,7 +6100,9 @@ function listMarketingScheduleAdmin(token,filters){
   const bookingSheet=sheets.bookingSheet;
   const scheduleSheet=sheets.marketingScheduleSheet;
   const scheduleIndex=getMarketingScheduleIndex_(scheduleSheet);
-  const selectConsentIndex=getSelectMarketingConsentIndex_(ensureSelectSheet_(sheets.ss));
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const selectConsentIndex=getSelectMarketingConsentIndex_(selSh);
+  const retouchDoneIndex=getSelectRetouchDoneIndex_(selSh);
   const rows=bookingSheet.getLastRow()>1 ? bookingSheet.getRange(2,1,bookingSheet.getLastRow()-1,CONFIG.BOOKING_HEADERS.length).getValues() : [];
   const query=String(filters&&filters.query||'').trim().toLowerCase();
   const stageFilter=String(filters&&filters.stage||'').trim();
@@ -6093,7 +6110,7 @@ function listMarketingScheduleAdmin(token,filters){
   rows.forEach(function(row,i){
     const bookingRowIndex=i+2;
     const mergedRow=withSelectMarketingConsent_(row,selectConsentIndex[String(bookingRowIndex)]);
-    if(!isMarketingScheduleEligibleBooking_(mergedRow)) return;
+    if(!isMarketingScheduleEligibleBooking_(mergedRow,retouchDoneIndex[String(bookingRowIndex)])) return;
     const item=buildMarketingScheduleItem_(bookingRowIndex,mergedRow,scheduleIndex[String(bookingRowIndex)]);
     if(query){
       const hay=[item.name,item.phone,item.email,item.dateStr,item.itemGroup,item.product,item.platform,item.postUrl,item.captionMemo,item.adminMemo].join(' ').toLowerCase();
@@ -6138,7 +6155,8 @@ function saveMarketingScheduleAdmin(token,payload){
       bookingSheet.getRange(bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0],
       selectConsentIndex[String(bookingRowIndex)]
     );
-    if(!isMarketingScheduleEligibleBooking_(bookingRow)) throw new Error('작업완료이며 마케팅 동의가 있는 예약만 스케줄 관리할 수 있습니다.');
+    const retouchDoneIndex=getSelectRetouchDoneIndex_(ensureSelectSheet_(sheets.ss));
+    if(!isMarketingScheduleEligibleBooking_(bookingRow,retouchDoneIndex[String(bookingRowIndex)])) throw new Error('보정 완료(또는 작업완료)이며 마케팅 동의가 있는 예약만 스케줄 관리할 수 있습니다.');
     const now=_nowStamp_();
     const scheduleIndex=getMarketingScheduleIndex_(scheduleSheet);
     const existing=scheduleIndex[String(bookingRowIndex)]||null;
@@ -7790,9 +7808,71 @@ function createAppleCalendarEvent_(eventDetails){
 /**
  * ══════════════════════════════════════════════════════
  *  TEST SUITE — run manually from GAS editor
- *  執行: runConflictTests_()
+ *  執行: runConflictTests_() / runLocationBlockerTests_()
  * ══════════════════════════════════════════════════════
  */
+// 로케이션 블로커 스캔 — 시트 없이 mock row 로 검증(GAS 에디터에서 직접 실행)
+function runLocationBlockerTests_(){
+  const PASS='✅',FAIL='❌';
+  const results=[];let failed=0;
+  function assert(name,actual,expected){
+    const ok=String(actual)===String(expected);
+    if(!ok) failed++;
+    results.push((ok?PASS:FAIL)+' '+name+(ok?'':` | expected ${expected}, got ${actual}`));
+  }
+  const header=CONFIG.BOOKING_HEADERS.slice();
+  function mkRow(dateTime,status,kind,product,loc){
+    const r=new Array(CONFIG.BOOKING_HEADERS.length).fill('');
+    r[BOOKING_COL['예약일시']]=dateTime; r[BOOKING_COL['상태']]=status;
+    r[BOOKING_COL['촬영종류']]=kind;     r[BOOKING_COL['상품']]=product;
+    r[BOOKING_COL['고객명']]='테스트';   r[BOOKING_COL['shooting_location']]=loc||'';
+    return r;
+  }
+  const scan=function(row,now){return _scanLocationBlockerConflicts_(row?[header,row]:[header],now);};
+
+  // 기준 2026-11-20 → 윈도 ~2026-12-20 (크리스마스마켓 운영기간 2026-11-23~12-22 과 겹침)
+  const nowNov=new Date('2026-11-20T09:00:00Z');
+  assert('크마 기간 MRT 스냅 → 감지',
+    scan(mkRow('2026-12-05 14:00','확정됨','마이리얼트립','2인스냅 45분','뢰머광장'),nowNov).count,1);
+  assert('대기중 예약도 감지(확정 전에 코스를 바꿔야 함)',
+    scan(mkRow('2026-12-05 14:00','대기중','마이리얼트립','1인스냅 60분','알테오퍼'),nowNov).count,1);
+  assert('실내 상품 → 무시',
+    scan(mkRow('2026-12-05 14:00','확정됨','증명사진','여권사진',''),nowNov).count,0);
+  assert('취소된 예약 → 무시',
+    scan(mkRow('2026-12-05 14:00','취소됨','마이리얼트립','2인스냅 45분','뢰머광장'),nowNov).count,0);
+  assert('30일 밖(D+31) → 아직 알리지 않음',
+    scan(mkRow('2026-12-21 14:00','확정됨','야외','야외/홈스냅 Plus',''),nowNov).count,0);
+  assert('D- 계산',
+    scan(mkRow('2026-12-05 14:00','확정됨','야외','야외/홈스냅 Basic',''),nowNov).items[0].daysAhead,15);
+
+  // 기준 2026-09-25 → 윈도 ~2026-10-25 (마라톤 당일이 경계)
+  const nowSep=new Date('2026-09-25T09:00:00Z');
+  assert('마라톤 당일 → 감지',
+    scan(mkRow('2026-10-25 10:00','확정됨','야외','야외/홈스냅 Basic',''),nowSep).count,1);
+  assert('블로커 없는 날 → 0',
+    scan(mkRow('2026-10-01 14:00','확정됨','야외','야외/홈스냅 Plus',''),nowSep).count,0);
+
+  // 철거 버퍼 — 공식 종료일만 보면 하루 차이로 빠져나간다(실제 예약 유소연 2026-09-12 08:00 케이스)
+  const nowAug=new Date('2026-08-20T09:00:00Z');
+  const wineTeardown=scan(mkRow('2026-09-12 08:00','확정됨','마이리얼트립','2인스냅 45분','Freßgass'),nowAug);
+  assert('와인마켓 종료 다음날 → 감지',wineTeardown.count,1);
+  assert('철거 단계로 표시',wineTeardown.items[0].blockers[0].phase,'teardown');
+  assert('종료 이틀 뒤 → 해제',
+    scan(mkRow('2026-09-13 08:00','확정됨','마이리얼트립','2인스냅 45분','Freßgass'),nowAug).count,0);
+  assert('운영 중인 날엔 phase 없음',
+    scan(mkRow('2026-09-05 14:00','확정됨','마이리얼트립','2인스냅 45분',''),nowAug).items[0].blockers[0].phase,undefined);
+  assert('마라톤은 철거 버퍼 없음(당일 원복)',
+    scan(mkRow('2026-10-26 10:00','확정됨','야외','야외/홈스냅 Basic',''),new Date('2026-10-01T09:00:00Z')).count,0);
+
+  // 표 만료 — 만료된 표가 '충돌 없음'으로 위장하면 안 된다
+  assert('표 커버 안(2026-11) → stale=false',scan(null,nowNov).stale,false);
+  assert('표 커버 밖(2027-01) → stale=true',scan(null,new Date('2027-01-01T09:00:00Z')).stale,true);
+
+  const summary=`\n로케이션 블로커 테스트: ${results.length-failed}/${results.length} 통과`;
+  Logger.log(results.join('\n')+summary);
+  return {passed:results.length-failed,failed:failed,results:results};
+}
+
 function runConflictTests_(){
   const PASS='\u2705',FAIL='\u274C';
   const results=[];
@@ -13157,6 +13237,78 @@ function _briefFail_(bucket,label,err){
   try{ bucket.push({section:String(label||''),message:String((err&&err.message)||err||'').slice(0,140)}); }catch(e){}
 }
 
+/* ── 프랑크푸르트 시내 로케이션 블로커 ─────────────────────────────────────
+   뢰머광장·알테오퍼·마인강변에서 촬영이 물리적으로 불가능하거나(부스 점유·도로차단)
+   현저히 어려운(인파·통제) 기간. 출처: 관광청 대형행사 목록 + 대회 주최측 공지.
+
+   ⚠️ 이 표는 자동 갱신되지 않는다 — 대부분의 행사가 '몇째 주 주말' 기준이라 해마다
+   날짜가 움직이고, 시가 예정 집회(데모) 목록을 공개하지 않아 크롤링할 소스도 없다.
+   그래서 COVERED_UNTIL 이 지나면 브리핑이 스스로 "표가 만료됐다"고 경고한다.
+   만료된 표가 조용히 '충돌 없음'을 보고하는 건 표가 없는 것보다 위험하다
+   (이 브리핑 전체의 원칙 — 빈 섹션이 '할 일 없음'인지 '못 읽은 것'인지 구분돼야 한다).
+   갱신처: visitfrankfurt.travel 대형행사 PDF(보통 연초 발행) · frankfurt-marathon.com ·
+   Ironman/JPMorgan 주최측 공지. 데모는 여기 담기지 않는다 — 촬영 당일 아침 뢰머광장
+   웹캠 육안 확인이 유일한 방법이다. */
+const FFM_BLOCKER_COVERED_UNTIL_='2027-01-06';
+/* teardownDays: 공식 종료일 **다음날**도 부스·트럭·쓰레기가 남는다. 관광청 목록은 운영일만 싣기 때문에
+   종료일만 보면 하루 차이로 빠져나간다 — 2026-09-12 08:00 Freßgass 스냅이 실제로 그 케이스였다
+   (와인마켓 09-11 종료, 다음날 이른 아침 = 철거 한복판). 광장 점유형 행사엔 전부 1일을 준다.
+   도로차단형(마라톤)은 당일 저녁 원복이라 버퍼 없음. */
+const FFM_BLOCKERS_=[
+  {from:'2026-08-07',to:'2026-08-16',name:'Apfelweinfest',area:'Roßmarkt — 알테오퍼 도보 2분',level:'mid',teardownDays:1},
+  {from:'2026-08-28',to:'2026-08-30',name:'Museumsuferfest',area:'마인강 양안 · 아이젤너다리',level:'high',teardownDays:1},
+  {from:'2026-09-02',to:'2026-09-11',name:'Rheingauer Weinmarkt',area:'Freßgass — 알테오퍼→Zeil 동선',level:'high',teardownDays:1},
+  {from:'2026-10-25',to:'2026-10-25',name:'Frankfurt Marathon',area:'시내 전역 · 07:15부터 도로차단',level:'high'},
+  {from:'2026-11-09',to:'2026-11-22',name:'크리스마스마켓 설치',area:'뢰머광장·Paulsplatz·Mainkai',level:'mid',estimated:true},
+  {from:'2026-11-23',to:'2026-12-22',name:'크리스마스마켓',area:'뢰머광장·Paulsplatz·Fahrtor·Mainkai',level:'high'},
+  {from:'2026-12-23',to:'2027-01-06',name:'크리스마스마켓 철거',area:'뢰머광장·Paulsplatz·Mainkai',level:'mid',estimated:true}
+];
+function _ffmAddDays_(ymd,n){
+  const d=new Date(ymd+'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate()+n);
+  return d.toISOString().slice(0,10);
+}
+
+/* 30일 내 야외/스냅 촬영 × 로케이션 블로커 교차.
+   윈도가 7일(=이번 주 일정)이면 늦다 — 코스를 바꾸든 고객에게 미리 알리든 한 달은 있어야 한다. */
+function _scanLocationBlockerConflicts_(rows,now){
+  const tz=CONFIG.TIMEZONE;
+  const today=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const horizon=Utilities.formatDate(new Date(now.getTime()+30*86400000),tz,'yyyy-MM-dd');
+  const items=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const st=String(row[BOOKING_COL['상태']]||'').trim();
+    if(st!=='확정됨'&&st!=='대기중') continue;
+    const d=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+    const d10=d.slice(0,10);
+    if(!d10||d10<today||d10>horizon) continue;
+    /* 야외 판정은 캘린더/버퍼 로직과 같은 키워드를 쓴다(단일 소스).
+       '홈스냅'도 '스냅'으로 걸려 과탐지되지만, 예약 장소를 같이 찍어 사장님이 판단한다 —
+       한 달에 몇 건 더 보는 비용 < 뢰머광장 예약 하나를 놓치는 비용. */
+    const product=String(row[BOOKING_COL['상품']]||'');
+    const title=String(row[BOOKING_COL['촬영종류']]||'')+' '+product;
+    if(!CONFIG.OUTDOOR_TITLE_KEYWORDS.some(function(kw){return title.indexOf(kw)>=0;})) continue;
+    const hits=FFM_BLOCKERS_.filter(function(b){
+      return d10>=b.from&&d10<=(b.teardownDays?_ffmAddDays_(b.to,b.teardownDays):b.to);
+    }).map(function(b){
+      // 운영 중인지 철거 중인지 구분해서 알린다 — 대응이 다르다(코스 변경 vs 시간대 조정)
+      return d10>b.to?Object.assign({},b,{phase:'teardown'}):b;
+    });
+    if(!hits.length) continue;
+    items.push({
+      rowIndex:i+1,dateTime:d.slice(0,16),status:st,
+      name:String(row[BOOKING_COL['고객명']]||''),product:product,
+      location:String(row[BOOKING_COL['shooting_location']]||'').trim(),
+      daysAhead:Math.round((new Date(d10+'T12:00:00Z').getTime()-new Date(today+'T12:00:00Z').getTime())/86400000),
+      blockers:hits
+    });
+  }
+  items.sort(function(a,b){return a.dateTime<b.dateTime?-1:1;});
+  // 표가 30일 윈도를 못 덮으면 '충돌 없음'이 아니라 '확인 안 됨'이다 — 그대로 말한다
+  return {count:items.length,items:items,stale:horizon>FFM_BLOCKER_COVERED_UNTIL_,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
+}
+
 function _buildDailyBriefingData_(){
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
@@ -13477,7 +13629,11 @@ function _buildDailyBriefingData_(){
     contractPending.count=cp.length;
     contractPending.items=cp.slice(0,6);
   }catch(e){Logger.log('briefing contract fail: '+e.message);_briefFail_(sectionFailures,'계약서',e);}
-  return {ok:true,date:today,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,sectionFailures:sectionFailures};
+  // 로케이션 블로커 — 30일 내 야외/스냅 촬영이 시내 행사와 겹치는지 (rows 재사용, 시트 재조회 없음)
+  let locationBlockers={count:0,items:[],stale:false,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
+  try{ locationBlockers=_scanLocationBlockerConflicts_(rows,now); }
+  catch(e){Logger.log('briefing locationBlockers fail: '+e.message);_briefFail_(sectionFailures,'로케이션 블로커',e);}
+  return {ok:true,date:today,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -13510,6 +13666,27 @@ function buildDailyBriefingEmailHtml_(b){
   // 2) 액션 필요
   const actions=[];
   if(b.pendingBookingCount>0) actions.push(line(`🟡 확정 대기 예약 <b>${b.pendingBookingCount}건</b> — 어드민에서 확정 처리 필요`));
+  /* 로케이션 블로커 — 30일 전부터. 촬영 주에 알면 코스 변경도 고객 안내도 늦는다. */
+  if(b.locationBlockers&&b.locationBlockers.count>0){
+    b.locationBlockers.items.forEach(function(c){
+      const high=c.blockers.some(function(x){return x.level==='high';});
+      const names=c.blockers.map(function(x){
+        return esc(x.name)
+          +(x.phase==='teardown'?' <span style="color:#94a3b8;">(종료 다음날 — 철거 중)</span>':'')
+          +(x.estimated?' <span style="color:#94a3b8;">(기간 추정)</span>':'');
+      }).join(' + ');
+      actions.push(line(`📍 <b style="color:${high?'#b91c1c':'#b45309'};">로케이션 충돌 D-${c.daysAhead}</b> — <b>${esc(c.name)}</b>님 `
+        +`${esc(c.dateTime.slice(5,16))} · ${esc(c.product)}${c.status==='대기중'?' '+badge('대기중','#fef3c7','#92400e'):''}`
+        +`<br>&nbsp;&nbsp;<b>${names}</b> · ${esc(c.blockers[0].area)}`
+        +`<br>&nbsp;&nbsp;예약 장소: ${c.location?`<b>${esc(c.location)}</b>`:'<span style="color:#94a3b8;">미기재</span>'}`
+        +` — 코스 변경 또는 고객 사전 안내 필요`));
+    });
+  }
+  if(b.locationBlockers&&b.locationBlockers.stale){
+    actions.push(line(`📍 <b style="color:#b91c1c;">시내 행사 일정표가 ${esc(b.locationBlockers.coveredUntil)} 까지만 등록돼 있습니다</b> — `
+      +`그 이후 촬영은 <b>충돌 없음이 아니라 확인 안 됨</b>입니다. visitfrankfurt.travel 대형행사 목록에서 새 연도 일정을 받아 `
+      +`<code>FFM_BLOCKERS_</code> 를 갱신해 주세요.`));
+  }
   b.depositWaiting.forEach(function(d){
     // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)가 사장님 확인 없이 실행되므로, 남은 일수를 앞에 세운다
     const urgent=d.daysToAutoCancel!=null&&d.daysToAutoCancel<=3;
@@ -13668,6 +13845,8 @@ function briefingActionCount_(b){
     +((b.extrasUnbilled&&b.extrasUnbilled.count)||0)
     +((b.extrasUnpaid&&b.extrasUnpaid.count)||0)
     +((b.calendarAudit&&b.calendarAudit.problemCount)||0)
+    +((b.locationBlockers&&b.locationBlockers.count)||0)
+    +((b.locationBlockers&&b.locationBlockers.stale)?1:0)
     +((b.sectionFailures&&b.sectionFailures.length)||0);
 }
 
@@ -25999,13 +26178,14 @@ function createInvoiceAdmin(token, bookingRowIndex, type, refundAmount, memo, cu
   return createInvoiceRecord_(payload);
 }
 
-function sendInvoiceEmailAdmin(token, invNumber, subject, body, mailLang){
+function sendInvoiceEmailAdmin(token, invNumber, subject, body, mailLang, opts){
   assertAdmin_(token);
   const {invoiceSheet}=ensureSheets_();
   const rows=invoiceSheet.getDataRange().getValues();
   const idx=rows.slice(1).findIndex(r=>String(r[INVOICE_COL['인보이스번호']]||'').trim()===String(invNumber||'').trim());
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const inv=invoiceRowToObject_(rows[idx+1],idx+2);
+  resendGuard_(inv.mailSentAt, inv.email, '인보이스', opts&&opts.force);
   return sendInvoiceEmailInternal_(inv,subject||inv.mailSubject||'',body||inv.mailBody||'',mailLang);
 }
 
@@ -28097,13 +28277,24 @@ function _sendQuoteEmailInternal_(quoteSh,rowIndex,q,subject,body){
   return {sentAt,recipientEmail:to};
 }
 
-function sendQuoteEmailAdmin(token, number, subject, body){
+/* 재발송 가드 (2026-08-13 실사고): 같은 견적서가 09:42·15:17 두 번 나가 고객이 동일 메일을
+   중복 수신했다. quote-send 는 실행할 때마다 그대로 한 통 더 보내고 아무 경고가 없었다.
+   이미 발송된 건은 기본 차단하고, 의도적 재발송만 force:true 로 통과시킨다. */
+function resendGuard_(sentAtRaw, to, docLabel, force){
+  if(force===true) return;
+  const sentAt=sentAtRaw?parseDateSafe_(sentAtRaw):null;
+  if(!sentAt||!sentAt.str) return;
+  throw new Error('이미 '+sentAt.str+' 에 '+String(to||'')+' 로 발송된 '+docLabel+'입니다. '
+    +'같은 내용이 한 통 더 나가므로 기본 차단합니다. 의도한 재발송이면 force:true 를 넣어 다시 실행하세요.');
+}
+function sendQuoteEmailAdmin(token, number, subject, body, opts){
   assertAdmin_(token);
   const {quoteSheet}=ensureSheets_();
   const found=_findQuoteRow_(quoteSheet,number);
   if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다.');
   const q=quoteRowToObject_(found.row,found.rowIndex);
   if(q.status===QUOTE_STATUS.EXPIRED||q.status===QUOTE_STATUS.REJECTED) throw new Error(`상태가 "${q.status}"인 견적서는 발송할 수 없습니다.`);
+  resendGuard_(q.mailSentAt, q.email, '견적서', opts&&opts.force);
   const sent=_sendQuoteEmailInternal_(quoteSheet,found.rowIndex,q,subject,body);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
   return {ok:true,sentAt:sent.sentAt,recipientEmail:sent.recipientEmail};
@@ -29320,7 +29511,7 @@ function repairGutscheinTaxFieldsAdmin(token){
   return {ok:true,checked:rows.length-1,updated,usageUpdated};
 }
 
-function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
+function sendGutscheinEmailAdmin(token, code, subject, body, mailLang, opts){
   assertAdmin_(token);
   const gutscheinSheet=getGutscheinSheet_();
   const found=_findGutscheinRow_(gutscheinSheet,code);
@@ -29329,6 +29520,7 @@ function sendGutscheinEmailAdmin(token, code, subject, body, mailLang){
   if(g.status===GUTSCHEIN_STATUS.CANCELLED) throw new Error('취소된 굿샤인은 메일 발송할 수 없습니다.');
   const recipient=String(g.purchaserEmail||'').trim();
   if(!recipient || !isValidEmailAddress_(recipient)) throw new Error('수신 이메일이 유효하지 않습니다.');
+  resendGuard_(g.mailSentAt, recipient, '굿샤인', opts&&opts.force);
   const effectiveLang=normalizeGutscheinLang_(mailLang||g.lang);
   const defaults=buildGutscheinEmailDefaults_(Object.assign({},g,{lang:effectiveLang}));
   const finalSubject=String(subject||g.mailSubject||defaults.subject||'').replace(/\{\{code\}\}/g,g.code||'').trim();
