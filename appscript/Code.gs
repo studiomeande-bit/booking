@@ -1255,6 +1255,10 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='travel-log'){
+          // 출장 km 기록부 (조회 전용) — 주차·이동 지출에서 왕복 km·공제액 산출
+          return jsonOk_(buildTravelKmLogForAgent_(payload.startDate,payload.endDate));
+        }
         if(action==='expense-list'){
           // 지출장부 조회 — rowIndex 포함(삭제·정정 대상 특정용)
           const eSh=ensureSheets_().expenseSheet;
@@ -13192,7 +13196,11 @@ function searchSelectSessionsForAgent_(token,query){
   const rows=selSh.getDataRange().getValues();
   const kw=String(query.keyword||'').trim().toLowerCase();
   const status=String(query.status||'').trim();
-  const limit=Math.min(50,Math.max(1,parseInt(query.limit,10)||20));
+  // 상한 500 — 아카이브 자동화(~/bin/studio_archive.py)가 오래된 완료건까지 전량 대조해야 한다.
+  // 50이던 시절엔 최신 50건만 잡혀 그 이전 세션이 전부 '상태불명'으로 빠졌고,
+  // 상태불명은 원본을 못 지우므로 맥 디스크가 400G 넘게 잠겼다.
+  // 기본값 20은 그대로 — limit을 안 주는 기존 호출자 동작은 변하지 않는다.
+  const limit=Math.min(500,Math.max(1,parseInt(query.limit,10)||20));
   const out=[];
   for(let i=rows.length-1;i>=1&&out.length<limit;i--){
     const row=rows[i];
@@ -16791,6 +16799,18 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
       );
     }
   }catch(e){Logger.log('month close record lookup skipped: '+e.message);}
+  /* 출장 km 기록부 — 정보성 체크. 마감을 막지는 않지만 여기 안 뜨면 아무도 안 본다
+     (2025년분은 로컬 스크립트로 한 번 만들고 2026년분이 통째로 비어 있었다). */
+  try{
+    const travel=buildTravelKmLogForAgent_(sd,ed);
+    const ts=travel.summary||{};
+    addCheck('travel_km','출장 km 기록부(주차 영수증 기준)',
+      ts.unmatchedCount?'warn':'ok', ts.trips||0, ts.deduction||0,
+      (ts.trips||0)+'회 · 왕복 '+(ts.totalRoundTripKm||0)+'km · 공제 €'+(ts.deduction||0)
+        +(ts.unmatchedCount?(' · 목적지 미판정 '+ts.unmatchedCount+'건'):''),
+      '','','travel-log');
+  }catch(travelErr){ Logger.log('travel_km 체크 실패: '+travelErr.message); }
+
   const blockers=checks.filter(function(c){return c.status==='fail';}).length;
   const warnings=checks.filter(function(c){return c.status==='warn';}).length;
   return {
@@ -28280,6 +28300,101 @@ function _sendQuoteEmailInternal_(quoteSh,rowIndex,q,subject,body){
 /* 재발송 가드 (2026-08-13 실사고): 같은 견적서가 09:42·15:17 두 번 나가 고객이 동일 메일을
    중복 수신했다. quote-send 는 실행할 때마다 그대로 한 통 더 보내고 아무 경고가 없었다.
    이미 발송된 건은 기본 차단하고, 의도적 재발송만 force:true 로 통과시킨다. */
+
+/* ── 출장 km 기록부 (Fahrtenbuch 대용) ─────────────────────────────────────────
+   2025년분은 로컬 일회성 스크립트(build_2025_travel_km_ledger.mjs)로 만들었고 —
+   1,117.6km × €0.30 = €335.34 공제 — 2026-05-29 이후로는 아무도 돌리지 않아
+   **2026년분이 통째로 비어 있었다**(2026-08-13 확인). 매년 스크립트를 기억해서
+   돌리는 구조가 실패한 것이므로 ERP 조회 액션으로 옮긴다.
+
+   근거는 2025년과 동일하게 **주차·이동 지출 영수증**이다. 주차비가 있었다는 것은
+   그날 그 도시에 차를 대고 일했다는 뜻이고, 세무서가 받아들인 방식이다.
+   거리는 스튜디오(오버우어젤) 기준 편도이며 왕복으로 계산한다(docs/travel-fee-policy.md 거리표).
+
+   판정 못 한 건은 버리지 않고 unmatched 로 돌려준다 — 조용히 빠지면
+   공제를 놓치고도 모른다. */
+const TRAVEL_KM_RATE_=0.30;                 // EStG 킬로미터당 공제액 (자가용)
+const TRAVEL_KM_TABLE_=[
+  {re:/bad\s*homburg|kur-?\s*und\s*kongress/i, city:'바트홈부르크', km:8},
+  {re:/steinbach/i,                            city:'슈타인바흐',   km:6},
+  {re:/kronberg|k[öo]nigstein|oberursel/i,      city:'크론베르크·쾨니히슈타인', km:7},
+  {re:/flughafen|fraport|airport/i,             city:'프랑크푸르트 공항', km:25},
+  {re:/messe/i,                                 city:'프랑크푸르트 메세',  km:20},
+  {re:/frankfurt/i,                             city:'프랑크푸르트',      km:17},
+  {re:/hanau/i,       city:'하나우',        km:40},
+  {re:/wiesbaden/i,   city:'비스바덴',      km:46},
+  {re:/darmstadt/i,   city:'다름슈타트',    km:45},
+  {re:/gie[sß]en/i,   city:'기센',          km:45},
+  {re:/mainz/i,       city:'마인츠',        km:50},
+  {re:/aschaffenburg/i, city:'아샤펜부르크', km:75},
+  {re:/marburg/i,     city:'마르부르크',    km:80},
+  {re:/heidelberg/i,  city:'하이델베르크',  km:100},
+  {re:/fulda/i,       city:'풀다',          km:105},
+  {re:/koblenz/i,     city:'코블렌츠',      km:125},
+  {re:/k[öo]ln|cologne/i, city:'쾰른',      km:170},
+];
+/* 이동을 증명하는 지출만 집는다. 주유(tank/Shell 등)는 목적지를 알 수 없어 제외 —
+   2025 원장도 주차 영수증만 근거로 삼았다. */
+const TRAVEL_EXPENSE_RE_=/park(haus|garage|en|ing)?\b|apcoa|contipark|q-?park|fraport|messe|kongress|parkplatz|주차/i;
+/* 주유는 제외한다. 주유소 위치는 "그 도시에서 일했다"를 증명하지 않는다 — 가는 길에 들른
+   것일 수도 있어 목적지로 쓰면 공제를 부풀린다. 2025 원장도 주차 영수증만 근거로 삼았다. */
+const TRAVEL_FUEL_RE_=/\btank\b|tankstelle|shell|aral|esso|\bjet\b|benzin|diesel|sprit|주유/i;
+
+function travelKmLookup_(text){
+  const t=String(text||'');
+  for(let i=0;i<TRAVEL_KM_TABLE_.length;i++){
+    if(TRAVEL_KM_TABLE_[i].re.test(t)) return TRAVEL_KM_TABLE_[i];
+  }
+  return null;
+}
+
+function buildTravelKmLogForAgent_(startDate, endDate){
+  const eSh=ensureSheets_().expenseSheet;
+  const last=eSh.getLastRow();
+  const rows=last>1?eSh.getRange(2,1,last-1,CONFIG.EXPENSE_HEADERS.length).getValues():[];
+  const from=String(startDate||'').slice(0,10), to=String(endDate||'').slice(0,10);
+  const entries=[], unmatched=[], seen={};
+  let totalKm=0, totalCost=0;
+  rows.forEach(function(r,i){
+    const d=parseDateSafe_(r[0]).str.slice(0,10);
+    if(from&&d<from) return;
+    if(to&&d>to) return;
+    const blob=String(r[1]||'')+' '+String(r[3]||'')+' '+String(r[8]||'');
+    if(!TRAVEL_EXPENSE_RE_.test(blob)) return;
+    if(TRAVEL_FUEL_RE_.test(blob)) return;
+    const gross=Number(r[4]||0);
+    const hit=travelKmLookup_(blob);
+    if(!hit){
+      unmatched.push({rowIndex:i+2,date:d,vendor:String(r[1]||''),gross:gross,
+        description:String(r[3]||'').slice(0,90),
+        note:'목적지 도시를 판정하지 못했습니다. 거래처/설명에 도시명을 넣거나 수기로 보완하세요.'});
+      return;
+    }
+    const key=d+'|'+hit.city;
+    if(seen[key]){
+      // 같은 날 같은 도시의 추가 영수증 — 왕복은 이미 한 번 계산했다. 금액만 합산.
+      seen[key].parkingGross=Math.round((seen[key].parkingGross+gross)*100)/100;
+      seen[key].receipts+=1;
+      return;
+    }
+    const roundTripKm=hit.km*2;
+    const deduction=Math.round(roundTripKm*TRAVEL_KM_RATE_*100)/100;
+    totalKm+=roundTripKm; totalCost+=deduction;
+    const entry={rowIndex:i+2,date:d,city:hit.city,oneWayKm:hit.km,roundTripKm:roundTripKm,
+      deduction:deduction,parkingGross:gross,receipts:1,vendor:String(r[1]||''),
+      description:String(r[3]||'').slice(0,90)};
+    seen[key]=entry;
+    entries.push(entry);
+  });
+  entries.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  return {ok:true,period:{startDate:from,endDate:to},rate:TRAVEL_KM_RATE_,
+    entries:entries,unmatched:unmatched,
+    summary:{trips:entries.length,totalRoundTripKm:Math.round(totalKm*10)/10,
+      deduction:Math.round(totalCost*100)/100,unmatchedCount:unmatched.length,
+      unmatchedGross:Math.round(unmatched.reduce(function(a,b){return a+Number(b.gross||0);},0)*100)/100},
+    basis:'주차·이동 지출 영수증 기준, 스튜디오(오버우어젤) 왕복, €'+TRAVEL_KM_RATE_+'/km (2025년분과 동일 산정)'};
+}
+
 function resendGuard_(sentAtRaw, to, docLabel, force){
   if(force===true) return;
   const sentAt=sentAtRaw?parseDateSafe_(sentAtRaw):null;
