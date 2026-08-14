@@ -1255,6 +1255,10 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='weekly-kpi'){
+          // 주간 KPI (조회 전용) — 매출·수주율·리드타임 주 단위 비교
+          return jsonOk_(buildWeeklyKpiForAgent_(token,String(payload.endDate||'')));
+        }
         if(action==='travel-log'){
           // 출장 km 기록부 (조회 전용) — 주차·이동 지출에서 왕복 km·공제액 산출
           return jsonOk_(buildTravelKmLogForAgent_(payload.startDate,payload.endDate));
@@ -28300,6 +28304,133 @@ function _sendQuoteEmailInternal_(quoteSh,rowIndex,q,subject,body){
 /* 재발송 가드 (2026-08-13 실사고): 같은 견적서가 09:42·15:17 두 번 나가 고객이 동일 메일을
    중복 수신했다. quote-send 는 실행할 때마다 그대로 한 통 더 보내고 아무 경고가 없었다.
    이미 발송된 건은 기본 차단하고, 의도적 재발송만 force:true 로 통과시킨다. */
+
+
+/* ── 주간 KPI 리포트 ───────────────────────────────────────────────────────────
+   일일 브리핑은 "오늘 처리할 일"(입금대기·셀렉대기·정산리뷰)만 본다. 추세가 없어서
+   이번 주가 좋은 주였는지 나쁜 주였는지를 알 수 없다. 여기서는 그 반대만 담는다:
+   매출·수주율·리드타임의 **주 단위 비교**.
+
+   장부 읽기는 무거우므로(과거 107s 사례) 5주치를 **한 번만** 읽고 주 단위로 쪼갠다. */
+function weekKeyFor_(dateStr, endDate){
+  // endDate 로부터 며칠 전인지로 주차를 나눈다(0=이번주, 1=지난주 …). 달력 주가 아니라
+  // 항상 "최근 7일"이라 요일에 상관없이 같은 길이로 비교된다.
+  const a=new Date(dateStr+'T00:00:00Z').getTime();
+  const b=new Date(endDate+'T00:00:00Z').getTime();
+  if(isNaN(a)||isNaN(b)) return -1;
+  const diff=Math.floor((b-a)/86400000);
+  if(diff<0) return -1;
+  return Math.floor(diff/7);
+}
+function pctChange_(cur, prev){
+  if(!prev) return cur?null:0;            // 전주 0 → 증감률 의미 없음(null)
+  return Math.round(((cur-prev)/prev)*1000)/10;
+}
+function buildWeeklyKpiForAgent_(token, endDateStr){
+  const tz=CONFIG.TIMEZONE;
+  const end=endDateStr?String(endDateStr).slice(0,10)
+    :Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
+  const endMs=new Date(end+'T00:00:00Z').getTime();
+  const start=Utilities.formatDate(new Date(endMs-34*86400000),tz,'yyyy-MM-dd'); // 5주
+  const sheets=ensureSheets_();
+  const ledger=getAccountingLedger(token,start,end,false,sheets);
+  const entries=ledger.entries||[];
+
+  const weeks=[0,1,2,3,4].map(function(){return {gross:0,count:0,byGroup:{}};});
+  entries.forEach(function(e){
+    if((e.flow||'income')==='expense') return;
+    const d=String(e.dateStr||e.date||'').slice(0,10);
+    const w=weekKeyFor_(d,end);
+    if(w<0||w>4) return;
+    const g=Number(e.gross||0);
+    weeks[w].gross+=g; weeks[w].count+=1;
+    const key=String(e.category||e.accountingClass||'기타');
+    weeks[w].byGroup[key]=Math.round(((weeks[w].byGroup[key]||0)+g)*100)/100;
+  });
+  weeks.forEach(function(w){w.gross=Math.round(w.gross*100)/100;});
+  const prior4=weeks.slice(1,5);
+  const avg4=Math.round((prior4.reduce(function(a,w){return a+w.gross;},0)/4)*100)/100;
+
+  // ── 견적 수주율 ────────────────────────────────────────────────────────────
+  const qSh=sheets.quoteSheet;
+  const qLast=qSh.getLastRow();
+  const qRows=qLast>1?qSh.getRange(2,1,qLast-1,QUOTE_HEADERS.length).getValues():[];
+  const q={issued:0,sent:0,accepted:0,rejected:0,acceptedAmount:0};
+  qRows.forEach(function(r){
+    const inWeek=function(v){
+      const d=v?parseDateSafe_(v).str.slice(0,10):'';
+      return d&&weekKeyFor_(d,end)===0;
+    };
+    if(inWeek(r[QUOTE_COL['발행일']])) q.issued++;
+    if(inWeek(r[QUOTE_COL['메일발송일시']])) q.sent++;
+    if(inWeek(r[QUOTE_COL['수락일시']])){ q.accepted++; q.acceptedAmount+=Number(r[QUOTE_COL['총액(€)']]||0); }
+    if(String(r[QUOTE_COL['상태']]||'')===QUOTE_STATUS.REJECTED && inWeek(r[QUOTE_COL['수정일시']])) q.rejected++;
+  });
+  q.acceptedAmount=Math.round(q.acceptedAmount*100)/100;
+  /* 주간 수주율은 계산하지 않는다. 이번 주 수락 건은 대개 몇 주 전에 보낸 견적이라
+     (이번주 수락)/(이번주 발송)은 200% 같은 무의미한 값이 나온다(2026-08-14 실측).
+     대신 같은 코호트 — 최근 90일에 **발송된** 견적이 지금까지 수락됐는지 — 로 본다. */
+  const cohortStart=Utilities.formatDate(new Date(endMs-89*86400000),tz,'yyyy-MM-dd');
+  const cohort={sent:0,accepted:0,pending:0,winRate:null};
+  qRows.forEach(function(r){
+    const sentD=r[QUOTE_COL['메일발송일시']]?parseDateSafe_(r[QUOTE_COL['메일발송일시']]).str.slice(0,10):'';
+    if(!sentD||sentD<cohortStart||sentD>end) return;
+    cohort.sent++;
+    const st=String(r[QUOTE_COL['상태']]||'');
+    if(st===QUOTE_STATUS.ACCEPTED||st===QUOTE_STATUS.CONVERTED) cohort.accepted++;
+    else if(st!==QUOTE_STATUS.REJECTED&&st!==QUOTE_STATUS.EXPIRED) cohort.pending++;
+  });
+  cohort.winRate=cohort.sent?Math.round((cohort.accepted/cohort.sent)*1000)/10:null;
+  cohort.note='최근 90일에 발송된 견적 기준(같은 코호트) — 주간 발송/수락 건수는 위 활동량';
+  q.cohort90=cohort;
+
+  // ── 셀렉 처리량·리드타임 ───────────────────────────────────────────────────
+  const sSh=ensureSelectSheet_(sheets.ss||SpreadsheetApp.getActiveSpreadsheet());
+  const sLast=sSh.getLastRow();
+  const sRows=sLast>1?sSh.getRange(2,1,sLast-1,SELECT_HEADERS.length).getValues():[];
+  const sel={submitted:0,retouchSent:0,handedOver:0,leadDays:[]};
+  sRows.forEach(function(r){
+    const sub=r[SELECT_COL['제출일시']], ret=r[SELECT_COL['보정본발송일시']], done=r[SELECT_COL['수령완료일시']];
+    const dOf=function(v){return v?parseDateSafe_(v).str.slice(0,10):'';};
+    if(weekKeyFor_(dOf(sub),end)===0) sel.submitted++;
+    if(weekKeyFor_(dOf(ret),end)===0){
+      sel.retouchSent++;
+      const a=dOf(sub), b=dOf(ret);
+      if(a&&b){
+        const days=Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/86400000);
+        if(days>=0&&days<120) sel.leadDays.push(days);
+      }
+    }
+    if(weekKeyFor_(dOf(done),end)===0) sel.handedOver++;
+  });
+  sel.avgLeadDays=sel.leadDays.length
+    ? Math.round((sel.leadDays.reduce(function(a,b){return a+b;},0)/sel.leadDays.length)*10)/10 : null;
+  delete sel.leadDays;
+
+  let travel=null;
+  try{
+    const tStart=Utilities.formatDate(new Date(endMs-6*86400000),tz,'yyyy-MM-dd');
+    travel=buildTravelKmLogForAgent_(tStart,end).summary;
+  }catch(e){ travel=null; }
+
+  const topGroups=Object.keys(weeks[0].byGroup)
+    .map(function(k){return {group:k,gross:weeks[0].byGroup[k]};})
+    .sort(function(a,b){return b.gross-a.gross;}).slice(0,5);
+
+  return {ok:true,
+    period:{thisWeek:{start:Utilities.formatDate(new Date(endMs-6*86400000),tz,'yyyy-MM-dd'),end:end},
+            comparedWith:'직전 7일 · 직전 4주 평균'},
+    revenue:{thisWeek:weeks[0].gross,lastWeek:weeks[1].gross,avg4Week:avg4,
+      changeVsLastWeekPct:pctChange_(weeks[0].gross,weeks[1].gross),
+      changeVsAvg4Pct:pctChange_(weeks[0].gross,avg4),
+      bookings:weeks[0].count,
+      avgTicket:weeks[0].count?Math.round((weeks[0].gross/weeks[0].count)*100)/100:0,
+      topGroups:topGroups,
+      weeklySeries:weeks.map(function(w,i){return {weeksAgo:i,gross:w.gross,count:w.count};})},
+    quotes:q, select:sel, travel:travel,
+    receivables:{openCount:ledger.openCount||0,openAmount:Math.round((ledger.openAmount||0)*100)/100,
+      note:'최근 5주 구간 기준'}};
+}
 
 /* ── 출장 km 기록부 (Fahrtenbuch 대용) ─────────────────────────────────────────
    2025년분은 로컬 일회성 스크립트(build_2025_travel_km_ledger.mjs)로 만들었고 —
