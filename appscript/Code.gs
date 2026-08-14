@@ -1255,6 +1255,10 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='backup-verify'){
+          // 백업 복구 검증 (조회 전용) — 최신 백업을 실제로 열어 라이브와 행수 대조
+          return jsonOk_(verifyBackupsForAgent_());
+        }
         if(action==='weekly-kpi'){
           // 주간 KPI (조회 전용) — 매출·수주율·리드타임 주 단위 비교
           return jsonOk_(buildWeeklyKpiForAgent_(token,String(payload.endDate||'')));
@@ -13625,6 +13629,14 @@ function _buildDailyBriefingData_(){
   /* 지난달 회계 마감 — 마감 기록이 없으면 리마인드. 분기 마감(ELSTER) 리마인더는 분기당 한 번뿐이라
      그 사이 달들은 아무도 챙기지 않았다. 마감 시트만 읽어 판정하므로 장부 재계산 없음(비용 0에 가까움).
      창은 5~25일 — 1~4일은 아직 정산이 덜 들어오고, 26일 이후는 분기 리마인더와 겹친다. */
+  /* 백업 건강도 — 문제 있을 때만 값이 실린다. 백업은 조용히 멈추는 게 최악이라
+     매일 한 번은 자동으로 확인되어야 한다(2026-08-14 backup-verify 신설과 함께 연결). */
+  let backupHealth=null;
+  try{
+    const bv=verifyBackupsForAgent_();
+    if(bv&&bv.status!=='ok') backupHealth={status:bv.status,latest:(bv.latest&&bv.latest.name)||'',
+      ageDays:(bv.latest&&bv.latest.ageDays),problems:bv.problems||[]};
+  }catch(e){Logger.log('briefing backupHealth fail: '+e.message);_briefFail_(sectionFailures,'백업 검증',e);}
   let monthCloseDue=null;
   try{
     const dd=now.getDate();
@@ -13645,7 +13657,7 @@ function _buildDailyBriefingData_(){
   let locationBlockers={count:0,items:[],stale:false,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
   try{ locationBlockers=_scanLocationBlockerConflicts_(rows,now); }
   catch(e){Logger.log('briefing locationBlockers fail: '+e.message);_briefFail_(sectionFailures,'로케이션 블로커',e);}
-  return {ok:true,date:today,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
+  return {ok:true,date:today,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -28305,6 +28317,104 @@ function _sendQuoteEmailInternal_(quoteSh,rowIndex,q,subject,body){
    중복 수신했다. quote-send 는 실행할 때마다 그대로 한 통 더 보내고 아무 경고가 없었다.
    이미 발송된 건은 기본 차단하고, 의도적 재발송만 force:true 로 통과시킨다. */
 
+
+
+/* ── 백업 복구 검증 ────────────────────────────────────────────────────────────
+   일일 백업(backupSpreadsheetDaily_)은 매일 도는데 **한 번도 열어본 적이 없다.**
+   검증하지 않은 백업은 백업이 아니다 — 정작 복구해야 할 날 파일이 비어 있거나
+   며칠 전에 멈춰 있었다는 걸 알게 되는 게 최악이다.
+
+   여기서는 실제 복구 없이 확인할 수 있는 것을 전부 본다:
+   최신 백업의 나이 / 보관 개수 / **백업을 실제로 열어 시트별 행수를 라이브와 대조**.
+   백업 행수가 라이브보다 크게 적으면 그 백업은 못 쓴다. */
+/* 시트명은 CONFIG 에서 가져온다 — 하드코딩했다가 '견적'(실제는 '견적서')이 조용히
+   검증에서 빠졌다(2026-08-14). 이름이 틀리면 '라이브에 없음'으로 넘어가 버린다. */
+function backupVerifySheetNames_(){
+  return [CONFIG.BOOKING_SHEET,SELECT_SHEET_NAME,CONFIG.QUOTE_SHEET,CONFIG.INVOICE_SHEET,
+          CONFIG.EXPENSE_SHEET,CONFIG.SETTLEMENT_SHEET,CONFIG.CASH_SHEET,CONFIG.TRAVEL_SHEET,
+          CONFIG.PRINT_SHEET,CONFIG.CONSULTATION_SHEET,CONFIG.PRODUCTS_SHEET,CONFIG.SETTINGS_SHEET];
+}
+
+function BOOKING_HEADERS_LEN_(){ return CONFIG.BOOKING_HEADERS.length; }
+function verifyBackupsForAgent_(){
+  const folder=_getOrCreateBackupFolder_();
+  const files=[];
+  const it=folder.getFiles();
+  while(it.hasNext()){
+    const f=it.next();
+    if(String(f.getName()||'').indexOf('StudioMeanDB_')!==0) continue;
+    files.push({id:f.getId(),name:f.getName(),createdAt:Utilities.formatDate(f.getDateCreated(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')});
+  }
+  files.sort(function(a,b){return a.name<b.name?1:a.name>b.name?-1:0;});
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(!files.length){
+    return {ok:true,status:'fail',backupCount:0,
+      problems:['백업 파일이 하나도 없습니다. 일일 백업 트리거가 도는지 확인하세요.'],
+      folder:folder.getName()};
+  }
+  const latest=files[0];
+  const latestDate=String(latest.name).replace('StudioMeanDB_','').slice(0,10);
+  const ageDays=Math.round((new Date(today+'T00:00:00Z')-new Date(latestDate+'T00:00:00Z'))/86400000);
+
+  // 실제로 열어본다. 열리지 않으면 그 시점에 이미 복구 불가다.
+  const sheets=ensureSheets_();
+  const live=sheets.ss;
+  const compare=[]; const problems=[];
+  let spotCheck=null;
+  let backupSs=null;
+  try{ backupSs=SpreadsheetApp.openById(latest.id); }
+  catch(openErr){
+    problems.push('최신 백업을 열 수 없습니다 ('+latest.name+'): '+openErr.message);
+  }
+  if(backupSs){
+    backupVerifySheetNames_().forEach(function(name){
+      const lv=live.getSheetByName(name), bk=backupSs.getSheetByName(name);
+      const liveRows=lv?Math.max(0,lv.getLastRow()-1):null;
+      const bkRows=bk?Math.max(0,bk.getLastRow()-1):null;
+      const row={sheet:name,liveRows:liveRows,backupRows:bkRows};
+      if(liveRows===null){ row.note='라이브에 없음(검증 대상 아님)'; }
+      else if(bkRows===null){ row.note='백업에 시트 없음'; problems.push(name+': 백업에 시트가 없습니다'); }
+      else{
+        row.delta=bkRows-liveRows;
+        // 백업은 어제 시점이라 라이브보다 몇 행 적은 게 정상. 10% 넘게 비면 의심.
+        if(liveRows>20 && bkRows < liveRows*0.9){
+          row.note='행수 부족';
+          problems.push(name+': 백업 '+bkRows+'행 < 라이브 '+liveRows+'행 (10% 이상 차이)');
+        }
+      }
+      compare.push(row);
+    });
+    /* 행수가 같아도 셀이 비어 있으면 못 쓰는 백업이다. 예약장부 마지막 행의
+       고객명·총결제액을 실제로 읽어 대조한다(값 단위 확인). */
+    try{
+      const lb=live.getSheetByName(CONFIG.BOOKING_SHEET), bb=backupSs.getSheetByName(CONFIG.BOOKING_SHEET);
+      if(lb&&bb&&bb.getLastRow()>1){
+        const r=bb.getLastRow();
+        const bkRow=bb.getRange(r,1,1,BOOKING_HEADERS_LEN_()).getValues()[0];
+        const lvRow=lb.getRange(r,1,1,BOOKING_HEADERS_LEN_()).getValues()[0];
+        const pick=function(a){return String(a[BOOKING_COL['고객명']]||'')+'/'+String(a[BOOKING_COL['총결제액']]||'');};
+        spotCheck={row:r,live:pick(lvRow),backup:pick(bkRow),match:pick(lvRow)===pick(bkRow)};
+        if(!spotCheck.match) problems.push('예약장부 '+r+'행 값이 라이브와 다릅니다 (백업 '+spotCheck.backup+' / 라이브 '+spotCheck.live+')');
+        if(!String(bkRow[BOOKING_COL['고객명']]||'').trim()) problems.push('백업 예약장부 마지막 행 고객명이 비어 있습니다 — 빈 껍데기 백업 의심');
+      }
+    }catch(spotErr){ problems.push('값 대조 실패: '+spotErr.message); }
+  }
+  if(ageDays>1) problems.push('최신 백업이 '+ageDays+'일 전입니다('+latestDate+'). 일일 백업이 멈췄을 수 있습니다.');
+  if(files.length<7) problems.push('백업이 '+files.length+'개뿐입니다(보관 '+BACKUP_RETENTION_DAYS+'일 설정).');
+
+  return {ok:true,
+    status:problems.length?(backupSs?'warn':'fail'):'ok',
+    folder:folder.getName(),
+    backupCount:files.length,
+    retentionDays:BACKUP_RETENTION_DAYS,
+    latest:{name:latest.name,date:latestDate,ageDays:ageDays,createdAt:latest.createdAt,
+      opened:!!backupSs,url:'https://docs.google.com/spreadsheets/d/'+latest.id},
+    oldest:files.length?files[files.length-1].name:null,
+    sheetCompare:compare,
+    spotCheck:spotCheck,
+    problems:problems,
+    howToRestore:'복구: Drive 에서 해당 백업 파일을 복사 → 스크립트 속성 DB_SHEET_ID 를 사본 ID 로 교체 → ensureSheets_ 캐시가 10분 내 갱신. 라이브 원본은 지우지 말 것.'};
+}
 
 /* ── 주간 KPI 리포트 ───────────────────────────────────────────────────────────
    일일 브리핑은 "오늘 처리할 일"(입금대기·셀렉대기·정산리뷰)만 본다. 추세가 없어서
