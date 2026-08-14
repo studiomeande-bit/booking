@@ -16820,9 +16820,10 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
   try{
     const travel=buildTravelKmLogForAgent_(sd,ed);
     const ts=travel.summary||{};
-    addCheck('travel_km','출장 km 기록부(주차 영수증 기준)',
+    addCheck('travel_km','출장 km 기록부(출장장부+주차 영수증)',
       ts.unmatchedCount?'warn':'ok', ts.trips||0, ts.deduction||0,
-      (ts.trips||0)+'회 · 왕복 '+(ts.totalRoundTripKm||0)+'km · 공제 €'+(ts.deduction||0)
+      (ts.trips||0)+'회(촬영 '+(ts.fromBookings||0)+'·주차 '+(ts.fromParking||0)+') · 왕복 '
+        +(ts.totalRoundTripKm||0)+'km · 공제 €'+(ts.deduction||0)
         +(ts.unmatchedCount?(' · 목적지 미판정 '+ts.unmatchedCount+'건'):''),
       '','','travel-log');
   }catch(travelErr){ Logger.log('travel_km 체크 실패: '+travelErr.message); }
@@ -28589,6 +28590,41 @@ function travelKmLookup_(text){
   return null;
 }
 
+/* 출장장부(`출장장부` 시트)는 예약마다 자동 upsert 되고 촬영장소로 **실제 거리**를 계산해 둔다
+   — 주차 영수증보다 정확하고, 주차비를 안 낸 출장도 잡힌다. 2026-08-14 에야 이 시트의 존재를
+   알아차렸다. 이제 이쪽을 1차 근거로 쓰고, 주차 영수증은 **출장장부가 못 잡은 날만** 보탠다
+   (은행·구매 외출 등 촬영이 아닌 이동). 같은 날 둘 다 있으면 주차 영수증은 증빙으로만 붙인다. */
+const TRAVEL_BOOKING_DONE_RE_=/확정|완료/;
+function collectTravelLedgerTrips_(from, to, sheets){
+  const sh=sheets.travelSheet||ensureTravelSheet_(sheets.ss);
+  const last=sh.getLastRow();
+  if(last<2) return [];
+  const rows=sh.getRange(2,1,last-1,TRAVEL_HEADERS.length).getValues();
+  const out=[];
+  /* 아직 오지 않은 촬영은 제외한다. 예약이 '확정됨'이어도 그 이동은 일어나지 않았고,
+     세무 공제에 미래 주행을 넣으면 그대로 과대 계상이다(2026-08-14: 8/22·9/12·9/26·10/16
+     4건 375.9km 가 섞여 있었다). */
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  rows.forEach(function(r){
+    const status=String(r[TRAVEL_COL['예약상태']]||'');
+    if(!TRAVEL_BOOKING_DONE_RE_.test(status)) return;      // 취소·대기 예약은 이동이 없었다
+    const d=parseDateSafe_(r[TRAVEL_COL['예약일시']]).str.slice(0,10);
+    if(!d) return;
+    if(from&&d<from) return;
+    if(to&&d>to) return;
+    if(d>todayStr) return;                                  // 미래 촬영 = 아직 이동 없음
+    const rt=Number(r[TRAVEL_COL['왕복거리(km)']]||0);
+    if(!(rt>0)) return;                                     // 거리 미계산 행은 집계 불가
+    out.push({date:d,roundTripKm:Math.round(rt*10)/10,
+      oneWayKm:Math.round((Number(r[TRAVEL_COL['편도거리(km)']]||rt/2))*10)/10,
+      city:String(r[TRAVEL_COL['촬영장소']]||'').slice(0,60),
+      name:String(r[TRAVEL_COL['고객명']]||''),
+      bookingRow:r[TRAVEL_COL['예약장부행']],
+      calcStatus:String(r[TRAVEL_COL['거리계산상태']]||'')});
+  });
+  return out;
+}
+
 function buildTravelKmLogForAgent_(startDate, endDate){
   const eSh=ensureSheets_().expenseSheet;
   const last=eSh.getLastRow();
@@ -28596,6 +28632,18 @@ function buildTravelKmLogForAgent_(startDate, endDate){
   const from=String(startDate||'').slice(0,10), to=String(endDate||'').slice(0,10);
   const entries=[], unmatched=[], seen={};
   let totalKm=0, totalCost=0;
+  // 1차: 출장장부(예약 기반, 실측 거리)
+  collectTravelLedgerTrips_(from,to,ensureSheets_()).forEach(function(t){
+    const key=t.date+'|booking';
+    if(seen[key]) return;
+    const deduction=Math.round(t.roundTripKm*TRAVEL_KM_RATE_*100)/100;
+    totalKm+=t.roundTripKm; totalCost+=deduction;
+    const entry={source:'booking',date:t.date,city:t.city||'(장소 미기재)',oneWayKm:t.oneWayKm,
+      roundTripKm:t.roundTripKm,deduction:deduction,parkingGross:0,receipts:0,
+      customer:t.name,bookingRow:t.bookingRow,
+      description:'촬영 출장 — '+(t.name||'')+' ('+(t.calcStatus||'')+')'};
+    seen[key]=entry; entries.push(entry);
+  });
   rows.forEach(function(r,i){
     const d=parseDateSafe_(r[0]).str.slice(0,10);
     if(from&&d<from) return;
@@ -28611,6 +28659,13 @@ function buildTravelKmLogForAgent_(startDate, endDate){
         note:'목적지 도시를 판정하지 못했습니다. 거래처/설명에 도시명을 넣거나 수기로 보완하세요.'});
       return;
     }
+    const bookingKey=d+'|booking';
+    if(seen[bookingKey]){
+      // 그날 촬영 출장이 이미 잡혔다 — 왕복을 두 번 세지 않고 주차비만 증빙으로 붙인다
+      seen[bookingKey].parkingGross=Math.round((seen[bookingKey].parkingGross+gross)*100)/100;
+      seen[bookingKey].receipts+=1;
+      return;
+    }
     const key=d+'|'+hit.city;
     if(seen[key]){
       // 같은 날 같은 도시의 추가 영수증 — 왕복은 이미 한 번 계산했다. 금액만 합산.
@@ -28621,7 +28676,7 @@ function buildTravelKmLogForAgent_(startDate, endDate){
     const roundTripKm=hit.km*2;
     const deduction=Math.round(roundTripKm*TRAVEL_KM_RATE_*100)/100;
     totalKm+=roundTripKm; totalCost+=deduction;
-    const entry={rowIndex:i+2,date:d,city:hit.city,oneWayKm:hit.km,roundTripKm:roundTripKm,
+    const entry={source:'parking',rowIndex:i+2,date:d,city:hit.city,oneWayKm:hit.km,roundTripKm:roundTripKm,
       deduction:deduction,parkingGross:gross,receipts:1,vendor:String(r[1]||''),
       description:String(r[3]||'').slice(0,90)};
     seen[key]=entry;
@@ -28630,10 +28685,14 @@ function buildTravelKmLogForAgent_(startDate, endDate){
   entries.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
   return {ok:true,period:{startDate:from,endDate:to},rate:TRAVEL_KM_RATE_,
     entries:entries,unmatched:unmatched,
-    summary:{trips:entries.length,totalRoundTripKm:Math.round(totalKm*10)/10,
+    summary:{trips:entries.length,
+      fromBookings:entries.filter(function(e){return e.source==='booking';}).length,
+      fromParking:entries.filter(function(e){return e.source==='parking';}).length,
+      totalRoundTripKm:Math.round(totalKm*10)/10,
       deduction:Math.round(totalCost*100)/100,unmatchedCount:unmatched.length,
       unmatchedGross:Math.round(unmatched.reduce(function(a,b){return a+Number(b.gross||0);},0)*100)/100},
-    basis:'주차·이동 지출 영수증 기준, 스튜디오(오버우어젤) 왕복, €'+TRAVEL_KM_RATE_+'/km (2025년분과 동일 산정)'};
+    basis:'1차 출장장부(예약별 실측 거리) + 2차 주차 영수증(출장장부가 못 잡은 날만). '
+      +'스튜디오(오버우어젤) 왕복, €'+TRAVEL_KM_RATE_+'/km'};
 }
 
 function resendGuard_(sentAtRaw, to, docLabel, force){
