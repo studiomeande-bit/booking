@@ -1,5 +1,5 @@
 // Code.gs - Studio mean v7
-// ✅ 버퍼: 여권→여권=0분, 스튜디오/프로필=15분, 야외/웨딩=60분, 개인캘린더=0분
+// ✅ 버퍼(사장님 확정 2026-08-16): 여권↔여권=0분 · 여권↔스튜디오/프로필=15분 · 야외/웨딩 관련=60분(이동 포함 최소치) · 개인캘린더(여보랑나랑/태웅 개인스케줄)=60분
 // ✅ 브레이크타임: 평일 12:00-15:00
 // ✅ 속도: getInitDataWithCalendar 단일 호출
 
@@ -5110,7 +5110,11 @@ function getBookingPassportComboDurationMinFromRow_(row){
 
 function getBookingDurationMinFromRow_(row,fallbackMin){
   const product=getBookingProductForRow_(row);
-  if(product) return Math.max(15,(Number(product.d||0)+Number(product.prep||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
+  /* 캘린더 이벤트 길이 = **촬영시간만**(d + 여권콤보 실촬영분). prep(준비 15분)을 여기 더하면
+     슬롯 계산의 타입 버퍼(B↔B 15분)와 **이중 가산**되어 30분 촬영이 45분 이벤트 + 15분 버퍼
+     = 실효 60분 간격이 됐다(2026-08-16 사장님 지적). prep 은 슬롯/견적의 footprint 계산
+     (booking.js·computeSlots_ 의 d+prep)에만 남긴다 — 그쪽은 새 예약이 차지할 창의 크기다. */
+  if(product) return Math.max(15,(Number(product.d||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
   return Math.max(15,Number(fallbackMin||0)||60);
 }
 
