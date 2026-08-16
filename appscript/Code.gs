@@ -1613,6 +1613,12 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-extra-paid') return jsonOk_(markSelectExtraPaidAdmin(token,payload));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
         if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token));
+        if(action==='studio-presence-schedule'){
+          // ✏️ 재실 사전 예약 — 픽업 창 + pass/prof/stud 슬롯이 실제로 열린다
+          return jsonOk_(scheduleStudioPresenceForAgent_(payload||{}));
+        }
+        if(action==='studio-presence-list') return jsonOk_(listStudioPresenceForAgent_());
+        if(action==='studio-presence-cancel') return jsonOk_(cancelStudioPresenceForAgent_(payload||{}));
         if(action==='icloud-set-ics-urls'){
           /* 애플 공개 피드 URL 교체 — 2026-08-16 실사고: 등록된 피드 3개가 낡아(재발행 등으로
              빈 캘린더를 반환) 애플 일정이 예약 차단에 전혀 반영되지 않고 있었다. icloud-status 의
@@ -6967,6 +6973,56 @@ function getBusyCalendarMeta_(){
   };
   try{cache.put('busy_cal_meta_v3',JSON.stringify({items:meta,missing:MISSING_BUSY_CALS_}),600);}catch(e){}  // 10분 캐시
   return meta;
+}
+
+
+/* ── 재실(Studio Open) 사전 예약 ──────────────────────────────────────────────
+   아이폰 단축어의 studio-presence-open 은 "지금부터 N분"만 연다(도착 자동화용).
+   계획형 — "토요일 15~17시에 픽업 받겠다" — 는 미래 이벤트가 필요해서 에이전트 경로를 연다.
+   같은 제목('Studio Open')·마커·주소를 쓰므로 효과도 동일하다:
+   ① 픽업 슬롯 창이 열리고 ② 여권/프로필/스튜디오 예약 슬롯이 추가 오픈된다(상주오픈). */
+function scheduleStudioPresenceForAgent_(payload){
+  const date=String(payload.date||'').trim();
+  const start=String(payload.start||'').trim();
+  const end=String(payload.end||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return {ok:false,message:'date 는 YYYY-MM-DD 형식이어야 합니다.'};
+  if(!/^\d{2}:\d{2}$/.test(start)||!/^\d{2}:\d{2}$/.test(end)) return {ok:false,message:'start/end 는 HH:MM 형식이어야 합니다.'};
+  const s=new Date(date+'T'+start+':00'), e=new Date(date+'T'+end+':00');
+  if(!(e>s)) return {ok:false,message:'end 가 start 보다 늦어야 합니다.'};
+  if(e-s>12*3600000) return {ok:false,message:'한 번에 12시간을 넘길 수 없습니다.'};
+  if(e.getTime()<Date.now()) return {ok:false,message:'과거 시간입니다.'};
+  const calendar=getStudioPresenceCalendar_();
+  const description=[STUDIO_PRESENCE_EVENT_MARKER,'Created by erp-agent (scheduled)',
+    'Studio presence opens extra slots for pass/prof/stud.'].join('\n');
+  const ev=calendar.createEvent('Studio Open',s,e,{location:STUDIO_ADDRESS,description:description});
+  bumpCalCacheVer_();
+  return {ok:true,eventId:ev.getId(),date:date,start:start,end:end,
+    note:'픽업 창 + 여권/프로필/스튜디오 예약 슬롯이 이 시간에 열립니다.'};
+}
+function listStudioPresenceForAgent_(){
+  const calendar=getStudioPresenceCalendar_();
+  const now=new Date();
+  const horizon=new Date(now.getTime()+60*24*3600000);
+  const items=getManagedStudioPresenceEvents_(calendar,new Date(now.getTime()-24*3600000),horizon)
+    .map(function(ev){return {eventId:ev.getId(),
+      start:Utilities.formatDate(ev.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'),
+      end:Utilities.formatDate(ev.getEndTime(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')};})
+    .sort(function(a,b){return a.start<b.start?-1:1;});
+  return {ok:true,count:items.length,items:items};
+}
+function cancelStudioPresenceForAgent_(payload){
+  const id=String(payload.eventId||'').trim();
+  if(!id) return {ok:false,message:'eventId 가 필요합니다.'};
+  const calendar=getStudioPresenceCalendar_();
+  const ev=calendar.getEventById(id);
+  if(!ev) return {ok:false,message:'이벤트를 찾을 수 없습니다.'};
+  // 마커 없는 이벤트는 절대 지우지 않는다 — 이 경로로 예약·개인 일정을 삭제할 수 없어야 한다
+  if(String(ev.getDescription()||'').indexOf(STUDIO_PRESENCE_EVENT_MARKER)<0)
+    return {ok:false,message:'Studio Open(관리형 재실) 이벤트가 아닙니다. 이 경로로는 삭제할 수 없습니다.'};
+  const info={start:Utilities.formatDate(ev.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')};
+  ev.deleteEvent();
+  bumpCalCacheVer_();
+  return {ok:true,deleted:info};
 }
 
 function getStudioPresenceCalendar_(){
