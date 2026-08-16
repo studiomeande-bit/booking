@@ -2130,6 +2130,21 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
     </div>
     <div class="card">
+      <div class="card-title">🟢 스튜디오 오픈(재실) 예약</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:10px;">
+        지정한 시간에 <b>픽업 예약 창</b>이 열리고 <b>여권/프로필/스튜디오 예약 슬롯</b>이 추가로 오픈됩니다.
+        촬영이 없는 날 스튜디오에 계실 예정이면 여기서 미리 열어두세요. (도착/출발 자동 오픈은 아이폰 단축어 방식 별도)
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <input type="date" id="presDate" class="input" style="width:150px;">
+        <input type="time" id="presStart" class="input" style="width:110px;" step="900">
+        <span style="color:#94a3b8;">~</span>
+        <input type="time" id="presEnd" class="input" style="width:110px;" step="900">
+        <button type="button" class="btn btn-primary" onclick="schedulePresenceUI(this)">오픈 예약</button>
+      </div>
+      <div id="presenceList" style="margin-top:12px;font-size:13px;color:#475569;">불러오는 중…</div>
+    </div>
+    <div class="card">
       <div class="card-title">🤖 자동화 API 키 (Claude ERP 에이전트)</div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Claude가 견적서·인보이스를 직접 작성/발송할 때 쓰는 전용 키입니다. 어드민 비밀번호와 별개이며 언제든 폐기할 수 있습니다. 발급된 키는 이 화면에서 한 번만 표시되니 복사해서 로컬 <code>reservation/.secrets/erp-automation-key</code> 파일에 저장해 주세요.</div>
       <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3409,6 +3424,42 @@ function forceChangeDefaultPassword(){
 }
 /* 설정: 스튜디오 PIN — 어드민 빠른잠금과 인화앱/수령확인 페이지를 하나의 번호로.
    인화앱 쪽은 기기토큰 없이 이 번호만으로 열리므로 서버가 6자리 이상을 강제한다. */
+function refreshPresenceList(){
+  const el=document.getElementById('presenceList');
+  if(!el||!adminToken) return;
+  google.script.run.withSuccessHandler(r=>{
+    if(!r||!r.ok){ el.textContent='목록을 불러오지 못했습니다.'; return; }
+    if(!r.items.length){ el.textContent='예약된 오픈 시간이 없습니다.'; return; }
+    el.innerHTML=r.items.map(it=>
+      `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed #e2e8f0;">`
+      +`<span>🟢 ${it.start} ~ ${it.end.slice(11)}</span>`
+      +`<button class="btn btn-outline btn-sm" style="color:#ef4444;font-size:11px;" onclick="cancelPresenceUI('${it.eventId}',this)">취소</button>`
+      +`</div>`).join('');
+  }).withFailureHandler(()=>{ el.textContent='목록을 불러오지 못했습니다.'; })
+  .adminRpc(adminToken,'listPresence',{});
+}
+function schedulePresenceUI(btn){
+  const date=document.getElementById('presDate').value;
+  const start=document.getElementById('presStart').value;
+  const end=document.getElementById('presEnd').value;
+  if(!date||!start||!end){ showToast('날짜와 시작·종료 시간을 입력해 주세요.','error'); return; }
+  btn.disabled=true;
+  google.script.run.withSuccessHandler(r=>{
+    btn.disabled=false;
+    if(r&&r.ok){ showToast('오픈 예약됨 — 픽업 창 + 여권/프로필/스튜디오 슬롯이 열립니다.','ok'); refreshPresenceList(); }
+    else showToast('실패: '+((r&&r.message)||'알 수 없는 오류'),'error');
+  }).withFailureHandler(e=>{ btn.disabled=false; showToast('오류: '+(e&&e.message||e),'error'); })
+  .adminRpc(adminToken,'schedulePresence',{date:date,start:start,end:end});
+}
+function cancelPresenceUI(eventId,btn){
+  if(!confirm('이 오픈 시간을 취소할까요? 해당 시간의 픽업 창과 추가 슬롯이 닫힙니다.')) return;
+  btn.disabled=true;
+  google.script.run.withSuccessHandler(r=>{
+    if(r&&r.ok){ showToast('취소됨','ok'); refreshPresenceList(); }
+    else { btn.disabled=false; showToast('실패: '+((r&&r.message)||'?'),'error'); }
+  }).withFailureHandler(e=>{ btn.disabled=false; showToast('오류: '+(e&&e.message||e),'error'); })
+  .adminRpc(adminToken,'cancelPresence',{eventId:eventId});
+}
 function refreshStudioPinStatus(){
   const el=document.getElementById('studioPinStatus');
   if(!el||!adminToken) return;
@@ -3438,7 +3489,7 @@ function setupStudioPinUI(){
     if(!r||!r.ok){ showToast('설정 실패','err'); return; }
     if(r.deviceToken) setDeviceToken(r.deviceToken);
     showToast('스튜디오 PIN이 설정되었습니다.'+(r.legacyRevoked?' 기존 인화앱 암호는 폐기됐습니다.':''),'ok');
-    refreshStudioPinStatus();
+    refreshStudioPinStatus(); refreshPresenceList();
   }).withFailureHandler(e=>handleApiError(e))
     .adminRpc(adminToken,'setStudioPin',{pin:p1,revokeLegacy:revoke,
       deviceToken:getDeviceToken(),   // 이미 등록된 기기면 새로 만들지 않고 그 기기 PIN만 갱신
@@ -4578,7 +4629,7 @@ function gotoOpsChecklistTarget(target){
   const t=String(target||'');
   if(!t) return;
   if(t==='booking'){switchTab('booking');return;}
-  if(t==='settings'){switchTab('settings');loadInvoiceSeqSetting();refreshStudioPinStatus();return;}
+  if(t==='settings'){switchTab('settings');loadInvoiceSeqSetting();refreshStudioPinStatus(); refreshPresenceList();return;}
   if(t==='logs'){switchTab('logs');loadOperationsLogFull();return;}
   if(t==='select'){switchTab('select');loadSelectHistory();return;}
   if(t==='consultation'){switchTab('consultation');loadConsultations();return;}

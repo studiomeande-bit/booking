@@ -389,6 +389,15 @@ function adminRpc(token, action, payload){
       return setStudioPinAdmin(token, payload||{});
     case 'getStudioPinStatus':
       return getStudioPinStatusAdmin(token);
+    case 'schedulePresence':
+      assertAdmin_(token);
+      return scheduleStudioPresenceForAgent_(payload||{});
+    case 'listPresence':
+      assertAdmin_(token);
+      return listStudioPresenceForAgent_();
+    case 'cancelPresence':
+      assertAdmin_(token);
+      return cancelStudioPresenceForAgent_(payload||{});
     case 'markSelectPrintDone':
       /* 인화앱 없이 어드민에서 출력완료 기록 — markSelectPrintDone_ 재사용이라
          출력완료일시·재인화 재개방·픽업 안내 메일(1회 멱등)이 인화앱 경로와 동일하게 동작 */
