@@ -47,7 +47,14 @@ cd "/Users/taewoongmin/Desktop/Studio_mean/스튜디오자료/website/reservatio
 | 시트 행수 10% 이상 부족 | 부분 복사 — 못 쓰는 백업 |
 | 마지막 행 값 불일치 / 고객명 공란 | 행수만 맞는 빈 껍데기 백업 |
 
-## 남은 약점
+## 남은 약점 (2026-08-16 갱신)
 
-- 백업은 **같은 Google 계정 Drive 안**에 있다. 계정 자체가 잠기면 백업도 함께 잠긴다. 계정 밖(로컬·타 클라우드) 사본은 아직 없다.
-- Apps Script 코드 자체는 git(`studiomeande-bit/booking`)에 있으나, **스크립트 속성**(자동화 키·폴더 ID·`DB_SHEET_ID`)은 어디에도 백업되지 않는다. 계정 복구 시 수동 재설정이 필요하다.
+- ~~백업이 같은 Google 계정 Drive 안에만 있다~~ → **오프사이트(로컬) 백업 신설 (@784)**:
+  `backup-export` 액션이 핵심 시트 12종을 CSV 로 내보내고, launchd `com.studiomean.erp-backup` 이
+  **매주 일요일 09:30** `~/Desktop/Studio_mean/백업/erp/YYYY-MM-DD/` 에 저장(최근 10개 스냅샷 보존).
+  수동 실행: `/bin/zsh ~/Desktop/Studio_mean/automation/erp_local_backup.zsh` ·
+  로그: `automation/logs/erp_backup_YYYYMM.log`. 첫 실행 2026-08-16: 12시트 1,015행 ~800KB.
+  로컬 디스크가 다시 맥 한 대에 있으므로, 맥 자체의 Time Machine/클라우드 백업이 2차 방어선이다.
+- Apps Script 코드 자체는 git(`studiomeande-bit/booking`)에 있으나, **스크립트 속성**(자동화 키·ACTION_SECRET·
+  APPLE 자격증명·`DB_SHEET_ID`·폴더 ID)은 어디에도 백업되지 않는다(비밀값이라 CSV 백업에도 **의도적으로 미포함**).
+  계정 복구 시 수동 재설정 필요 — 재발급 절차는 각 서비스(어드민 설정, Apple ID 앱 암호)에서.

@@ -62,6 +62,16 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
+- **오프사이트(로컬) 주간 백업 + GAS 버전 한도 경보 (2026-08-16, 배포 @784)** —
+  백업 리허설(8/14)에서 문서화한 약점 "백업이 같은 구글 계정 Drive 안에만 있어 계정이 잠기면 함께 잠긴다"를 닫음.
+  - `backup-export` 액션: 핵심 시트 12종(backup-verify 와 동일 목록)을 CSV(base64)로 반환. Date 셀은
+    `Utilities.formatDate` 로 TZ 명시 직렬화(String(Date) 함정 회피). 비밀값(스크립트 속성)은 의도적 미포함.
+  - launchd `com.studiomean.erp-backup`: **일요일 09:30** `~/Desktop/Studio_mean/백업/erp/날짜/` 저장,
+    최근 10개 스냅샷 보존(맥 head 는 음수 -n 미지원 → sort -r+tail 로 구현). 첫 실행 12시트 1,015행 검증.
+  - ⚠️ **GAS 버전 177/200** — 여유 23개. 한도 도달 시 배포가 막힌다. **정리는 Apps Script 편집기 →
+    프로젝트 기록에서 수동 삭제만 가능(clasp 불가)** — 오너 액션. 당분간 배포는 묶어서(오늘처럼 1회/작업).
+
+
 - **AdminV2 "출력완료·픽업안내" 버튼 (2026-08-16, 배포 @783)** — 인화앱 사용 보류 중이라 수기 출력이 일상
   경로인데, 출력완료 기록+픽업 안내는 CLI(`select-print-done`)뿐이었다. 셀렉 목록에서 **상태 '출력'인 픽업
   건**에 버튼이 뜬다 — `markSelectPrintDone_` 재사용이라 출력완료일시 기록·재인화 재개방·픽업 안내 메일

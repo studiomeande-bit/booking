@@ -1259,6 +1259,12 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='backup-export'){
+          /* 조회 전용 — 핵심 시트 전체를 CSV(base64)로 반환. 오프사이트(로컬) 백업용:
+             Drive 백업은 같은 구글 계정 안에 있어 계정이 잠기면 함께 잠긴다(backup-restore.md 약점).
+             주 1회 launchd(com.studiomean.erp-backup)가 이걸 받아 로컬 디스크에 쌓는다. */
+          return jsonOk_(exportCriticalSheetsForAgent_());
+        }
         if(action==='backup-verify'){
           // 백업 복구 검증 (조회 전용) — 최신 백업을 실제로 열어 라이브와 행수 대조
           return jsonOk_(verifyBackupsForAgent_());
@@ -28504,6 +28510,33 @@ function backupVerifySheetNames_(){
 }
 
 function BOOKING_HEADERS_LEN_(){ return CONFIG.BOOKING_HEADERS.length; }
+function csvEscapeCell_(v){
+  let t;
+  if(Object.prototype.toString.call(v)==='[object Date]'){
+    t=Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');   // TZ 명시 — String(Date) 함정 회피
+  }else{
+    t=String(v==null?'':v);
+  }
+  if(/[",\n\r]/.test(t)) t='"'+t.replace(/"/g,'""')+'"';
+  return t;
+}
+function exportCriticalSheetsForAgent_(){
+  const sheets=ensureSheets_();
+  const live=sheets.ss;
+  const files=[];
+  backupVerifySheetNames_().forEach(function(name){
+    const sh=live.getSheetByName(name);
+    if(!sh) return;
+    const values=sh.getDataRange().getValues();
+    const csv=values.map(function(row){return row.map(csvEscapeCell_).join(',');}).join('\n');
+    files.push({sheet:name,rows:Math.max(0,values.length-1),
+      csvBase64:Utilities.base64Encode(csv,Utilities.Charset.UTF_8)});
+  });
+  return {ok:true,exportedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+    fileCount:files.length,files:files,
+    note:'스크립트 속성(자동화 키·ACTION_SECRET·APPLE 자격증명·DB_SHEET_ID)은 포함되지 않는다 — 계정 복구 시 수동 재설정.'};
+}
+
 function verifyBackupsForAgent_(){
   const folder=_getOrCreateBackupFolder_();
   const files=[];
