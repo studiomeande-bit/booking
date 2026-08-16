@@ -209,6 +209,7 @@ export const COPY = {
     warnDeliveryMethod: '수령 방식을 선택해야 제출할 수 있습니다.',
     warnMailName: '우편 수령 받으실 분 성함을 입력해야 제출할 수 있습니다.',
     warnMailAddress: '우편 수령 주소를 입력해야 제출할 수 있습니다.',
+    warnMailLatin: '우편 성명과 주소는 영문으로만 입력해 주세요. 독일 우편은 한글을 처리하지 못합니다. 예: Hong Gildong / Musterstrasse 12, 61440 Oberursel',
     warnMailPostal: '우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel',
     /* ---- dynamic: package summary / delivery / success ---- */
     pkgTitle: '보정 패키지 안내',
@@ -587,6 +588,7 @@ export const COPY = {
     warnDeliveryMethod: 'Choose how you would like to receive your prints before submitting.',
     warnMailName: 'Enter the recipient name before submitting.',
     warnMailAddress: 'Enter the delivery address before submitting.',
+    warnMailLatin: 'Please use Latin letters only for the recipient name and address — German postal services cannot process Korean characters.',
     warnMailPostal: 'Please include the postcode and city in the address. For example: 61440 Oberursel',
     /* ---- dynamic: package summary / delivery / success ---- */
     pkgTitle: 'What your package includes',
@@ -965,6 +967,7 @@ export const COPY = {
     warnDeliveryMethod: 'Bitte wählen Sie vor dem Absenden, wie Sie Ihre Abzüge erhalten möchten.',
     warnMailName: 'Bitte geben Sie vor dem Absenden den Namen des Empfängers an.',
     warnMailAddress: 'Bitte geben Sie vor dem Absenden die Lieferadresse an.',
+    warnMailLatin: 'Bitte Name und Adresse nur in lateinischen Buchstaben angeben — die Deutsche Post kann koreanische Zeichen nicht verarbeiten.',
     warnMailPostal: 'Bitte geben Sie in der Adresse auch PLZ und Ort an. Zum Beispiel: 61440 Oberursel',
     /* ---- dynamic: package summary / delivery / success ---- */
     pkgTitle: 'Das ist in Ihrem Paket enthalten',

@@ -1259,6 +1259,10 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='data-audit'){
+          // 조회 전용 — 데이터 품질 감사 (날짜 오염·금액 불일치·링크 끊김·번호 중복·비영문 우편주소)
+          return jsonOk_(buildDataQualityAuditForAgent_());
+        }
         if(action==='backup-export'){
           /* 조회 전용 — 핵심 시트 전체를 CSV(base64)로 반환. 오프사이트(로컬) 백업용:
              Drive 백업은 같은 구글 계정 안에 있어 계정이 잠기면 함께 잠긴다(backup-restore.md 약점).
@@ -13755,6 +13759,12 @@ function _buildDailyBriefingData_(){
      창은 5~25일 — 1~4일은 아직 정산이 덜 들어오고, 26일 이후는 분기 리마인더와 겹친다. */
   /* 백업 건강도 — 문제 있을 때만 값이 실린다. 백업은 조용히 멈추는 게 최악이라
      매일 한 번은 자동으로 확인되어야 한다(2026-08-14 backup-verify 신설과 함께 연결). */
+  let dataQuality=null;
+  try{
+    const dq=buildDataQualityAuditForAgent_();
+    if(dq&&dq.issueCount>0) dataQuality={count:dq.issueCount,
+      top:dq.issues.slice(0,5).map(function(x){return x.sheet+' '+x.rowIndex+'행 '+x.name+': '+x.problem;})};
+  }catch(e){Logger.log('briefing dataQuality fail: '+e.message);_briefFail_(sectionFailures,'데이터품질',e);}
   let backupHealth=null;
   try{
     const bv=verifyBackupsForAgent_();
@@ -13781,7 +13791,7 @@ function _buildDailyBriefingData_(){
   let locationBlockers={count:0,items:[],stale:false,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
   try{ locationBlockers=_scanLocationBlockerConflicts_(rows,now); }
   catch(e){Logger.log('briefing locationBlockers fail: '+e.message);_briefFail_(sectionFailures,'로케이션 블로커',e);}
-  return {ok:true,date:today,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
+  return {ok:true,date:today,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -20678,6 +20688,20 @@ function selectRequiresDeliveryForSubmission_(row,prints,photocard,printUpgradeI
   return selectSubmissionHasAdditionalPhysicalOutput_(prints,photocard);
 }
 
+/* 우편 성명·주소는 라틴 문자만 허용한다(사장님 지시 2026-08-16) — 독일 우편(DHL/Post)은
+   한글 주소를 판독·배송하지 못하고, 라벨 인쇄에서도 깨진다. 허용: ASCII + 라틴 확장(ü ö ä ß é …).
+   차단: 한글·한자·가나·키릴 등 비라틴 문자. */
+const SELECT_MAIL_LATIN_OK_RE_=/^[\x20-\x7E -ɏ€]*$/;
+function selectMailLatinProblem_(mailName,mailAddress){
+  const bad=[];
+  if(!SELECT_MAIL_LATIN_OK_RE_.test(String(mailName||''))) bad.push('성명');
+  if(!SELECT_MAIL_LATIN_OK_RE_.test(String(mailAddress||''))) bad.push('주소');
+  if(!bad.length) return null;
+  return '우편 '+bad.join('·')+'은(는) 영문으로만 입력해 주세요. 독일 우편은 한글을 처리하지 못합니다. '
+    +'예: Hong Gildong / Musterstrasse 12, 61440 Oberursel '
+    +'(Please use Latin letters only — German postal services cannot process Korean characters.)';
+}
+
 function validateSelectDelivery_(sub,existingPickupEventId,row,prints,photocard,printUpgradeItems){
   if(!selectRequiresDeliveryForSubmission_(row,prints,photocard,printUpgradeItems)){
     return {method:'none',pickupDate:'',pickupTime:'',mailName:'',mailAddress:'',mailAddressText:''};
@@ -20704,6 +20728,8 @@ function validateSelectDelivery_(sub,existingPickupEventId,row,prints,photocard,
   }
   if(!mailName) throw new Error('우편 수령 받으실 분 성함을 입력해 주세요.');
   if(!mailAddress) throw new Error('우편 수령 주소를 입력해 주세요.');
+  const latinProblem=selectMailLatinProblem_(mailName,mailAddress);
+  if(latinProblem) throw new Error(latinProblem);
   if(!selectMailAddressHasPostalCity_(mailAddress)) throw new Error('우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel');
   return {method,pickupDate:'',pickupTime:'',mailName,mailAddress,mailAddressText:buildSelectMailAddressText_(mailName,mailAddress)};
 }
@@ -21708,6 +21734,8 @@ function setSelectDeliveryMethodCore_(selSh,row,rowNum,sessionId,delivery){
     }
     if(!mailName) return{ok:false,message:'우편 수령 받으실 분 성함을 입력해 주세요.'};
     if(!mailAddress) return{ok:false,message:'우편 수령 주소를 입력해 주세요.'};
+    const coreLatinProblem=selectMailLatinProblem_(mailName,mailAddress);
+    if(coreLatinProblem) return{ok:false,message:coreLatinProblem};
     if(!selectMailAddressHasPostalCity_(mailAddress)) return{ok:false,message:'우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel'};
     const mailAddressText=buildSelectMailAddressText_(mailName,mailAddress);
     // 동일 내용 재제출(mail→mail) no-op — 공개 라우트의 메일 재발송/시트 재작업 방지
@@ -28510,6 +28538,82 @@ function backupVerifySheetNames_(){
 }
 
 function BOOKING_HEADERS_LEN_(){ return CONFIG.BOOKING_HEADERS.length; }
+/* ── 데이터 품질 감사 ─────────────────────────────────────────────────────────
+   오염 데이터가 조용히 앉아 있다가 터진 실사고 3건에서 출발(2026-08):
+   김지훈 촬영일 2001년 → RAW 자동분류 실패 / 견적번호 AN-250006 중복 발급 /
+   총액≠계약금+잔금 불일치가 예약 전환 때 발견됨. 매일 브리핑에서 문제 있을 때만 표시. */
+function buildDataQualityAuditForAgent_(){
+  const sheets=ensureSheets_();
+  const issues=[];
+  const add=function(sheet,rowIndex,name,problem,value){
+    issues.push({sheet:sheet,rowIndex:rowIndex,name:String(name||'').slice(0,20),
+      problem:problem,value:String(value==null?'':value).slice(0,40)});
+  };
+  const yearNow=new Date().getFullYear();
+
+  // 예약장부 — 날짜 범위·금액 정합·이메일 형식
+  const bRows=sheets.bookingSheet.getDataRange().getValues();
+  for(let i=1;i<bRows.length;i++){
+    const r=bRows[i], rowIndex=i+1;
+    const status=String(r[BOOKING_COL['상태']]||'').trim();
+    if(status==='취소됨') continue;
+    const name=r[BOOKING_COL['고객명']];
+    const d=parseDateSafe_(r[BOOKING_COL['예약일시']]);
+    if(d.str){
+      const y=parseInt(d.str.slice(0,4),10);
+      if(y<yearNow-2||y>yearNow+2) add('예약장부',rowIndex,name,'예약일시 연도 이상',d.str.slice(0,10));
+    }
+    const email=String(r[BOOKING_COL['이메일']]||'').trim();
+    // '-' 는 옛 행의 "이메일 없음" 관행(15건 실측) — 매일 브리핑에서 울리면 경보 피로만 남는다
+    if(email&&email!=='수기등록'&&email!=='-'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+      add('예약장부',rowIndex,name,'이메일 형식 오류',email);
+    const total=parseMoneyValue_(r[BOOKING_COL['총결제액']]);
+    const dep=parseMoneyValue_(r[BOOKING_COL['계약금']]);
+    const bal=parseMoneyValue_(r[BOOKING_COL['잔금']]);
+    if(total>0&&(dep>0||bal>0)&&Math.abs(total-(dep+bal))>0.011)
+      add('예약장부',rowIndex,name,'총액≠계약금+잔금',total+'≠'+dep+'+'+bal);
+  }
+
+  // 사진셀렉 — 부모 예약 링크·촬영일 오염 (김지훈 2001 케이스)
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const sRows=selSh.getDataRange().getValues();
+  for(let i=1;i<sRows.length;i++){
+    const r=sRows[i], rowIndex=i+1;
+    const name=r[SELECT_COL['고객명']];
+    const bri=parseInt(r[SELECT_COL['예약장부행']],10)||0;
+    if(bri<2||bri>bRows.length) add('사진셀렉',rowIndex,name,'예약장부행 링크 끊김',bri);
+    const sd=parseDateSafe_(r[SELECT_COL['촬영일']]);
+    if(sd.str){
+      const y=parseInt(sd.str.slice(0,4),10);
+      if(y<yearNow-2||y>yearNow+1) add('사진셀렉',rowIndex,name,'촬영일 연도 이상',sd.str.slice(0,10));
+    }
+    // 우편 건인데 주소에 비라틴 문자 — 이제 입구는 막았지만 기존 행이 남아 있을 수 있다
+    if(String(r[SELECT_COL['수령방식']]||'').trim()==='mail'){
+      const addr=String(r[SELECT_COL['우편주소']]||'');
+      if(addr&&!SELECT_MAIL_LATIN_OK_RE_.test(addr.replace(/수령인\s*[:：]|주소\s*[:：]|\n/g,'')))
+        add('사진셀렉',rowIndex,name,'우편주소 비영문(라벨 인쇄 불가)',addr.slice(0,30));
+    }
+  }
+
+  // 견적서 — 번호 중복 (AN-250006 사고)
+  const qSh=sheets.quoteSheet;
+  const qLast=qSh.getLastRow();
+  if(qLast>1){
+    const qRows=qSh.getRange(2,1,qLast-1,3).getValues();
+    const seenNum={};
+    qRows.forEach(function(r,i){
+      const num=String(r[0]||'').trim();
+      if(!num) return;
+      if(seenNum[num]) add('견적서',i+2,num,'견적번호 중복(행 '+seenNum[num]+'과)',num);
+      else seenNum[num]=i+2;
+    });
+  }
+
+  return {ok:true,checkedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'),
+    issueCount:issues.length,issues:issues.slice(0,50),
+    note:issues.length>50?('총 '+issues.length+'건 중 50건만 표시'):''};
+}
+
 function csvEscapeCell_(v){
   let t;
   if(Object.prototype.toString.call(v)==='[object Date]'){

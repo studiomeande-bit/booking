@@ -50,6 +50,7 @@
     msAddr:     { ko: '주소 (우편번호 + 도시 포함)', en: 'Address (incl. postal code + city)', de: 'Adresse (inkl. PLZ + Stadt)' },
     msSubmit:   { ko: '우편 수령으로 변경 확정', en: 'Confirm Postal Delivery', de: 'Postversand bestätigen' },
     msNeedBoth: { ko: '성함과 주소를 모두 입력해 주세요.', en: 'Please enter both name and address.', de: 'Bitte Name und Adresse eingeben.' },
+    msLatinOnly: { ko: '성명과 주소는 영문으로만 입력해 주세요. 독일 우편은 한글을 처리하지 못합니다. 예: Hong Gildong / Musterstrasse 12, 61440 Oberursel', en: 'Please use Latin letters only — German postal services cannot process Korean characters.', de: 'Bitte nur lateinische Buchstaben verwenden — die Post kann koreanische Zeichen nicht verarbeiten.' },
     errPostal:  { ko: '우편 주소에 우편번호와 도시를 함께 입력해 주세요. 예: 61440 Oberursel', en: 'Please include the postal code and city in the address, e.g. 61440 Oberursel.', de: 'Bitte PLZ und Stadt in der Adresse angeben, z. B. 61440 Oberursel.' },
     errCooldown:{ ko: '방금 요청이 처리되었습니다. 잠시 후 다시 시도해 주세요.', en: 'Your previous request was just processed. Please try again in a moment.', de: 'Ihre letzte Anfrage wurde gerade verarbeitet. Bitte versuchen Sie es gleich erneut.' },
     errSlotGone:{ ko: '선택하신 픽업 시간이 마감되었습니다. 다른 시간을 선택해 주세요.', en: 'That pickup time was just taken. Please choose another slot.', de: 'Dieser Termin wurde gerade vergeben. Bitte wählen Sie einen anderen.' },
@@ -347,6 +348,10 @@
     var name = String($('msName').value || '').trim();
     var addr = String($('msAddr').value || '').trim();
     if (!name || !addr) { setBanner(t('msNeedBoth'), 'error'); return; }
+    // 독일 우편은 한글을 판독하지 못한다 — 라틴 문자만(서버도 동일 검증)
+    if (!/^[\x20-\x7E\u00A0-\u024F€]*$/.test(name) || !/^[\x20-\x7E\u00A0-\u024F€]*$/.test(addr)) {
+      setBanner(t('msLatinOnly'), 'error'); return;
+    }
     busy = true;
     var btn = $('msSubmitBtn');
     btn.disabled = true; btn.textContent = t('confirming');

@@ -3053,6 +3053,10 @@ function validateDeliverySelection() {
   const mailAddress = getMailAddressForSubmission();
   if (!mailName) { setBanner(copy().warnMailName, 'error'); return false; }
   if (!mailAddress) { setBanner(copy().warnMailAddress, 'error'); return false; }
+  // 독일 우편은 한글 주소를 판독하지 못한다 — 라틴 문자만 통과(서버도 동일 검증, 여긴 빠른 안내용)
+  if (!MAIL_LATIN_RE.test(mailName) || !MAIL_LATIN_RE.test(mailAddress)) {
+    setBanner(copy().warnMailLatin, 'error'); return false;
+  }
   if (!hasMailAddressPostalCity(mailAddress)) { setBanner(copy().warnMailPostal, 'error'); return false; }
   state.mailName = mailName;
   state.mailAddress = mailAddress;
@@ -3188,6 +3192,7 @@ function validateStep2() {
   return true;
 }
 
+const MAIL_LATIN_RE = /^[\x20-\x7E\u00A0-\u024F€]*$/;
 function validateStep3() {
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
