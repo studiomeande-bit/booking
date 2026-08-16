@@ -1564,6 +1564,29 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
         if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
+        if(action==='select-print-done'){
+          /* 인화 완료 기록 — 지금까지 인화앱(print.studio-mean.com, passcode 인증)에서만 가능해서
+             **앱을 안 쓰고 수기로 출력한 건은 픽업 안내 메일이 나가지 않았다**(2026-08-14 차수진 건).
+             인화앱 사용 보류 중이므로 에이전트 경로를 연다. markSelectPrintDone_ 을 그대로 재사용하므로
+             출력완료일시 기록·재인화 되돌리기·픽업 안내(1회 멱등)가 전부 동일하게 동작한다.
+             ⚠️외부발송: 픽업 세션이고 미예약이면 고객에게 안내 메일이 나간다. */
+          const spdSid=String(payload.sessionId||'').trim();
+          if(!spdSid) return jsonError_('BAD_REQUEST','sessionId가 필요합니다.');
+          if(payload.expectName){
+            // 세션ID 오타로 엉뚱한 고객에게 메일이 나가는 것을 막는다
+            const spdSh=ensureSelectSheet_(ensureSheets_().ss);
+            const spdRows=spdSh.getDataRange().getValues();
+            const spdIdx=spdRows.slice(1).findIndex(function(r){return String(r[0])===spdSid;});
+            if(spdIdx>-1){
+              const actual=String(spdRows[spdIdx+1][SELECT_COL['고객명']]||'').trim();
+              if(actual!==String(payload.expectName).trim())
+                return jsonError_('NAME_MISMATCH','고객명 불일치: 시트 "'+actual+'" vs 요청 "'+payload.expectName+'"');
+            }
+          }
+          const spd=markSelectPrintDone_(spdSid,{count:payload.count});
+          if(!spd||!spd.ok) return jsonError_('PRINT_DONE_FAILED',(spd&&spd.message)||'기록 실패');
+          return jsonOk_(spd);
+        }
         if(action==='customer-print-order-status') return jsonOk_(setCustomerPrintOrderStatusForAgent_(token,payload||{}));
         if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
         /* 촬영 직후 샘플 링크 메일 — 드라이브 'YYMMDD_고객명_샘플' 폴더를 찾아 공유 후 발송.
@@ -1590,6 +1613,29 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-extra-paid') return jsonOk_(markSelectExtraPaidAdmin(token,payload));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
         if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token));
+        if(action==='icloud-set-ics-urls'){
+          /* 애플 공개 피드 URL 교체 — 2026-08-16 실사고: 등록된 피드 3개가 낡아(재발행 등으로
+             빈 캘린더를 반환) 애플 일정이 예약 차단에 전혀 반영되지 않고 있었다. icloud-status 의
+             fetchOk 는 true 였다 — URL 이 응답만 하면 통과라 "죽은 피드"를 못 잡는다.
+             교체 후 반드시 다시 icloud-status 로 next30dEventCount 를 확인할 것. */
+          const rawUrls=Array.isArray(payload.urls)?payload.urls:[];
+          if(!rawUrls.length) return jsonError_('BAD_REQUEST','urls 배열이 필요합니다.');
+          if(rawUrls.length>9) return jsonError_('BAD_REQUEST','피드는 최대 9개까지입니다.');
+          const cleaned=[];
+          for(let i=0;i<rawUrls.length;i++){
+            const u=normalizeCalUrl_(String(rawUrls[i]||''));
+            if(!/^https:\/\/[a-z0-9.-]+\.icloud\.com\/published\//i.test(u))
+              return jsonError_('BAD_REQUEST','iCloud published 링크가 아닙니다: '+u.slice(0,60));
+            cleaned.push(u);
+          }
+          const props=PropertiesService.getScriptProperties();
+          // 리더(getIcloudIcsUrls_)는 single → _1 → _2 … 로 읽고 **빈 인덱스에서 멈춘다**.
+          // _2 부터 쓰면 _1 이 빈 순간 나머지가 전부 무시된다(첫 배포에서 실제로 그랬다).
+          props.setProperty('ICLOUD_ICS_URL',cleaned[0]);
+          for(let i=1;i<cleaned.length;i++) props.setProperty('ICLOUD_ICS_URL_'+i,cleaned[i]);
+          for(let i=cleaned.length;i<=10;i++) props.deleteProperty('ICLOUD_ICS_URL_'+i);
+          return jsonOk_({updated:cleaned.length});
+        }
         if(action==='icloud-status') return jsonOk_(getIcloudFeedStatusAdmin(token));
         if(action==='mrt-sync') return jsonOk_(syncMyRealTripBookingEmailsAdmin(token,payload||{}));
         if(action==='studio-pin-status') return jsonOk_(getStudioPinStatusAdmin(token));
@@ -5562,12 +5608,15 @@ function getIcloudFeedStatusAdmin(token){
     try{
       const now=new Date();
       const end=new Date(); end.setDate(end.getDate()+30);
-      const evs=fetchAppleCalendarDetailedEvents_(now,end)||[];
-      fetchFailed=ICLOUD_DETAIL_READ_FAILED_;
+      /* 가용성 경로와 **같은 함수**로 센다 — 전에는 CalDAV 전용 detailed fetch 만 세서
+         ICS 레인이 통째로 죽어 있어도 fetchOk:true 로 보였다(2026-08-16 발견). */
+      CAL_READ_FAILED_=false;
+      const evs=fetchAppleCalendarEvents_(now,end)||[];
+      fetchFailed=CAL_READ_FAILED_;
       fetchOk=!fetchFailed;
       eventCount=evs.length;
       // 제목 앞 6자만 — 고객 전체 이름·개인정보 덤프 방지, 피드가 '어느 캘린더'인지 감만 잡는 용도
-      sampleTitles=evs.slice(0,5).map(function(e){return String(e.title||'').slice(0,6);});
+      sampleTitles=evs.slice(0,5).map(function(e){return String(e.title||e.summary||'').slice(0,6);});
     }catch(e){fetchFailed=true;}
   }
   return{ok:true,calUrlCount:calUrlCount,icsUrlCount:icsUrlCount,hasAuth:hasAuth,
@@ -7621,9 +7670,13 @@ function parseIcsText_(ics){
  */
 function fetchAppleCalendarEvents_(startDate,endDate){
   try{
-    const auth=getIcloudBasicAuth_();
+    /* ⚠️ 2026-08-16 실사고: CalDAV URL 이 0개면 여기서 조기 return 해 **아래 공개 ICS 읽기가
+       죽은 코드**였다. ICS-only 구성(현재)에서는 애플 일정이 가용성에 한 번도 반영된 적이 없고,
+       구글 구독 캘린더(수 시간 지연)만 실제로 막고 있었다. CalDAV 블록만 조건부로 바꾼다. */
     const calUrls=getIcloudCalUrls_();
-    if(!calUrls||calUrls.length===0) return[];
+    const allEvents=[];
+    if(calUrls&&calUrls.length>0){
+    const auth=getIcloudBasicAuth_();
     const fmt=d=>Utilities.formatDate(d,'UTC',"yyyyMMdd'T'HHmmss'Z'");
     const reportBody=
       '<?xml version="1.0" encoding="UTF-8"?>'+
@@ -7639,7 +7692,6 @@ function fetchAppleCalendarEvents_(startDate,endDate){
       '</C:calendar-query>';
     const davNs=XmlService.getNamespace('DAV:');
     const calNs=XmlService.getNamespace('urn:ietf:params:xml:ns:caldav');
-    const allEvents=[];
     calUrls.forEach(calUrl=>{
       try{
         const res=UrlFetchApp.fetch(calUrl,{
@@ -7676,13 +7728,14 @@ function fetchAppleCalendarEvents_(startDate,endDate){
         });
       }catch(e){CAL_READ_FAILED_=true;Logger.log('iCloud fetch error for '+calUrl+': '+e.message);}
     });
-    // Public ICS subscription feeds (webcal / published links)
+    } // ← CalDAV 블록 끝 (URL 있을 때만)
+    // Public ICS subscription feeds (webcal / published links) — CalDAV 유무와 무관하게 항상 읽는다
     getIcloudIcsUrls_().forEach(icsUrl=>{
       try{
         fetchPublicIcsEvents_(icsUrl,startDate,endDate).forEach(ev=>allEvents.push(ev));
       }catch(e){CAL_READ_FAILED_=true;Logger.log('Public ICS error for '+icsUrl+': '+e.message);}
     });
-    Logger.log('iCloud total events fetched: '+allEvents.length+' (private CalDAV: '+calUrls.length+' cals)');
+    Logger.log('iCloud total events fetched: '+allEvents.length+' (CalDAV '+(calUrls?calUrls.length:0)+'개 · ICS '+getIcloudIcsUrls_().length+'개)');
     return allEvents;
   }catch(e){
     CAL_READ_FAILED_=true;
@@ -8572,9 +8625,14 @@ function isStudioPresenceEvent_(ev){
   if(isPersonal) return false;
   const safeTitle=String(ev&&ev.title||'');
   if(!safeTitle||isSelectPickupEventTitle_(safeTitle)) return false;
-  if(isStudioLocation_(ev&&ev.location)) return true;
+  /* ⚠️ 부재(야외) 판정을 **위치보다 먼저** 본다. 수기/MRT 예약 이벤트에는 스튜디오 주소가
+     location 으로 박히는 경우가 있어, 위치를 먼저 믿으면 야외 촬영이 "재실"로 둔갑한다 —
+     2026-08-30(일) MRT 야외촬영 시간에 픽업 슬롯이 열려 실제 예약이 들어온 사고(차수진 16:00).
+     픽업 가능 시간 = 사장님이 스튜디오에 머무는 시간(사장님 규칙 2026-08-16). */
   if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(kw=>safeTitle.indexOf(kw)>=0)) return false;
   if(/기업|행사|영상|Corporate|Event|Video|Firmen|Individualangebot/i.test(safeTitle)) return false;
+  if(/마이리얼트립|리얼트립|MRT|출장/i.test(safeTitle)) return false;
+  if(isStudioLocation_(ev&&ev.location)) return true;
   if(/여권|비자|Passfoto|Passport|passport/i.test(safeTitle)) return true;
   return /프로필|profile|Profil|스튜디오|studio|가족|family|커플|couple|백일|돌|baby/i.test(safeTitle);
 }
