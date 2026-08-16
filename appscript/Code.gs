@@ -1767,7 +1767,7 @@ function handlePublicApiRequest_(route,method,e){
         // 브리핑
         if(action==='daily-briefing') return jsonOk_(getAgentDailyBriefing_(token));
         if(action==='briefing-email') return jsonOk_(sendDailyBriefingEmail_());
-        if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token));
+        if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token,{forceWeekly:payload.forceWeekly===true||payload.forceWeekly==='true'}));
         if(action==='morning-report-install-trigger') return jsonOk_(installMorningReportTriggerAdmin(token));
         if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action+' — 사용 가능한 액션 목록은 actions-list 액션으로 확인하세요');
@@ -23842,7 +23842,30 @@ function buildDailyPaymentReviewSection_(){
 /* ===== 아침 통합 리포트 (결제 일일검토 + 오늘의 브리핑) — 08:50 트리거로 1통만 발송 =====
    기존엔 dailyTasks(08:00 창)에서 두 통이 따로 나가 도착 시각이 08:00~09:00으로 들쭉날쭉했다.
    섹션별 try/catch로 격리 — 한쪽이 실패해도 나머지는 발송되고 실패 섹션엔 에러 문구를 남긴다. */
-function sendCombinedMorningReport_(){
+function buildWeeklyKpiEmailHtml_(k){
+  const pc=function(v){ if(v===null||v===undefined) return ''; const s=(v>=0?'+':'')+v+'%';
+    const col=v>=0?'#15803d':'#b91c1c'; return ' <span style="color:'+col+';font-size:12px;">('+s+')</span>'; };
+  const eur=function(v){ return '€'+Number(v||0).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const row=function(label,val){ return '<tr><td style="padding:4px 10px 4px 0;color:#64748b;white-space:nowrap;">'+label
+    +'</td><td style="padding:4px 0;color:#1e293b;">'+val+'</td></tr>'; };
+  const r=k.revenue,q=k.quotes,sel=k.select,rc=k.receivables,c=q.cohort90||{};
+  const series=(r.weeklySeries||[]).map(function(w){return '€'+Math.round(w.gross);}).join(' ← ');
+  return '<table style="font-size:13px;border-collapse:collapse;">'
+    + row('기간', k.period.thisWeek.start+' ~ '+k.period.thisWeek.end)
+    + row('매출', '<b>'+eur(r.thisWeek)+'</b>'+pc(r.changeVsLastWeekPct)+' · 4주평균 '+eur(r.avg4Week)+pc(r.changeVsAvg4Pct))
+    + row('건수·객단가', r.bookings+'건 · '+eur(r.avgTicket))
+    + row('주 추이', series+' <span style="color:#94a3b8;font-size:11px;">(이번주 ← 4주전)</span>')
+    + row('견적', '발행 '+q.issued+' · 발송 '+q.sent+' · 수락 '+q.accepted+' ('+eur(q.acceptedAmount)+')')
+    + row('수주율', (c.winRate!==null&&c.winRate!==undefined?c.winRate+'%':'—')
+        +' <span style="color:#94a3b8;font-size:11px;">90일 코호트 · 발송 '+(c.sent||0)+' → 수락 '+(c.accepted||0)+' · 대기 '+(c.pending||0)+'</span>')
+    + row('셀렉', '제출 '+sel.submitted+' · 보정발송 '+sel.retouchSent+' · 수령 '+sel.handedOver
+        +(sel.avgLeadDays!==null?' · 리드타임 '+sel.avgLeadDays+'일':''))
+    + (k.travel?row('출장', k.travel.trips+'회 · '+(k.travel.totalRoundTripKm||0)+'km · 공제 '+eur(k.travel.deduction)):'')
+    + row('미수', rc.openCount+'건 '+eur(rc.openAmount))
+    + '</table>';
+}
+
+function sendCombinedMorningReport_(opts){
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const sections=[];
   const errBox=function(title,err){
@@ -23854,6 +23877,20 @@ function sendCombinedMorningReport_(){
   const secTitle=function(emoji,txt){
     return `<div style="font-size:16px;font-weight:800;color:#2D2A26;margin:0 0 12px;">${emoji} ${txt}</div>`;
   };
+
+  // ③ 주간 KPI — 월요일에만 싣는다. 사람이 기억해서 뽑는 구조는 방치된다(출장 기록부 선례).
+  const isMonday=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'u')==='1';
+  let kpiHtml='';
+  if(isMonday||(opts&&opts.forceWeekly)){
+    try{
+      const k=buildWeeklyKpi_('');
+      kpiHtml=buildWeeklyKpiEmailHtml_(k);
+      sections.push({name:'주간KPI',ok:true,summary:'매출 €'+Math.round(k.revenue.thisWeek)+' ('+(k.revenue.changeVsLastWeekPct===null?'—':(k.revenue.changeVsLastWeekPct>=0?'+':'')+k.revenue.changeVsLastWeekPct+'%')+')'});
+    }catch(e){
+      kpiHtml=errBox('주간 KPI',e);
+      sections.push({name:'주간KPI',ok:false,error:String((e&&e.message)||e)});
+    }
+  }
 
   // ① 결제 일일검토
   let payHtml='';
@@ -23884,7 +23921,8 @@ function sendCombinedMorningReport_(){
     + secTitle('💳','① 결제 일일검토') + payHtml
     + divider
     + secTitle('📋','② 오늘의 브리핑') + briefHtml
-    + `<div style="font-size:11px;color:#94a3b8;margin-top:20px;">이 메일은 매일 아침 자동 발송됩니다 (결제검토 + 브리핑 통합).</div>`
+    + (kpiHtml?(divider + secTitle('📈','③ 주간 KPI (월요일)') + kpiHtml):'')
+    + `<div style="font-size:11px;color:#94a3b8;margin-top:20px;">이 메일은 매일 아침 자동 발송됩니다 (결제검토 + 브리핑${kpiHtml?' + 주간 KPI':''}).</div>`
     + `</div>`;
 
   sendTrackedEmail_({
@@ -23916,9 +23954,9 @@ function installMorningReportTrigger(){
 }
 
 // 에이전트/어드민 온디맨드 발송 (morning-report-send)
-function sendCombinedMorningReportAdmin(token){
+function sendCombinedMorningReportAdmin(token,opts){
   assertAdmin_(token);
-  return sendCombinedMorningReport_();
+  return sendCombinedMorningReport_(opts||{});
 }
 
 // 08:50 트리거 설치/재설치 + 현재 상태 반환 (morning-report-install-trigger).
@@ -28496,13 +28534,18 @@ function pctChange_(cur, prev){
   return Math.round(((cur-prev)/prev)*1000)/10;
 }
 function buildWeeklyKpiForAgent_(token, endDateStr){
+  assertAdmin_(token);
+  return buildWeeklyKpi_(endDateStr);
+}
+/* 무인증 본체 — 월요일 아침 리포트 트리거에서도 쓴다(buildAccountingLedger_ 패턴). */
+function buildWeeklyKpi_(endDateStr){
   const tz=CONFIG.TIMEZONE;
   const end=endDateStr?String(endDateStr).slice(0,10)
     :Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
   const endMs=new Date(end+'T00:00:00Z').getTime();
   const start=Utilities.formatDate(new Date(endMs-34*86400000),tz,'yyyy-MM-dd'); // 5주
   const sheets=ensureSheets_();
-  const ledger=getAccountingLedger(token,start,end,false,sheets);
+  const ledger=buildAccountingLedger_(start,end,false,sheets);
   const entries=ledger.entries||[];
 
   const weeks=[0,1,2,3,4].map(function(){return {gross:0,count:0,byGroup:{}};});
