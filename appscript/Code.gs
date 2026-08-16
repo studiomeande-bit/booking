@@ -7481,6 +7481,27 @@ function isStudioAutoOpenEventByFields_(title,location,isPersonal){
  * @param {string} locEx    location string of existing event
  * @returns {number} buffer in minutes
  */
+/* 위치 문자열 → 편도 이동시간(분). travel-log 의 도시 거리표(TRAVEL_KM_TABLE_)를 재사용하고
+   평균 55km/h 혼합 주행(≈0.9분/km)으로 환산한다. 미매칭·스튜디오·빈 값은 null(고정 60분 유지).
+   슬롯 핫루프에서 이벤트마다 불리므로 실행 내 메모이즈 — 외부 API 호출은 절대 안 한다. */
+var TRAVEL_MIN_MEMO_={};
+function travelOneWayMinForLocation_(loc){
+  const key=String(loc||'').trim();
+  if(!key||isStudioLocation_(key)) return null;
+  if(Object.prototype.hasOwnProperty.call(TRAVEL_MIN_MEMO_,key)) return TRAVEL_MIN_MEMO_[key];
+  const hit=travelKmLookup_(key);
+  const min=hit?Math.min(180,Math.max(20,Math.round(hit.km*0.9))):null;
+  TRAVEL_MIN_MEMO_[key]=min;
+  return min;
+}
+/* 야외(C) 버퍼 = max(60, 편도 이동시간+15). 고정 60분은 프랑크푸르트권(편도 ~30분)엔 맞지만
+   하이델베르크(편도 ~90분)급 원거리엔 부족했다 — 사장님 정책(2026-08-16): "이동시간 포함 최소 1시간". */
+function travelAwareOutdoorBuffer_(loc){
+  const oneWay=travelOneWayMinForLocation_(loc);
+  if(oneWay==null) return CONFIG.BUFFER_OUTDOOR_MIN;
+  return Math.max(CONFIG.BUFFER_OUTDOOR_MIN, oneWay+15);
+}
+
 function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
   // R (Remote consultation) → direct overlap only, no travel/setup buffer.
   if(typeNew==='R'||typeEx==='R') return 0;
@@ -7488,15 +7509,19 @@ function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
   if(typeNew==='P'||typeEx==='P') return CONFIG.BUFFER_OUTDOOR_MIN;
   // A vs A only → no buffer (passport back-to-back)
   if(typeNew==='A'&&typeEx==='A') return 0;
-  // A vs B or B vs A → 15 min
-  if(typeNew==='A'||typeEx==='A') return CONFIG.BUFFER_STUDIO_MIN;
-  // Both C → same-location exception
+  /* ⚠️ C 판정을 A 일반 규칙보다 **먼저** 둔다. 원래 A||A→15 가 앞에 있어 여권↔야외가
+     15분으로 뚫려 있었다(내장 assert 'A vs C → 60' 은 이미 60을 기대 — 코드만 어긋난
+     잠복 버그, 2026-08-16 이동시간 버퍼 작업 중 로컬 하네스로 발견). */
+  // Both C → same-location exception (같은 현장 연속 세션), 다른 장소면 두 이동 중 큰 쪽
   if(typeNew==='C'&&typeEx==='C'){
     const sameLocation=locNew&&locEx&&locNew.trim()===locEx.trim();
-    return sameLocation?CONFIG.BUFFER_STUDIO_MIN:CONFIG.BUFFER_OUTDOOR_MIN;
+    if(sameLocation) return CONFIG.BUFFER_STUDIO_MIN;
+    return Math.max(travelAwareOutdoorBuffer_(locNew),travelAwareOutdoorBuffer_(locEx));
   }
-  // At least one C → 60 min
-  if(typeNew==='C'||typeEx==='C') return CONFIG.BUFFER_OUTDOOR_MIN;
+  // At least one C (A↔C, B↔C 포함) → 이동시간 인식 버퍼 (C 쪽의 장소 기준)
+  if(typeNew==='C'||typeEx==='C') return travelAwareOutdoorBuffer_(typeNew==='C'?locNew:locEx);
+  // A vs B → 15 min (여권↔스튜디오/프로필)
+  if(typeNew==='A'||typeEx==='A') return CONFIG.BUFFER_STUDIO_MIN;
   // Both B → 15 min
   return CONFIG.BUFFER_STUDIO_MIN;
 }
@@ -8034,6 +8059,13 @@ function runConflictTests_(){
   assert('C vs C, locNew empty → 60',   getRequiredBuffer_('C','','C','Park A'),60);
   assert('C vs C, locEx empty → 60',    getRequiredBuffer_('C','Park A','C',''),60);
   assert('C vs C, both empty → 60',     getRequiredBuffer_('C','','C',''),60);
+  /* 이동시간 인식(2026-08-16): 거리표 매칭 시 max(60, 편도×0.9분/km+15) */
+  assert('C 하이델베르크 → 105',        getRequiredBuffer_('B','','C','Heidelberg Schloss'),105);
+  assert('C 비스바덴 → 60 (41+15<60)',  getRequiredBuffer_('B','','C','Wiesbaden Kurpark'),60);
+  assert('C 쾰른 → 168 (153+15)',       getRequiredBuffer_('A','','C','Köln Dom'),168);
+  assert('C 프랑크푸르트 → 60',          getRequiredBuffer_('B','','C','Frankfurt Römerberg'),60);
+  assert('C 미지 장소 → 60 유지',        getRequiredBuffer_('B','','C','Irgendwo Nirgendwo'),60);
+  assert('C↔C 원거리 큰쪽 → 105',       getRequiredBuffer_('C','Frankfurt','C','Heidelberg Altstadt'),105);
   assert('P vs A → 60',                 getRequiredBuffer_('P','','A',''),60);
   assert('P vs B → 60',                 getRequiredBuffer_('P','','B',''),60);
   assert('P vs C → 60',                 getRequiredBuffer_('P','','C',''),60);
