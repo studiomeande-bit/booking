@@ -10322,6 +10322,10 @@ function renderSelectDashboard(){
                      '출력':isPickup?'최종작업완료':'우편발송','우편발송':'최종작업완료'};
       const nextStatus=nextMap[s];
       actions=`<button class="btn btn-outline btn-sm" style="font-size:11px;" onclick="viewSubmission(${r.rowIndex})">회신</button> `;
+      if(s==='출력'&&isPickup){
+        // 인화앱 보류 중 수기 출력 경로 — 출력완료일시 기록 + 픽업 안내 메일(1회 멱등)
+        actions+=`<button class="btn btn-success btn-sm" onclick="doMarkPrintDone(${r.rowIndex},this)">🖨 출력완료·픽업안내</button> `;
+      }
       if(nextStatus) actions+=`<button class="btn btn-outline btn-sm" onclick="advanceSelectStatus(${r.rowIndex},'${nextStatus}')">→ ${nextStatus}</button>`;
     } else if(s==='최종작업완료'){
       actions='<span style="font-size:11px;color:#10b981;font-weight:700;">완료</span>';
@@ -10851,6 +10855,22 @@ function doSendRetouch(rowIndex){
   openRetouchSendModal(rowIndex);
 }
 
+function doMarkPrintDone(rowIndex,btn){
+  if(!confirm('출력 완료로 기록할까요?\n픽업 고객이고 아직 안내 전이면 픽업 시간 예약 안내 메일이 발송됩니다.')) return;
+  if(btn){btn.disabled=true;btn.textContent='기록 중…';}
+  google.script.run.withSuccessHandler(function(r){
+    if(r&&r.ok){
+      showToast('출력완료 기록됨 · 픽업 안내 '+(r.inviteSent?'메일 발송':'생략(이미 안내/예약/우편)')+(r.reprint?' · 재인화':''),'ok');
+      loadSelectDashboard&&loadSelectDashboard();
+    }else{
+      showToast('실패: '+((r&&r.message)||'알 수 없는 오류'),'error');
+      if(btn){btn.disabled=false;btn.textContent='🖨 출력완료·픽업안내';}
+    }
+  }).withFailureHandler(function(e){
+    showToast('오류: '+(e&&e.message||e),'error');
+    if(btn){btn.disabled=false;btn.textContent='🖨 출력완료·픽업안내';}
+  }).adminRpc(adminToken,'markSelectPrintDone',{bookingRowIndex:rowIndex});
+}
 function advanceSelectStatus(rowIndex,newStatus){
   if(!confirm(`상태를 "${newStatus}"(으)로 변경하시겠습니까?`))return;
   google.script.run.withSuccessHandler(res=>{

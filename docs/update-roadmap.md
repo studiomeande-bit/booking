@@ -62,6 +62,14 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
+- **AdminV2 "출력완료·픽업안내" 버튼 (2026-08-16, 배포 @783)** — 인화앱 사용 보류 중이라 수기 출력이 일상
+  경로인데, 출력완료 기록+픽업 안내는 CLI(`select-print-done`)뿐이었다. 셀렉 목록에서 **상태 '출력'인 픽업
+  건**에 버튼이 뜬다 — `markSelectPrintDone_` 재사용이라 출력완료일시 기록·재인화 재개방·픽업 안내 메일
+  (1회 멱등)이 인화앱 경로와 완전 동일. 서버는 bookingRowIndex → 셀렉 세션 해석 후 호출
+  (`markSelectPrintDoneByBookingAdmin_`). 확인 다이얼로그에 메일 발송 여부 명시, 토스트에 발송/생략 표시.
+  ⚠️ 어드민 열려 있으면 새로고침해야 버튼이 보인다(웹앱 HTML 재배포).
+
+
 - **재실(Studio Open) 사전 예약 — studio-presence-schedule/list/cancel (2026-08-16, 배포 @782)** —
   픽업 재실 모델 도입(8/16)으로 "촬영 없는 날은 픽업 불가"가 됐는데, 사장님이 실제로는 있을 시간
   (예: 8/29 16시 제안)을 여는 수단이 없었다. 조사해 보니 **아이폰 단축어 기반 Studio Open 기능이 이미

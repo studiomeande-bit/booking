@@ -389,6 +389,10 @@ function adminRpc(token, action, payload){
       return setStudioPinAdmin(token, payload||{});
     case 'getStudioPinStatus':
       return getStudioPinStatusAdmin(token);
+    case 'markSelectPrintDone':
+      /* 인화앱 없이 어드민에서 출력완료 기록 — markSelectPrintDone_ 재사용이라
+         출력완료일시·재인화 재개방·픽업 안내 메일(1회 멱등)이 인화앱 경로와 동일하게 동작 */
+      return markSelectPrintDoneByBookingAdmin_(token, payload||{});
     case 'markSelectHandover':
       return markSelectHandoverAdmin(token, payload||{});
     case 'undoSelectHandover':
@@ -21861,6 +21865,17 @@ function _sendSelectDeliverySwitchMailEmail_(email,name,lang,mailAddressText,can
 var CUSTOMER_PRINT_ORDER_MAX_BYTES=600000; // 프리뷰 dataURL 포함 상한(과도한 payload 차단)
 // 스튜디오 자동출력 완료 기록 — 인화앱에서 lp 출력 성공 후 호출(최근주문 passcode로 게이트).
 // 출력완료일시/매수를 셀렉 세션에 남겨 재인화 방지·추적. automation key 불필요(passcode+세션ID).
+function markSelectPrintDoneByBookingAdmin_(token,payload){
+  assertAdmin_(token);
+  const bri=parseInt(payload.bookingRowIndex,10)||0;
+  if(bri<2) return {ok:false,message:'bookingRowIndex 가 필요합니다.'};
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues();
+  const idx=rows.slice(1).findIndex(function(r){return (parseInt(r[SELECT_COL['예약장부행']],10)||0)===bri;});
+  if(idx===-1) return {ok:false,message:'해당 예약의 셀렉 세션이 없습니다.'};
+  return markSelectPrintDone_(String(rows[idx+1][0]||''),{count:payload.count});
+}
+
 function markSelectPrintDone_(sessionId,info){
   const sid=String(sessionId||'').trim();
   if(!sid) return{ok:false,message:'세션 정보가 없습니다.'};
