@@ -96,6 +96,7 @@ const DEFAULT_BOOKING_HOURS = {
   saturday: '09:00-16:00'
 };
 const MORNING_BLOCK_CUTOFF_MIN = 13 * 60;   // morning_block_ranges 의 '오전' 경계 = 13:00 (평일 오전 세션의 끝)
+const DAY_CHARS_ = '일월화수목금토';        // getDay() 인덱스와 일치 — 요일 조건 표기용
 const SLOT_RECOMMENDATION_DEFAULTS = {
   beforeHours: 2,
   afterHours: 2,
@@ -1279,8 +1280,8 @@ function handlePublicApiRequest_(route,method,e){
           if(!bhWeekday&&!bhSaturday&&bhMorningBlock===null) return jsonError_('BAD_REQUEST','weekdayHours / saturdayHours / morningBlockRanges 중 하나가 필요합니다.');
           if(bhMorningBlock!==null){
             const mb=parseDateRangeListSetting_(bhMorningBlock);
-            if(bhMorningBlock&&!mb.length) return jsonError_('BAD_REQUEST','morningBlockRanges 형식 오류. 예: 2027-01-01~2027-01-31');
-            upsertSetting_('morning_block_ranges',mb.map(r=>r.from===r.to?r.from:`${r.from}~${r.to}`).join(','));
+            if(bhMorningBlock&&!mb.length) return jsonError_('BAD_REQUEST','morningBlockRanges 형식 오류. 예: 2027-01-01~2027-01-31 화수목금');
+            upsertSetting_('morning_block_ranges',formatDateRangeListSetting_(mb));
           }
           if(bhWeekday){
             const wb=parseTimeBlocksSetting_(bhWeekday,'');
@@ -6341,9 +6342,9 @@ function saveSiteSettings(token,s){
   upsertSetting_('custom_public_holidays',normalizeDateListSetting_(s.customPublicHolidays||''));
   const morningBlockRaw=String(s.morningBlockRanges||'').trim();
   if(morningBlockRaw&&!parseDateRangeListSetting_(morningBlockRaw).length){
-    throw new Error('오전 차단 기간 형식이 올바르지 않습니다. 예: 2027-01-01~2027-01-31');
+    throw new Error('오전 차단 기간 형식이 올바르지 않습니다. 예: 2027-01-01~2027-01-31 화수목금');
   }
-  upsertSetting_('morning_block_ranges',parseDateRangeListSetting_(morningBlockRaw).map(r=>r.from===r.to?r.from:`${r.from}~${r.to}`).join(','));
+  upsertSetting_('morning_block_ranges',formatDateRangeListSetting_(parseDateRangeListSetting_(morningBlockRaw)));
   upsertSetting_('weekday_hours',normalizedWeekdayHours);upsertSetting_('saturday_hours',normalizedSaturdayHours);upsertSetting_('event_rate',s.eventRate||'');
   upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',String(parsePercentSetting_(s.returnDiscount,10,50)));upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
@@ -8407,19 +8408,39 @@ function getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents)
   return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
 }
 
-/** '2027-01-01~2027-01-31, 2027-03-02' 형태 → [{from,to}]. 단일 날짜는 from==to. */
+/** '2027-01-01~2027-01-31 화수목금, 2027-03-02' 형태 → [{from,to,days}].
+ *  단일 날짜는 from==to. 뒤에 요일 문자가 붙으면 그 요일에만 적용(없으면 전 요일). */
 function parseDateRangeListSetting_(raw){
   return String(raw||'').split(',').map(part=>part.trim()).filter(Boolean).map(function(part){
+    let days=null;
+    const dayMatch=part.match(/[\s(]+([일월화수목금토]{1,7})\)?$/);
+    if(dayMatch){
+      const parsed=dayMatch[1].split('').map(ch=>DAY_CHARS_.indexOf(ch));
+      days=parsed.filter((d,i)=>parsed.indexOf(d)===i).sort((a,b)=>a-b);
+      part=part.slice(0,dayMatch.index).trim();
+    }
     const range=part.match(/^(\d{4}-\d{2}-\d{2})\s*[~–—]\s*(\d{4}-\d{2}-\d{2})$/);
-    if(range) return range[1]<=range[2]?{from:range[1],to:range[2]}:{from:range[2],to:range[1]};
-    if(/^\d{4}-\d{2}-\d{2}$/.test(part)) return {from:part,to:part};
+    if(range){
+      const from=range[1]<=range[2]?range[1]:range[2],to=range[1]<=range[2]?range[2]:range[1];
+      return{from,to,days};
+    }
+    if(/^\d{4}-\d{2}-\d{2}$/.test(part)) return{from:part,to:part,days};
     return null;
   }).filter(Boolean);
 }
 
+/** parseDateRangeListSetting_ 의 역변환 — 저장 시 정규화된 문자열로 되돌린다. */
+function formatDateRangeListSetting_(ranges){
+  return (ranges||[]).map(function(r){
+    const base=r.from===r.to?r.from:`${r.from}~${r.to}`;
+    return r.days&&r.days.length?`${base} ${r.days.map(d=>DAY_CHARS_[d]).join('')}`:base;
+  }).join(', ');
+}
+
 function isMorningBlockedDate_(dateStr){
+  const day=new Date(`${dateStr}T00:00:00`).getDay();
   return parseDateRangeListSetting_(getSettingsMap_().morning_block_ranges||'')
-    .some(r=>dateStr>=r.from&&dateStr<=r.to);
+    .some(r=>dateStr>=r.from&&dateStr<=r.to&&(!r.days||!r.days.length||r.days.indexOf(day)>-1));
 }
 
 /** 지정 기간의 오전(13:00 이전)을 시간창에서 잘라낸다. 13:00 = 평일 오전 세션의 끝. */

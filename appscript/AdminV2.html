@@ -2182,9 +2182,9 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>토요일 공개 예약</label><input type="text" id="s_saturday_hours" placeholder="09:00-16:00"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>오전 차단 기간</label><input type="text" id="s_morning_block_ranges" placeholder="2027-01-01~2027-01-31"></div>
+        <div class="form-group"><label>오전 차단 기간</label><input type="text" id="s_morning_block_ranges" placeholder="2027-01-01~2027-01-31 화수목금"></div>
       </div>
-      <div style="font-size:12px;color:#64748b;">오전 차단 기간에는 그 날짜의 13:00 이전 슬롯이 전 상품(여권·프로필·스튜디오·웨딩·기업) 공개 예약에서 사라집니다. 재실 자동오픈보다 우선합니다. 여러 구간은 쉼표로 구분(<code>2027-01-01~2027-01-31, 2027-03-02</code>). 어드민 수기 등록은 영향받지 않습니다.</div>
+      <div style="font-size:12px;color:#64748b;">오전 차단 기간에는 그 날짜의 13:00 이전 슬롯이 전 상품(여권·프로필·스튜디오·웨딩·기업) 공개 예약에서 사라집니다. 재실 자동오픈보다 우선합니다. 뒤에 <b>요일</b>을 적으면 그 요일에만 적용됩니다(<code>2027-01-01~2027-01-31 화수목금</code> = 토요일 오전은 열림). 요일을 생략하면 전 요일. 여러 구간은 쉼표로 구분(<code>2027-01-01~2027-01-31 화수목금, 2027-03-02</code>). 어드민 수기 등록은 영향받지 않습니다.</div>
       <div style="font-size:12px;color:#64748b;">월요일/일요일 공개 예약 차단과 웨딩·기업 예약의 별도 운영시간은 기존 규칙을 유지합니다.</div>
     </div>
     <div class="card">
