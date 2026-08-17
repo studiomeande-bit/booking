@@ -438,6 +438,9 @@ function applyCopy() {
   els.langButtons.forEach((button) => {
     button.classList.toggle('active', button.dataset.lang === state.lang);
   });
+
+  // 언어 전환 시 JS 로 그린 압축본 패널도 새 언어로 다시 그린다 (data-i18n 밖이라 위 루프가 못 건드림)
+  try { renderZipDownloadPanel(); } catch (e) {}
 }
 
 function setLang(lang) {
@@ -729,6 +732,7 @@ function hydrateSession(session) {
   syncServiceCutRows();
   renderServiceCutNotice();
   renderRetouchScopeNotice();
+  renderZipDownloadPanel();
   syncMarketingUi();
   syncDeliveryUi();
   seedPickupCalendarCursor();
@@ -2220,6 +2224,17 @@ function renderLightbox() {
   }
   const nameEl = document.getElementById('lb-name');
   if (nameEl) nameEl.textContent = `${stripExt(p.name)} · ${lb.index + 1} / ${lb.list.length}`;
+  // 원본 다운로드 — 낱장(4~7MB)은 Drive 직링크로 문제없이 내려온다. 미리보기 목데이터엔 id 가 없다.
+  const dlBtn = document.getElementById('lb-download');
+  if (dlBtn) {
+    const fid = String(p.id || '').trim();
+    if (fid && !state.previewMode) {
+      dlBtn.href = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fid)}`;
+      dlBtn.style.display = '';
+    } else {
+      dlBtn.style.display = 'none';
+    }
+  }
   const key = stripExt(p.name);
   const star = getStarOf(key);
   document.querySelectorAll('#lb-stars .lb-star').forEach((btn) => {
@@ -2290,10 +2305,41 @@ function downloadAllPhotos() {
     alert(copy().downloadPreviewAlert);
     return;
   }
+  // 분할 압축본이 연결돼 있으면 그쪽이 정답 — Drive 폴더 일괄 다운로드는 2GB대에서 깨진다.
+  if (state.session?.zips?.length) {
+    const panel = document.getElementById('zipDownloadPanel');
+    if (panel) { panel.style.display = ''; panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    return;
+  }
   const driveLink = state.session?.driveLink || '';
   if (!driveLink) { alert(copy().downloadNoLink); return; }
-  if (!confirm(copy().downloadConfirm)) return;
+  // 압축본이 아직 없는 대용량 세션 — 이윤경(260810) 건처럼 Drive 쪽 압축이 실패할 수 있음을 미리 알린다
+  const large = state.gallery.photos.length > 300;
+  if (!confirm(copy().downloadConfirm + (large ? '\n\n' + copy().downloadLargeWarn : ''))) return;
   globalThis.open(driveLink, '_blank', 'noopener');
+}
+
+/* 분할 압축본 패널 — 세션 로드 시 zips 가 있으면 채워서 바로 보여준다.
+   각 zip 은 독립적으로 열리는 파일이라(볼륨 분할 아님) 순서 상관없이 받아도 된다. */
+function renderZipDownloadPanel() {
+  const panel = document.getElementById('zipDownloadPanel');
+  if (!panel) return;
+  const zips = state.session?.zips || [];
+  if (!zips.length) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  const c = copy();
+  const rows = zips.map((z) => `
+    <a href="${escapeHtml(z.download)}" target="_blank" rel="noopener"
+       style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px solid #e2ddd4;border-radius:9px;background:#fff;text-decoration:none;color:#2d2a26;font-size:13px;">
+      <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📦 ${escapeHtml(z.name)}</span>
+      <span style="flex:none;color:#8a8375;">${escapeHtml(z.size)} ⬇</span>
+    </a>`).join('');
+  panel.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px;">${escapeHtml(c.zipListTitle(zips.length))}</div>
+    <div style="display:grid;gap:6px;">${rows}</div>
+    <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>`;
+  panel.style.display = '';
+  const btn = els.gallerySelectDownloadAllBtn;
+  if (btn) btn.textContent = c.zipListBtn(zips.length);
 }
 
 /* ========================================================================

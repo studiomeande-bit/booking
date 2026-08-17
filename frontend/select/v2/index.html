@@ -163,6 +163,8 @@
           <span id="galleryStatus" class="gallery-status"></span>
           <span id="galleryCount" class="gallery-count"></span>
         </div>
+        <!-- 분할 압축본 목록 — 세션에 압축본 폴더가 연결되면 select.js 가 채운다. 없으면 빈 채로 숨김 -->
+        <div id="zipDownloadPanel" class="soft-note" style="display:none;margin:10px 0 0;"></div>
 
         <div class="star-filter-bar" role="tablist" data-i18n-attr="aria-label:starFilterAria" aria-label="별점 필터">
           <button type="button" class="star-filter active" data-star-filter="all" data-i18n="filterAll">전체</button>
@@ -451,6 +453,7 @@
           <button type="button" class="lb-star" data-lb-star="4" data-i18n-attr="aria-label:lbStar4" aria-label="별 4">★</button>
           <button type="button" class="lb-star" data-lb-star="5" data-i18n-attr="aria-label:lbStar5" aria-label="별 5">★</button>
         </div>
+        <a class="lightbox-btn" id="lb-download" href="#" target="_blank" rel="noopener" data-i18n-attr="aria-label:lbDownload,title:lbDownload" aria-label="원본 다운로드" title="원본 다운로드" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">⬇</a>
         <button type="button" class="lightbox-btn lightbox-btn-close" id="lb-close" data-i18n-attr="aria-label:lbClose" aria-label="닫기">✕</button>
       </div>
     </div>
@@ -458,6 +461,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=b193676f2a"></script>
+  <script src="./select.min.js?v=344bcd9b93"></script>
 </body>
 </html>

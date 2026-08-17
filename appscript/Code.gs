@@ -1586,6 +1586,7 @@ function handlePublicApiRequest_(route,method,e){
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
         if(action==='select-folder-audit') return jsonOk_(auditSelectDeliveryFoldersForAgent_(token,payload||{}));
+        if(action==='select-set-zip-folder') return jsonOk_(setSelectZipFolderAdmin(token,payload.bookingRowIndex||payload.rowIndex,payload));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
         if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
         if(action==='select-print-done'){
@@ -18869,7 +18870,7 @@ function summarizeSettlementImport_(transactions,source){
 
 /* ====== 사진 셀렉 시스템 ====== */
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 // ⚠ SELECT_HEADERS 는 append-only. 중간 삽입은 SELECT_COL 이 상수에서 파생되므로 기존 전 행이 조용히 어긋난다.
@@ -19841,6 +19842,72 @@ function checkSelectDeliveryFolderSize_(folderRef){
   };
 }
 
+/* ===== 셀렉 분할 압축본 노출 =====
+   Drive 일괄 다운로드는 2GB대에서 깨지므로(2026-08-17 실측: 평소 납품도 3.5GB+)
+   전체 원본은 로컬에서 만든 분할 zip(scripts/split-delivery-zips.sh)으로 준다.
+   고객을 Drive 폴더 UI로 보내는 대신, 셀렉페이지가 zip 목록을 직접 보여주고
+   파일별 직다운로드 링크를 건다. 세션 시트의 '압축본링크' 컬럼이 연결 고리다. */
+function listSelectZipBundle_(folderRef){
+  const folderId=_extractDriveFolderId_(folderRef);
+  if(!folderId)return[];
+  const cache=CacheService.getScriptCache();
+  const key='selzips:v1:'+folderId;
+  const cached=cache.get(key);
+  if(cached){try{return JSON.parse(cached);}catch(e){}}
+  const out=[];
+  try{
+    const it=DriveApp.getFolderById(folderId).getFiles();
+    while(it.hasNext()&&out.length<40){
+      const f=it.next();
+      const name=String(f.getName()||'');
+      if(!/\.zip$/i.test(name))continue;
+      const id=f.getId();
+      out.push({
+        id:id,
+        name:name,
+        bytes:Number(f.getSize())||0,
+        size:formatDriveSizeShort_(Number(f.getSize())||0),
+        // uc?export=download 는 대용량에서 바이러스 검사 안내가 한 번 끼지만 "그래도 다운로드"로 이어진다.
+        download:'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id),
+        view:'https://drive.google.com/file/d/'+encodeURIComponent(id)+'/view'
+      });
+    }
+  }catch(e){return[];} // 폴더를 못 읽으면 없는 것으로 — 셀렉페이지는 기존 버튼으로 폴백
+  out.sort(function(a,b){return String(a.name).localeCompare(String(b.name),undefined,{numeric:true});});
+  try{cache.put(key,JSON.stringify(out),900);}catch(e){}
+  return out;
+}
+
+// 압축본 폴더를 세션에 연결 — updateSelectDriveLinkAdmin 과 같은 골격.
+// 폴더+파일을 링크 열람으로 공유해 uc 직링크가 익명으로도 열리게 한다.
+function setSelectZipFolderAdmin(token,bookingRowIndex,payload){
+  try{
+    assertAdmin_(token);
+    payload=payload||{};
+    const sheets=ensureSheets_();
+    const selSh=ensureSelectSheet_(sheets.ss);
+    const found=getLatestSelectRowForBooking_(selSh,bookingRowIndex);
+    if(!found)return{ok:false,message:'셀렉 세션을 찾을 수 없습니다.'};
+    const folderRef=String(payload.zipFolderId||payload.zipFolderUrl||payload.folderRef||'').trim();
+    if(!folderRef)return{ok:false,message:'압축본 Drive 폴더 URL을 입력해 주세요.'};
+    const folderId=_extractDriveFolderId_(folderRef);
+    if(!folderId)return{ok:false,message:'Drive 폴더 URL 형식을 확인해 주세요.'};
+    let folder;
+    try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive 폴더를 열지 못했습니다: '+e.message};}
+    // 열람 공유 — zip 은 편집 권한이 필요 없다. 파일도 개별 공유해 직링크 접근을 못박는다.
+    try{folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(e){}
+    try{
+      const it=folder.getFiles();let n=0;
+      while(it.hasNext()&&n<40){it.next().setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);n++;}
+    }catch(e){}
+    selSh.getRange(found.rowIndex,SELECT_COL['압축본링크']+1).setValue(folder.getUrl());
+    try{CacheService.getScriptCache().remove('selzips:v1:'+folderId);}catch(e){}
+    const zips=listSelectZipBundle_(folderId);
+    if(!zips.length)return{ok:true,warning:'연결은 됐지만 폴더에 .zip 파일이 없습니다. 업로드 후 다시 확인해 주세요.',zipFolderLink:folder.getUrl(),zips:zips};
+    return{ok:true,zipFolderLink:folder.getUrl(),zips:zips};
+  }catch(err){return{ok:false,message:err.message};}
+}
+
 function createSelectSession(token,data){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'셀렉 링크 발송 처리 중입니다. 잠시 후 다시 시도해 주세요.'};
@@ -20093,6 +20160,8 @@ function getSelectSession(sessionId){
       serviceCutCount:Math.max(0,parseInt(row[SELECT_COL['서비스컷수']],10)||0),
       lang:row[SELECT_COL['언어']]||'ko',
       driveLink:row[SELECT_COL['드라이브링크']]||'',
+      zipFolderLink:SELECT_COL['압축본링크']!=null?String(row[SELECT_COL['압축본링크']]||''):'',
+      zips:SELECT_COL['압축본링크']!=null?listSelectZipBundle_(row[SELECT_COL['압축본링크']]):[],
       bookingMarketing,
       bookingAddress,
       deadline:String(row[SELECT_COL['셀렉마감일']]||''),
@@ -20133,6 +20202,7 @@ function getSelectSession(sessionId){
         return{
           ok:false,submitted:true,finalLocked:true,
           lang:base.lang,name:base.name,driveLink:base.driveLink,
+          zipFolderLink:base.zipFolderLink,zips:base.zips, // 마감 후에도 원본 내려받기는 열어 둔다
           handoverAt:base.handoverAt,
           existingDeliveryMethod:base.existingDeliveryMethod,
           existingPrints:Array.isArray(lockedPrints)?lockedPrints:[],

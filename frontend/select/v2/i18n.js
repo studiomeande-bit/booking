@@ -164,6 +164,7 @@ export const COPY = {
     lbStar4: '별 4',
     lbStar5: '별 5',
     lbClose: '닫기',
+    lbDownload: '이 사진 원본 다운로드',
     lbPrev: '이전',
     lbNext: '다음',
     /* ---- dynamic: header / summary / marketing ---- */
@@ -256,6 +257,10 @@ export const COPY = {
     downloadPreviewAlert: '[미리보기] 실제 배포 시 Google Drive 폴더가 새 탭에서 열리고, 우측 상단 메뉴 "다운로드"로 ZIP 일괄 다운로드가 가능합니다.',
     downloadNoLink: 'Drive 폴더 링크가 연결되어 있지 않습니다.',
     downloadConfirm: 'Google Drive 폴더가 새 탭에서 열립니다.\n우측 상단 메뉴(⋮) → "다운로드"를 누르면 전체 사진이 ZIP으로 다운로드됩니다.\n\n계속할까요?',
+    downloadLargeWarn: '⚠️ 이번 촬영은 사진이 많아 Drive 일괄 다운로드가 실패할 수 있습니다. 실패하면 저희가 나눠 받을 수 있는 압축본을 준비해 드리니 메일로 알려주세요.',
+    zipListTitle: (n) => `전체 원본 다운로드 — 분할 압축 ${n}개`,
+    zipListBtn: (n) => `전체 원본 다운로드 (압축본 ${n}개)`,
+    zipListNote: '각 파일은 따로 열리는 일반 ZIP입니다. 순서와 상관없이 하나씩 받아 압축을 풀면 됩니다. 클릭 후 "바이러스 검사를 할 수 없음" 안내가 나오면 "그래도 다운로드"를 눌러주세요.',
     /* ---- dynamic: retouch entries ---- */
     retouchIntroTitle: '보정 선택',
     retouchIntroCopy: '보정할 사진과 요청사항만 선택하세요. 출력물은 다음 단계에서 따로 고르며, 보정과 다른 사진도 출력할 수 있습니다.',
@@ -543,6 +548,7 @@ export const COPY = {
     lbStar4: '4 stars',
     lbStar5: '5 stars',
     lbClose: 'Close',
+    lbDownload: 'Download this photo (original)',
     lbPrev: 'Previous',
     lbNext: 'Next',
     /* ---- dynamic: header / summary / marketing ---- */
@@ -635,6 +641,10 @@ export const COPY = {
     downloadPreviewAlert: '[Preview] On the live site this opens your Google Drive folder in a new tab, where “Download” in the top-right menu saves everything as a ZIP.',
     downloadNoLink: 'No Drive folder link is connected.',
     downloadConfirm: 'Your Google Drive folder opens in a new tab.\nChoose “Download” from the top-right menu (⋮) to save all photos as a ZIP.\n\nContinue?',
+    downloadLargeWarn: '⚠️ This session has a lot of photos, so Drive\'s bulk download may fail. If it does, email us and we\'ll prepare split archives you can download one by one.',
+    zipListTitle: (n) => `Download all originals — ${n} split archives`,
+    zipListBtn: (n) => `Download all originals (${n} ZIP files)`,
+    zipListNote: 'Each file is a regular ZIP that opens on its own. Download them one by one, in any order. If Google shows a "can\'t scan for viruses" notice, choose "Download anyway".',
     /* ---- dynamic: retouch entries ---- */
     retouchIntroTitle: 'Retouch selection',
     retouchIntroCopy: 'Choose only the photos to retouch and your requests. Prints are picked separately in the next step, and may be different photos.',
@@ -922,6 +932,7 @@ export const COPY = {
     lbStar4: '4 Sterne',
     lbStar5: '5 Sterne',
     lbClose: 'Schließen',
+    lbDownload: 'Dieses Foto herunterladen (Original)',
     lbPrev: 'Zurück',
     lbNext: 'Weiter',
     /* ---- dynamic: header / summary / marketing ---- */
@@ -1014,6 +1025,10 @@ export const COPY = {
     downloadPreviewAlert: '[Vorschau] Auf der Live-Seite öffnet sich hier Ihr Google-Drive-Ordner in einem neuen Tab; über „Herunterladen“ im Menü oben rechts speichern Sie alles als ZIP.',
     downloadNoLink: 'Es ist kein Drive-Ordner verknüpft.',
     downloadConfirm: 'Ihr Google-Drive-Ordner öffnet sich in einem neuen Tab.\nWählen Sie im Menü oben rechts (⋮) „Herunterladen“, um alle Bilder als ZIP zu speichern.\n\nFortfahren?',
+    downloadLargeWarn: '⚠️ Dieses Shooting umfasst sehr viele Fotos — der Drive-Sammeldownload kann fehlschlagen. Falls ja, schreiben Sie uns; wir stellen geteilte Archive bereit, die Sie einzeln herunterladen können.',
+    zipListTitle: (n) => `Alle Originale herunterladen — ${n} geteilte Archive`,
+    zipListBtn: (n) => `Alle Originale herunterladen (${n} ZIP-Dateien)`,
+    zipListNote: 'Jede Datei ist ein eigenständiges ZIP. Laden Sie sie einzeln und in beliebiger Reihenfolge herunter. Erscheint der Hinweis „Auf Viren kann nicht geprüft werden“, wählen Sie „Trotzdem herunterladen“.',
     /* ---- dynamic: retouch entries ---- */
     retouchIntroTitle: 'Retusche-Auswahl',
     retouchIntroCopy: 'Wählen Sie hier nur die Bilder für die Retusche und Ihre Wünsche. Abzüge wählen Sie separat im nächsten Schritt, dort dürfen es auch andere Bilder sein.',
