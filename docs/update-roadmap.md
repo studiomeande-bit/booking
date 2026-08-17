@@ -62,6 +62,19 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
+- **PR#7 Apps Script 배포 + 8월 대용량 3건 압축본 납품 완료 (2026-08-17 운영, @790)** —
+  main(a6743d7) clasp push 후 기존 배포 ID 재배포. 스모크: `select-folder-audit` 8월 15건 중 분할필요 4건 검출.
+  - **압축본 3건 완납**: 이윤경(6zip·7.7GB) · 진희수(7zip·8.9GB, 내부표기 파일명 `[MRT·시간미정]…` 를
+    고객용 `260812_진희수_` 로 정리) · 강예슬(4zip·5.4GB). 업로드는 **clasp OAuth(drive.file) 재사용**
+    resumable 업로더(scratchpad/drive_upload.py 패턴 — Drive 데스크톱 마운트가 개인계정뿐이라).
+    압축본 폴더는 원본 부모 조회 후 같은 위치에 생성. 세 세션 모두 `select-set-zip-folder` 연결,
+    고객 페이로드 zips 실림 + **익명 curl 로 17개 전부 다운로드 접근 실측**.
+  - 공유 경고 2건(진희수_5of7·강예슬_3of4 'Zugriff verweigert')은 Drive API 로 anyone-reader 직접 부여해 해소 —
+    경고 표면화(PR 리뷰 ⑤)가 실제로 고객 403 을 막았다.
+  - 이윤경 폴더의 웹업로드 통짜 zip(7.8GB)은 drive.file 권한 밖(403) — 사장님 원클릭 삭제 대기.
+    고객 회신 메일은 사장님 지시로 발송 생략(임시보관함 유지).
+
+
 - **셀렉 납품 PR#7 배포 전 리뷰 패스 (2026-08-17)** — max 레벨 코드리뷰 13건 지적 → 12건 수정, 1건 의도적 보류.
   핵심 수정: ① `createSelectSession` 규모 가드를 **락·공유설정 앞으로** 이동(락 5~30s 점유로 픽업예약이
   튕기던 것, 차단된 발송이 잘못 고른 폴더를 링크 편집공개로 남기던 것, alreadyExists 재연결이 가드를
