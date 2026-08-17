@@ -33,11 +33,14 @@ if (-not $Prefix) { $Prefix = Split-Path -Leaf $Source }
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
-# 사진만 담는다 — 부수 파일(.DS_Store, Thumbs.db, xmp 사이드카)이 섞여 들어가지 않게.
+# 사진만, 하위 폴더 포함 — 셀렉페이지 갤러리는 재귀로 세므로 최상위만 담으면
+# "전체 원본"이라며 하위 폴더 사진이 조용히 빠진다. 상대 경로를 zip 에 보존한다.
 $exts = @('.jpg', '.jpeg', '.png', '.heic', '.heif', '.tif', '.tiff', '.webp')
-$files = Get-ChildItem -LiteralPath $Source -File |
+$srcRoot = (Resolve-Path -LiteralPath $Source).Path.TrimEnd('\') + '\'
+$files = Get-ChildItem -LiteralPath $Source -File -Recurse |
   Where-Object { $exts -contains $_.Extension.ToLowerInvariant() } |
-  Sort-Object Name
+  ForEach-Object { $_ | Add-Member -NotePropertyName RelPath -NotePropertyValue ($_.FullName.Substring($srcRoot.Length) -replace '\\', '/') -PassThru } |
+  Sort-Object RelPath
 
 if ($files.Count -eq 0) { throw "원본 폴더에 사진 파일이 없습니다: $Source" }
 
@@ -83,7 +86,7 @@ for ($i = 0; $i -lt $chunks.Count; $i++) {
     try {
       foreach ($f in $chunkFiles) {
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-          $zip, $f.FullName, $f.Name, [System.IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+          $zip, $f.FullName, $f.RelPath, [System.IO.Compression.CompressionLevel]::NoCompression) | Out-Null
       }
     } finally { $zip.Dispose() }
   } finally { $stream.Dispose() }
@@ -91,8 +94,8 @@ for ($i = 0; $i -lt $chunks.Count; $i++) {
   $manifest += [pscustomobject]@{
     part  = $name
     count = $chunkFiles.Count
-    first = $chunkFiles[0].Name
-    last  = $chunkFiles[-1].Name
+    first = $chunkFiles[0].RelPath
+    last  = $chunkFiles[-1].RelPath
     sizeMB = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1MB, 1)
   }
 }

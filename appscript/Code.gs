@@ -13381,11 +13381,17 @@ function auditSelectDeliveryFoldersForAgent_(token,payload){
   payload=payload||{};
   const limit=Math.min(40,Math.max(1,parseInt(payload.limit,10)||10));
   const since=String(payload.since||'').trim();   // 'YYYY-MM-DD' 이후 촬영일만
+  /* 세션당 폴더 스캔이 5~30초라 40건이면 GAS 6분 실행한도를 넘겨 **전부 유실**된다
+     (부분 결과 없이 실행이 통째로 죽는다). 총 예산 안에서 돌다가 남으면 partial 로 돌려주고,
+     호출자가 마지막 촬영일을 since 삼아 이어서 부르게 한다. */
+  const AUDIT_TOTAL_BUDGET_MS=240000;
+  const startedAt=Date.now();
   const selSh=ensureSelectSheet_(ensureSheets_().ss);
   const rows=selSh.getDataRange().getValues();
   const out=[];
-  let overCount=0;
+  let overCount=0,splitCount=0,partial=false;
   for(let i=rows.length-1;i>=1&&out.length<limit;i--){
+    if(Date.now()-startedAt>AUDIT_TOTAL_BUDGET_MS){partial=true;break;}
     const row=rows[i];
     if(!row[0])continue;
     const driveLink=String(row[SELECT_COL['드라이브링크']]||'').trim();
@@ -13397,23 +13403,30 @@ function auditSelectDeliveryFoldersForAgent_(token,payload){
     const stats=check.stats||{};
     const over=check.ok!==true;
     if(over)overCount++;
+    // 차단 티어(over)만이 아니라 2GB 안내 티어도 표시한다 — 이 감사의 존재 이유가
+    // "압축본 없이 나간 세션 찾기"인데 over 만 보면 진희수(4.4GB)·강예슬(3.7GB)이 통과로 보인다.
+    const needsSplitZip=!!(stats.needsSplitZip||over);
+    if(needsSplitZip)splitCount++;
     out.push({
       sessionId:String(row[0]),
       name:String(row[SELECT_COL['고객명']]||''),
       date:dateStr,
       product:String(row[SELECT_COL['상품']]||''),
       driveLink:driveLink,
+      zipFolderLink:SELECT_COL['압축본링크']!=null?String(row[SELECT_COL['압축본링크']]||''):'',
       photos:Number(stats.photos||0),
       bytes:Number(stats.bytes||0),
       size:formatDriveSizeShort_(Number(stats.bytes||0)),
       truncatedBy:String(stats.truncatedBy||''),
       scanFailed:check.skipped===true,
+      needsSplitZip:needsSplitZip,
       over:over,
       reason:over?String(check.message||''):''
     });
   }
-  return{ok:true,checked:out.length,over:overCount,
-    thresholds:{maxPhotos:SELECT_DELIVERY_MAX_PHOTOS,maxSize:formatDriveSizeShort_(SELECT_DELIVERY_MAX_BYTES)},
+  return{ok:true,checked:out.length,over:overCount,needsSplitZip:splitCount,partial:partial,
+    message:partial?('시간 예산('+Math.round(AUDIT_TOTAL_BUDGET_MS/1000)+'s) 소진으로 '+out.length+'건에서 중단 — 마지막 촬영일 이전을 since 로 지정해 이어서 호출해 주세요.'):'',
+    thresholds:{maxPhotos:SELECT_DELIVERY_MAX_PHOTOS,maxSize:formatDriveSizeShort_(SELECT_DELIVERY_MAX_BYTES),splitHint:formatDriveSizeShort_(SELECT_DELIVERY_SPLIT_HINT_BYTES)},
     sessions:out};
 }
 
@@ -19819,12 +19832,19 @@ function checkSelectDeliveryFolderSize_(folderRef){
   const hitScanCap=stats.truncatedBy==='cap';
   if(!tooMany&&!tooBig&&!hitScanCap){
     // 통과지만 2GB를 넘으면 압축본 없이는 고객이 일괄 다운로드에 실패한다 — 발송은 시키되 알린다.
-    return{ok:true,stats:stats,needsSplitZip:!!stats.needsSplitZip,
-      notice:stats.needsSplitZip
-        ?('사진 '+stats.photos+'장('+formatDriveSizeShort_(stats.bytes)+') — Drive 일괄 다운로드 한계('
-          +formatDriveSizeShort_(SELECT_DELIVERY_SPLIT_HINT_BYTES)+')를 넘습니다. 분할 압축본을 함께 올려 주세요 '
-          +'(scripts/split-delivery-zips.sh).')
-        :''};
+    // 시간 예산으로 끊긴 스캔은 부분 집계라 "깨끗한 통과"처럼 보이면 안 된다 —
+    // Drive 가 느린 날일수록 큰 폴더가 조용히 빠져나가는 역상관이 생긴다. 미확정으로 알린다.
+    const timeTruncated=stats.truncatedBy==='time';
+    let notice='';
+    if(stats.needsSplitZip){
+      notice='사진 '+stats.photos+(stats.truncated?'+':'')+'장('+formatDriveSizeShort_(stats.bytes)+(stats.truncated?'+':'')+') — Drive 일괄 다운로드 한계('
+        +formatDriveSizeShort_(SELECT_DELIVERY_SPLIT_HINT_BYTES)+')를 넘습니다. 분할 압축본을 함께 올려 주세요 '
+        +'(scripts/split-delivery-zips.sh).';
+    }else if(timeTruncated){
+      notice='폴더 규모 미확정 — Drive 응답 지연으로 스캔이 '+stats.photos+'장('+formatDriveSizeShort_(stats.bytes)+')에서 끊겼습니다. '
+        +'실제 규모를 수동으로 확인하시고, 2GB를 넘으면 분할 압축본(scripts/split-delivery-zips.sh)을 함께 올려 주세요.';
+    }
+    return{ok:true,stats:stats,needsSplitZip:!!stats.needsSplitZip,unverified:timeTruncated,notice:notice};
   }
   const countText=stats.photos+(stats.truncated?'+':'')+'장';
   const reason=[tooMany?('장수 '+countText+' > '+SELECT_DELIVERY_MAX_PHOTOS+'장'):'',
@@ -19895,25 +19915,54 @@ function setSelectZipFolderAdmin(token,bookingRowIndex,payload){
     let folder;
     try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive 폴더를 열지 못했습니다: '+e.message};}
     // 열람 공유 — zip 은 편집 권한이 필요 없다. 파일도 개별 공유해 직링크 접근을 못박는다.
-    try{folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}catch(e){}
+    // 실패를 삼키면 안 된다: 공유가 안 됐는데 '연결 완료'로 보이면 고객은 모든 다운로드에서 403 을 본다.
+    const shareErrors=[];
+    try{folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}
+    catch(e){shareErrors.push('폴더: '+e.message);}
     try{
       const it=folder.getFiles();let n=0;
-      while(it.hasNext()&&n<40){it.next().setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);n++;}
-    }catch(e){}
+      while(it.hasNext()&&n<40){
+        const f=it.next();
+        try{f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);}
+        catch(e){if(shareErrors.length<3)shareErrors.push(f.getName()+': '+e.message);}
+        n++;
+      }
+    }catch(e){shareErrors.push('파일 목록: '+e.message);}
     selSh.getRange(found.rowIndex,SELECT_COL['압축본링크']+1).setValue(folder.getUrl());
     try{CacheService.getScriptCache().remove('selzips:v1:'+folderId);}catch(e){}
     const zips=listSelectZipBundle_(folderId);
-    if(!zips.length)return{ok:true,warning:'연결은 됐지만 폴더에 .zip 파일이 없습니다. 업로드 후 다시 확인해 주세요.',zipFolderLink:folder.getUrl(),zips:zips};
+    // 공유 실패는 zip 유무보다 우선 경고 — 목록은 스크립트 소유자 권한으로 열려도 고객(익명)은 403 이다.
+    const shareWarning=shareErrors.length
+      ?('링크 공유 설정에 실패했습니다('+shareErrors.length+'건: '+shareErrors.join(' / ')+'). 고객 다운로드가 막힐 수 있으니 Drive 에서 폴더 공유 상태를 직접 확인해 주세요.')
+      :'';
+    if(!zips.length)return{ok:true,warning:(shareWarning?shareWarning+' 또한 ':'')+'폴더에 .zip 파일이 없습니다. 업로드 후 다시 확인해 주세요.',zipFolderLink:folder.getUrl(),zips:zips};
+    if(shareWarning)return{ok:true,warning:shareWarning,zipFolderLink:folder.getUrl(),zips:zips};
     return{ok:true,zipFolderLink:folder.getUrl(),zips:zips};
   }catch(err){return{ok:false,message:err.message};}
 }
 
 function createSelectSession(token,data){
+  data=data||{};
+  /* 📦 규모 가드는 락·공유설정보다 **먼저** 돈다. 순서가 곧 버그였다:
+     ① 가드가 락 안에 있으면 5~30초짜리 Drive 스캔이 전역 락을 쥔 채 돌아
+        같은 락을 쓰는 고객 픽업 예약 등이 10초 tryLock 에서 튕긴다.
+     ② setSharing(EDIT)이 가드보다 앞이면, 차단된 발송이 잘못 고른 폴더
+        (원본 전량)를 링크 편집 가능으로 공개해 둔 채 끝난다.
+     ③ 기존 세션(alreadyExists) 재연결도 이 가드를 지나야 한다 — 이윤경 사고의
+        재발송 경로가 정확히 그 분기였다. */
+  let sizeNotice='';
+  try{
+    assertAdmin_(token);
+    const explicitRef=String(data.driveFolderId||data.driveLink||data.driveFolderUrl||data.driveFolderLink||'').trim();
+    if(explicitRef&&data.allowOversizedFolder!==true){
+      const sizeCheck=checkSelectDeliveryFolderSize_(explicitRef);
+      if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
+      sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
+    }
+  }catch(err){return{ok:false,message:err.message};}
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'셀렉 링크 발송 처리 중입니다. 잠시 후 다시 시도해 주세요.'};
   try{
-    assertAdmin_(token);
-    data=data||{};
     const sheets=ensureSheets_();
     const selSh=ensureSelectSheet_(sheets.ss);
     let driveLink=data.driveLink||data.driveFolderUrl||data.driveFolderLink||'';
@@ -19936,6 +19985,7 @@ function createSelectSession(token,data){
         selectUrl:buildSelectSessionUrl_(sessionId,pageVersion),
         alreadyExists:true,
         emailSent:false,
+        sizeNotice:sizeNotice,
         message:'이미 생성된 셀렉 링크가 있어 중복 발송하지 않았습니다. 다시 보내려면 재발송 버튼을 사용해 주세요.'
       };
     }
@@ -19948,13 +19998,12 @@ function createSelectSession(token,data){
         return resolved || {ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'셀렉 발송용 Drive 폴더를 찾지 못했습니다.'};
       }
       driveLink=resolved.url||driveLink;
-    }
-    // 📦 규모 가드 — 세션 행을 만들기 전에 막아야 재발송 흐름으로 넘어가지 않는다.
-    let sizeNotice='';
-    if(data.allowOversizedFolder!==true){
-      const sizeCheck=checkSelectDeliveryFolderSize_(driveLink||data.driveFolderId);
-      if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
-      sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
+      // 자동탐색 폴더는 위 사전 가드를 못 거쳤다 — 여기서라도 잰다(에이전트 전용의 드문 경로라 락 점유 허용).
+      if(data.allowOversizedFolder!==true){
+        const sizeCheck=checkSelectDeliveryFolderSize_(driveLink);
+        if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
+        sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
+      }
     }
     const ri=getRetouchInfo_(data.itemGroup,data.product);
     const baseCount=normalizeSelectBaseRetouchCount_(data.baseRetouchCount,ri.count);
@@ -23207,6 +23256,14 @@ function updateSelectDriveLinkAdmin(token,bookingRowIndex,data){
     const rawLink=String(payload.driveLink||payload.driveFolderUrl||payload.driveFolderLink||'').trim();
     const folderRef=String(payload.driveFolderId||rawLink).trim();
     if(!folderRef) return{ok:false,message:'Drive 폴더 URL을 입력해 주세요.'};
+    // 📦 규모 가드 — createSelectSession 과 같은 이유로 공유설정 **전에** 잰다.
+    // 링크를 바꾸는 경로는 전부 같은 문을 지나야 이윤경(260810) 재발송 우회가 안 생긴다.
+    let sizeNotice='';
+    if(payload.allowOversizedFolder!==true){
+      const sizeCheck=checkSelectDeliveryFolderSize_(folderRef);
+      if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
+      sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
+    }
     const shared=ensureDriveFolderEditorLink_(folderRef,{recursive:false,includeFiles:false,maxItems:20,maxDepth:0});
     if(!shared||!shared.ok) return{ok:false,message:(shared&&shared.message)||'Drive 폴더를 확인하지 못했습니다.'};
 
@@ -23242,7 +23299,7 @@ function updateSelectDriveLinkAdmin(token,bookingRowIndex,data){
         isReshoot:payload.reshoot===true,
         deadline:String(row[SELECT_COL['셀렉마감일']]||'')
       };
-      if(!mailData.email||mailData.email.indexOf('@')<0) return{ok:true,driveLink:driveLink,folderName:folderName,selectUrl:selectUrl,emailSent:false,message:'고객 이메일이 없어 안내 메일은 재발송하지 않았습니다.'};
+      if(!mailData.email||mailData.email.indexOf('@')<0) return{ok:true,driveLink:driveLink,folderName:folderName,selectUrl:selectUrl,emailSent:false,sizeNotice:sizeNotice,message:'고객 이메일이 없어 안내 메일은 재발송하지 않았습니다.'};
       const baseCount=normalizeSelectBaseRetouchCount_(row[SELECT_COL['기본보정수']],retouchInfo.count);
       const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']],10)||retouchInfo.price;
       const marketingBonusCount=normalizeSelectMarketingBonusCount_(row[SELECT_COL['마케팅보너스수']],itemGroup,product,payMethod);
@@ -23254,7 +23311,7 @@ function updateSelectDriveLinkAdmin(token,bookingRowIndex,data){
       emailSent=true;
     }
 
-    return{ok:true,driveLink:driveLink,folderName:folderName,selectUrl:selectUrl,emailSent:emailSent};
+    return{ok:true,driveLink:driveLink,folderName:folderName,selectUrl:selectUrl,emailSent:emailSent,sizeNotice:sizeNotice};
   }catch(e){
     return{ok:false,message:e.message};
   }

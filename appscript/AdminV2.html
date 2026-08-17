@@ -10573,7 +10573,8 @@ function saveSelectZipFolder(btn){
     btn.disabled=false;btn.textContent=orig;
     if(res&&res.ok){
       statusDiv.style.color=res.warning?'#d97706':'#10b981';
-      const list=(res.zips||[]).map(z=>`${escHtml(z.name)} (${escHtml(z.size)})`).join(' · ');
+      // textContent 는 엔티티를 해석하지 않으므로 escHtml 을 쓰면 &가 &amp;로 이중 표시된다
+      const list=(res.zips||[]).map(z=>`${z.name} (${z.size})`).join(' · ');
       statusDiv.textContent=res.warning?('⚠️ '+res.warning):('✅ 연결 완료 — '+((res.zips||[]).length)+'개: '+list);
     }else{
       statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+(res&&res.message||'연결 실패');
@@ -10674,11 +10675,11 @@ function selectRelinkFolder(i){
   });
 }
 
-function saveSelectDriveRelink(sendEmail){
+function saveSelectDriveRelink(sendEmail,allowOversizedFolder){
   const rowIndex=parseInt(document.getElementById('rel_drive_rowIndex').value,10);
   const r=allSelectDashboard.find(x=>x.rowIndex===rowIndex);
   if(!r)return;
-  if(sendEmail&&!confirm('Drive 링크를 저장한 뒤 고객에게 셀렉 안내 메일을 다시 발송하시겠습니까?'))return;
+  if(sendEmail&&allowOversizedFolder!==true&&!confirm('Drive 링크를 저장한 뒤 고객에게 셀렉 안내 메일을 다시 발송하시겠습니까?'))return;
   const statusDiv=document.getElementById('rel_drive_status');
   const manualUrl=String(document.getElementById('rel_drive_url').value||'').trim();
   let driveLink='',driveFolderId='',driveFolderName='';
@@ -10701,8 +10702,15 @@ function saveSelectDriveRelink(sendEmail){
   google.script.run.withSuccessHandler(res=>{
     if(res&&res.ok){
       statusDiv.style.color='#10b981';
-      statusDiv.innerHTML=`Drive 재연결 완료${res.emailSent?' · 안내 메일 재발송 완료':''}${res.message?` · ${escHtml(res.message)}`:''}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">셀렉 열기</a>`:''}`;
-      setTimeout(()=>{closeSelectDriveRelinkModal();loadSelectHistory();},1800);
+      const notice=String(res.sizeNotice||'');
+      statusDiv.innerHTML=`Drive 재연결 완료${res.emailSent?' · 안내 메일 재발송 완료':''}${res.message?` · ${escHtml(res.message)}`:''}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">셀렉 열기</a>`:''}`
+        +(notice?`<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fef3c7;border:1px solid #f0d060;color:#92400e;">📦 ${escHtml(notice)}</div>`:'');
+      setTimeout(()=>{closeSelectDriveRelinkModal();loadSelectHistory();},notice?6000:1800);
+    }else if(res&&res.code==='DRIVE_FOLDER_TOO_LARGE'){
+      statusDiv.style.color='#d97706';
+      statusDiv.innerHTML=`⚠️ ${escHtml(res.message||'폴더가 너무 큽니다.')}`
+        +`<div style="margin-top:10px;"><button type="button" class="btn btn-sm" data-relink-force style="background:#d97706;color:#fff;">폴더 확인함 · 그래도 저장</button></div>`;
+      statusDiv.querySelector('[data-relink-force]')?.addEventListener('click',()=>saveSelectDriveRelink(sendEmail,true));
     }else{
       statusDiv.style.color='#ef4444';
       statusDiv.textContent='오류: '+(res&&res.message||'저장 실패');
@@ -10710,7 +10718,7 @@ function saveSelectDriveRelink(sendEmail){
   }).withFailureHandler(e=>{
     statusDiv.style.color='#ef4444';
     statusDiv.textContent='오류: '+(e.message||e);
-  }).updateSelectDriveLinkAdmin(adminToken,rowIndex,{driveLink,driveFolderId,driveFolderName,sendEmail:!!sendEmail});
+  }).updateSelectDriveLinkAdmin(adminToken,rowIndex,{driveLink,driveFolderId,driveFolderName,sendEmail:!!sendEmail,allowOversizedFolder:allowOversizedFolder===true});
 }
 
 function getDefaultRetouchCount(itemGroup,product){

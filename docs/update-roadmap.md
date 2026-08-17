@@ -62,6 +62,22 @@ Updated: 2026-08-03 Europe/Berlin
 
 ## Done Recently
 
+- **셀렉 납품 PR#7 배포 전 리뷰 패스 (2026-08-17)** — max 레벨 코드리뷰 13건 지적 → 12건 수정, 1건 의도적 보류.
+  핵심 수정: ① `createSelectSession` 규모 가드를 **락·공유설정 앞으로** 이동(락 5~30s 점유로 픽업예약이
+  튕기던 것, 차단된 발송이 잘못 고른 폴더를 링크 편집공개로 남기던 것, alreadyExists 재연결이 가드를
+  통째로 우회하던 것 — 셋 다 순서 문제였다) + `updateSelectDriveLinkAdmin` 에도 같은 가드.
+  ② finalLocked done 화면이 서버가 실어 보내는 zips 를 안 그리던 것(죽은 데이터) → `doneZipList` 렌더.
+  ③ `select-folder-audit` 총 시간예산 240s + partial 반환(40건×30s 는 GAS 6분 한도 초과로 전부 유실됐다)
+  + `needsSplitZip` 티어 표기(over 만 보면 진희수·강예슬이 통과로 보였다). ④ time-truncated 스캔이
+  "깨끗한 통과"로 보이던 것 → 미확정 안내. ⑤ zip 폴더 공유 실패 침묵 → 경고 표면화(안 하면 고객 403).
+  ⑥ 분할 스크립트 재귀 수납(상대경로 보존 — 최상위만 담아 하위 폴더 사진이 조용히 빠졌다) + 독일 로케일
+  printf 사망 수정(bc 제거, LC_NUMERIC=C). ⑦ 라이트박스 ⬇ display 를 CSS 로(인라인이면 첫 토글에 정렬 파괴),
+  zip 패널 컨테이너 스타일(soft-note 는 process-guide 하위 전용이었다). 보류 1건: `resendSelectLinkAdmin`
+  가드 — 재발송은 링크를 바꾸지 않아 원발송 가드가 이미 지켰고, 매 재발송에 5~30s 스캔을 붙일 이유가 없다.
+  검증: Playwright 실로드 스모크(로컬 API 스텁으로 편집/마감/프리뷰 3경로, 콘솔오류 0, zip 패널·done zip
+  목록·36→96 보폭·⬇ href 실렌더 확인) + verify-release-gate 13건 + check-print-prices + 목 하네스 + 중첩
+  폴더 zip 왕복(35/35). 라이브 스모크(clasp 배포 후 select-session 응답·압축본링크 컬럼)는 오너 몫.
+
 - **셀렉 발송 폴더 규모 가드 (2026-08-17)** — 이윤경(260810) 고객 클레임에서 나왔다.
   증상은 "스크롤이 끝없이 내려간다 / 사진 선택해서 다운받으면 오류 / 폴더엔 460개인데 1800개 이상 보인다".
   - **원인은 코드가 아니라 올라간 파일이었다.** `260810_이윤경`(`1KF45qH9hOUtAN_9UMSFKqqvdfHDkhn2k`)은

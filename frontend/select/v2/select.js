@@ -668,6 +668,25 @@ function renderDoneScreen() {
     els.doneDriveBtn.href = link;
     els.doneDriveBtn.textContent = c.doneDrive;
   }
+  /* 마감 후 원본 수령 — 서버가 finalLocked 페이로드에도 zips 를 실어 보내는 이유가 이 화면이다.
+     Drive 폴더 일괄 다운로드는 2GB대에서 깨지므로, 압축본이 연결돼 있으면 여기에도 목록을 그린다. */
+  let zipBox = document.getElementById('doneZipList');
+  if (!zipBox && els.donePanel) {
+    zipBox = document.createElement('div');
+    zipBox.id = 'doneZipList';
+    zipBox.style.cssText = 'margin-top:16px;text-align:left;';
+    els.donePanel.appendChild(zipBox);
+  }
+  if (zipBox) {
+    const zips = Array.isArray(session.zips) ? session.zips : [];
+    if (zips.length) {
+      zipBox.innerHTML = buildZipListHtml(zips);
+      zipBox.style.display = '';
+    } else {
+      zipBox.innerHTML = '';
+      zipBox.style.display = 'none';
+    }
+  }
 }
 
 function showApp() {
@@ -2319,13 +2338,9 @@ function downloadAllPhotos() {
   globalThis.open(driveLink, '_blank', 'noopener');
 }
 
-/* 분할 압축본 패널 — 세션 로드 시 zips 가 있으면 채워서 바로 보여준다.
+/* 분할 압축본 목록 — 갤러리 툴바 패널과 마감(done) 화면이 같은 마크업을 쓴다.
    각 zip 은 독립적으로 열리는 파일이라(볼륨 분할 아님) 순서 상관없이 받아도 된다. */
-function renderZipDownloadPanel() {
-  const panel = document.getElementById('zipDownloadPanel');
-  if (!panel) return;
-  const zips = state.session?.zips || [];
-  if (!zips.length) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+function buildZipListHtml(zips) {
   const c = copy();
   const rows = zips.map((z) => `
     <a href="${escapeHtml(z.download)}" target="_blank" rel="noopener"
@@ -2333,13 +2348,21 @@ function renderZipDownloadPanel() {
       <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📦 ${escapeHtml(z.name)}</span>
       <span style="flex:none;color:#8a8375;">${escapeHtml(z.size)} ⬇</span>
     </a>`).join('');
-  panel.innerHTML = `
+  return `
     <div style="font-weight:700;margin-bottom:6px;">${escapeHtml(c.zipListTitle(zips.length))}</div>
     <div style="display:grid;gap:6px;">${rows}</div>
     <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>`;
+}
+
+function renderZipDownloadPanel() {
+  const panel = document.getElementById('zipDownloadPanel');
+  if (!panel) return;
+  const zips = state.session?.zips || [];
+  if (!zips.length) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.innerHTML = buildZipListHtml(zips);
   panel.style.display = '';
   const btn = els.gallerySelectDownloadAllBtn;
-  if (btn) btn.textContent = c.zipListBtn(zips.length);
+  if (btn) btn.textContent = copy().zipListBtn(zips.length);
 }
 
 /* ========================================================================
