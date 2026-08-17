@@ -349,7 +349,7 @@
     var addr = String($('msAddr').value || '').trim();
     if (!name || !addr) { setBanner(t('msNeedBoth'), 'error'); return; }
     // 독일 우편은 한글을 판독하지 못한다 — 라틴 문자만(서버도 동일 검증)
-    if (!/^[\x20-\x7E\u00A0-\u024F€]*$/.test(name) || !/^[\x20-\x7E\u00A0-\u024F€]*$/.test(addr)) {
+    if (!/^[\x20-\x7E\r\n\u00A0-\u024F€]*$/.test(name) || !/^[\x20-\x7E\r\n\u00A0-\u024F€]*$/.test(addr)) {
       setBanner(t('msLatinOnly'), 'error'); return;
     }
     busy = true;

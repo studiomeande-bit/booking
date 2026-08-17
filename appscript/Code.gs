@@ -21107,7 +21107,7 @@ function selectRequiresDeliveryForSubmission_(row,prints,photocard,printUpgradeI
 /* 우편 성명·주소는 라틴 문자만 허용한다(사장님 지시 2026-08-16) — 독일 우편(DHL/Post)은
    한글 주소를 판독·배송하지 못하고, 라벨 인쇄에서도 깨진다. 허용: ASCII + 라틴 확장(ü ö ä ß é …).
    차단: 한글·한자·가나·키릴 등 비라틴 문자. */
-const SELECT_MAIL_LATIN_OK_RE_=/^[\x20-\x7E -ɏ€]*$/;
+const SELECT_MAIL_LATIN_OK_RE_=/^[\x20-\x7E\r\n -ɏ€]*$/;   // \r\n 허용 — 여러 줄 주소가 순수 라틴인데도 거부되던 버그 수정(2026-08-17)
 function selectMailLatinProblem_(mailName,mailAddress){
   const bad=[];
   if(!SELECT_MAIL_LATIN_OK_RE_.test(String(mailName||''))) bad.push('성명');
@@ -28989,10 +28989,12 @@ function buildDataQualityAuditForAgent_(){
     }
     const email=String(r[BOOKING_COL['이메일']]||'').trim();
     // '-' 는 옛 행의 "이메일 없음" 관행(15건 실측) — 매일 브리핑에서 울리면 경보 피로만 남는다
-    if(email&&email!=='수기등록'&&email!=='-'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+    // '수기등록'은 접두 매칭: '수기등록(메일없음)' 같은 변형이 5건 실측(2026-08-17)
+    if(email&&!/^수기등록/.test(email)&&email!=='-'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       add('예약장부',rowIndex,name,'이메일 형식 오류',email);
     const total=parseMoneyValue_(r[BOOKING_COL['총결제액']]);
-    const dep=parseMoneyValue_(r[BOOKING_COL['계약금']]);
+    // 계약금 셀은 '50|DB|2026-03-06' 복합 표기가 있다 — 금액은 첫 세그먼트만 (김지훈 행18·신비아 행98 오탐)
+    const dep=parseMoneyValue_(String(r[BOOKING_COL['계약금']]||'').split('|')[0]);
     const bal=parseMoneyValue_(r[BOOKING_COL['잔금']]);
     if(total>0&&(dep>0||bal>0)&&Math.abs(total-(dep+bal))>0.011)
       add('예약장부',rowIndex,name,'총액≠계약금+잔금',total+'≠'+dep+'+'+bal);
@@ -29011,8 +29013,9 @@ function buildDataQualityAuditForAgent_(){
       const y=parseInt(sd.str.slice(0,4),10);
       if(y<yearNow-2||y>yearNow+1) add('사진셀렉',rowIndex,name,'촬영일 연도 이상',sd.str.slice(0,10));
     }
-    // 우편 건인데 주소에 비라틴 문자 — 이제 입구는 막았지만 기존 행이 남아 있을 수 있다
-    if(String(r[SELECT_COL['수령방식']]||'').trim()==='mail'){
+    // 우편 건인데 주소에 비라틴 문자 — 이제 입구는 막았지만 기존 행이 남아 있을 수 있다.
+    // 이미 수령 완료된 건은 제외: 라벨은 이미 나갔고, 영구 경고는 피로만 남긴다(정다은 케이스)
+    if(String(r[SELECT_COL['수령방식']]||'').trim()==='mail'&&!String(r[SELECT_COL['수령완료일시']]||'').trim()){
       const addr=String(r[SELECT_COL['우편주소']]||'');
       if(addr&&!SELECT_MAIL_LATIN_OK_RE_.test(addr.replace(/수령인\s*[:：]|주소\s*[:：]|\n/g,'')))
         add('사진셀렉',rowIndex,name,'우편주소 비영문(라벨 인쇄 불가)',addr.slice(0,30));

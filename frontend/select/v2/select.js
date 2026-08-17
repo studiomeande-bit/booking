@@ -3269,7 +3269,7 @@ function validateStep2() {
   return true;
 }
 
-const MAIL_LATIN_RE = /^[\x20-\x7E\u00A0-\u024F€]*$/;
+const MAIL_LATIN_RE = /^[\x20-\x7E\r\n\u00A0-\u024F€]*$/;
 function validateStep3() {
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
