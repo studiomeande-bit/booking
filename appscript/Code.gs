@@ -1585,6 +1585,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-update') return jsonOk_(updateBookingFieldsForAgent_(token,parseInt(payload.rowIndex,10),payload.data||{}));
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
+        if(action==='select-folder-audit') return jsonOk_(auditSelectDeliveryFoldersForAgent_(token,payload||{}));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
         if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
         if(action==='select-print-done'){
@@ -13370,6 +13371,51 @@ function updateSelectStatusByRowForAgent_(token,selectRowIndex,newStatus){
 }
 
 // 셀렉 세션 검색 — keyword(이름/이메일), status. 보정본 발송/상태 변경에 쓸 bookingRowIndex 포함
+/* 이미 발송된 셀렉 세션들의 Drive 폴더를 되짚어 규모를 잰다.
+   createSelectSession 의 가드는 앞으로 나갈 건만 막는다 — 이미 나간 건 중에
+   같은 사고(컬링 전 원본 전량 업로드)가 더 있는지는 이 액션으로 확인한다.
+   폴더 스캔이 무거우니 기본 10건, 최대 40건. */
+function auditSelectDeliveryFoldersForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const limit=Math.min(40,Math.max(1,parseInt(payload.limit,10)||10));
+  const since=String(payload.since||'').trim();   // 'YYYY-MM-DD' 이후 촬영일만
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues();
+  const out=[];
+  let overCount=0;
+  for(let i=rows.length-1;i>=1&&out.length<limit;i--){
+    const row=rows[i];
+    if(!row[0])continue;
+    const driveLink=String(row[SELECT_COL['드라이브링크']]||'').trim();
+    if(!driveLink)continue;
+    // 셀은 Date 객체로 들어오기도 한다 — 13448행과 같은 파서를 써야 'Mon Aug 10...' 이 되지 않는다
+    const dateStr=parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10);
+    if(since&&dateStr&&dateStr<since)continue;
+    const check=checkSelectDeliveryFolderSize_(driveLink);
+    const stats=check.stats||{};
+    const over=check.ok!==true;
+    if(over)overCount++;
+    out.push({
+      sessionId:String(row[0]),
+      name:String(row[SELECT_COL['고객명']]||''),
+      date:dateStr,
+      product:String(row[SELECT_COL['상품']]||''),
+      driveLink:driveLink,
+      photos:Number(stats.photos||0),
+      bytes:Number(stats.bytes||0),
+      size:formatDriveSizeShort_(Number(stats.bytes||0)),
+      truncatedBy:String(stats.truncatedBy||''),
+      scanFailed:check.skipped===true,
+      over:over,
+      reason:over?String(check.message||''):''
+    });
+  }
+  return{ok:true,checked:out.length,over:overCount,
+    thresholds:{maxPhotos:SELECT_DELIVERY_MAX_PHOTOS,maxSize:formatDriveSizeShort_(SELECT_DELIVERY_MAX_BYTES)},
+    sessions:out};
+}
+
 function searchSelectSessionsForAgent_(token,query){
   assertAdmin_(token);
   query=query||{};

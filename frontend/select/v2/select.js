@@ -1944,10 +1944,18 @@ function bindGalleryCellEvents() {
   });
 }
 
+/* 고정 60장 증가분은 수백 장짜리 폴더 기준이었다. 원본을 통째로 올린 1,800장 폴더에서는
+   끝까지 보려면 서른 번을 더 불러야 하고, 매 단계가 그리드 전체를 다시 그린다 —
+   고객이 "스크롤이 계속 내려간다"고 말한 그 느낌이 우리 페이지에서도 똑같이 난다.
+   갤러리가 클수록 보폭을 넓혀 단계 수를 12회 언저리로 묶는다(작은 갤러리는 기존 60장 그대로). */
+function galleryRenderStep(total) {
+  return Math.min(240, Math.max(GALLERY_RENDER_INCREMENT, Math.ceil((Number(total) || 0) / 12)));
+}
+
 function expandGalleryRenderCount() {
   const total = state.gallery.filteredList.length;
   if ((state.gallery.renderCount || 0) >= total) return;
-  state.gallery.renderCount = Math.min(total, (state.gallery.renderCount || GALLERY_INITIAL_RENDER) + GALLERY_RENDER_INCREMENT);
+  state.gallery.renderCount = Math.min(total, (state.gallery.renderCount || GALLERY_INITIAL_RENDER) + galleryRenderStep(total));
   renderGallery();
 }
 
@@ -2040,7 +2048,7 @@ function moveGalleryFocus(delta) {
   const next = Math.max(0, Math.min(list.length - 1, prev + delta));
   state.gallery.focusIndex = next;
   while (state.gallery.renderCount <= next) {
-    state.gallery.renderCount = Math.min(list.length, state.gallery.renderCount + GALLERY_RENDER_INCREMENT);
+    state.gallery.renderCount = Math.min(list.length, state.gallery.renderCount + galleryRenderStep(list.length));
   }
   renderGallery();
   els.galleryGrid.querySelectorAll('.gallery-cell.focused').forEach((c) => c.classList.remove('focused'));
