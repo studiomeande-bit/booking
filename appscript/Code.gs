@@ -21284,9 +21284,9 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
     de:`[Studio mean] 🖼 Ihre Abzüge sind fertig — Abholtermin buchen`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 월–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:30 (일/공휴일 휴무)</i>`,
-    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Mon–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:30 (closed Sun/holidays)</i>`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Mo–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:30 (So/Feiertage geschlossen)</i>`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i>`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i>`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i>`
   };
   const btn={ko:'📅 픽업 시간 예약하기',en:'📅 Book Pickup Time',de:'📅 Abholtermin buchen'};
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
@@ -21696,9 +21696,9 @@ function _sendSelectPickupReminderEmail_(sessionId,name,email,lang,bookingRowInd
     de:`[Studio mean] 🖼 Ihre Abzüge liegen für Sie bereit`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>지난번 안내드린 사진 인화물이 스튜디오에 준비되어 있습니다. 🖼<br>아직 픽업 시간을 정하지 않으셔서 한 번 더 안내드려요.<br><br><b>① 영업시간 중 편하게 들러 주셔도 됩니다.</b><br><i>월–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:30 (일/공휴일 휴무)</i><br><b>② 시간을 미리 정하고 싶으시면</b> 아래 버튼에서 예약해 주세요.<br><b>③ 우편 발송을 원하시면</b> 같은 페이지에서 주소를 남겨 주시면 보내드립니다.<br><br>이 메일에 그대로 답장하셔도 됩니다. 😊`,
-    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready and waiting at the studio. 🖼<br>Since no pickup time has been booked yet, here's a quick reminder.<br><br><b>① Just drop by during opening hours.</b><br><i>Mon–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:30 (closed Sun/holidays)</i><br><b>② Prefer a fixed time?</b> Book one with the button below.<br><b>③ Prefer postal delivery?</b> Leave your address on the same page and we'll ship them.<br><br>Feel free to simply reply to this email. 😊`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge liegen im Studio für Sie bereit. 🖼<br>Da noch kein Abholtermin gebucht wurde, hier eine kurze Erinnerung.<br><br><b>① Kommen Sie einfach während der Öffnungszeiten vorbei.</b><br><i>Mo–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:30 (So/Feiertage geschlossen)</i><br><b>② Lieber ein fester Termin?</b> Buchen Sie ihn über den Button unten.<br><b>③ Lieber Postversand?</b> Hinterlassen Sie Ihre Adresse auf derselben Seite.<br><br>Sie können auch einfach auf diese E-Mail antworten. 😊`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>지난번 안내드린 사진 인화물이 스튜디오에 준비되어 있습니다. 🖼<br>아직 픽업 시간을 정하지 않으셔서 한 번 더 안내드려요.<br><br><b>① 영업시간 중 편하게 들러 주셔도 됩니다.</b><br><i>화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i><br><b>② 시간을 미리 정하고 싶으시면</b> 아래 버튼에서 예약해 주세요.<br><b>③ 우편 발송을 원하시면</b> 같은 페이지에서 주소를 남겨 주시면 보내드립니다.<br><br>이 메일에 그대로 답장하셔도 됩니다. 😊`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready and waiting at the studio. 🖼<br>Since no pickup time has been booked yet, here's a quick reminder.<br><br><b>① Just drop by during opening hours.</b><br><i>Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i><br><b>② Prefer a fixed time?</b> Book one with the button below.<br><b>③ Prefer postal delivery?</b> Leave your address on the same page and we'll ship them.<br><br>Feel free to simply reply to this email. 😊`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge liegen im Studio für Sie bereit. 🖼<br>Da noch kein Abholtermin gebucht wurde, hier eine kurze Erinnerung.<br><br><b>① Kommen Sie einfach während der Öffnungszeiten vorbei.</b><br><i>Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i><br><b>② Lieber ein fester Termin?</b> Buchen Sie ihn über den Button unten.<br><b>③ Lieber Postversand?</b> Hinterlassen Sie Ihre Adresse auf derselben Seite.<br><br>Sie können auch einfach auf diese E-Mail antworten. 😊`
   };
   const btn={ko:'📅 픽업 예약 / 우편 전환',en:'📅 Book pickup / switch to post',de:'📅 Abholtermin / Postversand'};
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
@@ -21728,7 +21728,7 @@ function sendSelectPickupReminders_(opts){
   const cntCol=SELECT_COL['픽업리마인드횟수'];
   if(cntCol==null) return{count:0,summary:'컬럼 미마이그레이션',targets:[]};
   const now=new Date();
-  if(!dryRun&&now.getDay()===0) return{count:0,summary:'일요일 건너뜀',targets:[]};   // 휴무일 안내 방지
+  if(!dryRun&&(now.getDay()===0||now.getDay()===1)) return{count:0,summary:'휴무일 건너뜀',targets:[]};   // 일·월 휴무 — "들러 주세요" 안내가 닫힌 날 나가는 것 방지
   if(!dryRun&&MailApp.getRemainingDailyQuota()<30) return{count:0,summary:'메일 쿼터 부족',targets:[]};
   const sheets=ensureSheets_();
   const selSh=ensureSelectSheet_(sheets.ss);
