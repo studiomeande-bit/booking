@@ -19742,8 +19742,20 @@ function resolveSelectDeliveryFolder_(payload,name,dateStr){
      ③ 그 상태로 다운로드하면 Drive 압축 한도에 걸려 오류가 난다
    빈 폴더를 막는 가드는 이미 있는데(위 resolveSelectDeliveryFolder_) 반대쪽 끝은 비어 있었다.
    발송 직전에 장수·용량을 세어, 비정상적으로 큰 폴더는 명시적 확인 없이는 내보내지 않는다. */
-const SELECT_DELIVERY_MAX_PHOTOS=900;                    // 통상 납품은 수백 장 — 2배 여유
-const SELECT_DELIVERY_MAX_BYTES=4*1024*1024*1024;        // 4GB. Drive 압축 다운로드는 2GB대에서 이미 깨진다
+/* ⚠️ 2026-08-17 실측으로 임계를 다시 잡았다. 처음엔 "통상 납품은 수백 장"이라고 보고 900장/4GB로
+   잡았는데, 8월 폴더를 번호블록으로 실제로 훑어보니 그 전제가 틀렸다:
+     260812_진희수  _DSF4845~5748 (밀도 ~90%) → 약 800장 · 4.4GB대
+     260815_강예슬  _DSF6053~6777 (밀도 ~90%) → 약 650장 · 3.7GB대
+     260810_이윤경  _DSF2572~4208 + _DS12821~13093 → 약 1,800장 · 7.9GB대
+   즉 **평소 납품이 이미 600~800장**이고, 첫 임계였다면 강예슬은 아예 안 걸리고 진희수는 간신히 걸렸다.
+   더 중요한 건 따로 있다 — Drive 일괄 다운로드는 2GB대에서 깨지므로 **세 건 모두 이미 한계 초과**다.
+   이윤경만의 사고가 아니라 전 건이 같은 벽에 부딪히고 있었고, 이윤경은 규모가 커서 먼저 터진 것뿐이다.
+   그래서 두 단계로 나눈다:
+     · 2GB 초과  → needsSplitZip 표시만(발송은 막지 않음). 압축본을 같이 준비하라는 신호.
+     · 1200장 / 6GB 초과 → 발송 차단(확인 후 override). 이윤경급 이상치만 걸리게. */
+const SELECT_DELIVERY_MAX_PHOTOS=1200;                   // 평소 600~800장 위 — 이상치만 걸린다
+const SELECT_DELIVERY_MAX_BYTES=6*1024*1024*1024;        // 6GB
+const SELECT_DELIVERY_SPLIT_HINT_BYTES=2*1024*1024*1024; // Drive 일괄 다운로드가 실질적으로 깨지는 선
 const SELECT_DELIVERY_SCAN_CAP=3000;                     // 스캔 상한 — 폴더가 커도 발송이 타임아웃되지 않게
 const SELECT_DELIVERY_SCAN_DEPTH=3;                      // ensureDriveFolderEditorLink_ 와 같은 깊이
 const SELECT_DELIVERY_SCAN_BUDGET_MS=30000;              // Drive 가 느린 날 발송 자체가 멎지 않도록
@@ -19782,7 +19794,9 @@ function inspectSelectDeliveryFolder_(folderRef,options){
     return{ok:false,code:'DRIVE_FOLDER_INACCESSIBLE',message:'Drive 폴더를 읽지 못했습니다: '+e.message};
   }
   return{ok:true,folderId:folderId,photos:photos,bytes:bytes,scanned:scanned,
-    truncated:!!truncatedBy,truncatedBy:truncatedBy};
+    truncated:!!truncatedBy,truncatedBy:truncatedBy,
+    // 발송을 막지는 않지만 압축본이 필요하다는 신호 — 평소 납품도 대부분 여기 걸린다.
+    needsSplitZip:bytes>SELECT_DELIVERY_SPLIT_HINT_BYTES};
 }
 
 function formatDriveSizeShort_(bytes){
@@ -19802,7 +19816,15 @@ function checkSelectDeliveryFolderSize_(folderRef){
   // 스캔 상한까지 찼다는 건 파일이 최소 그만큼 있다는 뜻 — 그 자체로 확인 대상이다.
   // 반면 시간 예산으로 끊긴 건 폴더가 크다는 증거가 아니라 Drive 가 느렸다는 뜻이라 판정에 쓰지 않는다.
   const hitScanCap=stats.truncatedBy==='cap';
-  if(!tooMany&&!tooBig&&!hitScanCap)return{ok:true,stats:stats};
+  if(!tooMany&&!tooBig&&!hitScanCap){
+    // 통과지만 2GB를 넘으면 압축본 없이는 고객이 일괄 다운로드에 실패한다 — 발송은 시키되 알린다.
+    return{ok:true,stats:stats,needsSplitZip:!!stats.needsSplitZip,
+      notice:stats.needsSplitZip
+        ?('사진 '+stats.photos+'장('+formatDriveSizeShort_(stats.bytes)+') — Drive 일괄 다운로드 한계('
+          +formatDriveSizeShort_(SELECT_DELIVERY_SPLIT_HINT_BYTES)+')를 넘습니다. 분할 압축본을 함께 올려 주세요 '
+          +'(scripts/split-delivery-zips.sh).')
+        :''};
+  }
   const countText=stats.photos+(stats.truncated?'+':'')+'장';
   const reason=[tooMany?('장수 '+countText+' > '+SELECT_DELIVERY_MAX_PHOTOS+'장'):'',
                 tooBig?('용량 '+formatDriveSizeShort_(stats.bytes)+' > '+formatDriveSizeShort_(SELECT_DELIVERY_MAX_BYTES)):'',
@@ -19813,8 +19835,9 @@ function checkSelectDeliveryFolderSize_(folderRef){
     code:'DRIVE_FOLDER_TOO_LARGE',
     stats:stats,
     message:'Drive 폴더에 사진이 '+countText+'('+formatDriveSizeShort_(stats.bytes)+') 있습니다 ['+reason+']. '
-      +'컬링 전 원본이 통째로 올라갔는지 확인해 주세요 — 이대로 보내면 고객 Drive에서 스크롤이 끝없이 이어지고 '
-      +'전체 선택 다운로드가 실패합니다. 확인 후에도 보내려면 allowOversizedFolder:true 로 다시 요청해 주세요.'
+      +'평소 납품(600~800장)보다 눈에 띄게 큽니다 — 다른 촬영본이 섞였는지, 폴더를 잘못 지정했는지 확인해 주세요. '
+      +'규모가 맞다면 분할 압축본(scripts/split-delivery-zips.sh)을 먼저 준비하시고, '
+      +'그대로 보내려면 allowOversizedFolder:true 로 다시 요청해 주세요.'
   };
 }
 
@@ -19860,9 +19883,11 @@ function createSelectSession(token,data){
       driveLink=resolved.url||driveLink;
     }
     // 📦 규모 가드 — 세션 행을 만들기 전에 막아야 재발송 흐름으로 넘어가지 않는다.
+    let sizeNotice='';
     if(data.allowOversizedFolder!==true){
       const sizeCheck=checkSelectDeliveryFolderSize_(driveLink||data.driveFolderId);
       if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
+      sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
     }
     const ri=getRetouchInfo_(data.itemGroup,data.product);
     const baseCount=normalizeSelectBaseRetouchCount_(data.baseRetouchCount,ri.count);
@@ -19886,7 +19911,7 @@ function createSelectSession(token,data){
     selSh.appendRow(built.row);
     const url=buildSelectSessionUrl_(built.sessionId,'v2');
     _sendSelectLinkEmail(data,url,driveLink,baseCount,retouchPrice,marketingBonusCount);
-    return{ok:true,sessionId:built.sessionId,selectUrl:url,emailSent:true};
+    return{ok:true,sessionId:built.sessionId,selectUrl:url,emailSent:true,sizeNotice:sizeNotice};
   }catch(err){return{ok:false,message:err.message};}
   finally{try{lock.releaseLock();}catch(e){}}
 }
