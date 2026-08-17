@@ -2588,6 +2588,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       </div>
       <div id="sel_selectedFolder" class="modal-panel modal-copy" style="display:none;background:#d1fae5;border-color:#a7f3d0;"></div>
       <div class="modal-section">
+        <div class="modal-section-title">분할 압축본 연결 <span class="modal-inline-meta">(발송 후 · 2GB 초과 납품용)</span></div>
+        <div style="font-size:11px;color:#64748b;line-height:1.45;margin-bottom:6px;">split-delivery-zips.sh 로 만든 zip 들을 올린 폴더 URL. 연결하면 셀렉페이지에 파일별 다운로드 목록이 뜹니다.</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" id="sel_zipFolderUrl" placeholder="https://drive.google.com/drive/folders/... (압축본 폴더)" style="flex:1;">
+          <button class="btn btn-outline btn-sm" style="flex:none;" onclick="saveSelectZipFolder(this)">연결</button>
+        </div>
+        <div id="sel_zipFolderStatus" style="font-size:11px;margin-top:6px;line-height:1.45;"></div>
+      </div>
+      <div class="modal-section">
         <div class="modal-section-title">발송 설정</div>
         <label>기본 보정 수량 <span class="modal-inline-meta">(발송 전 확인)</span></label>
         <input type="number" id="sel_baseRetouchCount" min="0" style="width:100px;" oninput="refreshSelectPreview()">
@@ -10418,6 +10427,8 @@ function openSelectModal(rowIndex){
   document.getElementById('sel_selectedFolder').textContent='';
   document.getElementById('sel_folderManualWrap').style.display='none';
   document.getElementById('sel_folderUrl').value='';
+  document.getElementById('sel_zipFolderUrl').value='';
+  document.getElementById('sel_zipFolderStatus').textContent='';
   document.getElementById('sel_sendStatus').textContent='';
   document.getElementById('sel_preview').style.display='none';
   document.getElementById('sel_baseRetouchCount').value=r.sel?r.sel.baseCount:getDefaultRetouchCount(r.itemGroup,r.product);
@@ -10501,7 +10512,7 @@ function refreshSelectPreview(){
   if(folderName) updateSelectPreview(r,folderName);
 }
 
-function confirmSendSelect(btn){
+function confirmSendSelect(btn,allowOversizedFolder){
   const r=allSelectDashboard.find(x=>x.rowIndex===currentSelectRowIndex);
   if(!r)return;
   const statusDiv=document.getElementById('sel_sendStatus');
@@ -10518,13 +10529,27 @@ function confirmSendSelect(btn){
   const baseRetouchCount=parseInt(document.getElementById('sel_baseRetouchCount').value)||0;
   const marketingBonusCount=parseInt(document.getElementById('sel_marketingBonusCount').value)||0;
   const data={rowIndex:currentSelectRowIndex,name:r.name,email:r.email||'',phone:r.phone||'',lang:r.lang||'ko',itemGroup:r.itemGroup,product:r.product||'',payMethod:r.payMethod||'',dateStr:r.dateStr||'',driveFolderId:driveId,driveFolderUrl:driveUrl,driveFolderName:driveName,bookingRowIndex:String(currentSelectRowIndex),baseRetouchCount:baseRetouchCount,marketingBonusCount:marketingBonusCount,serviceCutCount:parseInt(document.getElementById('sel_serviceCutCount').value)||0};
+  if(allowOversizedFolder===true)data.allowOversizedFolder=true;
   google.script.run.withSuccessHandler(res=>{
     selectSendInProgress=false;
     if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='셀렉 링크 발송';}
     if(res&&res.ok){
       statusDiv.style.color=res.alreadyExists?'#d97706':'#10b981';
-      statusDiv.innerHTML=`${escHtml(res.message||'셀렉 링크 발송 완료')}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">열기</a>`:''}`;
-      setTimeout(()=>{closeSelectModal();loadSelectHistory();},1800);
+      /* 2GB 초과 안내는 발송을 막지 않지만 놓치면 고객이 일괄 다운로드에 실패한다 —
+         모달이 자동으로 닫히기 전에 읽을 수 있게 보여주고, 이때는 닫힘을 늦춘다. */
+      const notice=String(res.sizeNotice||'');
+      statusDiv.innerHTML=`${escHtml(res.message||'셀렉 링크 발송 완료')}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">열기</a>`:''}`
+        +(notice?`<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fef3c7;border:1px solid #f0d060;color:#92400e;font-size:12px;line-height:1.6;">📦 ${escHtml(notice)}</div>`:'');
+      setTimeout(()=>{closeSelectModal();loadSelectHistory();},notice?6000:1800);
+    }
+    /* 컬링 전 원본이 통째로 올라간 폴더 — 막기만 하면 어드민이 막다른 길에 걸린다.
+       실제 장수/용량을 보여주고, 의도한 발송이면 한 번 더 눌러 넘어갈 수 있게 한다. */
+    else if(res&&res.code==='DRIVE_FOLDER_TOO_LARGE'){
+      statusDiv.style.color='#d97706';
+      statusDiv.innerHTML=`⚠️ ${escHtml(res.message||'폴더가 너무 큽니다.')}`
+        +`<div style="margin-top:10px;"><button type="button" class="btn btn-sm" data-select-force-send style="background:#d97706;color:#fff;">폴더 확인함 · 그래도 발송</button></div>`;
+      const forceBtn=statusDiv.querySelector('[data-select-force-send]');
+      if(forceBtn)forceBtn.addEventListener('click',()=>confirmSendSelect(sendBtn,true));
     }
     else{statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+(res&&res.message||'오류 발생');}
   }).withFailureHandler(e=>{
@@ -10532,6 +10557,32 @@ function confirmSendSelect(btn){
     if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='셀렉 링크 발송';}
     statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+e.message;
   }).createSelectSession(adminToken,data);
+}
+
+/* 분할 압축본 폴더 연결 — 발송된 세션에만 의미가 있다(셀렉페이지가 세션에서 zip 목록을 읽는다) */
+function saveSelectZipFolder(btn){
+  const statusDiv=document.getElementById('sel_zipFolderStatus');
+  const r=allSelectDashboard.find(x=>x.rowIndex===currentSelectRowIndex);
+  if(!r||!r.sel){statusDiv.style.color='#ef4444';statusDiv.textContent='아직 발송된 셀렉 세션이 없습니다. 셀렉 링크 발송 후 연결해 주세요.';return;}
+  const url=(document.getElementById('sel_zipFolderUrl').value||'').trim();
+  if(!url){statusDiv.style.color='#ef4444';statusDiv.textContent='압축본 폴더 URL을 입력해 주세요.';return;}
+  const orig=btn.textContent;
+  btn.disabled=true;btn.textContent='연결 중...';
+  statusDiv.style.color='#64748b';statusDiv.innerHTML='<span class="spinner"></span> 폴더 확인·공유 설정 중...';
+  google.script.run.withSuccessHandler(res=>{
+    btn.disabled=false;btn.textContent=orig;
+    if(res&&res.ok){
+      statusDiv.style.color=res.warning?'#d97706':'#10b981';
+      // textContent 는 엔티티를 해석하지 않으므로 escHtml 을 쓰면 &가 &amp;로 이중 표시된다
+      const list=(res.zips||[]).map(z=>`${z.name} (${z.size})`).join(' · ');
+      statusDiv.textContent=res.warning?('⚠️ '+res.warning):('✅ 연결 완료 — '+((res.zips||[]).length)+'개: '+list);
+    }else{
+      statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+(res&&res.message||'연결 실패');
+    }
+  }).withFailureHandler(e=>{
+    btn.disabled=false;btn.textContent=orig;
+    statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+e.message;
+  }).setSelectZipFolderAdmin(adminToken,currentSelectRowIndex,{zipFolderUrl:url});
 }
 
 /* 발송 없이 수량만 저장 — 이미 발송된 세션의 기본보정/마케팅보너스/서비스컷 수정 (고객 메일 미발송) */
@@ -10624,11 +10675,11 @@ function selectRelinkFolder(i){
   });
 }
 
-function saveSelectDriveRelink(sendEmail){
+function saveSelectDriveRelink(sendEmail,allowOversizedFolder){
   const rowIndex=parseInt(document.getElementById('rel_drive_rowIndex').value,10);
   const r=allSelectDashboard.find(x=>x.rowIndex===rowIndex);
   if(!r)return;
-  if(sendEmail&&!confirm('Drive 링크를 저장한 뒤 고객에게 셀렉 안내 메일을 다시 발송하시겠습니까?'))return;
+  if(sendEmail&&allowOversizedFolder!==true&&!confirm('Drive 링크를 저장한 뒤 고객에게 셀렉 안내 메일을 다시 발송하시겠습니까?'))return;
   const statusDiv=document.getElementById('rel_drive_status');
   const manualUrl=String(document.getElementById('rel_drive_url').value||'').trim();
   let driveLink='',driveFolderId='',driveFolderName='';
@@ -10651,8 +10702,15 @@ function saveSelectDriveRelink(sendEmail){
   google.script.run.withSuccessHandler(res=>{
     if(res&&res.ok){
       statusDiv.style.color='#10b981';
-      statusDiv.innerHTML=`Drive 재연결 완료${res.emailSent?' · 안내 메일 재발송 완료':''}${res.message?` · ${escHtml(res.message)}`:''}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">셀렉 열기</a>`:''}`;
-      setTimeout(()=>{closeSelectDriveRelinkModal();loadSelectHistory();},1800);
+      const notice=String(res.sizeNotice||'');
+      statusDiv.innerHTML=`Drive 재연결 완료${res.emailSent?' · 안내 메일 재발송 완료':''}${res.message?` · ${escHtml(res.message)}`:''}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">셀렉 열기</a>`:''}`
+        +(notice?`<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fef3c7;border:1px solid #f0d060;color:#92400e;">📦 ${escHtml(notice)}</div>`:'');
+      setTimeout(()=>{closeSelectDriveRelinkModal();loadSelectHistory();},notice?6000:1800);
+    }else if(res&&res.code==='DRIVE_FOLDER_TOO_LARGE'){
+      statusDiv.style.color='#d97706';
+      statusDiv.innerHTML=`⚠️ ${escHtml(res.message||'폴더가 너무 큽니다.')}`
+        +`<div style="margin-top:10px;"><button type="button" class="btn btn-sm" data-relink-force style="background:#d97706;color:#fff;">폴더 확인함 · 그래도 저장</button></div>`;
+      statusDiv.querySelector('[data-relink-force]')?.addEventListener('click',()=>saveSelectDriveRelink(sendEmail,true));
     }else{
       statusDiv.style.color='#ef4444';
       statusDiv.textContent='오류: '+(res&&res.message||'저장 실패');
@@ -10660,7 +10718,7 @@ function saveSelectDriveRelink(sendEmail){
   }).withFailureHandler(e=>{
     statusDiv.style.color='#ef4444';
     statusDiv.textContent='오류: '+(e.message||e);
-  }).updateSelectDriveLinkAdmin(adminToken,rowIndex,{driveLink,driveFolderId,driveFolderName,sendEmail:!!sendEmail});
+  }).updateSelectDriveLinkAdmin(adminToken,rowIndex,{driveLink,driveFolderId,driveFolderName,sendEmail:!!sendEmail,allowOversizedFolder:allowOversizedFolder===true});
 }
 
 function getDefaultRetouchCount(itemGroup,product){
