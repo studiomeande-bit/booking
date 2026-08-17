@@ -81,7 +81,7 @@ const PUBLIC_API_CONFIG = {
   WALKIN_TOKEN_TTL_SEC: 60 * 30,
   WALKIN_MIN_ELAPSED_MS: 2500,
   HONEYPOT_FIELD: 'website',
-  MAX_BOOKING_DATE_STR: '2026-12-31'
+  MAX_BOOKING_DATE_STR: '2027-03-31'   // 2026-08-17 사장님 지시로 연장 (구: 2026-12-31)
 };
 const PROMO_CONFIG = {
   START: '2026-06-23',
@@ -95,6 +95,7 @@ const DEFAULT_BOOKING_HOURS = {
   weekday: '09:30-13:00,15:30-18:00',   // 2026-08-17 사장님 변경 (구: 09:30-11:30,15:00-17:30)
   saturday: '09:00-16:00'
 };
+const MORNING_BLOCK_CUTOFF_MIN = 13 * 60;   // morning_block_ranges 의 '오전' 경계 = 13:00 (평일 오전 세션의 끝)
 const SLOT_RECOMMENDATION_DEFAULTS = {
   beforeHours: 2,
   afterHours: 2,
@@ -1274,7 +1275,13 @@ function handlePublicApiRequest_(route,method,e){
              시간 정책이 바뀌면 코드 배포도 함께 가야 한다(2026-08-17 운영시간 변경에서 신설). */
           const bhWeekday=String(payload.weekdayHours||'').trim();
           const bhSaturday=String(payload.saturdayHours||'').trim();
-          if(!bhWeekday&&!bhSaturday) return jsonError_('BAD_REQUEST','weekdayHours 또는 saturdayHours 가 필요합니다.');
+          const bhMorningBlock=payload.morningBlockRanges===undefined?null:String(payload.morningBlockRanges||'').trim();
+          if(!bhWeekday&&!bhSaturday&&bhMorningBlock===null) return jsonError_('BAD_REQUEST','weekdayHours / saturdayHours / morningBlockRanges 중 하나가 필요합니다.');
+          if(bhMorningBlock!==null){
+            const mb=parseDateRangeListSetting_(bhMorningBlock);
+            if(bhMorningBlock&&!mb.length) return jsonError_('BAD_REQUEST','morningBlockRanges 형식 오류. 예: 2027-01-01~2027-01-31');
+            upsertSetting_('morning_block_ranges',mb.map(r=>r.from===r.to?r.from:`${r.from}~${r.to}`).join(','));
+          }
           if(bhWeekday){
             const wb=parseTimeBlocksSetting_(bhWeekday,'');
             if(!wb.length) return jsonError_('BAD_REQUEST','weekdayHours 형식 오류. 예: 09:30-13:00,15:30-18:00');
@@ -1287,6 +1294,7 @@ function handlePublicApiRequest_(route,method,e){
           }
           bumpCalCacheVer_();
           return jsonOk_({ok:true,weekdayHours:bhWeekday||'(유지)',saturdayHours:bhSaturday||'(유지)',
+            morningBlockRanges:bhMorningBlock===null?'(유지)':(getSettingsMap_().morning_block_ranges||'(없음)'),
             note:'슬롯 캐시 무효화됨 — 다음 조회부터 새 시간 적용'});
         }
         if(action==='data-audit'){
@@ -4318,6 +4326,7 @@ function ensureSettingsSheet_(ss) {
     ['custom_holidays',''],
     ['public_holiday_open_dates',''],
     ['custom_public_holidays',''],
+    ['morning_block_ranges',''],
     ['weekday_hours',DEFAULT_BOOKING_HOURS.weekday],
     ['saturday_hours',DEFAULT_BOOKING_HOURS.saturday],
     ['event_rate','0'],
@@ -5797,7 +5806,7 @@ function isPromoDateAllowed_(dateStr){
 function getInitDataCustomer() {
   const s=getSettingsMap_();
   const promo=getPromoConfig_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCustomerProducts_(),promoProducts:getPromoProducts_()};
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCustomerProducts_(),promoProducts:getPromoProducts_()};
 }
 
 /* ✅ 속도 개선: init + 2개월 캘린더 한 번에 */
@@ -6330,6 +6339,11 @@ function saveSiteSettings(token,s){
   upsertSetting_('custom_holidays',normalizeDateListSetting_(s.customHolidays||''));
   upsertSetting_('public_holiday_open_dates',normalizeDateListSetting_(s.publicHolidayOpenDates||''));
   upsertSetting_('custom_public_holidays',normalizeDateListSetting_(s.customPublicHolidays||''));
+  const morningBlockRaw=String(s.morningBlockRanges||'').trim();
+  if(morningBlockRaw&&!parseDateRangeListSetting_(morningBlockRaw).length){
+    throw new Error('오전 차단 기간 형식이 올바르지 않습니다. 예: 2027-01-01~2027-01-31');
+  }
+  upsertSetting_('morning_block_ranges',parseDateRangeListSetting_(morningBlockRaw).map(r=>r.from===r.to?r.from:`${r.from}~${r.to}`).join(','));
   upsertSetting_('weekday_hours',normalizedWeekdayHours);upsertSetting_('saturday_hours',normalizedSaturdayHours);upsertSetting_('event_rate',s.eventRate||'');
   upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',String(parsePercentSetting_(s.returnDiscount,10,50)));upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
@@ -8373,7 +8387,15 @@ function getStudioAutoOpenBlocksForDate_(dateStr,events){
   }).filter(Boolean);
 }
 
+/* 공개 예약의 최종 시간창. morning_block_ranges 는 **여기서** 적용한다 —
+   표시(computeSlots_)와 제출 가드(slotAvailable_)가 모두 이 함수를 거치므로 한 곳만 막으면 된다.
+   재실 자동오픈(extraBlocks)보다 뒤에 적용되어, 그날 스튜디오에 있어도 오전은 열리지 않는다.
+   어드민/에이전트 수기 등록은 영업시간 규칙 자체를 안 보므로 영향 없음(사장님은 언제든 잡을 수 있다). */
 function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
+  return applyMorningBlock_(dateStr,getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents));
+}
+
+function getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents){
   const baseBlocks=getTimeBlocksForDate_(dateStr,itemGroup);
   if(!isStudioAutoOpenEligibleGroup_(itemGroup)) return baseBlocks;
   const extraBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
@@ -8383,6 +8405,33 @@ function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
     return extraBlocks;
   }
   return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
+}
+
+/** '2027-01-01~2027-01-31, 2027-03-02' 형태 → [{from,to}]. 단일 날짜는 from==to. */
+function parseDateRangeListSetting_(raw){
+  return String(raw||'').split(',').map(part=>part.trim()).filter(Boolean).map(function(part){
+    const range=part.match(/^(\d{4}-\d{2}-\d{2})\s*[~–—]\s*(\d{4}-\d{2}-\d{2})$/);
+    if(range) return range[1]<=range[2]?{from:range[1],to:range[2]}:{from:range[2],to:range[1]};
+    if(/^\d{4}-\d{2}-\d{2}$/.test(part)) return {from:part,to:part};
+    return null;
+  }).filter(Boolean);
+}
+
+function isMorningBlockedDate_(dateStr){
+  return parseDateRangeListSetting_(getSettingsMap_().morning_block_ranges||'')
+    .some(r=>dateStr>=r.from&&dateStr<=r.to);
+}
+
+/** 지정 기간의 오전(13:00 이전)을 시간창에서 잘라낸다. 13:00 = 평일 오전 세션의 끝. */
+function applyMorningBlock_(dateStr,blocks){
+  if(!blocks.length||!isMorningBlockedDate_(dateStr)) return blocks;
+  const cut=MORNING_BLOCK_CUTOFF_MIN;
+  return blocks.map(function(b){
+    const start=b.startHour*60+b.startMin,end=b.endHour*60+b.endMin;
+    if(end<=cut) return null;      // 통째로 오전 → 삭제
+    if(start>=cut) return b;       // 통째로 오후 → 유지
+    return {startHour:Math.floor(cut/60),startMin:cut%60,endHour:b.endHour,endMin:b.endMin};  // 걸침 → 13:00부터
+  }).filter(Boolean);
 }
 
 function getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents){

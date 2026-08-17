@@ -2181,6 +2181,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>화-금 공개 예약</label><input type="text" id="s_weekday_hours" placeholder="09:30-13:00,15:30-18:00"></div>
         <div class="form-group"><label>토요일 공개 예약</label><input type="text" id="s_saturday_hours" placeholder="09:00-16:00"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>오전 차단 기간</label><input type="text" id="s_morning_block_ranges" placeholder="2027-01-01~2027-01-31"></div>
+      </div>
+      <div style="font-size:12px;color:#64748b;">오전 차단 기간에는 그 날짜의 13:00 이전 슬롯이 전 상품(여권·프로필·스튜디오·웨딩·기업) 공개 예약에서 사라집니다. 재실 자동오픈보다 우선합니다. 여러 구간은 쉼표로 구분(<code>2027-01-01~2027-01-31, 2027-03-02</code>). 어드민 수기 등록은 영향받지 않습니다.</div>
       <div style="font-size:12px;color:#64748b;">월요일/일요일 공개 예약 차단과 웨딩·기업 예약의 별도 운영시간은 기존 규칙을 유지합니다.</div>
     </div>
     <div class="card">
@@ -9465,6 +9469,7 @@ function loadSettings(s){
   document.getElementById('s_return_discount').value=s.returnDiscount||'10';
   document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-13:00,15:30-18:00';
   document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';
+  document.getElementById('s_morning_block_ranges').value=s.morningBlockRanges||'';
   document.getElementById('s_recommend_before_hours').value=s.recommendBeforeHours||'2';
   document.getElementById('s_recommend_after_hours').value=s.recommendAfterHours||'2';
   document.getElementById('s_recommend_max_slots').value=s.recommendMaxSlots||'4';
@@ -9491,6 +9496,7 @@ function saveSettings(){
     returnDiscount:document.getElementById('s_return_discount').value||'10',
     weekdayHours:document.getElementById('s_weekday_hours').value||'',
     saturdayHours:document.getElementById('s_saturday_hours').value||'',
+    morningBlockRanges:document.getElementById('s_morning_block_ranges').value||'',
     recommendBeforeHours:document.getElementById('s_recommend_before_hours').value||'2',
     recommendAfterHours:document.getElementById('s_recommend_after_hours').value||'2',
     recommendMaxSlots:document.getElementById('s_recommend_max_slots').value||'4',
