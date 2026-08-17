@@ -10501,7 +10501,7 @@ function refreshSelectPreview(){
   if(folderName) updateSelectPreview(r,folderName);
 }
 
-function confirmSendSelect(btn){
+function confirmSendSelect(btn,allowOversizedFolder){
   const r=allSelectDashboard.find(x=>x.rowIndex===currentSelectRowIndex);
   if(!r)return;
   const statusDiv=document.getElementById('sel_sendStatus');
@@ -10518,6 +10518,7 @@ function confirmSendSelect(btn){
   const baseRetouchCount=parseInt(document.getElementById('sel_baseRetouchCount').value)||0;
   const marketingBonusCount=parseInt(document.getElementById('sel_marketingBonusCount').value)||0;
   const data={rowIndex:currentSelectRowIndex,name:r.name,email:r.email||'',phone:r.phone||'',lang:r.lang||'ko',itemGroup:r.itemGroup,product:r.product||'',payMethod:r.payMethod||'',dateStr:r.dateStr||'',driveFolderId:driveId,driveFolderUrl:driveUrl,driveFolderName:driveName,bookingRowIndex:String(currentSelectRowIndex),baseRetouchCount:baseRetouchCount,marketingBonusCount:marketingBonusCount,serviceCutCount:parseInt(document.getElementById('sel_serviceCutCount').value)||0};
+  if(allowOversizedFolder===true)data.allowOversizedFolder=true;
   google.script.run.withSuccessHandler(res=>{
     selectSendInProgress=false;
     if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='셀렉 링크 발송';}
@@ -10525,6 +10526,15 @@ function confirmSendSelect(btn){
       statusDiv.style.color=res.alreadyExists?'#d97706':'#10b981';
       statusDiv.innerHTML=`${escHtml(res.message||'셀렉 링크 발송 완료')}${res.selectUrl?` · <a href="${escHtml(res.selectUrl)}" target="_blank" style="color:#0f766e;font-weight:700;">열기</a>`:''}`;
       setTimeout(()=>{closeSelectModal();loadSelectHistory();},1800);
+    }
+    /* 컬링 전 원본이 통째로 올라간 폴더 — 막기만 하면 어드민이 막다른 길에 걸린다.
+       실제 장수/용량을 보여주고, 의도한 발송이면 한 번 더 눌러 넘어갈 수 있게 한다. */
+    else if(res&&res.code==='DRIVE_FOLDER_TOO_LARGE'){
+      statusDiv.style.color='#d97706';
+      statusDiv.innerHTML=`⚠️ ${escHtml(res.message||'폴더가 너무 큽니다.')}`
+        +`<div style="margin-top:10px;"><button type="button" class="btn btn-sm" data-select-force-send style="background:#d97706;color:#fff;">폴더 확인함 · 그래도 발송</button></div>`;
+      const forceBtn=statusDiv.querySelector('[data-select-force-send]');
+      if(forceBtn)forceBtn.addEventListener('click',()=>confirmSendSelect(sendBtn,true));
     }
     else{statusDiv.style.color='#ef4444';statusDiv.textContent='오류: '+(res&&res.message||'오류 발생');}
   }).withFailureHandler(e=>{

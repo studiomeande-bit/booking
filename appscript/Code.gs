@@ -19687,6 +19687,91 @@ function resolveSelectDeliveryFolder_(payload,name,dateStr){
   return shared;
 }
 
+/* ===== 셀렉 발송 폴더 규모 가드 =====
+   2026-08-17 이윤경(260810_이윤경) 건에서 터졌다: 컬링 전 원본이 통째로 올라간 폴더
+   (_DSF2572~4208 · _DS12821~13093, 약 1,800장 / 7GB대)에 셀렉 링크가 그대로 나갔다.
+   고객 쪽 증상은 세 가지가 한 묶음이다 —
+     ① Drive 폴더가 무한 스크롤로 계속 아래로 내려간다
+     ② 전체 선택이 로드된 만큼만 잡혀 실제 장수와 다르게 보인다(고객은 460장으로 봤다)
+     ③ 그 상태로 다운로드하면 Drive 압축 한도에 걸려 오류가 난다
+   빈 폴더를 막는 가드는 이미 있는데(위 resolveSelectDeliveryFolder_) 반대쪽 끝은 비어 있었다.
+   발송 직전에 장수·용량을 세어, 비정상적으로 큰 폴더는 명시적 확인 없이는 내보내지 않는다. */
+const SELECT_DELIVERY_MAX_PHOTOS=900;                    // 통상 납품은 수백 장 — 2배 여유
+const SELECT_DELIVERY_MAX_BYTES=4*1024*1024*1024;        // 4GB. Drive 압축 다운로드는 2GB대에서 이미 깨진다
+const SELECT_DELIVERY_SCAN_CAP=3000;                     // 스캔 상한 — 폴더가 커도 발송이 타임아웃되지 않게
+const SELECT_DELIVERY_SCAN_DEPTH=3;                      // ensureDriveFolderEditorLink_ 와 같은 깊이
+const SELECT_DELIVERY_SCAN_BUDGET_MS=30000;              // Drive 가 느린 날 발송 자체가 멎지 않도록
+
+// 갤러리가 재귀로 훑는 것과 같은 기준(사진 파일만)으로 폴더 규모를 잰다.
+// 가드가 쓰는 숫자와 고객이 셀렉 페이지에서 실제로 보는 장수를 어긋나지 않게 하려는 것.
+// 중단 사유(truncatedBy)를 구분해서 돌려준다 — 'cap' 은 그 자체로 폴더가 크다는 증거지만
+// 'time' 은 그냥 느렸다는 뜻이라 판정 근거로 쓰면 안 된다.
+function inspectSelectDeliveryFolder_(folderRef,options){
+  const opts=options||{};
+  const folderId=_extractDriveFolderId_(folderRef);
+  if(!folderId)return{ok:false,code:'INVALID_DRIVE_FOLDER',message:'Drive 폴더 ID를 확인하지 못했습니다.'};
+  const scanCap=Math.max(1,parseInt(opts.scanCap,10)||SELECT_DELIVERY_SCAN_CAP);
+  const maxDepth=Math.max(0,parseInt(opts.maxDepth,10)||SELECT_DELIVERY_SCAN_DEPTH);
+  const budgetMs=Math.max(1000,parseInt(opts.timeBudgetMs,10)||SELECT_DELIVERY_SCAN_BUDGET_MS);
+  const startedAt=Date.now();
+  let photos=0,bytes=0,scanned=0,truncatedBy='';
+  try{
+    const queue=[{folder:DriveApp.getFolderById(folderId),depth:0}];
+    while(queue.length&&!truncatedBy){
+      const current=queue.shift();
+      const files=current.folder.getFiles();
+      while(files.hasNext()){
+        if(scanned>=scanCap){truncatedBy='cap';break;}
+        if(Date.now()-startedAt>budgetMs){truncatedBy='time';break;}
+        const f=files.next();scanned++;
+        if(!_isDrivePhotoFile_(f.getMimeType(),f.getName()))continue;
+        photos++;
+        try{bytes+=Number(f.getSize())||0;}catch(e){}
+      }
+      if(truncatedBy||current.depth>=maxDepth)continue;
+      const subs=current.folder.getFolders();
+      while(subs.hasNext())queue.push({folder:subs.next(),depth:current.depth+1});
+    }
+  }catch(e){
+    return{ok:false,code:'DRIVE_FOLDER_INACCESSIBLE',message:'Drive 폴더를 읽지 못했습니다: '+e.message};
+  }
+  return{ok:true,folderId:folderId,photos:photos,bytes:bytes,scanned:scanned,
+    truncated:!!truncatedBy,truncatedBy:truncatedBy};
+}
+
+function formatDriveSizeShort_(bytes){
+  const n=Number(bytes)||0;
+  if(n>=1024*1024*1024)return(n/(1024*1024*1024)).toFixed(1)+'GB';
+  if(n>=1024*1024)return Math.round(n/(1024*1024))+'MB';
+  return Math.max(1,Math.round(n/1024))+'KB';
+}
+
+// 폴더를 읽지 못하면 가드는 통과시킨다 — 규모 점검 실패로 정상 발송을 막을 이유는 없다.
+// 막아야 할 건 "확실히 너무 큰 폴더"뿐이다.
+function checkSelectDeliveryFolderSize_(folderRef){
+  const stats=inspectSelectDeliveryFolder_(folderRef);
+  if(!stats||stats.ok!==true)return{ok:true,skipped:true,stats:stats||null};
+  const tooMany=stats.photos>SELECT_DELIVERY_MAX_PHOTOS;
+  const tooBig=stats.bytes>SELECT_DELIVERY_MAX_BYTES;
+  // 스캔 상한까지 찼다는 건 파일이 최소 그만큼 있다는 뜻 — 그 자체로 확인 대상이다.
+  // 반면 시간 예산으로 끊긴 건 폴더가 크다는 증거가 아니라 Drive 가 느렸다는 뜻이라 판정에 쓰지 않는다.
+  const hitScanCap=stats.truncatedBy==='cap';
+  if(!tooMany&&!tooBig&&!hitScanCap)return{ok:true,stats:stats};
+  const countText=stats.photos+(stats.truncated?'+':'')+'장';
+  const reason=[tooMany?('장수 '+countText+' > '+SELECT_DELIVERY_MAX_PHOTOS+'장'):'',
+                tooBig?('용량 '+formatDriveSizeShort_(stats.bytes)+' > '+formatDriveSizeShort_(SELECT_DELIVERY_MAX_BYTES)):'',
+                (hitScanCap&&!tooMany&&!tooBig)?('스캔 상한 '+SELECT_DELIVERY_SCAN_CAP+'개 도달'):'']
+               .filter(Boolean).join(' · ');
+  return{
+    ok:false,
+    code:'DRIVE_FOLDER_TOO_LARGE',
+    stats:stats,
+    message:'Drive 폴더에 사진이 '+countText+'('+formatDriveSizeShort_(stats.bytes)+') 있습니다 ['+reason+']. '
+      +'컬링 전 원본이 통째로 올라갔는지 확인해 주세요 — 이대로 보내면 고객 Drive에서 스크롤이 끝없이 이어지고 '
+      +'전체 선택 다운로드가 실패합니다. 확인 후에도 보내려면 allowOversizedFolder:true 로 다시 요청해 주세요.'
+  };
+}
+
 function createSelectSession(token,data){
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) return{ok:false,message:'셀렉 링크 발송 처리 중입니다. 잠시 후 다시 시도해 주세요.'};
@@ -19727,6 +19812,11 @@ function createSelectSession(token,data){
         return resolved || {ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'셀렉 발송용 Drive 폴더를 찾지 못했습니다.'};
       }
       driveLink=resolved.url||driveLink;
+    }
+    // 📦 규모 가드 — 세션 행을 만들기 전에 막아야 재발송 흐름으로 넘어가지 않는다.
+    if(data.allowOversizedFolder!==true){
+      const sizeCheck=checkSelectDeliveryFolderSize_(driveLink||data.driveFolderId);
+      if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
     }
     const ri=getRetouchInfo_(data.itemGroup,data.product);
     const baseCount=normalizeSelectBaseRetouchCount_(data.baseRetouchCount,ri.count);
