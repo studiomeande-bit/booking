@@ -27471,6 +27471,23 @@ function syncBookingLexwarePaymentInternal_(bookingRowIndex){
 }
 
 
+/* 좀비 트리거 자가 정리 (2026-08-18) — 리포 이전(구 3파일 GAS 시절) 함수명을 가리키는
+   10:54 일일 트리거가 'Script function not found: sendReminderEmails' 로 매일 실패 알림을 만들었다.
+   git 전 이력에 이 함수는 존재한 적이 없고, 현행 리마인더(B2 24시간·L2 계약금)는 dailyTasks(08:00)가
+   담당하며 8/6·8/13·8/16 계약금 리마인더 실발송으로 건강 확인됨. 이 함수는 고객 메일을 보내지 않는다 —
+   다음 10:54 실행 때 자기 트리거를 지우고 관리자에게 1회 보고한 뒤, 이후 정리 커밋에서 제거하면 된다. */
+function sendReminderEmails(){
+  const zombies=ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='sendReminderEmails');
+  zombies.forEach(t=>ScriptApp.deleteTrigger(t));
+  try{
+    MailApp.sendEmail(CONFIG.ADMIN_EMAIL,'[Studio mean] 좀비 트리거(sendReminderEmails) 자가 정리 완료',
+      '옛 함수명을 가리키던 10:54 트리거 '+zombies.length+'개를 삭제했습니다.\n\n'
+      +'예약·계약금 리마인더는 08:00 dailyTasks가 정상 발송 중입니다(8/16 김혜수 계약금 리마인더 실발송 확인).\n'
+      +'더 이상 "Script function not found" 오류 알림이 오지 않습니다.');
+  }catch(e){}
+  return {ok:true,removedTriggers:zombies.length};
+}
+
 /* ====== B2: 자동 리마인더 트리거 ====== */
 // 일일 트리거 설치 — dailyTasks(08:00) + 아침 통합 리포트(08:50)를 한 진입점에서 함께 설치한다.
 // nearMinute(0) 필수: atHour(8) 만 주면 GAS 가 08:00~09:00 임의 분에 실행해 P1 SumUp 동기화가
