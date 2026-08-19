@@ -31655,7 +31655,7 @@ function buildFotografenvertragBodyHtml_(c){
       deadlineDefault:'innerhalb von 10 Tagen nach Abschluss der Aufnahmen (inkl. einer Korrekturschleife)',
       usageDefault:'private, nicht-kommerzielle Nutzung',
       a4t:'§ 4 Vergütung und Zahlung',
-      payLabels:{net:'Nettobetrag',vat:'Umsatzsteuer (19 %)',total:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restbetrag'},
+      payLabels:{net:'Nettobetrag',vat:'Umsatzsteuer (19 %)',vatExempt:'Umsatzsteuer',total:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restbetrag'},
       payTermsDefault:(dep,bal)=>`Die Anzahlung in Höhe von ${dep} ist innerhalb von 14 Tagen nach Vertragsschluss fällig und reserviert den Termin verbindlich. Der Restbetrag in Höhe von ${bal} ist spätestens am Tag des Shootings fällig, sofern in den Besonderen Vereinbarungen nichts anderes geregelt ist.`,
       payTermsNoDeposit:(tot)=>`Der Gesamtbetrag in Höhe von ${tot} ist spätestens am Tag des Shootings fällig, sofern in den Besonderen Vereinbarungen nichts anderes geregelt ist.`,
       bank:'Der Auftragnehmer weist die gesetzliche Umsatzsteuer von 19 % aus (USt-IdNr. DE440009941) und stellt auf Wunsch eine Rechnung aus.',
@@ -31692,7 +31692,7 @@ function buildFotografenvertragBodyHtml_(c){
       deadlineDefault:'촬영 종료 후 10일 이내 (교정 1회 포함)',
       usageDefault:'사적·비상업적 이용',
       a4t:'제 4 조 (대금 및 지급방식)',
-      payLabels:{net:'공급가액',vat:'부가가치세 (19%)',total:'총 금액',deposit:'계약금',balance:'잔금'},
+      payLabels:{net:'공급가액',vat:'부가가치세 (19%)',vatExempt:'부가가치세',total:'총 금액',deposit:'계약금',balance:'잔금'},
       payTermsDefault:(dep,bal)=>`계약금 ${dep}은 계약 체결 후 14일 이내에 지급하며, 입금 시 촬영일이 확정된다. 잔금 ${bal}은 촬영일까지 지급한다. 다만 특약사항에 달리 정한 경우에는 그에 따른다.`,
       payTermsNoDeposit:(tot)=>`총 금액 ${tot}은 촬영일까지 지급한다. 다만 특약사항에 달리 정한 경우에는 그에 따른다.`,
       bank:'"스튜디오"는 독일 부가가치세법에 따라 19% 부가가치세를 적용하며(USt-IdNr. DE440009941), 요청 시 인보이스(Rechnung)를 발행한다.',
@@ -31737,7 +31737,7 @@ function buildFotografenvertragBodyHtml_(c){
       deadlineDefault:'within 10 days after the shoot (incl. one round of revisions)',
       usageDefault:'private, non-commercial use',
       a4t:'Article 4 (Fees and Payment)',
-      payLabels:{net:'Net amount',vat:'VAT (19%)',total:'Total',deposit:'Deposit',balance:'Balance'},
+      payLabels:{net:'Net amount',vat:'VAT (19%)',vatExempt:'VAT',total:'Total',deposit:'Deposit',balance:'Balance'},
       payTermsDefault:(dep,bal)=>`The deposit of ${dep} is due within 14 days of signing and secures the date. The balance of ${bal} is due no later than on the day of the shoot, unless the Special Terms provide otherwise.`,
       payTermsNoDeposit:(tot)=>`The total amount of ${tot} is due no later than on the day of the shoot, unless the Special Terms provide otherwise.`,
       bank:'The Photographer applies German VAT of 19% (VAT ID DE440009941) and issues an invoice on request.',
@@ -31784,8 +31784,10 @@ function buildFotografenvertragBodyHtml_(c){
   ].filter(r=>String(r[1]||'').trim())
    .map(r=>`<tr><td class="k">${escapeHtml_(r[0])}</td><td>${escapeHtml_(r[1]).replace(/\n/g,'<br>')}</td></tr>`).join('');
   const payTerms=c.paymentTerms||(c.deposit>0?T.payTermsDefault(money(c.deposit),money(c.balance)):T.payTermsNoDeposit(money(c.total)));
+  // 면세 시 라벨에서 '19 %' 를 뺀다(값이 "미부과"인데 라벨이 19%면 모순). 국가명의 다국어 '//' 잔재도 방어.
+  const exemptCountry=_pickQuoteLangText_(String(c.vatExemptCountry||''),0);
   const vatRow=vatExempt
-    ? `<tr><td class="k">${T.payLabels.vat}</td><td>${escapeHtml_(vatExemptNoteText_(L,'contract',c.vatExemptCountry||''))}</td></tr>`
+    ? `<tr><td class="k">${T.payLabels.vatExempt}</td><td>${escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry))}</td></tr>`
     : `<tr><td class="k">${T.payLabels.vat}</td><td>${money(c.vat)}</td></tr>`;
   const refund=_contractRefundLines_(L,c);
   const reschedule=String(c.reschedulePolicy||'')==='carry'; // 대체일 예약금 이월 — 기존 규정에 없어 명시 지정 시에만
@@ -31808,7 +31810,7 @@ ${vatRow}
 <tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
 ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',c.vatExemptCountry||'')):T.bank}</p>
+<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry)):T.bank}</p>
 <h2>${T.a5t}</h2><p>${T.a5}</p>
 <h2>${T.a6t}</h2><p>${T.a6}</p>
 <h2>${T.a7t}</h2><p>${T.a7(escapeHtml_(String(c.usageScope||'').trim()||T.usageDefault),escapeHtml_(String(c.retention||'').trim()||T.retentionDefault))}</p>
@@ -32095,6 +32097,12 @@ function createContractForAgent_(payload){
     }
     // 견적 촬영예정일이 시트 Date 로 들어온 경우만 yyyy-MM-dd 로 정규화 ('10-19 ~ 10-20' 같은 자유 텍스트는 보존)
     if(/^\w{3} \w{3} \d{2} \d{4}/.test(String(c.schedule||''))) c.schedule=parseDateSafe_(c.schedule).str.slice(0,10);
+    // 견적의 다국어('//') 필드를 계약 언어 한 벌로 — 계약서는 단일 언어 문서다
+    if(quote){
+      const qi=_contractLangIndexInQuote_(quote.lang,c.lang);
+      if(!String(data.vatExemptCountry||'').trim()) c.vatExemptCountry=_pickQuoteLangText_(String(c.vatExemptCountry||''),qi);
+      if(!String(data.scopeText||'').trim()) c.scopeText=_pickQuoteLangText_(String(c.scopeText||''),qi);
+    }
     // 견적 조건 → 특약 자동 이관 (수기 specialTerms 우선)
     if(quote&&!String(data.specialTerms||'').trim()){
       const t=_contractSpecialTermsFromQuote_(quote.terms,c.lang,_contractLangIndexInQuote_(quote.lang,c.lang));

@@ -147,6 +147,10 @@ check('§ 356 Abs. 4 문단: 먼 촬영일엔 없음', !de.includes('§ 356 Abs.
 check('§ 356 Abs. 4 문단: 14일 이내면 삽입', M.buildDrehvertragBodyHtml_(b2c({ schedule: '2026-08-25' })).includes('erlischt Ihr Widerrufsrecht mit vollständiger Erbringung'));
 const exempt = M.buildDrehvertragBodyHtml_(b2c({ vatMode: 'exempt_third_country', vatExemptCountry: 'Republik Korea', vat: 0, net: 1950 }));
 check('부가세 면제 모드 → 부가세 행 대신 면제 문구', exempt.includes('Nicht steuerbare sonstige Leistung') && exempt.includes('Republik Korea'));
+check("면제 시 라벨에서 '19 %' 제거 (값과 모순 방지)", exempt.includes('>Umsatzsteuer</td>') && !exempt.includes('Umsatzsteuer (19 %)'));
+check('면제 아닐 때는 19 % 라벨 유지', de.includes('Umsatzsteuer (19 %)'));
+const exemptMulti = M.buildDrehvertragBodyHtml_(b2c({ vatMode: 'exempt_third_country', vatExemptCountry: 'Republik Korea\n//\n대한민국', vat: 0, net: 1950 }));
+check("면세국가 다국어 '//' 가 계약서로 새지 않음", !exemptMulti.includes('//') && !exemptMulti.includes('대한민국') && exemptMulti.includes('Republik Korea'));
 
 const ko = M.buildDrehvertragHtml_(b2c({ lang: 'ko' }));
 console.log('\n── 소비자 계약서 (ko / en) ──');
