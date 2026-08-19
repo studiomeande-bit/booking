@@ -62,6 +62,26 @@ Updated: 2026-08-19 Europe/Berlin
 
 ## Done Recently
 
+- **협력업체 소개 링크 + 클릭 집계 Phase 1 (2026-08-19, @803~@804)** — `docs/partner-links-plan.md`.
+  촬영 준비에 필요한 세 곳(가온테이블 돌상·한복 / 라온 블루멘 꽃 / cozyjoo 메이크업·드레스)을
+  **예약 성공화면 + 확정·접수 메일**에 소개한다. 단순 소개(대가 없음)라 광고 표기 불요 —
+  기존 "준비 가이드" 톤으로 이름+한줄설명+상담버튼 하나, 관여하지 않는다는 고지 한 줄.
+  - 데이터는 **'협력업체' 시트 1장**이 정본(상품설정과 같은 패턴). 상담 링크가 비면 **인스타를 CTA 로 자동 대체**
+    → 링크가 아직 없어도 지금 동작하고, 나중에 시트에 적기만 하면 **배포 불요**.
+  - 노출 조건 토큰: itemGroup · 상품id · `baby`(백일·돌). 가온 `baby` / 라온 `wed,baby,biz` / cozyjoo `wed,prof,stud,snap`.
+  - **잡은 버그**: 예약장부에 상품ID·babyType 컬럼이 없어 확정메일 경로가 돌·백일을 놓쳤다 →
+    상품명 텍스트 판정(`돌잔치|백일|1st Birthday`…)으로 해결하고 **성공화면도 같은 규칙으로 정렬**.
+    초기 구현은 두 경로가 어긋나 dolp(가족파티)에서 메일엔 뜨고 화면엔 안 떴다.
+  - **클릭 집계**: GA4 는 동의자만 잡고 **메일 클릭은 아예 못 본다** → 자체 집계.
+    웹은 새 탭 즉시 + keepalive 핑(지연 0), 메일은 `booking.studio-mean.com/go/<id>` →
+    Netlify Edge Function(`frontend/booking/netlify/edge-functions/partner-go.ts`)이 `waitUntil` 로
+    집계를 완주시킨 뒤 302. 대상 URL 은 `api=partners` 10분 캐시라 **링크가 바뀌어도 기존 메일이 안 깨진다**.
+    기록은 일시·업체·출처·언어·상품군뿐(이름·이메일·IP 미기록) → 동의 없이 집계해도 DSGVO 무리 없음.
+  - 조회: `partner-click-stats --json '{"days":30}'`. 라이브 실측으로 Edge 경유 기록까지 확인.
+  - **오너 액션**: '협력업체클릭' 시트의 점검 행 7건(출처 verify/mail, 2026-08-19) 삭제.
+    라온블루멘 상담링크는 QR 카드 WhatsApp(+49 176 30152733) — **명함 전화(+49 172 3842546)와 다른 번호**라 확인 필요.
+
+
 - **소비자(B2C) Fotografenvertrag 계약종류 신설 (2026-08-19)** — 스펙 `docs/fotografenvertrag-b2c-spec.md`
   - **왜**: 기존 Drehvertrag(B2B)를 개인 고객에게 쓰면 § 9 영업비밀·§ 10 도산해지가 무의미하고
     § 12 관할합의는 소비자 상대로 **무효**(§§ 12·13 ZPO). 결정적으로 **Widerrufsbelehrung 누락**이면

@@ -1306,6 +1306,40 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='partner-click-stats'){
+          /* 조회 전용 — 협력업체 클릭 집계. 개인정보가 없는 시트라 그대로 집계만 한다.
+             출처: web(성공화면) / mail(확정·접수메일) / dolmail / consult / verify(점검용). */
+          const days=Math.max(1,Math.min(365,Number(payload.days)||30));
+          const since=new Date(Date.now()-days*86400000);
+          const sinceStr=Utilities.formatDate(since,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+          const sh=ensurePartnerClickSheet_(ensureSheets_().ss);
+          const last=sh.getLastRow();
+          const rows=last>=2?sh.getRange(2,1,last-1,PARTNER_CLICK_HEADERS.length).getValues():[];
+          const nameById={};
+          getPartners_().forEach(function(p){nameById[p.id]=p.name;});
+          const byPartner={},bySource={},byLang={},byGroup={};
+          let total=0;
+          rows.forEach(function(r){
+            const ts=String(r[0]||'');
+            if(ts<sinceStr) return;
+            const id=String(r[1]||'').trim();
+            if(!id) return;
+            total++;
+            byPartner[id]=(byPartner[id]||0)+1;
+            const src=String(r[2]||'').trim()||'(미상)';
+            bySource[src]=(bySource[src]||0)+1;
+            const lg=String(r[3]||'').trim()||'(미상)';
+            byLang[lg]=(byLang[lg]||0)+1;
+            const gp=String(r[4]||'').trim()||'(미상)';
+            byGroup[gp]=(byGroup[gp]||0)+1;
+          });
+          const partners=Object.keys(byPartner).map(function(id){
+            return{id:id,name:nameById[id]||id,clicks:byPartner[id]};
+          }).sort(function(a,b){return b.clicks-a.clicks;});
+          return jsonOk_({days:days,since:sinceStr,totalClicks:total,partners:partners,
+            bySource:bySource,byLang:byLang,byItemGroup:byGroup,
+            summary:partners.map(function(p){return p.name+' '+p.clicks;}).join(' · ')||'(클릭 없음)'});
+        }
         if(action==='booking-hours-set'){
           /* ✏️ 공개 예약 영업시간 변경 — saveSettingsAdmin 의 검증·정규화 로직을 그대로 쓰되
              시간 두 키만 받는다. 슬롯 캐시 무효화 포함. 표기 문구(메일 등)는 코드에 있으므로
