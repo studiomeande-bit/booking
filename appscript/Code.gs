@@ -1379,6 +1379,53 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_({deleted:victims.length,remaining:Math.max(0,(last-1)-victims.length),
             samples:victims.slice(0,10)});
         }
+        if(action==='select-fix-shoot-dates'){
+          /* ✏️ 셀렉 촬영일 복구 — 연도가 빠진 값('Tue Mar 31')을 예약장부 기준으로 되돌린다.
+             **월·일이 예약장부와 일치할 때만** 고친다. 하나라도 어긋나면 건드리지 않고 보고만 한다
+             (짐작으로 날짜를 쓰면 RAW 분류·집계가 더 조용히 틀어진다).
+             기본 dryRun — 실제 수정은 confirm:"FIX". */
+          const sheets=ensureSheets_();
+          const selSh=ensureSelectSheet_(sheets.ss);
+          const bkSh=getDbSheet();
+          const sRows=selSh.getDataRange().getValues();
+          const bRows=bkSh.getDataRange().getValues();
+          const BAD_RE=/^[A-Z][a-z]{2} ([A-Z][a-z]{2}) (\d{1,2})$/;
+          const MON={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+          const plan=[],skipped=[];
+          for(let i=1;i<sRows.length;i++){
+            const raw=sRows[i][SELECT_COL['촬영일']];
+            if(Object.prototype.toString.call(raw)==='[object Date]') continue;
+            const cur=String(raw||'').trim();
+            const m=cur.match(BAD_RE);
+            if(!m) continue;
+            const rowIndex=i+1;
+            const name=String(sRows[i][SELECT_COL['고객명']]||'');
+            const bri=parseInt(sRows[i][SELECT_COL['예약장부행']],10)||0;
+            if(bri<2||bri>bRows.length){
+              skipped.push({rowIndex:rowIndex,name:name,current:cur,reason:'예약장부행 링크 없음('+bri+')'});
+              continue;
+            }
+            const real=parseDateSafe_(bRows[bri-1][BOOKING_COL['예약일시']]).str;
+            if(!/^\d{4}-\d{2}-\d{2}/.test(real)){
+              skipped.push({rowIndex:rowIndex,name:name,current:cur,reason:'예약장부 날짜를 읽지 못함'});
+              continue;
+            }
+            const mon=MON[m[1]],day=parseInt(m[2],10);
+            if(parseInt(real.slice(5,7),10)!==mon||parseInt(real.slice(8,10),10)!==day){
+              skipped.push({rowIndex:rowIndex,name:name,current:cur,booking:real,reason:'월·일 불일치 — 수동 확인 필요'});
+              continue;
+            }
+            plan.push({rowIndex:rowIndex,name:name,current:cur,newDate:real.slice(0,10),bookingRow:bri});
+          }
+          if(String(payload.confirm||'')!=='FIX'){
+            return jsonOk_({dryRun:true,wouldFix:plan.length,plan:plan,skipped:skipped,
+              note:'수정하지 않았습니다. confirm:"FIX" 로 실행하세요.'});
+          }
+          plan.forEach(function(p){
+            selSh.getRange(p.rowIndex,SELECT_COL['촬영일']+1).setValue(p.newDate);
+          });
+          return jsonOk_({fixed:plan.length,plan:plan,skipped:skipped});
+        }
         if(action==='partner-click-stats'){
           /* 조회 전용 — 협력업체 클릭 집계. 개인정보가 없는 시트라 그대로 집계만 한다.
              출처: web(성공화면) / mail(확정·접수메일) / dolmail / consult / verify(점검용). */
@@ -19895,6 +19942,29 @@ function getDefaultSelectRetouchPrice_(itemGroup,productName){
   return 10;
 }
 
+/** 셀렉 촬영일 정규화 — 연도가 빠진 값이 시트에 앉는 것을 막는다.
+ *  'Tue Mar 31' 같은 값(Date 를 String() 한 뒤 slice(0,10) 한 흔적)이 10건 실측됐다.
+ *  이런 값은 파싱하면 **2001년**이 되어 RAW 자동분류·기간 집계가 조용히 어긋난다.
+ *  파싱 연도가 비현실적이면 빈칸으로 둔다 — 틀린 연도보다 빈칸이 낫다(감사가 잡아준다). */
+function normalizeSelectShootDate_(raw){
+  if(raw===''||raw===null||raw===undefined) return '';
+  if(Object.prototype.toString.call(raw)==='[object Date]'){
+    return isNaN(raw.getTime())?'':Utilities.formatDate(raw,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  }
+  const str=String(raw).trim();
+  if(!str) return '';
+  if(/^\d{4}-\d{2}-\d{2}/.test(str)) return str;           // 이미 정상
+  const parsed=parseDateSafe_(str);
+  if(isNaN(parsed.obj.getTime())) return str;              // 못 읽으면 원본 보존
+  const y=parsed.obj.getFullYear();
+  const nowY=new Date().getFullYear();
+  if(y<nowY-2||y>nowY+1){
+    Logger.log('normalizeSelectShootDate_: 연도 비정상('+y+') 원본="'+str+'" → 빈칸 처리');
+    return '';
+  }
+  return Utilities.formatDate(parsed.obj,CONFIG.TIMEZONE,'yyyy-MM-dd');
+}
+
 function _makeSelectRow_(data){
   const nowDate=new Date();
   const now=Utilities.formatDate(nowDate,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
@@ -19906,7 +19976,7 @@ function _makeSelectRow_(data){
   row[SELECT_COL['고객명']]=data.name||'';
   row[SELECT_COL['이메일']]=data.email||'';
   row[SELECT_COL['연락처']]=data.phone||'';
-  row[SELECT_COL['촬영일']]=data.date||data.dateStr||'';
+  row[SELECT_COL['촬영일']]=normalizeSelectShootDate_(data.date||data.dateStr||'');
   row[SELECT_COL['촬영종류']]=data.itemGroup||'';
   row[SELECT_COL['상품']]=data.product||'';
   row[SELECT_COL['기본보정수']]=parseInt(data.baseRetouchCount,10)||0;
@@ -29420,9 +29490,15 @@ function buildDataQualityAuditForAgent_(){
       add('예약장부',rowIndex,name,'이메일 형식 오류',email);
     const total=parseMoneyValue_(r[BOOKING_COL['총결제액']]);
     // 계약금 셀은 '50|DB|2026-03-06' 복합 표기가 있다 — 금액은 첫 세그먼트만 (김지훈 행18·신비아 행98 오탐)
-    const dep=parseMoneyValue_(String(r[BOOKING_COL['계약금']]||'').split('|')[0]);
-    const bal=parseMoneyValue_(r[BOOKING_COL['잔금']]);
-    if(total>0&&(dep>0||bal>0)&&Math.abs(total-(dep+bal))>0.011)
+    /* 계약금·잔금 **양쪽 모두** '170|DB|2026-01-24' 복합 표기가 있다. 계약금만 분리하고
+       잔금을 빼먹어 완납 건이 계속 오탐으로 잡혔다(임수현 행88·이현지 행103, 2026-08-19 실측). */
+    const depRaw=String(r[BOOKING_COL['계약금']]||''),balRaw=String(r[BOOKING_COL['잔금']]||'');
+    const dep=parseMoneyValue_(depRaw.split('|')[0]);
+    const bal=parseMoneyValue_(balRaw.split('|')[0]);
+    /* MRT 건은 잔금을 원화로 적는다('153000KRW|MRT|…'). 유로 총액과 더하면 당연히 안 맞는다 —
+       통화가 섞인 행은 이 검사의 대상이 아니다(박혜란 행50 오탐, 2026-08-19). */
+    const mixedCurrency=/KRW|원/i.test(depRaw)||/KRW|원/i.test(balRaw);
+    if(!mixedCurrency&&total>0&&(dep>0||bal>0)&&Math.abs(total-(dep+bal))>0.011)
       add('예약장부',rowIndex,name,'총액≠계약금+잔금',total+'≠'+dep+'+'+bal);
   }
 
