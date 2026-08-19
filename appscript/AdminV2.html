@@ -2743,9 +2743,15 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
             <div class="form-group"><label>계약서 언어</label>
               <select id="edit_contractLang"><option value="">예약 언어 자동</option><option value="ko">한국어</option><option value="de">Deutsch</option><option value="en">English</option></select>
             </div>
-            <div class="form-group"><label>저작권 귀속</label>
+            <div class="form-group"><label>저작권 귀속 <span style="color:#94a3b8;">(사업자용)</span></label>
               <select id="edit_contractCopyright"><option value="스튜디오">스튜디오 (사용범위 라이선스)</option><option value="고객">고객 (전부 양도)</option></select>
             </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>계약종류</label>
+              <select id="edit_contractKind"><option value="">자동 판정 (사업자명·VAT 있으면 사업자)</option><option value="b2c">소비자 — Fotografenvertrag (철회권 안내 포함)</option><option value="b2b">사업자 — Drehvertrag</option></select>
+            </div>
+            <div class="form-group"><label>촬영 장소 <span style="color:#94a3b8;">(비우면 "추후 협의")</span></label><input type="text" id="edit_contractLocation" placeholder="예: Zollenspieker Faehrhaus, Hamburg"></div>
           </div>
           <div class="form-group"><label>업무내용 <span style="color:#94a3b8;">(비우면 상품명)</span></label><input type="text" id="edit_contractScope" placeholder="예: 웨딩 본식·피로연 촬영 (포토·비디오 7시간)"></div>
           <div class="form-group"><label>목적물 (납품 내역)</label><textarea id="edit_contractDeliverables" rows="2" placeholder="예: 사진 약 200장 (JPG, 보정 포함)&#10;하이라이트 영상 3분 1편"></textarea></div>
@@ -4109,7 +4115,8 @@ function renderBookingContracts(res){
     if(c.signedAt) meta.push('서명 '+escHtml(c.signerName||'')+' · '+escHtml(String(c.signedAt).slice(5,16)));
     if(c.quoteNumber) meta.push('견적 '+escHtml(c.quoteNumber));
     meta.push(String(c.lang||'ko').toUpperCase());
-    meta.push(c.copyrightOwner==='고객'?'저작권 고객 양도':'저작권 스튜디오');
+    meta.push(c.contractType==='Fotografenvertrag'?'소비자 Fotografenvertrag':'사업자 Drehvertrag');
+    if(c.contractType!=='Fotografenvertrag') meta.push(c.copyrightOwner==='고객'?'저작권 고객 양도':'저작권 스튜디오');
     return '<div class="modal-panel" style="margin-bottom:8px;padding:10px 12px;">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
       +'<b style="font-size:12.5px;">'+escHtml(c.contractId)+'</b>'+contractStatusChip(c.status)
@@ -4135,6 +4142,8 @@ function createBookingContract(){
   const val=function(id){const el=document.getElementById(id);return String(el&&el.value||'').trim();};
   const data={copyrightOwner:val('edit_contractCopyright')||'스튜디오'};
   const lang=val('edit_contractLang'); if(lang) data.lang=lang;
+  const kind=val('edit_contractKind'); if(kind) data.contractKind=kind;
+  const location=val('edit_contractLocation'); if(location) data.location=location;
   const scope=val('edit_contractScope'); if(scope) data.scopeText=scope;
   const deliverables=val('edit_contractDeliverables'); if(deliverables) data.deliverables=deliverables;
   const special=val('edit_contractSpecial'); if(special) data.specialTerms=special;
@@ -4144,7 +4153,8 @@ function createBookingContract(){
     .withSuccessHandler(function(res){
       if(btn) btn.disabled=false;
       if(!res||!res.ok){showToast(res&&res.message||'계약서 생성 실패','err');return;}
-      showToast('계약서 초안 생성됨 — '+res.contractId,'ok');
+      showToast('계약서 초안 생성됨 — '+res.contractId+(res.contractType?' ('+res.contractType+')':''),'ok');
+      if(res.warnings&&res.warnings.length) showToast('⚠️ '+res.warnings.join(' / '),'warn');
       loadBookingContractsForEdit(rowIndex);
     })
     .withFailureHandler(function(e){ if(btn) btn.disabled=false; handleApiError(e); })

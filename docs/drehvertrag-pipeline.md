@@ -1,4 +1,7 @@
-# Drehvertrag 계약 파이프라인 v1 (2026-08-02, @717~720)
+# 계약 파이프라인 (2026-08-02 v1 @717~720 · 2026-08-19 소비자 분기)
+
+> **계약종류가 둘이다.** 사업자 = `촬영대행`(Drehvertrag, 12조) · 소비자 = `Fotografenvertrag`(13조 + 철회권 별지).
+> 소비자 조항 스펙은 `docs/fotografenvertrag-b2c-spec.md`. 아래 v1 문서는 **사업자 계약** 기준이며 흐름(create→send→sign)은 두 종류가 공유한다.
 
 대상(사장님 확정): **B2B·웨딩본식 등 €500 이상 건.**
 조항: `계약서/2026/Drehvertrag_FisslerKorea_2026_draft.html`(12조)을 파라미터화한 `DV-v1 (2026-08-02)`. 계약서 언어는 ko(MVP) — de/en 후속.
@@ -44,3 +47,19 @@
 ## 테스트 기록
 
 - 계약서 시트 행2 `DV-260802-BDM2`(서명완료) = E2E 검증 기록 유지, 행3 `DV-260802-6BYD`(취소) = de 렌더 검증
+
+## 소비자(B2C) Fotografenvertrag 분기 (2026-08-19)
+
+**왜**: Drehvertrag 을 개인 고객에게 쓰면 § 12 관할합의가 무효(§§ 12·13 ZPO)이고, 무엇보다
+Widerrufsbelehrung 이 없으면 철회기간이 14일 → **12개월+14일**(§ 356 Abs. 3 BGB)로 늘어난다.
+
+- **판정은 생성 시 1회**, `계약종류` 열에 굳힌다(`resolveContractType_`). 렌더(`isB2cContract_`)는 저장값만 본다 →
+  기존 행은 **서명본 재생성까지 종전 Drehvertrag 그대로**. 이게 하위호환의 핵심 장치다.
+- 우선순위: `contractKind` 명시 > 회사명·VAT번호·예약유형 기업 > itemGroup(wed/stud/snap/prof/pass) > 개인=소비자.
+- 조항: § 9 Datenschutz · § 10 Stornierung(스태플 본문) · § 11 소비자 책임제한 · § 12 법정관할 ·
+  **§ 13 Widerrufsbelehrung** + 별지 Muster-Widerrufsformular(PDF 마지막 장). 조항버전 `FV-v1 (2026-08-19)`.
+  § 356 Abs. 4 문단은 촬영일이 계약일+14일 이내일 때만.
+- 견적 연동: § 3 = 견적 items 전체, 특약 = 견적 terms 자동 이관(견적 전용 문구 제외), 부가세 면제 문구, 금액 독일식 `1.950,00 €`.
+- 검증: `node scripts/check-contract-b2c.mjs` (B2B 조항해시 골든값 5건 + 소비자 조항/견적연동 50여 항목).
+- 시트 신규 4열: 촬영장소 · 부가세모드 · 면세국가 · 보관기간.
+- ⚠️ Widerrufsbelehrung 문구·스토노 비율은 변호사 검토 권장(§ 309 Nr. 5 BGB). 스태플 1~6개월 구간은 § 648 BGB 로 위임.

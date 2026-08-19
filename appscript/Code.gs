@@ -176,8 +176,9 @@ function readVatModeFromPayload_(payload,fallback){
 function vatExemptNoteText_(lang,docKind,country){
   const c=String(country||'').trim();
   const isInv=docKind==='invoice';
+  const koDoc=docKind==='contract'?'계약':(isInv?'인보이스':'견적');
   const map={
-    ko:`본 ${isInv?'인보이스':'견적'}의 고객사는 ${c?c+'(EU 역외)':'EU 역외 국가'} 소재 사업자로, 독일 부가가치세법 §3a Abs. 2 UStG에 따라 용역의 공급지가 국외에 해당하여 독일 부가가치세가 부과되지 않습니다. 표기 금액이 최종 금액입니다.`,
+    ko:`본 ${koDoc}의 고객사는 ${c?c+'(EU 역외)':'EU 역외 국가'} 소재 사업자로, 독일 부가가치세법 §3a Abs. 2 UStG에 따라 용역의 공급지가 국외에 해당하여 독일 부가가치세가 부과되지 않습니다. 표기 금액이 최종 금액입니다.`,
     de:`Nicht steuerbare sonstige Leistung — Leistungsort im Drittland${c?' ('+c+')':''} gem. §3a Abs. 2 UStG. Es wird keine deutsche Umsatzsteuer berechnet.`,
     en:`Not subject to German VAT — place of supply outside Germany${c?' ('+c+')':''} pursuant to Sec. 3a (2) German VAT Act (UStG). The amounts shown are final.`
   };
@@ -31432,7 +31433,7 @@ function _formatBookingDate_(v){
  * → 고객 온라인 단순전자서명 → 서명 PDF 재생성 + 양측 메일. 조항은 계약서/2026 draft(12조) 기반 v1.
  * MVP는 한국어 계약서만 (de/en 후속). 저작권귀속 기본 '스튜디오'(사용범위 라이선스), 전부양도는 '고객'. */
 const CONTRACT_SHEET_NAME='계약서';
-const CONTRACT_HEADERS=['계약ID','생성일시','상태','언어','계약종류','고객명','회사명','이메일','연락처','고객주소','VAT번호','연결견적번호','연결예약행','촬영일정','업무내용','목적물','납품형식','납품기한','사용범위','저작권귀속','순액(€)','부가세(€)','총액(€)','계약금(€)','잔금(€)','지급조건','계약기간종료','특약메모','PDF파일ID','PDF링크','발송일시','서명자명','서명일시','서명UA','조항버전','조항해시','메모'];
+const CONTRACT_HEADERS=['계약ID','생성일시','상태','언어','계약종류','고객명','회사명','이메일','연락처','고객주소','VAT번호','연결견적번호','연결예약행','촬영일정','업무내용','목적물','납품형식','납품기한','사용범위','저작권귀속','순액(€)','부가세(€)','총액(€)','계약금(€)','잔금(€)','지급조건','계약기간종료','특약메모','PDF파일ID','PDF링크','발송일시','서명자명','서명일시','서명UA','조항버전','조항해시','메모','촬영장소','부가세모드','면세국가','보관기간'];
 const CONTRACT_COL=CONTRACT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const CONTRACT_STATUS={DRAFT:'초안',SENT:'발송',SIGNED:'서명완료',CANCELLED:'취소'};
 const CONTRACT_CLAUSE_VERSION='DV-v1 (2026-08-02)';
@@ -31479,6 +31480,7 @@ function contractRowToObject_(row,rowIndex){
     deliveryDeadline:cell('납품기한'),usageScope:cell('사용범위'),copyrightOwner:cell('저작권귀속')||'스튜디오',
     net:money('순액(€)'),vat:money('부가세(€)'),total:money('총액(€)'),deposit:money('계약금(€)'),balance:money('잔금(€)'),
     paymentTerms:cell('지급조건'),contractEnd:cell('계약기간종료'),specialTerms:cell('특약메모'),
+    location:cell('촬영장소'),vatMode:normalizeVatMode_(cell('부가세모드')),vatExemptCountry:cell('면세국가'),retention:cell('보관기간'),
     pdfFileId:cell('PDF파일ID'),pdfUrl:ensurePublicDriveFileUrl_(cell('PDF파일ID'))||cell('PDF링크'),
     sentAt:cell('발송일시'),signerName:cell('서명자명'),signedAt:cell('서명일시'),
     clauseVersion:cell('조항버전')||CONTRACT_CLAUSE_VERSION,clauseHash:cell('조항해시'),memo:cell('메모')
@@ -31496,8 +31498,331 @@ function normalizeContractLang_(lang){
   return (l==='de'||l==='en')?l:'ko';
 }
 
+/* ====== 소비자(B2C) Fotografenvertrag — 계약종류 분기 (2026-08-19) ======
+ * 왜: 기존 Drehvertrag(B2B)를 개인 고객에게 쓰면 § 9 영업비밀·§ 10 도산해지·§ 12 관할합의가
+ *     소비자 상대로 무의미하거나 무효(§§ 12·13 ZPO / § 307 BGB)이고, 무엇보다
+ *     Widerrufsbelehrung 이 없으면 철회기간이 14일 → 12개월+14일 로 늘어난다(§ 356 Abs. 3 BGB).
+ * 설계: 종류 판정은 **생성 시 1회**만 하고 '계약종류' 열에 굳힌다. 렌더는 언제나 저장값을 따르므로
+ *     기존 행('촬영대행')은 배포 후에도 — 서명본 재생성 포함 — Drehvertrag 그대로 나온다.
+ * 스펙: docs/fotografenvertrag-b2c-spec.md */
+const CONTRACT_KIND_B2B='촬영대행';
+const CONTRACT_KIND_B2C='Fotografenvertrag';
+const CONTRACT_CLAUSE_VERSION_B2C='FV-v1 (2026-08-19)';
+const CONTRACT_B2C_ITEM_GROUPS=['wed','stud','snap','prof','pass'];
+
+function isB2cContract_(c){
+  const t=String((c&&(c.contractKind||c.contractType))||'').trim().toLowerCase();
+  return t==='fotografenvertrag'||t==='b2c'||t==='소비자';
+}
+/* 판정 우선순위: 명시 지정 > 사업자 신호(회사명·VAT번호·예약유형 기업) > itemGroup > 개인=소비자.
+   itemGroup 은 보조 신호다 — AN-260011(Jin Hee Choi 웨딩)처럼 itemGroup 이 'biz' 로 잘못 들어간
+   개인 건이 실제로 있어서, 회사명·VAT 가 비어 있으면 소비자로 본다. */
+function resolveContractType_(c){
+  const explicit=String((c&&(c.contractKind||c.contractType))||'').trim();
+  if(explicit){
+    const e=explicit.toLowerCase();
+    if(e==='fotografenvertrag'||e==='b2c'||e==='소비자') return CONTRACT_KIND_B2C;
+    if(e==='b2b'||e==='drehvertrag'||e===CONTRACT_KIND_B2B) return CONTRACT_KIND_B2B;
+    return explicit; // 그 밖의 자유 입력은 종전대로 보존
+  }
+  if(String(c.companyName||'').trim()||String(c.vatId||'').trim()||String(c.bookingType||'').trim()==='기업') return CONTRACT_KIND_B2B;
+  const g=String(c.itemGroup||'').trim().toLowerCase();
+  if(CONTRACT_B2C_ITEM_GROUPS.indexOf(g)>-1) return CONTRACT_KIND_B2C;
+  return CONTRACT_KIND_B2C;
+}
+
+/* 독일식 금액 표기 1.950,00 € — 소비자 계약서 전용.
+   B2B Drehvertrag 은 종전 '€ 1950'(formatEuroAmount_) 을 그대로 쓴다(하위호환). */
+function formatEuroDe_(value){
+  const n=roundCurrency_(value);
+  const p=Math.abs(n).toFixed(2).split('.');
+  return (n<0?'-':'')+p[0].replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+p[1]+' €';
+}
+
+/* 견적 lang('de_ko' 등) 안에서 계약 언어가 몇 번째 칸인지 — '//' 분리 텍스트 선택용 */
+function _contractLangIndexInQuote_(quoteLang,contractLang){
+  const langs=_quoteLangList_(quoteLang);
+  const idx=langs.indexOf(normalizeContractLang_(contractLang));
+  return idx<0?0:idx;
+}
+
+/* 견적 품목 → § 3 Leistungsumfang 텍스트.
+   첫 줄 = Leistung, 나머지 줄 = 그 하위 설명('· ' 들여쓰기). 다국어 '//' 는 계약 언어 쪽만.
+   €0 라인(포트폴리오 동의 등)도 Leistungsumfang 에는 넣는다 — 대금표(§ 4)는 총액만 쓰므로 영향 없음. */
+function _contractScopeFromQuoteItems_(items,quoteLang,contractLang){
+  const idx=_contractLangIndexInQuote_(quoteLang,contractLang);
+  const out=[];
+  (items||[]).forEach(function(it){
+    const desc=_pickQuoteLangText_(String((it&&it.description)||''),idx);
+    const lines=String(desc||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+    if(!lines.length) return;
+    const qty=Math.max(1,parseInt(it&&it.qty,10)||1);
+    out.push(lines[0]+(qty>1?' × '+qty:''));
+    lines.slice(1).forEach(function(s){out.push('· '+s);});
+  });
+  return out.join('\n');
+}
+
+/* 견적 '조건' → 계약 특약 자동 이관.
+   견적서에서만 의미가 있는 줄(유효기간·대체공지·freibleibend·"계약서를 보내드립니다")은 걸러낸다 —
+   서명 계약서 안에 "이 견적은 확정이 아닙니다" 가 남으면 그 자체가 결함이다.
+   걸러낸 줄은 create 응답 droppedTerms 로 돌려주므로 필요하면 특약메모를 직접 손보면 된다. */
+const CONTRACT_TERMS_DROP_PATTERNS=[
+  /freibleibend/i,/angebot/i,/quotation/i,/견적/,
+  /g(ü|ue)ltig/i,/valid for/i,/유효기한|유효기간/,
+  /fotografenvertrag[^\n]*(zugesandt|unterschrift|unterzeichnung)/i,
+  /계약서[^\n]*(발송|송부|전달)/
+];
+function _contractSpecialTermsFromQuote_(termsText,contractLang,langIdx){
+  const L=normalizeContractLang_(contractLang);
+  const picked=_pickQuoteLangText_(String(termsText||''),langIdx);
+  if(!picked) return {text:'',dropped:[]};
+  const boiler={};
+  _defaultQuoteTerms_(L).split('\n').forEach(function(s){const t=s.trim();if(t)boiler[t]=true;});
+  const keep=[],dropped=[];
+  picked.split('\n').forEach(function(raw){
+    const line=raw.trim();
+    if(!line) return;
+    if(boiler[line]||CONTRACT_TERMS_DROP_PATTERNS.some(function(re){return re.test(line);})) dropped.push(line);
+    else keep.push(line);
+  });
+  return {text:keep.join('\n'),dropped:dropped};
+}
+
+/* § 356 Abs. 4 BGB 조기이행 문단 삽입 조건 — 촬영일이 계약일로부터 14일 이내일 때만.
+   계약일은 '생성일시'(재렌더 시에도 동일) 기준이라 서명본 재생성에서 결과가 흔들리지 않는다. */
+function _contractShootWithin14Days_(c){
+  const s=String(c.schedule||'').trim().match(/\d{4}-\d{2}-\d{2}/);
+  if(!s) return false;
+  const base=String(c.createdAt||'').trim().match(/\d{4}-\d{2}-\d{2}/);
+  const start=base?base[0]:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const diff=Math.round((new Date(s[0]+'T00:00:00Z')-new Date(start+'T00:00:00Z'))/86400000);
+  return diff>=0&&diff<=14;
+}
+
+/* 소비자 계약서 본문 (13조). 독일어가 정본 — § 13 Widerrufsbelehrung 은 언어와 무관하게
+   법정 양식 독일어 원문을 그대로 싣고, ko/en 계약서에는 이해용 번역을 함께 단다. */
+function buildFotografenvertragBodyHtml_(c){
+  const L=normalizeContractLang_(c.lang);
+  const money=v=>formatEuroDe_(v);
+  const vatExempt=isVatExempt_(c.vatMode);
+  const early=_contractShootWithin14Days_(c);
+  const W={
+    h1:'Widerrufsrecht',
+    p1:'Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen. Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag des Vertragsabschlusses. Um Ihr Widerrufsrecht auszuüben, müssen Sie uns (Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, Tel. +49 176 6093 9400, studio.mean.de@gmail.com) mittels einer eindeutigen Erklärung (z. B. ein mit der Post versandter Brief oder E-Mail) über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das beigefügte Muster-Widerrufsformular verwenden, das jedoch nicht vorgeschrieben ist. Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden.',
+    h2:'Folgen des Widerrufs',
+    p2:'Wenn Sie diesen Vertrag widerrufen, haben wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben, unverzüglich und spätestens binnen vierzehn Tagen ab dem Tag zurückzuzahlen, an dem die Mitteilung über Ihren Widerruf dieses Vertrags bei uns eingegangen ist. Für diese Rückzahlung verwenden wir dasselbe Zahlungsmittel, das Sie bei der ursprünglichen Transaktion eingesetzt haben, es sei denn, mit Ihnen wurde ausdrücklich etwas anderes vereinbart; in keinem Fall werden Ihnen wegen dieser Rückzahlung Entgelte berechnet.',
+    h3:'Vorzeitige Leistungserbringung (§ 356 Abs. 4 BGB)',
+    p3:'Haben Sie verlangt, dass die Dienstleistung während der Widerrufsfrist beginnen soll, so erlischt Ihr Widerrufsrecht mit vollständiger Erbringung der Dienstleistung.'
+  };
+  const T={
+    de:{
+      title:'Fotografenvertrag',
+      parties:(party)=>`${party} (nachfolgend „Auftraggeber:in“) und <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (nachfolgend „Auftragnehmer“) schließen den folgenden Vertrag über fotografische Leistungen.`,
+      contact:(n)=>`Ansprechpartner:in: ${n}`,
+      a1t:'§ 1 Vertragsgegenstand',a1:'Dieser Vertrag regelt die Grundlagen sowie die Rechte und Pflichten beider Parteien für die von der/dem Auftraggeber:in beauftragten fotografischen Leistungen (nachfolgend „Werk“). Der Auftragnehmer übergibt das fertiggestellte Werk in vollständiger Form an die/den Auftraggeber:in.',
+      a2t:'§ 2 Laufzeit',a2:(end)=>`Dieser Vertrag gilt vom Tag des Vertragsschlusses bis ${end}. Mit vollständiger Lieferung des Werks innerhalb der Laufzeit gilt der Vertrag als erfüllt.`,
+      endDefault:'zur vollständigen Lieferung des Werks',
+      a3t:'§ 3 Leistungsumfang',
+      rowLabels:{scope:'Leistung',items:'Leistungsumfang',schedule:'Termin',location:'Ort',format:'Lieferformat',deadline:'Lieferfrist',usage:'Nutzungsumfang'},
+      tbd:'nach Absprache',
+      deadlineDefault:'innerhalb von 10 Tagen nach Abschluss der Aufnahmen (inkl. einer Korrekturschleife)',
+      usageDefault:'private, nicht-kommerzielle Nutzung',
+      a4t:'§ 4 Vergütung und Zahlung',
+      payLabels:{net:'Nettobetrag',vat:'Umsatzsteuer (19 %)',total:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restbetrag'},
+      payTermsDefault:(dep,bal)=>`Die Anzahlung in Höhe von ${dep} ist innerhalb von 14 Tagen nach Vertragsschluss fällig und reserviert den Termin verbindlich. Der Restbetrag in Höhe von ${bal} ist spätestens am Tag des Shootings fällig, sofern in den Besonderen Vereinbarungen nichts anderes geregelt ist.`,
+      payTermsNoDeposit:(tot)=>`Der Gesamtbetrag in Höhe von ${tot} ist spätestens am Tag des Shootings fällig, sofern in den Besonderen Vereinbarungen nichts anderes geregelt ist.`,
+      bank:'Der Auftragnehmer weist die gesetzliche Umsatzsteuer von 19 % aus (USt-IdNr. DE440009941) und stellt auf Wunsch eine Rechnung aus.',
+      a5t:'§ 5 Abnahme und Korrekturen',a5:'Im Lieferumfang ist eine Korrekturschleife enthalten. Angemessene Korrekturwünsche auf Grundlage der zuvor abgestimmten Richtung setzt der Auftragnehmer sorgfältig um. Darüber hinausgehende Wünsche gelten als zusätzliche Beauftragung; die Vergütung hierfür wird einvernehmlich festgelegt.',
+      a6t:'§ 6 Mitwirkung',a6:'Die/Der Auftraggeber:in stellt die für die Durchführung des Shootings erforderlichen Informationen rechtzeitig zur Verfügung — insbesondere Ablauf und Zeiten des Tages, eine Liste der gewünschten Gruppenaufnahmen, Ansprechpartner:in vor Ort sowie Besonderheiten der Location. Verzögerungen, die auf fehlender oder verspäteter Mitwirkung beruhen, gehen nicht zu Lasten des Auftragnehmers.',
+      a7t:'§ 7 Nutzungsrechte und Urheberrecht',
+      a7:(u,ret)=>`Das Urheberrecht am Werk verbleibt beim Auftragnehmer. Die/Der Auftraggeber:in erhält ein zeitlich, räumlich und inhaltlich unbeschränktes einfaches Nutzungsrecht für ${u} — hierzu zählen insbesondere Abzüge, Fotobücher, die Weitergabe an Familie und Freunde sowie die Veröffentlichung auf privaten Social-Media-Profilen. Eine kommerzielle Nutzung bedarf einer gesonderten Vereinbarung. Eine Veröffentlichung der Aufnahmen durch den Auftragnehmer (z. B. Portfolio, Website, Social Media) erfolgt ausschließlich mit gesonderter Einwilligung der/des Auftraggeber:in. Rohmaterial und finale Dateien werden ${ret} aufbewahrt; über eine frühere Löschung wird die/der Auftraggeber:in vorab informiert.`,
+      retentionDefault:'mindestens 12 Monate ab Lieferung',
+      a8t:'§ 8 Abtretung',a8:'Rechte und Pflichten aus diesem Vertrag dürfen ohne schriftliche Zustimmung der jeweils anderen Partei nicht auf Dritte übertragen werden.',
+      a9t:'§ 9 Datenschutz',a9:'Der Auftragnehmer verarbeitet personenbezogene Daten ausschließlich zur Durchführung dieses Vertrags (Art. 6 Abs. 1 lit. b DSGVO). Aufnahmen werden nicht ohne gesonderte Einwilligung veröffentlicht. Der/Dem Auftraggeber:in stehen die Rechte nach Art. 15–21 DSGVO zu.',
+      a10t:'§ 10 Stornierung und Terminverlegung',
+      a10intro:'Die/Der Auftraggeber:in kann diesen Vertrag jederzeit in Textform kündigen. Maßgeblich ist der Zugang der Stornierungserklärung beim Auftragnehmer. Es gelten folgende pauschalierte Ausfallentschädigungen:',
+      a10rows:['Stornierung früher als 12 Monate vor dem Termin: die geleistete Anzahlung wird einbehalten.',
+        'Stornierung 12 bis 6 Monate vor dem Termin: 50 % der Gesamtvergütung.',
+        'Stornierung innerhalb eines Monats vor dem Termin: 80 % der Gesamtvergütung.',
+        'Im Übrigen gelten die gesetzlichen Regelungen (§ 648 BGB).'],
+      a10tail:'Der/Dem Auftraggeber:in bleibt der Nachweis vorbehalten, dass ein Schaden überhaupt nicht entstanden oder wesentlich niedriger ist als die vorstehende Pauschale. Wird innerhalb von zwölf Monaten einvernehmlich ein Ersatztermin vereinbart, wird die geleistete Anzahlung vollständig auf den neuen Termin angerechnet. Kann der Auftragnehmer die Leistung aus von ihm zu vertretenden Gründen (z. B. Krankheit, Unfall, höhere Gewalt) nicht erbringen, bemüht er sich um eine gleichwertige Ersatzfotografin bzw. einen gleichwertigen Ersatzfotografen; gelingt dies nicht, werden bereits geleistete Zahlungen vollständig erstattet. Innerhalb der Widerrufsfrist nach § 13 geht das gesetzliche Widerrufsrecht diesen Stornoregelungen vor; in diesem Fall werden bereits geleistete Zahlungen vollständig erstattet.',
+      a11t:'§ 11 Haftung',a11:'Der Auftragnehmer haftet unbeschränkt für Vorsatz und grobe Fahrlässigkeit sowie für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit. Bei einfacher Fahrlässigkeit haftet der Auftragnehmer nur bei Verletzung einer wesentlichen Vertragspflicht, deren Erfüllung die ordnungsgemäße Durchführung des Vertrags überhaupt erst ermöglicht und auf deren Einhaltung die/der Auftraggeber:in regelmäßig vertrauen darf; die Haftung ist in diesem Fall auf den vertragstypischen, vorhersehbaren Schaden begrenzt. Die Haftung nach dem Produkthaftungsgesetz bleibt unberührt.',
+      a12t:'§ 12 Anwendbares Recht',a12:'Es gilt das Recht der Bundesrepublik Deutschland. Streitigkeiten werden vorrangig einvernehmlich beigelegt. Es gelten die gesetzlichen Gerichtsstände.',
+      a13t:'§ 13 Widerrufsbelehrung',a13note:'',
+      wTrans:null,
+      specialT:'Besondere Vereinbarungen',
+      anlageT:'Anlage — Muster-Widerrufsformular',
+      anlageNote:'(Wenn Sie den Vertrag widerrufen wollen, dann füllen Sie bitte dieses Formular aus und senden Sie es zurück.)'
+    },
+    ko:{
+      title:'사진 촬영 계약서 (Fotografenvertrag)',
+      parties:(party)=>`${party} (이하 "고객")와(과) <b>Studio mean (Inhaber: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel (이하 "스튜디오")은 아래와 같이 사진 촬영 계약을 체결한다.`,
+      contact:(n)=>`담당: ${n}`,
+      a1t:'제 1 조 (목적)',a1:'본 계약은 "고객"이 "스튜디오"에 의뢰한 사진 촬영 및 제작 업무(이하 \'목적물\')에 관한 기본 사항과 양 당사자의 권리·의무를 규정함을 목적으로 한다. "스튜디오"는 최종 목적물을 완전한 형태로 "고객"에게 인도한다.',
+      a2t:'제 2 조 (계약의 기간)',a2:(end)=>`본 계약의 유효기간은 계약 체결일로부터 ${end}까지로 하며, 기간 내 납품이 완료되면 계약이 완료된 것으로 본다.`,
+      endDefault:'목적물 납품 완료일',
+      a3t:'제 3 조 (촬영 및 납품 범위)',
+      rowLabels:{scope:'촬영 내용',items:'포함 사항',schedule:'촬영일',location:'촬영 장소',format:'납품형식',deadline:'납품기한',usage:'사용범위'},
+      tbd:'추후 협의',
+      deadlineDefault:'촬영 종료 후 10일 이내 (교정 1회 포함)',
+      usageDefault:'사적·비상업적 이용',
+      a4t:'제 4 조 (대금 및 지급방식)',
+      payLabels:{net:'공급가액',vat:'부가가치세 (19%)',total:'총 금액',deposit:'계약금',balance:'잔금'},
+      payTermsDefault:(dep,bal)=>`계약금 ${dep}은 계약 체결 후 14일 이내에 지급하며, 입금 시 촬영일이 확정된다. 잔금 ${bal}은 촬영일까지 지급한다. 다만 특약사항에 달리 정한 경우에는 그에 따른다.`,
+      payTermsNoDeposit:(tot)=>`총 금액 ${tot}은 촬영일까지 지급한다. 다만 특약사항에 달리 정한 경우에는 그에 따른다.`,
+      bank:'"스튜디오"는 독일 부가가치세법에 따라 19% 부가가치세를 적용하며(USt-IdNr. DE440009941), 요청 시 인보이스(Rechnung)를 발행한다.',
+      a5t:'제 5 조 (검수 및 수정)',a5:'납품 범위에는 교정 1회가 포함된다. 사전 협의된 편집 방향을 근거로 한 타당한 수정 요구에 "스튜디오"는 성실히 임하며, 사전 협의 범위를 벗어나는 요구는 별도의 추가 작업으로 보고 비용을 상호 합의하여 정한다.',
+      a6t:'제 6 조 (고객의 협조)',a6:'"고객"은 촬영 진행에 필요한 정보 — 당일 일정과 시간, 원하는 단체사진 목록, 현장 담당자, 장소의 특이사항 등 — 를 적시에 제공한다. 협조가 없거나 지연되어 발생한 지연은 "스튜디오"의 책임으로 보지 않는다.',
+      a7t:'제 7 조 (사용권 및 저작권)',
+      a7:(u,ret)=>`목적물의 저작권은 "스튜디오"에 귀속된다. "고객"은 ${u}을 위하여 기간·지역·매체의 제한 없는 이용권을 갖는다 — 인화, 포토북 제작, 가족·지인에 대한 전달, 개인 SNS 계정 게시가 여기에 포함된다. 상업적 이용은 별도 합의로 한다. "스튜디오"가 촬영본을 포트폴리오·웹사이트·SNS 등에 게시하는 것은 "고객"의 별도 동의가 있는 경우에만 가능하다. 촬영원본과 최종 파일은 ${ret} 보관하며, 그 이전에 삭제할 경우 "고객"에게 미리 알린다.`,
+      retentionDefault:'납품 후 최소 12개월',
+      a8t:'제 8 조 (양도 금지)',a8:'양 당사자는 상대방의 서면 동의 없이 본 계약상의 권리·의무를 제3자에게 양도하지 못한다.',
+      a9t:'제 9 조 (개인정보 보호)',a9:'"스튜디오"는 개인정보를 본 계약의 이행 목적으로만 처리한다(DSGVO 제6조 제1항 b호). 촬영본은 별도 동의 없이 공개하지 않는다. "고객"은 DSGVO 제15조~제21조에 따른 권리를 갖는다.',
+      a10t:'제 10 조 (취소 및 일정 변경)',
+      a10intro:'"고객"은 언제든지 문서(이메일 포함)로 본 계약을 해지할 수 있다. 기준일은 취소 통보가 "스튜디오"에 도달한 날이다. 취소 시 다음의 정액 손해배상이 적용된다:',
+      a10rows:['촬영일 12개월 초과 전 취소: 기지급 계약금 몰수',
+        '촬영일 12~6개월 전 취소: 총액의 50%',
+        '촬영일 1개월 이내 취소: 총액의 80%',
+        '그 밖의 경우에는 법정 규정(독일 민법 제648조)에 따른다.'],
+      a10tail:'"고객"은 실제 손해가 발생하지 않았거나 위 정액보다 현저히 적다는 사실을 입증할 수 있다. 12개월 이내에 대체일을 상호 합의한 경우 기지급 계약금은 전액 새 일정으로 이월된다. "스튜디오"의 사유(질병·사고·불가항력 등)로 이행이 불가능한 경우 "스튜디오"는 동급의 대체 사진가를 주선하며, 주선이 불가능하면 기지급액을 전액 환불한다. 제13조의 철회기간 내에는 법정 철회권이 본 취소 규정에 우선하며, 이 경우 기지급액은 전액 환불된다.',
+      a11t:'제 11 조 (책임)',a11:'"스튜디오"는 고의·중과실 및 생명·신체·건강 침해로 인한 손해에 대해 무제한 책임을 진다. 경과실의 경우에는 계약의 본질적 의무(그 이행 없이는 계약의 목적 달성이 불가능하고 고객이 그 준수를 신뢰할 수 있는 의무)를 위반한 때에만 책임을 지며, 그 범위는 계약전형적이고 예견가능한 손해로 한정된다. 제조물책임법상의 책임은 영향을 받지 않는다.',
+      a12t:'제 12 조 (준거법)',a12:'본 계약은 독일법을 준거법으로 한다. 분쟁은 우선 상호 합의로 해결한다. 관할은 법정 관할에 따른다.',
+      a13t:'제 13 조 (철회권 안내 / Widerrufsbelehrung)',
+      a13note:'아래 철회권 안내는 독일 법정 양식으로, 독일어 원문이 법적 효력을 가진다. 한국어는 이해를 돕기 위한 번역이다.',
+      wTrans:{
+        h1:'철회권',
+        p1:'귀하는 사유를 밝히지 않고 14일 이내에 본 계약을 철회할 권리가 있습니다. 철회기간은 계약 체결일로부터 14일입니다. 철회권을 행사하려면 Studio mean (Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, Tel. +49 176 6093 9400, studio.mean.de@gmail.com) 에 명확한 의사표시(우편 또는 이메일 등)로 철회 의사를 알려야 합니다. 첨부된 철회 서식을 사용할 수 있으나 의무는 아닙니다. 철회기간 준수를 위해서는 기간 만료 전에 통지를 발송하면 충분합니다.',
+        h2:'철회의 효과',
+        p2:'귀하가 본 계약을 철회하는 경우, 당사는 귀하로부터 수령한 모든 대금을 철회 통지가 당사에 도달한 날로부터 지체 없이, 늦어도 14일 이내에 반환합니다. 반환에는 원 거래에서 사용한 것과 동일한 결제수단을 사용하며, 별도로 명시적으로 합의한 경우는 예외입니다. 이 반환으로 인하여 귀하에게 어떠한 수수료도 청구되지 않습니다.',
+        h3:'철회기간 중 이행 개시 (독일 민법 제356조 제4항)',
+        p3:'귀하가 철회기간 중에 용역의 개시를 요청한 경우, 용역이 완전히 이행되면 철회권은 소멸합니다.'
+      },
+      specialT:'특약사항',
+      anlageT:'별지 — 철회 서식 (Muster-Widerrufsformular)',
+      anlageNote:'(계약을 철회하려면 이 서식을 작성하여 회신해 주십시오. 독일어 원문 양식이 정본입니다.)'
+    },
+    en:{
+      title:'Photography Agreement (Fotografenvertrag)',
+      parties:(party)=>`${party} (hereinafter the “Client”) and <b>Studio mean (Owner: Taewoong Min)</b>, Holzweg-Passage 3, 61440 Oberursel, Germany (hereinafter the “Photographer”) enter into the following agreement for photographic services.`,
+      contact:(n)=>`Contact: ${n}`,
+      a1t:'Article 1 (Subject)',a1:'This agreement sets out the basic terms and the rights and obligations of both parties regarding the photographic services commissioned by the Client (the “Work”). The Photographer shall deliver the completed Work to the Client in full.',
+      a2t:'Article 2 (Term)',a2:(end)=>`This agreement is effective from the date of signing until ${end}. The agreement is deemed fulfilled upon complete delivery of the Work within the term.`,
+      endDefault:'complete delivery of the Work',
+      a3t:'Article 3 (Scope of Services)',
+      rowLabels:{scope:'Service',items:'Scope of services',schedule:'Date',location:'Location',format:'Delivery format',deadline:'Delivery deadline',usage:'Scope of use'},
+      tbd:'to be agreed',
+      deadlineDefault:'within 10 days after the shoot (incl. one round of revisions)',
+      usageDefault:'private, non-commercial use',
+      a4t:'Article 4 (Fees and Payment)',
+      payLabels:{net:'Net amount',vat:'VAT (19%)',total:'Total',deposit:'Deposit',balance:'Balance'},
+      payTermsDefault:(dep,bal)=>`The deposit of ${dep} is due within 14 days of signing and secures the date. The balance of ${bal} is due no later than on the day of the shoot, unless the Special Terms provide otherwise.`,
+      payTermsNoDeposit:(tot)=>`The total amount of ${tot} is due no later than on the day of the shoot, unless the Special Terms provide otherwise.`,
+      bank:'The Photographer applies German VAT of 19% (VAT ID DE440009941) and issues an invoice on request.',
+      a5t:'Article 5 (Review and Revisions)',a5:'One round of revisions is included. The Photographer will diligently implement reasonable revision requests based on the direction agreed in advance. Requests beyond that scope are treated as additional work, with fees agreed mutually.',
+      a6t:'Article 6 (Client Cooperation)',a6:'The Client shall provide the information required to carry out the shoot in good time — in particular the schedule and timings of the day, a list of desired group photographs, an on-site contact person and any particularities of the location. Delays caused by missing or late cooperation are not attributable to the Photographer.',
+      a7t:'Article 7 (Rights of Use and Copyright)',
+      a7:(u,ret)=>`Copyright in the Work remains with the Photographer. The Client receives a non-exclusive right of use, unlimited in time, territory and medium, for ${u} — including prints, photo books, sharing with family and friends and publication on private social media profiles. Commercial use requires a separate agreement. Publication of the images by the Photographer (e.g. portfolio, website, social media) requires the Client's separate consent. Raw material and final files are retained for ${ret}; the Client will be informed in advance of any earlier deletion.`,
+      retentionDefault:'at least 12 months after delivery',
+      a8t:'Article 8 (No Assignment)',a8:'Neither party may transfer rights or obligations under this agreement to third parties without the other party\'s written consent.',
+      a9t:'Article 9 (Data Protection)',a9:'The Photographer processes personal data solely for the performance of this agreement (Art. 6(1)(b) GDPR). Images are not published without separate consent. The Client has the rights set out in Art. 15–21 GDPR.',
+      a10t:'Article 10 (Cancellation and Rescheduling)',
+      a10intro:'The Client may terminate this agreement at any time in text form. The date the cancellation reaches the Photographer is decisive. The following lump-sum compensation applies:',
+      a10rows:['Cancellation more than 12 months before the date: the deposit paid is retained.',
+        'Cancellation 12 to 6 months before the date: 50% of the total fee.',
+        'Cancellation within one month of the date: 80% of the total fee.',
+        'Otherwise the statutory rules apply (Sec. 648 German Civil Code).'],
+      a10tail:'The Client is entitled to prove that no damage was incurred or that it was substantially lower than the lump sum above. If a replacement date is agreed within twelve months, the deposit paid is credited in full to the new date. If the Photographer cannot perform for reasons within his sphere (e.g. illness, accident, force majeure), he will endeavour to arrange an equivalent replacement photographer; if this is not possible, all payments already made are refunded in full. Within the withdrawal period under Article 13, the statutory right of withdrawal takes precedence over these cancellation rules; in that case all payments already made are refunded in full.',
+      a11t:'Article 11 (Liability)',a11:'The Photographer is liable without limitation for intent and gross negligence and for damage arising from injury to life, body or health. In the case of simple negligence the Photographer is liable only for breach of a material contractual obligation, the fulfilment of which is essential to the proper performance of the contract and on the observance of which the Client may regularly rely; in that case liability is limited to the foreseeable damage typical for this type of contract. Liability under the German Product Liability Act remains unaffected.',
+      a12t:'Article 12 (Governing Law)',a12:'This agreement is governed by German law. Disputes shall primarily be settled amicably. The statutory places of jurisdiction apply.',
+      a13t:'Article 13 (Right of Withdrawal / Widerrufsbelehrung)',
+      a13note:'The following withdrawal instruction is the German statutory form; the German wording is legally binding. The English text is a courtesy translation.',
+      wTrans:{
+        h1:'Right of withdrawal',
+        p1:'You have the right to withdraw from this contract within fourteen days without giving any reason. The withdrawal period is fourteen days from the day of conclusion of the contract. To exercise your right of withdrawal you must inform us (Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, Tel. +49 176 6093 9400, studio.mean.de@gmail.com) of your decision to withdraw from this contract by an unequivocal statement (e.g. a letter sent by post or e-mail). You may use the attached model withdrawal form, but it is not obligatory. To meet the withdrawal deadline it is sufficient for you to send your communication concerning the exercise of the right of withdrawal before the withdrawal period has expired.',
+        h2:'Effects of withdrawal',
+        p2:'If you withdraw from this contract, we shall reimburse to you all payments received from you without undue delay and in any event not later than fourteen days from the day on which we are informed about your decision to withdraw from this contract. We will carry out such reimbursement using the same means of payment as you used for the initial transaction, unless you have expressly agreed otherwise; in any event, you will not incur any fees as a result of such reimbursement.',
+        h3:'Early performance (Sec. 356(4) German Civil Code)',
+        p3:'If you requested that the services begin during the withdrawal period, your right of withdrawal expires upon complete performance of the services.'
+      },
+      specialT:'Special Terms',
+      anlageT:'Annex — Model withdrawal form (Muster-Widerrufsformular)',
+      anlageNote:'(Complete and return this form only if you wish to withdraw from the contract. The German original is authoritative.)'
+    }
+  }[L];
+  const addr=String(c.customerAddress||'').trim().replace(/\s*\n\s*/g,', ');
+  const partyName=c.companyName?`${escapeHtml_(c.companyName)} (${escapeHtml_(T.contact(c.name))})`:escapeHtml_(c.name);
+  const party=partyName+(addr?', '+escapeHtml_(addr):'');
+  const rows=[
+    [T.rowLabels.scope,String(c.scopeText||'').trim()],            // 견적 '상품' — 한 줄 요약
+    [T.rowLabels.items,String(c.deliverables||'').trim()],         // 견적 품목 전체(첫 줄=Leistung, 나머지=설명)
+    [T.rowLabels.schedule,String(c.schedule||'').trim()||T.tbd],
+    [T.rowLabels.location,String(c.location||'').trim()||T.tbd],
+    [T.rowLabels.format,String(c.deliveryFormat||'').trim()],
+    [T.rowLabels.deadline,String(c.deliveryDeadline||'').trim()||T.deadlineDefault],
+    [T.rowLabels.usage,String(c.usageScope||'').trim()||T.usageDefault]
+  ].filter(r=>String(r[1]||'').trim())
+   .map(r=>`<tr><td class="k">${escapeHtml_(r[0])}</td><td>${escapeHtml_(r[1]).replace(/\n/g,'<br>')}</td></tr>`).join('');
+  const payTerms=c.paymentTerms||(c.deposit>0?T.payTermsDefault(money(c.deposit),money(c.balance)):T.payTermsNoDeposit(money(c.total)));
+  const vatRow=vatExempt
+    ? `<tr><td class="k">${T.payLabels.vat}</td><td>${escapeHtml_(vatExemptNoteText_(L,'contract',c.vatExemptCountry||''))}</td></tr>`
+    : `<tr><td class="k">${T.payLabels.vat}</td><td>${money(c.vat)}</td></tr>`;
+  const a10=`<p>${T.a10intro}</p><ul class="staffel">${T.a10rows.map(s=>`<li>${s}</li>`).join('')}</ul><p>${T.a10tail}</p>`;
+  const wBlock=(w)=>`<p class="wr-h">${w.h1}</p><p>${w.p1}</p><p class="wr-h">${w.h2}</p><p>${w.p2}</p>`+(early?`<p class="wr-h">${w.h3}</p><p>${w.p3}</p>`:'');
+  const a13=(T.a13note?`<p class="muted-note">${T.a13note}</p>`:'')
+    +`<div class="widerruf">${wBlock(W)}</div>`
+    +(T.wTrans?`<div class="widerruf-trans">${wBlock(T.wTrans)}</div>`:'');
+  return `
+<h1>${T.title}</h1>
+<p class="parties">${T.parties(party)}</p>
+<h2>${T.a1t}</h2><p>${T.a1}</p>
+<h2>${T.a2t}</h2><p>${T.a2(escapeHtml_(c.contractEnd||T.endDefault))}</p>
+<h2>${T.a3t}</h2><table class="scope">${rows}</table>
+<h2>${T.a4t}</h2>
+<table class="pay"><tr><td class="k">${T.payLabels.net}</td><td>${money(c.net)}</td></tr>
+${vatRow}
+<tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
+${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
+<p>${escapeHtml_(payTerms)}</p>
+<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',c.vatExemptCountry||'')):T.bank}</p>
+<h2>${T.a5t}</h2><p>${T.a5}</p>
+<h2>${T.a6t}</h2><p>${T.a6}</p>
+<h2>${T.a7t}</h2><p>${T.a7(escapeHtml_(String(c.usageScope||'').trim()||T.usageDefault),escapeHtml_(String(c.retention||'').trim()||T.retentionDefault))}</p>
+<h2>${T.a8t}</h2><p>${T.a8}</p>
+<h2>${T.a9t}</h2><p>${T.a9}</p>
+<h2>${T.a10t}</h2>${a10}
+<h2>${T.a11t}</h2><p>${T.a11}</p>
+<h2>${T.a12t}</h2><p>${T.a12}</p>
+<h2>${T.a13t}</h2>${a13}
+${c.specialTerms?`<h2>${T.specialT}</h2><p>${escapeHtml_(c.specialTerms).replace(/\n/g,'<br>')}</p>`:''}`;
+}
+
+/* 별지 — Muster-Widerrufsformular (Anlage 2 zu Art. 246a § 1 Abs. 2 S. 1 Nr. 1 EGBGB).
+   법정 서식이므로 독일어 원문 그대로. PDF 에서는 서명란 뒤 별도 페이지로 나간다. */
+function buildWiderrufsformularHtml_(c){
+  const L=normalizeContractLang_(c.lang);
+  const H={de:{t:'Anlage — Muster-Widerrufsformular',n:'(Wenn Sie den Vertrag widerrufen wollen, dann füllen Sie bitte dieses Formular aus und senden Sie es zurück.)'},
+    ko:{t:'별지 — 철회 서식 (Muster-Widerrufsformular)',n:'(계약을 철회하려면 이 서식을 작성하여 회신해 주십시오. 독일어 원문 양식이 정본입니다.)'},
+    en:{t:'Annex — Model withdrawal form (Muster-Widerrufsformular)',n:'(Complete and return this form only if you wish to withdraw from the contract. The German original is authoritative.)'}}[L];
+  return `<div class="anlage">
+<h2>${H.t}</h2>
+<p class="muted-note">${H.n}</p>
+<div class="wr-form">
+<p>An: Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, studio.mean.de@gmail.com</p>
+<p>Hiermit widerrufe(n) ich/wir (*) den von mir/uns (*) abgeschlossenen Vertrag über die Erbringung der folgenden Dienstleistung (*)</p>
+<p>${escapeHtml_(String(c.scopeText||c.deliverables||'').split('\n')[0]||'')}${c.contractId?' · '+escapeHtml_(c.contractId):''}</p>
+<p>Bestellt am (*)/erhalten am (*): ______________________</p>
+<p>Name des/der Verbraucher(s): ______________________</p>
+<p>Anschrift des/der Verbraucher(s): ______________________</p>
+<p>Unterschrift des/der Verbraucher(s) (nur bei Mitteilung auf Papier): ______________________</p>
+<p>Datum: ______________________</p>
+<p class="muted-note">(*) Unzutreffendes streichen.</p>
+</div></div>`;
+}
+
 /* 계약서 본문 HTML (ko/de/en, 12조) — 서명 페이지와 PDF가 공유 */
 function buildDrehvertragBodyHtml_(c){
+  if(isB2cContract_(c)) return buildFotografenvertragBodyHtml_(c); // 소비자 계약은 별도 조항표(하위 B2B 경로는 아래 그대로)
   const L=normalizeContractLang_(c.lang);
   const money=v=>'€ '+formatEuroAmount_(v);
   const copyrightStudio=String(c.copyrightOwner||'스튜디오')!=='고객';
@@ -31622,13 +31947,19 @@ ${c.specialTerms?`<h2>${T.specialT}</h2><p>${escapeHtml_(c.specialTerms).replace
 }
 
 function buildDrehvertragHtml_(c){
+  const b2c=isB2cContract_(c);
   const body=buildDrehvertragBodyHtml_(c);
   const L=normalizeContractLang_(c.lang);
-  const S={
+  let S={
     ko:{studio:'"을" Studio mean',client:(n)=>`"갑" ${n}`,esig:'전자서명',esigNote:'온라인 단순전자서명',blank:'서명란 (온라인 서명 링크로 서명)'},
     de:{studio:'Auftragnehmer — Studio mean',client:(n)=>`Auftraggeber — ${n}`,esig:'Elektronische Signatur',esigNote:'einfache elektronische Signatur (online)',blank:'Unterschrift (über den Online-Signaturlink)'},
     en:{studio:'Contractor — Studio mean',client:(n)=>`Client — ${n}`,esig:'Electronic signature',esigNote:'simple electronic signature (online)',blank:'Signature (via the online signing link)'}
   }[L];
+  // 소비자 계약서는 본문이 "고객/스튜디오"·Auftraggeber:in 이므로 서명란 라벨도 맞춘다
+  if(b2c) S=Object.assign({},S,{
+    studio:{ko:'"스튜디오" Studio mean',de:'Auftragnehmer — Studio mean',en:'Photographer — Studio mean'}[L],
+    client:{ko:(n)=>`"고객" ${n}`,de:(n)=>`Auftraggeber:in — ${n}`,en:(n)=>`Client — ${n}`}[L]
+  });
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const signBlock=c.signedAt
     ? `<div class="sig-row"><div><b>${S.studio}</b><br>Taewoong Min<br><span class="muted">${escapeHtml_(String(c.sentAt||c.createdAt||today).slice(0,10))}</span></div>
@@ -31643,13 +31974,13 @@ td.k{width:30mm;background:#fafaf9;font-weight:700;white-space:nowrap}
 .parties{margin-bottom:3mm}.bank{font-size:9pt;color:#57534e}.muted{color:#78716c;font-size:9pt}
 .sig-row{display:flex;justify-content:space-between;gap:10mm;margin-top:10mm;padding-top:5mm;border-top:1px solid #d6d3d1}
 .sig-row>div{flex:1}
-.foot{margin-top:8mm;font-size:8pt;color:#a8a29e;text-align:center}
-</style></head><body>${body}${signBlock}
+.foot{margin-top:8mm;font-size:8pt;color:#a8a29e;text-align:center}${b2c?'\n.staffel{margin:0 0 2mm;padding-left:6mm}.staffel li{margin:0 0 1mm}\n.widerruf{border:1px solid #d6d3d1;padding:3mm 4mm;margin:2mm 0}.widerruf-trans{border:1px dashed #d6d3d1;padding:3mm 4mm;margin:2mm 0;color:#44403c}\n.wr-h{font-weight:700;margin:0 0 1.5mm}.muted-note{font-size:9pt;color:#78716c}\n.anlage{page-break-before:always;padding-top:4mm}.wr-form p{margin:0 0 3.5mm}':''}
+</style></head><body>${body}${signBlock}${b2c?buildWiderrufsformularHtml_(c):''}
 <div class="foot">${escapeHtml_(c.contractId)} · ${escapeHtml_(c.clauseVersion||CONTRACT_CLAUSE_VERSION)}${c.clauseHash?' · '+escapeHtml_(c.clauseHash):''} · Studio mean, Holzweg-Passage 3, 61440 Oberursel</div>
 </body></html>`;
 }
 function _contractClauseHash_(c){
-  const raw=buildDrehvertragBodyHtml_(c);
+  const raw=buildDrehvertragBodyHtml_(c)+(isB2cContract_(c)?buildWiderrufsformularHtml_(c):'');
   return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,raw,Utilities.Charset.UTF_8)
     .map(b=>((b&0xff)+0x100).toString(16).slice(1)).join('').slice(0,10);
 }
@@ -31685,12 +32016,17 @@ function createContractForAgent_(payload){
   payload=payload||{};
   const data=payload.data||{};
   const sheet=getContractSheet_();
+  const warnings=[];
+  let droppedTerms=[];
+  let quote=null;
   let base={};
   if(payload.quoteNumber){
     const q=getQuoteByNumberForContract_(payload.quoteNumber);
     if(!q) throw new Error('견적을 찾을 수 없습니다: '+payload.quoteNumber);
+    quote=q;
     base={quoteNumber:q.number,name:q.name,companyName:q.companyName,email:q.email,phone:q.phone,
-      customerAddress:q.customerAddress,vatId:q.vatId,lang:normalizeContractLang_(q.lang),
+      customerAddress:q.customerAddress||q.billingAddress,vatId:q.vatId,lang:normalizeContractLang_(q.lang),
+      itemGroup:q.itemGroup,vatMode:q.vatMode,vatExemptCountry:q.vatExemptCountry,
       schedule:q.shootDate||'',scopeText:q.product||'',deliverables:(q.items||[]).map(i=>String(i.description||'').split('\n')[0]).filter(Boolean).join('\n'),
       net:q.netto,vat:q.vat,total:q.total,deposit:q.depositAmount,balance:roundCurrency_((q.total||0)-(q.depositAmount||0)),
       bookingRowIndex:q.linkedBookingRow||0};
@@ -31706,6 +32042,9 @@ function createContractForAgent_(payload){
     base={bookingRowIndex:bri,name:String(row[BOOKING_COL['고객명']]||''),email:String(row[BOOKING_COL['이메일']]||''),
       phone:String(row[BOOKING_COL['연락처']]||''),customerAddress:String(row[BOOKING_COL['고객주소']]||''),
       companyName:String(row[BOOKING_COL['사업자명']]||''),vatId:String(row[BOOKING_COL['사업자VAT번호']]||''),lang:normalizeContractLang_(row[BOOKING_COL['언어']]),
+      itemGroup:String(row[BOOKING_COL['촬영종류']]||''),bookingType:String(row[BOOKING_COL['예약유형']]||''),
+      location:BOOKING_COL['shooting_location']!=null?String(row[BOOKING_COL['shooting_location']]||''):'',
+      vatMode:BOOKING_COL['부가세모드']!=null?normalizeVatMode_(row[BOOKING_COL['부가세모드']]):VAT_MODE_STANDARD,
       schedule:parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16),
       scopeText:String(row[BOOKING_COL['상품']]||''),
       net:net,vat:roundCurrency_(gross-net),total:gross,deposit:dep,balance:roundCurrency_(gross-dep)};
@@ -31715,15 +32054,37 @@ function createContractForAgent_(payload){
   if(!(parseMoneyValue_(c.total)>0)) throw new Error('총액이 필요합니다.');
   c.contractId=generateContractId_();
   c.status=CONTRACT_STATUS.DRAFT;
-  c.clauseVersion=CONTRACT_CLAUSE_VERSION;
   c.copyrightOwner=c.copyrightOwner||'스튜디오';
   c.net=parseMoneyValue_(c.net);c.vat=parseMoneyValue_(c.vat);c.total=parseMoneyValue_(c.total);
   c.deposit=parseMoneyValue_(c.deposit);c.balance=parseMoneyValue_(c.balance||(c.total-c.deposit));
-  c.clauseHash=_contractClauseHash_(c);
+  /* 계약종류는 여기서 한 번만 판정해 '계약종류' 열에 굳힌다 — 이후 렌더는 전부 저장값을 따른다 */
+  c.contractType=resolveContractType_(c);
+  const isB2c=isB2cContract_(c);
+  c.clauseVersion=isB2c?CONTRACT_CLAUSE_VERSION_B2C:CONTRACT_CLAUSE_VERSION;
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  c.createdAt=now; // § 356 Abs. 4 조기이행 문단 판정(계약일+14일) 기준 — 서명본 재렌더에서도 동일
+  if(isB2c){
+    // § 3 Leistungsumfang 을 견적 품목 전체로 구성 (수기 deliverables 가 오면 그것이 우선)
+    if(quote&&!String(data.deliverables||'').trim()){
+      const scope=_contractScopeFromQuoteItems_(quote.items,quote.lang,c.lang);
+      if(scope) c.deliverables=scope;
+    }
+    // 견적 촬영예정일이 시트 Date 로 들어온 경우만 yyyy-MM-dd 로 정규화 ('10-19 ~ 10-20' 같은 자유 텍스트는 보존)
+    if(/^\w{3} \w{3} \d{2} \d{4}/.test(String(c.schedule||''))) c.schedule=parseDateSafe_(c.schedule).str.slice(0,10);
+    // 견적 조건 → 특약 자동 이관 (수기 specialTerms 우선)
+    if(quote&&!String(data.specialTerms||'').trim()){
+      const t=_contractSpecialTermsFromQuote_(quote.terms,c.lang,_contractLangIndexInQuote_(quote.lang,c.lang));
+      if(t.text) c.specialTerms=t.text;
+      droppedTerms=t.dropped;
+    }
+    if(!String(c.customerAddress||'').trim()) warnings.push('고객 주소가 비어 있습니다 — 소비자 계약서 당사자 표기가 약해집니다. 견적/예약에 주소를 채운 뒤 재생성을 권합니다.');
+    if(!String(c.schedule||'').trim()) warnings.push('촬영일이 비어 있어 § 3 에 "추후 협의"로 들어갑니다.');
+    if(!(c.deposit>0)) warnings.push('계약금이 0 입니다 — § 4 가 총액 일시불로 작성됩니다.');
+  }
+  c.clauseHash=_contractClauseHash_(c);
   const rowArr=new Array(CONTRACT_HEADERS.length).fill('');
   const set=(h,v)=>{if(CONTRACT_COL[h]!=null)rowArr[CONTRACT_COL[h]]=v==null?'':v;};
-  set('계약ID',c.contractId);set('생성일시',now);set('상태',c.status);set('언어',normalizeContractLang_(c.lang));set('계약종류',c.contractType||'촬영대행');
+  set('계약ID',c.contractId);set('생성일시',now);set('상태',c.status);set('언어',normalizeContractLang_(c.lang));set('계약종류',c.contractType);
   set('고객명',c.name);set('회사명',c.companyName||'');set('이메일',c.email||'');set('연락처',c.phone||'');
   set('고객주소',c.customerAddress||'');set('VAT번호',c.vatId||'');set('연결견적번호',c.quoteNumber||'');set('연결예약행',c.bookingRowIndex||'');
   set('촬영일정',c.schedule||'');set('업무내용',c.scopeText||'');set('목적물',c.deliverables||'');set('납품형식',c.deliveryFormat||'');
@@ -31731,10 +32092,12 @@ function createContractForAgent_(payload){
   set('순액(€)',c.net);set('부가세(€)',c.vat);set('총액(€)',c.total);set('계약금(€)',c.deposit);set('잔금(€)',c.balance);
   set('지급조건',c.paymentTerms||'');set('계약기간종료',c.contractEnd||'');set('특약메모',c.specialTerms||'');
   set('조항버전',c.clauseVersion);set('조항해시',c.clauseHash);set('메모',c.memo||'');
+  set('촬영장소',c.location||'');set('부가세모드',normalizeVatMode_(c.vatMode));set('면세국가',c.vatExemptCountry||'');set('보관기간',c.retention||'');
   sheet.appendRow(rowArr);
   const rowIndex=sheet.getLastRow();
   const pdf=_persistContractPdf_(sheet,rowIndex,c);
-  return {ok:true,contractId:c.contractId,rowIndex:rowIndex,total:c.total,deposit:c.deposit,pdfUrl:pdf.url,status:c.status};
+  return {ok:true,contractId:c.contractId,rowIndex:rowIndex,total:c.total,deposit:c.deposit,pdfUrl:pdf.url,status:c.status,
+    contractType:c.contractType,clauseVersion:c.clauseVersion,warnings:warnings,droppedTerms:droppedTerms};
 }
 /* 견적에 연결된 활성(미취소) 계약 존재 여부 — quote-accept 자동 초안의 중복 방지 */
 function _hasActiveContractForQuote_(quoteNumber){
@@ -31765,7 +32128,7 @@ function listContractsForAgent_(){
   const rows=sheet.getRange(2,1,last-1,CONTRACT_HEADERS.length).getValues();
   return {ok:true,contracts:rows.map((r,i)=>{
     const c=contractRowToObject_(r,i+2);
-    return {rowIndex:c.rowIndex,contractId:c.contractId,status:c.status,name:c.name,companyName:c.companyName,
+    return {rowIndex:c.rowIndex,contractId:c.contractId,status:c.status,name:c.name,companyName:c.companyName,contractType:c.contractType,
       total:c.total,deposit:c.deposit,quoteNumber:c.quoteNumber,bookingRowIndex:c.bookingRowIndex,
       createdAt:c.createdAt,sentAt:c.sentAt,signedAt:c.signedAt,signerName:c.signerName,pdfUrl:c.pdfUrl};
   }).reverse()};
@@ -31871,7 +32234,7 @@ function getBookingContractsAdmin(token,bookingRowIndex){
       const c=contractRowToObject_(r,i+2);
       contracts.push({contractId:c.contractId,status:c.status,lang:c.lang,total:c.total,deposit:c.deposit,
         createdAt:c.createdAt,sentAt:c.sentAt,signedAt:c.signedAt,signerName:c.signerName,pdfUrl:c.pdfUrl,
-        copyrightOwner:c.copyrightOwner,quoteNumber:c.quoteNumber});
+        copyrightOwner:c.copyrightOwner,quoteNumber:c.quoteNumber,contractType:c.contractType});
     });
   }
   const bSh=getDbSheet();
@@ -31912,7 +32275,7 @@ function contractSignPage_(contractId,p){
   const c=contractRowToObject_(found.row,found.rowIndex);
   if(c.status===CONTRACT_STATUS.CANCELLED) return HtmlService.createHtmlOutput('<h2>ℹ️ 취소된 계약입니다. 문의: studio.mean.de@gmail.com</h2>');
   const alreadySigned=c.status===CONTRACT_STATUS.SIGNED;
-  const body=buildDrehvertragBodyHtml_(c);
+  const body=buildDrehvertragBodyHtml_(c)+(isB2cContract_(c)?buildWiderrufsformularHtml_(c):'');
   const L=normalizeContractLang_(c.lang);
   const P={
     ko:{pageTitle:'계약서 서명 — Studio mean',signH:'✍️ 전자서명',sub:'아래에 성명을 정확히 입력하고 동의 후 서명을 완료해 주세요. 서명 시각과 함께 기록되며, 서명된 계약서 PDF가 이메일로 발송됩니다.',
@@ -31937,6 +32300,10 @@ function contractSignPage_(contractId,p){
 .contract table{width:100%;border-collapse:collapse;margin:8px 0}.contract td{border:1px solid #e7e5e4;padding:6px 10px;vertical-align:top;font-size:13px}
 .contract td.k{width:92px;background:#fafaf9;font-weight:700;white-space:nowrap}
 .bank{font-size:12px;color:#57534e}
+.contract .staffel{margin:0 0 8px;padding-left:20px}.contract .widerruf{border:1px solid #e7e5e4;border-radius:8px;padding:10px 12px;margin:8px 0}
+.contract .widerruf-trans{border:1px dashed #e7e5e4;border-radius:8px;padding:10px 12px;margin:8px 0;color:#44403c}
+.contract .wr-h{font-weight:700;margin:0 0 4px}.contract .muted-note{font-size:12px;color:#78716c}
+.contract .anlage{margin-top:18px;border-top:1px solid #e7e5e4;padding-top:12px}.contract .wr-form p{margin:0 0 10px}
 .sign-card{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:24px;margin-top:14px;}
 .sign-card h3{margin:0 0 4px;font-size:16px}.sub{color:#64748b;font-size:12.5px;margin-bottom:14px}
 input[type=text]{width:100%;border:1.5px solid #d6d3d1;border-radius:9px;padding:11px 12px;font-size:15px;margin-bottom:12px;font-family:inherit}

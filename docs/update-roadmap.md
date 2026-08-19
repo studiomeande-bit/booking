@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-08-03 Europe/Berlin
+Updated: 2026-08-19 Europe/Berlin
 
 ## Immediate
 
@@ -61,6 +61,32 @@ Updated: 2026-08-03 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+- **소비자(B2C) Fotografenvertrag 계약종류 신설 (2026-08-19)** — 스펙 `docs/fotografenvertrag-b2c-spec.md`
+  - **왜**: 기존 Drehvertrag(B2B)를 개인 고객에게 쓰면 § 9 영업비밀·§ 10 도산해지가 무의미하고
+    § 12 관할합의는 소비자 상대로 **무효**(§§ 12·13 ZPO). 결정적으로 **Widerrufsbelehrung 누락**이면
+    철회기간이 14일 → **12개월+14일**(§ 356 Abs. 3 BGB) — 촬영 완료 후에도 전액 환불 요구가 가능해진다.
+    발견 경로: Jin Hee Choi 웨딩(견적 AN-260011)을 기존 계약서로 뽑아 검토.
+  - **분기**: `계약종류` 열에 `Fotografenvertrag` 추가. 판정은 **생성 시 1회**만 하고 열에 굳힌다 —
+    렌더는 항상 저장값을 따르므로 기존 행('촬영대행')은 서명본 재생성까지 포함해 종전 그대로.
+    우선순위: 명시 지정(`contractKind`) > 사업자 신호(회사명·VAT번호·예약유형 기업) > itemGroup(wed/stud/snap/prof/pass) > 개인=소비자.
+    ※ AN-260011 은 itemGroup 이 'biz' 로 잘못 들어간 개인 웨딩이라, 회사명·VAT 부재를 우선한다.
+  - **조항 교체**: § 9 Vertraulichkeit → **Datenschutz(DSGVO)** · § 10 Kündigung → **Stornierung und Terminverlegung**
+    (스토노 스태플을 특약이 아니라 **본문**에) · § 11 소비자용 책임제한 · § 12 **관할합의 삭제**(법정관할) ·
+    **§ 13 Widerrufsbelehrung 신설** + Muster-Widerrufsformular **별지**(PDF 마지막 장, page-break).
+    § 356 Abs. 4 조기이행 문단은 **촬영일이 계약일+14일 이내일 때만** 삽입. 철회기간 내 법정 철회권이 스토노에 우선함을 명시.
+    법정 문구는 언어와 무관하게 독일어 원문을 그대로 싣고 ko/en 은 이해용 번역을 병기.
+  - **견적 연동**: § 3 을 견적 `items` 전체로 구성(첫 줄=Leistung, 나머지=하위 설명, 다국어 `//` 는 계약 언어 쪽만, €0 라인 포함) ·
+    견적 `terms` 의 옵션·조건을 특약으로 자동 이관(견적 전용 문구 freibleibend·유효기간·대체공지는 제외, 제외분은 응답 `droppedTerms`) ·
+    `vatMode:exempt_third_country` 면 부가세 행 대신 면제 문구 · 촬영일·장소 없으면 `nach Absprache` ·
+    주소는 견적/예약에서 상속하고 비면 생성 응답 `warnings` 로 경고.
+  - **금액 표기**: 소비자 계약서는 독일식 `1.950,00 €`. B2B 은 종전 `€ 1950` 유지(하위호환).
+  - **시트 4열 추가**: 촬영장소·부가세모드·면세국가·보관기간 (ensureHeaderSheet_ 가 자동 증설).
+  - **어드민**: 계약 패널에 계약종류(자동/소비자/사업자)·촬영장소 입력 + 생성 결과에 종류·경고 토스트.
+  - **회귀 잠금**: `node scripts/check-contract-b2c.mjs` — B2B 표본 5건의 **조항해시 골든값**을 못박아
+    B2B 본문이 한 글자만 바뀌어도 실패한다. 소비자 조항·견적 연동·금액 포맷까지 총 50여 항목.
+  - ⚠️ **법률 검토 권장**: Widerrufsbelehrung 문구와 스토노 비율(§ 309 Nr. 5 BGB 위약금 상한)은 변호사 확인 대상.
+    스태플에 1~6개월 구간이 비어 있어 그 구간은 `§ 648 BGB` 법정 규정으로 넘겼다 — 비율 확정 시 채울 것.
 
 - **운영시간 전면 개편 + 데이터 정리 배치 (2026-08-17, @791~@798)** —
   - **운영시간**: 화–금 09:30–13:00/15:30–18:00 · 토 09:00–16:00 · 일·월 휴무 확정.
