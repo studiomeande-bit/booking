@@ -1,10 +1,10 @@
 # 협력업체 링크 — 기획안 (코딩 전)
 
 Updated: 2026-08-19 Europe/Berlin
-Status: **Phase 1 배포 완료 (2026-08-19, @803~@805)** — 시트·성공화면·메일·/go 집계 라이브.
-2026-08-19 추가: **메신저+인스타 동시 노출**(링크 slot chat/insta), cozyjoo 카카오 오픈채팅,
-소개문구 3개국어 재작성, cozyjoo `baby` 추가(가족파티 메이크업), `partner-seed-apply` 액션.
-Phase 2(돌추천메일·상담화면·상품상세·KPI 한줄) 대기
+Status: **Phase 1·2 배포 완료 (2026-08-19, @803~@810)** — 6개 접점 전부 라이브:
+예약 성공화면 · 확정/접수 메일 · 돌 추천 메일 · 상담 완료화면 · 상품 상세 한 줄 · 주간 KPI.
+클릭 집계(웹 핑 + `/go` Edge Function)와 `partner-click-stats` / `partner-click-purge` 포함.
+남은 것: 어드민 협력업체 관리 카드(Phase 3, 시트 직접 수정으로 충분해 보류) · 리마인드 메일(보류).
 
 ## 0. 요청
 
