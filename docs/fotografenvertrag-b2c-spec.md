@@ -39,12 +39,30 @@
 - **§ 8 Abtretung** — 현행 유지.
 - **§ 9 Datenschutz** ← *Vertraulichkeit 대체*
   `Der Auftragnehmer verarbeitet personenbezogene Daten ausschließlich zur Durchführung dieses Vertrags (Art. 6 Abs. 1 lit. b DSGVO). Aufnahmen werden nicht ohne gesonderte Einwilligung veröffentlicht. Der Auftraggeber:in stehen die Rechte nach Art. 15–21 DSGVO zu.`
-- **§ 10 Stornierung und Terminverlegung** ← *Kündigung 대체* — 스토노 스태플을 **본문에** 명시(특약으로 빼지 않는다):
-  - 12개월 초과 전 취소: 계약금 몰수
-  - 6~12개월 전: 총액 50 %
-  - 1개월 이내: 총액 80 %
-  - 대체일 합의(12개월 내): 계약금 전액 이월
-  - 수급인 귀책 불이행(질병·사고·불가항력): 동급 대체 사진가 주선, 불가 시 **기지급액 전액 환불**
+- **§ 10 Stornierung und Terminverlegung** ← *Kündigung 대체*
+  ⚠️ **환불 비율을 계약서에 하드코딩하지 말 것.** 스튜디오에는 이미 공식 환불 규정이 코드로 존재하며(`getWeddingRefundPolicyHtml_(lang)`, 3개 국어) 예약 확정 메일로 고객에게 발송된다. 계약서는 **같은 함수를 재사용**해야 한다 — 복사하면 두 문서가 갈라진다.
+
+  **웨딩·프리웨딩 (itemGroup wed / 웨딩 본식):** 예약금(Anzahlung) 환불 — 기준일은 **취소 요청 접수일**
+  | 취소 시점 | 환불 |
+  |---|---|
+  | 촬영일 60일 전까지 | 100 % |
+  | 59~30일 전 | 70 % |
+  | 29~14일 전 | 50 % |
+  | 13~7일 전 | 30 % |
+  | 6일 전~당일 | 환불 불가 |
+
+  **그 외 상품 (일반):** `EMAIL_I18N.refund_policy` — 30일 전 100 % / 29~8일 50 % / 7~2일 25 % / 전날·당일 0 %
+
+  → 계약 생성 시 `itemGroup`(또는 상품명)으로 웨딩/일반을 판정해 **해당 규정을 그대로 인용**한다. 판정 로직은 프런트 안내문(`booking.js`)과 동일해야 한다.
+
+  **잔금 처리**: 위 표는 예약금 환불 기준이다. 잔금은 촬영 전 취소 시 청구하지 않는다(기존 실무). 계약서에 명시할 것.
+
+  **터미널 변경(Terminverlegung)**: 대체일을 합의하면 예약금은 전액 이월. 기존 규정에 없으므로 **사장님 확인 후** 반영.
+
+  **수급인 귀책 불이행**(질병·사고·불가항력): 동급 대체 사진가 주선, 불가 시 **기지급액 전액 환불**.
+
+  **철회권 우선**: 계약일로부터 14일 이내에는 § 13 법정 철회권이 위 규정보다 **우선**하며 전액 환불된다. 이 우선순위를 조항에 명시.
+
 - **§ 11 Haftung** — 소비자용: 고의·중과실 및 생명·신체·건강 침해는 무제한, 그 밖의 경과실은 계약전형적 예견가능 손해로 제한.
 - **§ 12 Anwendbares Recht** — 독일법. **관할합의 조항 삭제** → `Es gelten die gesetzlichen Gerichtsstände.`
 - **§ 13 Widerrufsbelehrung** (신규, 필수) — 아래 §4.
@@ -99,4 +117,4 @@ Datum: ______
 
 ## 8. 법률 확인 필요 (개발 범위 밖)
 
-Widerrufsbelehrung 문구와 스토노 스태플 비율은 변호사 검토를 받는 것이 안전하다. 특히 스토노 비율은 과도하면 § 309 Nr. 5 BGB(위약금 상한) 문제가 될 수 있다.
+Widerrufsbelehrung 문구와 스토노 스태플 비율은 변호사 검토를 받는 것이 안전하다. 환불 규정 자체는 기존 라이브 규정을 인용하므로 새로 만드는 위험은 없다. 다만 '6일 전부터 환불 불가'가 소비자약관으로서 과도한지(§ 309 Nr. 5 BGB 위약금 상한) 한 번 확인받는 것이 좋다.

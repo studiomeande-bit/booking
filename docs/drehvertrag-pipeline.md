@@ -56,10 +56,14 @@ Widerrufsbelehrung 이 없으면 철회기간이 14일 → **12개월+14일**(§
 - **판정은 생성 시 1회**, `계약종류` 열에 굳힌다(`resolveContractType_`). 렌더(`isB2cContract_`)는 저장값만 본다 →
   기존 행은 **서명본 재생성까지 종전 Drehvertrag 그대로**. 이게 하위호환의 핵심 장치다.
 - 우선순위: `contractKind` 명시 > 회사명·VAT번호·예약유형 기업 > itemGroup(wed/stud/snap/prof/pass) > 개인=소비자.
-- 조항: § 9 Datenschutz · § 10 Stornierung(스태플 본문) · § 11 소비자 책임제한 · § 12 법정관할 ·
+- 조항: § 9 Datenschutz · § 10 Stornierung(환불 규정 본문) · § 11 소비자 책임제한 · § 12 법정관할 ·
   **§ 13 Widerrufsbelehrung** + 별지 Muster-Widerrufsformular(PDF 마지막 장). 조항버전 `FV-v1 (2026-08-19)`.
   § 356 Abs. 4 문단은 촬영일이 계약일+14일 이내일 때만.
 - 견적 연동: § 3 = 견적 items 전체, 특약 = 견적 terms 자동 이관(견적 전용 문구 제외), 부가세 면제 문구, 금액 독일식 `1.950,00 €`.
 - 검증: `node scripts/check-contract-b2c.mjs` (B2B 조항해시 골든값 5건 + 소비자 조항/견적연동 50여 항목).
 - 시트 신규 4열: 촬영장소 · 부가세모드 · 면세국가 · 보관기간.
-- ⚠️ Widerrufsbelehrung 문구·스토노 비율은 변호사 검토 권장(§ 309 Nr. 5 BGB). 스태플 1~6개월 구간은 § 648 BGB 로 위임.
+- **§ 10 환불 규정은 라이브 안내문을 런타임에 인용**(`_contractRefundLines_`) — 웨딩 `getWeddingRefundPolicyHtml_`,
+  그 외 `EMAIL_I18N.refund_policy`. 복사하지 않으므로 메일과 갈라질 수 없다. 웨딩 판정 = `itemGroup==='wed'` + 상품명 보정.
+  대체일 예약금 이월은 `reschedulePolicy:'carry'` 지정 시에만(기존 규정에 없음 — 사장님 확인 대기).
+- 시트 신규 열에 촬영종류·일정변경정책 포함 — 서명본 재렌더에서 같은 환불 규정이 인용되도록 저장한다.
+- ⚠️ Widerrufsbelehrung 문구와 '6일 전부터 환불 불가'의 § 309 Nr. 5 BGB 적정성은 변호사 검토 권장.

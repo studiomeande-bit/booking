@@ -53,7 +53,7 @@ globalThis.UrlFetchApp = nope('UrlFetchApp');
 
 const EXPORTS = ['buildDrehvertragHtml_', 'buildDrehvertragBodyHtml_', 'buildWiderrufsformularHtml_', '_contractClauseHash_',
   'isB2cContract_', 'resolveContractType_', 'formatEuroDe_', 'formatEuroAmount_', '_contractShootWithin14Days_',
-  '_contractScopeFromQuoteItems_', '_contractSpecialTermsFromQuote_'];
+  '_contractScopeFromQuoteItems_', '_contractSpecialTermsFromQuote_', '_contractRefundLines_', 'getWeddingRefundPolicyHtml_', '_contractIsWeddingContract_'];
 const dir = mkdtempSync(join(tmpdir(), 'smcontract-'));
 const modPath = join(dir, 'code.cjs');
 writeFileSync(modPath, `${readFileSync(join(ROOT, 'appscript', 'Code.gs'), 'utf8')}\nmodule.exports={${EXPORTS.join(',')}};\n`);
@@ -127,9 +127,12 @@ console.log('\n── 소비자 계약서 (de) ──');
 check('제목 Fotografenvertrag', /<h1>Fotografenvertrag<\/h1>/.test(de));
 check('Drehvertrag·Videoproduktion 문구 없음', !/Drehvertrag|Videoproduktion/.test(de));
 check('§ 9 Vertraulichkeit → Datenschutz(DSGVO)', de.includes('§ 9 Datenschutz') && de.includes('Art. 6 Abs. 1 lit. b DSGVO') && !de.includes('Vertraulichkeit'));
-check('§ 10 스토노 스태플이 본문에', de.includes('§ 10 Stornierung und Terminverlegung') && de.includes('50 % der Gesamtvergütung') && de.includes('80 % der Gesamtvergütung'));
-check('§ 10 사업자 전제(도산·강제집행) 제거', !/Zwangsvollstreckung|Insolvenz|Geschäftsaufgabe/.test(de));
+check('§ 10 Kündigung → Stornierung, 사업자 전제(도산·강제집행) 제거', de.includes('§ 10 Stornierung') && !/Zwangsvollstreckung|Insolvenz|Geschäftsaufgabe/.test(de));
+check('§ 10 환불 규정이 본문에(특약 아님)', de.includes('<ul class="staffel">'));
+check('§ 10 잔금 미청구 명시', de.includes('Der Restbetrag wird bei einer Stornierung vor dem Shooting nicht in Rechnung gestellt.'));
 check('§ 309 Nr. 5 대응 — 손해 감액 입증 유보', de.includes('bleibt der Nachweis vorbehalten'));
+check('일정변경(예약금 이월) 조항은 기본 미삽입', !de.includes('Wird einvernehmlich ein Ersatztermin vereinbart'));
+check("reschedulePolicy:'carry' 지정 시에만 삽입", M.buildDrehvertragBodyHtml_(b2c({ reschedulePolicy: 'carry' })).includes('Wird einvernehmlich ein Ersatztermin vereinbart') && M.buildDrehvertragBodyHtml_(b2c({ reschedulePolicy: 'carry' })).includes('§ 10 Stornierung und Terminverlegung'));
 check('§ 12 관할합의 삭제 → 법정관할', de.includes('Es gelten die gesetzlichen Gerichtsstände.') && !/Gerichtsstand der Sitz des Auftragnehmers/.test(de));
 check('§ 13 Widerrufsbelehrung 법정 문구', de.includes('binnen vierzehn Tagen ohne Angabe von Gründen') && de.includes('Folgen des Widerrufs'));
 check('철회권이 스토노 규정에 우선함을 명시', de.includes('geht das gesetzliche Widerrufsrecht diesen Stornoregelungen vor'));
@@ -149,9 +152,34 @@ const ko = M.buildDrehvertragHtml_(b2c({ lang: 'ko' }));
 console.log('\n── 소비자 계약서 (ko / en) ──');
 check('ko: 법정 독일어 원문 유지 + 원문 우선 안내', ko.includes('binnen vierzehn Tagen ohne Angabe von Gründen') && ko.includes('독일어 원문이 법적 효력을 가진다'));
 check('ko: 제 12 조 법정 관할', ko.includes('관할은 법정 관할에 따른다'));
-check('ko: 스토노 스태플 본문', ko.includes('총액의 50%') && ko.includes('총액의 80%'));
+check('ko: 환불 규정이 라이브 한국어 안내문과 동일', M.buildDrehvertragBodyHtml_(b2c({ lang: 'ko', itemGroup: 'wed' })).includes('촬영일 60일 전까지: 100% 환불')
+  && M.buildDrehvertragBodyHtml_(b2c({ lang: 'ko', itemGroup: 'prof', scopeText: '1인 프로필' })).includes('촬영 30일 이전 취소: 계약금 100% 환불'));
+check('ko: 잔금 미청구 명시', ko.includes('잔금은 촬영 전 취소 시 청구하지 않는다'));
 const en = M.buildDrehvertragHtml_(b2c({ lang: 'en' }));
 check('en: 렌더 + 법정 독일어 원문 유지', en.includes('Photography Agreement') && en.includes('Right of withdrawal') && en.includes('binnen vierzehn Tagen'));
+
+/* ── 5b) § 10 환불 규정은 라이브 안내문을 그대로 인용해야 한다 (복사 금지 · 갈라짐 방지) ── */
+console.log('\n── § 10 환불 규정 = 예약확정 메일과 동일 원장 ──');
+const wedLines = M._contractRefundLines_('de', { itemGroup: 'wed' });
+const genLines = M._contractRefundLines_('de', { itemGroup: 'prof', scopeText: 'Bewerbungsfoto' });
+check('웨딩(itemGroup=wed) → 웨딩 규정 5단계', wedLines.isWed && wedLines.rows.length === 5, `실제 ${wedLines.rows.length}줄`);
+check('그 외 → 일반 규정 4단계', !genLines.isWed && genLines.rows.length === 4, `실제 ${genLines.rows.length}줄`);
+check('웨딩 첫 단계가 라이브 메일 문구와 동일', wedLines.rows[0] === 'Ab 60 Tagen vor dem Shooting: 100% Rückerstattung', `실제 "${wedLines.rows[0]}"`);
+check('웨딩 마지막 단계가 라이브 메일 문구와 동일', wedLines.rows[4] === 'Ab 6 Tagen vorher bis am Shootingtag: keine Rückerstattung', `실제 "${wedLines.rows[4]}"`);
+check('일반 첫/마지막 단계가 라이브 메일 문구와 동일', genLines.rows[0] === 'Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung' && genLines.rows[3] === 'Am Vortag oder am selben Tag: keine Rückerstattung');
+check('3개국어 모두 항목이 뽑힌다', ['ko', 'de', 'en'].every((l) => M._contractRefundLines_(l, { itemGroup: 'wed' }).rows.length === 5 && M._contractRefundLines_(l, { itemGroup: 'pass', scopeText: 'Passbild' }).rows.length === 4));
+// 메일 원문에서 뽑았음을 직접 대조 — 메일 문구가 바뀌면 여기서 즉시 드러난다
+const wedMailPlain = M.getWeddingRefundPolicyHtml_('de').replace(/<span[^>]*>[\s\S]*?<\/span>/gi, '').replace(/<[^>]+>/g, '|');
+check('추출값이 라이브 메일 HTML 안에 실제로 존재', wedLines.rows.every((r) => wedMailPlain.includes(r)));
+const wedDoc = M.buildDrehvertragBodyHtml_(b2c({ itemGroup: 'wed' }));
+const genDoc = M.buildDrehvertragBodyHtml_(b2c({ itemGroup: 'prof', scopeText: 'Bewerbungsfoto Basic' }));
+check('계약서 본문에 웨딩 규정이 실제로 렌더', wedDoc.includes('Ab 60 Tagen vor dem Shooting: 100% Rückerstattung'));
+check('웨딩이 아니면 웨딩 규정이 새지 않음', !genDoc.includes('Ab 60 Tagen') && genDoc.includes('Mehr als 30 Tage vor dem Shooting'));
+check("itemGroup 오분류(biz) + 상품명 웨딩 → 웨딩 규정 (AN-260011 실사례)",
+  M._contractIsWeddingContract_({ itemGroup: 'biz', scopeText: 'Hochzeitsreportage - Zollenspieker Faehrhaus, Hamburg' })
+  && M.buildDrehvertragBodyHtml_(b2c({ itemGroup: 'biz' })).includes('Ab 60 Tagen vor dem Shooting'));
+check('상품명이 웨딩이 아니면 오탐 없음', !M._contractIsWeddingContract_({ itemGroup: 'prof', scopeText: 'Bewerbungsfoto Basic' }));
+check('옛 스태플(12개월/50%/80%) 잔재 없음', !/12 Monate vor dem Termin|50 % der Gesamtvergütung|80 % der Gesamtvergütung/.test(wedDoc + genDoc));
 
 /* ── 6) 견적 연동 ── */
 console.log('\n── 견적 연동 ──');

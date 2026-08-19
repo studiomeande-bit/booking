@@ -31433,7 +31433,7 @@ function _formatBookingDate_(v){
  * → 고객 온라인 단순전자서명 → 서명 PDF 재생성 + 양측 메일. 조항은 계약서/2026 draft(12조) 기반 v1.
  * MVP는 한국어 계약서만 (de/en 후속). 저작권귀속 기본 '스튜디오'(사용범위 라이선스), 전부양도는 '고객'. */
 const CONTRACT_SHEET_NAME='계약서';
-const CONTRACT_HEADERS=['계약ID','생성일시','상태','언어','계약종류','고객명','회사명','이메일','연락처','고객주소','VAT번호','연결견적번호','연결예약행','촬영일정','업무내용','목적물','납품형식','납품기한','사용범위','저작권귀속','순액(€)','부가세(€)','총액(€)','계약금(€)','잔금(€)','지급조건','계약기간종료','특약메모','PDF파일ID','PDF링크','발송일시','서명자명','서명일시','서명UA','조항버전','조항해시','메모','촬영장소','부가세모드','면세국가','보관기간'];
+const CONTRACT_HEADERS=['계약ID','생성일시','상태','언어','계약종류','고객명','회사명','이메일','연락처','고객주소','VAT번호','연결견적번호','연결예약행','촬영일정','업무내용','목적물','납품형식','납품기한','사용범위','저작권귀속','순액(€)','부가세(€)','총액(€)','계약금(€)','잔금(€)','지급조건','계약기간종료','특약메모','PDF파일ID','PDF링크','발송일시','서명자명','서명일시','서명UA','조항버전','조항해시','메모','촬영장소','부가세모드','면세국가','보관기간','촬영종류','일정변경정책'];
 const CONTRACT_COL=CONTRACT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const CONTRACT_STATUS={DRAFT:'초안',SENT:'발송',SIGNED:'서명완료',CANCELLED:'취소'};
 const CONTRACT_CLAUSE_VERSION='DV-v1 (2026-08-02)';
@@ -31481,6 +31481,7 @@ function contractRowToObject_(row,rowIndex){
     net:money('순액(€)'),vat:money('부가세(€)'),total:money('총액(€)'),deposit:money('계약금(€)'),balance:money('잔금(€)'),
     paymentTerms:cell('지급조건'),contractEnd:cell('계약기간종료'),specialTerms:cell('특약메모'),
     location:cell('촬영장소'),vatMode:normalizeVatMode_(cell('부가세모드')),vatExemptCountry:cell('면세국가'),retention:cell('보관기간'),
+    itemGroup:cell('촬영종류'),reschedulePolicy:cell('일정변경정책'),
     pdfFileId:cell('PDF파일ID'),pdfUrl:ensurePublicDriveFileUrl_(cell('PDF파일ID'))||cell('PDF링크'),
     sentAt:cell('발송일시'),signerName:cell('서명자명'),signedAt:cell('서명일시'),
     clauseVersion:cell('조항버전')||CONTRACT_CLAUSE_VERSION,clauseHash:cell('조항해시'),memo:cell('메모')
@@ -31589,6 +31590,31 @@ function _contractSpecialTermsFromQuote_(termsText,contractLang,langIdx){
   return {text:keep.join('\n'),dropped:dropped};
 }
 
+/* 계약서 § 10 환불 규정 — **복사하지 않는다**. 고객이 예약확정 메일로 받는 바로 그 안내문
+   (웨딩=getWeddingRefundPolicyHtml_ / 그 외=EMAIL_I18N.refund_policy)을 런타임에 읽어 항목만 뽑는다.
+   → 메일 규정을 고치면 계약서도 같이 바뀐다. 두 문서가 갈라질 수 없다.
+   웨딩/일반 판정은 메일·프런트(booking.js)와 동일하게 itemGroup==='wed'.
+   촬영종류는 계약서 시트에 저장되므로 서명본 재렌더에서도 같은 규정이 인용된다. */
+function _contractIsWeddingContract_(c){
+  if(String((c&&c.itemGroup)||'').trim().toLowerCase()==='wed') return true;
+  // itemGroup 이 잘못 들어간 수기 견적 대비 — 상품명으로 보정(_bookingNeedsContract_ 와 같은 판정어).
+  // 실제 사례: AN-260011(Hochzeitsreportage)이 itemGroup='biz' 로 발행돼 있었다.
+  return /본식|결혼식|웨딩|암트|standesamt|hochzeit|wedding/i.test(String((c&&c.scopeText)||''));
+}
+function _contractRefundLines_(lang,c){
+  const L=normalizeContractLang_(lang);
+  const isWed=_contractIsWeddingContract_(c);
+  const src=isWed?getWeddingRefundPolicyHtml_(L):String(((EMAIL_I18N||{})[L]||{}).refund_policy||'');
+  const rows=String(src)
+    .replace(/<span[^>]*>[\s\S]*?<\/span>/gi,'')      // 하단 부연 span 은 조항 본문에서 따로 말한다
+    .split(/<br\s*\/?>/i)
+    .map(function(x){return x.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();})
+    .filter(function(x){return x.indexOf('•')===0;})
+    .map(function(x){return x.replace(/^•\s*/,'').trim();})
+    .filter(Boolean);
+  return {isWed:isWed,rows:rows};
+}
+
 /* § 356 Abs. 4 BGB 조기이행 문단 삽입 조건 — 촬영일이 계약일로부터 14일 이내일 때만.
    계약일은 '생성일시'(재렌더 시에도 동일) 기준이라 서명본 재생성에서 결과가 흔들리지 않는다. */
 function _contractShootWithin14Days_(c){
@@ -31640,13 +31666,11 @@ function buildFotografenvertragBodyHtml_(c){
       retentionDefault:'mindestens 12 Monate ab Lieferung',
       a8t:'§ 8 Abtretung',a8:'Rechte und Pflichten aus diesem Vertrag dürfen ohne schriftliche Zustimmung der jeweils anderen Partei nicht auf Dritte übertragen werden.',
       a9t:'§ 9 Datenschutz',a9:'Der Auftragnehmer verarbeitet personenbezogene Daten ausschließlich zur Durchführung dieses Vertrags (Art. 6 Abs. 1 lit. b DSGVO). Aufnahmen werden nicht ohne gesonderte Einwilligung veröffentlicht. Der/Dem Auftraggeber:in stehen die Rechte nach Art. 15–21 DSGVO zu.',
-      a10t:'§ 10 Stornierung und Terminverlegung',
-      a10intro:'Die/Der Auftraggeber:in kann diesen Vertrag jederzeit in Textform kündigen. Maßgeblich ist der Zugang der Stornierungserklärung beim Auftragnehmer. Es gelten folgende pauschalierte Ausfallentschädigungen:',
-      a10rows:['Stornierung früher als 12 Monate vor dem Termin: die geleistete Anzahlung wird einbehalten.',
-        'Stornierung 12 bis 6 Monate vor dem Termin: 50 % der Gesamtvergütung.',
-        'Stornierung innerhalb eines Monats vor dem Termin: 80 % der Gesamtvergütung.',
-        'Im Übrigen gelten die gesetzlichen Regelungen (§ 648 BGB).'],
-      a10tail:'Der/Dem Auftraggeber:in bleibt der Nachweis vorbehalten, dass ein Schaden überhaupt nicht entstanden oder wesentlich niedriger ist als die vorstehende Pauschale. Wird innerhalb von zwölf Monaten einvernehmlich ein Ersatztermin vereinbart, wird die geleistete Anzahlung vollständig auf den neuen Termin angerechnet. Kann der Auftragnehmer die Leistung aus von ihm zu vertretenden Gründen (z. B. Krankheit, Unfall, höhere Gewalt) nicht erbringen, bemüht er sich um eine gleichwertige Ersatzfotografin bzw. einen gleichwertigen Ersatzfotografen; gelingt dies nicht, werden bereits geleistete Zahlungen vollständig erstattet. Innerhalb der Widerrufsfrist nach § 13 geht das gesetzliche Widerrufsrecht diesen Stornoregelungen vor; in diesem Fall werden bereits geleistete Zahlungen vollständig erstattet.',
+      a10t:'§ 10 Stornierung',a10tReschedule:'§ 10 Stornierung und Terminverlegung',
+      a10intro:'Die/Der Auftraggeber:in kann die Buchung jederzeit in Textform stornieren. Maßgeblich ist der Tag, an dem die Stornierungserklärung beim Auftragnehmer eingeht. Für die geleistete Anzahlung gelten die folgenden Erstattungsstufen:',
+      a10balance:'Der Restbetrag wird bei einer Stornierung vor dem Shooting nicht in Rechnung gestellt. Der/Dem Auftraggeber:in bleibt der Nachweis vorbehalten, dass ein Schaden überhaupt nicht entstanden oder wesentlich niedriger ist als der einbehaltene Betrag.',
+      a10reschedule:'Wird einvernehmlich ein Ersatztermin vereinbart, wird die geleistete Anzahlung vollständig auf den neuen Termin angerechnet.',
+      a10tail:'Kann der Auftragnehmer die Leistung aus von ihm zu vertretenden Gründen (z. B. Krankheit, Unfall, höhere Gewalt) nicht erbringen, bemüht er sich um eine gleichwertige Ersatzfotografin bzw. einen gleichwertigen Ersatzfotografen; gelingt dies nicht, werden bereits geleistete Zahlungen vollständig erstattet. Innerhalb der Widerrufsfrist nach § 13 geht das gesetzliche Widerrufsrecht diesen Stornoregelungen vor; in diesem Fall werden bereits geleistete Zahlungen vollständig erstattet.',
       a11t:'§ 11 Haftung',a11:'Der Auftragnehmer haftet unbeschränkt für Vorsatz und grobe Fahrlässigkeit sowie für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit. Bei einfacher Fahrlässigkeit haftet der Auftragnehmer nur bei Verletzung einer wesentlichen Vertragspflicht, deren Erfüllung die ordnungsgemäße Durchführung des Vertrags überhaupt erst ermöglicht und auf deren Einhaltung die/der Auftraggeber:in regelmäßig vertrauen darf; die Haftung ist in diesem Fall auf den vertragstypischen, vorhersehbaren Schaden begrenzt. Die Haftung nach dem Produkthaftungsgesetz bleibt unberührt.',
       a12t:'§ 12 Anwendbares Recht',a12:'Es gilt das Recht der Bundesrepublik Deutschland. Streitigkeiten werden vorrangig einvernehmlich beigelegt. Es gelten die gesetzlichen Gerichtsstände.',
       a13t:'§ 13 Widerrufsbelehrung',a13note:'',
@@ -31679,13 +31703,11 @@ function buildFotografenvertragBodyHtml_(c){
       retentionDefault:'납품 후 최소 12개월',
       a8t:'제 8 조 (양도 금지)',a8:'양 당사자는 상대방의 서면 동의 없이 본 계약상의 권리·의무를 제3자에게 양도하지 못한다.',
       a9t:'제 9 조 (개인정보 보호)',a9:'"스튜디오"는 개인정보를 본 계약의 이행 목적으로만 처리한다(DSGVO 제6조 제1항 b호). 촬영본은 별도 동의 없이 공개하지 않는다. "고객"은 DSGVO 제15조~제21조에 따른 권리를 갖는다.',
-      a10t:'제 10 조 (취소 및 일정 변경)',
-      a10intro:'"고객"은 언제든지 문서(이메일 포함)로 본 계약을 해지할 수 있다. 기준일은 취소 통보가 "스튜디오"에 도달한 날이다. 취소 시 다음의 정액 손해배상이 적용된다:',
-      a10rows:['촬영일 12개월 초과 전 취소: 기지급 계약금 몰수',
-        '촬영일 12~6개월 전 취소: 총액의 50%',
-        '촬영일 1개월 이내 취소: 총액의 80%',
-        '그 밖의 경우에는 법정 규정(독일 민법 제648조)에 따른다.'],
-      a10tail:'"고객"은 실제 손해가 발생하지 않았거나 위 정액보다 현저히 적다는 사실을 입증할 수 있다. 12개월 이내에 대체일을 상호 합의한 경우 기지급 계약금은 전액 새 일정으로 이월된다. "스튜디오"의 사유(질병·사고·불가항력 등)로 이행이 불가능한 경우 "스튜디오"는 동급의 대체 사진가를 주선하며, 주선이 불가능하면 기지급액을 전액 환불한다. 제13조의 철회기간 내에는 법정 철회권이 본 취소 규정에 우선하며, 이 경우 기지급액은 전액 환불된다.',
+      a10t:'제 10 조 (취소)',a10tReschedule:'제 10 조 (취소 및 일정 변경)',
+      a10intro:'"고객"은 언제든지 문서(이메일 포함)로 예약을 취소할 수 있다. 기준일은 취소 요청이 "스튜디오"에 접수된 날이다. 기지급 계약금(예약금)은 아래 기준으로 환불한다:',
+      a10balance:'잔금은 촬영 전 취소 시 청구하지 않는다. "고객"은 실제 손해가 발생하지 않았거나 위 공제액보다 현저히 적다는 사실을 입증할 수 있다.',
+      a10reschedule:'대체일을 상호 합의한 경우 기지급 계약금은 전액 새 일정으로 이월된다.',
+      a10tail:'"스튜디오"의 사유(질병·사고·불가항력 등)로 이행이 불가능한 경우 "스튜디오"는 동급의 대체 사진가를 주선하며, 주선이 불가능하면 기지급액을 전액 환불한다. 제13조의 철회기간 내에는 법정 철회권이 본 취소 규정에 우선하며, 이 경우 기지급액은 전액 환불된다.',
       a11t:'제 11 조 (책임)',a11:'"스튜디오"는 고의·중과실 및 생명·신체·건강 침해로 인한 손해에 대해 무제한 책임을 진다. 경과실의 경우에는 계약의 본질적 의무(그 이행 없이는 계약의 목적 달성이 불가능하고 고객이 그 준수를 신뢰할 수 있는 의무)를 위반한 때에만 책임을 지며, 그 범위는 계약전형적이고 예견가능한 손해로 한정된다. 제조물책임법상의 책임은 영향을 받지 않는다.',
       a12t:'제 12 조 (준거법)',a12:'본 계약은 독일법을 준거법으로 한다. 분쟁은 우선 상호 합의로 해결한다. 관할은 법정 관할에 따른다.',
       a13t:'제 13 조 (철회권 안내 / Widerrufsbelehrung)',
@@ -31726,13 +31748,11 @@ function buildFotografenvertragBodyHtml_(c){
       retentionDefault:'at least 12 months after delivery',
       a8t:'Article 8 (No Assignment)',a8:'Neither party may transfer rights or obligations under this agreement to third parties without the other party\'s written consent.',
       a9t:'Article 9 (Data Protection)',a9:'The Photographer processes personal data solely for the performance of this agreement (Art. 6(1)(b) GDPR). Images are not published without separate consent. The Client has the rights set out in Art. 15–21 GDPR.',
-      a10t:'Article 10 (Cancellation and Rescheduling)',
-      a10intro:'The Client may terminate this agreement at any time in text form. The date the cancellation reaches the Photographer is decisive. The following lump-sum compensation applies:',
-      a10rows:['Cancellation more than 12 months before the date: the deposit paid is retained.',
-        'Cancellation 12 to 6 months before the date: 50% of the total fee.',
-        'Cancellation within one month of the date: 80% of the total fee.',
-        'Otherwise the statutory rules apply (Sec. 648 German Civil Code).'],
-      a10tail:'The Client is entitled to prove that no damage was incurred or that it was substantially lower than the lump sum above. If a replacement date is agreed within twelve months, the deposit paid is credited in full to the new date. If the Photographer cannot perform for reasons within his sphere (e.g. illness, accident, force majeure), he will endeavour to arrange an equivalent replacement photographer; if this is not possible, all payments already made are refunded in full. Within the withdrawal period under Article 13, the statutory right of withdrawal takes precedence over these cancellation rules; in that case all payments already made are refunded in full.',
+      a10t:'Article 10 (Cancellation)',a10tReschedule:'Article 10 (Cancellation and Rescheduling)',
+      a10intro:'The Client may cancel the booking at any time in text form. The date on which the cancellation reaches the Photographer is decisive. The deposit paid is refunded according to the following schedule:',
+      a10balance:'The balance is not charged if the booking is cancelled before the shoot. The Client is entitled to prove that no damage was incurred or that it was substantially lower than the amount retained.',
+      a10reschedule:'If a replacement date is agreed, the deposit paid is credited in full to the new date.',
+      a10tail:'If the Photographer cannot perform for reasons within his sphere (e.g. illness, accident, force majeure), he will endeavour to arrange an equivalent replacement photographer; if this is not possible, all payments already made are refunded in full. Within the withdrawal period under Article 13, the statutory right of withdrawal takes precedence over these cancellation rules; in that case all payments already made are refunded in full.',
       a11t:'Article 11 (Liability)',a11:'The Photographer is liable without limitation for intent and gross negligence and for damage arising from injury to life, body or health. In the case of simple negligence the Photographer is liable only for breach of a material contractual obligation, the fulfilment of which is essential to the proper performance of the contract and on the observance of which the Client may regularly rely; in that case liability is limited to the foreseeable damage typical for this type of contract. Liability under the German Product Liability Act remains unaffected.',
       a12t:'Article 12 (Governing Law)',a12:'This agreement is governed by German law. Disputes shall primarily be settled amicably. The statutory places of jurisdiction apply.',
       a13t:'Article 13 (Right of Withdrawal / Widerrufsbelehrung)',
@@ -31767,7 +31787,11 @@ function buildFotografenvertragBodyHtml_(c){
   const vatRow=vatExempt
     ? `<tr><td class="k">${T.payLabels.vat}</td><td>${escapeHtml_(vatExemptNoteText_(L,'contract',c.vatExemptCountry||''))}</td></tr>`
     : `<tr><td class="k">${T.payLabels.vat}</td><td>${money(c.vat)}</td></tr>`;
-  const a10=`<p>${T.a10intro}</p><ul class="staffel">${T.a10rows.map(s=>`<li>${s}</li>`).join('')}</ul><p>${T.a10tail}</p>`;
+  const refund=_contractRefundLines_(L,c);
+  const reschedule=String(c.reschedulePolicy||'')==='carry'; // 대체일 예약금 이월 — 기존 규정에 없어 명시 지정 시에만
+  const a10t=reschedule?T.a10tReschedule:T.a10t;
+  const a10=`<p>${T.a10intro}</p><ul class="staffel">${refund.rows.map(s=>`<li>${escapeHtml_(s)}</li>`).join('')}</ul>`
+    +`<p>${T.a10balance}</p>`+(reschedule?`<p>${T.a10reschedule}</p>`:'')+`<p>${T.a10tail}</p>`;
   const wBlock=(w)=>`<p class="wr-h">${w.h1}</p><p>${w.p1}</p><p class="wr-h">${w.h2}</p><p>${w.p2}</p>`+(early?`<p class="wr-h">${w.h3}</p><p>${w.p3}</p>`:'');
   const a13=(T.a13note?`<p class="muted-note">${T.a13note}</p>`:'')
     +`<div class="widerruf">${wBlock(W)}</div>`
@@ -31790,7 +31814,7 @@ ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposi
 <h2>${T.a7t}</h2><p>${T.a7(escapeHtml_(String(c.usageScope||'').trim()||T.usageDefault),escapeHtml_(String(c.retention||'').trim()||T.retentionDefault))}</p>
 <h2>${T.a8t}</h2><p>${T.a8}</p>
 <h2>${T.a9t}</h2><p>${T.a9}</p>
-<h2>${T.a10t}</h2>${a10}
+<h2>${a10t}</h2>${a10}
 <h2>${T.a11t}</h2><p>${T.a11}</p>
 <h2>${T.a12t}</h2><p>${T.a12}</p>
 <h2>${T.a13t}</h2>${a13}
@@ -32080,6 +32104,8 @@ function createContractForAgent_(payload){
     if(!String(c.customerAddress||'').trim()) warnings.push('고객 주소가 비어 있습니다 — 소비자 계약서 당사자 표기가 약해집니다. 견적/예약에 주소를 채운 뒤 재생성을 권합니다.');
     if(!String(c.schedule||'').trim()) warnings.push('촬영일이 비어 있어 § 3 에 "추후 협의"로 들어갑니다.');
     if(!(c.deposit>0)) warnings.push('계약금이 0 입니다 — § 4 가 총액 일시불로 작성됩니다.');
+    if(String(c.itemGroup||'').trim().toLowerCase()!=='wed'&&_contractIsWeddingContract_(c))
+      warnings.push('촬영종류가 wed 가 아닌데 상품명이 웨딩입니다 — 계약서는 웨딩 환불규정을 인용합니다. 견적/예약의 촬영종류를 wed 로 정정하는 것을 권합니다.');
   }
   c.clauseHash=_contractClauseHash_(c);
   const rowArr=new Array(CONTRACT_HEADERS.length).fill('');
@@ -32093,6 +32119,7 @@ function createContractForAgent_(payload){
   set('지급조건',c.paymentTerms||'');set('계약기간종료',c.contractEnd||'');set('특약메모',c.specialTerms||'');
   set('조항버전',c.clauseVersion);set('조항해시',c.clauseHash);set('메모',c.memo||'');
   set('촬영장소',c.location||'');set('부가세모드',normalizeVatMode_(c.vatMode));set('면세국가',c.vatExemptCountry||'');set('보관기간',c.retention||'');
+  set('촬영종류',c.itemGroup||'');set('일정변경정책',c.reschedulePolicy||'');
   sheet.appendRow(rowArr);
   const rowIndex=sheet.getLastRow();
   const pdf=_persistContractPdf_(sheet,rowIndex,c);
