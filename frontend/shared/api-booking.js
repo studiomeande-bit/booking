@@ -20,6 +20,10 @@ export function pingPartnerClick({ partnerId, source, lang, itemGroup, linkKind 
   } catch { /* ignore */ }
 }
 
+export function fetchPartners() {
+  return requestJson(buildUrl('partners'));
+}
+
 export function fetchInitData() {
   return requestJson(buildUrl('init'));
 }

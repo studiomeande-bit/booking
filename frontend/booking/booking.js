@@ -5631,6 +5631,7 @@ function renderProductDetail() {
     ${detailIntro ? `<div class="detail-copy product-detail-intro">${escapeHtml(detailIntro)}</div>` : ''}
     ${getSnapRetouchScopeNote(state.selectedProduct) ? `<div class="detail-copy snap-scope-note">${escapeHtml(getSnapRetouchScopeNote(state.selectedProduct))}</div>` : ''}
     ${businessSummary}
+    ${getPartnerHintHtml(state.selectedProduct)}
     ${compositionHtml}
     ${renderPrintInfoSection(state.selectedProduct)}
     ${eventBadge}
@@ -6749,6 +6750,22 @@ function getPartnersForSuccess(payload) {
     const groups = Array.isArray(p.groups) ? p.groups : [];
     return groups.some((t) => (t === 'baby' ? isBaby : t === group || (!!productId && t === productId)));
   });
+}
+
+/* 상품 상세의 한 줄 안내 — "드레스·메이크업이 포함인가요?" 문의를 줄이는 목적.
+   여기는 아직 **결정 단계**라 링크를 걸지 않는다(예약을 방해하지 않는다). 실제 소개는
+   예약을 마친 뒤 성공 화면과 메일에서 한다. */
+function getPartnerHintHtml(product) {
+  if (!product) return '';
+  const g = String(product.g || '').toLowerCase();
+  if (!['wed', 'prof', 'stud', 'snap'].includes(g)) return '';
+  const copy = {
+    ko: '헤어·메이크업과 드레스, 꽃 장식은 촬영에 포함되지 않습니다. 예약을 마치시면 함께 준비하기 좋은 협력업체를 안내해 드립니다.',
+    en: 'Hair, makeup, dresses, and floral styling are not included in the session. After you book, we will introduce partners you can arrange these with.',
+    de: 'Hair, Make-up, Kleider und Blumendekoration sind nicht im Shooting enthalten. Nach der Buchung empfehlen wir Ihnen passende Partner.'
+  };
+  const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  return `<div class="detail-copy partner-hint">${escapeHtml(copy[lang])}</div>`;
 }
 
 function buildPartnerSectionHtml(payload) {

@@ -1,4 +1,4 @@
-import { submitConsultation } from '../../shared/api-booking.js';
+import { fetchPartners, pingPartnerClick, submitConsultation } from '../../shared/api-booking.js';
 
 const SUPPORTED_LANGS = ['de', 'en', 'ko'];
 const APPOINTMENT_METHODS = ['phone', 'video', 'studio'];
@@ -727,12 +727,89 @@ async function handleSubmit(event) {
     await submitConsultation(payload(), requestId());
     els.formPanel.hidden = true;
     els.successPanel.hidden = false;
+    renderConsultPartners();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err) {
     setStatus(err.message || tr('errorGeneric'), 'error');
     els.submit.disabled = false;
   }
 }
+
+/* ===== 협력업체 소개 (상담 접수 완료 화면) =====
+   상담 페이지는 init 데이터를 쓰지 않으므로 별도로 목록을 받아온다.
+   상담 유형 → 예약 상품군으로 옮겨 예약 성공화면과 같은 규칙으로 고른다. */
+const CONSULT_TYPE_TO_GROUP = { wedding: 'wed', corporate: 'biz', event: 'biz', content: 'biz' };
+const PARTNER_CTA_COPY = {
+  kakao: { ko: '카카오톡으로 바로 상담', en: 'Chat on KakaoTalk', de: 'Per KakaoTalk anfragen' },
+  instagram: { ko: '인스타그램으로 문의', en: 'Message on Instagram', de: 'Per Instagram anfragen' },
+  whatsapp: { ko: 'WhatsApp으로 문의', en: 'Message on WhatsApp', de: 'Per WhatsApp anfragen' },
+  email: { ko: '메일로 문의', en: 'Send an email', de: 'Per E-Mail anfragen' },
+  phone: { ko: '전화로 문의', en: 'Call', de: 'Anrufen' },
+  web: { ko: '바로 상담하기', en: 'Get in touch', de: 'Kontakt aufnehmen' }
+};
+const PARTNER_BLOCK_COPY = {
+  title: { ko: '함께 준비하시면 좋은 곳', en: 'Recommended partners', de: 'Empfohlene Partner' },
+  note: {
+    ko: 'Studio mean은 소개만 드리며 각 업체의 예약·결제에는 관여하지 않습니다.',
+    en: 'Studio mean only makes the introduction and is not involved in each partner’s booking or payment.',
+    de: 'Studio mean vermittelt lediglich den Kontakt und ist an Buchung oder Zahlung der Partner nicht beteiligt.'
+  }
+};
+
+function escapePartnerHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function renderConsultPartners() {
+  const host = document.getElementById('consultPartners');
+  if (!host) return;
+  const group = CONSULT_TYPE_TO_GROUP[state.type] || '';
+  if (!group) return;
+  let partners = [];
+  try {
+    const res = await fetchPartners();
+    partners = Array.isArray(res?.partners) ? res.partners : [];
+  } catch {
+    return; // 목록을 못 받으면 조용히 생략 — 접수 완료 화면을 깨뜨리지 않는다
+  }
+  const list = partners.filter((p) => {
+    const placements = Array.isArray(p.placements) ? p.placements : [];
+    if (placements.length && !placements.includes('consult')) return false;
+    return (Array.isArray(p.groups) ? p.groups : []).includes(group);
+  });
+  if (!list.length) return;
+  const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  const rows = list.map((p) => {
+    const desc = (lang === 'en' ? p.descEn : lang === 'de' ? p.descDe : p.descKo) || p.descKo || '';
+    const meta = [p.langs ? (lang === 'ko' ? `상담 ${p.langs}` : p.langs) : '', p.area].filter(Boolean).join(' · ');
+    const links = Array.isArray(p.links) && p.links.length ? p.links : (p.url ? [{ kind: p.linkKind || 'web', url: p.url }] : []);
+    const ctas = links.map((l) => {
+      const label = (PARTNER_CTA_COPY[l.kind] || PARTNER_CTA_COPY.web)[lang];
+      return `<a class="partner-cta" href="${escapePartnerHtml(l.url)}" target="_blank" rel="noopener noreferrer" data-partner-id="${escapePartnerHtml(p.id)}" data-partner-link="${escapePartnerHtml(l.kind)}">${escapePartnerHtml(label)} →</a>`;
+    }).join('<span class="partner-sep">|</span>');
+    return `<div class="partner-item">
+        <div class="partner-name">${escapePartnerHtml(p.name)}${meta ? `<span class="partner-meta">${escapePartnerHtml(meta)}</span>` : ''}</div>
+        ${desc ? `<div class="partner-desc">${escapePartnerHtml(desc)}</div>` : ''}
+        <div class="partner-ctas">${ctas}</div>
+      </div>`;
+  }).join('');
+  host.innerHTML = `<h3 class="partner-title">${PARTNER_BLOCK_COPY.title[lang]}</h3>${rows}<p class="partner-note">${PARTNER_BLOCK_COPY.note[lang]}</p>`;
+  host.hidden = false;
+}
+
+document.addEventListener('click', (event) => {
+  const link = event.target?.closest?.('a.partner-cta[data-partner-id]');
+  if (!link) return;
+  pingPartnerClick({
+    partnerId: link.getAttribute('data-partner-id'),
+    linkKind: link.getAttribute('data-partner-link') || '',
+    source: 'consult',
+    lang: state.lang || '',
+    itemGroup: CONSULT_TYPE_TO_GROUP[state.type] || ''
+  });
+});
 
 function bindLanguageControls() {
   els.langButtons.forEach((button) => {

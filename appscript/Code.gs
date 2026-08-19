@@ -134,6 +134,16 @@ const LEAD_COL=LEAD_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
    노출위치 토큰: success(예약 성공화면) · mail(확정/접수 메일) · dolmail(돌추천) · consult(상담) */
 const PARTNER_HEADERS=['id','분류','업체명','한줄설명KO','한줄설명EN','한줄설명DE','상담언어','지역','상담링크','인스타링크','적용그룹','노출위치','순서','활성','제휴메모'];
 const PARTNER_CLICK_HEADERS=['일시','업체id','출처','언어','상품그룹','링크종류'];
+/* 점검·스모크로 만든 클릭의 출처 표기. 리포트 집계에서 제외한다 — 사장님이 보는 숫자에
+   내 테스트가 섞이면 안 된다. 지우는 건 partner-click-purge. */
+const PARTNER_TEST_SOURCE_RE_=/^(verify|test|smoke)/i;
+/* 클릭 시트의 '일시'는 appendRow 로 문자열을 넣어도 Sheets 가 **Date 로 자동 변환**한다.
+   그대로 String() 하면 'Tue Aug 19 2026 …' 가 되어 'yyyy-MM-dd …' 와의 문자열 비교가
+   전부 어긋난다(기간 필터가 조용히 무력화됨 — 2026-08-19 실측으로 발견). 읽을 때 정규화한다. */
+function partnerClickTs_(v){
+  if(v instanceof Date) return Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  return String(v||'');
+}
 
 const CONSULTATION_HEADERS=['상담ID','접수일시','상태','상담유형','언어','고객명','이메일','연락처','회사명','희망상담일정','상담방식','촬영예정일','촬영장소','예산','우선순위','설문JSON','요약','회의록JSON','연결리드행','연결예약행','최근관리일시','관리메모','출처','UTM','IP','UserAgent','마케팅동의','개인정보동의','예약전환일시','상담예약일시','상담소요분','상담캘린더ID'];
 const CONSULTATION_COL=CONSULTATION_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -1337,6 +1347,38 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_({updated:updated,added:added,
             note:'캐시 비움 — 즉시 반영. 시드에 없는 시트 행은 그대로 둡니다.'});
         }
+        if(action==='partner-click-purge'){
+          /* ✏️ 협력업체 클릭 로그 정리 — 점검용 행 삭제. 개인정보가 없는 로그라 삭제 위험은
+             낮지만, 실제 고객 클릭을 지우면 되돌릴 수 없으므로 조건을 명시적으로 받는다.
+             before: 이 일시 이전(미만) · sourcePrefix: 출처 접두사 목록 · partnerId: 특정 업체 */
+          if(String(payload.confirm||'')!=='DELETE') return jsonError_('BAD_REQUEST','confirm:"DELETE" 필요');
+          const before=String(payload.before||'').trim();
+          const prefixes=(Array.isArray(payload.sourcePrefix)?payload.sourcePrefix:[])
+            .map(function(x){return String(x||'').trim().toLowerCase();}).filter(Boolean);
+          const onlyId=String(payload.partnerId||'').trim();
+          if(!before&&!prefixes.length&&!onlyId) return jsonError_('BAD_REQUEST','before / sourcePrefix / partnerId 중 하나는 필요합니다(전체 삭제는 허용하지 않습니다).');
+          const sh=ensurePartnerClickSheet_(ensureSheets_().ss);
+          const last=sh.getLastRow();
+          if(last<2) return jsonOk_({deleted:0,remaining:0,note:'삭제할 행이 없습니다.'});
+          const rows=sh.getRange(2,1,last-1,PARTNER_CLICK_HEADERS.length).getValues();
+          const victims=[];
+          rows.forEach(function(r,i){
+            const ts=partnerClickTs_(r[0]),id=String(r[1]||'').trim(),src=String(r[2]||'').trim().toLowerCase();
+            if(before&&!(ts<before)) return;
+            if(prefixes.length&&!prefixes.some(function(p){return src.indexOf(p)===0;})) return;
+            if(onlyId&&id!==onlyId) return;
+            victims.push({rowIndex:i+2,ts:ts,id:id,source:src});
+          });
+          if(payload.dryRun===true){
+            return jsonOk_({dryRun:true,wouldDelete:victims.length,samples:victims.slice(0,10),
+              note:'삭제하지 않았습니다. dryRun 없이 다시 실행하세요.'});
+          }
+          // 큰 행번호부터 지운다 — 작은 것부터 지우면 뒤 행이 밀려 엉뚱한 행이 사라진다
+          victims.slice().sort(function(a,b){return b.rowIndex-a.rowIndex;})
+            .forEach(function(v){sh.deleteRow(v.rowIndex);});
+          return jsonOk_({deleted:victims.length,remaining:Math.max(0,(last-1)-victims.length),
+            samples:victims.slice(0,10)});
+        }
         if(action==='partner-click-stats'){
           /* 조회 전용 — 협력업체 클릭 집계. 개인정보가 없는 시트라 그대로 집계만 한다.
              출처: web(성공화면) / mail(확정·접수메일) / dolmail / consult / verify(점검용). */
@@ -1351,7 +1393,7 @@ function handlePublicApiRequest_(route,method,e){
           const byPartner={},bySource={},byLang={},byGroup={},byLink={};
           let total=0;
           rows.forEach(function(r){
-            const ts=String(r[0]||'');
+            const ts=partnerClickTs_(r[0]);
             if(ts<sinceStr) return;
             const id=String(r[1]||'').trim();
             if(!id) return;
@@ -24696,6 +24738,40 @@ function buildDailyPaymentReviewSection_(){
 /* ===== 아침 통합 리포트 (결제 일일검토 + 오늘의 브리핑) — 08:50 트리거로 1통만 발송 =====
    기존엔 dailyTasks(08:00 창)에서 두 통이 따로 나가 도착 시각이 08:00~09:00으로 들쭉날쭉했다.
    섹션별 try/catch로 격리 — 한쪽이 실패해도 나머지는 발송되고 실패 섹션엔 에러 문구를 남긴다. */
+/** 주간 KPI 용 협력업체 클릭 요약. 클릭이 없으면 null 을 돌려 리포트에 줄을 만들지 않는다. */
+function buildPartnerClickSummary_(days){
+  try{
+    const since=Utilities.formatDate(new Date(Date.now()-(Number(days)||7)*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+    const sh=ensurePartnerClickSheet_(ensureSheets_().ss);
+    const last=sh.getLastRow();
+    if(last<2) return null;
+    const rows=sh.getRange(2,1,last-1,PARTNER_CLICK_HEADERS.length).getValues();
+    const nameById={};
+    getPartners_().forEach(function(p){nameById[p.id]=p.name;});
+    const byPartner={},bySource={};
+    let total=0;
+    rows.forEach(function(r){
+      if(partnerClickTs_(r[0])<since) return;
+      const id=String(r[1]||'').trim();
+      if(!id) return;
+      // 점검용 클릭은 리포트에서 제외 — 사장님이 보는 숫자는 실제 고객 클릭만이어야 한다
+      if(PARTNER_TEST_SOURCE_RE_.test(String(r[2]||''))) return;
+      total++;
+      byPartner[id]=(byPartner[id]||0)+1;
+      const src=String(r[2]||'').trim();
+      // 화면(예약 성공화면·상담 완료화면) vs 메일(/go 경유). 점검용 출처는 위에서 걸러진다.
+      const key=(src==='web'||src==='consult')?'web':'mail';
+      bySource[key]=(bySource[key]||0)+1;
+    });
+    if(!total) return null;
+    const list=Object.keys(byPartner).map(function(id){return{name:nameById[id]||id,clicks:byPartner[id]};})
+      .sort(function(a,b){return b.clicks-a.clicks;});
+    return{days:Number(days)||7,total:total,
+      summary:list.map(function(p){return p.name+' '+p.clicks;}).join(' · '),
+      web:bySource.web||0,mail:bySource.mail||0};
+  }catch(e){Logger.log('buildPartnerClickSummary_ 실패: '+e.message);return null;}
+}
+
 function buildWeeklyKpiEmailHtml_(k){
   const pc=function(v){ if(v===null||v===undefined) return ''; const s=(v>=0?'+':'')+v+'%';
     const col=v>=0?'#15803d':'#b91c1c'; return ' <span style="color:'+col+';font-size:12px;">('+s+')</span>'; };
@@ -24715,6 +24791,8 @@ function buildWeeklyKpiEmailHtml_(k){
     + row('셀렉', '제출 '+sel.submitted+' · 보정발송 '+sel.retouchSent+' · 수령 '+sel.handedOver
         +(sel.avgLeadDays!==null?' · 리드타임 '+sel.avgLeadDays+'일':''))
     + (k.travel?row('출장', k.travel.trips+'회 · '+(k.travel.totalRoundTripKm||0)+'km · 공제 '+eur(k.travel.deduction)):'')
+    + (k.partners?row('협력업체 클릭', k.partners.summary
+        +' <span style="color:#94a3b8;font-size:11px;">최근 '+k.partners.days+'일 · 화면 '+k.partners.web+' / 메일 '+k.partners.mail+'</span>'):'')
     + row('미수', rc.openCount+'건 '+eur(rc.openAmount))
     + '</table>';
 }
@@ -28284,15 +28362,19 @@ function sendDolRecommendationEmails_(){
     if(diffDays<150 || diffDays>240) return;
     const lang=String(row[5]||'ko').toLowerCase().trim();
     const name=String(row[2]||'');
+    /* 돌 준비를 막 시작하는 시점 — 돌상·한복·꽃 업체가 가장 필요한 순간이다. */
+    const dolPartnerHtml=buildPartnerMailBlockHtml_(
+      partnerContextFrom_(String(row[BOOKING_COL['촬영종류']]||''),String(row[BOOKING_COL['상품']]||'')+' 돌촬영',['baby'],'dol'),
+      (lang==='en'||lang==='de')?lang:'ko','dolmail');
     const subj={
       ko:`[Studio mean] 돌촬영 준비 시기를 미리 안내드립니다 — ${name}님`,
       en:`[Studio mean] Planning ahead for the first birthday session — ${name}`,
       de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>프로필 프로페셔널(€130) 이상</b> 상품에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${_getSignatureHtml()}`,
-      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>${_getSignatureHtml()}`,
-      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>${_getSignatureHtml()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>프로필 프로페셔널(€130) 이상</b> 상품에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${_getSignatureHtml()}`,
+      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${_getSignatureHtml()}`,
+      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${_getSignatureHtml()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -29619,6 +29701,7 @@ function buildWeeklyKpi_(endDateStr){
       topGroups:topGroups,
       weeklySeries:weeks.map(function(w,i){return {weeksAgo:i,gross:w.gross,count:w.count};})},
     quotes:q, select:sel, travel:travel,
+    partners:buildPartnerClickSummary_(7),
     receivables:{openCount:ledger.openCount||0,openAmount:Math.round((ledger.openAmount||0)*100)/100,
       note:'최근 5주 구간 기준'}};
 }
