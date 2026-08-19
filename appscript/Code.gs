@@ -2867,7 +2867,7 @@ const PARTNER_SEED_ROWS=[
    'Shoot makeup and wedding dress rental.',
    'Make-up für Shootings und Brautkleid-Verleih.',
    'KO','','','https://www.instagram.com/cozyjoo.de/',
-   'wed,prof,stud,snap','success,mail,consult',3,'Y','']
+   'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','']
 ];
 
 function ensurePartnerSheet_(ss){
