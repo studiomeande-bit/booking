@@ -2673,6 +2673,32 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   </div>
 </div>
 
+<!-- 당일 완결 납품(원본+보정본) 모달 -->
+<div class="modal-overlay" id="finalSendModal">
+  <div class="modal">
+    <div class="modal-title">원본 + 보정본 발송 (당일 완결)</div>
+    <input type="hidden" id="final_rowIndex">
+    <div class="modal-body">
+      <div class="modal-panel modal-copy">
+        <div class="modal-section-title">발송 대상</div>
+        <div id="final_custInfo" style="font-size:14px;"></div>
+      </div>
+      <!-- 어느 폴더를 보내는지 먼저 확인한다 — 보정본 폴더가 없으면 서버가 발송을 막는다 -->
+      <div class="modal-panel modal-copy" id="final_preview" style="font-size:13px;"></div>
+      <div class="form-group">
+        <label for="final_message">함께 보낼 메시지 (선택)</label>
+        <textarea id="final_message" rows="4" maxlength="2000" placeholder="예: 오늘 촬영과 보정까지 함께해 주셔서 감사합니다."></textarea>
+        <div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.45;">발송하면 셀렉 상태가 <b>최종작업완료</b>, 예약이 <b>작업완료</b>로 바뀝니다. 셀렉 과정을 거치는 일반 건에는 사용하지 마세요.</div>
+      </div>
+      <div id="final_sendStatus" class="modal-copy" style="font-size:13px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeFinalSendModal()">취소</button>
+      <button class="btn btn-success" id="final_sendBtn" onclick="sendFinalFromModal(this)" disabled>메일 발송</button>
+    </div>
+  </div>
+</div>
+
 <!-- 사진셀렉 Drive 재연결 모달 -->
 <div class="modal-overlay" id="selectDriveRelinkModal">
   <div class="modal">
@@ -3282,6 +3308,19 @@ document.addEventListener('click',function(ev){
     openSampleSendModal(idx);
   }catch(err){
     alert('샘플 발송을 시작하지 못했습니다: '+((err&&err.message)||err));
+  }
+});
+/* 당일 완결 납품(원본+보정본) — 샘플 발송과 같은 위임 패턴 */
+document.addEventListener('click',function(ev){
+  const el=ev.target&&ev.target.closest&&ev.target.closest('[data-final-send]');
+  if(!el) return;
+  ev.preventDefault();
+  const idx=Number(el.getAttribute('data-final-send'))||0;
+  try{
+    if(typeof openFinalSendModal!=='function') throw new Error('납품 발송 화면이 로드되지 않았습니다. 어드민을 새로고침(Cmd+Shift+R)해 주세요.');
+    openFinalSendModal(idx);
+  }catch(err){
+    alert('납품 발송을 시작하지 못했습니다: '+((err&&err.message)||err));
   }
 });
 let settlementMatchBoardState={source:'sumup',includeMatched:false};
@@ -6560,6 +6599,11 @@ function renderBookingQuickActions(c){
        위임은 리스너가 직접 호출하므로 그 실패 모드가 없고, 실패해도 catch 에 걸린다. */
     const sentMark=String(c.sampleSentAt||'').trim()?' ✓':'';
     buttons.push(`<button class="btn btn-outline btn-sm" data-sample-send="${row}">샘플 발송${sentMark}</button>`);
+    /* 당일 완결 납품 — 촬영과 보정이 같은 날 끝난 건(주로 프로필). 원본+보정본을 한 통으로 보내고
+       예약을 작업완료까지 닫는다. 셀렉을 거치는 일반 건에는 쓰지 않는다(그쪽은 셀렉→보정본 발송). */
+    if(!['작업완료','최종작업완료'].includes(String(c.status||''))){
+      buttons.push(`<button class="btn btn-outline btn-sm" style="color:#065f46;border-color:#a7f3d0;" data-final-send="${row}">✨ 원본+보정본</button>`);
+    }
   }
   buttons.push(`<button class="btn btn-outline btn-sm" onclick="openInvIssueModal(${row})">인보이스</button>`);
   // 환불: 취소와 무관한 결제 이벤트(촬영 후 불만, 부분 환불 등). 서버가 실수령·기환불 상한을 검증한다.
@@ -10856,6 +10900,80 @@ function syncEditAmounts(source){
       ? `<span style="color:#059669;">계약금 ${fmtAdminAmount(nd)}€ + 잔금 ${fmtAdminAmount(nb)}€ = 총금액 ${fmtAdminAmount(np)}€</span>`
       : `<span style="color:#b45309;">⚠️ 합계가 ${gap>0?'':'−'}${fmtAdminAmount(Math.abs(gap))}€ 어긋납니다 (계약금 ${fmtAdminAmount(nd)} + 잔금 ${fmtAdminAmount(nb)} ≠ 총금액 ${fmtAdminAmount(np)})</span>`;
   }
+}
+
+/* ===== 당일 완결 납품(원본+보정본) — 샘플 발송 모달과 같은 구조 =====
+   열 때 dryRun 으로 폴더를 먼저 확인한다. 보정본 폴더가 없으면 서버가 막으므로
+   그 사실이 여기서 바로 보이고, 발송 버튼은 잠긴 채로 남는다. */
+function openFinalSendModal(rowIndex){
+  try{
+    const idx=Number(rowIndex)||0;
+    if(!idx){alert('예약 행 번호를 확인할 수 없습니다.');return;}
+    const c=(typeof allCustomers!=='undefined'&&Array.isArray(allCustomers))
+      ? allCustomers.find(x=>Number(x&&x.rowIndex)===idx) : null;
+    const $=id=>document.getElementById(id);
+    if($('final_rowIndex')) $('final_rowIndex').value=idx;
+    if($('final_custInfo')) $('final_custInfo').innerHTML=c
+      ? `<b>${escHtml(c.name||'')}</b> · ${escHtml(c.email||'이메일 없음')}<br><span style="font-size:12px;color:#64748b;">${escHtml(c.dateStr||'')} · ${escHtml(c.product||'')}</span>`
+      : `<span style="color:#64748b;">행 ${idx} · 불러오는 중…</span>`;
+    if($('final_message')) $('final_message').value='';
+    if($('final_sendStatus')) $('final_sendStatus').textContent='';
+    const prev=$('final_preview');
+    if(prev) prev.innerHTML='<span class="spinner"></span> 원본·보정본 폴더 확인 중...';
+    const btn=$('final_sendBtn');
+    if(btn){btn.disabled=true;btn.textContent='메일 발송';}
+    const modal=$('finalSendModal');
+    if(!modal){alert('납품 발송 창을 찾을 수 없습니다. 어드민을 새로고침해 주세요.');return;}
+    modal.classList.add('open');
+    google.script.run.withSuccessHandler(res=>{
+      if(res&&res.ok){
+        if($('final_custInfo')) $('final_custInfo').innerHTML=
+          `<b>${escHtml(res.name||'')}</b> · ${escHtml(res.to||'')}<br><span style="font-size:12px;color:#64748b;">행 ${idx} · 언어 ${escHtml(res.lang||'ko')} · ${escHtml(res.product||'')} · ${escHtml(res.date||'')}</span>`;
+        if(prev) prev.innerHTML=`<div class="modal-section-title">보낼 내용</div>`
+          +`📁 <a href="${escHtml(res.originalUrl||'')}" target="_blank" rel="noopener">원본 폴더 →</a><br>`
+          +`✨ <a href="${escHtml(res.retouchUrl||'')}" target="_blank" rel="noopener">보정본 폴더(${escHtml(res.retouchFolderName||'보정본')}) →</a>`;
+        if(btn) btn.disabled=false;
+      }else{
+        const code=String((res&&res.code)||'');
+        let hint='';
+        if(code==='RETOUCH_FOLDER_NOT_FOUND') hint='<div style="margin-top:8px;color:#64748b;">원본 폴더 안에 <b>보정본</b> 폴더를 만들고 보정 파일을 넣은 뒤 다시 열어 주세요.</div>';
+        if(code==='ALREADY_SENT') hint='<div style="margin-top:8px;color:#64748b;">이미 보낸 건입니다. 다시 보내야 하면 담당자에게 문의하세요.</div>';
+        if(prev) prev.innerHTML=`<span style="color:#ef4444;">${escHtml((res&&res.message)||'폴더 확인 실패')}</span>`+hint;
+      }
+    }).withFailureHandler(e=>{
+      if(prev) prev.innerHTML=`<span style="color:#ef4444;">${escHtml((e&&e.message)||e)}</span>`;
+    }).adminRpc(adminToken,'sendFinalDelivery',{bookingRowIndex:idx,dryRun:true});
+  }catch(err){
+    alert('납품 발송 창을 열지 못했습니다: '+((err&&err.message)||err));
+  }
+}
+
+function closeFinalSendModal(){
+  const m=document.getElementById('finalSendModal');
+  if(m) m.classList.remove('open');
+}
+
+function sendFinalFromModal(btn){
+  const $=id=>document.getElementById(id);
+  const idx=Number($('final_rowIndex')&&$('final_rowIndex').value)||0;
+  if(!idx){alert('예약 행 번호를 확인할 수 없습니다.');return;}
+  if(!confirm('원본과 보정본을 고객에게 발송할까요?\n발송 후 예약이 작업완료로 바뀝니다.')) return;
+  const msg=String(($('final_message')&&$('final_message').value)||'').trim();
+  if(btn){btn.disabled=true;btn.textContent='발송 중…';}
+  if($('final_sendStatus')) $('final_sendStatus').innerHTML='<span class="spinner"></span> 발송 중...';
+  google.script.run.withSuccessHandler(res=>{
+    if(res&&res.ok){
+      showToast('원본+보정본 발송 완료 · '+(res.to||''),'success');
+      closeFinalSendModal();
+      loadCustomers&&loadCustomers();
+    }else{
+      if($('final_sendStatus')) $('final_sendStatus').innerHTML=`<span style="color:#ef4444;">${escHtml((res&&res.message)||'발송 실패')}</span>`;
+      if(btn){btn.disabled=false;btn.textContent='메일 발송';}
+    }
+  }).withFailureHandler(e=>{
+    if($('final_sendStatus')) $('final_sendStatus').innerHTML=`<span style="color:#ef4444;">${escHtml((e&&e.message)||e)}</span>`;
+    if(btn){btn.disabled=false;btn.textContent='메일 발송';}
+  }).adminRpc(adminToken,'sendFinalDelivery',{bookingRowIndex:idx,extraMessage:msg});
 }
 
 function openSampleSendModal(rowIndex){
