@@ -1,6 +1,8 @@
 [build]
   command = "npm --prefix .. install && npm --prefix .. run build:booking-site"
   publish = "."
+  # /go/* 협력업체 리디렉션 + 클릭 집계 (partner-go.ts). 경로는 함수의 config.path 가 선언한다.
+  edge_functions = "netlify/edge-functions"
 
 [build.environment]
   SITE_MODE = "production"

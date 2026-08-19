@@ -4880,3 +4880,36 @@ a.b2b-consult-card:hover { border-color: #0f766e; }
 }
 #resultBox h3 { text-align: center; }
 #resultBox > p { text-align: center; }
+
+/* ===== 협력업체 소개 (성공 화면) =====
+   광고가 아니라 준비 안내다 — 로고·배너 없이 이름/설명/버튼 하나. 기존 result-guide-box 안에 든다. */
+.partner-item + .partner-item {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e8e4dd;
+}
+.partner-name {
+  font-weight: 700;
+  color: var(--sm-brand-ink);
+}
+.partner-meta {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  color: #8b8378;
+}
+.partner-desc {
+  margin: 2px 0 6px;
+  font-size: 13px;
+}
+a.partner-cta {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.partner-note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #8b8378;
+}

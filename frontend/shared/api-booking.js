@@ -5,6 +5,21 @@ async function requestJson(url) {
   return parseJsonResponse(response);
 }
 
+/* 협력업체 클릭 집계 — 응답을 기다리지 않는다(링크는 이미 새 탭에서 열렸다).
+   keepalive 로 페이지가 바뀌어도 전송이 살아남는다. 실패는 조용히 무시: 집계 때문에
+   고객 흐름을 막지 않는다. 개인정보는 보내지 않는다(업체·출처·언어·상품군만). */
+export function pingPartnerClick({ partnerId, source, lang, itemGroup }) {
+  if (!partnerId) return;
+  try {
+    fetch(buildUrl('partner-click', { p: partnerId, s: source || 'web', lang: lang || '', g: itemGroup || '' }), {
+      method: 'GET',
+      keepalive: true,
+      cache: 'no-store',
+      mode: 'no-cors'
+    }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
 export function fetchInitData() {
   return requestJson(buildUrl('init'));
 }

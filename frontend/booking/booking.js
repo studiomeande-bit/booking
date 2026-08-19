@@ -1,4 +1,4 @@
-import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, submitBooking } from '../shared/api-booking.js';
+import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, getProductIncludedPrintQuota, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { groupPrintCatalogByGrade, printCatalogGradeLabel, printCatalogName } from '../shared/print-catalog.js';
 import { PRINT_METHOD_POINTS, PRINT_TIERS, getPrintMicrocopy, getPrintTier } from '../shared/print-tier-copy.js';
@@ -6709,8 +6709,90 @@ function buildGermanSuccessGuideHtml(product) {
   `;
 }
 
+const PARTNER_CTA_COPY = {
+  kakao: { ko: '카카오톡으로 바로 상담', en: 'Chat on KakaoTalk', de: 'Per KakaoTalk anfragen' },
+  instagram: { ko: '인스타그램으로 문의', en: 'Message on Instagram', de: 'Per Instagram anfragen' },
+  whatsapp: { ko: 'WhatsApp으로 문의', en: 'Message on WhatsApp', de: 'Per WhatsApp anfragen' },
+  email: { ko: '메일로 문의', en: 'Send an email', de: 'Per E-Mail anfragen' },
+  phone: { ko: '전화로 문의', en: 'Call', de: 'Anrufen' },
+  web: { ko: '바로 상담하기', en: 'Get in touch', de: 'Kontakt aufnehmen' }
+};
+const PARTNER_BLOCK_COPY = {
+  title: { ko: '함께 준비하시면 좋은 곳', en: 'Recommended partners', de: 'Empfohlene Partner' },
+  note: {
+    ko: 'Studio mean은 소개만 드리며 각 업체의 예약·결제에는 관여하지 않습니다.',
+    en: 'Studio mean only makes the introduction and is not involved in each partner’s booking or payment.',
+    de: 'Studio mean vermittelt lediglich den Kontakt und ist an Buchung oder Zahlung der Partner nicht beteiligt.'
+  }
+};
+
+/* 협력업체 노출 조건 — 서버 buildPartnerMailBlockHtml_ 과 같은 규칙을 쓴다.
+   'baby' 토큰은 백일·돌, 나머지는 itemGroup 또는 상품 id 매칭. */
+function getPartnersForSuccess(payload) {
+  const partners = Array.isArray(state.init?.partners) ? state.init.partners : [];
+  const product = state.selectedProduct;
+  if (!partners.length || !product) return [];
+  const group = String(product.g || '').toLowerCase();
+  const productId = String(product.id || '').toLowerCase();
+  /* 상품명 텍스트도 본다 — 서버(partnerContextFrom_)와 같은 규칙. 돌잔치/가족파티(dolp)처럼
+     설문 없이 상품 자체가 돌·백일인 경우를 성공화면과 메일이 똑같이 잡게 하기 위함. */
+  const productText = [product.nameKo, product.nameEn, product.nameDe, product.id].filter(Boolean).join(' ');
+  const isBaby = !!(
+    payload.surveyKeys?.includes('baby') ||
+    payload.babyType === 'baekil' ||
+    payload.babyType === 'dol' ||
+    /돌\s*촬영|돌상|돌잔치|백일|1st\s*Birthday|1\.\s*Geburtstag|100.?day/i.test(productText)
+  );
+  return partners.filter((p) => {
+    const placements = Array.isArray(p.placements) ? p.placements : [];
+    if (placements.length && !placements.includes('success')) return false;
+    const groups = Array.isArray(p.groups) ? p.groups : [];
+    return groups.some((t) => (t === 'baby' ? isBaby : t === group || (!!productId && t === productId)));
+  });
+}
+
+function buildPartnerSectionHtml(payload) {
+  const list = getPartnersForSuccess(payload);
+  if (!list.length) return '';
+  const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  const rows = list.map((p) => {
+    const desc = (lang === 'en' ? p.descEn : lang === 'de' ? p.descDe : p.descKo) || p.descKo || '';
+    const meta = [p.langs ? (lang === 'ko' ? `상담 ${p.langs}` : p.langs) : '', p.area].filter(Boolean).join(' · ');
+    const cta = (PARTNER_CTA_COPY[p.linkKind] || PARTNER_CTA_COPY.web)[lang];
+    return `
+      <div class="partner-item">
+        <div class="partner-name">${escapeHtml(p.name)}${meta ? `<span class="partner-meta">${escapeHtml(meta)}</span>` : ''}</div>
+        ${desc ? `<div class="partner-desc">${escapeHtml(desc)}</div>` : ''}
+        <a class="partner-cta" href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" data-partner-id="${escapeHtml(p.id)}">${escapeHtml(cta)} →</a>
+      </div>
+    `;
+  }).join('');
+  return `
+    <section class="result-guide-box">
+      <h4 class="result-guide-title">${PARTNER_BLOCK_COPY.title[lang]}</h4>
+      <div class="result-guide-body">
+        ${rows}
+        <p class="partner-note">${PARTNER_BLOCK_COPY.note[lang]}</p>
+      </div>
+    </section>
+  `;
+}
+
+/* 클릭 집계는 위임으로 한 번만 건다. 링크는 target=_blank 로 바로 열리고, 핑은 뒤따라간다 —
+   기다리지 않으므로 체감 지연이 없다. */
+document.addEventListener('click', (event) => {
+  const link = event.target?.closest?.('a.partner-cta[data-partner-id]');
+  if (!link) return;
+  pingPartnerClick({
+    partnerId: link.getAttribute('data-partner-id'),
+    source: 'web',
+    lang: state.lang || '',
+    itemGroup: state.selectedProduct?.g || ''
+  });
+});
+
 function getSuccessGuideHtml(payload) {
-  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct);
+  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct) + buildPartnerSectionHtml(payload);
   const product = state.selectedProduct;
   if (!product) return '';
   const isKo = state.lang === 'ko';
@@ -6956,6 +7038,9 @@ function getSuccessGuideHtml(payload) {
       </div>
     </section>
   `);
+
+  const partnerHtml = buildPartnerSectionHtml(payload);
+  if (partnerHtml) sections.push(partnerHtml);
 
   return `<div class="result-guide-stack">${sections.join('')}</div>`;
 }
