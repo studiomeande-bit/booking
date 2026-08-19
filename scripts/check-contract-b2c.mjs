@@ -81,7 +81,7 @@ for (const [label, golden, c] of B2B) {
 const b2bDoc = M.buildDrehvertragHtml_(B2B[0][2]);
 check('B2B 에 소비자 조항이 새지 않음', !/Widerrufsbelehrung|Fotografenvertrag|Muster-Widerrufsformular/.test(b2bDoc));
 check('B2B 금액 표기 종전 유지 (€ 1300)', b2bDoc.includes('€ 1300') && !b2bDoc.includes('1.300,00 €'));
-check("계약종류 '촬영대행'·빈값·자유값은 B2B 경로", ['촬영대행', '', '영상제작', 'Drehvertrag'].every((t) => !M.isB2cContract_({ contractType: t })));
+check("기존 행: 계약종류 '촬영대행'·빈값·자유라벨은 B2B 렌더 유지", ['촬영대행', '', '영상제작', 'Hochzeitsreportage', 'Drehvertrag'].every((t) => !M.isB2cContract_({ contractType: t })));
 
 /* ── 2) 계약종류 판정 ── */
 console.log('\n── 계약종류 판정 (명시 > 사업자 신호 > itemGroup > 개인=소비자) ──');
@@ -93,7 +93,8 @@ for (const [label, c, want] of [
   ['개인 wed/pass', { itemGroup: 'wed' }, 'Fotografenvertrag'],
   ['명시 b2b 지정', { itemGroup: 'wed', contractKind: 'b2b' }, '촬영대행'],
   ['명시 b2c 지정 (회사 있어도)', { companyName: 'Acme', contractKind: 'b2c' }, 'Fotografenvertrag'],
-  ['자유 계약종류 보존', { contractType: '영상제작' }, '영상제작'],
+  ['설명 라벨(Hochzeitsreportage)은 명시 지정이 아님 → 자동 판정 (DV-260819-WST3 실사례)', { contractType: 'Hochzeitsreportage', companyName: '', vatId: '' }, 'Fotografenvertrag'],
+  ['설명 라벨 + 사업자 신호 → B2B', { contractType: '영상제작', companyName: 'Acme GmbH' }, '촬영대행'],
 ]) check(`${label} → ${want}`, M.resolveContractType_(c) === want, `실제 ${M.resolveContractType_(c)}`);
 
 /* ── 3) 금액 표기 ── */

@@ -31517,15 +31517,15 @@ function isB2cContract_(c){
 }
 /* 판정 우선순위: 명시 지정 > 사업자 신호(회사명·VAT번호·예약유형 기업) > itemGroup > 개인=소비자.
    itemGroup 은 보조 신호다 — AN-260011(Jin Hee Choi 웨딩)처럼 itemGroup 이 'biz' 로 잘못 들어간
-   개인 건이 실제로 있어서, 회사명·VAT 가 비어 있으면 소비자로 본다. */
+   개인 건이 실제로 있어서, 회사명·VAT 가 비어 있으면 소비자로 본다.
+   ⚠ 알아듣지 못하는 값(예: 'Hochzeitsreportage')은 **명시 지정으로 보지 않고 자동 판정으로 넘긴다**.
+     '계약종류'에 설명용 라벨을 넣는 실사용(DV-260819-WST3, DV-260818-M273)이 있는데, 그걸
+     명시 지정으로 오인하면 소비자 건이 조용히 B2B 계약서로 나간다 — 이 작업이 없애려던 바로 그 결함.
+     이미 만들어진 행은 그대로 둔다(isB2cContract_ 가 미인식 값을 B2B 로 읽으므로 문서가 바뀌지 않는다). */
 function resolveContractType_(c){
-  const explicit=String((c&&(c.contractKind||c.contractType))||'').trim();
-  if(explicit){
-    const e=explicit.toLowerCase();
-    if(e==='fotografenvertrag'||e==='b2c'||e==='소비자') return CONTRACT_KIND_B2C;
-    if(e==='b2b'||e==='drehvertrag'||e===CONTRACT_KIND_B2B) return CONTRACT_KIND_B2B;
-    return explicit; // 그 밖의 자유 입력은 종전대로 보존
-  }
+  const explicit=String((c&&(c.contractKind||c.contractType))||'').trim().toLowerCase();
+  if(explicit==='fotografenvertrag'||explicit==='b2c'||explicit==='소비자') return CONTRACT_KIND_B2C;
+  if(explicit==='b2b'||explicit==='drehvertrag'||explicit===CONTRACT_KIND_B2B) return CONTRACT_KIND_B2B;
   if(String(c.companyName||'').trim()||String(c.vatId||'').trim()||String(c.bookingType||'').trim()==='기업') return CONTRACT_KIND_B2B;
   const g=String(c.itemGroup||'').trim().toLowerCase();
   if(CONTRACT_B2C_ITEM_GROUPS.indexOf(g)>-1) return CONTRACT_KIND_B2C;
@@ -32084,7 +32084,10 @@ function createContractForAgent_(payload){
   c.net=parseMoneyValue_(c.net);c.vat=parseMoneyValue_(c.vat);c.total=parseMoneyValue_(c.total);
   c.deposit=parseMoneyValue_(c.deposit);c.balance=parseMoneyValue_(c.balance||(c.total-c.deposit));
   /* 계약종류는 여기서 한 번만 판정해 '계약종류' 열에 굳힌다 — 이후 렌더는 전부 저장값을 따른다 */
+  const requestedType=String((c.contractKind||c.contractType)||'').trim();
   c.contractType=resolveContractType_(c);
+  if(requestedType&&requestedType!==c.contractType)
+    warnings.push('계약종류 "'+requestedType+'" 는 계약서 종류가 아니라 설명 라벨로 보고 자동 판정했습니다 → "'+c.contractType+'". 강제하려면 contractKind 를 b2c/b2b 로 지정하세요.');
   const isB2c=isB2cContract_(c);
   c.clauseVersion=isB2c?CONTRACT_CLAUSE_VERSION_B2C:CONTRACT_CLAUSE_VERSION;
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
