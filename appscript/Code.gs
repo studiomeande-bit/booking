@@ -1746,6 +1746,11 @@ function handlePublicApiRequest_(route,method,e){
         /* 촬영 직후 샘플 링크 메일 — 드라이브 'YYMMDD_고객명_샘플' 폴더를 찾아 공유 후 발송.
            dryRun:true 면 폴더·수신자만 확인하고 보내지 않는다(발송 전 점검용). */
         if(action==='booking-sample-send') return jsonOk_(sendBookingSampleAdmin(token,payload.rowIndex,payload));
+        if(action==='booking-final-send'){
+          /* ⚠️외부발송 — 당일 완결 건(촬영+보정 같은 날 완료)의 원본+보정본 동시 전달.
+             dryRun:true 로 폴더·수신자 먼저 확인할 것. 이미 보낸 건은 force:true 로만 재발송. */
+          return jsonOk_(sendFinalDeliveryAdmin(token,Number(payload.rowIndex),payload));
+        }
         if(action==='select-update-status'){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
           return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
@@ -2878,25 +2883,28 @@ function ensureAutomationLogSheet_(ss){
  *  메일 링크는 /go/<id> 우리 도메인 → Edge Function → 시트의 최신 링크로 302).
  * ══════════════════════════════════════════════════════ */
 
+/* 소개문구는 각 업체가 **자기 인스타 프로필에 쓰는 표현**을 기준으로 썼다(2026-08-19 사장님 지시).
+   가온테이블 "독일및유럽 백일상 돌상 한복대여" · LAON Floral Design · "K-Beauty Makeup Artist | Bridal | Europe".
+   우리가 임의로 지어낸 홍보 문구가 아니라 업체 자신의 표현이라 사실관계가 틀릴 여지가 적다. */
 const PARTNER_SEED_ROWS=[
   ['gaontable','돌상·한복','가온테이블',
-   '돌상·백일상 대여와 아기 한복. 상차림 구성부터 한국어로 상담됩니다.',
-   'Dol and 100-day table rental with baby hanbok. Setup is planned together in advance.',
-   'Verleih von Dol- und 100-Tage-Tischen samt Baby-Hanbok. Die Gestaltung wird vorab gemeinsam abgestimmt.',
+   '독일·유럽 백일상, 돌상, 한복 대여.',
+   'Baekil and dol table settings and hanbok rental across Germany and Europe.',
+   'Baekil- und Dol-Tischdekoration sowie Hanbok-Verleih in Deutschland und Europa.',
    'KO','','https://open.kakao.com/o/s6crDMbi','https://www.instagram.com/gaontable.eu/',
-   'baby','success,mail,dolmail,consult',1,'Y',''],
+   'baby','success,mail,dolmail,consult',1,'Y','인스타 프로필: 가온테이블 / 독일및유럽 백일상 돌상 한복대여'],
   ['laonblumen','플로리스트','라온 블루멘',
-   '부케와 부토니에, 돌상·행사 꽃장식. 스튜디오에서 가까운 Kronberg에 있습니다.',
-   'Bouquets, boutonnieres, and floral styling for tables and events. Based in Kronberg, close to the studio.',
-   'Brautsträuße, Anstecker und florale Dekoration für Tische und Feiern. In Kronberg, ganz in der Nähe des Studios.',
+   'LAON Floral Design — 부케와 행사 꽃장식. 상담 후 진행됩니다.',
+   'LAON Floral Design — bouquets and floral styling for celebrations, arranged after a consultation.',
+   'LAON Floral Design — Brautsträuße und florale Dekoration für Feiern, nach Beratungstermin.',
    'KO','Kronberg im Taunus','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
-   'wed,baby,biz','success,mail,dolmail,consult',2,'Y','WhatsApp +49 176 30152733(QR카드) · 명함 전화는 +49 172 3842546 로 다름 · laonblumen@gmail.com · Werkstatt 13, 61476 Kronberg'],
+   'wed,baby,biz','success,mail,dolmail,consult',2,'Y','인스타 프로필: LAON Floral Design · 명함 "Jetzt einen Beratungstermin vereinbaren" · WhatsApp +49 176 30152733 (사장님 확인: 이 번호가 정본) · Werkstatt 13, 61476 Kronberg'],
   ['cozyjoo','메이크업·드레스','cozyjoo',
-   '촬영 당일 메이크업과 웨딩드레스 대여. 촬영 콘셉트에 맞춰 상담됩니다.',
-   'Makeup on the day of the shoot and wedding dress rental, matched to your concept.',
-   'Make-up am Shootingtag und Brautkleid-Verleih, abgestimmt auf Ihr Konzept.',
+   'K-뷰티 메이크업 아티스트. 웨딩·촬영 메이크업과 드레스 대여.',
+   'K-beauty makeup artist — bridal and shoot makeup, plus dress rental.',
+   'K-Beauty-Make-up-Artistin — Braut- und Shooting-Make-up sowie Kleiderverleih.',
    'KO','','https://open.kakao.com/o/sLHQbH9g','https://www.instagram.com/cozyjoo.de/',
-   'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','']
+   'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','인스타 프로필: K-Beauty Makeup Artist | Bridal | Europe']
 ];
 
 function ensurePartnerSheet_(ss){
@@ -31514,6 +31522,171 @@ ${safeNote?`<p>📝 ${safeNote}</p>`:''}
     try{sh.getRange(rowIndex,BOOKING_COL['상태']+1).setValue('작업완료');}catch(e){}
     try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[여권 발송] ${name} — ${dateStr}`,htmlBody:`<p>${escapeHtml_(name)}님(${escapeHtml_(email)})에게 여권사진 발송 완료.<br>폴더: ${escapeHtml_(folderResult.name||'-')}<br>권한: 링크가 있는 모든 사용자 편집자 (${escapeHtml_(permissionSummary)})<br>링크: <a href="${safeDriveUrl}">${safeDriveUrl}</a></p>`});}catch(e){}
     return{ok:true,to:email,lang:L,driveUrl:driveUrl,folderName:folderResult.name||'',permission:folderResult.permission||'editor',permissionStats:permissionStats,autoMatched:!!folderResult.autoMatched};
+  } finally{try{lock.releaseLock();}catch(e){}}
+}
+
+/* ══════════════════════════════════════════════════════
+ *  당일 완결 납품 — 원본 + 보정본 한 번에
+ *
+ *  스튜디오 프로필처럼 촬영 당일 보정까지 끝나는 건은 셀렉 단계가 의미가 없다.
+ *  (기존 흐름: 셀렉링크 발송 → 고객이 고름 → 보정 → 보정본 발송. 3단계 · 메일 2통)
+ *  이 액션은 원본 폴더와 그 안 '보정본' 서브폴더를 **한 통의 메일**로 함께 전달하고
+ *  예약을 작업완료까지 닫는다. 폴더 규약은 기존과 같다(sendRetouchCompleteAdmin 과 동일).
+ * ══════════════════════════════════════════════════════ */
+function sendFinalDeliveryAdmin(token,rowIndex,payload){
+  assertAdmin_(token);
+  const lock=LockService.getScriptLock();
+  try{lock.waitLock(10000);}catch(e){return{ok:false,message:'다른 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.'};}
+  try{
+    payload=payload||{};
+    const sh=getDbSheet();
+    const row=sh.getRange(rowIndex,1,1,sh.getLastColumn()).getValues()[0];
+    if(!row||!row[BOOKING_COL['고객명']]) return{ok:false,message:'예약 행을 찾지 못했습니다.'};
+    const name=String(row[BOOKING_COL['고객명']]||'');
+    const expectName=String(payload.expectName||'').trim();
+    if(expectName&&expectName!==name){
+      return{ok:false,code:'NAME_MISMATCH',message:`행 ${rowIndex} 고객명이 "${name}" 입니다(기대: "${expectName}"). 행 번호를 확인해 주세요.`};
+    }
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(status==='취소됨') return{ok:false,message:'취소된 예약입니다.'};
+    const email=String(row[BOOKING_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')<0||email.indexOf('수기등록')>-1) return{ok:false,message:'고객 이메일이 없습니다(수기등록 건).'};
+    const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase();
+    const L=(lang==='en'||lang==='de')?lang:'ko';
+    const product=String(row[BOOKING_COL['상품']]||'');
+    const dateStr=_formatBookingDate_(row[BOOKING_COL['예약일시']]);
+
+    /* 1) 원본 폴더 — 셀렉 발송과 같은 해결기(명시 지정 우선, 아니면 고객명+촬영일 자동탐색) */
+    const folderResult=resolveSelectDeliveryFolder_(payload,name,dateStr);
+    if(!folderResult.ok) return folderResult;
+    const originalUrl=String(folderResult.url||'').trim();
+
+    /* 2) 보정본 서브폴더 — sendRetouchCompleteAdmin 과 동일 규약('보정본' 이름) */
+    let retouchUrl='',retouchFolderName='';
+    const subName=String(payload.retouchFolderName||'보정본').trim();
+    try{
+      const folderId=originalUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+      if(folderId&&folderId[1]){
+        const parent=DriveApp.getFolderById(folderId[1]);
+        const it=parent.getFoldersByName(subName);
+        if(it.hasNext()){
+          const sub=it.next();
+          sub.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+          retouchUrl=sub.getUrl();
+          retouchFolderName=sub.getName();
+        }
+      }
+    }catch(e){Logger.log('보정본 폴더 탐색 오류: '+e.message);}
+    /* 보정본이 없으면 멈춘다 — 원본만 보내놓고 "완성됐다"고 하면 안 된다.
+       원본만 보내려면 booking-sample-send(샘플) 또는 select-create(셀렉)를 쓴다. */
+    if(!retouchUrl&&payload.allowMissingRetouch!==true){
+      return{ok:false,code:'RETOUCH_FOLDER_NOT_FOUND',
+        message:`원본 폴더 안에 '${subName}' 폴더가 없습니다. 보정본을 넣은 뒤 다시 실행하거나, retouchFolderName 으로 폴더명을 지정해 주세요.`,
+        originalUrl:originalUrl};
+    }
+
+    if(payload.dryRun===true){
+      return{ok:true,dryRun:true,to:email,lang:L,name:name,product:product,date:dateStr,
+        originalUrl:originalUrl,retouchUrl:retouchUrl,retouchFolderName:retouchFolderName,
+        note:'발송하지 않았습니다. 폴더와 수신자를 확인한 뒤 dryRun 없이 다시 실행하세요.'};
+    }
+
+    /* 3) 중복 발송 가드 — 이미 보낸 건을 또 보내지 않는다(force 로만 재발송) */
+    const sheets=ensureSheets_();
+    const selSh=ensureSelectSheet_(sheets.ss);
+    /* 행 특정은 검증된 헬퍼로 — 직접 순회하면 한 예약에 셀렉 행이 여럿일 때(재촬영 등)
+       엉뚱한 행을 덮어쓴다. 헬퍼는 워크플로 점수로 최신 행을 고른다. */
+    const found=getActiveSelectRowForBooking_(selSh,rowIndex);
+    const selRowIdx=found?found.rowIndex:null;
+    const prevSent=found?String(found.row[SELECT_COL['보정본발송일시']]||'').trim():'';
+    if(prevSent&&payload.force!==true){
+      return{ok:false,code:'ALREADY_SENT',
+        message:`이미 ${prevSent} 에 최종본을 보냈습니다. 다시 보내려면 force:true 를 주세요.`};
+    }
+
+    const extraMessage=String(payload.extraMessage||'').trim();
+    const esc=function(t){return escapeHtml_(String(t||''));};
+    const safeExtra=extraMessage?esc(extraMessage).replace(/\n/g,'<br>'):'';
+    const subj={
+      ko:`[Studio mean] ${name}님, 원본과 보정본을 전달드립니다`,
+      en:`[Studio mean] Your photos are ready — ${name}`,
+      de:`[Studio mean] Ihre Fotos sind fertig — ${name}`
+    };
+    const T={
+      ko:{hello:`안녕하세요, <b>${esc(name)}</b>님.`,
+          lead:'촬영해 주셔서 감사합니다. 촬영 당일 보정까지 마무리되어 <b>원본과 보정본을 함께</b> 전달드립니다.',
+          orig:'원본 전체',
+          ret:'보정본',
+          info:`촬영: ${esc(product)} · ${esc(dateStr)}`,
+          keep:'※ 링크는 다운로드가 가능하며, 보관 기간은 촬영일로부터 3개월입니다. 그 전에 꼭 내려받아 주세요.',
+          ask:'보정 범위 안에서 조정이 필요한 부분이 있으면 사진 번호와 함께 이 메일로 회신해 주세요.',
+          close:'감사합니다.'},
+      en:{hello:`Hello <b>${esc(name)}</b>,`,
+          lead:'thank you for your session. The retouching was completed on the same day, so here are <b>both the originals and the retouched files</b>.',
+          orig:'All originals',
+          ret:'Retouched files',
+          info:`Session: ${esc(product)} · ${esc(dateStr)}`,
+          keep:'※ The links allow downloading and stay available for 3 months from the shoot date. Please save your files before then.',
+          ask:'If you would like any fine-tuning within the agreed retouch scope, just reply to this email with the photo numbers.',
+          close:'Thank you.'},
+      de:{hello:`Guten Tag, <b>${esc(name)}</b>,`,
+          lead:'vielen Dank für Ihr Shooting. Die Bearbeitung wurde noch am selben Tag abgeschlossen — hier erhalten Sie <b>Originale und bearbeitete Bilder zusammen</b>.',
+          orig:'Alle Originale',
+          ret:'Bearbeitete Bilder',
+          info:`Shooting: ${esc(product)} · ${esc(dateStr)}`,
+          keep:'※ Die Links erlauben den Download und bleiben 3 Monate ab Aufnahmedatum verfügbar. Bitte sichern Sie Ihre Dateien rechtzeitig.',
+          ask:'Falls Sie sich innerhalb des vereinbarten Bearbeitungsumfangs noch kleine Anpassungen wünschen, antworten Sie einfach mit der Bildnummer.',
+          close:'Vielen Dank.'}
+    }[L];
+    const btn=function(url,label,primary){
+      return '<a href="'+esc(url)+'" target="_blank" style="display:inline-block;padding:12px 20px;border-radius:10px;font-weight:700;text-decoration:none;margin:0 8px 8px 0;'
+        +(primary?'background:#111827;color:#ffffff;':'background:#f1f5f9;color:#111827;border:1px solid #cbd5e1;')+'">'+esc(label)+'</a>';
+    };
+    const partnerBlock=buildPartnerMailBlockHtml_(
+      partnerContextFrom_(String(row[BOOKING_COL['촬영종류']]||''),product,String(row[BOOKING_COL['분위기']]||'').split(','),''),L,'mail');
+    const html=`<div style="font-size:14px;line-height:1.8;color:#374151;">
+<p>${T.hello}<br>${T.lead}</p>
+<p style="margin:18px 0;">${retouchUrl?btn(retouchUrl,'✨ '+T.ret,true):''}${btn(originalUrl,'📁 '+T.orig,!retouchUrl)}</p>
+<p style="color:#6b7280;font-size:13px;">${T.info}</p>
+${safeExtra?`<p style="background:#f8fafc;border-left:3px solid #cbd5e1;padding:10px 14px;">${safeExtra}</p>`:''}
+<p style="color:#b45309;">${T.keep}</p>
+<p>${T.ask}</p>
+${partnerBlock}
+<p>${T.close}</p>
+${_getSignatureHtml()}
+</div>`;
+    sendTrackedEmail_({to:email,subject:subj[L],htmlBody:html});
+
+    /* 4) 장부 정리 — 셀렉 행 갱신/생성 + 예약 작업완료 + 메모 이력 */
+    const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+    if(selRowIdx){
+      selSh.getRange(selRowIdx,SELECT_COL['드라이브링크']+1).setValue(originalUrl);
+      selSh.getRange(selRowIdx,SELECT_COL['보정본발송일시']+1).setValue(stamp);
+      selSh.getRange(selRowIdx,SELECT_COL['상태']+1).setValue('최종작업완료');
+    }else{
+      const built=_makeSelectRow_({
+        name:name,email:email,phone:String(row[BOOKING_COL['연락처']]||''),
+        date:dateStr,itemGroup:String(row[BOOKING_COL['촬영종류']]||''),product:product,
+        baseRetouchCount:0,retouchPrice:0,lang:lang,driveLink:originalUrl,
+        bookingRowIndex:String(rowIndex),pageVersion:'classic'
+      });
+      built.row[SELECT_COL['보정본발송일시']]=stamp;
+      built.row[SELECT_COL['상태']]='최종작업완료';
+      selSh.appendRow(built.row);
+    }
+    try{sh.getRange(rowIndex,BOOKING_COL['상태']+1).setValue('작업완료');}catch(e){}
+    try{
+      const memoCol=BOOKING_COL['요청사항'];
+      const existing=String(row[memoCol]||'');
+      const entry=`[${stamp}] 당일 완결 납품 메일 발송 → 원본 ${originalUrl}${retouchUrl?' · 보정본 '+retouchUrl:''}`;
+      sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
+    }catch(e){}
+    try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[당일 납품] ${name} — ${dateStr}`,
+      htmlBody:`<p>${esc(name)}님(${esc(email)})에게 원본+보정본 발송 완료.<br>원본: ${esc(originalUrl)}<br>보정본: ${esc(retouchUrl||'(없음)')}</p>`});}catch(e){}
+
+    return{ok:true,to:email,lang:L,name:name,originalUrl:originalUrl,retouchUrl:retouchUrl,
+      retouchFolderName:retouchFolderName,sentAt:stamp,autoMatched:!!folderResult.autoMatched,
+      bookingStatus:'작업완료'};
   } finally{try{lock.releaseLock();}catch(e){}}
 }
 
