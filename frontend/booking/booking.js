@@ -6758,12 +6758,19 @@ function buildPartnerSectionHtml(payload) {
   const rows = list.map((p) => {
     const desc = (lang === 'en' ? p.descEn : lang === 'de' ? p.descDe : p.descKo) || p.descKo || '';
     const meta = [p.langs ? (lang === 'ko' ? `상담 ${p.langs}` : p.langs) : '', p.area].filter(Boolean).join(' · ');
-    const cta = (PARTNER_CTA_COPY[p.linkKind] || PARTNER_CTA_COPY.web)[lang];
+    /* 메신저와 인스타를 모두 건다. 웹은 원본 URL 을 바로 열고(지연 0) 핑만 뒤따라 보낸다. */
+    const links = Array.isArray(p.links) && p.links.length
+      ? p.links
+      : (p.url ? [{ slot: 'chat', kind: p.linkKind || 'web', url: p.url }] : []);
+    const ctas = links.map((l) => {
+      const label = (PARTNER_CTA_COPY[l.kind] || PARTNER_CTA_COPY.web)[lang];
+      return `<a class="partner-cta" href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer" data-partner-id="${escapeHtml(p.id)}" data-partner-link="${escapeHtml(l.kind)}">${escapeHtml(label)} →</a>`;
+    }).join('<span class="partner-sep">|</span>');
     return `
       <div class="partner-item">
         <div class="partner-name">${escapeHtml(p.name)}${meta ? `<span class="partner-meta">${escapeHtml(meta)}</span>` : ''}</div>
         ${desc ? `<div class="partner-desc">${escapeHtml(desc)}</div>` : ''}
-        <a class="partner-cta" href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" data-partner-id="${escapeHtml(p.id)}">${escapeHtml(cta)} →</a>
+        <div class="partner-ctas">${ctas}</div>
       </div>
     `;
   }).join('');
@@ -6785,6 +6792,7 @@ document.addEventListener('click', (event) => {
   if (!link) return;
   pingPartnerClick({
     partnerId: link.getAttribute('data-partner-id'),
+    linkKind: link.getAttribute('data-partner-link') || '',
     source: 'web',
     lang: state.lang || '',
     itemGroup: state.selectedProduct?.g || ''

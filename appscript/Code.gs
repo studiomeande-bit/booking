@@ -133,7 +133,7 @@ const LEAD_COL=LEAD_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
    적용그룹 토큰: itemGroup(pass/prof/stud/snap/wed/biz) · 상품id(dolp 등) · 'baby'(백일·돌).
    노출위치 토큰: success(예약 성공화면) · mail(확정/접수 메일) · dolmail(돌추천) · consult(상담) */
 const PARTNER_HEADERS=['id','분류','업체명','한줄설명KO','한줄설명EN','한줄설명DE','상담언어','지역','상담링크','인스타링크','적용그룹','노출위치','순서','활성','제휴메모'];
-const PARTNER_CLICK_HEADERS=['일시','업체id','출처','언어','상품그룹'];
+const PARTNER_CLICK_HEADERS=['일시','업체id','출처','언어','상품그룹','링크종류'];
 
 const CONSULTATION_HEADERS=['상담ID','접수일시','상태','상담유형','언어','고객명','이메일','연락처','회사명','희망상담일정','상담방식','촬영예정일','촬영장소','예산','우선순위','설문JSON','요약','회의록JSON','연결리드행','연결예약행','최근관리일시','관리메모','출처','UTM','IP','UserAgent','마케팅동의','개인정보동의','예약전환일시','상담예약일시','상담소요분','상담캘린더ID'];
 const CONSULTATION_COL=CONSULTATION_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -1208,7 +1208,7 @@ function handlePublicApiRequest_(route,method,e){
          Origin 헤더 없는 서버-투-서버 호출도 허용된다(assertPublicOrigin_ 은 origin 이 있을 때만 검사). */
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/partners');
       return jsonOk_({partners:getPartners_().map(function(p){
-        return{id:p.id,name:p.name,url:p.url,linkKind:p.linkKind,category:p.category,
+        return{id:p.id,name:p.name,links:p.links,url:p.url,linkKind:p.linkKind,category:p.category,
           descKo:p.descKo,descEn:p.descEn,descDe:p.descDe,langs:p.langs,area:p.area,
           groups:p.groups,placements:p.placements};
       })});
@@ -1226,7 +1226,8 @@ function handlePublicApiRequest_(route,method,e){
       recordPartnerClick_(partnerId,
         String(body.source||pc.s||pc.source||'web'),
         String(body.lang||pc.lang||''),
-        String(body.itemGroup||pc.g||pc.itemGroup||''));
+        String(body.itemGroup||pc.g||pc.itemGroup||''),
+        String(body.linkKind||pc.l||pc.linkKind||''));
       return jsonOk_({recorded:true});
     }
     if(route==='gutschein-release'){
@@ -1306,6 +1307,32 @@ function handlePublicApiRequest_(route,method,e){
         // 월마감 확정 — 그 시점 숫자를 스냅샷으로 굳힌다. 이후 같은 기간 숫자가 바뀌면 체크리스트가 '마감 후 변동'으로 잡는다.
         if(action==='accounting-month-close-record') return jsonOk_(recordAccountingMonthCloseAdmin(token,String(payload.startDate||''),String(payload.endDate||''),payload.options||payload));
         if(action==='expense-add') return jsonOk_(saveExpenseAdmin(token,payload.data||{}));
+        if(action==='partner-seed-apply'){
+          /* ✏️ 코드의 PARTNER_SEED_ROWS 를 '협력업체' 시트에 id 기준 upsert.
+             시드는 원래 시트가 **비어 있을 때만** 심어지므로, 이미 행이 있는 라이브에
+             문구·링크 변경을 반영하려면 이 액션이 필요하다. 사장님이 시트에서 직접 고친
+             내용을 덮어쓸 수 있으므로 confirm 필수. 시트에 있고 시드에 없는 행은 건드리지 않는다. */
+          if(String(payload.confirm||'')!=='APPLY') return jsonError_('BAD_REQUEST','confirm:"APPLY" 필요 — 시트의 수동 수정을 덮어쓸 수 있습니다.');
+          const sh=ensurePartnerSheet_(ensureSheets_().ss);
+          const last=sh.getLastRow();
+          const cur=last>=2?sh.getRange(2,1,last-1,PARTNER_HEADERS.length).getValues():[];
+          const idxById={};
+          cur.forEach(function(r,i){const id=String(r[0]||'').trim();if(id) idxById[id]=i;});
+          const updated=[],added=[];
+          PARTNER_SEED_ROWS.forEach(function(seed){
+            const id=String(seed[0]);
+            if(idxById[id]!=null){
+              sh.getRange(2+idxById[id],1,1,PARTNER_HEADERS.length).setValues([seed]);
+              updated.push(id);
+            }else{
+              sh.appendRow(seed);
+              added.push(id);
+            }
+          });
+          try{CacheService.getScriptCache().remove('partners_v1');}catch(e){}
+          return jsonOk_({updated:updated,added:added,
+            note:'캐시 비움 — 즉시 반영. 시드에 없는 시트 행은 그대로 둡니다.'});
+        }
         if(action==='partner-click-stats'){
           /* 조회 전용 — 협력업체 클릭 집계. 개인정보가 없는 시트라 그대로 집계만 한다.
              출처: web(성공화면) / mail(확정·접수메일) / dolmail / consult / verify(점검용). */
@@ -1317,7 +1344,7 @@ function handlePublicApiRequest_(route,method,e){
           const rows=last>=2?sh.getRange(2,1,last-1,PARTNER_CLICK_HEADERS.length).getValues():[];
           const nameById={};
           getPartners_().forEach(function(p){nameById[p.id]=p.name;});
-          const byPartner={},bySource={},byLang={},byGroup={};
+          const byPartner={},bySource={},byLang={},byGroup={},byLink={};
           let total=0;
           rows.forEach(function(r){
             const ts=String(r[0]||'');
@@ -1332,12 +1359,14 @@ function handlePublicApiRequest_(route,method,e){
             byLang[lg]=(byLang[lg]||0)+1;
             const gp=String(r[4]||'').trim()||'(미상)';
             byGroup[gp]=(byGroup[gp]||0)+1;
+            const lk=String(r[5]||'').trim()||'(미상)';
+            byLink[lk]=(byLink[lk]||0)+1;
           });
           const partners=Object.keys(byPartner).map(function(id){
             return{id:id,name:nameById[id]||id,clicks:byPartner[id]};
           }).sort(function(a,b){return b.clicks-a.clicks;});
           return jsonOk_({days:days,since:sinceStr,totalClicks:total,partners:partners,
-            bySource:bySource,byLang:byLang,byItemGroup:byGroup,
+            bySource:bySource,byLang:byLang,byItemGroup:byGroup,byLinkKind:byLink,
             summary:partners.map(function(p){return p.name+' '+p.clicks;}).join(' · ')||'(클릭 없음)'});
         }
         if(action==='booking-hours-set'){
@@ -2851,22 +2880,22 @@ function ensureAutomationLogSheet_(ss){
 
 const PARTNER_SEED_ROWS=[
   ['gaontable','돌상·한복','가온테이블',
-   '돌상·백일상 대여와 한복. 한국어 상담.',
-   'Dol / 100-day table setup and hanbok rental. Korean-speaking.',
-   'Dol-/100-Tage-Tisch und Hanbok-Verleih. Beratung auf Koreanisch.',
+   '돌상·백일상 대여와 아기 한복. 상차림 구성부터 한국어로 상담됩니다.',
+   'Dol and 100-day table rental with baby hanbok. Setup is planned together in advance.',
+   'Verleih von Dol- und 100-Tage-Tischen samt Baby-Hanbok. Die Gestaltung wird vorab gemeinsam abgestimmt.',
    'KO','','https://open.kakao.com/o/s6crDMbi','https://www.instagram.com/gaontable.eu/',
    'baby','success,mail,dolmail,consult',1,'Y',''],
   ['laonblumen','플로리스트','라온 블루멘',
-   '부케·부토니에, 돌상과 행사 꽃장식.',
-   'Bouquets, boutonnieres, and floral styling for events.',
-   'Brautsträuße, Anstecker und florale Dekoration für Feiern.',
+   '부케와 부토니에, 돌상·행사 꽃장식. 스튜디오에서 가까운 Kronberg에 있습니다.',
+   'Bouquets, boutonnieres, and floral styling for tables and events. Based in Kronberg, close to the studio.',
+   'Brautsträuße, Anstecker und florale Dekoration für Tische und Feiern. In Kronberg, ganz in der Nähe des Studios.',
    'KO','Kronberg im Taunus','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
    'wed,baby,biz','success,mail,dolmail,consult',2,'Y','WhatsApp +49 176 30152733(QR카드) · 명함 전화는 +49 172 3842546 로 다름 · laonblumen@gmail.com · Werkstatt 13, 61476 Kronberg'],
   ['cozyjoo','메이크업·드레스','cozyjoo',
-   '촬영 메이크업 · 웨딩드레스 대여.',
-   'Shoot makeup and wedding dress rental.',
-   'Make-up für Shootings und Brautkleid-Verleih.',
-   'KO','','','https://www.instagram.com/cozyjoo.de/',
+   '촬영 당일 메이크업과 웨딩드레스 대여. 촬영 콘셉트에 맞춰 상담됩니다.',
+   'Makeup on the day of the shoot and wedding dress rental, matched to your concept.',
+   'Make-up am Shootingtag und Brautkleid-Verleih, abgestimmt auf Ihr Konzept.',
+   'KO','','https://open.kakao.com/o/sLHQbH9g','https://www.instagram.com/cozyjoo.de/',
    'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','']
 ];
 
@@ -2898,7 +2927,13 @@ function getPartners_(){
       const rows=sh.getRange(2,1,last-1,PARTNER_HEADERS.length).getValues();
       out=rows.map(function(r){
         const consultLink=String(r[8]||'').trim(),instaLink=String(r[9]||'').trim();
+        /* 상담(메신저)과 인스타를 **둘 다** 노출한다. slot 은 /go/<id>?l=<slot> 의 선택자 —
+           둘 중 하나만 있어도 그대로 동작한다(예전처럼 하나로 접히지 않는다). */
+        const links=[];
+        if(consultLink) links.push({slot:'chat',kind:partnerLinkKind_(consultLink),url:consultLink});
+        if(instaLink) links.push({slot:'insta',kind:'instagram',url:instaLink});
         return{
+          links:links,
           id:String(r[0]||'').trim(),
           category:String(r[1]||'').trim(),
           name:String(r[2]||'').trim(),
@@ -2907,15 +2942,14 @@ function getPartners_(){
           descDe:String(r[5]||'').trim(),
           langs:String(r[6]||'').trim(),
           area:String(r[7]||'').trim(),
-          /* 상담링크가 비면 인스타로 대체 — 링크는 나중에 채워도 지금 동작한다 */
-          url:consultLink||instaLink,
+          url:consultLink||instaLink,           // 하위호환(구 캐시·구 Edge 대비)
           linkKind:consultLink?partnerLinkKind_(consultLink):(instaLink?'instagram':''),
           groups:String(r[10]||'').split(',').map(t=>t.trim().toLowerCase()).filter(Boolean),
           placements:String(r[11]||'').split(',').map(t=>t.trim().toLowerCase()).filter(Boolean),
           order:Number(r[12]||0)||0,
           active:String(r[13]||'').trim().toUpperCase()!=='N'
         };
-      }).filter(p=>p.id&&p.name&&p.url&&p.active)
+      }).filter(p=>p.id&&p.name&&p.links.length&&p.active)
         .sort((a,b)=>a.order-b.order);
     }
   }catch(e){Logger.log('getPartners_ 실패: '+e.message);}
@@ -2983,9 +3017,10 @@ function partnerContextFrom_(itemGroup,productText,surveyKeys,babyType){
 }
 
 /** /go/<id> — 메일용 추적 링크. 프론트(웹)는 원본 URL 을 직접 열고 별도 핑을 쏜다. */
-function partnerGoUrl_(id,source){
+function partnerGoUrl_(id,source,slot){
   return 'https://booking.studio-mean.com/go/'+encodeURIComponent(id)
-    +'?s='+encodeURIComponent(source||'mail');
+    +'?s='+encodeURIComponent(source||'mail')
+    +(slot?'&l='+encodeURIComponent(slot):'');
 }
 
 /** 메일 본문용 블록(HTML). 대상이 없으면 빈 문자열 — 호출부는 그냥 이어붙이면 된다. */
@@ -2996,14 +3031,19 @@ function buildPartnerMailBlockHtml_(ctx,lang,placement){
   const rows=list.map(function(p){
     const desc=(L==='en'?p.descEn:L==='de'?p.descDe:p.descKo)||p.descKo||'';
     const meta=[p.langs?(L==='ko'?'상담 '+p.langs:p.langs):'',p.area].filter(Boolean).join(' · ');
-    const cta=(PARTNER_CTA_I18N_[p.linkKind]||PARTNER_CTA_I18N_.web)[L];
+    /* 메신저와 인스타를 모두 건다. 메일은 /go/ 경유라 클릭이 집계되고,
+       업체가 링크를 바꿔도 이미 보낸 메일이 깨지지 않는다. */
+    const ctas=p.links.map(function(l){
+      const label=(PARTNER_CTA_I18N_[l.kind]||PARTNER_CTA_I18N_.web)[L];
+      return '<a href="'+partnerGoUrl_(p.id,placement||'mail',l.slot)+'" style="color:#2563eb;font-weight:700;font-size:13px;text-decoration:none;">'
+        +escapeHtmlForEmail_(label)+' &rarr;</a>';
+    }).join('<span style="color:#cbd5e1;"> &nbsp;|&nbsp; </span>');
     return '<div style="margin:0 0 12px;">'
       +'<div style="font-weight:700;color:#1f2937;">'+escapeHtmlForEmail_(p.name)
       +(meta?'<span style="font-weight:400;color:#6b7280;font-size:12px;"> &nbsp;'+escapeHtmlForEmail_(meta)+'</span>':'')
       +'</div>'
       +(desc?'<div style="color:#4b5563;font-size:13px;margin:2px 0 4px;">'+escapeHtmlForEmail_(desc)+'</div>':'')
-      +'<a href="'+partnerGoUrl_(p.id,placement||'mail')+'" style="color:#2563eb;font-weight:700;font-size:13px;">'
-      +escapeHtmlForEmail_(cta)+' &rarr;</a>'
+      +ctas
       +'</div>';
   }).join('');
   return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;">'
@@ -3020,7 +3060,7 @@ function escapeHtmlForEmail_(text){
 }
 
 /** 클릭 1건 기록. 개인정보는 남기지 않는다 — 그래서 동의 없이 집계해도 문제가 없다. */
-function recordPartnerClick_(partnerId,source,lang,itemGroup){
+function recordPartnerClick_(partnerId,source,lang,itemGroup,linkKind){
   const id=String(partnerId||'').trim();
   if(!id) return{ok:false};
   try{
@@ -3030,7 +3070,8 @@ function recordPartnerClick_(partnerId,source,lang,itemGroup){
       id,
       String(source||'').slice(0,20),
       String(lang||'').slice(0,5),
-      String(itemGroup||'').slice(0,20)
+      String(itemGroup||'').slice(0,20),
+      String(linkKind||'').slice(0,20)
     ]);
   }catch(e){Logger.log('recordPartnerClick_ 실패: '+e.message);return{ok:false};}
   return{ok:true};
@@ -6075,7 +6116,7 @@ function getInitDataCustomer() {
   const s=getSettingsMap_();
   const promo=getPromoConfig_();
   return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCustomerProducts_(),promoProducts:getPromoProducts_(),partners:getPartners_().map(function(p){
-    return{id:p.id,name:p.name,url:p.url,linkKind:p.linkKind,descKo:p.descKo,descEn:p.descEn,descDe:p.descDe,
+    return{id:p.id,name:p.name,links:p.links,descKo:p.descKo,descEn:p.descEn,descDe:p.descDe,
       langs:p.langs,area:p.area,groups:p.groups,placements:p.placements};
   })};
 }

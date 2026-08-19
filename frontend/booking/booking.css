@@ -4913,3 +4913,13 @@ a.partner-cta {
   font-size: 11px;
   color: #8b8378;
 }
+.partner-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.partner-sep {
+  color: #d8d2c8;
+  font-size: 12px;
+}

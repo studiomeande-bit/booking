@@ -15,17 +15,25 @@ const API_BASE =
 const FALLBACK = 'https://booking.studio-mean.com/';
 const TTL_MS = 10 * 60 * 1000;
 
-let cache: { at: number; map: Record<string, string> } | null = null;
+let cache: { at: number; map: Record<string, Record<string, string>> } | null = null;
 
-async function partnerUrls(): Promise<Record<string, string>> {
+/** id → { chat: url, insta: url }. 슬롯이 없으면 첫 링크로 폴백한다. */
+async function partnerLinks(): Promise<Record<string, Record<string, string>>> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.map;
   const res = await fetch(`${API_BASE}?api=partners`, { redirect: 'follow' });
   const json = await res.json();
-  const map: Record<string, string> = {};
+  const map: Record<string, Record<string, string>> = {};
   for (const p of json?.data?.partners ?? []) {
-    const url = String(p?.url ?? '');
-    // http(s)/mailto/tel 만 허용 — 시트 오타가 javascript: 같은 스킴으로 새지 않도록
-    if (p?.id && /^(https?:|mailto:|tel:)/i.test(url)) map[String(p.id).toLowerCase()] = url;
+    const id = String(p?.id ?? '').toLowerCase();
+    if (!id) continue;
+    const slots: Record<string, string> = {};
+    // http/mailto/tel 만 허용 — 시트 오타가 javascript: 같은 스킴으로 새지 않도록
+    const ok = (u: unknown) => typeof u === 'string' && /^(https?:|mailto:|tel:)/i.test(u);
+    for (const l of p?.links ?? []) {
+      if (ok(l?.url)) slots[String(l.slot || 'chat')] = String(l.url);
+    }
+    if (!Object.keys(slots).length && ok(p?.url)) slots.chat = String(p.url);
+    if (Object.keys(slots).length) map[id] = slots;
   }
   cache = { at: Date.now(), map };
   return map;
@@ -35,12 +43,18 @@ export default async (request: Request, context: Context): Promise<Response> => 
   const url = new URL(request.url);
   const id = decodeURIComponent(url.pathname.replace(/^\/go\/?/, '')).trim().toLowerCase();
   const source = (url.searchParams.get('s') || 'mail').slice(0, 20);
+  const slot = (url.searchParams.get('l') || '').slice(0, 20);
   if (!id) return Response.redirect(FALLBACK, 302);
 
   let target = FALLBACK;
+  let picked = '';
   try {
-    const map = await partnerUrls();
-    if (map[id]) target = map[id];
+    const slots = (await partnerLinks())[id];
+    if (slots) {
+      // 요청한 슬롯 → chat → 남은 것 순으로 고른다(슬롯 하나만 등록된 업체도 안 깨진다)
+      picked = slots[slot] ? slot : slots.chat ? 'chat' : Object.keys(slots)[0];
+      target = slots[picked] || FALLBACK;
+    }
   } catch {
     /* 목록을 못 읽으면 예약 홈으로 — 깨진 링크보다 낫다 */
   }
@@ -48,9 +62,11 @@ export default async (request: Request, context: Context): Promise<Response> => 
   /* 집계는 응답을 막지 않되, waitUntil 로 리디렉션 이후에도 완주시킨다.
      (그냥 띄우기만 하면 응답 반환 시점에 취소될 수 있다.) */
   context.waitUntil(
-    fetch(`${API_BASE}?api=partner-click&p=${encodeURIComponent(id)}&s=${encodeURIComponent(source)}`, {
-      redirect: 'follow'
-    }).catch(() => {})
+    fetch(
+      `${API_BASE}?api=partner-click&p=${encodeURIComponent(id)}&s=${encodeURIComponent(source)}` +
+        (picked ? `&l=${encodeURIComponent(picked)}` : ''),
+      { redirect: 'follow' }
+    ).catch(() => {})
   );
 
   return new Response(null, {
