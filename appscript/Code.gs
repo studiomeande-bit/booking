@@ -1970,6 +1970,36 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
+        if(action==='booking-set-balance-note'){
+          /* ✏️ 잔금 셀의 **결제 흔적 표기 복원** — '35' → '35|CARD|2026-03-14'.
+             금액은 바꾸지 않는다(첫 세그먼트가 현재 값과 같아야 통과). 수단·날짜만 붙인다.
+             booking-set-amount 의 recomputeBalance 가 꼬리를 지워버린 건을 되돌리는 용도
+             (2026-08-20 4건). 금액을 고치려면 booking-set-amount 를 쓴다. */
+          const rIdx=parseInt(payload.rowIndex,10)||0;
+          if(rIdx<2) return jsonError_('BAD_REQUEST','rowIndex 가 필요합니다.');
+          const sh=getDbSheet();
+          const row=sh.getRange(rIdx,1,1,sh.getLastColumn()).getValues()[0];
+          const name=String(row[BOOKING_COL['고객명']]||'').trim();
+          if(!name) return jsonError_('BAD_REQUEST','예약 행 '+rIdx+' 을 찾지 못했습니다.');
+          const expectName=String(payload.expectName||'').trim();
+          if(expectName&&expectName!==name) return jsonError_('NAME_MISMATCH','행 '+rIdx+' 고객명이 "'+name+'" 입니다(기대: "'+expectName+'").');
+          const note=String(payload.balanceNote||'').trim();
+          if(!/^[\d.,]+\|[A-Za-z가-힣]+\|\d{4}-\d{2}-\d{2}$/.test(note)){
+            return jsonError_('BAD_REQUEST','balanceNote 형식은 "금액|수단|YYYY-MM-DD" 입니다. 예: 35|CARD|2026-03-14');
+          }
+          const curRaw=String(row[BOOKING_COL['잔금']]||'');
+          const curAmt=roundCurrency_(parseMoneyValue_(curRaw.split('|')[0]));
+          const newAmt=roundCurrency_(parseMoneyValue_(note.split('|')[0]));
+          if(Math.abs(curAmt-newAmt)>0.011){
+            return jsonError_('AMOUNT_MISMATCH','현재 잔금 '+curAmt+'€ 와 balanceNote 금액 '+newAmt+'€ 가 다릅니다. 금액 변경은 booking-set-amount 로 하세요.');
+          }
+          if(payload.dryRun===true){
+            return jsonOk_({dryRun:true,rowIndex:rIdx,name:name,current:curRaw,next:note,
+              note:'변경하지 않았습니다. dryRun 없이 다시 실행하세요.'});
+          }
+          sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(note);
+          return jsonOk_({ok:true,rowIndex:rIdx,name:name,previous:curRaw,balance:note});
+        }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
@@ -12957,13 +12987,20 @@ function setBookingAmountForAgent_(token,payload){
   const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
   const depositAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
   const recomputeBalance=payload.recomputeBalance===undefined?true:!!payload.recomputeBalance;
-  const prevBalance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+  /* 잔금 셀은 '35|CARD|2026-03-14' 복합 표기가 흔하다(금액|수단|날짜).
+     ① parseMoneyValue_ 를 그대로 쓰면 파이프 때문에 **0** 으로 읽혀 감사메모에
+        "잔금 0→35" 같은 거짓 기록이 남는다. 첫 세그먼트만 파싱한다.
+     ② 재계산해 덮어쓸 때 수단·날짜 꼬리를 **보존**한다. 안 그러면 "언제 무엇으로 받았는지"가
+        사라진다 — 2026-08-20 이다솜·제이진·홍동협·안민성 4건에서 실제로 지워졌다. */
+  const prevBalanceRaw=String(row[BOOKING_COL['잔금']]||'');
+  const balanceTail=prevBalanceRaw.indexOf('|')>-1?prevBalanceRaw.slice(prevBalanceRaw.indexOf('|')):'';
+  const prevBalance=roundCurrency_(parseMoneyValue_(prevBalanceRaw.split('|')[0]));
   const newBalance=recomputeBalance?roundCurrency_(Math.max(0,newTotal-depositAmt)):prevBalance;
 
   sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
   if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
   if(recomputeBalance){
-    sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(newBalance);
+    sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(balanceTail?(newBalance+balanceTail):newBalance);
     if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
   }
   // 감사메모 1줄 (요청사항 컬럼에 append)
