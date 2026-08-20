@@ -1576,6 +1576,69 @@ function handlePublicApiRequest_(route,method,e){
             String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
         }
         if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-mark-split'){
+          /* ✏️ 분할이체 정리 — 한 예약의 금액을 **여러 번에 나눠 보낸** 입금들을 묶어
+             review 큐에서 내린다(황영목 잔금 298 = 288 + 10, 2026-04-02 실측).
+             settlement-apply-match 는 거래 1건의 금액이 예약 금액과 같아야 통과하므로
+             분할이체는 영영 review 로 남는다 — 그 구멍을 메운다.
+
+             **예약장부는 읽기만 한다.** 분할이체는 이미 사람이 장부에 반영해 둔 뒤
+             매칭 표시만 남은 경우이고, 여기서 또 입금 반영을 하면 이중계상이 된다.
+             안전장치는 금액 검증 하나뿐이다: 지목한 거래들의 **합계**가 예약의 해당
+             금액과 일치해야 한다. 안 맞으면 아무것도 하지 않는다. */
+          const idxList=(Array.isArray(payload.settlementRowIndexes)?payload.settlementRowIndexes:[])
+            .map(function(v){return parseInt(v,10);}).filter(function(v){return v>1;});
+          if(idxList.length<2) return jsonError_('BAD_REQUEST','settlementRowIndexes 에 2개 이상의 결제대조 행이 필요합니다(분할이체 전용).');
+          const bri=parseInt(payload.bookingRowIndex,10)||0;
+          if(bri<2) return jsonError_('BAD_REQUEST','bookingRowIndex 가 필요합니다.');
+          const kind=String(payload.kind||'balance').trim().toLowerCase();
+          if(['balance','deposit','full'].indexOf(kind)===-1) return jsonError_('BAD_REQUEST','kind 는 balance / deposit / full 중 하나여야 합니다.');
+          const sh=ensureSheets_();
+          const bRow=sh.bookingSheet.getRange(bri,1,1,sh.bookingSheet.getLastColumn()).getValues()[0];
+          const bookingName=String(bRow[BOOKING_COL['고객명']]||'').trim();
+          if(!bookingName) return jsonError_('BAD_REQUEST','예약 행 '+bri+' 을 찾지 못했습니다.');
+          const expectName=String(payload.expectName||'').trim();
+          if(expectName&&expectName!==bookingName){
+            return jsonError_('NAME_MISMATCH','행 '+bri+' 고객명이 "'+bookingName+'" 입니다(기대: "'+expectName+'").');
+          }
+          /* 목표 금액 — 계약금·잔금 셀은 '298|DB|날짜' 복합 표기라 첫 세그먼트만 쓴다 */
+          const seg=function(col){return parseMoneyValue_(String(bRow[BOOKING_COL[col]]||'').split('|')[0]);};
+          const targetAmount=kind==='full'?parseMoneyValue_(bRow[BOOKING_COL['총결제액']])
+            :(kind==='deposit'?seg('계약금'):seg('잔금'));
+          if(!(targetAmount>0)) return jsonError_('BAD_REQUEST','예약행의 '+kind+' 금액을 읽지 못했습니다.');
+          const txs=[];
+          let sum=0;
+          for(let i=0;i<idxList.length;i++){
+            const ref=getSettlementTransactionByRow_(sh.settlementSheet,idxList[i]);
+            const g=Number(ref.tx.gross||0);
+            if(g<=0) return jsonError_('BAD_REQUEST','행 '+idxList[i]+' 은 입금 거래가 아닙니다(총액 '+g+').');
+            sum+=g;
+            txs.push({rowIndex:ref.rowIndex,date:String(ref.tx.date||'').slice(0,10),
+              gross:g,counterparty:String(ref.tx.counterparty||''),source:String(ref.tx.source||'')});
+          }
+          sum=Math.round(sum*100)/100;
+          const label=kind==='balance'?'예약장부 잔금(분할)':(kind==='deposit'?'예약장부 계약금(분할)':'예약장부 전액(분할)');
+          if(Math.abs(sum-targetAmount)>0.011){
+            return jsonError_('AMOUNT_MISMATCH','합계 '+sum+'€ 가 예약 '+kind+' 금액 '+targetAmount+'€ 와 다릅니다. 거래 선택을 확인해 주세요.');
+          }
+          if(payload.dryRun===true||String(payload.confirm||'')!=='MATCH'){
+            return jsonOk_({dryRun:true,bookingRowIndex:bri,name:bookingName,kind:kind,
+              targetAmount:targetAmount,sum:sum,transactions:txs,
+              note:'표시하지 않았습니다. confirm:"MATCH" 로 실행하세요. 예약장부 금액은 변경하지 않습니다.'});
+          }
+          const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          const accClass=classifyBookingAccounting_(String(bRow[BOOKING_COL['촬영종류']]||''),String(bRow[BOOKING_COL['상품']]||''));
+          txs.forEach(function(t,i){
+            updateSettlementMatchRow_(sh.settlementSheet,t.rowIndex,{
+              status:'matched',target:label,rowIndex:bri,accountingClass:accClass,
+              memo:['분할이체 '+(i+1)+'/'+txs.length,label,bookingName,
+                t.gross+'€ (합계 '+sum+'€)','장부 반영 완료 — 수동 확인 '+stamp].join(' · ')
+            });
+          });
+          return jsonOk_({marked:txs.length,bookingRowIndex:bri,name:bookingName,kind:kind,
+            targetAmount:targetAmount,sum:sum,transactions:txs,
+            note:'결제대조 매칭 표시만 바꿨습니다. 예약장부 금액은 그대로입니다.'});
+        }
         if(action==='settlement-refresh') return jsonOk_(refreshSettlementMatchesAdmin(token,String(payload.startDate||''),String(payload.endDate||'')));
         if(action==='cash-delete') return jsonOk_(deleteCashLedgerManualEntryAdmin(token,payload.rowIndex));
         if(action==='deposit-bulk-confirm'){
@@ -2028,6 +2091,9 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='morning-report-send') return jsonOk_(sendCombinedMorningReportAdmin(token,{forceWeekly:payload.forceWeekly===true||payload.forceWeekly==='true'}));
         if(action==='morning-report-install-trigger') return jsonOk_(installMorningReportTriggerAdmin(token));
         if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
+        if(action==='insta-publisher-status') return jsonOk_(instaPublisherStatusForAgent_(token));
+        if(action==='insta-publisher-install') return jsonOk_(instaPublisherInstallForAgent_(token));
+        if(action==='insta-publisher-set-secrets') return jsonOk_(instaPublisherSetSecretsForAgent_(token,payload.data||payload||{}));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action+' — 사용 가능한 액션 목록은 actions-list 액션으로 확인하세요');
       }finally{
         try{logoutAdmin(token);}catch(outErr){}
