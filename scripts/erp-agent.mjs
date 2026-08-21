@@ -15,6 +15,7 @@
  *   단가(unitGross)는 그대로 brutto 로 넣는다 — 부가세 0 · 총액=netto 로 문서가 닫힌다.
  *   미지정/빈값은 'standard'(19%) — 기존 견적 전부 종전과 동일. 상세는 studio-erp SKILL.md.
  *   booking-search | booking-get | booking-set-time | booking-set-amount | booking-change-product
+ *   booking-set-extra-days: 추가일정(이동일·다일차 촬영) 등록/교체 — 아래 참조
  *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
  *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
  *   booking-refund-quote: 취소 환불 규정 제안액(실수령·기환불 포함) 조회
@@ -29,6 +30,22 @@
  *   node scripts/erp-agent.mjs booking-change-product --json '{"rowIndex":218,"itemId":"pp","passAddon":true}'
  *   payload: itemId(필수), passAddon/passAddonPeople, people, optionKeys[], expectName(안전확인).
  *   변경 통지가 필요하면 이어서 booking-confirm-mail 로 사장님이 별도 발송.
+ *
+ * booking-set-extra-days: ✏️변경계 — 이미 만들어진 예약에 추가일정(이동일·다일차 촬영)을 붙인다.
+ *   그동안 extraDays 는 quote-convert-booking 전환 시점에만 넣을 수 있었다. 캘린더에 손으로 만든
+ *   이벤트는 '추가일정JSON' 에 없어 **자가치유(calendar-audit) 보호 밖**이다 — 지워지면 그 날 슬롯이
+ *   조용히 열린다. 이 액션으로 등록하면 보호 대상이 된다. **고객 메일 미발송**(내부 스케줄).
+ *   node scripts/erp-agent.mjs booking-set-extra-days --json '{"rowIndex":251,"expectName":"Jin Hee Choi",
+ *     "extraDays":[{"date":"2027-06-11","time":"09:00","durationMin":600,"kind":"travel","note":"오버우어젤→함부르크"}],
+ *     "replace":true}'
+ *   kind: 'shoot'(기본)=촬영 있는 N일차, 제목 `상품 | 고객명 (N/M일차)` · 'travel'=이동/숙박 블록,
+ *         제목 `[이동] …` + 설명에 "촬영 없음 · 다른 촬영 잡지 말 것". 일차 번호는 촬영일만 센다.
+ *   replace: true=전체 교체(빠진 날짜의 이벤트 삭제) / 생략=병합 추가(같은 날짜는 입력이 이김).
+ *   **기존 이벤트 흡수**: 같은 날짜에 제목이 고객명을 포함한 이벤트가 있으면 새로 만들지 않고 그
+ *     eventId 를 연결한다(중복 0). 흡수 이벤트의 제목·설명은 보존, 시간은 캘린더 실측으로 되읽는다.
+ *     특정 이벤트를 콕 집으려면 각 날짜에 "eventId":"…@google.com".
+ *   allowConflict: 1일차와 동일 기준(checkBookingTimeConflict_)의 충돌 검사를 강행. dryRun: 계획만 확인.
+ *   조회는 booking-get 의 extraDays 필드. 회귀 검사: node scripts/check-extra-days.mjs
  *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)

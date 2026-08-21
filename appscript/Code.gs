@@ -2154,6 +2154,8 @@ function handlePublicApiRequest_(route,method,e){
         }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
+        // ✏️변경계: 추가일정(이동일·다일차) 등록/교체. 같은 날짜의 기존 이벤트는 흡수(중복 생성 없음). 고객 메일 미발송.
+        if(action==='booking-set-extra-days') return jsonOk_(setBookingExtraDaysForAgent_(token,payload||{}));
         // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
         if(action==='booking-confirm-deposit'){
           // ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 함수 내부에서 무조건 나간다(payload 억제 불가, 이미 입금완료면 스킵).
@@ -5919,19 +5921,59 @@ function parseBookingExtraDays_(row){
     return Array.isArray(arr)?arr.filter(function(d){return d&&d.date;}):[];
   }catch(e){ return []; }
 }
-/* 추가 날짜 이벤트 생성/재생성 — extraDays [{date,time,durationMin}] 를 받아 이벤트를 만들고
-   eventId 를 채워 JSON 으로 되돌려준다(시트 쓰기는 호출자). titleBase 는 1일차 이벤트와 같은 제목. */
+/* kind — 추가일차의 성격. 'shoot'(기본)=촬영이 있는 N일차, 'travel'=촬영 없는 이동/숙박 블록.
+   이동일이 촬영으로 보이면 그 날 다른 촬영을 잡는 사고가 난다 — 제목·설명에서 갈라놓는다. */
+const EXTRA_DAY_TRAVEL_NOTE_='촬영 없음 · 다른 촬영 잡지 말 것 (이동/숙박 블록)';
+function normalizeExtraDayKind_(k){ return String(k||'').trim().toLowerCase()==='travel'?'travel':'shoot'; }
+/* 이벤트 제목·설명을 한 곳에서 만든다 — 생성 경로와 자가치유 복구 경로가 같은 규칙을 쓰도록.
+   복구 제목이 '(추가일정 복구)' 고정 문자열이던 시절엔 복구된 이동일이 촬영처럼 보였다. */
+function buildExtraDayEventFields_(titleBase,description,day,shootSeq,shootTotal){
+  const kind=normalizeExtraDayKind_(day&&day.kind);
+  const note=String(day&&day.note||'').trim();
+  const title=kind==='travel'?`[이동] ${titleBase}`:`${titleBase} (${shootSeq}/${shootTotal}일차)`;
+  const desc=[kind==='travel'?EXTRA_DAY_TRAVEL_NOTE_:'',note,description].filter(Boolean).join('\n');
+  return {kind:kind,note:note,title:title,description:desc};
+}
+/* 추가 날짜 이벤트 1건 생성 — 저장용 JSON 항목을 돌려준다(시트 쓰기는 호출자). */
+function createExtraDayEvent_(calendar,titleBase,description,location,day,shootSeq,shootTotal){
+  const f=buildExtraDayEventFields_(titleBase,description,day,shootSeq,shootTotal);
+  const time=String(day.time||'09:00');
+  const dur=Math.max(30,parseInt(day.durationMin,10)||480);
+  const s=new Date(`${day.date}T${time}:00`);
+  const e=new Date(s.getTime()+dur*60000);
+  const ev=calendar.createEvent(f.title,s,e,{description:f.description,location:location||''});
+  return {date:String(day.date),time:time,durationMin:dur,eventId:ev.getId(),kind:f.kind,note:f.note};
+}
+/* 추가 날짜 이벤트 생성/재생성 — extraDays [{date,time,durationMin,kind,note}] 를 받아 이벤트를
+   만들고 eventId 를 채워 JSON 으로 되돌려준다(시트 쓰기는 호출자). titleBase 는 1일차와 같은 제목.
+   일차 번호는 **촬영일만** 센다 — 이동일이 끼어도 "2/3일차"가 촬영 3일이라는 뜻을 유지한다
+   (전부 shoot 이면 종전과 동일: total=extraDays.length+1, seq=i+2). */
 function createBookingExtraDayEvents_(titleBase,description,location,extraDays){
   const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
-  const total=extraDays.length+1; // 1일차 포함 총 일수
-  return extraDays.map(function(d,i){
-    const time=String(d.time||'09:00');
-    const dur=Math.max(30,parseInt(d.durationMin,10)||480);
-    const s=new Date(`${d.date}T${time}:00`);
-    const e=new Date(s.getTime()+dur*60000);
-    const ev=calendar.createEvent(`${titleBase} (${i+2}/${total}일차)`,s,e,{description:description,location:location||''});
-    return {date:String(d.date),time:time,durationMin:dur,eventId:ev.getId()};
+  const shootTotal=1+extraDays.filter(function(d){return normalizeExtraDayKind_(d&&d.kind)==='shoot';}).length;
+  let shootSeq=1; // 1일차 = 본 예약
+  return extraDays.map(function(d){
+    if(normalizeExtraDayKind_(d&&d.kind)==='shoot') shootSeq++;
+    return createExtraDayEvent_(calendar,titleBase,description,location,d,shootSeq,shootTotal);
   });
+}
+/* 같은 날짜에 이미 있는 이 예약의 이벤트를 찾아 채택한다(중복 생성 방지).
+   손으로 만들어 둔 이동일 이벤트를 흡수해 '추가일정JSON' 에 연결하는 게 목적 —
+   제목에 고객명이 들어있고 아직 다른 항목이 가져가지 않은 첫 이벤트. */
+function findAdoptableExtraDayEvent_(calendar,dateStr,customerName,claimedIds){
+  const nm=String(customerName||'').trim();
+  if(!nm) return null;
+  let evs=[];
+  try{ evs=calendar.getEvents(new Date(dateStr+'T00:00:00'),new Date(dateStr+'T23:59:59')); }
+  catch(e){ return null; }
+  for(let i=0;i<evs.length;i++){
+    const ev=evs[i];
+    if(ev.isAllDayEvent()) continue;
+    if(claimedIds[ev.getId()]) continue;
+    if(String(ev.getTitle()||'').indexOf(nm)<0) continue;
+    return ev;
+  }
+  return null;
 }
 /* 예약의 추가 날짜 이벤트 전부 삭제(멱등). row 를 주면 JSON 에서 읽고, 성공분은 eventId 를 비운다.
    반환: {deleted,failed}. 시트 쓰기는 rowIndex 가 있을 때만(삭제 직전 행에는 불필요). */
@@ -6215,8 +6257,12 @@ function auditBookingCalendarConsistency_(){
        애플 사본이 있으면 정상(양쪽 등록 관행), 피드 실패 중엔 판정 보류. */
     if(!isTbd&&BOOKING_COL['추가일정JSON']!=null){
       const exDays=parseBookingExtraDays_(row);
+      /* 일차 번호는 촬영일만 센다 — 복구 제목이 생성 시 제목과 같아야 이동일이 촬영으로 안 보인다 */
+      const exShootTotal=1+exDays.filter(function(d){return normalizeExtraDayKind_(d&&d.kind)==='shoot';}).length;
+      let exSeq=1;
+      const exSeqByIdx=exDays.map(function(d){return normalizeExtraDayKind_(d&&d.kind)==='shoot'?(++exSeq):exSeq;});
       let exChanged=false;
-      exDays.forEach(function(xd){
+      exDays.forEach(function(xd,xi){
         if(!xd||!xd.date||xd.date<today||xd.date>horizonStr) return;
         let exEv=null;
         const xid=String(xd.eventId||'').trim();
@@ -6227,12 +6273,14 @@ function auditBookingCalendarConsistency_(){
         try{
           const xs=new Date(xd.date+'T'+(xd.time||'09:00')+':00');
           const xe=new Date(xs.getTime()+Math.max(30,parseInt(xd.durationMin,10)||480)*60000);
-          const nev=calendar.createEvent(String(row[BOOKING_COL['상품']]||'예약')+' | '+name+' (추가일정 복구)',xs,xe,
-            {description:'다일정 자동 복구 — 예약장부 행 '+(r+1)});
+          /* kind 보존 — 이동일이 '촬영'으로 복구되면 그 날 다른 촬영을 잡는 사고가 난다 */
+          const xf=buildExtraDayEventFields_(String(row[BOOKING_COL['상품']]||'예약')+' | '+name,
+            '다일정 자동 복구 — 예약장부 행 '+(r+1),xd,exSeqByIdx[xi],exShootTotal);
+          const nev=calendar.createEvent(xf.title,xs,xe,{description:xf.description});
           xd.eventId=nev.getId();
           knownIds.add(xd.eventId);
           exChanged=true;
-          push('healed',name+' 추가일정 '+xd.date);
+          push('healed',name+' 추가일정 '+xd.date+(xf.kind==='travel'?' [이동]':''));
         }catch(e){push('missing',name+' 추가일정 '+xd.date);}
       });
       if(exChanged){
@@ -13276,6 +13324,185 @@ function changeBookingProductForAgent_(token,payload){
     durationMin:quote.totalDuration,passAddon:passAddon,mailSent:false,auditLine:auditLine};
 }
 
+/* 추가일정(이동일·다일차 촬영) 등록 — 이미 만들어진 예약에 부수 일정을 붙인다.
+ * 지금까지 extraDays 는 견적전환(quote-convert-booking) 시점에만 넣을 수 있었고, 놓치면
+ * 캘린더에 손으로 만드는 수밖에 없었다. 손으로 만든 이벤트는 '추가일정JSON' 에 없으므로
+ * **자가치유(calendar-audit)의 보호 대상이 아니다** — 지워지면 그 날 슬롯이 조용히 열린다.
+ * 그래서 이 액션은 기존 이벤트를 **흡수(adopt)** 한다: 같은 날짜에 이 예약 이벤트가 이미
+ * 있으면 새로 만들지 않고 그 eventId 를 JSON 에 연결한다(중복 이벤트 0). 흡수한 이벤트의
+ * 제목·설명은 손대지 않는다(사장님이 쓴 내용 보존) — 시간만 캘린더 실측으로 되읽는다.
+ * 고객 메일 미발송 — 부수 일정은 내부 스케줄이다.
+ * payload: rowIndex, expectName(선택 가드), extraDays[{date,time,durationMin,kind,note,eventId}],
+ *          replace(true=전체교체 / 생략=병합추가), allowConflict, dryRun.
+ */
+function setBookingExtraDaysForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  if(BOOKING_COL['추가일정JSON']==null) throw new Error("예약장부에 '추가일정JSON' 열이 없습니다.");
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  assertBookingRowName_(rIdx,payload.expectName);
+  const name=String(row[BOOKING_COL['고객명']]||'').trim();
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']]))
+    throw new Error('취소/자동취소 예약에는 추가일정을 등록할 수 없습니다(취소 시 추가일정 이벤트는 정리 대상).');
+
+  const replace=agentBoolFlag_(payload.replace);
+  const dryRun=agentBoolFlag_(payload.dryRun);
+  const allowConflict=agentBoolFlag_(payload.allowConflict);
+  const day1Str=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+  const day1=day1Str.slice(0,10);
+
+  const input=(Array.isArray(payload.extraDays)?payload.extraDays:[]).map(function(d){
+    return {date:String(d&&d.date||'').trim().slice(0,10),
+            time:String(d&&d.time||'09:00').trim(),
+            durationMin:Math.max(30,parseInt(d&&d.durationMin,10)||480),
+            kind:normalizeExtraDayKind_(d&&d.kind),
+            note:String(d&&d.note||'').trim(),
+            adoptEventId:String((d&&(d.adoptExistingEventId||d.adoptEventId||d.eventId))||'').trim()};
+  });
+  const seenDate={};
+  input.forEach(function(d){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) throw new Error('date 형식이 잘못됐습니다(YYYY-MM-DD): "'+d.date+'"');
+    if(!/^\d{2}:\d{2}$/.test(d.time)) throw new Error('time 형식이 잘못됐습니다(HH:MM): "'+d.time+'"');
+    if(d.date===day1) throw new Error('1일차와 같은 날짜는 추가일정이 될 수 없습니다: '+d.date);
+    if(seenDate[d.date]) throw new Error('extraDays 에 같은 날짜가 두 번 있습니다: '+d.date);
+    seenDate[d.date]=true;
+  });
+  if(!input.length&&!replace) throw new Error('extraDays 가 비어 있습니다. 전부 지우려면 replace:true 로 보내세요.');
+
+  const existing=parseBookingExtraDays_(row).map(function(d){
+    return {date:String(d.date||'').slice(0,10),time:String(d.time||'09:00'),
+            durationMin:Math.max(30,parseInt(d.durationMin,10)||480),
+            kind:normalizeExtraDayKind_(d.kind),note:String(d.note||''),
+            eventId:String(d.eventId||'').trim()};
+  }).filter(function(d){return !!d.date;});
+  const prevByDate={}; existing.forEach(function(d){prevByDate[d.date]=d;});
+  const inputByDate={}; input.forEach(function(d){inputByDate[d.date]=d;});
+
+  /* replace:true = 전체 교체(빠진 날짜의 이벤트는 삭제) · 생략/false = 병합 추가(같은 날짜는 입력이 이김) */
+  const target=(replace?input.slice()
+      :existing.filter(function(d){return !inputByDate[d.date];}).concat(input))
+    .sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+
+  const calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const titleBase=buildBookingCalendarTitleFromRow_(row);
+  const location=BOOKING_COL['shooting_location']!=null?String(row[BOOKING_COL['shooting_location']]||'').trim():'';
+  const itemGroup=String(row[BOOKING_COL['촬영종류']]||'');
+  const description=['이름='+name,'상품='+String(row[BOOKING_COL['상품']]||''),
+    '연결 예약행='+rIdx+' (1일차 '+day1Str.slice(0,16)+')'].join('\n');
+
+  const shootTotal=1+target.filter(function(d){return d.kind==='shoot';}).length;
+  let seq=1;
+  const seqByIdx=target.map(function(d){return d.kind==='shoot'?(++seq):seq;});
+
+  /* 흡수 금지 목록 — **장부가 이미 알고 있는 모든 이벤트**. 흡수는 제목에 고객명이 들어간
+     이벤트를 집으므로, 같은 고객의 다른 예약(또는 이 예약의 1일차)이 그 날짜에 있으면 그걸
+     삼킨다. 그 상태로 replace:true 를 한 번 더 보내면 남의 예약 캘린더가 지워진다.
+     읽기 실패는 삼키지 않는다 — 확인 못 한 채 흡수하는 게 더 위험하다. */
+  const claimed={};
+  const day1EventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+  if(day1EventId) claimed[day1EventId]=true;
+  existing.forEach(function(d){ if(d.eventId) claimed[d.eventId]=true; });
+  const lastRow=sh.getLastRow();
+  if(lastRow>=2){
+    sh.getRange(2,BOOKING_COL['캘린더ID']+1,lastRow-1,1).getValues().forEach(function(v){
+      const id=String(v[0]||'').trim(); if(id) claimed[id]=true;
+    });
+    sh.getRange(2,BOOKING_COL['추가일정JSON']+1,lastRow-1,1).getValues().forEach(function(v){
+      let arr=[]; try{ arr=JSON.parse(String(v[0]||'[]'))||[]; }catch(e){ arr=[]; }
+      if(Array.isArray(arr)) arr.forEach(function(d){
+        const id=String(d&&d.eventId||'').trim(); if(id) claimed[id]=true;
+      });
+    });
+  }
+
+  /* ── 계획 수립(읽기만). 충돌 검사까지 끝난 뒤에야 캘린더·시트를 건드린다 —
+        중간에 실패해도 '이벤트는 지웠는데 JSON 은 옛날' 같은 반쪽 상태가 안 남도록. */
+  const plan=target.map(function(d,i){
+    const prev=prevByDate[d.date];
+    const unchanged=prev&&prev.eventId&&prev.time===d.time&&prev.durationMin===d.durationMin
+      &&prev.kind===d.kind&&prev.note===d.note;
+    if(unchanged){
+      let live=null; try{live=calendar.getEventById(prev.eventId);}catch(e){live=null;}
+      if(live) return {day:d,op:'keep',eventId:prev.eventId,title:live.getTitle(),dropEventId:''};
+    }
+    const dropEventId=(prev&&prev.eventId&&prev.eventId!==d.adoptEventId)?prev.eventId:'';
+    let adopt=null;
+    if(d.adoptEventId){
+      try{adopt=calendar.getEventById(d.adoptEventId);}catch(e){adopt=null;}
+      if(!adopt) throw new Error('지정한 eventId 를 캘린더에서 찾을 수 없습니다: '+d.adoptEventId+' ('+d.date+')');
+      if(Utilities.formatDate(adopt.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd')!==d.date)
+        throw new Error('지정한 이벤트의 날짜가 요청과 다릅니다: '+d.adoptEventId+' (요청 '+d.date+')');
+    }else{
+      adopt=findAdoptableExtraDayEvent_(calendar,d.date,name,claimed);
+    }
+    if(adopt){
+      claimed[adopt.getId()]=true;
+      /* 흡수한 이벤트의 실제 시간을 JSON 에 담는다 — 가용성의 진실은 캘린더 쪽이다.
+         제목·설명은 그대로 둔다(사장님이 손으로 쓴 맥락 보존). */
+      const st=adopt.getStartTime(), en=adopt.getEndTime();
+      return {day:d,op:'adopt',eventId:adopt.getId(),title:String(adopt.getTitle()||''),dropEventId:dropEventId,
+        time:Utilities.formatDate(st,CONFIG.TIMEZONE,'HH:mm'),
+        durationMin:Math.max(30,Math.round((en.getTime()-st.getTime())/60000))};
+    }
+    return {day:d,op:'create',eventId:'',dropEventId:dropEventId,
+      title:buildExtraDayEventFields_(titleBase,description,d,seqByIdx[i],shootTotal).title};
+  });
+
+  // 충돌 검사 — 새로 만드는 날짜만(흡수·유지는 그 이벤트 자체가 그 날의 블록이다). 1일차와 같은 기준.
+  const conflicts=[];
+  plan.forEach(function(p){
+    if(p.op!=='create') return;
+    const cc=checkBookingTimeConflict_(p.day.date,p.day.time,p.day.durationMin,itemGroup,location,p.dropEventId);
+    if(cc.readFailed) throw new Error('캘린더를 확인할 수 없어 추가일정 등록을 보류합니다. 잠시 후 다시 시도해 주세요.');
+    if(cc.conflict) conflicts.push(p.day.date+' '+p.day.time);
+  });
+  if(conflicts.length&&!allowConflict)
+    throw new Error('해당 시간에 이미 다른 일정이 있습니다: '+conflicts.join(', ')+' — 겹쳐도 등록하려면 allowConflict:true');
+
+  const targetDates={}; target.forEach(function(d){targetDates[d.date]=true;});
+  const removals=existing.filter(function(d){return !targetDates[d.date]&&d.eventId;})
+      .map(function(d){return {date:d.date,eventId:d.eventId,reason:'dropped'};})
+    .concat(plan.filter(function(p){return p.dropEventId;})
+      .map(function(p){return {date:p.day.date,eventId:p.dropEventId,reason:'recreate'};}));
+
+  const planOut=function(){
+    return plan.map(function(p){return {date:p.day.date,kind:p.day.kind,op:p.op,
+      time:p.op==='adopt'?p.time:p.day.time,durationMin:p.op==='adopt'?p.durationMin:p.day.durationMin,
+      eventId:p.eventId,title:p.title};});
+  };
+  if(dryRun) return {ok:true,dryRun:true,rowIndex:rIdx,name:name,replace:replace,
+    plan:planOut(),removals:removals,conflicts:conflicts,customerMailSent:false,
+    note:'dryRun — 캘린더·시트를 건드리지 않았습니다.'};
+
+  let removedOk=0,removedFailed=0;
+  removals.forEach(function(rm){ if(deleteBookingCalendarEventById_(rm.eventId)) removedOk++; else removedFailed++; });
+  const saved=plan.map(function(p,i){
+    const d=p.day;
+    if(p.op==='create'){
+      const made=createExtraDayEvent_(calendar,titleBase,description,location,d,seqByIdx[i],shootTotal);
+      p.eventId=made.eventId;
+      return made;
+    }
+    return {date:d.date,time:p.op==='adopt'?p.time:d.time,
+      durationMin:p.op==='adopt'?p.durationMin:d.durationMin,
+      eventId:p.eventId,kind:d.kind,note:d.note};
+  });
+  sh.getRange(rIdx,BOOKING_COL['추가일정JSON']+1).setValue(JSON.stringify(saved));
+  bumpCalCacheVer_();
+  const counts={create:0,adopt:0,keep:0};
+  plan.forEach(function(p){counts[p.op]++;});
+  return {ok:true,rowIndex:rIdx,name:name,replace:replace,
+    extraDays:planOut(),
+    created:counts.create,adopted:counts.adopt,kept:counts.keep,
+    removed:removals.length,removedOk:removedOk,removedFailed:removedFailed,
+    conflicts:conflicts,customerMailSent:false,
+    note:'고객 메일은 발송하지 않았습니다(부수 일정은 내부 스케줄). 추가일정JSON 기록 완료 — 이제 calendar-audit 자가치유의 보호 대상입니다.'};
+}
+
 /* ===== MRT Open API (마케팅파트너 API, partner-ext-api.myrealtrip.com) =====
  * 파트너 페이지 "Open API" 메뉴에서 셀프 발급한 키를 어드민 설정에서 등록하면 동작.
  * 주의: 이 API는 어필리에이트 예약 조회용이라 고객 연락처·요청사항은 없다(파트너센터에만 존재).
@@ -13893,6 +14120,14 @@ function _bookingRowToAgentObject_(row,rowIndex){
     gutscheinCode:String(row[BOOKING_COL['굿샤인코드']]||''),
     // 매출 세액 판정을 바꾸는 값이라 반드시 읽어볼 수 있어야 한다(booking-update 후 확인용)
     vatMode:normalizeVatMode_(row[BOOKING_COL['부가세모드']]),
+    /* 추가일정(이동일·다일차 촬영) — 캘린더에만 있고 여기 없으면 '이 예약이 며칠짜리인지'를
+       조회로는 영영 알 수 없다. booking-set-extra-days 가 쓰는 그 열을 그대로 읽는다. */
+    extraDays:parseBookingExtraDays_(row).map(function(d){
+      return {date:String(d.date||''),time:String(d.time||''),
+        durationMin:parseInt(d.durationMin,10)||0,
+        kind:normalizeExtraDayKind_(d.kind),note:String(d.note||''),
+        eventId:String(d.eventId||'')};
+    }),
     memo:String(row[BOOKING_COL['요청사항']]||'').slice(0,300)
   };
 }
@@ -14340,6 +14575,21 @@ function _buildDailyBriefingData_(){
     if(d10&&d10>=today&&d10<=weekEnd&&(st==='확정됨'||st==='대기중')){
       upcoming.push({rowIndex:i+1,dateTime:d.slice(0,16),status:st,name:String(row[BOOKING_COL['고객명']]||''),product:String(row[BOOKING_COL['상품']]||''),total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0});
     }
+    /* 추가일정(이동일·다일차 촬영) — 장부는 예약행 1건뿐이라 이 7일 창에 안 잡힌다. 그래서
+       함부르크 출발 전날 아침에도 브리핑은 "예정된 촬영이 없습니다"라고 말한다. 이동일도
+       그 날 사장님을 통째로 묶는 일정이므로 같은 목록에 올린다(금액은 1일차에서만 인식). */
+    if(st==='확정됨'||st==='대기중'){
+      parseBookingExtraDays_(row).forEach(function(xd){
+        const xd10=String(xd&&xd.date||'').slice(0,10);
+        if(!xd10||xd10<today||xd10>weekEnd) return;
+        const xk=normalizeExtraDayKind_(xd.kind);
+        upcoming.push({rowIndex:i+1,dateTime:xd10+' '+String(xd.time||'09:00').slice(0,5),status:st,
+          name:String(row[BOOKING_COL['고객명']]||''),
+          product:(xk==='travel'?'[이동] ':'[추가촬영] ')+String(row[BOOKING_COL['상품']]||'')
+            +(xd.note?' — '+String(xd.note):''),
+          total:0,extraKind:xk});
+      });
+    }
     /* 계약금 대기 — 판정은 **계약금입금여부**로 한다(자동취소 flagAndCancelOverdueDepositBookings_ 와 동일 기준).
        예전엔 '계약금' 셀의 '입금전' 텍스트를 봤는데, 입금 확인 3경로(어드민 confirmBookingDepositAdmin ·
        은행 CSV · SumUp)가 전부 계약금입금여부만 'Y'로 쓰고 그 텍스트는 그대로 둔다. 그래서 이미 받은 건이
@@ -14688,7 +14938,7 @@ function buildDailyBriefingEmailHtml_(b){
     b.upcomingBookings.length
       ? b.upcomingBookings.slice(0,10).map(function(u){
           const isToday=u.dateTime.slice(0,10)===b.date;
-          return line(`${isToday?badge('오늘','#fee2e2','#b91c1c')+' ':''}<b>${esc(u.dateTime.slice(5,16))}</b> — ${esc(u.name)}님 · ${esc(u.product)} · ${money(u.total)} ${u.status==='대기중'?badge('대기중','#fef3c7','#92400e'):''}`);
+          return line(`${isToday?badge('오늘','#fee2e2','#b91c1c')+' ':''}<b>${esc(u.dateTime.slice(5,16))}</b> — ${esc(u.name)}님 · ${esc(u.product)}${u.extraKind?'':' · '+money(u.total)} ${u.extraKind==='travel'?badge('이동일','#e0e7ff','#3730a3')+' ':''}${u.status==='대기중'?badge('대기중','#fef3c7','#92400e'):''}`);
         }).join('')+(b.upcomingBookings.length>10?line(`외 ${b.upcomingBookings.length-10}건`):'')
       : line('<span style="color:#94a3b8;">예정된 촬영이 없습니다.</span>')));
   // 2) 액션 필요
@@ -14881,7 +15131,7 @@ function briefingActionCount_(b){
 function sendDailyBriefingEmail_(){
   const b=_buildDailyBriefingData_();
   const html=buildDailyBriefingEmailHtml_(b);
-  const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
+  const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date&&u.extraKind!=='travel';}).length;
   const actionCount=briefingActionCount_(b);
   sendTrackedEmail_({
     to:CONFIG.ADMIN_EMAIL,
@@ -25172,7 +25422,7 @@ function sendCombinedMorningReport_(opts){
   try{
     const b=_buildDailyBriefingData_();
     briefHtml=buildDailyBriefingEmailHtml_(b);
-    const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date;}).length;
+    const todayCount=b.upcomingBookings.filter(function(u){return u.dateTime.slice(0,10)===b.date&&u.extraKind!=='travel';}).length;
     const actionCount=briefingActionCount_(b);
     sections.push({name:'브리핑',ok:true,summary:`오늘 촬영 ${todayCount}건 · 액션 ${actionCount}건`});
   }catch(e){
