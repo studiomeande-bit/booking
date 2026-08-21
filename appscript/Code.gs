@@ -1911,6 +1911,57 @@ function handlePublicApiRequest_(route,method,e){
           if(payload.selectRowIndex) return jsonOk_(updateSelectStatusByRowForAgent_(token,payload.selectRowIndex,String(payload.status||'')));
           return jsonOk_(updateSelectStatusAdmin(token,payload.bookingRowIndex,String(payload.status||'')));
         }
+        if(action==='select-clear-extras'){
+          /* ✏️ 셀렉 세션의 **추가금(보정·인화) 청구를 0 으로** — 오청구 정정용.
+             주문 내역(추가인화 JSON)은 건드리지 않고 금액만 지운다: 무엇을 주문했는지는
+             기록으로 남기고 청구만 취소하는 것이 정정의 정확한 의미다.
+             이미 결제된 건에는 쓰지 않는다(그건 환불 대상이다). 감사 1줄을 메모에 남긴다. */
+          const sheets=ensureSheets_();
+          const selSh=ensureSelectSheet_(sheets.ss);
+          let rIdx=parseInt(payload.selectRowIndex,10)||0;
+          const sid=String(payload.sessionId||'').trim();
+          const rows=selSh.getDataRange().getValues();
+          if(!rIdx&&sid){
+            for(let i=1;i<rows.length;i++){
+              if(String(rows[i][SELECT_COL['세션ID']]||'').trim()===sid){rIdx=i+1;break;}
+            }
+          }
+          if(rIdx<2||rIdx>rows.length) return jsonError_('BAD_REQUEST','selectRowIndex 또는 sessionId 로 행을 찾지 못했습니다.');
+          const row=rows[rIdx-1];
+          const name=String(row[SELECT_COL['고객명']]||'').trim();
+          const expectName=String(payload.expectName||'').trim();
+          if(expectName&&expectName!==name) return jsonError_('NAME_MISMATCH','셀렉 행 '+rIdx+' 고객명이 "'+name+'" 입니다(기대: "'+expectName+'").');
+          const paidRef=String(row[SELECT_COL['추가금인보이스번호']]||'').trim();
+          if(paidRef&&payload.force!==true){
+            return jsonError_('ALREADY_BILLED','이미 청구/인보이스 발행된 건입니다('+paidRef+'). 정정이 아니라 환불 대상일 수 있습니다 — 확인 후 force:true.');
+          }
+          const before={
+            retouch:parseMoneyValue_(row[SELECT_COL['추가보정금액']]),
+            print:parseMoneyValue_(row[SELECT_COL['추가인화금액']]),
+            total:parseMoneyValue_(row[SELECT_COL['총추가금액']])
+          };
+          if(!(before.retouch>0||before.print>0||before.total>0)){
+            return jsonOk_({ok:true,unchanged:true,selectRowIndex:rIdx,name:name,note:'이미 추가금이 0 입니다.'});
+          }
+          if(payload.dryRun===true){
+            return jsonOk_({dryRun:true,selectRowIndex:rIdx,name:name,before:before,
+              note:'변경하지 않았습니다. 주문 내역(추가인화 JSON)은 그대로 두고 금액만 0 으로 만듭니다.'});
+          }
+          [['추가보정금액',0],['추가인화금액',0],['총추가금액',0]].forEach(function(pair){
+            if(SELECT_COL[pair[0]]!=null) selSh.getRange(rIdx,SELECT_COL[pair[0]]+1).setValue(pair[1]);
+          });
+          const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          const reason=String(payload.reason||'').trim();
+          const line='[추가금정정 '+stamp+'] 보정 '+before.retouch+'€ · 인화 '+before.print+'€ · 합계 '+before.total+'€ → 0'+(reason?' 사유: '+reason:'')+' (agent)';
+          try{
+            const memoCol=SELECT_COL['재수정요청메모'];
+            if(memoCol!=null){
+              const cur=String(row[memoCol]||'');
+              selSh.getRange(rIdx,memoCol+1).setValue([cur,line].filter(Boolean).join('\n'));
+            }
+          }catch(e){}
+          return jsonOk_({ok:true,selectRowIndex:rIdx,name:name,before:before,after:{retouch:0,print:0,total:0},auditLine:line});
+        }
         if(action==='select-set-counts') return jsonOk_(updateSelectSessionCountsAdmin(token,payload));
         if(action==='select-create') return jsonOk_(createSelectSession(token,payload.data||{}));
         if(action==='select-set-delivery') return jsonOk_(updateSelectDeliveryAdmin(token,
@@ -14310,8 +14361,13 @@ function _buildDailyBriefingData_(){
          어드민 수기 입력(updateSelectManualAdmin)만 쓰는 옛 값이라, '제출완료'만 세면 실제 작업
          백로그가 **항상 0**으로 보였다. 다른 소비처들은 이미 둘 다 인정한다(운영보드·상태정규화·셀렉탭). */
       else if(st==='제출완료'||st==='작업대기') select.submitted++;
+      /* 인화앱은 사용 보류 상태라 '출력완료일시'가 채워지지 않는 건이 많다. 그 열만 보면
+         **이미 우편으로 보낸 건까지 영영 '출력 대기'로 남는다**(Sae-Jin Choi·정다은·
+         Annielyn Martin 3건 실측, 2026-08-21). 물리적으로 나간 근거는 ERP 의 수령 기록이므로
+         '수령완료일시'가 있으면 완료로 본다 — 앱 기록이 아니라 ERP 가 기준이다. */
       if(SELECT_COL['출력완료일시']!=null && selectJsonArrayHasItems_(sRows[i][SELECT_COL['추가인화']])
-         && !String(sRows[i][SELECT_COL['출력완료일시']]||'').trim()){
+         && !String(sRows[i][SELECT_COL['출력완료일시']]||'').trim()
+         && !(SELECT_COL['수령완료일시']!=null && String(sRows[i][SELECT_COL['수령완료일시']]||'').trim())){
         const anchor=[SELECT_COL['제출일시'],SELECT_COL['보정본발송일시'],SELECT_COL['촬영일']]
           .map(function(c){return c!=null?parseDateSafe_(sRows[i][c]).str.slice(0,10):'';})
           .filter(Boolean).sort().pop()||'';
