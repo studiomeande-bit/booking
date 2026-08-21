@@ -5957,6 +5957,29 @@ function createBookingExtraDayEvents_(titleBase,description,location,extraDays){
     return createExtraDayEvent_(calendar,titleBase,description,location,d,shootSeq,shootTotal);
   });
 }
+/* 이벤트 되찾기 — getEventById 는 **모든 이벤트를 되읽지 못한다**. 외부(애플 등)에서 동기화된
+   이벤트는 getId() 가 구글식 '…@google.com' 이 아닌 UID 라 조회가 null 로 떨어진다
+   (2027-06-11 Jin Hee Choi 이동일에서 실측). 그대로 두면 자가치유가 "증발"로 오판해 매일
+   중복 이벤트를 만든다. 날짜를 아는 자리에서는 그 날을 훑어 같은 id 를 찾는 걸 대체 경로로 둔다. */
+function getCalendarEventByIdOnDate_(calendar,eventId,dateStr){
+  const id=String(eventId||'').trim();
+  if(!id) return null;
+  try{ const ev=calendar.getEventById(id); if(ev) return ev; }catch(e){}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr||''))) return null;
+  try{
+    const evs=calendar.getEvents(new Date(dateStr+'T00:00:00'),new Date(dateStr+'T23:59:59'));
+    for(let i=0;i<evs.length;i++) if(String(evs[i].getId())===id) return evs[i];
+  }catch(e){}
+  return null;
+}
+/* 추가일정 이벤트 삭제 — 위 되찾기를 거친다(흡수한 외부 UID 도 확실히 지우도록).
+   못 찾으면 기존 경로로 넘긴다(이미 없음 = true 규약 유지). */
+function deleteExtraDayEventById_(calendar,eventId,dateStr){
+  const ev=getCalendarEventByIdOnDate_(calendar,eventId,dateStr);
+  if(!ev) return deleteBookingCalendarEventById_(eventId);
+  try{ ev.deleteEvent(); return true; }
+  catch(e){ Logger.log('deleteExtraDayEventById_ failed: '+e.message); return false; }
+}
 /* 같은 날짜에 이미 있는 이 예약의 이벤트를 찾아 채택한다(중복 생성 방지).
    손으로 만들어 둔 이동일 이벤트를 흡수해 '추가일정JSON' 에 연결하는 게 목적 —
    제목에 고객명이 들어있고 아직 다른 항목이 가져가지 않은 첫 이벤트. */
@@ -5981,10 +6004,12 @@ function cleanupBookingExtraDayEvents_(sheet,rowIndex,row){
   const days=parseBookingExtraDays_(row);
   if(!days.length) return {deleted:0,failed:0};
   let deleted=0,failed=0,changed=false;
+  const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
   days.forEach(function(d){
     const id=String(d.eventId||'').trim();
     if(!id) return;
-    if(deleteBookingCalendarEventById_(id)){ d.eventId=''; deleted++; changed=true; }
+    // 날짜 경유 되찾기 — 흡수한 외부 UID 는 getEventById 로 안 잡힌다(안 지우면 그 날이 계속 막힌다)
+    if(deleteExtraDayEventById_(cal,id,String(d.date||''))){ d.eventId=''; deleted++; changed=true; }
     else failed++;
   });
   if(changed&&sheet&&rowIndex&&BOOKING_COL['추가일정JSON']!=null){
@@ -6264,10 +6289,9 @@ function auditBookingCalendarConsistency_(){
       let exChanged=false;
       exDays.forEach(function(xd,xi){
         if(!xd||!xd.date||xd.date<today||xd.date>horizonStr) return;
-        let exEv=null;
         const xid=String(xd.eventId||'').trim();
-        if(xid){ try{exEv=calendar.getEventById(xid);}catch(e){exEv=null;} }
-        if(exEv) return;
+        // 되찾기 경유 — 흡수한 외부 UID 를 getEventById 로만 보면 매일 '증발'로 오판해 중복을 만든다
+        if(xid&&getCalendarEventByIdOnDate_(calendar,xid,xd.date)) return;
         if(appleFeedFailed) return;
         if(appleSameDayMatch(name,xd.date)) return;
         try{
@@ -13426,14 +13450,14 @@ function setBookingExtraDaysForAgent_(token,payload){
     const unchanged=prev&&prev.eventId&&prev.time===d.time&&prev.durationMin===d.durationMin
       &&prev.kind===d.kind&&prev.note===d.note;
     if(unchanged){
-      let live=null; try{live=calendar.getEventById(prev.eventId);}catch(e){live=null;}
-      if(live) return {day:d,op:'keep',eventId:prev.eventId,title:live.getTitle(),dropEventId:''};
+      const live=getCalendarEventByIdOnDate_(calendar,prev.eventId,d.date);
+      if(live) return {day:d,op:'keep',eventId:prev.eventId,title:String(live.getTitle()||''),dropEventId:''};
     }
     const dropEventId=(prev&&prev.eventId&&prev.eventId!==d.adoptEventId)?prev.eventId:'';
     let adopt=null;
     if(d.adoptEventId){
-      try{adopt=calendar.getEventById(d.adoptEventId);}catch(e){adopt=null;}
-      if(!adopt) throw new Error('지정한 eventId 를 캘린더에서 찾을 수 없습니다: '+d.adoptEventId+' ('+d.date+')');
+      adopt=getCalendarEventByIdOnDate_(calendar,d.adoptEventId,d.date);
+      if(!adopt) throw new Error('지정한 eventId 를 그 날짜의 캘린더에서 찾을 수 없습니다: '+d.adoptEventId+' ('+d.date+')');
       if(Utilities.formatDate(adopt.getStartTime(),CONFIG.TIMEZONE,'yyyy-MM-dd')!==d.date)
         throw new Error('지정한 이벤트의 날짜가 요청과 다릅니다: '+d.adoptEventId+' (요청 '+d.date+')');
     }else{
@@ -13479,7 +13503,7 @@ function setBookingExtraDaysForAgent_(token,payload){
     note:'dryRun — 캘린더·시트를 건드리지 않았습니다.'};
 
   let removedOk=0,removedFailed=0;
-  removals.forEach(function(rm){ if(deleteBookingCalendarEventById_(rm.eventId)) removedOk++; else removedFailed++; });
+  removals.forEach(function(rm){ if(deleteExtraDayEventById_(calendar,rm.eventId,rm.date)) removedOk++; else removedFailed++; });
   const saved=plan.map(function(p,i){
     const d=p.day;
     if(p.op==='create'){

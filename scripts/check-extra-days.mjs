@@ -49,19 +49,21 @@ const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 class FakeCal {
   constructor() { this.events = new Map(); this.seq = 0; this.log = []; }
-  add(title, start, end, opts) {
-    const id = `ev${++this.seq}@google.com`;
+  /* opaque=true → 외부(애플 등) 동기화 이벤트 흉내: getEvents 로는 보이는데
+     getEventById 로는 안 잡힌다. 라이브 실측(Jin Hee Choi 이동일)에서 확인된 동작. */
+  add(title, start, end, opts, opaque) {
+    const id = opaque ? `${++this.seq}A7C-EXTERNAL-UID` : `ev${++this.seq}@google.com`;
     const ev = {
       _id: id, _title: title, _s: start, _e: end, _desc: (opts && opts.description) || '', _dead: false,
       getId: () => id, getTitle() { return this._title; }, getStartTime() { return this._s; },
       getEndTime() { return this._e; }, getDescription() { return this._desc; },
-      isAllDayEvent: () => false, deleteEvent() { this._dead = true; },
+      isAllDayEvent: () => false, deleteEvent() { this._dead = true; }, _opaque: !!opaque,
     };
     this.events.set(id, ev);
     return ev;
   }
   createEvent(title, s, e, opts) { this.log.push(['create', title, ymd(s), hm(s)]); return this.add(title, s, e, opts); }
-  getEventById(id) { const ev = this.events.get(id); return ev && !ev._dead ? ev : null; }
+  getEventById(id) { const ev = this.events.get(id); return ev && !ev._dead && !ev._opaque ? ev : null; }
   getEvents(from, to) {
     return [...this.events.values()].filter((ev) => !ev._dead && ev._s >= from && ev._s <= to);
   }
@@ -116,6 +118,7 @@ function makeCtx({ cal, row, conflictDates = [], otherRows = [] }) {
   for (const src of [extractConst('EXTRA_DAY_TRAVEL_NOTE_'),
     extractFn('normalizeExtraDayKind_'), extractFn('buildExtraDayEventFields_'),
     extractFn('createExtraDayEvent_'), extractFn('createBookingExtraDayEvents_'),
+    extractFn('getCalendarEventByIdOnDate_'), extractFn('deleteExtraDayEventById_'),
     extractFn('findAdoptableExtraDayEvent_'), extractFn('setBookingExtraDaysForAgent_')]) {
     vm.runInContext(src, ctx);
   }
@@ -319,7 +322,42 @@ test('dryRun — 계획만 반환하고 캘린더·시트 불변', () => {
   assert.equal(ctx._written[COL['추가일정JSON']], undefined, 'dryRun 이 시트를 썼다');
 });
 
-// ── 7) 자가치유 복구 제목이 kind 를 보존하는지 (calendar-audit 이 쓰는 그 함수)
+// ── 7) 외부 동기화 UID (getEventById 로 안 잡히는 이벤트) 왕복
+test('흡수한 외부 UID — 재실행이 중복을 만들지 않는다(날짜 경유 되찾기)', () => {
+  const cal = new FakeCal();
+  cal.add('[이동] Jin Hee Choi 웨딩 출장', D('2027-06-11', '09:00'), D('2027-06-11', '19:00'), {}, true);
+  const ctx1 = makeCtx({ cal, row: newRow() });
+  const r1 = run(ctx1, { rowIndex: 251, extraDays: [TRAVEL[0]], replace: true });
+  assert.equal(r1.adopted, 1);
+  const saved = JSON.stringify(json(ctx1));
+  assert.equal(cal.getEventById(json(ctx1)[0].eventId), null, '이 테스트는 getEventById 가 null 인 경우를 봐야 한다');
+  // 재실행: getEventById 로는 못 찾지만 그 날짜를 훑으면 있다 → keep
+  const ctx2 = makeCtx({ cal, row: newRow(saved) });
+  const r2 = run(ctx2, { rowIndex: 251, extraDays: [TRAVEL[0]], replace: true });
+  assert.equal(r2.kept, 1, '되찾기가 실패하면 매 실행마다 중복이 생긴다');
+  assert.equal(r2.created, 0);
+  assert.equal(cal.live().length, 1);
+});
+
+test('흡수한 외부 UID — replace 로 빠지면 실제로 삭제된다', () => {
+  const cal = new FakeCal();
+  const ext = cal.add('[이동] Jin Hee Choi 웨딩 출장', D('2027-06-11', '09:00'), D('2027-06-11', '19:00'), {}, true);
+  const ctx1 = makeCtx({ cal, row: newRow() });
+  run(ctx1, { rowIndex: 251, extraDays: [TRAVEL[0], TRAVEL[1]], replace: true });
+  const ctx2 = makeCtx({ cal, row: newRow(JSON.stringify(json(ctx1))) });
+  const res = run(ctx2, { rowIndex: 251, extraDays: [TRAVEL[1]], replace: true });
+  assert.equal(res.removedOk, 1);
+  assert.ok(ext._dead, '외부 UID 이벤트가 안 지워졌다 — 그 날 슬롯이 계속 막힌다');
+});
+
+test('calendar-audit 존재확인·취소정리도 되찾기를 쓴다', () => {
+  assert.ok(SRC.includes('if(xid&&getCalendarEventByIdOnDate_(calendar,xid,xd.date)) return;'),
+    '자가치유가 getEventById 만 보면 흡수 이벤트를 매일 중복 생성한다');
+  assert.ok(SRC.includes("deleteExtraDayEventById_(cal,id,String(d.date||''))"),
+    '취소 정리가 흡수 이벤트를 못 지우면 그 날이 계속 막힌다');
+});
+
+// ── 8) 자가치유 복구 제목이 kind 를 보존하는지 (calendar-audit 이 쓰는 그 함수)
 test('자가치유 복구 — 이동일은 [이동] 제목·촬영금지 설명으로 되살아난다', () => {
   const ctx = makeCtx({ cal: new FakeCal(), row: newRow() });
   const t = vm.runInContext(
