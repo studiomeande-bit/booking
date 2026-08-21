@@ -2000,6 +2000,49 @@ function handlePublicApiRequest_(route,method,e){
           sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(note);
           return jsonOk_({ok:true,rowIndex:rIdx,name:name,previous:curRaw,balance:note});
         }
+        if(action==='booking-set-item-group'){
+          /* ✏️ 촬영종류(itemGroup) 교정 — **분류만** 바꾼다. 금액·상품·일정은 건드리지 않는다.
+             예약 접수 경로에 따라 개인 웨딩이 'biz' 로 들어가는 일이 있고(Alice 행228·최하은 행236),
+             그러면 그룹별 매출 통계와 버퍼·환불규정 판정이 어긋난다.
+             booking-update 의 허용 필드에 넣지 않은 이유: 촬영종류는 가격·슬롯·버퍼의 기준이라
+             일반 필드 수정과 같은 취급을 하면 위험하다. 여기서 사유를 남기고 따로 바꾼다.
+             금액을 함께 바꿔야 하면 booking-change-product 를 쓴다. */
+          const rIdx=parseInt(payload.rowIndex,10)||0;
+          if(rIdx<2) return jsonError_('BAD_REQUEST','rowIndex 가 필요합니다.');
+          const next=String(payload.itemGroup||'').trim();
+          if(!next) return jsonError_('BAD_REQUEST','itemGroup 이 필요합니다.');
+          /* 라이브 상품 카탈로그에 실제로 존재하는 그룹만 허용 — 오타로 없는 그룹을 심으면
+             그 예약이 슬롯·통계에서 조용히 사라진다 */
+          const knownGroups={};
+          getCachedProducts_().forEach(function(p){ if(p&&p.g) knownGroups[String(p.g)]=true; });
+          if(!knownGroups[next]){
+            return jsonError_('BAD_REQUEST','상품 카탈로그에 없는 촬영종류입니다: '+next+' (사용 가능: '+Object.keys(knownGroups).sort().join(', ')+')');
+          }
+          const sh=getDbSheet();
+          const row=sh.getRange(rIdx,1,1,sh.getLastColumn()).getValues()[0];
+          const name=String(row[BOOKING_COL['고객명']]||'').trim();
+          if(!name) return jsonError_('BAD_REQUEST','예약 행 '+rIdx+' 을 찾지 못했습니다.');
+          const expectName=String(payload.expectName||'').trim();
+          if(expectName&&expectName!==name) return jsonError_('NAME_MISMATCH','행 '+rIdx+' 고객명이 "'+name+'" 입니다(기대: "'+expectName+'").');
+          const prev=String(row[BOOKING_COL['촬영종류']]||'').trim();
+          if(prev===next) return jsonOk_({ok:true,unchanged:true,rowIndex:rIdx,name:name,itemGroup:next,note:'이미 같은 값입니다.'});
+          if(payload.dryRun===true){
+            return jsonOk_({dryRun:true,rowIndex:rIdx,name:name,previous:prev,next:next,
+              note:'변경하지 않았습니다. dryRun 없이 다시 실행하세요. 금액·상품·일정은 바뀌지 않습니다.'});
+          }
+          sh.getRange(rIdx,BOOKING_COL['촬영종류']+1).setValue(next);
+          const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          const reason=String(payload.reason||'').trim();
+          const auditLine='[촬영종류정정 '+stamp+'] '+(prev||'(빈값)')+'→'+next+(reason?' 사유: '+reason:'')+' (agent)';
+          try{
+            const memoCol=BOOKING_COL['요청사항'];
+            const cur=String(row[memoCol]||'');
+            sh.getRange(rIdx,memoCol+1).setValue([cur,auditLine].filter(Boolean).join('\n'));
+          }catch(e){}
+          bumpCalCacheVer_();
+          return jsonOk_({ok:true,rowIndex:rIdx,name:name,previous:prev,itemGroup:next,auditLine:auditLine,
+            note:'분류만 변경했습니다 — 금액·상품·일정은 그대로입니다. 슬롯 캐시 무효화됨.'});
+        }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
