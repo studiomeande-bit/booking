@@ -1490,6 +1490,64 @@ function handlePublicApiRequest_(route,method,e){
             morningBlockRanges:bhMorningBlock===null?'(유지)':(getSettingsMap_().morning_block_ranges||'(없음)'),
             note:'슬롯 캐시 무효화됨 — 다음 조회부터 새 시간 적용'});
         }
+        if(action==='sheet-header-repair'){
+          /* ✏️ 시트 **헤더 행(1행)만** 코드 정의와 일치시킨다. 데이터 행은 건드리지 않는다.
+             왜 필요한가: 코드는 대부분 열을 **배열 인덱스**(SELECT_COL/BOOKING_COL)로 읽고 쓰는데,
+             시트 헤더 이름은 과거 열 추가 과정에서 순서가 밀려 중복까지 생겼다. 데이터 자체는
+             인덱스 기준이라 멀쩡하지만 ① 사람이 시트를 열면 열 이름과 값이 안 맞고
+             ② **이름으로 열을 찾는 코드가 엉뚱한 열을 조작**한다(실제 사고: 셀렉 행38 픽업일시가
+             서비스컷수 열로 이동). ①②를 한 번에 없앤다.
+             안전장치: 코드 헤더 수보다 오른쪽에 있는 여분 열에 **데이터가 하나라도 있으면 거부**한다
+             (그 열은 코드가 모르는 값이므로 이름을 지우면 정체를 잃는다). */
+          const target=String(payload.sheet||'').trim();
+          const MAP={};
+          MAP[SELECT_SHEET_NAME]=SELECT_HEADERS;
+          MAP[CONFIG.BOOKING_SHEET]=CONFIG.BOOKING_HEADERS;
+          if(!MAP[target]) return jsonError_('BAD_REQUEST','sheet 는 다음 중 하나여야 합니다: '+Object.keys(MAP).join(', '));
+          const want=MAP[target];
+          const ss=ensureSheets_().ss;
+          const sh=ss.getSheetByName(target);
+          if(!sh) return jsonError_('BAD_REQUEST','시트를 찾지 못했습니다: '+target);
+          const maxCol=sh.getMaxColumns();
+          const cur=sh.getRange(1,1,1,maxCol).getValues()[0].map(function(v){return String(v||'').trim();});
+          let curLen=0;
+          for(let i=cur.length-1;i>=0;i--){ if(cur[i]!==''){curLen=i+1;break;} }
+          const diffs=[];
+          for(let i=0;i<Math.max(curLen,want.length);i++){
+            const a=i<cur.length?cur[i]:'';
+            const b=i<want.length?want[i]:'';
+            if(a!==b) diffs.push({col:i+1,current:a,next:b});
+          }
+          /* 여분 열 데이터 검사 — 코드가 모르는 열에 값이 있으면 손대지 않는다 */
+          const lastRow=sh.getLastRow();
+          const extras=[];
+          if(curLen>want.length&&lastRow>1){
+            const vals=sh.getRange(2,want.length+1,lastRow-1,curLen-want.length).getValues();
+            for(let c=0;c<curLen-want.length;c++){
+              let n=0;
+              for(let r=0;r<vals.length;r++){ if(String(vals[r][c]||'').trim()!=='') n++; }
+              if(n>0) extras.push({col:want.length+c+1,header:cur[want.length+c],nonEmptyRows:n});
+            }
+          }
+          if(extras.length){
+            return jsonError_('EXTRA_COLUMN_HAS_DATA','코드가 모르는 여분 열에 데이터가 있습니다 — 헤더를 지우면 정체를 잃습니다: '
+              +JSON.stringify(extras));
+          }
+          if(!diffs.length) return jsonOk_({ok:true,unchanged:true,sheet:target,note:'헤더가 이미 코드와 일치합니다.'});
+          if(payload.dryRun===true||String(payload.confirm||'')!=='REPAIR'){
+            return jsonOk_({dryRun:true,sheet:target,currentLen:curLen,codeLen:want.length,
+              diffCount:diffs.length,diffs:diffs.slice(0,25),
+              note:'헤더 행만 바꿉니다(데이터 행 불변). confirm:"REPAIR" 로 실행하세요.'});
+          }
+          sh.getRange(1,1,1,want.length).setValues([want]);
+          // 코드 정의 오른쪽에 남은 여분 헤더 이름은 비운다(데이터가 없음을 위에서 확인했다)
+          if(curLen>want.length){
+            sh.getRange(1,want.length+1,1,curLen-want.length).clearContent();
+          }
+          try{CacheService.getScriptCache().remove('sheets_ok_'+ss.getId());}catch(e){}
+          return jsonOk_({ok:true,sheet:target,repaired:diffs.length,clearedExtraHeaders:Math.max(0,curLen-want.length),
+            note:'헤더 행만 교체했습니다. 데이터 행은 그대로입니다.'});
+        }
         if(action==='data-audit'){
           // 조회 전용 — 데이터 품질 감사 (날짜 오염·금액 불일치·링크 끊김·번호 중복·비영문 우편주소)
           return jsonOk_(buildDataQualityAuditForAgent_());
@@ -19670,12 +19728,15 @@ function isInvoiceNumberLike_(value){
 function repairSelectRevisionNoteColumn_(sh){
   try{
     if(!sh || sh.getLastRow()<=1) return;
-    const headers=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(function(v){return String(v||'').trim();});
-    const invoiceIdx=headers.indexOf('추가금인보이스번호');
-    const noteIdx=headers.indexOf('재수정요청메모');
-    const statusIdx=headers.indexOf('상태');
-    const revisionCountIdx=headers.indexOf('재수정요청횟수');
-    if(invoiceIdx<0 || noteIdx<0 || statusIdx<0 || revisionCountIdx<0) return;
+    /* ⚠ 열을 **시트 헤더 이름으로 찾으면 안 된다.** 시트 헤더 행은 코드 SELECT_HEADERS 와
+       순서가 어긋나 있고(중복 이름까지 있다) 코드의 나머지 전부는 SELECT_COL 인덱스로 읽고 쓴다.
+       이름으로 찾던 탓에 이 함수가 실제로 **픽업일시를 서비스컷수 열로 옮겨 버린 사고**가 있었다
+       (셀렉 행38 최한결, 2026-08-21 발견). 인덱스 경로로 통일한다. */
+    const invoiceIdx=SELECT_COL['추가금인보이스번호'];
+    const noteIdx=SELECT_COL['재수정요청메모'];
+    const statusIdx=SELECT_COL['상태'];
+    const revisionCountIdx=SELECT_COL['재수정요청횟수'];
+    if(invoiceIdx==null || noteIdx==null || statusIdx==null || revisionCountIdx==null) return;
     const lastRow=sh.getLastRow();
     const values=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues();
     let changed=false;
@@ -19701,11 +19762,11 @@ function repairSelectRevisionNoteColumn_(sh){
 function repairSelectRevisionHistoryColumn_(sh){
   try{
     if(!sh || sh.getLastRow()<=1) return;
-    const headers=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(function(v){return String(v||'').trim();});
-    const historyIdx=headers.indexOf('재수정요청이력JSON');
-    const noteIdx=headers.indexOf('재수정요청메모');
-    const revisionCountIdx=headers.indexOf('재수정요청횟수');
-    if(historyIdx<0 || noteIdx<0 || revisionCountIdx<0) return;
+    /* 위 repairSelectRevisionNoteColumn_ 과 같은 이유로 인덱스 경로를 쓴다(이름 금지). */
+    const historyIdx=SELECT_COL['재수정요청이력JSON'];
+    const noteIdx=SELECT_COL['재수정요청메모'];
+    const revisionCountIdx=SELECT_COL['재수정요청횟수'];
+    if(historyIdx==null || noteIdx==null || revisionCountIdx==null) return;
     const lastRow=sh.getLastRow();
     const values=sh.getRange(2,1,lastRow-1,sh.getLastColumn()).getValues();
     let changed=false;
