@@ -62,7 +62,7 @@ Updated: 2026-08-23 Europe/Berlin
 
 ## Done Recently
 
-- **발송 전 검수 `doc-preview-text` + `showMemo` 기본값 반전 (2026-08-23)** —
+- **발송 전 검수 `doc-preview-text` + `showMemo` 기본값 반전 (2026-08-23, @822)** —
   2026-08-21 견적 AN-260012(KOTRA)에서 **내부 작업 메모가 고객 PDF 비고란에 인쇄되어 발송**됐다.
   원인 둘: `pdfOptions.showMemo` 기본값이 `true`(메모는 내부 기록용인데 기본이 "고객에게 노출"),
   그리고 **발송 전에 PDF 내용을 볼 방법이 없음**(Drive 비공개 저장 + 운영 세션 무인증).
@@ -80,6 +80,10 @@ Updated: 2026-08-23 Europe/Berlin
     (AN-260012 de_ko 는 2쪽이 아니라 **3쪽**). 높이 근사는 실측 24쪽 대조로 보정(±5mm, 최대 +17mm 과대).
     상세 표는 `견적서/00_견적대장.md`.
   - 회귀 검사: `node scripts/check-doc-preview.mjs` (showMemo 저장값 존중 · 메모 렌더 · 가드 · 쪽 분해 · 높이 근사).
+  - **배포 후 검증**: 견적 12건을 배포 전(6601406)·후(@822) 코드로 재렌더해 HTML 바이트 대조 → **12/12 동일(회귀 0)**.
+    인보이스는 15건 중 7건이 의도된 변경(내부 메모 제거), 8건 무변경. `quote-send AN-260009` 실제 차단 확인(메일 미발송).
+  - 잔여(오너): 견적 9건(AN-260001~260009)이 아직 `showMemo:true` + 내부 메모 보유 —
+    발송은 가드가 막지만 `quote-update` 재생성 시 Drive PDF 에는 찍힌다. 상세는 `견적서/00_견적대장.md`.
 
 - **추가일정 사후 등록 + 이동일 개념 — `booking-set-extra-days` (2026-08-21, @820 / 되찾기 수정 @821)** —
   다일정 자체는 이미 있었다(`추가일정JSON` · `parseBookingExtraDays_` · `createBookingExtraDayEvents_` ·
