@@ -62,6 +62,8 @@ const SERVER_MODULE = [
   extractFn(gs, 'selectQuotaCredit_'),
   extractFn(gs, 'selectPhotoNumKey_'),
   extractFn(gs, 'mergeSelectPrintItems_'),
+  extractFn(gs, 'getDefaultSelectMarketingBonusCount_'),
+  extractFn(gs, 'normalizeSelectMarketingBonusCount_'),
   extractFn(gs, 'computeSelectDecoupledPrints_'),
   // 하네스가 채우는 부분: 상품키는 fixture 가 직접 주고, 쿼터는 위 실제 표에서 읽는다.
   `const SELECT_COL={'촬영종류':0,'상품':1,'서비스컷수':2};`,

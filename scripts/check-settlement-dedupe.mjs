@@ -41,7 +41,7 @@ const SETTLEMENT_COL_LINE = extractLine(gs, 'const SETTLEMENT_COL=SETTLEMENT_HEA
 const EXPENSE_HEADERS_LINE = extractLine(gs, "EXPENSE_HEADERS: ['지출일'");
 
 const FNS = [
-  'sha256Hex32_', 'settlementIdentityKey_', 'buildSettlementHash_', 'buildSettlementHashLegacy_',
+  'sha256Hex32_', 'settlementDescriptionForKey_', 'settlementIdentityKey_', 'settlementIdentitySlot_', 'buildSettlementHash_', 'buildSettlementHashLegacy_',
   'settlementRefKey_', 'getSettlementIndex_', 'findSettlementRow_', 'registerSettlementRow_',
   'makeSettlementSeqCounter_', 'buildSettlementSheetRow_', 'dedupeSettlementRowsAdmin',
   'sumupFeeExpenseId_', 'sumupFeeExpenseDesc_', 'getSumupFeeExpenseMap_', 'findSumupFeeExpenseRow_',
