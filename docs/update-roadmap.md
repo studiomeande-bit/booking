@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-08-19 Europe/Berlin
+Updated: 2026-08-23 Europe/Berlin
 
 ## Immediate
 
@@ -61,6 +61,25 @@ Updated: 2026-08-19 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+- **발송 전 검수 `doc-preview-text` + `showMemo` 기본값 반전 (2026-08-23)** —
+  2026-08-21 견적 AN-260012(KOTRA)에서 **내부 작업 메모가 고객 PDF 비고란에 인쇄되어 발송**됐다.
+  원인 둘: `pdfOptions.showMemo` 기본값이 `true`(메모는 내부 기록용인데 기본이 "고객에게 노출"),
+  그리고 **발송 전에 PDF 내용을 볼 방법이 없음**(Drive 비공개 저장 + 운영 세션 무인증).
+  - **`showMemo` 기본 OFF**: 명시적 `true` 만 인쇄. 저장값은 언제나 존중하므로 기존 견적 재생성 결과는 불변
+    (`QUOTE_PDF_OPTION_DEFAULT_OFF`). 나머지 7개 표시옵션은 종전대로 기본 ON. 어드민 폼 체크박스도 기본 해제 + "내부 전용" 라벨.
+  - **인보이스 메모도 기본 미인쇄**: 종전엔 무조건 인쇄돼 결번·마이그레이션 기록 7건이 고객 'Sonstiges' 란에 찍히는 상태였다.
+    사업자 VAT/참조를 memo 로 쓰는 건은 0건이라 회귀 없음. 계약서는 원래 '메모' 열을 렌더하지 않는다.
+  - **`doc-preview-text`** (읽기 전용): PDF 를 파싱하지 않고 **PDF 를 만드는 그 HTML** 을 재사용해 텍스트·쪽수를 반환.
+    `pages`/`estPhysicalPages`/`memoPrinted`/`perPage[{page,lang,chars,estHeightMm,text}]`/`warnings[]`,
+    옵션 `includeHtml`(브라우저 인쇄 미리보기용)·`showMemo`(가정)·`maxChars`. 접두어로 kind 자동 판별.
+  - **발송 가드**: `quote-send`/`invoice-send`/`contract-send` 는 내부 메모가 인쇄되는 상태면 차단, `force:true` 로만 강행
+    (`internalMemoGuard_` — 중복발송 `resendGuard_` 와 같은 패턴).
+  - **부수 발견 — 견적서 빈 페이지**: 템플릿은 `.page{min-height:273mm}` 로 언어당 1쪽을 전제하는데,
+    Chrome 전수 실측 결과 **기존 견적 12건 중 6건이 273mm 초과**라 뒤에 거의 빈 A4 한 장이 붙고 있었다
+    (AN-260012 de_ko 는 2쪽이 아니라 **3쪽**). 높이 근사는 실측 24쪽 대조로 보정(±5mm, 최대 +17mm 과대).
+    상세 표는 `견적서/00_견적대장.md`.
+  - 회귀 검사: `node scripts/check-doc-preview.mjs` (showMemo 저장값 존중 · 메모 렌더 · 가드 · 쪽 분해 · 높이 근사).
 
 - **추가일정 사후 등록 + 이동일 개념 — `booking-set-extra-days` (2026-08-21, @820 / 되찾기 수정 @821)** —
   다일정 자체는 이미 있었다(`추가일정JSON` · `parseBookingExtraDays_` · `createBookingExtraDayEvents_` ·

@@ -9,6 +9,14 @@
  *   quote-list | quote-get | quote-create | quote-update | quote-send
  *   quote-hold | quote-snooze | quote-release-hold | quote-extend
  *   invoice-list | invoice-create | invoice-send
+ *   doc-preview-text: 발송 전 검수 — 문서 PDF 에 실제로 인쇄되는 텍스트·쪽수 (읽기 전용)
+ *     node scripts/erp-agent.mjs doc-preview-text --json '{"id":"AN-260012"}'
+ *     kind 는 접두어로 자동 판별(AN-=quote / STMIN-=invoice / DV-=contract), 명시하려면 "kind":"quote".
+ *     반환: pages(템플릿 쪽수) · estPhysicalPages(실제 인쇄 예상 쪽수) · memoPrinted ·
+ *           perPage[{page,lang,chars,estHeightMm,text}] · warnings[].
+ *     warnings 가 비어야 발송한다 — '내부 메모가 인쇄됨'(AN-260012 사고) / '빈 페이지 발생 가능'(본문 273mm 초과).
+ *     "includeHtml":true 면 PDF 원본 HTML 도 반환 → 브라우저 인쇄 미리보기로 눈으로 확인 가능.
+ *     회귀 검사: node scripts/check-doc-preview.mjs
  *
  * 국외 B2B 부가세 미부과(§3a Abs.2 UStG): quote-create/quote-update/invoice-create 의 data 에
  *   {"vatMode":"exempt_third_country","vatExemptCountry":"대한민국\n//\nRepublic of Korea"}

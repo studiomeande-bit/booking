@@ -1273,6 +1273,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='quote-get') return jsonOk_(getQuoteAdmin(token,String(payload.number||'')));
         if(action==='quote-create') return jsonOk_(createQuoteAdmin(token,payload.data||{}));
         if(action==='quote-update') return jsonOk_(updateQuoteAdmin(token,String(payload.number||''),payload.data||{}));
+        // 발송 전 검수 — 문서 PDF 의 실제 텍스트·쪽수(읽기 전용, 메일·파일 생성 없음)
+        if(action==='doc-preview-text') return jsonOk_(buildDocPreviewTextForAgent_(payload));
         if(action==='quote-send') return jsonOk_(sendQuoteEmailAdmin(token,String(payload.number||''),String(payload.subject||''),String(payload.body||''),{force:payload.force===true||payload.force==='true'}));
         if(action==='quote-hold') return jsonOk_(holdQuoteAdmin(token,String(payload.number||''),payload.data||{}));
         if(action==='quote-snooze') return jsonOk_(snoozeQuoteHoldAdmin(token,String(payload.number||''),String(payload.followUpDate||'')));
@@ -27083,6 +27085,11 @@ function getInvoiceLogoHtml_(){
   return `<div class="logo-wordmark"><div class="logo-name">Studio_mean</div><div class="logo-tag">crafts meaningful moments</div></div>`;
 }
 
+/* ⚠ inv.memo('메모' 열)는 **내부 전용** — 결번 처리·마이그레이션 기록 같은 운영 메모가 들어 있다.
+   2026-08-23 이전에는 무조건 인쇄돼서 그 내부 메모가 고객 인보이스 하단 'Sonstiges' 에 그대로
+   찍혔다(견적 AN-260012 와 같은 사고 유형). 이제 inv.showMemo===true 일 때만 인쇄한다 —
+   시트에 표시옵션 열이 없으므로 실질적으로 항상 미인쇄다.
+   고객에게 보일 문구는 **품목 설명(items[].description)** 에 쓴다. */
 function buildInvoiceHtml_(inv, lang){
   const L=resolveInvoiceLang_(lang||inv.lang, inv.bookingRowIndex);
   const isRefund=inv.type==='취소/환불';
@@ -27183,7 +27190,7 @@ ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="
   <div class="t-row t-end"><span>${t.end}</span><span>€${finalAmt.toFixed(2)}</span></div>
 </div>
 ${vatExempt?`<div class="vat-note-exempt">${escapeHtml_(vatExemptNoteText_(L,'invoice',inv.vatExemptCountry))}</div>`:''}
-${inv.memo?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div>${escapeHtml_(inv.memo)}</div></div>`:''}
+${(inv.showMemo===true&&inv.memo)?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div>${escapeHtml_(inv.memo)}</div></div>`:''}
 <div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
 </div></body></html>`;
 }
@@ -27858,6 +27865,7 @@ function sendInvoiceEmailAdmin(token, invNumber, subject, body, mailLang, opts){
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const inv=invoiceRowToObject_(rows[idx+1],idx+2);
   resendGuard_(inv.mailSentAt, inv.email, '인보이스', opts&&opts.force);
+  internalMemoGuard_('invoice', inv, '인보이스', opts&&opts.force);
   return sendInvoiceEmailInternal_(inv,subject||inv.mailSubject||'',body||inv.mailBody||'',mailLang);
 }
 
@@ -29420,14 +29428,24 @@ function _parseQuoteItems_(raw){
   }catch(e){return[];}
 }
 
-// 견적서 PDF 표시 항목 옵션 — 기본 전부 표시, 명시적 false만 제외 (구버전 행 호환)
+// 견적서 PDF 표시 항목 옵션 — showMemo 를 뺀 나머지는 기본 표시, 명시적 false만 제외 (구버전 행 호환)
 const QUOTE_PDF_OPTION_KEYS=['showValidUntil','showShootDate','showDiscount','showDeposit','showTerms','showBank','showVatId','showMemo'];
+/* ⚠ showMemo 만 기본 OFF — '메모'는 **내부 기록용** 필드다 (AN-260012 노출 사고, 2026-08-21).
+   기본이 true 라서 내부 단가 검토 메모가 고객 PDF 비고란에 그대로 인쇄되어 발송됐다.
+   이제 시트에 **명시적으로 true 가 저장된 건만** 인쇄한다 — 저장값은 언제나 존중하므로
+   기존 행의 재생성 결과는 바뀌지 않는다(빈 셀이었던 행만 인쇄→미인쇄로 바뀐다).
+   고객에게 보일 문구는 '조건(terms)' 에 쓴다. */
+const QUOTE_PDF_OPTION_DEFAULT_OFF=['showMemo'];
 function _normalizeQuotePdfOptions_(raw){
   let src=raw;
   if(typeof src==='string'){ try{src=JSON.parse(src||'{}');}catch(e){src={};} }
   if(!src||typeof src!=='object') src={};
   const opts={};
-  QUOTE_PDF_OPTION_KEYS.forEach(function(k){ opts[k]=src[k]===false?false:true; });
+  QUOTE_PDF_OPTION_KEYS.forEach(function(k){
+    opts[k]=QUOTE_PDF_OPTION_DEFAULT_OFF.indexOf(k)>-1
+      ? (src[k]===true||src[k]==='true')   // 기본 OFF: 명시적 true 만 인쇄
+      : (src[k]===false?false:true);       // 기본 ON: 명시적 false 만 제외
+  });
   return opts;
 }
 
@@ -30471,6 +30489,188 @@ function buildTravelKmLogForAgent_(startDate, endDate){
       +'스튜디오(오버우어젤) 왕복, €'+TRAVEL_KM_RATE_+'/km'};
 }
 
+/* ══ 발송 전 검수 — 문서 PDF 의 실제 텍스트·쪽수 조회 (2026-08-23) ═══════════════════
+   왜: PDF 는 Drive 에 비공개로만 저장되고 운영 세션은 인증이 없어 열어볼 수 없다.
+       "발송 전에 무엇이 인쇄되는지 볼 방법이 없다" 는 것이 AN-260012 내부메모 노출 사고의
+       절반이었다(나머지 절반은 showMemo 기본값 true — 위 _normalizeQuotePdfOptions_ 참조).
+   어떻게: PDF 를 파싱하지 않는다. **PDF 를 만들 때 쓰는 그 HTML** 을 그대로 다시 만들어
+       태그만 벗긴다 — 정확하고 싸다. 쪽 구분은 템플릿의 .page/.pbreak/.anlage 단위.
+   읽기 전용: 파일 생성·시트 수정·메일 발송 전부 없음. */
+
+const DOC_A4_BODY_MM=273;   // A4 297mm − @page margin 12mm×2 = .page{min-height:273mm} 와 동일
+
+function _htmlToPlainText_(html){
+  return String(html||'')
+    .replace(/<!--[\s\S]*?-->/g,'')
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi,'')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<\/(p|div|h1|h2|h3|li|tr|table|thead|tbody)>/gi,'\n')
+    .replace(/<\/(td|th)>/gi,'\t')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/gi,' ')
+    .replace(/&#(\d+);/g,function(m,d){return String.fromCharCode(parseInt(d,10));})
+    .replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&amp;/gi,'&')
+    .replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').replace(/^\s+|\s+$/g,'');
+}
+
+/* 쪽 단위 분해. 견적/인보이스는 .page 블록이 곧 1쪽, 계약서는 래퍼가 없고
+   B2C 별지(.anlage)만 page-break-before 를 갖는다 → 본문 + 별지 = 2쪽. */
+function _splitDocPages_(html){
+  const body=String(html||'').replace(/[\s\S]*<body[^>]*>/i,'').replace(/<\/body>[\s\S]*/i,'');
+  const re=/<div[^>]*class="[^"]*(?:\bpage\b|\banlage\b)[^"]*"[^>]*>/gi;
+  const marks=[];let m;
+  while((m=re.exec(body))) marks.push(m.index);
+  if(!marks.length) return [body];
+  if(marks[0]>0&&_htmlToPlainText_(body.slice(0,marks[0]))) marks.unshift(0);
+  return marks.map(function(start,i){
+    return body.slice(start,i+1<marks.length?marks[i+1]:body.length);
+  });
+}
+
+// 줄바꿈 후 실제 줄 수 근사 — 한글·한자는 라틴 문자 2배 폭으로 센다
+function _wrappedLineCount_(text,cpl){
+  const w=Math.max(10,cpl||90);
+  return String(text||'').split('\n').reduce(function(n,line){
+    const width=line.replace(/[ᄀ-ᇿ㄰-㆏가-힯　-〿一-鿿]/g,'--').length;
+    return n+Math.max(1,Math.ceil(width/w));
+  },0);
+}
+
+/* 한 쪽 본문 높이(mm) 근사. .page{min-height:273mm} 를 넘기면 뒤에 거의 빈 2쪽이 딸려 나온다
+   — Chrome 실측으로 기존 견적 12건 중 6건이 이 상태였다(2026-08-23 조사).
+   상수는 Chrome 실측값이다(186mm 폭, .header 61.1 / .inv-meta 18.5+margin 11.6 / .footer 31.0 …).
+   기존 견적 12건 전수 대조로 24쪽 중 22쪽이 오차 ±5mm, 최대 +17mm(과대 추정) 였다 —
+   그래서 273mm 초과는 "가능" 경고로만 쓰고 확정은 사람이 본다(includeHtml:true → 인쇄 미리보기).
+   계약서는 원래 여러 쪽에 걸치는 문서라 이 검사 대상이 아니다. */
+function _estimateDocPageMm_(kind,doc,langIdx){
+  if(kind==='contract') return 0;
+  const isQuote=(kind==='quote');
+  const opt=isQuote?_normalizeQuotePdfOptions_(doc.pdfOptions):null;
+  const pick=function(t){return isQuote?_pickQuoteLangText_(String(t||''),langIdx):String(t||'');};
+  let mm=61.1                       // .header (로고 + 발신줄 + .customer-block min-height 90px)
+        +11.6+7.5                   // .inv-meta 상하 margin + 견적번호(17px) 줄
+        +4.2+8.4                    // .invoice-table margin-top + thead
+        +7.4                        // .totals margin-top
+        +31.0;                      // .footer (구분선 + 3단 그리드)
+  const items=(doc.items&&doc.items.length)?doc.items:[{description:doc.product||'-'}];
+  items.forEach(function(it){
+    mm+=3.7+_wrappedLineCount_(pick(it.description),64)*4.2;   // td padding 7px×2 + 11px/1.45 한 줄
+  });
+  if(isQuote){
+    let metaRows=1; // 발행일
+    if(opt.showValidUntil&&doc.validUntil) metaRows++;
+    if(opt.showShootDate&&doc.shootDate) metaRows++;
+    mm+=metaRows*3.9;
+    mm+=2.1+(isVatExempt_(doc.vatMode)?_wrappedLineCount_(String(doc.vatExemptCountry||''),120)*3.3+6.6:3.3); // .vat-note
+    let totalRows=3; // 공급가액·부가세·총액
+    if(opt.showDiscount&&Number(doc.discount)>0) totalRows+=2;
+    if(opt.showDeposit&&Number(doc.depositAmount)>0) totalRows+=1;
+    mm+=totalRows*5.9;
+    const noteLines=[];
+    const termsRaw=String(doc.terms||'').trim();
+    if(opt.showTerms) noteLines.push(termsRaw?pick(termsRaw):_defaultQuoteTerms_(_quoteLangList_(doc.lang)[langIdx]||'de'));
+    if(opt.showMemo) noteLines.push(pick(String(doc.memo||'').trim()));
+    const notes=noteLines.filter(Boolean).join('\n');
+    if(notes) mm+=4.8+5.3+_wrappedLineCount_(notes,126)*4.7;     // .notes-block margin + 테두리·패딩 + 10.5px/1.7 한 줄
+  }else{
+    mm+=2*3.9+3*5.9;                                            // 발행일·촬영일시 + 합계 3줄
+    if(isVatExempt_(doc.vatMode)) mm+=4.8+_wrappedLineCount_(String(doc.vatExemptCountry||''),120)*4.7;
+    if(doc.showMemo===true&&doc.memo) mm+=4.8+5.3+_wrappedLineCount_(String(doc.memo),62)*4.7; // .memo-block width 360px
+  }
+  return Math.round(mm*10)/10;
+}
+
+/* 지금 상태로 PDF 를 만들면 내부 메모가 고객에게 인쇄되는가 */
+function _docMemoPrinted_(kind,doc){
+  const memo=String((doc&&doc.memo)||'').trim();
+  if(!memo) return false;
+  if(kind==='quote') return _normalizeQuotePdfOptions_(doc.pdfOptions).showMemo===true;
+  if(kind==='invoice') return doc.showMemo===true;
+  return false;   // 계약서: '메모' 열은 PDF 에 렌더되지 않는다 (고객용 문구는 '특약메모')
+}
+
+/* 발송 가드 (AN-260012 사고) — 중복발송 가드(resendGuard_)와 같은 패턴. force:true 로만 강행. */
+function internalMemoGuard_(kind,doc,docLabel,force){
+  if(force===true) return;
+  if(!_docMemoPrinted_(kind,doc)) return;
+  throw new Error('내부 메모가 고객 '+docLabel+' PDF 비고란에 인쇄되는 상태라 발송을 차단했습니다. '
+    +'메모는 내부 기록용입니다 — 고객에게 보일 문구는 조건(terms)에 쓰세요. '
+    +'doc-preview-text 로 실제 인쇄 내용을 확인한 뒤 pdfOptions.showMemo:false 로 고치거나 '
+    +'메모를 비우고 다시 발송하세요. 의도한 인쇄면 force:true.');
+}
+
+/* payload={kind?:'quote|invoice|contract', id:'AN-…|STMIN-…|DV-…',
+            showMemo?:bool(미리보기 한정 오버라이드), includeHtml?:bool, maxChars?:number} */
+function buildDocPreviewTextForAgent_(payload){
+  const p=payload||{};
+  const id=String(p.id||p.number||p.contractId||'').trim();
+  if(!id) throw new Error('id 가 필요합니다 (견적 AN-…, 인보이스 STMIN-…, 계약 DV-…).');
+  let kind=String(p.kind||'').trim().toLowerCase();
+  if(!kind) kind=/^AN-/i.test(id)?'quote':(/^DV-/i.test(id)?'contract':(/^STMIN-/i.test(id)?'invoice':''));
+  if(['quote','invoice','contract'].indexOf(kind)===-1)
+    throw new Error('kind 는 quote|invoice|contract 중 하나여야 합니다 (접두어 AN-/STMIN-/DV- 로 자동 판별).');
+  const ov=(p.showMemo===true||p.showMemo==='true')?true:((p.showMemo===false||p.showMemo==='false')?false:null);
+
+  const sheets=ensureSheets_();
+  let doc,html,langs,expectedPages,docLabel;
+  if(kind==='quote'){
+    const found=_findQuoteRow_(sheets.quoteSheet,id);
+    if(found.rowIndex===-1) throw new Error('견적서를 찾을 수 없습니다: '+id);
+    doc=quoteRowToObject_(found.row,found.rowIndex);
+    if(ov!==null) doc.pdfOptions=Object.assign({},doc.pdfOptions,{showMemo:ov});
+    langs=_quoteLangList_(doc.lang);
+    expectedPages=langs.length;
+    html=buildQuoteHtml_(doc);
+    docLabel='견적서';
+  }else if(kind==='invoice'){
+    const rows=sheets.invoiceSheet.getDataRange().getValues();
+    const idx=rows.slice(1).findIndex(function(r){return String(r[INVOICE_COL['인보이스번호']]||'').trim()===id;});
+    if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다: '+id);
+    doc=invoiceRowToObject_(rows[idx+1],idx+2);
+    if(ov!==null) doc.showMemo=ov;
+    langs=[doc.lang];
+    expectedPages=1;
+    html=buildInvoiceHtml_(doc,doc.lang);
+    docLabel='인보이스';
+  }else{
+    const found=_findContractRow_(getContractSheet_(),id);
+    if(found.rowIndex===-1) throw new Error('계약을 찾을 수 없습니다: '+id);
+    doc=contractRowToObject_(found.row,found.rowIndex);
+    langs=[normalizeContractLang_(doc.lang)];
+    expectedPages=1+(isB2cContract_(doc)?1:0);   // B2C 는 Widerrufsformular 별지가 1쪽 더 붙는다
+    html=buildDrehvertragHtml_(doc);
+    docLabel='계약서';
+  }
+
+  const maxChars=Math.max(200,Math.min(20000,parseInt(p.maxChars,10)||8000));
+  const segs=_splitDocPages_(html);
+  const perPage=segs.map(function(seg,i){
+    const text=_htmlToPlainText_(seg);
+    return {page:i+1,lang:langs[i]||langs[langs.length-1]||'',chars:text.length,
+      estHeightMm:_estimateDocPageMm_(kind,doc,i),
+      text:text.length>maxChars?text.slice(0,maxChars)+'…(생략)':text};
+  });
+
+  // 템플릿 쪽수(.page 단위)와 별개로, 본문이 273mm 를 넘으면 실제로는 그 뒤에 빈 쪽이 붙는다
+  const estPhysicalPages=perPage.reduce(function(n,x){
+    return n+(x.estHeightMm>0?Math.max(1,Math.ceil(x.estHeightMm/DOC_A4_BODY_MM)):1);},0);
+  const warnings=[];
+  const memoPrinted=_docMemoPrinted_(kind,doc);
+  if(memoPrinted) warnings.push('내부 메모가 인쇄됨');
+  if(segs.length>expectedPages) warnings.push('언어당 A4 1쪽 초과 ('+segs.length+'쪽)');
+  const over=perPage.filter(function(x){return x.estHeightMm>DOC_A4_BODY_MM;});
+  if(over.length) warnings.push('빈 페이지 발생 가능 — '
+    +over.map(function(x){return x.page+'쪽 약 '+x.estHeightMm+'mm';}).join(', ')
+    +' (A4 본문 한도 '+DOC_A4_BODY_MM+'mm)');
+
+  const out={ok:true,kind:kind,id:id,docLabel:docLabel,lang:langs.join('_'),
+    pages:segs.length,expectedPages:expectedPages,estPhysicalPages:estPhysicalPages,
+    memoPrinted:memoPrinted,memoChars:String(doc.memo||'').trim().length,
+    perPage:perPage,warnings:warnings};
+  if(p.includeHtml===true||p.includeHtml==='true') out.html=html;   // 브라우저 인쇄 미리보기용 원본
+  return out;
+}
+
 function resendGuard_(sentAtRaw, to, docLabel, force){
   if(force===true) return;
   const sentAt=sentAtRaw?parseDateSafe_(sentAtRaw):null;
@@ -30486,6 +30686,7 @@ function sendQuoteEmailAdmin(token, number, subject, body, opts){
   const q=quoteRowToObject_(found.row,found.rowIndex);
   if(q.status===QUOTE_STATUS.EXPIRED||q.status===QUOTE_STATUS.REJECTED) throw new Error(`상태가 "${q.status}"인 견적서는 발송할 수 없습니다.`);
   resendGuard_(q.mailSentAt, q.email, '견적서', opts&&opts.force);
+  internalMemoGuard_('quote', q, '견적서', opts&&opts.force);
   const sent=_sendQuoteEmailInternal_(quoteSheet,found.rowIndex,q,subject,body);
   quoteSheet.getRange(found.rowIndex,QUOTE_COL['상태']+1).setValue(QUOTE_STATUS.SENT);
   return {ok:true,sentAt:sent.sentAt,recipientEmail:sent.recipientEmail};
@@ -33368,6 +33569,7 @@ function sendContractForAgent_(payload){
   if(c.status===CONTRACT_STATUS.SIGNED) throw new Error('이미 서명 완료된 계약입니다.');
   if(c.status===CONTRACT_STATUS.CANCELLED) throw new Error('취소된 계약입니다.');
   if(!c.email||c.email.indexOf('@')<0) throw new Error('고객 이메일이 없습니다.');
+  internalMemoGuard_('contract', c, '계약서', (payload||{}).force===true);
   if(!c.pdfFileId) _persistContractPdf_(sheet,found.rowIndex,c);
   const signUrl=createActionLink_('contract_sign',c.contractId);
   const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
