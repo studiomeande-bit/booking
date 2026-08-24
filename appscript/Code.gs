@@ -14751,7 +14751,8 @@ function _buildDailyBriefingData_(){
             name:String(sRows[i][SELECT_COL['고객명']]||'').trim()||'(이름없음)',
             shootDate:(parseDateSafe_(sRows[i][SELECT_COL['촬영일']]).str||'').slice(0,10),
             submittedAt:(parseDateSafe_(sRows[i][SELECT_COL['제출일시']]).str||'').slice(0,10),
-            count:cnt
+            count:cnt,
+            sessionId:String(sRows[i][SELECT_COL['세션ID']]||'').trim()
           });
         }
       }
@@ -14891,6 +14892,21 @@ function _buildDailyBriefingData_(){
     const up=listUnpaidSelectExtras_({limit:6,sinceDays:60});
     extrasUnpaid.count=up.count; extrasUnpaid.total=up.total; extrasUnpaid.items=up.items;
     extrasUnpaid.olderCount=up.olderCount; extrasUnpaid.olderTotal=up.olderTotal;
+    /* 출력 대기와 교차 — **결제 전에 인화물을 내보내면 회수가 어려워진다.**
+       실제로 미수 3건(112€) 중 2건이 출력 대기에 함께 떠 있었다(2026-08-24).
+       세션ID 로 붙여 출력 목록에서 바로 보이게 한다(이름 매칭은 동명이인에 취약). */
+    const unpaidBySession={},unpaidByName={};
+    (up.items||[]).forEach(function(it){
+      const sid=String(it.sessionId||'').trim();
+      if(sid) unpaidBySession[sid]=(unpaidBySession[sid]||0)+Number(it.amount||0);
+      const nm=String(it.name||'').trim();
+      if(nm) unpaidByName[nm]=(unpaidByName[nm]||0)+Number(it.amount||0);
+    });
+    printPending.items.forEach(function(p){
+      const amt=unpaidBySession[String(p.sessionId||'')]||unpaidByName[String(p.name||'')]||0;
+      if(amt>0) p.unpaidExtra=roundCurrency_(amt);
+    });
+    printPending.unpaidCount=printPending.items.filter(function(p){return p.unpaidExtra>0;}).length;
   }catch(e){Logger.log('briefing extrasUnpaid fail: '+e.message);_briefFail_(sectionFailures,'추가금 미수',e);}
   /* 카드·은행 대사 검토 — 최근 14일 창의 review 만. 대사 신뢰 회복(@696~@701) 후 여기 뜨는 건
      = 진짜 액션(워크인 매출 미기록, 미귀속 입금)이다. 과거 달의 역사적 review 는 월마감 트랙에서
@@ -15070,9 +15086,11 @@ function buildDailyBriefingEmailHtml_(b){
   }
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
   if(b.printPending&&b.printPending.count>0){
-    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b> — 인화앱에서 세션 불러와 자동출력`));
+    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b>${b.printPending.unpaidCount?` <span style="color:#b91c1c;">(미결제 ${b.printPending.unpaidCount}건 포함 — 결제 확인 후 출력)</span>`:''}`));
     (b.printPending.items||[]).forEach(function(p){
-      actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`));
+      /* 미결제 추가금이 있는 건은 붉게 — 인화물이 나가고 나면 회수가 어렵다 */
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`
+        +`${p.unpaidExtra?` <b style="color:#b91c1c;">· 미결제 ${p.unpaidExtra}€</b>`:''}`));
     });
     if(b.printPending.count>(b.printPending.items||[]).length) actions.push(line(`&nbsp;&nbsp;· 외 ${b.printPending.count-(b.printPending.items||[]).length}건`));
   }
