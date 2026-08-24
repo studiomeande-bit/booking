@@ -1636,6 +1636,38 @@ function handlePublicApiRequest_(route,method,e){
             String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
         }
         if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-mark-nonbooking'){
+          /* ✏️ **예약이 아닌 입금**을 review 큐에서 내린다 — 굿샤인 판매대금처럼 예약장부에
+             대응 행이 없는 거래는 `settlement-apply-match` 로는 영영 처리할 수 없고,
+             금액이 우연히 맞는 예약에 승인해 버리면 **없는 매출이 생긴다**(실제 함정:
+             2026-08-13 €185 는 굿샤인 T9Z7-5RKQ-RMG6 판매인데 후보가 전부 예약이었다).
+             예약장부는 전혀 건드리지 않고 결제대조의 매칭 표시와 회계분류만 기록한다.
+             ⚠ 이 액션은 **회계 반영이 아니다** — 굿샤인 판매의 EÜR 계상 여부는 별도 과제. */
+          const rIdx=parseInt(payload.settlementRowIndex,10)||0;
+          if(rIdx<2) return jsonError_('BAD_REQUEST','settlementRowIndex 가 필요합니다.');
+          const category=String(payload.category||'').trim();
+          if(!category) return jsonError_('BAD_REQUEST','category 가 필요합니다(예: "굿샤인 판매", "이자", "환불 반제").');
+          const sh=ensureSheets_();
+          const ref=getSettlementTransactionByRow_(sh.settlementSheet,rIdx);
+          const tx=ref.tx;
+          const expectAmount=payload.expectAmount===undefined?null:Number(payload.expectAmount);
+          if(expectAmount!==null&&Math.abs(Number(tx.gross||0)-expectAmount)>0.011){
+            return jsonError_('AMOUNT_MISMATCH','행 '+rIdx+' 금액이 '+tx.gross+'€ 입니다(기대: '+expectAmount+'€).');
+          }
+          const note=String(payload.note||'').trim();
+          if(payload.dryRun===true||String(payload.confirm||'')!=='MARK'){
+            return jsonOk_({dryRun:true,settlementRowIndex:ref.rowIndex,date:String(tx.date||'').slice(0,10),
+              gross:Number(tx.gross||0),counterparty:String(tx.counterparty||''),category:category,
+              note:'표시하지 않았습니다. confirm:"MARK" 로 실행하세요. 예약장부는 건드리지 않습니다.'});
+          }
+          const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          updateSettlementMatchRow_(sh.settlementSheet,ref.rowIndex,{
+            status:'matched',target:'예약 아님 · '+category,rowIndex:'',accountingClass:category,
+            memo:['예약 아님',category,Number(tx.gross||0)+'€',note,'수동 확인 '+stamp].filter(Boolean).join(' · ')
+          });
+          return jsonOk_({ok:true,settlementRowIndex:ref.rowIndex,gross:Number(tx.gross||0),category:category,
+            note:'결제대조 표시만 바꿨습니다. 회계 반영은 별도입니다.'});
+        }
         if(action==='settlement-mark-split'){
           /* ✏️ 분할이체 정리 — 한 예약의 금액을 **여러 번에 나눠 보낸** 입금들을 묶어
              review 큐에서 내린다(황영목 잔금 298 = 288 + 10, 2026-04-02 실측).
@@ -1648,7 +1680,10 @@ function handlePublicApiRequest_(route,method,e){
              금액과 일치해야 한다. 안 맞으면 아무것도 하지 않는다. */
           const idxList=(Array.isArray(payload.settlementRowIndexes)?payload.settlementRowIndexes:[])
             .map(function(v){return parseInt(v,10);}).filter(function(v){return v>1;});
-          if(idxList.length<2) return jsonError_('BAD_REQUEST','settlementRowIndexes 에 2개 이상의 결제대조 행이 필요합니다(분할이체 전용).');
+          /* 1건도 허용한다: 이미 장부에 반영됐는데 매칭 플래그만 빈 건(예: Annielyn 행242 —
+             잔금결제금액 170 으로 반영 완료라 apply-match 의 후보 계산에서 빠진다)도
+             **같은 금액 검증**으로 안전하게 표시만 정리할 수 있다. 분할이체는 2건 이상. */
+          if(idxList.length<1) return jsonError_('BAD_REQUEST','settlementRowIndexes 에 결제대조 행이 최소 1개 필요합니다.');
           const bri=parseInt(payload.bookingRowIndex,10)||0;
           if(bri<2) return jsonError_('BAD_REQUEST','bookingRowIndex 가 필요합니다.');
           const kind=String(payload.kind||'balance').trim().toLowerCase();
@@ -1677,7 +1712,8 @@ function handlePublicApiRequest_(route,method,e){
               gross:g,counterparty:String(ref.tx.counterparty||''),source:String(ref.tx.source||'')});
           }
           sum=Math.round(sum*100)/100;
-          const label=kind==='balance'?'예약장부 잔금(분할)':(kind==='deposit'?'예약장부 계약금(분할)':'예약장부 전액(분할)');
+          const multi=idxList.length>1;
+          const label=(kind==='balance'?'예약장부 잔금':(kind==='deposit'?'예약장부 계약금':'예약장부 전액'))+(multi?'(분할)':'');
           if(Math.abs(sum-targetAmount)>0.011){
             return jsonError_('AMOUNT_MISMATCH','합계 '+sum+'€ 가 예약 '+kind+' 금액 '+targetAmount+'€ 와 다릅니다. 거래 선택을 확인해 주세요.');
           }
@@ -1691,7 +1727,7 @@ function handlePublicApiRequest_(route,method,e){
           txs.forEach(function(t,i){
             updateSettlementMatchRow_(sh.settlementSheet,t.rowIndex,{
               status:'matched',target:label,rowIndex:bri,accountingClass:accClass,
-              memo:['분할이체 '+(i+1)+'/'+txs.length,label,bookingName,
+              memo:[(multi?'분할이체 '+(i+1)+'/'+txs.length:'수동 대사'),label,bookingName,
                 t.gross+'€ (합계 '+sum+'€)','장부 반영 완료 — 수동 확인 '+stamp].join(' · ')
             });
           });
