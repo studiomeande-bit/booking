@@ -14892,9 +14892,10 @@ function _buildDailyBriefingData_(){
     const up=listUnpaidSelectExtras_({limit:6,sinceDays:60});
     extrasUnpaid.count=up.count; extrasUnpaid.total=up.total; extrasUnpaid.items=up.items;
     extrasUnpaid.olderCount=up.olderCount; extrasUnpaid.olderTotal=up.olderTotal;
-    /* 출력 대기와 교차 — **결제 전에 인화물을 내보내면 회수가 어려워진다.**
-       실제로 미수 3건(112€) 중 2건이 출력 대기에 함께 떠 있었다(2026-08-24).
-       세션ID 로 붙여 출력 목록에서 바로 보이게 한다(이름 매칭은 동명이인에 취약). */
+    /* 출력 대기와 교차 — 추가금은 **출력 후 수령 시 지불**이 정상 운영이다(2026-08-24 확정).
+       그러므로 이건 '미납 경고'가 아니라 **수령 때 얼마를 받아야 하는지 알려주는 리마인더**다.
+       금액을 모른 채 인화물만 건네면 그대로 못 받는다 — 그걸 막는 게 목적.
+       세션ID 로 붙인다(이름 매칭은 동명이인에 취약). */
     const unpaidBySession={},unpaidByName={};
     (up.items||[]).forEach(function(it){
       const sid=String(it.sessionId||'').trim();
@@ -14907,6 +14908,7 @@ function _buildDailyBriefingData_(){
       if(amt>0) p.unpaidExtra=roundCurrency_(amt);
     });
     printPending.unpaidCount=printPending.items.filter(function(p){return p.unpaidExtra>0;}).length;
+    printPending.unpaidTotal=roundCurrency_(printPending.items.reduce(function(sum,p){return sum+(Number(p.unpaidExtra)||0);},0));
   }catch(e){Logger.log('briefing extrasUnpaid fail: '+e.message);_briefFail_(sectionFailures,'추가금 미수',e);}
   /* 카드·은행 대사 검토 — 최근 14일 창의 review 만. 대사 신뢰 회복(@696~@701) 후 여기 뜨는 건
      = 진짜 액션(워크인 매출 미기록, 미귀속 입금)이다. 과거 달의 역사적 review 는 월마감 트랙에서
@@ -15086,11 +15088,13 @@ function buildDailyBriefingEmailHtml_(b){
   }
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
   if(b.printPending&&b.printPending.count>0){
-    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b>${b.printPending.unpaidCount?` <span style="color:#b91c1c;">(미결제 ${b.printPending.unpaidCount}건 포함 — 결제 확인 후 출력)</span>`:''}`));
+    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b>${b.printPending.unpaidCount?` <span style="color:#b45309;">(수령 시 받을 금액 ${b.printPending.unpaidTotal}€ · ${b.printPending.unpaidCount}건)</span>`:''}`));
     (b.printPending.items||[]).forEach(function(p){
-      /* 미결제 추가금이 있는 건은 붉게 — 인화물이 나가고 나면 회수가 어렵다 */
+      /* 추가금은 **출력 후 수령 시 지불**이 정상 운영(2026-08-24 확정)이라 경고가 아니라
+         "얼마 받을지" 리마인더다. 붉은색(사고)이 아니라 주황(안내)으로 둔다 —
+         정상 흐름을 매일 붉게 띄우면 진짜 경고가 묻힌다. */
       actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`
-        +`${p.unpaidExtra?` <b style="color:#b91c1c;">· 미결제 ${p.unpaidExtra}€</b>`:''}`));
+        +`${p.unpaidExtra?` <b style="color:#b45309;">· 수령 시 ${p.unpaidExtra}€ 수납</b>`:''}`));
     });
     if(b.printPending.count>(b.printPending.items||[]).length) actions.push(line(`&nbsp;&nbsp;· 외 ${b.printPending.count-(b.printPending.items||[]).length}건`));
   }
@@ -22352,19 +22356,58 @@ function setSelectPickupTimeAdmin(token,payload){
          rescheduled:!!done.prevPickupAt,mailSent:mailSent};
 }
 
+/* 이 세션에서 **수령 시 받아야 할 추가금**. 추가 주문(보정·인화)은 출력 후 수령 때 받는 것이
+   정상 운영이므로(2026-08-24 확정), 고객이 얼마를 준비해야 하는지 미리 알려야 한다.
+   안 알리면 빈손으로 와서 그대로 미수가 된다 — 실제로 2~3주 미수 3건(112€)이 있었다. */
+function getUnpaidExtraForSession_(sessionId){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return 0;
+  try{
+    const sh=ensureSheets_().printSheet;
+    const colMap=getPrintSheetColMap_(sh);
+    const rows=sh.getDataRange().getValues();
+    let sum=0;
+    for(let r=1;r<rows.length;r++){
+      const n=normalizePrintRow_(rows[r],r+1,colMap);
+      const amt=Number(n.total)||0;
+      if(amt<=0) continue;
+      if(/취소|환불|cancel/i.test(String(n.status||''))) continue;
+      if(!isPrintRowUnpaid_(n)) continue;
+      if(selectPrintMemoTag_(n.memo)!==sid) continue;
+      sum+=amt;
+    }
+    return roundCurrency_(sum);
+  }catch(e){Logger.log('getUnpaidExtraForSession_ 실패: '+e.message);return 0;}
+}
+
+/** 수령 시 수납 안내 한 줄(3개국어). 받을 금액이 없으면 빈 문자열. */
+function buildPickupPayableLine_(amount,lang){
+  const amt=roundCurrency_(Number(amount)||0);
+  if(!(amt>0)) return '';
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const money=formatEuroDe_(amt);
+  const t={
+    ko:`<br><br>💳 추가 주문분 <b>${money}</b>은 <b>수령하실 때</b> 결제해 주시면 됩니다 (카드·현금 모두 가능합니다).`,
+    en:`<br><br>💳 The additional order of <b>${money}</b> can be settled <b>when you pick up</b> (card or cash).`,
+    de:`<br><br>💳 Die Zusatzbestellung über <b>${money}</b> begleichen Sie bitte <b>bei der Abholung</b> (Karte oder bar).`
+  };
+  return t[L];
+}
+
 // 픽업 예약/변경 확인 메일 — 일시·주소·변경 안내
 function _sendSelectPickupConfirmEmail_(email,name,lang,date,time,sessionId,isReschedule){
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const payable=buildPickupPayableLine_(getUnpaidExtraForSession_(sessionId),L);
   const subj={
     ko:`[Studio mean] ✅ 픽업 예약 ${isReschedule?'변경 ':''}확인 — ${date} ${time}`,
     en:`[Studio mean] ✅ Pickup ${isReschedule?'rescheduled':'confirmed'} — ${date} ${time}`,
     de:`[Studio mean] ✅ Abholung ${isReschedule?'geändert':'bestätigt'} — ${date} ${time}`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>픽업 예약이 ${isReschedule?'변경':'확정'}되었습니다. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>예약 시간에 방문해 주시면 인화물을 전달해 드립니다.<br>일정 변경이 필요하시면 <a href="${pickupUrl}" style="color:#2563eb;">이 링크</a>에서 다시 선택하시면 됩니다.`,
-    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your pickup appointment has been ${isReschedule?'rescheduled':'confirmed'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Please visit us at the scheduled time to collect your prints.<br>Need to change it? Simply pick a new slot <a href="${pickupUrl}" style="color:#2563eb;">here</a>.`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihr Abholtermin wurde ${isReschedule?'geändert':'bestätigt'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Bitte besuchen Sie uns zum vereinbarten Termin, um Ihre Abzüge abzuholen.<br>Terminänderung? Wählen Sie <a href="${pickupUrl}" style="color:#2563eb;">hier</a> einfach einen neuen Slot.`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>픽업 예약이 ${isReschedule?'변경':'확정'}되었습니다. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>예약 시간에 방문해 주시면 인화물을 전달해 드립니다.<br>일정 변경이 필요하시면 <a href="${pickupUrl}" style="color:#2563eb;">이 링크</a>에서 다시 선택하시면 됩니다.${payable}`,
+    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your pickup appointment has been ${isReschedule?'rescheduled':'confirmed'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Please visit us at the scheduled time to collect your prints.<br>Need to change it? Simply pick a new slot <a href="${pickupUrl}" style="color:#2563eb;">here</a>.${payable}`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihr Abholtermin wurde ${isReschedule?'geändert':'bestätigt'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Bitte besuchen Sie uns zum vereinbarten Termin, um Ihre Abzüge abzuholen.<br>Terminänderung? Wählen Sie <a href="${pickupUrl}" style="color:#2563eb;">hier</a> einfach einen neuen Slot.${payable}`
   };
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
     <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
@@ -22389,15 +22432,16 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
   const lang=String(row[SELECT_COL['언어']]||'ko');
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const payable=buildPickupPayableLine_(getUnpaidExtraForSession_(sessionId),L);
   const subj={
     ko:`[Studio mean] 🖼 인화 완료 — 픽업 시간을 예약해 주세요, ${name}님`,
     en:`[Studio mean] 🖼 Your prints are ready — book your pickup time`,
     de:`[Studio mean] 🖼 Ihre Abzüge sind fertig — Abholtermin buchen`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i>`,
-    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i>`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i>`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i>${payable}`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i>${payable}`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i>${payable}`
   };
   const btn={ko:'📅 픽업 시간 예약하기',en:'📅 Book Pickup Time',de:'📅 Abholtermin buchen'};
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
