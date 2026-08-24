@@ -14921,7 +14921,18 @@ function _buildDailyBriefingData_(){
     let lastDate='';
     bankTxs.forEach(function(t){const d=String(t.date||'').slice(0,10);if(d>lastDate)lastDate=d;});
     const days=lastDate?Math.floor((new Date(today+'T00:00:00')-new Date(lastDate+'T00:00:00'))/86400000):null;
-    if(!lastDate||days>=21) bankGap={lastDate:lastDate,days:days,count:bankTxs.length};
+    /* 은행 CSV 는 **매달 마감 때 한 번** 받아온다(2026-08-24 사장님 확정 운영).
+       그래서 "며칠째 공백"으로 재면 월 주기상 정상인 기간에도 매달 2주씩 거짓 경고가 뜬다
+       (임계 21일 기준: 마감 직후 0일 → 다음 마감 전 최대 35일). 경보 피로로 진짜 사고를 놓친다.
+       판정을 **월 단위**로 바꾼다: 지난달 거래가 하나라도 있으면 정상. 없으면 이번 달이
+       유예일(10일)을 넘겼을 때만 경고한다 — 그 시점이면 지난달 마감분이 들어와 있어야 한다. */
+    const BANK_GRACE_DAY=10;
+    const nowD=new Date(today+'T00:00:00');
+    const prevMonth=new Date(nowD.getFullYear(),nowD.getMonth()-1,1);
+    const prevKey=Utilities.formatDate(prevMonth,CONFIG.TIMEZONE,'yyyy-MM');
+    const hasPrevMonth=bankTxs.some(function(t){return String(t.date||'').slice(0,7)===prevKey;});
+    const overdue=!hasPrevMonth&&nowD.getDate()>=BANK_GRACE_DAY;
+    if(!lastDate||overdue) bankGap={lastDate:lastDate,days:days,count:bankTxs.length,missingMonth:hasPrevMonth?'':prevKey};
   }catch(e){Logger.log('briefing bankGap fail: '+e.message);_briefFail_(sectionFailures,'은행 데이터',e);}
   /* 아마존 전자 인보이스 미도착 감시 (2026-08-10) — ZUGFeRD 메일 수신을 켰지만(8/8) VAT 검증이
      조용히 멈춰 있으면 인보이스가 영영 안 오고, D8 은 매일 '성공·0건'만 남긴다(그래서 아무도 모른다 —
@@ -15039,7 +15050,7 @@ function buildDailyBriefingEmailHtml_(b){
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.bankGap){
-    actions.push(line(`🏦 <b style="color:#b91c1c;">은행 거래가 ${b.bankGap.lastDate?`${b.bankGap.days}일째 없습니다`:'최근 4개월간 없습니다'}</b>`
+    actions.push(line(`🏦 <b style="color:#b91c1c;">${b.bankGap.missingMonth?`${esc(b.bankGap.missingMonth)} 은행 거래가 아직 없습니다`:(b.bankGap.lastDate?`은행 거래가 ${b.bankGap.days}일째 없습니다`:'최근 4개월간 은행 거래가 없습니다')}</b>`
       +`${b.bankGap.lastDate?` (마지막 ${esc(b.bankGap.lastDate)})`:''} — Deutsche Bank CSV를 가져와 주세요. `
       +`<b>지출·매입세액이 빠진 채로 마감하면 세금을 과납합니다.</b>`));
   }
