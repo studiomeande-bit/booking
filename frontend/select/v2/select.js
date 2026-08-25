@@ -1405,14 +1405,29 @@ function getRegularPhotos() {
 
 // 마케팅 보너스를 제외한 보정 선택 수가 기본 포함 장수를 초과하면 유료.
 // 갤러리 별점 선택과 직접 추가 모두 같은 기준으로 계산한다.
-function getRetouchExtraCount() {
+/* 무료 한도 = 기본 포함 + **남는 마케팅 보너스** (서버 computeSelectExtraRetouch_ 와 동일 규칙).
+ * 보너스 칸을 따로 채우지 않아도 기본 N + 보너스 M = N+M 장까지 무료다 — 종전엔 보너스 칸이
+ * 비어 있는데 16번째 갤러리 선택에 +10€ 가 붙어 고객 혼란을 만들었다(2026-08-25 강예슬).
+ * 채워진 보너스 행(num/note 있음)만 슬롯을 소비하고, 빈 행은 placeholder 로 무시한다. */
+function getRetouchFreeLimit() {
   const included = Number(state.session?.baseRetouchCount || 0);
+  if (state.marketing !== 'Y') return included;
+  const cap = getMarketingBonusCount();
+  let filled = 0;
+  state.photos.forEach((p) => {
+    if (p.isBonus && !p.isService && (String(p.num || '').trim() || String(p.note || '').trim())) filled += 1;
+  });
+  return included + Math.max(0, cap - Math.min(filled, cap));
+}
+
+function getRetouchExtraCount() {
+  const freeLimit = getRetouchFreeLimit();
   let nonBonusIndex = 0;
   let paid = 0;
   state.photos.forEach((p) => {
     if (p.isBonus) return;
     nonBonusIndex += 1;
-    if (nonBonusIndex > included) paid += 1;
+    if (nonBonusIndex > freeLimit) paid += 1;
   });
   return paid;
 }
@@ -1420,12 +1435,12 @@ function getRetouchExtraCount() {
 // 해당 사진 항목이 유료(+€)인지 판정
 function isPhotoPaid(photo, photoIndex) {
   if (photo.isBonus) return false;
-  const included = Number(state.session?.baseRetouchCount || 0);
+  const freeLimit = getRetouchFreeLimit();
   let nonBonusPosition = 0;
   for (let i = 0; i <= photoIndex; i += 1) {
     if (!state.photos[i].isBonus) nonBonusPosition += 1;
   }
-  return nonBonusPosition > included;
+  return nonBonusPosition > freeLimit;
 }
 
 /* ===== 볼륨 할인 (2026-08-09) — 서버 computeSelectVolumeDiscount_ 미러 =====
@@ -1604,8 +1619,8 @@ function applyGalleryPayload(res, options = {}) {
   state.photos.forEach((ph) => {
     if (ph.isBonus) return;
     const key = stripExt(ph.num);
-    if (key && state.gallery.byKey.has(key) && !state.gallery.ratings.has(key)) {
-      state.gallery.ratings.set(key, 5);
+    if (key && state.gallery.byKey.has(key) && getStarOf(key) === 0) {
+      state.gallery.ratings.set(ratingKey(key), 5);
     }
   });
   state.gallery.loaded = true;
@@ -1782,16 +1797,25 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushRatingsSave();
 });
 
+/* 별점 맵 키는 **항상 소문자 정규화**로 통일한다.
+ * 서버 복원(existingRatings)은 소문자 키로 넣는데 조회는 원본 케이스로 하고 있었다 —
+ * 재방문 세션에서 찜 66장이 픽커에 0장으로 보인 원인(2026-08-25 강예슬).
+ * 맵 접근만 이 두 함수로 정규화하고, DOM 갱신 등 부수 호출엔 원본 키를 그대로 넘긴다. */
+function ratingKey(photoKey) {
+  return String(photoKey || '').trim().toLowerCase();
+}
+
 function getStarOf(photoKey) {
-  return state.gallery.ratings.get(photoKey) || 0;
+  return state.gallery.ratings.get(ratingKey(photoKey)) || 0;
 }
 
 function setStarFor(photoKey, star) {
   if (!photoKey) return;
   const s = Math.max(0, Math.min(5, Number(star) || 0));
   const prev = getStarOf(photoKey);
-  if (s === 0) state.gallery.ratings.delete(photoKey);
-  else state.gallery.ratings.set(photoKey, s);
+  const rk = ratingKey(photoKey);
+  if (s === 0) state.gallery.ratings.delete(rk);
+  else state.gallery.ratings.set(rk, s);
   syncPhotosFromRatings(photoKey, prev, s);
   scheduleRatingsSave();
   renderGalleryCell(photoKey);

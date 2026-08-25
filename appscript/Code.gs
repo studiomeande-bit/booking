@@ -21503,18 +21503,27 @@ function computeSelectExtraRetouch_(photos,baseCount,caps){
   var c=caps||{};
   var serviceRemaining=Math.max(0,parseInt(c.serviceCap,10)||0);
   var bonusRemaining=c.marketingAgreed?Math.max(0,parseInt(c.bonusCap,10)||0):0;
-  var nonBonusIndex=0,paid=0;
+  /* 규칙 (2026-08-25 강예슬 신고로 확정):
+     ① 빈 보너스/서비스 행(num·note 모두 공백)은 슬롯을 소비하지 않는다 — 자리만 잡은 placeholder.
+     ② **남는 보너스는 일반 선택 초과분을 자동 흡수한다.** 고객이 보너스 칸을 따로 채우지 않아도
+        기본 N + 보너스 M = N+M 장까지 무료여야 한다. 종전엔 보너스 칸이 비어 있으면 16번째
+        갤러리 선택에 +10€ 가 붙었다(#16 유료 · #17~ 보너스 빈칸 — 고객 입장에선 모순).
+     ③ 서비스컷 잔여는 흡수하지 않는다 — 어드민이 특정 사진에 주는 성격이라 자동 전용이 어색하다. */
+  var paidCandidates=0;
   (photos||[]).forEach(function(p){
     if(!p) return;
+    var hasContent=String(p.num||'').trim()!==''||String(p.note||'').trim()!=='';
     if(p.isService){
+      if(!hasContent) return;
       if(serviceRemaining>0){serviceRemaining-=1;return;}
     }else if(p.isBonus){
+      if(!hasContent) return;
       if(bonusRemaining>0){bonusRemaining-=1;return;}
     }
-    nonBonusIndex+=1;
-    if(nonBonusIndex>baseCount) paid+=1;
+    paidCandidates+=1;
   });
-  return paid;
+  var freeLimit=baseCount+bonusRemaining;
+  return Math.max(0,paidCandidates-freeLimit);
 }
 
 /** 제출·수정 공용 — 보정 무료 슬롯 캡. 동의는 제출값 우선(시트는 아직 갱신 전일 수 있다),
