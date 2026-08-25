@@ -21491,17 +21491,43 @@ function computeSelectVolumeDiscount_(kind,count,amount){
   };
 }
 
-// 추가 보정(유료) 수 계산 - 프론트 getRetouchExtraCount()와 일치
-// - isBonus=true (마케팅 보너스) 는 항상 무료, 카운트 제외
-// - 갤러리 별점 선택과 직접 추가 모두 기본 포함 장수를 초과하면 유료로 카운트
-function computeSelectExtraRetouch_(photos,baseCount){
+/* 추가 보정(유료) 수 계산 — 서버가 청구 정본.
+ * 종전엔 isBonus=true 를 **무조건** 무료로 뺐다 — 동의 검증도 상한도 없어서, 클라이언트가
+ * isBonus 만 붙여 보내면 장수 제한 없이 전부 무료가 됐다(2026-08-25 감사에서 발견).
+ * 인화 크레딧 쪽(computeSelectDecoupledPrints_)은 이미 동의 재검증 + 마케팅보너스수 캡을
+ * 걸어두고 정작 보정 쪽만 뚫려 있었다. 같은 정책으로 맞춘다:
+ *  - isService(서비스컷): 어드민이 준 서비스컷수까지만 무료
+ *  - isBonus(마케팅 보너스): **동의했을 때만**, 마케팅보너스수까지만 무료
+ *  - 캡을 넘긴 플래그 사진은 일반 사진으로 취급(기본 포함분 소진 후 유료) */
+function computeSelectExtraRetouch_(photos,baseCount,caps){
+  var c=caps||{};
+  var serviceRemaining=Math.max(0,parseInt(c.serviceCap,10)||0);
+  var bonusRemaining=c.marketingAgreed?Math.max(0,parseInt(c.bonusCap,10)||0):0;
   var nonBonusIndex=0,paid=0;
   (photos||[]).forEach(function(p){
-    if(p&&p.isBonus) return;
+    if(!p) return;
+    if(p.isService){
+      if(serviceRemaining>0){serviceRemaining-=1;return;}
+    }else if(p.isBonus){
+      if(bonusRemaining>0){bonusRemaining-=1;return;}
+    }
     nonBonusIndex+=1;
     if(nonBonusIndex>baseCount) paid+=1;
   });
   return paid;
+}
+
+/** 제출·수정 공용 — 보정 무료 슬롯 캡. 동의는 제출값 우선(시트는 아직 갱신 전일 수 있다),
+ *  둘 다 없으면 미동의로 본다(priceSelectPrints_ 의 agreedMarketing 판정과 동일 규칙). */
+function buildSelectRetouchCaps_(sub,row){
+  var agreed=/^y/i.test(String((sub&&sub.marketing)||'').trim())
+    || (!(sub&&sub.marketing) && /^y/i.test(String((row&&row[SELECT_COL['마케팅동의']])||'').trim()));
+  return{
+    marketingAgreed:agreed,
+    bonusCap:normalizeSelectMarketingBonusCount_(
+      row&&row[SELECT_COL['마케팅보너스수']],row&&row[SELECT_COL['촬영종류']],row&&row[SELECT_COL['상품']]),
+    serviceCap:Math.max(0,parseInt(row&&row[SELECT_COL['서비스컷수']],10)||0)
+  };
 }
 function computeSelectPrintUpgrade_(photos,row){
   const itemGroup=row&&row[SELECT_COL['촬영종류']];
@@ -23614,7 +23640,7 @@ function submitPhotoSelection(sessionId,sub){
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount,buildSelectRetouchCaps_(sub,row));
     const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
@@ -23886,7 +23912,7 @@ function updatePhotoSelection(sessionId,sub){
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount,buildSelectRetouchCaps_(sub,row));
     const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
