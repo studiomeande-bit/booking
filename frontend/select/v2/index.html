@@ -161,8 +161,10 @@
           <button type="button" id="gallerySelectDownloadAllBtn" class="ghost-btn" data-i18n="downloadAllBtn">전체 다운로드 (Drive ZIP)</button>
           <button type="button" id="galleryStarredListBtn" class="ghost-btn" data-i18n="starredListBtn">⭐ 찜 목록 저장 (파일명)</button>
           <input type="search" id="gallerySearch" placeholder="파일명 검색 (예: 0023)" class="gallery-search" data-i18n-attr="placeholder:searchPlaceholder">
-          <span id="galleryStatus" class="gallery-status"></span>
-          <span id="galleryCount" class="gallery-count"></span>
+          <span class="gallery-status-group">
+            <span id="galleryStatus" class="gallery-status"></span>
+            <span id="galleryCount" class="gallery-count"></span>
+          </span>
         </div>
         <!-- 분할 압축본 목록 — 세션에 압축본 폴더가 연결되면 select.js 가 채운다. 없으면 빈 채로 숨김 -->
         <div id="zipDownloadPanel" class="soft-note" style="display:none;margin:10px 0 0;"></div>

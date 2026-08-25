@@ -893,8 +893,8 @@ h1 {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-/* 상태 텍스트 2개(불러옴/평점 선택)는 오른쪽 한 덩어리로 — 줄바꿈 시 홀로 떨어지지 않게 */
-.gallery-stage-toolbar .gallery-status { margin-left: auto; }
+/* 상태 텍스트 2개(불러옴/평점 선택)는 오른쪽 한 덩어리로 — 줄바꿈 시에도 함께 움직인다 */
+.gallery-status-group { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .gallery-search {
   flex: 1 1 220px;
   max-width: 360px;
