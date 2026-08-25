@@ -2520,9 +2520,27 @@ function renderPrintPicker() {
     btn.addEventListener('click', () => {
       const key = btn.dataset.pickKey || '';
       if (printPickerMode === 'retouch') {
-        // 토글 다중 선택 — 픽커를 닫지 않고 배지·제목 카운트만 갱신 (반영은 닫을 때 일괄)
+        /* 토글 시 **전체 재렌더 금지** — renderPrintPicker() 를 부르면 grid.innerHTML 이
+           통째로 재생성되어 로딩 중이던 Drive 썸네일 120장이 클릭마다 끊기고 재요청된다.
+           그 결과 여러 사진의 가로줄이 섞인 찢김이 화면에 남았다(2026-08-25 강예슬 실화면).
+           해당 셀의 표시와 제목 카운트만 갱신한다. */
         togglePhotoInRetouch(key);
-        renderPrintPicker();
+        const cell = btn.closest('.gallery-cell');
+        const marked = isPhotoInRetouch(key);
+        if (cell) {
+          cell.classList.toggle('is-current', marked);
+          let badge = cell.querySelector('.picker-picked-badge');
+          if (marked && !badge) {
+            badge = document.createElement('div');
+            badge.className = 'picker-picked-badge';
+            badge.textContent = `✓ ${c.retouchPickedBadge}`;
+            cell.appendChild(badge);
+          } else if (!marked && badge) {
+            badge.remove();
+          }
+        }
+        const titleNow = document.getElementById('printPickerTitleText');
+        if (titleNow) titleNow.textContent = c.retouchPickerTitle(state.photos.filter((ph) => !ph.isBonus).length);
         return;
       }
       if (printPickerTarget >= 0 && state.prints[printPickerTarget]) {
