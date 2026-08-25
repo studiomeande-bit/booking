@@ -2401,7 +2401,10 @@ h1 {
 }
 /* 픽커에서는 별점 조작 불가(보정 선택과 섞이면 안 된다) — 뱃지만 표시 */
 .print-picker-grid .cell-stars { display: none; }
-.print-picker-grid .gallery-zoom { display: none; }
+/* 픽커에서도 크게 보기 허용(2026-08-25) — 담기 버튼(inset:0)보다 위에 얹는다 */
+.print-picker-grid .gallery-zoom.picker-zoom {
+  display: flex; position: absolute; right: 6px; bottom: 6px; z-index: 3;
+}
 .print-picker-cell-pick {
   position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer;
 }

@@ -2539,17 +2539,23 @@ function renderPrintPicker() {
   let list = state.gallery.photos;
   if (term) list = list.filter((p) => String(p.name || '').toLowerCase().includes(term));
   if (printPickerFilter === 'starred') list = list.filter((p) => getStarOf(stripExt(p.name)) > 0);
+  else if (/^[1-5]$/.test(printPickerFilter)) list = list.filter((p) => getStarOf(stripExt(p.name)) === Number(printPickerFilter));
   /* 별점(1차 셀렉) 사진 우선 정렬 — 점수 높은 순, 같은 점수면 원래 순서. 찜해 둔 사진을
      맨 위에서 바로 보고 고르라는 취지(사장님 확정 2026-08-09). 별점 없는 사진도 뒤에 그대로. */
   list = list.map((p, i) => ({ p, i, star: getStarOf(stripExt(p.name)) }))
     .sort((a, b) => (b.star - a.star) || (a.i - b.i))
     .map((x) => x.p);
-  const starredCount = state.gallery.photos.reduce((n, p) => n + (getStarOf(stripExt(p.name)) > 0 ? 1 : 0), 0);
+  const starBuckets = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  state.gallery.photos.forEach((p) => { const st = getStarOf(stripExt(p.name)); if (st >= 1 && st <= 5) starBuckets[st] += 1; });
+  const starredCount = starBuckets[1] + starBuckets[2] + starBuckets[3] + starBuckets[4] + starBuckets[5];
   const chips = document.getElementById('printPickerChips');
   if (chips) {
     chips.innerHTML = [
       `<button type="button" class="star-filter${printPickerFilter === 'all' ? ' active' : ''}" data-pp-filter="all">${escapeHtml(c.printPickerFilterAll)}</button>`,
-      `<button type="button" class="star-filter${printPickerFilter === 'starred' ? ' active' : ''}" data-pp-filter="starred">${escapeHtml(c.printPickerFilterStarred(starredCount))}</button>`
+      `<button type="button" class="star-filter${printPickerFilter === 'starred' ? ' active' : ''}" data-pp-filter="starred">${escapeHtml(c.printPickerFilterStarred(starredCount))}</button>`,
+      /* 점수별 필터(2026-08-25 요청) — 그 점수가 실제로 있는 것만 노출, 라벨은 갤러리 starBadge 재사용 */
+      ...[5, 4, 3, 2, 1].filter((n2) => starBuckets[n2] > 0).map((n2) =>
+        `<button type="button" class="star-filter${printPickerFilter === String(n2) ? ' active' : ''}" data-pp-filter="${n2}">${escapeHtml(c.starBadge(n2))} (${starBuckets[n2]})</button>`)
     ].join('');
     chips.querySelectorAll('[data-pp-filter]').forEach((b) => {
       b.addEventListener('click', () => { printPickerFilter = b.dataset.ppFilter; renderPrintPicker(); });
@@ -2575,10 +2581,16 @@ function renderPrintPicker() {
         ${retouchMode && marked ? `<div class="picker-picked-badge">✓ ${escapeHtml(c.retouchPickedBadge)}</div>` : ''}
         <div class="gallery-name">${escapeHtml(p.name)}</div>
         <button type="button" class="print-picker-cell-pick" data-pick-key="${escapeHtml(key)}" aria-label="${escapeHtml(p.name)}"></button>
+        <button type="button" class="gallery-zoom picker-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="${escapeHtml(c.galleryZoomAria)}" title="${escapeHtml(c.galleryZoomTitle)}">${escapeHtml(c.galleryZoom)}</button>
       </div>`;
   }).join('') + (list.length > visible.length
     ? `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.printPickerMore(list.length - visible.length))}</div>`
     : (visible.length ? '' : `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.galleryNoPhotos)}</div>`));
+  /* 확대(크게 보기) — 본문 갤러리와 같은 라이트박스를 연다. 라이트박스는 픽커보다
+     DOM 뒤라 위에 뜨고, 닫으면 픽커가 그대로 남는다(2026-08-25 요청). */
+  grid.querySelectorAll('.picker-zoom').forEach((btn) => {
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLightboxByKey(btn.dataset.zoomKey); });
+  });
   grid.querySelectorAll('[data-pick-key]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.pickKey || '';
