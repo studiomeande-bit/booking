@@ -581,6 +581,8 @@ function wireEvents() {
   }
   if (els.gallerySelectDownloadAllBtn) {
     els.gallerySelectDownloadAllBtn.addEventListener('click', downloadAllPhotos);
+  const starredListBtn = document.getElementById('galleryStarredListBtn');
+  if (starredListBtn) starredListBtn.addEventListener('click', downloadStarredList);
   }
   els.starFilters.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2343,6 +2345,32 @@ function stripExt(name) {
 /* ========================================================================
  * 다운로드
  * ====================================================================== */
+/* 찜(별점) 목록을 파일명 텍스트로 저장 — 별점 높은 순.
+   Drive 는 선택 파일만 묶은 ZIP 을 못 만들므로(2GB 이슈·API 제한) 사진 자체가 아니라
+   **파일명 목록**을 준다. 고객은 이 목록으로 Drive 폴더에서 검색해 받거나 스튜디오에 전달한다. */
+function downloadStarredList() {
+  const c = copy();
+  const rows = state.gallery.photos
+    .map((p) => ({ name: p.name, star: getStarOf(stripExt(p.name)) }))
+    .filter((x) => x.star > 0)
+    .sort((a, b) => b.star - a.star || String(a.name).localeCompare(String(b.name)));
+  // 갤러리가 아직 다 안 불렸으면 별점 맵에만 있는 키도 포함(파일명 확장자 없이라도 목록에 남긴다)
+  const seen = new Set(rows.map((x) => ratingKey(stripExt(x.name))));
+  state.gallery.ratings.forEach((star, key) => {
+    if (!seen.has(key)) rows.push({ name: key, star });
+  });
+  if (!rows.length) { alert(c.starredListEmpty); return; }
+  const lines = [c.starredListHeader(rows.length), ''].concat(rows.map((x) => `${'★'.repeat(x.star)}	${x.name}`));
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `starred_${state.sessionId || 'select'}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
 function downloadAllPhotos() {
   if (state.previewMode) {
     alert(copy().downloadPreviewAlert);
@@ -2437,6 +2465,17 @@ function openPrintPicker(index) {
 
 /* 보정 단계용 — 찜(별점) 사진에서 보정할 사진을 담는다. 토글식 다중 선택이라 픽커가 닫히지 않는다.
    기본 필터는 '별점만'(찜에서 고르는 게 모델), 찜이 없으면 전체. */
+/* 사진번호 입력란용 — 찜 썸네일에서 골라 그 행의 번호를 채운다(단일 선택 후 닫힘).
+   타이핑 대신 눈으로 고르게 해 달라는 요청(2026-08-25 사장님). */
+function openAssignPicker(photoIndex) {
+  printPickerMode = 'assign';
+  printPickerTarget = Number(photoIndex);
+  const starred = state.gallery.photos.some((p) => getStarOf(stripExt(p.name)) > 0)
+    || state.gallery.ratings.size > 0;
+  printPickerFilter = starred ? 'starred' : 'all';
+  openPickerShared();
+}
+
 function openRetouchPicker() {
   printPickerMode = 'retouch';
   printPickerTarget = -1;
@@ -2471,6 +2510,29 @@ function renderPrintPicker() {
       if (ov && ov.classList.contains('open')) renderPrintPicker();
     }, 700);
     return;
+  }
+  /* 첫 배치(loaded) 이후에도 전체 로드가 끝날 때까지 배치가 계속 붙는다. 종전엔 여기서 폴링을
+     멈춰서 픽커를 일찍 열면 별점 카운트가 로드된 범위(예: 67장 중 15장)에서 굳었다(2026-08-25).
+     사진 수가 **실제로 늘었을 때만** 재렌더한다 — 매 폴링 재렌더는 썸네일 찢김을 다시 부른다. */
+  if (!state.gallery.fullLoaded) {
+    const seenCount = state.gallery.photos.length;
+    setTimeout(() => {
+      const ov = document.getElementById('printPicker');
+      if (!ov || !ov.classList.contains('open')) return;
+      if (state.gallery.photos.length !== seenCount) renderPrintPicker();
+      else if (!state.gallery.fullLoaded) renderPrintPicker.pollAgain?.();
+    }, 900);
+    renderPrintPicker.pollAgain = () => {
+      const ov = document.getElementById('printPicker');
+      if (!ov || !ov.classList.contains('open') || state.gallery.fullLoaded) return;
+      const c2 = state.gallery.photos.length;
+      setTimeout(() => {
+        const ov2 = document.getElementById('printPicker');
+        if (!ov2 || !ov2.classList.contains('open')) return;
+        if (state.gallery.photos.length !== c2) renderPrintPicker();
+        else renderPrintPicker.pollAgain();
+      }, 900);
+    };
   }
   const term = String(document.getElementById('printPickerSearch')?.value || '').toLowerCase().trim();
   let list = state.gallery.photos;
@@ -2541,6 +2603,15 @@ function renderPrintPicker() {
         }
         const titleNow = document.getElementById('printPickerTitleText');
         if (titleNow) titleNow.textContent = c.retouchPickerTitle(state.photos.filter((ph) => !ph.isBonus).length);
+        return;
+      }
+      if (printPickerMode === 'assign') {
+        const ph = state.photos[printPickerTarget];
+        if (ph) ph.num = key;
+        closePrintPicker();
+        renderPhotos();
+        updateReview();
+        updateSubmitState();
         return;
       }
       if (printPickerTarget >= 0 && state.prints[printPickerTarget]) {
@@ -2725,6 +2796,11 @@ function renderPhotos() {
   }).join('');
 
   els.photoList.querySelectorAll('[data-photo-num]').forEach((input) => {
+    /* 빈 입력란을 클릭하면 찜 픽커가 떠서 썸네일로 고른다. 값이 이미 있으면 그냥 편집
+       (수기 입력을 막지 않는다 — 픽커는 빈 칸의 진입로일 뿐). */
+    input.addEventListener('click', () => {
+      if (!String(input.value || '').trim()) openAssignPicker(Number(input.dataset.photoNum));
+    });
     input.addEventListener('input', () => {
       state.photos[Number(input.dataset.photoNum)].num = input.value;
       // 썸네일만 갱신하기 위해 해당 row만 교체
