@@ -2372,6 +2372,7 @@ function downloadStarredList() {
 }
 
 function downloadAllPhotos() {
+  { const d=document.querySelector('#zipDownloadPanel details'); if (d) d.open = true; }
   if (state.previewMode) {
     alert(copy().downloadPreviewAlert);
     return;
@@ -2400,10 +2401,14 @@ function buildZipListHtml(zips) {
       <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📦 ${escapeHtml(z.name)}</span>
       <span style="flex:none;color:#8a8375;">${escapeHtml(z.size)} ⬇</span>
     </a>`).join('');
+  /* 접이식(2026-08-25 레이아웃 정리) — 펼친 목록이 갤러리 위 공간을 크게 차지했다.
+     기본은 접힘, 제목 클릭으로 펼친다. '전체 다운로드' 버튼도 이 패널로 스크롤한다. */
   return `
-    <div style="font-weight:700;margin-bottom:6px;">${escapeHtml(c.zipListTitle(zips.length))}</div>
-    <div style="display:grid;gap:6px;">${rows}</div>
-    <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>`;
+    <details class="zip-panel-details">
+      <summary style="font-weight:700;cursor:pointer;list-style:revert;">${escapeHtml(c.zipListTitle(zips.length))}</summary>
+      <div style="display:grid;gap:6px;margin-top:8px;">${rows}</div>
+      <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>
+    </details>`;
 }
 
 function renderZipDownloadPanel() {

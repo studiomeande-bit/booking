@@ -889,9 +889,15 @@ h1 {
   background: #f1efeb;
   border: 0;
   box-shadow: none;
+  /* 버튼은 내용 폭 — 찜 버튼이 남는 공간을 먹으며 거대해지던 것 정리 (2026-08-25) */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
+/* 상태 텍스트 2개(불러옴/평점 선택)는 오른쪽 한 덩어리로 — 줄바꿈 시 홀로 떨어지지 않게 */
+.gallery-stage-toolbar .gallery-status { margin-left: auto; }
 .gallery-search {
-  flex: 1 1 260px;
+  flex: 1 1 220px;
+  max-width: 360px;
   min-width: 180px;
   padding: 12px 14px;
   font-size: 16px;
