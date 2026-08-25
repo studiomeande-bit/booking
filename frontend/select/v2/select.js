@@ -2511,28 +2511,29 @@ function renderPrintPicker() {
     }, 700);
     return;
   }
-  /* 첫 배치(loaded) 이후에도 전체 로드가 끝날 때까지 배치가 계속 붙는다. 종전엔 여기서 폴링을
-     멈춰서 픽커를 일찍 열면 별점 카운트가 로드된 범위(예: 67장 중 15장)에서 굳었다(2026-08-25).
-     사진 수가 **실제로 늘었을 때만** 재렌더한다 — 매 폴링 재렌더는 썸네일 찢김을 다시 부른다. */
-  if (!state.gallery.fullLoaded) {
-    const seenCount = state.gallery.photos.length;
-    setTimeout(() => {
+  /* 첫 배치(loaded) 이후에도 전체 로드가 끝날 때까지 배치가 계속 붙는다.
+     ⚠ 진행 중에 그리드를 재렌더하면 안 된다 — grid.innerHTML 재생성마다 로딩 중이던
+     Drive 썸네일이 abort 되어 부분 디코드 상태(여러 사진 가로줄 찢김)로 화면에 남는다
+     (2026-08-25 강예슬, 1차 수정 후에도 배치 재렌더 경로로 재발).
+     진행 중엔 **그리드 밖 텍스트만**(필터 칩 카운트·하단 안내) 갱신하고,
+     전체 로드가 끝난 시점에 **한 번만** 재렌더한다 — 그때는 이미지가 캐시에 있어 안 끊긴다. */
+  if (!state.gallery.fullLoaded && !renderPrintPicker._waitingFull) {
+    renderPrintPicker._waitingFull = true;
+    const tick = () => {
       const ov = document.getElementById('printPicker');
-      if (!ov || !ov.classList.contains('open')) return;
-      if (state.gallery.photos.length !== seenCount) renderPrintPicker();
-      else if (!state.gallery.fullLoaded) renderPrintPicker.pollAgain?.();
-    }, 900);
-    renderPrintPicker.pollAgain = () => {
-      const ov = document.getElementById('printPicker');
-      if (!ov || !ov.classList.contains('open') || state.gallery.fullLoaded) return;
-      const c2 = state.gallery.photos.length;
-      setTimeout(() => {
-        const ov2 = document.getElementById('printPicker');
-        if (!ov2 || !ov2.classList.contains('open')) return;
-        if (state.gallery.photos.length !== c2) renderPrintPicker();
-        else renderPrintPicker.pollAgain();
-      }, 900);
+      if (!ov || !ov.classList.contains('open')) { renderPrintPicker._waitingFull = false; return; }
+      if (state.gallery.fullLoaded) {
+        renderPrintPicker._waitingFull = false;
+        renderPrintPicker();   // 최종 1회 — 전체 사진·별점 반영
+        return;
+      }
+      // 그리드는 두고 카운트 칩만 최신화
+      const starredNow = state.gallery.photos.reduce((n2, p) => n2 + (getStarOf(stripExt(p.name)) > 0 ? 1 : 0), 0);
+      const starBtn = document.querySelector('#printPickerChips [data-pp-filter="starred"]');
+      if (starBtn) starBtn.textContent = copy().printPickerFilterStarred(starredNow);
+      setTimeout(tick, 900);
     };
+    setTimeout(tick, 900);
   }
   const term = String(document.getElementById('printPickerSearch')?.value || '').toLowerCase().trim();
   let list = state.gallery.photos;
