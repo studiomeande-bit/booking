@@ -8,6 +8,12 @@
   SITE_MODE = "production"
 
 [[redirects]]
+  from = "/prep"
+  to = "/prep/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/promo"
   to = "/promo/index.html"
   status = 200

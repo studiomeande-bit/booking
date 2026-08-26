@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Studio mean · 촬영 준비 설문</title>
+  <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="./prep.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://studio-mean.com/" target="_blank" rel="noopener">Studio_mean</a>
+    <div class="lang-panel" aria-label="언어 선택">
+      <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+      <button type="button" class="lang-btn" data-lang="en">EN</button>
+      <button type="button" class="lang-btn" data-lang="de">DE</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1 id="pageTitle">촬영 준비 설문</h1>
+    <p class="lede" id="pageLede">촬영 전에 원하시는 방향을 알려주세요. 선택만 하시면 되고 5분이면 끝납니다.</p>
+
+    <div id="banner" class="banner hidden"></div>
+
+    <div id="loadingCard" class="card muted">
+      <p id="loadingText">예약 정보를 불러오는 중입니다.</p>
+    </div>
+
+    <div id="errorCard" class="card error hidden">
+      <h2 id="errorTitle">설문을 열 수 없습니다</h2>
+      <p id="errorText"></p>
+      <p class="contact"><a href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a></p>
+    </div>
+
+    <div id="doneCard" class="card done hidden">
+      <h2 id="doneTitle"></h2>
+      <p id="doneText"></p>
+    </div>
+
+    <div id="app" class="hidden">
+      <section class="ctx card">
+        <div class="ctx-name" id="ctxName"></div>
+        <div class="ctx-grid" id="ctxGrid"></div>
+      </section>
+
+      <div id="questions"></div>
+
+      <section class="q">
+        <h2><span class="q-num">＋</span><label id="refsLabel" for="ref1">참고 이미지 링크 (선택)</label></h2>
+        <p class="hint" id="refsHint"></p>
+        <input id="ref1" type="url" inputmode="url" placeholder="https://">
+        <input id="ref2" type="url" inputmode="url" placeholder="https://">
+        <input id="ref3" type="url" inputmode="url" placeholder="https://">
+      </section>
+
+      <section class="q">
+        <h2><span class="q-num">＋</span><label id="noteLabel" for="noteInput">그 밖에 알려주실 것 (선택)</label></h2>
+        <textarea id="noteInput" rows="4"></textarea>
+      </section>
+
+      <div class="submit-row">
+        <button type="button" id="submitBtn" class="primary-btn">설문 보내기</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <span>Studio mean · Holzweg-Passage 3, 61440 Oberursel</span>
+    <a href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a>
+  </footer>
+
+  <script src="/site-analytics.js"></script>
+  <script src="./prep.js"></script>
+</body>
+</html>
