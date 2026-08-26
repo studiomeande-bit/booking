@@ -1574,6 +1574,11 @@ function handlePublicApiRequest_(route,method,e){
           // 출장 km 기록부 (조회 전용) — 주차·이동 지출에서 왕복 km·공제액 산출
           return jsonOk_(buildTravelKmLogForAgent_(payload.startDate,payload.endDate));
         }
+        if(action==='travel-fee-quote'){
+          /* 출장비 존 판정 (조회 전용) — 주소/예약행 → 실측 편도km → 존 → 금액.
+             자동 과금 아님: 반영은 사장님이 booking-set-amount 등으로 수동 처리한다. */
+          return jsonOk_(buildTravelFeeQuoteForAgent_(payload||{}));
+        }
         if(action==='expense-list'){
           // 지출장부 조회 — rowIndex 포함(삭제·정정 대상 특정용)
           const eSh=ensureSheets_().expenseSheet;
@@ -5793,6 +5798,120 @@ function syncTravelLedgerFromBookings_(options){
 function syncTravelLedgerFromBookingsAdmin(token){
   assertAdmin_(token);
   return syncTravelLedgerFromBookings_({maxRows:1000});
+}
+
+/* ══ 출장비 존 판정 (2026-08-26) ═══════════════════════════════════════════════
+   왜: 존 표가 docs/travel-fee-policy.md 문서에만 있어 문의에 답할 때마다 사람이 찾아봐야 했다.
+       2026-08-26 하이델베르크 프리웨딩 문의에 €30(존2)으로 답했는데 정책은 €70(존3) — €40 손실.
+   범위: **조회 전용**. 예약 폼 자동 과금은 하지 않는다(2026-07-16 '수동 반영' 결정 유지).
+   금액의 단일 출처는 아래 상수다 — docs/travel-fee-policy.md 는 근거·배경 문서이고,
+   값을 바꿀 때는 두 곳을 같이 고친다. 거리는 getTravelDistanceForLocation_
+   (구글맵 실측 주행거리 + 24h 스크립트 캐시) 를 그대로 재사용한다.
+   경계 ±10km 와 뭉뚱그린 주소는 단정하지 않는다 — 틀린 금액보다 '모름'이 낫다(€40 손실의 교훈). */
+const TRAVEL_FEE_ZONES_=[
+  {zone:1,fromKm:0,   toKm:30,       fee:0,    label:'존1 ~30km 무료'},
+  {zone:2,fromKm:30,  toKm:60,       fee:30,   label:'존2 30–60km €30'},
+  {zone:3,fromKm:60,  toKm:100,      fee:70,   label:'존3 60–100km €70'},
+  {zone:4,fromKm:100, toKm:Infinity, fee:null, label:'존4 100km 초과 — 상담 견적'}
+];
+const TRAVEL_FEE_BORDERLINE_KM_=10;
+/* 주소가 특정되지 않은 표현. Maps 는 이런 문자열에도 아무 좌표나 물어다 주므로 그대로 믿으면 안 된다.
+   이때는 TRAVEL_KM_TABLE_(정책 문서의 도시별 거리표)를 폴백으로 쓰고 confidence 를 낮춘다. */
+const TRAVEL_LOCATION_VAGUE_RE_=/협의|미정|추후|결정|상의|논의|시내|근교|일대|주변|근처|또는|혹은|중\s*택|택\s*\d|미팅|정하|등[\s)\]]*$|tbd|to\s*be\s*(?:decided|confirmed)/i;
+
+function travelFeeZoneForKm_(oneWayKm){
+  const km=Number(oneWayKm);
+  if(!isFinite(km)||km<0) return null;
+  for(let i=0;i<TRAVEL_FEE_ZONES_.length;i++) if(km<=TRAVEL_FEE_ZONES_[i].toKm) return TRAVEL_FEE_ZONES_[i];
+  return TRAVEL_FEE_ZONES_[TRAVEL_FEE_ZONES_.length-1];
+}
+
+/* 존 경계 ±10km 는 단정하지 않는다 — 하이델베르크(≈100km)가 정확히 이 케이스다. */
+function travelFeeBorderlineNote_(oneWayKm){
+  const km=Number(oneWayKm);
+  for(let i=0;i<TRAVEL_FEE_ZONES_.length-1;i++){
+    if(Math.abs(km-TRAVEL_FEE_ZONES_[i].toKm)<=TRAVEL_FEE_BORDERLINE_KM_){
+      return '존'+TRAVEL_FEE_ZONES_[i].zone+'/존'+TRAVEL_FEE_ZONES_[i+1].zone+' 경계 — 실제 주소로 확인 필요';
+    }
+  }
+  return '';
+}
+
+/* travel-fee-quote — payload {"location":"Heidelberg"} 또는 {"bookingRowIndex":123}. 아무것도 쓰지 않는다. */
+function buildTravelFeeQuoteForAgent_(payload){
+  const p=payload||{};
+  const rowIndex=parseInt(p.bookingRowIndex,10)||0;
+  let location=String(p.location||'').trim();
+  let booking=null;
+  if(!location&&rowIndex){
+    const sh=getDbSheet();
+    if(rowIndex<2||rowIndex>sh.getLastRow()) return {ok:false,error:'NOT_FOUND',message:'예약 행 '+rowIndex+' 가 없습니다.'};
+    const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    booking={rowIndex:rowIndex,name:String(row[BOOKING_COL['고객명']]||'').trim(),
+      dateTime:parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      itemGroup:String(row[BOOKING_COL['촬영종류']]||'').trim(),
+      total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0};
+    location=parseBookingLocationFromRow_(row);
+  }
+  const out={ok:true,location:location,booking:booking,basis:'B2C',currency:'EUR',
+    oneWayKm:null,roundTripKm:null,oneWayMin:null,
+    zone:null,zoneLabel:'',fee:null,borderline:false,confidence:'none',note:'',
+    source:'',status:'',calculatedAt:'',mapUrl:location?buildTravelMapUrl_(location):'',
+    policy:'docs/travel-fee-policy.md (2026-07-16 확정) · 자동 과금 없음 — 반영은 수동'};
+  if(!location){
+    out.status='장소없음';
+    out.note='촬영장소가 비어 있습니다 — 주소를 확인한 뒤 다시 조회하세요. 금액은 추정하지 않습니다.';
+    return out;
+  }
+  const vague=TRAVEL_LOCATION_VAGUE_RE_.test(location);
+  const cityHit=travelKmLookup_(location);
+  const dist=getTravelDistanceForLocation_(location);
+  out.status=dist.status||'';
+  out.mapUrl=dist.mapUrl||out.mapUrl;
+  /* 캐시 적중이면 **최초 계산 시각**이 그대로 실려 온다(getTravelDistanceForLocation_ 는 캐시된
+     calculatedAt 을 보존한다) — 같은 주소를 다시 물었을 때 이 값이 안 바뀌면 Maps 재호출이 없었다는 뜻.
+     거리가 언제 잰 값인지도 같이 알려준다(24h TTL). */
+  out.calculatedAt=String(dist.calculatedAt||'');
+  if(dist.status==='스튜디오'){
+    out.oneWayKm=0;out.roundTripKm=0;out.oneWayMin=0;
+    out.zone=1;out.zoneLabel=TRAVEL_FEE_ZONES_[0].label;out.fee=0;
+    out.confidence='high';out.source='studio';out.note='스튜디오 촬영 — 출장비 없음';
+    return out;
+  }
+  if(dist.status!=='계산완료'){
+    /* 계산 실패에 금액을 얹지 않는다. 도시표 값은 '참고'로만 붙이고 fee 는 null 로 둔다 —
+       €40 손실은 확신 없는 금액을 말해서 났다. */
+    out.note='거리 계산 실패로 존을 판정하지 않았습니다 ('+String(dist.status||'원인미상')+').'
+      +(cityHit?' 참고: 도시표상 '+cityHit.city+' 편도 '+cityHit.km+'km — 실제 주소로 재확인하세요.':'')
+      +' 금액은 추정하지 않습니다.';
+    return out;
+  }
+  let km=Number(dist.oneWayKm);
+  const notes=[];
+  if(vague){
+    out.confidence='low';
+    if(cityHit){
+      km=cityHit.km;out.source='city-table';
+      notes.push('주소가 특정되지 않았습니다 — 도시표('+cityHit.city+' 편도 '+cityHit.km+'km)로 판정했습니다'
+        +'(구글맵 실측은 '+dist.oneWayKm+'km). 정확한 주소로 재확인하세요.');
+    }else{
+      out.source='maps';
+      notes.push('주소가 특정되지 않았습니다 — 구글맵 결과를 그대로 쓴 값이라 신뢰도가 낮습니다. 정확한 주소로 재확인하세요.');
+    }
+  }else{
+    out.confidence='high';out.source='maps';
+  }
+  out.oneWayKm=roundCurrency_(km);
+  out.roundTripKm=roundCurrency_(km*2);
+  out.oneWayMin=dist.oneWayMin!=null?dist.oneWayMin:null;
+  const z=travelFeeZoneForKm_(km);
+  out.zone=z.zone;out.zoneLabel=z.label;out.fee=z.fee;
+  if(z.fee===null) notes.unshift('상담 견적 (B2B 단가표 준용)');
+  const edge=travelFeeBorderlineNote_(km);
+  if(edge){out.borderline=true;notes.unshift(edge);}
+  out.note=notes.join(' · ');
+  return out;
 }
 
 function buildCalendarDescriptionFromBookingRow_(row){
@@ -14707,6 +14826,74 @@ function _scanLocationBlockerConflicts_(rows,now){
   return {count:items.length,items:items,stale:horizon>FFM_BLOCKER_COVERED_UNTIL_,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
 }
 
+/* 출장비 누락 경고 (2026-08-26) — 받아야 할 출장비가 안 붙은 미래 예약을 브리핑에 띄운다.
+   **경고만 한다.** 금액은 사장님이 booking-set-amount 등으로 수동 반영한다(2026-07-16 결정 유지).
+
+   오탐이 하나라도 있으면 그날로 무시당하는 섹션이므로, 확실한 것만 남기고 전부 침묵한다:
+   - 거리: 출장장부의 '계산완료' 행만 쓴다 → 브리핑에서 Maps 를 한 번도 부르지 않는다(쿼터 0).
+           장부에 없거나 계산 실패면 그냥 넘어간다.
+   - 주소: 뭉뚱그려진 표현이면 건너뛴다(TRAVEL_LOCATION_VAGUE_RE_).
+   - 존:   하단 경계 +10km 안쪽은 건너뛴다 — 존1(무료)일 수도 있는 건을 부르지 않기 위해서다.
+           상단 경계는 그대로 경고한다(더 비싼 존일 수는 있어도 이 금액 이하는 아니다).
+   - 금액: 상품 정가(+토요일 할증) '이하'일 때만. 옵션·추가인원이 붙어 총액이 올라간 건은
+           반영됐는지 알 수 없으므로 침묵한다(놓치는 쪽으로 틀린다).
+   - 제외: 굿샤인(할인으로 총액이 내려감) · 마이리얼트립(계약 상품, 프랑크푸르트 고정) ·
+           정가 0 인 상담견적 상품 · 이미 '출장비' 표기가 있는 건. */
+const TRAVEL_FEE_MENTION_RE_=/출장비|출장\s*요금|anfahrt|fahrtkost|travel\s*fee/i;
+
+function _scanTravelFeeGaps_(rows,now){
+  const today=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const ledger={};
+  let ledgerRows=0;
+  const sheets=ensureSheets_();
+  const tSh=sheets.travelSheet||ensureTravelSheet_(sheets.ss);
+  const tLast=tSh.getLastRow();
+  if(tLast>1){
+    tSh.getRange(2,1,tLast-1,TRAVEL_HEADERS.length).getValues().forEach(function(r){
+      ledgerRows++;
+      if(String(r[TRAVEL_COL['거리계산상태']]||'').trim()!=='계산완료') return;
+      const km=Number(r[TRAVEL_COL['편도거리(km)']]||0);
+      if(!(km>0)) return;
+      ledger[String(r[TRAVEL_COL['예약장부행']]||'').trim()]=
+        {oneWayKm:km,location:String(r[TRAVEL_COL['촬영장소']]||'').trim()};
+    });
+  }
+  const products=getCachedProducts_();
+  const items=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const st=String(row[BOOKING_COL['상태']]||'').trim();
+    if(st!=='확정됨'&&st!=='대기중') continue;
+    const d10=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
+    if(!d10||d10<today) continue;                                   // 미래 예약만
+    if(String(row[BOOKING_COL['촬영종류']]||'').trim()==='마이리얼트립') continue;
+    if(String(row[BOOKING_COL['굿샤인코드']]||'').trim()) continue;
+    if(!isTravelBookingTypeRow_(row)) continue;
+    const led=ledger[String(i+1)];
+    if(!led||!led.location) continue;
+    if(TRAVEL_LOCATION_VAGUE_RE_.test(led.location)) continue;
+    const z=travelFeeZoneForKm_(led.oneWayKm);
+    if(!z||z.zone<2) continue;
+    if(led.oneWayKm<=z.fromKm+TRAVEL_FEE_BORDERLINE_KM_) continue;  // 존 하단 경계 — 아래 존일 수 있다
+    const hay=[row[BOOKING_COL['상품']],row[BOOKING_COL['옵션']],row[BOOKING_COL['추가항목']],
+      row[BOOKING_COL['요청사항']],row[BOOKING_COL['결제메모']]]
+      .map(function(v){return String(v||'');}).join(' ');
+    if(TRAVEL_FEE_MENTION_RE_.test(hay)) continue;                  // 이미 반영 표기가 있다
+    const productName=String(row[BOOKING_COL['상품']]||'').trim();
+    const prod=products.find(function(x){return x.nameKo===productName;});
+    if(!prod||!(Number(prod.p)>0)) continue;                        // 상담견적·커스텀 상품 — 정가 없음
+    const listPrice=Number(prod.p)+getWeekendSurcharge_(prod,d10);
+    const total=parseMoneyValue_(row[BOOKING_COL['총결제액']])||0;
+    if(!(total>0)) continue;                                        // 금액 미입력 — 판정 불가
+    if(total>listPrice+0.01) continue;                              // 뭔가 더 붙어 있다 — 침묵
+    items.push({rowIndex:i+1,date:d10,name:String(row[BOOKING_COL['고객명']]||''),
+      product:productName,location:led.location,oneWayKm:Math.round(led.oneWayKm*10)/10,
+      zone:z.zone,fee:z.fee,total:total,listPrice:listPrice,status:st});
+  }
+  items.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  return {count:items.length,items:items,ledgerRows:ledgerRows};
+}
+
 function _buildDailyBriefingData_(){
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
@@ -15094,7 +15281,11 @@ function _buildDailyBriefingData_(){
   let locationBlockers={count:0,items:[],stale:false,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
   try{ locationBlockers=_scanLocationBlockerConflicts_(rows,now); }
   catch(e){Logger.log('briefing locationBlockers fail: '+e.message);_briefFail_(sectionFailures,'로케이션 블로커',e);}
-  return {ok:true,date:today,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
+  /* 출장비 누락 — 존2 이상인데 상품 정가만 받은 미래 예약 (rows 재사용, Maps 호출 없음) */
+  let travelFeeGaps={count:0,items:[],ledgerRows:0};
+  try{ travelFeeGaps=_scanTravelFeeGaps_(rows,now); }
+  catch(e){Logger.log('briefing travelFeeGaps fail: '+e.message);_briefFail_(sectionFailures,'출장비 누락',e);}
+  return {ok:true,date:today,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -15147,6 +15338,21 @@ function buildDailyBriefingEmailHtml_(b){
     actions.push(line(`📍 <b style="color:#b91c1c;">시내 행사 일정표가 ${esc(b.locationBlockers.coveredUntil)} 까지만 등록돼 있습니다</b> — `
       +`그 이후 촬영은 <b>충돌 없음이 아니라 확인 안 됨</b>입니다. visitfrankfurt.travel 대형행사 목록에서 새 연도 일정을 받아 `
       +`<code>FFM_BLOCKERS_</code> 를 갱신해 주세요.`));
+  }
+  /* 출장비 누락 — 자동으로 금액을 바꾸지 않는다. 반영은 booking-set-amount 로 수동. */
+  if(b.travelFeeGaps&&b.travelFeeGaps.count>0){
+    b.travelFeeGaps.items.forEach(function(t){
+      const feeText=t.fee==null?'상담 견적 대상인데 반영 흔적 없음':`출장비 ${money(t.fee)} 미반영으로 보임`;
+      actions.push(line(`🚗 <b>${esc(t.name)}</b>님 (${esc(t.date.slice(5).replace('-','/'))}, ${esc(String(t.location).slice(0,40))}) — `
+        +`<b style="color:#b45309;">존${t.zone} ${feeText}</b> (편도 ${t.oneWayKm}km)`
+        +`<br>&nbsp;&nbsp;${esc(t.product)} · 총액 ${money(t.total)} = 정가 ${money(t.listPrice)}`
+        +`${t.status==='대기중'?' '+badge('대기중','#fef3c7','#92400e'):''}`
+        +` — 맞으면 <code>booking-set-amount</code> 로 반영 (행 ${t.rowIndex})`));
+    });
+  }
+  if(b.travelFeeGaps&&b.travelFeeGaps.ledgerRows===0){
+    actions.push(line(`🚗 <b style="color:#b91c1c;">출장장부가 비어 있어 출장비 점검을 못 했습니다</b> — `
+      +`<code>T1 출장장부 동기화</code> 결과를 확인해 주세요.`));
   }
   b.depositWaiting.forEach(function(d){
     // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)가 사장님 확인 없이 실행되므로, 남은 일수를 앞에 세운다
@@ -15312,6 +15518,8 @@ function briefingActionCount_(b){
     +((b.calendarAudit&&b.calendarAudit.problemCount)||0)
     +((b.locationBlockers&&b.locationBlockers.count)||0)
     +((b.locationBlockers&&b.locationBlockers.stale)?1:0)
+    +((b.travelFeeGaps&&b.travelFeeGaps.count)||0)
+    +((b.travelFeeGaps&&b.travelFeeGaps.ledgerRows===0)?1:0)
     +((b.sectionFailures&&b.sectionFailures.length)||0);
 }
 
@@ -30701,24 +30909,28 @@ function buildWeeklyKpi_(endDateStr){
    판정 못 한 건은 버리지 않고 unmatched 로 돌려준다 — 조용히 빠지면
    공제를 놓치고도 모른다. */
 const TRAVEL_KM_RATE_=0.30;                 // EStG 킬로미터당 공제액 (자가용)
+/* 한글 표기도 같이 잡는다 — 이 표는 주차 영수증(독일어)뿐 아니라 travel-fee-quote 의
+   **모호한 주소 폴백**으로도 쓰인다. 예약 메모의 촬영장소는 대개 한글이라('프랑크푸르트 시내'),
+   라틴 표기만 두면 정작 폴백이 필요한 순간에 한 건도 안 걸린다(2026-08-26 확인).
+   위에서부터 첫 매칭이 이긴다 — 공항·메세를 프랑크푸르트보다 앞에 둔 이유. */
 const TRAVEL_KM_TABLE_=[
-  {re:/bad\s*homburg|kur-?\s*und\s*kongress/i, city:'바트홈부르크', km:8},
-  {re:/steinbach/i,                            city:'슈타인바흐',   km:6},
-  {re:/kronberg|k[öo]nigstein|oberursel/i,      city:'크론베르크·쾨니히슈타인', km:7},
-  {re:/flughafen|fraport|airport/i,             city:'프랑크푸르트 공항', km:25},
-  {re:/messe/i,                                 city:'프랑크푸르트 메세',  km:20},
-  {re:/frankfurt/i,                             city:'프랑크푸르트',      km:17},
-  {re:/hanau/i,       city:'하나우',        km:40},
-  {re:/wiesbaden/i,   city:'비스바덴',      km:46},
-  {re:/darmstadt/i,   city:'다름슈타트',    km:45},
-  {re:/gie[sß]en/i,   city:'기센',          km:45},
-  {re:/mainz/i,       city:'마인츠',        km:50},
-  {re:/aschaffenburg/i, city:'아샤펜부르크', km:75},
-  {re:/marburg/i,     city:'마르부르크',    km:80},
-  {re:/heidelberg/i,  city:'하이델베르크',  km:100},
-  {re:/fulda/i,       city:'풀다',          km:105},
-  {re:/koblenz/i,     city:'코블렌츠',      km:125},
-  {re:/k[öo]ln|cologne/i, city:'쾰른',      km:170},
+  {re:/bad\s*homburg|kur-?\s*und\s*kongress|바트\s*홈부르크/i, city:'바트홈부르크', km:8},
+  {re:/steinbach|슈타인바흐/i,                  city:'슈타인바흐',   km:6},
+  {re:/kronberg|k[öo]nigstein|oberursel|크론베르크|쾨니히슈타인|오버우어젤/i, city:'크론베르크·쾨니히슈타인', km:7},
+  {re:/flughafen|fraport|airport|공항/i,        city:'프랑크푸르트 공항', km:25},
+  {re:/messe|메세/i,                            city:'프랑크푸르트 메세',  km:20},
+  {re:/frankfurt|프랑크푸르트/i,                city:'프랑크푸르트',      km:17},
+  {re:/hanau|하나우/i,       city:'하나우',        km:40},
+  {re:/wiesbaden|비스바덴/i, city:'비스바덴',      km:46},
+  {re:/darmstadt|다름슈타트/i, city:'다름슈타트',  km:45},
+  {re:/gie[sß]en|기센/i,     city:'기센',          km:45},
+  {re:/mainz|마인츠/i,       city:'마인츠',        km:50},
+  {re:/aschaffenburg|아샤펜부르크/i, city:'아샤펜부르크', km:75},
+  {re:/marburg|마르부르크/i, city:'마르부르크',    km:80},
+  {re:/heidelberg|하이델베르크/i, city:'하이델베르크', km:100},
+  {re:/fulda|풀다/i,         city:'풀다',          km:105},
+  {re:/koblenz|코블렌츠/i,   city:'코블렌츠',      km:125},
+  {re:/k[öo]ln|cologne|쾰른/i, city:'쾰른',        km:170},
 ];
 /* 이동을 증명하는 지출만 집는다. 주유(tank/Shell 등)는 목적지를 알 수 없어 제외 —
    2025 원장도 주차 영수증만 근거로 삼았다. */
