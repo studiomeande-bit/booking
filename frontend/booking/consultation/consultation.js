@@ -264,6 +264,48 @@ const TYPE_CONFIG = {
       }
     }
   },
+  dol: {
+    labels: {
+      de: { label: 'Dol / Baekil (1. Geburtstag)', desc: 'Doljanchi, Baekil, Hanbok, Doljabi und Familienfeier im Studio oder vor Ort.' },
+      en: { label: 'Dol / Baekil (1st birthday)', desc: 'Doljanchi, baekil, hanbok, doljabi and family celebration, in studio or on location.' },
+      ko: { label: '돌잔치 / 백일', desc: '돌상, 돌잡이, 한복, 가족 단체사진 등 준비 범위를 정리합니다.' }
+    },
+    groups: {
+      coverage: {
+        titles: { de: 'Benotigter Umfang', en: 'Coverage needed', ko: '필요한 촬영 범위' },
+        choices: [
+          { id: 'dolTableSetup', labels: { de: 'Dol-Tisch / Baekil-Tisch', en: 'Dol / baekil table setting', ko: '돌상/백일상 세팅' } },
+          { id: 'doljabi', labels: { de: 'Doljabi-Zeremonie', en: 'Doljabi ceremony', ko: '돌잡이' } },
+          { id: 'hanbokPortrait', labels: { de: 'Hanbok-Portrait', en: 'Hanbok portrait', ko: '한복 촬영' } },
+          { id: 'familyGroups', labels: { de: 'Familien- und Gruppenfotos', en: 'Family / guest group photos', ko: '가족/하객 단체사진' } },
+          { id: 'partyProgram', labels: { de: 'Feier und Programm', en: 'Party and program', ko: '행사 진행/케이크 커팅' } },
+          { id: 'videoCoverage', labels: { de: 'Videoaufnahme', en: 'Video coverage', ko: '영상 촬영' } }
+        ]
+      },
+      deliverables: {
+        titles: { de: 'Gewunschte Ergebnisse', en: 'Deliverables needed', ko: '필요한 결과물' },
+        choices: [
+          { id: 'editedPhotos', labels: { de: 'Bearbeitete Fotos', en: 'Edited photos', ko: '보정 사진' } },
+          { id: 'allOriginals', labels: { de: 'Alle Originaldateien', en: 'All originals', ko: '전체 원본' } },
+          { id: 'printsAlbum', labels: { de: 'Prints / Album', en: 'Prints / album', ko: '인화/액자/앨범' } },
+          { id: 'shortReels', labels: { de: 'Kurze Reels', en: 'Short reels', ko: '짧은 릴스 영상' } },
+          { id: 'growthVideo', labels: { de: 'Wachstumsvideo', en: 'Growth video', ko: '성장 영상' } },
+          { id: 'fullRecord', labels: { de: 'Gesamtdokumentation', en: 'Full event record', ko: '행사 전체 기록' } }
+        ]
+      },
+      style: {
+        titles: { de: 'Gewunschte Stimmung', en: 'Preferred mood', ko: '원하는 분위기' },
+        choices: [
+          { id: 'babyExpressions', labels: { de: 'Gesichter des Kindes', en: 'Baby expressions first', ko: '아기 표정 중심' } },
+          { id: 'familyFocused', labels: { de: 'Familienfokus', en: 'Family-focused', ko: '가족 중심' } },
+          { id: 'brightAiry', labels: { de: 'Hell und freundlich', en: 'Bright and airy', ko: '화사하고 밝게' } },
+          { id: 'traditionalHanbok', labels: { de: 'Traditionell mit Hanbok', en: 'Traditional hanbok mood', ko: '전통 한복 느낌' } },
+          { id: 'documentary', labels: { de: 'Naturlich dokumentarisch', en: 'Natural documentary', ko: '자연스러운 기록' } },
+          { id: 'detailFocused', labels: { de: 'Details sind wichtig', en: 'Detail shots matter', ko: '돌상/소품 디테일 컷' } }
+        ]
+      }
+    }
+  },
   event: {
     labels: {
       de: { label: 'Event / Veranstaltung', desc: 'Konferenz, Party, Ausstellung, Familienfeier oder Buhnenprogramm.' },
@@ -393,7 +435,7 @@ function detectInitialLanguage() {
 }
 
 // 예약 페이지 딥링크로 상담 유형 프리셀렉트.
-// 1순위 ?type=wedding|corporate|event|content (B2B 카드), 2순위 기존 CTA의 ?from=/&event= 매핑.
+// 1순위 ?type=wedding|corporate|dol|event|content (B2B 카드), 2순위 기존 CTA의 ?from=/&event= 매핑.
 function detectInitialType() {
   const params = new URLSearchParams(window.location.search);
   const raw = String(params.get('type') || '').trim().toLowerCase();
@@ -402,6 +444,7 @@ function detectInitialType() {
   const event = String(params.get('event') || '').trim().toLowerCase();
   if (from === 'wed' || event === 'civil' || event === 'wedparty') return 'wedding';
   if (event === 'corporate') return 'corporate';
+  if (from === 'dolp' || from === 'dol' || event === 'dol' || event === 'baekil') return 'dol';
   if (from === 'biz' || from === 'famevt' || from === 'b2b' || event) return 'event';
   return 'wedding';
 }
@@ -738,7 +781,7 @@ async function handleSubmit(event) {
 /* ===== 협력업체 소개 (상담 접수 완료 화면) =====
    상담 페이지는 init 데이터를 쓰지 않으므로 별도로 목록을 받아온다.
    상담 유형 → 예약 상품군으로 옮겨 예약 성공화면과 같은 규칙으로 고른다. */
-const CONSULT_TYPE_TO_GROUP = { wedding: 'wed', corporate: 'biz', event: 'biz', content: 'biz' };
+const CONSULT_TYPE_TO_GROUP = { wedding: 'wed', corporate: 'biz', dol: 'baby', event: 'biz', content: 'biz' };
 const PARTNER_CTA_COPY = {
   kakao: { ko: '카카오톡으로 바로 상담', en: 'Chat on KakaoTalk', de: 'Per KakaoTalk anfragen' },
   instagram: { ko: '인스타그램으로 문의', en: 'Message on Instagram', de: 'Per Instagram anfragen' },
