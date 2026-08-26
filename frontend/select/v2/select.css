@@ -2453,3 +2453,25 @@ h1 {
 .review-item.volume-line strong { color: #0e7a4f; }
 .unused-quota-warn { color: #92400e; background: #fef3c7; border: 1px solid #f0d060; border-radius: 8px; padding: 9px 11px; margin-top: 8px; line-height: 1.6; }
 .unused-quota-warn .linklike { border: 0; background: none; color: #92400e; font-weight: 800; text-decoration: underline; cursor: pointer; padding: 0; font-size: inherit; }
+
+/* ===== 조건 미충족 안내 (2026-08-26) =====
+   버튼을 비활성으로 잠그는 대신, 눌렀을 때 문제 지점을 직접 짚어 준다.
+   .needs-input  — 아직 조건이 덜 찬 버튼(누를 수는 있다)
+   .field-problem — 방금 지적된 칸. 스크롤 이동 + 테두리 강조 + 짧은 흔들림 */
+.needs-input {
+  opacity: 0.7;
+}
+.field-problem {
+  outline: 2px solid #c2410c !important;
+  outline-offset: 3px;
+  border-radius: 10px;
+  animation: field-problem-nudge 0.45s ease;
+}
+@keyframes field-problem-nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-problem { animation: none; }
+}

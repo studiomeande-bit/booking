@@ -3438,11 +3438,61 @@ function validateStep3() {
   return true;
 }
 
+/* ===== 조건 미충족 안내 =====
+   버튼을 비활성으로 잠그면 고객에겐 '이유 없이 죽은 버튼'이라 고장으로 읽힌다 — 실제로
+   "셀렉과 내용을 다 넣었는데 다음으로 안 넘어간다" 신고가 그렇게 들어왔다(2026-08-26).
+   그래서 버튼은 항상 누를 수 있게 두고, 누르면 **무엇이 · 어디가** 문제인지
+   배너 문구 + 해당 칸으로 스크롤 + 테두리 강조 + 포커스로 직접 짚어 준다. (사장님 지시) */
+function highlightProblem(el) {
+  if (!el) return;
+  // goStep 이 맨 위로 스크롤한 직후에도 지지 않도록 한 틱 뒤에 이동한다
+  globalThis.setTimeout(() => {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { try { el.scrollIntoView(); } catch (_e) {} }
+  }, 80);
+  el.classList.add('field-problem');
+  globalThis.setTimeout(() => el.classList.remove('field-problem'), 2800);
+  const focusTarget = (el.matches && el.matches('input,textarea,select')) ? el : (el.querySelector && el.querySelector('input,textarea,select'));
+  if (focusTarget) globalThis.setTimeout(() => { try { focusTarget.focus({ preventScroll: true }); } catch (_) {} }, 520);
+}
+
+/* 단계별 '첫 번째 문제 지점'. 사유 문구는 validateStepN 이 이미 배너에 띄우므로 여기선 위치만 찾는다. */
+function findStepProblemEl(step) {
+  const pick = (sel) => document.querySelector(sel);
+  if (step === 1) {
+    if (!state.marketing) return pick('#marketingBox');
+    return pick('#galleryGrid');
+  }
+  if (step === 2) {
+    const idx = findIncompleteRetouchIndex();
+    if (idx >= 0) {
+      const numEl = pick(`[data-photo-num="${idx}"]`);
+      const noteEl = pick(`[data-photo-note="${idx}"]`);
+      const emptyNum = numEl && !String(numEl.value || '').trim();
+      return (emptyNum ? numEl : (noteEl || numEl)) || pick('#photoList');
+    }
+    if (getPhotocardWarning()) return pick('#photocardBox');
+    return pick('#pickRetouchBtn') || pick('#photoList');
+  }
+  if (step === 3) {
+    const i = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
+    if (i >= 0) return pick(`[data-print-photo="${i}"]`) || pick('#printList');
+    return pick('#printList');
+  }
+  if (step === 4) {
+    if (!state.deliveryMethod) return pick('#deliveryChoiceBox');
+    if (state.deliveryMethod === 'mail') {
+      if (!getMailNameForSubmission()) return pick('#mailNameInput');
+      return pick('#mailAddressInput');
+    }
+  }
+  return null;
+}
+
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
-  if (step === 2 && !validateStep1()) return;
-  if (step === 3 && !validateStep2()) return;
-  if (step === 4 && !validateStep3()) return;
+  if (step === 2 && !validateStep1()) { highlightProblem(findStepProblemEl(1)); return; }
+  if (step === 3 && !validateStep2()) { highlightProblem(findStepProblemEl(2)); return; }
+  if (step === 4 && !validateStep3()) { highlightProblem(findStepProblemEl(3)); return; }
   if (state.submitted) return;
   state.step = step;
   els.progressRow.classList.remove('hidden');
@@ -3477,11 +3527,20 @@ function canSubmit() {
   return true;
 }
 
+/* 아직 조건이 안 찬 버튼도 **누를 수 있게** 둔다 — 눌렀을 때 이유를 짚어 주는 편이
+   비활성으로 침묵하는 것보다 낫다. 시각적으로만 '아직 덜 됐음'을 표시한다.
+   이미 제출된 세션만 진짜로 잠근다(중복 제출 방지). */
+function markStepBtn(btn, ready) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.classList.toggle('needs-input', !ready);
+}
 function updateSubmitState() {
-  if (els.step1NextBtn) els.step1NextBtn.disabled = !canProceedStep1();
-  if (els.step2NextBtn) els.step2NextBtn.disabled = !canProceedStep2();
-  if (els.step3NextBtn) els.step3NextBtn.disabled = !canProceedStep3();
-  els.submitBtn.disabled = !canSubmit() || state.submitted;
+  markStepBtn(els.step1NextBtn, canProceedStep1());
+  markStepBtn(els.step2NextBtn, canProceedStep2());
+  markStepBtn(els.step3NextBtn, canProceedStep3());
+  markStepBtn(els.submitBtn, canSubmit());
+  els.submitBtn.disabled = state.submitted;
   renderStepWarnings();
 }
 
@@ -3602,7 +3661,10 @@ function buildMockGalleryPhotos(n) {
  * 제출
  * ====================================================================== */
 async function onSubmit() {
-  if (!validateStep2() || !validateStep3() || !validateDeliverySelection()) return;
+  // 문제가 이전 단계에 있으면 그 단계로 되돌린 뒤 짚어 준다(숨은 패널은 스크롤해도 안 보인다)
+  if (!validateStep2()) { goStep(2); highlightProblem(findStepProblemEl(2)); return; }
+  if (!validateStep3()) { goStep(3); highlightProblem(findStepProblemEl(3)); return; }
+  if (!validateDeliverySelection()) { highlightProblem(findStepProblemEl(4)); return; }
   if (state.previewMode) {
     alert(copy().previewSubmitAlert);
     return;
