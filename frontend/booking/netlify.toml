@@ -35,8 +35,16 @@
   status = 301
   force = true
 
+# 와일드카드로 잡으면 이 페이지의 css/js(/consultation/consultation.min.*)까지 301 로 날아가
+# /consultation-legacy 가 스타일·스크립트 없는 껍데기로 뜬다(2026-08-26 확인). 문서 경로만 넘긴다.
 [[redirects]]
-  from = "/consultation/*"
+  from = "/consultation/"
+  to = "https://studio-mean.com/contact/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/consultation/index.html"
   to = "https://studio-mean.com/contact/"
   status = 301
   force = true
