@@ -3390,9 +3390,35 @@ function validateStep1() {
   return true;
 }
 
+/* 보너스·서비스 슬롯은 '안 쓰면 비워 두는 자리'다. 서버(computeSelectExtraRetouch_)도 빈 행은
+   슬롯을 소비하지 않는 placeholder 로 보고, 남은 마케팅 보너스는 일반 선택 초과분을 대신 흡수한다.
+   그런데 프런트만 '모든 행을 채워야 다음'이라, 마케팅에 동의하고 무료 슬롯을 다 쓰지 않은 고객은
+   자기 사진을 전부 채우고도 버튼이 죽어 있었다(2026-08-26 신고 · 재현 확인). 이 카드들엔 삭제
+   버튼조차 없어 빠져나갈 길도 없었다. → 완전히 빈 무료 슬롯은 진행을 막지 않는다.
+   단 '반쯤 채운' 행(번호만/요청만)은 실수이므로 계속 막는다. */
+function isRetouchRowComplete(photo) {
+  return !!String(photo?.num || '').trim() && !!String(photo?.note || '').trim();
+}
+function isRetouchRowEmpty(photo) {
+  return !String(photo?.num || '').trim() && !String(photo?.note || '').trim();
+}
+function findIncompleteRetouchIndex() {
+  return state.photos.findIndex((photo) => {
+    if (photo?.isBonus && isRetouchRowEmpty(photo)) return false;   // 미사용 무료 슬롯 — 통과
+    return !isRetouchRowComplete(photo);
+  });
+}
+function countCompleteRetouchRows() {
+  return state.photos.filter(isRetouchRowComplete).length;
+}
+// 안 쓰고 남은 서비스 컷 수 — 마케팅 보너스와 달리 서버가 흡수해 주지 않아 그대로 소멸한다
+function countUnusedServiceSlots() {
+  return state.photos.filter((photo) => photo?.isService && isRetouchRowEmpty(photo)).length;
+}
+
 function validateStep2() {
-  if (!state.photos.length) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
-  const invalid = state.photos.findIndex((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim());
+  if (countCompleteRetouchRows() < 1) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
+  const invalid = findIncompleteRetouchIndex();
   if (invalid >= 0) {
     setBanner(copy().errRetouchRow(invalid + 1), 'error');
     return false;
@@ -3437,8 +3463,8 @@ function goStep(step) {
 
 function canSubmit() {
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
-  if (!state.photos.length) return false;
-  if (state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())) return false;
+  if (countCompleteRetouchRows() < 1) return false;
+  if (findIncompleteRetouchIndex() >= 0) return false;
   if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
   if (!requiresDeliverySelection()) return true;
@@ -3467,9 +3493,8 @@ function canProceedStep1() {
 }
 
 function canProceedStep2() {
-  if (!state.photos.length) return false;
-  return !state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())
-    && !getPhotocardWarning();
+  if (countCompleteRetouchRows() < 1) return false;   // 실제로 고른 사진이 최소 1장
+  return findIncompleteRetouchIndex() < 0 && !getPhotocardWarning();
 }
 
 function canProceedStep3() {
@@ -3484,13 +3509,19 @@ function renderStepWarnings() {
     : !state.marketing
       ? c.warnMarketing(bonusCount)
       : c.warnNoStars;
+  const incompleteIdx = findIncompleteRetouchIndex();
+  const unusedService = countUnusedServiceSlots();
   const step2Message = canProceedStep2()
-    ? ''
-    : !state.photos.length
+    // 진행은 되지만 서비스 컷은 안 쓰면 그대로 소멸한다(보너스와 달리 흡수 안 됨) — 알려만 준다
+    ? (unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
+    : countCompleteRetouchRows() < 1
       ? c.warnNoRetouch
       : getPhotocardWarning()
         ? getPhotocardWarning()
-        : c.warnRetouchIncomplete;
+        // "다 넣었는데 안 넘어감"을 막으려면 몇 번 칸인지 짚어야 한다
+        : incompleteIdx >= 0
+          ? c.errRetouchRow(incompleteIdx + 1)
+          : c.warnRetouchIncomplete;
   const step3Message = canProceedStep3() ? '' : c.warnPrintNumbers;
   const step4Message = canSubmit()
     ? ''
