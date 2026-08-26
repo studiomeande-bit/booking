@@ -3455,44 +3455,106 @@ function highlightProblem(el) {
   if (focusTarget) globalThis.setTimeout(() => { try { focusTarget.focus({ preventScroll: true }); } catch (_) {} }, 520);
 }
 
-/* 단계별 '첫 번째 문제 지점'. 사유 문구는 validateStepN 이 이미 배너에 띄우므로 여기선 위치만 찾는다. */
-function findStepProblemEl(step) {
+/* 미충족 항목을 **전부** 모은다. 하나만 알려 주면 고치고 또 막히는 일이 반복된다.
+   각 항목은 {message, el} — el 은 눌렀을 때 이동할 대상. */
+function collectStepProblems(step) {
+  const c = copy();
   const pick = (sel) => document.querySelector(sel);
+  const out = [];
+  const push = (message, el) => { if (message) out.push({ message, el: el || null }); };
+
   if (step === 1) {
-    if (!state.marketing) return pick('#marketingBox');
-    return pick('#galleryGrid');
+    if (!state.marketing) push(c.errPickMarketing, pick('#marketingBox'));
+    const regularCount = state.photos.filter((p) => !p.isBonus).length;
+    if (state.gallery.ratings.size < 1 && regularCount < 1) push(c.errRateAtLeastOne, pick('#galleryGrid'));
   }
+
   if (step === 2) {
-    const idx = findIncompleteRetouchIndex();
-    if (idx >= 0) {
-      const numEl = pick(`[data-photo-num="${idx}"]`);
-      const noteEl = pick(`[data-photo-note="${idx}"]`);
+    if (countCompleteRetouchRows() < 1) push(c.errRetouchAtLeastOne, pick('#pickRetouchBtn') || pick('#photoList'));
+    state.photos.forEach((photo, i) => {
+      if (photo && photo.isBonus && isRetouchRowEmpty(photo)) return;   // 안 쓴 무료 슬롯은 문제가 아니다
+      if (isRetouchRowComplete(photo)) return;
+      const numEl = pick(`[data-photo-num="${i}"]`);
+      const noteEl = pick(`[data-photo-note="${i}"]`);
       const emptyNum = numEl && !String(numEl.value || '').trim();
-      return (emptyNum ? numEl : (noteEl || numEl)) || pick('#photoList');
-    }
-    if (getPhotocardWarning()) return pick('#photocardBox');
-    return pick('#pickRetouchBtn') || pick('#photoList');
+      push(c.errRetouchRow(i + 1), emptyNum ? numEl : (noteEl || numEl));
+    });
+    const photocard = getPhotocardWarning();
+    if (photocard) push(photocard, pick('#photocardBox'));
   }
+
   if (step === 3) {
-    const i = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
-    if (i >= 0) return pick(`[data-print-photo="${i}"]`) || pick('#printList');
-    return pick('#printList');
+    state.prints.forEach((print, i) => {
+      if (String(print.photoNum || '').trim()) return;
+      push(c.errPrintRow(i + 1), pick(`[data-print-photo="${i}"]`) || pick('#printList'));
+    });
   }
-  if (step === 4) {
-    if (!state.deliveryMethod) return pick('#deliveryChoiceBox');
-    if (state.deliveryMethod === 'mail') {
-      if (!getMailNameForSubmission()) return pick('#mailNameInput');
-      return pick('#mailAddressInput');
+
+  if (step === 4 && requiresDeliverySelection()) {
+    if (!state.deliveryMethod) push(c.errPickDelivery, pick('#deliveryChoiceBox'));
+    else if (state.deliveryMethod === 'mail') {
+      const mailName = getMailNameForSubmission();
+      const mailAddress = getMailAddressForSubmission();
+      if (!mailName) push(c.warnMailName, pick('#mailNameInput'));
+      if (!mailAddress) push(c.warnMailAddress, pick('#mailAddressInput'));
+      if (mailName && mailAddress && (!MAIL_LATIN_RE.test(mailName) || !MAIL_LATIN_RE.test(mailAddress))) push(c.warnMailLatin, pick('#mailAddressInput'));
+      if (mailAddress && !hasMailAddressPostalCity(mailAddress)) push(c.warnMailPostal, pick('#mailAddressInput'));
     }
   }
-  return null;
+  return out;
+}
+
+function closeBlockedModal() {
+  const existing = document.getElementById('blockedModal');
+  if (existing) existing.remove();
+}
+
+/* 버튼을 눌렀을 때 뜨는 안내 팝업 (2026-08-26 사장님 지시).
+   목록의 각 항목을 누르면 팝업이 닫히고 그 칸으로 스크롤·강조·포커스된다. */
+function showBlockedModal(problems) {
+  closeBlockedModal();
+  const list = (problems || []).filter((p) => p && p.message);
+  if (!list.length) return;
+  const c = copy();
+  const shown = list.slice(0, 6);            // 너무 길면 팝업이 스크롤 덩어리가 된다
+  const rest = list.length - shown.length;
+  const wrap = document.createElement('div');
+  wrap.id = 'blockedModal';
+  wrap.className = 'blocked-modal';
+  wrap.innerHTML = `
+    <div class="blocked-card" role="dialog" aria-modal="true" aria-labelledby="blockedModalTitle">
+      <div class="blocked-title" id="blockedModalTitle">${escapeHtml(c.blockedTitle)}</div>
+      <p class="blocked-intro">${escapeHtml(c.blockedIntro(list.length))}</p>
+      <ol class="blocked-list">${shown.map((p, i) => `<li><button type="button" data-blocked-idx="${i}">${escapeHtml(p.message)}</button></li>`).join('')}</ol>
+      ${rest > 0 ? `<p class="blocked-rest">+ ${rest}</p>` : ''}
+      <div class="blocked-actions">
+        <button type="button" class="ghost-btn" data-blocked-close>${escapeHtml(c.blockedClose)}</button>
+        <button type="button" class="primary-btn" data-blocked-go>${escapeHtml(c.blockedGo)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const jumpTo = (index) => {
+    const target = shown[index] && shown[index].el;
+    closeBlockedModal();
+    highlightProblem(target);
+  };
+  wrap.querySelectorAll('[data-blocked-idx]').forEach((btn) => {
+    btn.addEventListener('click', () => jumpTo(Number(btn.dataset.blockedIdx)));
+  });
+  wrap.querySelector('[data-blocked-go]').addEventListener('click', () => jumpTo(0));
+  wrap.querySelector('[data-blocked-close]').addEventListener('click', closeBlockedModal);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeBlockedModal(); });   // 바깥 클릭으로 닫기
+  const onEsc = (e) => { if (e.key === 'Escape') { closeBlockedModal(); globalThis.removeEventListener('keydown', onEsc); } };
+  globalThis.addEventListener('keydown', onEsc);
+  globalThis.setTimeout(() => { try { wrap.querySelector('[data-blocked-go]').focus(); } catch (_) {} }, 60);
 }
 
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
-  if (step === 2 && !validateStep1()) { highlightProblem(findStepProblemEl(1)); return; }
-  if (step === 3 && !validateStep2()) { highlightProblem(findStepProblemEl(2)); return; }
-  if (step === 4 && !validateStep3()) { highlightProblem(findStepProblemEl(3)); return; }
+  if (step === 2 && !validateStep1()) { showBlockedModal(collectStepProblems(1)); return; }
+  if (step === 3 && !validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
+  if (step === 4 && !validateStep3()) { showBlockedModal(collectStepProblems(3)); return; }
   if (state.submitted) return;
   state.step = step;
   els.progressRow.classList.remove('hidden');
@@ -3662,9 +3724,9 @@ function buildMockGalleryPhotos(n) {
  * ====================================================================== */
 async function onSubmit() {
   // 문제가 이전 단계에 있으면 그 단계로 되돌린 뒤 짚어 준다(숨은 패널은 스크롤해도 안 보인다)
-  if (!validateStep2()) { goStep(2); highlightProblem(findStepProblemEl(2)); return; }
-  if (!validateStep3()) { goStep(3); highlightProblem(findStepProblemEl(3)); return; }
-  if (!validateDeliverySelection()) { highlightProblem(findStepProblemEl(4)); return; }
+  if (!validateStep2()) { goStep(2); showBlockedModal(collectStepProblems(2)); return; }
+  if (!validateStep3()) { goStep(3); showBlockedModal(collectStepProblems(3)); return; }
+  if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
   if (state.previewMode) {
     alert(copy().previewSubmitAlert);
     return;

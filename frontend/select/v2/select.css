@@ -2475,3 +2475,56 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .field-problem { animation: none; }
 }
+
+/* ===== 조건 미충족 안내 팝업 (2026-08-26) =====
+   버튼을 눌렀을 때 무엇이 남았는지 목록으로 보여주고, 항목을 누르면 그 칸으로 이동한다. */
+.blocked-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;               /* 라이트박스(9999)보다 위 — 픽커가 열린 상태에서도 보여야 한다 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(28, 24, 20, 0.55);
+  backdrop-filter: blur(6px);
+  animation: blocked-fade 0.16s ease;
+}
+.blocked-card {
+  width: 100%;
+  max-width: 460px;
+  max-height: 82vh;
+  overflow-y: auto;
+  background: var(--surface, #fffdf9);
+  border: 1px solid rgba(140, 118, 90, 0.28);
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 18px 50px rgba(40, 30, 18, 0.28);
+  animation: blocked-rise 0.2s ease;
+}
+.blocked-title { font-size: 17px; font-weight: 700; color: #3a2f22; margin-bottom: 6px; }
+.blocked-intro { font-size: 13px; color: #6b5b47; line-height: 1.6; margin: 0 0 14px; }
+/* 목록 번호를 붙이지 않는다 — 문구 자체가 "2번째 보정 사진…"이라 목록의 "1."과 겹쳐 읽혀 혼동된다 */
+.blocked-list { list-style: none; margin: 0 0 4px; padding-left: 0; display: flex; flex-direction: column; gap: 8px; }
+.blocked-list button {
+  width: 100%;
+  text-align: left;
+  background: #fdf8ef;
+  border: 1px solid #ecdcc4;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #4a3b2a;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.blocked-list button:hover { background: #f7ecd9; border-color: #dcc49f; }
+.blocked-rest { font-size: 12px; color: #94836c; margin: 8px 0 0; }
+.blocked-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.blocked-actions .primary-btn, .blocked-actions .ghost-btn { flex: 0 0 auto; white-space: nowrap; }
+@keyframes blocked-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes blocked-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .blocked-modal, .blocked-card { animation: none; }
+}
