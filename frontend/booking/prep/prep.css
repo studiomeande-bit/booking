@@ -23,16 +23,17 @@ body {
 .hidden { display: none !important; }
 
 .topbar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 16px 20px; border-bottom: 1px solid var(--line);
   background: rgba(250, 247, 241, 0.92); position: sticky; top: 0; z-index: 10;
   backdrop-filter: blur(10px);
 }
-.brand { font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); text-decoration: none; }
-.lang-panel { display: flex; gap: 4px; }
+.brand { font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.lang-panel { display: flex; gap: 4px; flex: 0 0 auto; }
 .lang-btn {
   border: 1px solid transparent; background: none; color: var(--ink-soft);
   font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  white-space: nowrap;   /* '한국어' 가 세로로 찢어지던 것 — 좁은 화면에서 특히 */
 }
 .lang-btn.active { border-color: var(--line); background: var(--paper); color: var(--ink); font-weight: 500; }
 
