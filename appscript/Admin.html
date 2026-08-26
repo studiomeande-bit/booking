@@ -1189,6 +1189,8 @@ function saveEdit(){
   const origDate=document.getElementById('edit_origDate').value||'';
   const newDateStr=newDate+' '+newTime;
   const dateChanged=newDate&&(newDateStr.slice(0,16)!==origDate.slice(0,16));
+  // 일정도 바뀌면 변경 안내 메일은 억제 — 뒤따르는 일정변경 메일이 통지를 맡는다(중복 방지, AdminV2 와 동일)
+  d.__silent=!!dateChanged;
   // 먼저 기본 필드 저장, 날짜 변경이면 reschedule 추가 실행
   google.script.run
     .withSuccessHandler(()=>{

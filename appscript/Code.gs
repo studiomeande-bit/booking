@@ -1098,7 +1098,9 @@ function handlePublicApiRequest_(route,method,e){
       if(!gate.ok) return jsonError_(gate.code,gate.message);
       const sid=String(payload.sessionId||payload.id||'').trim();
       const res=route==='select-handover-done'
-        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false})
+        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,
+            // 마감 억제 스위치는 core 가 판정한다 — 여기서 ===true 로 좁히면 별칭 finalize:false 가 유실된다
+            skipFinalize:payload.skipFinalize,finalize:payload.finalize,notify:payload.notify!==false})
         : undoSelectHandoverBySession_(sid);
       if(!res||!res.ok) return jsonError_('HANDOVER_FAILED',(res&&res.message)||'기록 실패');
       return jsonOk_(res);
@@ -4166,9 +4168,9 @@ function _sendPortfolioLeadCustomerEmail_(lead){
     de:'[Studio mean] Ihre Anfrage ist angekommen'
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br><b>문의 종류</b>: ${escapeHtml_(lead.projectType)}<br><b>희망 일정</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br><b>Project</b>: ${escapeHtml_(lead.projectType)}<br><b>Preferred timing</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br><b>Projektart</b>: ${escapeHtml_(lead.projectType)}<br><b>Wunschtermin</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:lead.email,subject:subject[L],htmlBody:body[L]},{
@@ -4178,6 +4180,22 @@ function _sendPortfolioLeadCustomerEmail_(lead){
       ref:'portfolio-lead'
     });
   }catch(e){Logger.log('portfolio lead customer mail failed: '+e.message);}
+}
+
+/* 접수 메일에 **문의 원문을 그대로 다시 싣는다** (2026-08-26 사장님 지시: "메일 발송시 구체적 내용 같이 발송").
+   · 고객: 자기가 무엇을 보냈는지 메일로 남는다(폼은 제출하면 사라진다)
+   · 사장님: 메일 한 통만 보고 바로 판단·회신할 수 있다 — 표만 있고 본문이 빠지면 결국 시트를 열어야 했다
+   rows 는 [라벨, 값] 배열이며 값이 빈 항목은 알아서 빠진다. */
+function _inquiryEchoBlockHtml_(lang,rows,message){
+  const L=_leadLanguage_(lang);
+  const title={ko:'보내주신 내용',en:'What you sent us',de:'Ihre Angaben'}[L]||'보내주신 내용';
+  const tr=(rows||[]).filter(function(r){return r&&r[1]&&String(r[1]).trim()&&String(r[1]).trim()!=='-';}).map(function(r){
+    return '<tr><td style="padding:7px 12px;background:#f8fafc;font-weight:700;white-space:nowrap;">'+escapeHtml_(r[0])+'</td><td style="padding:7px 12px;">'+escapeHtml_(r[1])+'</td></tr>';
+  }).join('');
+  const msg=String(message||'').trim();
+  return '<div style="font-weight:700;margin:18px 0 6px;">'+title+'</div>'+
+    (tr?'<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:10px;">'+tr+'</table>':'')+
+    (msg?'<div style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">'+escapeHtml_(msg)+'</div>':'');
 }
 
 function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
@@ -4196,7 +4214,8 @@ function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
     '</div>'
   ].join('');
   try{
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[포트폴리오 문의] ${lead.projectType} — ${lead.name}`,htmlBody:html},{
+    // replyTo 가 없으면 사장님이 '답장'을 눌러도 고객에게 가지 않는다(구 PHP 폼엔 있던 기능) — 반드시 유지할 것
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:lead.email,subject:`[포트폴리오 문의] ${lead.projectType} — ${lead.name}${lead.preferredDate?' · '+lead.preferredDate:''}`,htmlBody:html},{
       type:'포트폴리오문의',
       customerName:lead.name,
       email:lead.email,
@@ -4511,9 +4530,9 @@ function _sendConsultationCustomerEmail_(c){
     de:`[Studio mean] Beratungsformular erhalten — ${c.name}`
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 보통 1-2 영업일 안에 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>상담 희망</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>촬영 예정</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Hello ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule — usually within 1-2 business days.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Preferred meeting</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Planned shoot</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns in der Regel innerhalb von 1-2 Werktagen mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Wunschtermin Beratung</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Geplantes Shooting</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 보통 1-2 영업일 안에 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('ko',[['상담 희망',c.preferredSchedule],['촬영 예정',c.shootDate],['촬영 장소',c.location],['회사/단체',c.company],['연락처',c.phone]],c.message)}<br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule — usually within 1-2 business days.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('en',[['Preferred meeting',c.preferredSchedule],['Planned shoot',c.shootDate],['Location',c.location],['Company',c.company],['Phone',c.phone]],c.message)}<br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns in der Regel innerhalb von 1-2 Werktagen mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('de',[['Wunschtermin Beratung',c.preferredSchedule],['Geplantes Shooting',c.shootDate],['Ort',c.location],['Firma',c.company],['Telefon',c.phone]],c.message)}<br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:c.email,subject:subject[L],htmlBody:body[L]},{
@@ -4541,10 +4560,12 @@ function _sendConsultationAdminEmail_(c,rowIndex){
     </table>
     <div style="font-weight:700;margin-bottom:6px;">설문 요약</div>
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">${surveyHtml||'-'}</div>
+    ${c.message?`<div style="font-weight:700;margin:16px 0 6px;">고객이 직접 쓴 내용</div><div style="white-space:pre-wrap;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;">${escapeHtml_(c.message)}</div>`:''}
     <p style="font-size:12px;color:#64748b;">상담장부 행 ${rowIndex}</p>
   </div>`;
   try{
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[상담] ${c.typeLabel||c.consultationType} — ${c.name}`,htmlBody:html},{
+    // replyTo — 사장님이 알림 메일에서 바로 '답장'으로 고객에게 회신할 수 있게 한다
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:c.email,subject:`[상담] ${c.typeLabel||c.consultationType} — ${c.name}${c.shootDate?' · '+c.shootDate:''}`,htmlBody:html},{
       type:'상담',
       customerName:c.name,
       email:c.email,
@@ -11143,12 +11164,41 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
 }
 
 /* ====== 액션 링크 ====== */
+/* 고객 셀프서비스 액션(일정변경·취소)은 예약을 직접 바꾸지 않는다 — 스튜디오에 "신청" 메일만 보내고
+   실제 반영은 사장님이 어드민에서 한다. 그런데 TTL 이 메일 발송시각 기준 14일이라, 두 달 뒤 촬영을
+   한 달 전에 확정한 고객은 정작 변경이 필요한 시점에 링크가 죽어 있었다
+   (2026-08-25 노유경 신고: 7/27 확정메일 → 링크 8/10 만료 → 8/25 클릭). 서명이 유효하면 만료돼도
+   통과시키고, 실제 차단은 아래 예약 상태 화이트리스트가 맡는다. */
+const CUSTOMER_SELF_SERVICE_ACTIONS_={customer_reschedule:1,customer_cancel:1};
+const BOOKING_RESCHEDULE_OK_STATUSES_=['대기중','확정됨','변경대기','촬영연기'];
+const BOOKING_CANCEL_REQUEST_OK_STATUSES_=['대기중','확정됨','변경대기'];
+/* 링크가 안 열릴 때 고객이 다음에 뭘 해야 하는지 알려준다. 언어를 모르는 지점이라 3개국어 병기. */
+function actionLinkErrorPage_(kind){
+  const title=kind==='expired'
+    ? {ko:'링크가 만료되었습니다',en:'This link has expired',de:'Dieser Link ist abgelaufen'}
+    : {ko:'링크를 열 수 없습니다',en:'This link cannot be opened',de:'Dieser Link kann nicht geöffnet werden'};
+  const body={
+    ko:'예약 확인 메일의 <b>🔎 내 예약 확인·관리</b> 버튼을 눌러 주세요. 그래도 열리지 않으면 아래 주소로 회신해 주시면 새 링크를 보내드립니다.',
+    en:'Please use the <b>🔎 View / manage my booking</b> button in your confirmation email. If it still does not open, reply to the address below and we will send you a new link.',
+    de:'Bitte nutzen Sie die Schaltfläche <b>🔎 Meine Buchung ansehen</b> in Ihrer Bestätigungs-E-Mail. Falls sie sich nicht öffnet, antworten Sie an die untenstehende Adresse — wir senden Ihnen einen neuen Link.'
+  };
+  const block=function(lang){return `<div style="margin:0 0 18px;"><div style="font-size:15px;font-weight:700;color:#2D2A26;margin-bottom:4px;">${title[lang]}</div><div style="font-size:13px;color:#475569;line-height:1.6;">${body[lang]}</div></div>`;};
+  return HtmlService.createHtmlOutput(
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;max-width:520px;margin:0 auto;padding:48px 22px;">`+
+    `<div style="border:1px solid #e2e8f0;border-radius:14px;padding:26px 24px;background:#fff;">`+
+    block('ko')+block('en')+block('de')+
+    `<div style="border-top:1px solid #e2e8f0;padding-top:14px;font-size:13px;">`+
+    `<a href="mailto:${CONFIG.ADMIN_EMAIL}" style="color:#2D2A26;font-weight:700;text-decoration:none;">${CONFIG.ADMIN_EMAIL}</a>`+
+    `<span style="color:#94a3b8;"> · Studio mean</span></div></div></div>`
+  );
+}
 function handleActionRoute_(p){
   try{
-    if(!p.action||!p.eventId||!p.exp||!p.sig) return HtmlService.createHtmlOutput('<h2>❌ 잘못된 링크입니다.</h2>');
-    if(Number(p.exp)<Math.floor(Date.now()/1000)) return HtmlService.createHtmlOutput('<h2>⏰ 만료된 링크입니다.</h2>');
+    if(!p.action||!p.eventId||!p.exp||!p.sig) return actionLinkErrorPage_('invalid');
     const rawId=decodeURIComponent(p.eventId);
-    if(signAction_(p.action,rawId,Number(p.exp))!==p.sig) return HtmlService.createHtmlOutput('<h2>❌ 유효하지 않은 서명입니다.</h2>');
+    // 서명을 먼저 본다 — 위조 링크에 "만료됐다"고 알려줄 이유가 없다
+    if(signAction_(p.action,rawId,Number(p.exp))!==p.sig) return actionLinkErrorPage_('invalid');
+    if(Number(p.exp)<Math.floor(Date.now()/1000)&&!CUSTOMER_SELF_SERVICE_ACTIONS_[p.action]) return actionLinkErrorPage_('expired');
     if(p.action==='confirm') return confirmBooking(rawId);
     if(p.action==='cancel') return cancelBooking(rawId);
     if(p.action==='customer_cancel') return customerCancelRequest_(rawId);
@@ -11175,7 +11225,24 @@ function bookingRowActionTokenFromSeed_(seed){
   const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET')||'studio-mean-action';
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(seed,secret)).replace(/=+$/g,'').slice(0,18);
 }
+/* ⚠️ 시드에는 **바뀌지 않는 신원 필드만** 넣는다.
+   구 산식(V1)은 상품·총결제액까지 시드에 넣었는데, 둘 다 ERP 가 일상적으로 바꾸는 값이다
+   (booking-change-product, booking-set-amount, gutschein-apply …). 상품을 한 번 바꾸면
+   이미 발송된 고객 포털 링크가 전부 즉시 무효가 됐다
+   (2026-08-25 노유경: 확정메일 Premium/360€ → 현재 Plus/300€ → 메일 속 ref 영구 사망).
+   동의시각(타임스탬프)이 엔트로피를 담당하고, 나머지 3개는 행이 밀렸을 때 남의 예약으로
+   해석되지 않게 하는 신원 확인용이다. 구 산식들은 조회 시 폴백으로 계속 받아준다. */
 function bookingRowActionToken_(row){
+  const seed=[
+    bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['이메일']]).toLowerCase(),
+    bookingRowActionSeedPart_(row[BOOKING_COL['동의시각']])
+  ].join('|');
+  return bookingRowActionTokenFromSeed_(seed);
+}
+// 구 산식 V1 — 상품·총결제액 포함. 그 값들이 아직 안 바뀐 행의 옛 링크는 이걸로 살린다.
+function bookingRowActionTokenV1_(row){
   const seed=[
     bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
     bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
@@ -11201,6 +11268,12 @@ function bookingRowActionTokenLegacy_(row){
 function createBookingRowActionRef_(rowIndex,row){
   return `row:${rowIndex}:${bookingRowActionToken_(row)}`;
 }
+// 현행 + 구 산식 전부와 대조 — 이미 고객 메일함에 있는 옛 링크를 최대한 살린다
+function bookingRowActionTokenMatches_(row,token){
+  return bookingRowActionToken_(row)===token
+      || bookingRowActionTokenV1_(row)===token
+      || bookingRowActionTokenLegacy_(row)===token;
+}
 function findBookingRowByActionRef_(ref){
   const safeRef=String(ref||'').trim();
   const sh=getDbSheet(),data=sh.getDataRange().getValues();
@@ -11210,10 +11283,10 @@ function findBookingRowByActionRef_(ref){
     const token=rowRef[2];
     if(rowIndex>=2&&rowIndex<=data.length){
       const row=data[rowIndex-1];
-      if(bookingRowActionToken_(row)===token||bookingRowActionTokenLegacy_(row)===token) return{sheet:sh,rowIndex,row,data};
+      if(bookingRowActionTokenMatches_(row,token)) return{sheet:sh,rowIndex,row,data};
     }
     for(let i=1;i<data.length;i++){
-      if(bookingRowActionToken_(data[i])===token||bookingRowActionTokenLegacy_(data[i])===token) return{sheet:sh,rowIndex:i+1,row:data[i],data};
+      if(bookingRowActionTokenMatches_(data[i],token)) return{sheet:sh,rowIndex:i+1,row:data[i],data};
     }
     return null;
   }
@@ -11659,6 +11732,8 @@ function customerCancelRequest_(eventId){
     if(idx===-1) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>❌ 예약 정보를 찾을 수 없습니다.</h2></div>');
     const row=data[idx+1];
     if(isBookingCancelledStatus_(row[1])) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>ℹ️ 이미 취소된 예약입니다.</h2></div>');
+    // 만료 시각 대신 상태가 링크 수명을 정한다 — 이미 촬영이 끝난 예약엔 취소 신청을 받지 않는다
+    if(BOOKING_CANCEL_REQUEST_OK_STATUSES_.indexOf(String(row[1]||'').trim())<0) return actionLinkErrorPage_('invalid');
     const name=String(row[2]||'');
     const email=String(row[4]||'');
     const lang=String(row[5]||'ko');
@@ -11713,6 +11788,8 @@ function customerRescheduleForm_(eventId){
     const row=found.row;
     const status=String(row[BOOKING_COL['상태']]||'').trim();
     if(isBookingCancelledStatus_(status)) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>ℹ️ 취소된 예약은 이 링크로 일정 변경을 신청할 수 없습니다.</h2></div>');
+    // 만료 시각 대신 상태가 링크 수명을 정한다 — 촬영이 끝난 뒤엔 변경 신청을 받지 않는다
+    if(BOOKING_RESCHEDULE_OK_STATUSES_.indexOf(status)<0) return actionLinkErrorPage_('invalid');
     const lang=String(row[5]||'ko');
     const name=String(row[2]||'');
     const product=String(row[7]||'');
@@ -11926,6 +12003,16 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
   const preferredDate=requestInfo.preferredDate||'-';
   const note=requestInfo.note&&requestInfo.note!=='-'?requestInfo.note:'';
   const extraMemo=memo?String(memo).trim():'';
+  /* 일정과 상품·금액이 같은 저장에서 바뀌면 변경 안내 메일은 억제된다(중복 방지) →
+     이 메일이 유일한 통지가 되므로 현재 금액을 반드시 함께 싣는다 (2026-08-25). */
+  const totalAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const balanceAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+  const amountLines={
+    ko:`<br>💶 총 금액: <b>${formatEuroAmount_(totalAmt)}€</b> · 당일 잔금: <b>${formatEuroAmount_(balanceAmt)}€</b>`,
+    en:`<br>💶 Total: <b>${formatEuroAmount_(totalAmt)}€</b> · balance due on the day: <b>${formatEuroAmount_(balanceAmt)}€</b>`,
+    de:`<br>💶 Gesamt: <b>${formatEuroAmount_(totalAmt)}€</b> · Restbetrag am Tag: <b>${formatEuroAmount_(balanceAmt)}€</b>`
+  };
+  const amountLine=amountLines[lang]||amountLines.de;   // 본문 폴백(bodies.de)과 언어를 맞춘다
   if(decision==='approved'){
     const subjects={
       ko:`[Studio mean] ${name}님, 일정 변경 요청이 확인되었습니다`,
@@ -11933,9 +12020,9 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
       de:`[Studio mean] ${name}, Ihre Terminänderung wurde bestätigt`
     };
     const bodies={
-      ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
+      ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${amountLine}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${amountLine}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${amountLine}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
     };
     sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
     return;
@@ -13371,19 +13458,24 @@ function changeBookingProductForAgent_(token,payload){
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memoParts.filter(Boolean).join('\n'));
 
   // 캘린더 이벤트가 있으면 제목/시간(소요시간) 동기화 — 없으면 skip. 기존 sync 엔진 재사용(무발송).
+  const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   try{
-    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
     if(String(rowAfter[BOOKING_COL['캘린더ID']]||'').trim()){
       ensureBookingCalendarEventForRow_(sh,rIdx,rowAfter);
     }
   }catch(e){Logger.log('changeBookingProductForAgent_ calendar sync skipped: '+e.message);}
   bumpCalCacheVer_();
+  // 상품 교체는 고객이 보는 상품·금액을 바꾼다 → 변경 안내 메일 (notify:false 로 억제 가능)
+  const changeMail=(payload.notify===false)
+    ? {sent:false,reason:'SUPPRESSED'}
+    : sendBookingChangeNoticeEmail_(row,rowAfter,rIdx);
 
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
     product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
     previousProduct:prevProduct,previousTotal:prevTotal,
     total:newTotal,deposit:newDeposit,balance:newBalance,
-    durationMin:quote.totalDuration,passAddon:passAddon,mailSent:false,auditLine:auditLine};
+    durationMin:quote.totalDuration,passAddon:passAddon,
+    mailSent:!!changeMail.sent,changeMail:changeMail,auditLine:auditLine};
 }
 
 /* 추가일정(이동일·다일차 촬영) 등록 — 이미 만들어진 예약에 부수 일정을 붙인다.
@@ -15693,6 +15785,109 @@ function bulkConfirmAllPendingDepositsAdmin(token){
   return bulkConfirmAllPendingDeposits_();
 }
 
+/* ====== 예약 변경 안내 메일 ======
+   2026-08-25 사장님 지시: "일정 변경이든 상품 변경이든 안내가 메일로 나가게 해줘."
+   그전까지 상품·금액을 바꿔도 고객에겐 아무 통지가 없었다 — 노유경 건에서 메일은 Premium/360€,
+   장부는 Plus/300€ 라 고객이 60€ 차이를 모른 채 촬영일을 맞을 뻔했다.
+   **diff 기반**이라 실제로 바뀐 항목만 이전→이후로 보여주고, 바뀐 게 없으면 아예 보내지 않는다
+   (메모·연락처 정정 같은 내부 수정은 조용히 지나간다).
+   일시 변경은 rescheduleBookingAdmin 의 기존 안내 메일이 맡으므로, 그 경로에선 `__silent` 로
+   억제해 **한 번의 저장에 메일 한 통**만 나가게 한다. */
+const BOOKING_CHANGE_NOTICE_FIELDS_=[
+  {key:'date',    label:{ko:'촬영 일시',en:'Date & time',de:'Termin'}},
+  {key:'product', label:{ko:'상품',en:'Service',de:'Leistung'}},
+  {key:'people',  label:{ko:'인원',en:'Guests',de:'Personen'},suffix:{ko:'명',en:'',de:''}},
+  {key:'location',label:{ko:'촬영 장소',en:'Location',de:'Ort'}},
+  {key:'total',   label:{ko:'총 금액',en:'Total',de:'Gesamt'},money:true},
+  {key:'deposit', label:{ko:'계약금',en:'Deposit',de:'Anzahlung'},money:true},
+  {key:'balance', label:{ko:'잔금',en:'Balance',de:'Restbetrag'},money:true}
+];
+function bookingChangeNoticeSnapshot_(row){
+  return {
+    date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,16),
+    product:String(row[BOOKING_COL['상품']]||'').trim(),
+    people:String(row[BOOKING_COL['인원']]||'').trim(),
+    location:String(parseBookingLocationFromRow_(row)||'').trim(),
+    total:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']])),
+    deposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+    balance:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]))
+  };
+}
+function buildBookingChangeDiff_(rowBefore,rowAfter){
+  const a=bookingChangeNoticeSnapshot_(rowBefore),b=bookingChangeNoticeSnapshot_(rowAfter);
+  return BOOKING_CHANGE_NOTICE_FIELDS_.filter(function(f){
+    return f.money
+      ? Math.abs(Number(a[f.key]||0)-Number(b[f.key]||0))>=0.005   // 반올림 노이즈로 메일 나가지 않게
+      : String(a[f.key]||'')!==String(b[f.key]||'');
+  }).map(function(f){return {f:f,from:a[f.key],to:b[f.key]};});
+}
+function sendBookingChangeNoticeEmail_(rowBefore,rowAfter,rowIndex){
+  try{
+    const email=String(rowAfter[BOOKING_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')===-1||email.indexOf('수기등록')>-1) return{sent:false,reason:'NO_EMAIL'};
+    if(isBookingCancelledStatus_(rowAfter[BOOKING_COL['상태']])) return{sent:false,reason:'CANCELLED'}; // 취소 안내가 따로 나간다
+    const diff=buildBookingChangeDiff_(rowBefore,rowAfter);
+    if(!diff.length) return{sent:false,reason:'NO_CHANGE'};
+    const lang=String(rowAfter[BOOKING_COL['언어']]||'ko').toLowerCase().trim();
+    const L=(lang==='en'||lang==='de')?lang:'ko';
+    const name=String(rowAfter[BOOKING_COL['고객명']]||'');
+    const fmt=function(d,side){
+      const v=d[side];
+      if(d.f.money) return formatEuroAmount_(Number(v||0))+'€';
+      const s=String(v||'').trim();
+      if(!s) return '-';
+      return escapeHtml_(s)+((d.f.suffix&&d.f.suffix[L])||'');
+    };
+    const subject={
+      ko:`[Studio mean] ${name}님, 예약 내용이 변경되었습니다`,
+      en:`[Studio mean] ${name}, your booking has been updated`,
+      de:`[Studio mean] ${name}, Ihre Buchung wurde geändert`
+    }[L];
+    const hello={ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님.`,en:`Hello <b>${escapeHtml_(name)}</b>,`,de:`Guten Tag, <b>${escapeHtml_(name)}</b>,`}[L];
+    const intro={
+      ko:'예약 내용이 아래와 같이 변경되었습니다. 확인해 주시고, 다른 점이 있으면 알려 주세요.',
+      en:'Your booking has been updated as follows. Please review it and let us know if anything looks wrong.',
+      de:'Ihre Buchung wurde wie folgt geändert. Bitte prüfen Sie die Angaben und melden Sie sich, falls etwas nicht stimmt.'
+    }[L];
+    const head={ko:['항목','변경 전','변경 후'],en:['Item','Before','After'],de:['Position','Vorher','Nachher']}[L];
+    const th='padding:8px 12px;background:#f8fafc;font-weight:700;font-size:12px;color:#475569;text-align:left;border-bottom:1px solid #e2e8f0;';
+    const td='padding:9px 12px;font-size:13px;border-bottom:1px solid #f1f5f9;';
+    const rows=diff.map(function(d){
+      return `<tr><td style="${td}font-weight:700;color:#334155;">${d.f.label[L]}</td>`+
+             `<td style="${td}color:#94a3b8;text-decoration:line-through;">${fmt(d,'from')}</td>`+
+             `<td style="${td}color:#1d4ed8;font-weight:700;">${fmt(d,'to')}</td></tr>`;
+    }).join('');
+    const balDiff=diff.filter(function(d){return d.f.key==='balance';})[0];
+    const balNote=balDiff?{
+      ko:`촬영 당일 결제하실 잔금은 <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b> 입니다.`,
+      en:`The balance due on the shoot day is <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b>.`,
+      de:`Der am Shooting-Tag fällige Restbetrag beträgt <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b>.`
+    }[L]:'';
+    let portalBtn='';
+    try{
+      const ref=createBookingRowActionRef_(rowIndex,rowAfter);
+      const url=('https://booking.studio-mean.com/status/?ref='+encodeURIComponent(ref)).replace(/&/g,'&amp;');
+      const btn={ko:'🔎 내 예약 확인·관리',en:'🔎 View / manage my booking',de:'🔎 Meine Buchung ansehen'}[L];
+      portalBtn=`<p style="margin:20px 0;"><a href="${url}" style="display:inline-block;padding:11px 22px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">${btn}</a></p>`;
+    }catch(e){Logger.log('change notice portal link 실패: '+e.message);}
+    sendTrackedEmail_({
+      to:email,
+      subject:subject,
+      htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;max-width:600px;color:#1e293b;line-height:1.65;">`+
+        `<p>${hello}</p><p>${intro}</p>`+
+        `<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:16px 0;">`+
+        `<tr><th style="${th}">${head[0]}</th><th style="${th}">${head[1]}</th><th style="${th}">${head[2]}</th></tr>`+
+        rows+`</table>`+
+        (balNote?`<p style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;font-size:13px;color:#166534;">${balNote}</p>`:'')+
+        portalBtn+_getSignatureHtml()+`</div>`
+    },{type:'예약변경안내',customerName:name,email:email,bookingRowIndex:rowIndex});
+    return{sent:true,fields:diff.map(function(d){return d.f.key;})};
+  }catch(err){
+    Logger.log('sendBookingChangeNoticeEmail_ 실패 row '+rowIndex+': '+err.message);
+    return{sent:false,reason:'ERROR: '+err.message};   // 메일 실패가 저장을 되돌리면 안 된다
+  }
+}
+
 function updateBookingAdmin(token,rIdx,d){
   assertAdmin_(token);const sh=getDbSheet();
   const rowBefore=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
@@ -15833,7 +16028,9 @@ function updateBookingAdmin(token,rIdx,d){
   try{
     ensureBookingCalendarEventForRow_(sh,rIdx,newRow);
   }catch(e){Logger.log('updateBookingAdmin calendar sync failed row '+rIdx+': '+e.message);}
-  return{ok:true};
+  // 고객이 보는 값이 바뀌었으면 변경 안내 메일. __silent 는 일정변경 메일이 뒤따르는 경우(중복 방지)
+  const changeMail=d.__silent?{sent:false,reason:'SILENT'}:sendBookingChangeNoticeEmail_(rowBefore,newRow,rIdx);
+  return{ok:true,changeMail:changeMail};
 }
 
 // 에이전트 전용 예약 필드 수정 — updateBookingAdmin 을 재사용하되, '부분 업데이트 필드 소실'을 막는다.
@@ -15847,7 +16044,9 @@ function updateBookingAdmin(token,rIdx,d){
 //     계약금11·잔금12·결제수단13·요청사항15·계약금수단17·추가항목18·잔금입금일20 (updateBookingAdmin 의 w() 열과 동일)
 //   · 상태/금액/결제수단 변경은 전용 액션(booking-update-status, booking-set-amount, booking-refund 등)을 쓰도록
 //     이 경로에서는 화이트리스트 밖 키를 거부한다.
-//   · 고객 메일은 발송하지 않는다(updateBookingAdmin 자체가 메일 미발송). location/date/time 변경 시 구글 캘린더는
+//   · 2026-08-25부터 **고객이 보는 값(일시·상품·인원·장소·금액)이 실제로 바뀌면 변경 안내 메일이 나간다**
+//     (사장님 지시). 이름·연락처·메모만 고친 경우엔 diff 가 비어 아무것도 안 나간다. 조용히 고쳐야 하면
+//     `notify:false`. location/date/time 변경 시 구글 캘린더는
 //     기존 이벤트에 sync 되고, 캘린더가 없던 활성 예약이면 1건 생성된다(어드민 저장과 동일 동작).
 function updateBookingFieldsForAgent_(token,rIdx,data){
   assertAdmin_(token);
@@ -15857,7 +16056,7 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','notify'];
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   // '무조건 덮어쓰기' 칸은 현재 값으로 시드(미지정 시 소실 방지). 화이트리스트 필드는 있으면 얹는다.
@@ -15872,7 +16071,8 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
     depPayMethod:row[17],                                // 계약금수단 (유지)
     balanceDate:row[20],                                 // 잔금입금일 (유지)
     memo:(d.memo!==undefined?d.memo:row[15]),            // 요청사항
-    extraItem:row[18]                                    // 추가항목 (updateBookingAdmin 이 세부내역 블록 재구성)
+    extraItem:row[18],                                   // 추가항목 (updateBookingAdmin 이 세부내역 블록 재구성)
+    __silent:(d.notify===false)                          // 기본은 변경 안내 메일 발송(diff 있을 때만)
   };
   // 조건부 칸: 에이전트가 준 경우에만 포함(안 주면 updateBookingAdmin 이 해당 칸을 건드리지 않음)
   if(d.location!==undefined) merged.location=d.location;
@@ -22702,12 +22902,18 @@ function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
      어드민 셀렉 탭의 진행 버튼 체인이 출력→우편발송→최종작업완료 뿐이라 픽업 건은 마감 경로가 없었다.
      진입점(어드민/휴대폰/에이전트)이 아니라 **method 로 판정**한다: 진입점별로 켜면 실제 기록의 대부분인
      휴대폰 페이지가 빠지고, 프론트가 finalize 를 보내게 하면 캐시 갱신 전 구버전 화면으로 기록된 건이
-     alreadyDone 조기 반환 때문에 영영 마감되지 않는다. skipFinalize 로만 끌 수 있다. */
+     alreadyDone 조기 반환 때문에 영영 마감되지 않는다. skipFinalize:true / finalize:false 로만 끌 수 있다. */
   /* ⚠ 인화가 안 끝난 건은 마감하지 않는다. 휴대폰 수령 큐는 fresh(아직 인화 전)까지 포함해 보여주고
      그 카드의 주 버튼도 똑같은 '✅ 수령 완료'라, 오터치 한 번이면 보정도 안 끝난 건이 마감될 수 있다.
      인화하지 않은 인화물을 건넬 수는 없으므로 출력완료일시를 마감의 전제로 둔다(수령 기록 자체는 남는다). */
   const printedAt=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
-  const finalize=HANDOVER_FINALIZE_METHODS_.indexOf(method)>=0 && info.skipFinalize!==true && !!printedAt;
+  /* 마감 억제 스위치 — skipFinalize:true 와 그 별칭 finalize:false 를 둘 다 받는다. 미지정이면 현행(마감) 유지:
+     어드민 버튼도 휴대폰 수령 페이지도 둘 다 안 보내므로 기존 동작은 그대로다.
+     문자열 'false'/'0' 까지 받는 이유 — 되돌리기 어려운 마감을 막는 킬스위치가 오타 한 번에 **조용히 무시**되면
+     안 된다. 실제로 finalize:false 를 보냈는데 예약행까지 작업완료로 넘어간 사고가 있었다(2026-08-25). */
+  const noFinalize=agentBoolFlag_(info.skipFinalize)
+    ||(info.finalize!=null&&info.finalize!==''&&!agentBoolFlag_(info.finalize));
+  const finalize=HANDOVER_FINALIZE_METHODS_.indexOf(method)>=0 && !noFinalize && !!printedAt;
   // finalize 가 이기게 둔다 — 둘 다 쓰면 같은 셀에 두 번 쓰게 되고 두 번째가 낡은 st 로 판단한다
   if(!finalize&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('우편발송');
@@ -23074,7 +23280,8 @@ function markSelectHandoverAdmin(token,payload){
   if(!sid) throw new Error('셀렉 세션을 찾을 수 없습니다.');
   const res=markSelectHandoverBySession_(sid,{
     method:payload.method,memo:payload.memo,
-    skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false
+    // 마감 억제 스위치는 core 가 판정한다 — 여기서 ===true 로 좁히면 별칭 finalize:false 가 유실된다
+    skipFinalize:payload.skipFinalize,finalize:payload.finalize,notify:payload.notify!==false
   });
   if(!res||!res.ok) throw new Error((res&&res.message)||'수령 기록 실패');
   return res;
