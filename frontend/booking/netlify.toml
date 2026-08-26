@@ -49,9 +49,23 @@
   status = 301
   force = true
 
+# 슬래시 없이 두면 페이지의 상대경로 에셋이 루트(/consultation.min.css)로 풀려 404 난다.
+# 디렉터리 형태로 고정하고 하위 경로를 /consultation/ 로 넘겨 에셋까지 맞춘다.
 [[redirects]]
   from = "/consultation-legacy"
+  to = "/consultation-legacy/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/consultation-legacy/"
   to = "/consultation/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/consultation-legacy/*"
+  to = "/consultation/:splat"
   status = 200
   force = true
 
