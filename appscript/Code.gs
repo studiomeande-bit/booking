@@ -1616,6 +1616,26 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='consult-appointment-cancel') return jsonOk_(cancelConsultationAppointmentAdmin(token,payload.rowIndex,payload));
         if(action==='consult-note') return jsonOk_(addConsultationMeetingNoteAdmin(token,payload.rowIndex,String(payload.note||''),String(payload.nextAction||'')));
         if(action==='portfolio-lead-list') return jsonOk_(listPortfolioLeadsAdmin(token,payload.limit||60));
+        /* 문의·상담 통합 목록 — 리드 시트 + 상담 시트를 한 목록으로. 기본은 미처리만,
+           includeClosed:true 로 전체. 오래 방치된 순으로 정렬돼 답장 누락을 바로 잡아낸다. */
+        if(action==='dashboard-token'){
+          assertAdmin_(token);
+          return jsonOk_({ok:true,token:getOrCreateDashboardToken_()});
+        }
+        if(action==='dashboard-token-rotate'){
+          // 토큰이 새면 이걸로 폐기·재발급. 기존 대시보드는 새 토큰을 다시 붙여넣어야 열린다.
+          assertAdmin_(token);
+          PropertiesService.getScriptProperties().deleteProperty(DASHBOARD_TOKEN_PROP);
+          return jsonOk_({ok:true,rotated:true,token:getOrCreateDashboardToken_()});
+        }
+        if(action==='today-board'){
+          assertAdmin_(token);
+          return jsonOk_(buildTodayBoard_(payload.date));
+        }
+        if(action==='inquiry-list'){
+          assertAdmin_(token);
+          return jsonOk_(buildUnifiedInquiries_({includeClosed:!!payload.includeClosed}));
+        }
         if(action==='portfolio-lead-update') return jsonOk_(updatePortfolioLeadStatusAdmin(token,payload.rowIndex,String(payload.status||''),String(payload.note||'')));
         /* ── Phase 3: Gutschein 도메인 (deleteGutscheinAdmin 은 의도적으로 미노출 — 취소로 충분) ── */
         if(action==='gutschein-get') return jsonOk_(getGutscheinAdmin(token,String(payload.code||'')));
@@ -2381,6 +2401,13 @@ function handlePublicApiRequest_(route,method,e){
       const payload=request.payload||{};
       assertPublicPortfolioLeadPayload_(payload,body);
       return jsonOk_(createPortfolioLead_(payload,e));
+    }
+    if(route==='today-board'){
+      // 오늘 촬영 보드 — 데스크탑 대시보드 전용. 전용 토큰으로만 열린다(어드민 로그인 불필요).
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/today-board');
+      const tbP=(e&&e.parameter)||{};
+      if(!isValidDashboardToken_(tbP.token)) return jsonError_('UNAUTHORIZED','Invalid dashboard token');
+      return jsonOk_(buildTodayBoard_(tbP.date));
     }
     if(route==='consultation'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/consultation');
@@ -3292,7 +3319,7 @@ const PARTNER_SEED_ROWS=[
    'K-beauty makeup artist — bridal and shoot makeup, plus dress rental.',
    'K-Beauty-Make-up-Artistin — Braut- und Shooting-Make-up sowie Kleiderverleih.',
    'KO','','https://open.kakao.com/o/sLHQbH9g','https://www.instagram.com/cozyjoo.de/',
-   'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','인스타 프로필: K-Beauty Makeup Artist | Bridal | Europe']
+   'wed,prof,stud,snap,baby','success,mail,dolmail,consult',3,'Y','인스타 프로필: K-Beauty Makeup Artist | Bridal | Europe']
 ];
 
 function ensurePartnerSheet_(ss){
@@ -4283,6 +4310,282 @@ function _mapLeadRow_(row,rowIndex){
   };
 }
 
+/* ===== 문의·상담 통합 뷰 (2026-08-26 사장님 지시: "ERP에서 통합") =====
+   리드 시트(홈페이지 문의)와 상담 시트(상담 설문)는 **물리적으로 합치지 않는다.**
+   상담 시트에만 있는 설문JSON·회의록·상담캘린더·예약전환 파이프라인에 리드를 밀어 넣으면
+   행마다 빈 칸이 14개 생기고 consult-* 액션들의 전제가 흔들린다. 되돌리기도 어렵다.
+   그래서 **읽는 쪽에서 하나로 합친다** — 원장은 둘로 두되 사람이 보는 곳은 한 곳.
+   나중에 물리 통합으로 승급하고 싶으면 이 함수의 출력 형태를 그대로 쓰면 된다.
+
+   미처리 판정은 각 시트의 기존 정의를 그대로 따른다(동작 변경 최소화):
+     리드  = 신규·상담중            (listPortfolioLeadsAdmin 과 동일)
+     상담  = 신규·상담예정·상담중·견적준비 (브리핑 기존 정의와 동일) */
+const INQUIRY_OPEN_LEAD_=['신규','상담중'];
+const INQUIRY_OPEN_CONSULT_=['신규','상담예정','상담중','견적준비'];
+
+function _inquiryAgeDays_(value){
+  const parsed=parseDateSafe_(value);
+  const str=String(parsed&&parsed.str||'').slice(0,10);
+  if(!str) return null;
+  const then=new Date(str+'T00:00:00');
+  if(isNaN(then.getTime())) return null;
+  const today=new Date(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+'T00:00:00');
+  return Math.max(0,Math.round((today-then)/86400000));
+}
+
+/* 문의 ↔ 예약 자동 대조 (2026-08-26).
+   왕혜연 건에서 드러난 문제: 문의가 실제로 **예약으로 성사됐는데** 리드 상태를 아무도 안 바꿔서
+   브리핑에는 계속 "56일 방치"로 떴다. 진짜 방치와 구분이 안 되면 브리핑을 아무도 안 믿게 된다.
+   그 건의 실제 값 — 리드 `왕혜연 / wang0721@naver.com / +49 172 457 3970`,
+   예약 `Hyeyeon Wang / eunice0721@gmail.com / 491724573970`.
+   **이름도 이메일도 안 맞고 전화만 맞는다.** 그래서 전화·이메일을 주 키로 쓰고 이름은 안 쓴다
+   (이름 일치는 동명이인 오탐이 크고, 정작 이 사례를 못 잡는다). */
+function _inqDigits_(v){ return String(v==null?'':v).replace(/[^0-9]/g,''); }
+// 국가번호·선행 0 표기가 제각각이라 뒤 9자리로 비교한다 (0172…/+49172…/49172… 모두 같은 번호)
+function _inqPhoneKey_(v){
+  const d=_inqDigits_(v);
+  return d.length>=8 ? d.slice(-9) : '';
+}
+function _inqEmailKey_(v){
+  const e=String(v==null?'':v).trim().toLowerCase();
+  return e.indexOf('@')>0 ? e : '';
+}
+function findBookingMatchForInquiry_(inq,bookingRows){
+  const phoneKey=_inqPhoneKey_(inq&&inq.phone);
+  const emailKey=_inqEmailKey_(inq&&inq.email);
+  if(!phoneKey&&!emailKey) return null;
+  for(let i=0;i<bookingRows.length;i++){
+    const row=bookingRows[i];
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) continue;          // 취소건은 '성사'가 아니다
+    let via='';
+    if(emailKey&&_inqEmailKey_(row[BOOKING_COL['이메일']])===emailKey) via='email';
+    else if(phoneKey&&_inqPhoneKey_(row[BOOKING_COL['연락처']])===phoneKey) via='phone';
+    if(!via) continue;
+    return {
+      rowIndex:i+2, via:via,
+      name:String(row[BOOKING_COL['고객명']]||''),
+      dateTime:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,16),
+      status:status,
+      product:String(row[BOOKING_COL['상품']]||'')
+    };
+  }
+  return null;
+}
+
+// AdminV2 가 google.script.run 으로 부르는 진입점 (에이전트는 inquiry-list 액션을 쓴다)
+/* ===== 오늘 촬영 보드 (2026-08-26) =====
+   사장님이 촬영일에 상시 띄워 두는 데스크탑 대시보드용. 어드민을 열면 무겁고 로그인이 필요해
+   "상시"가 안 된다. 그래서 **오늘 하루치만** 내주는 가벼운 공개 라우트 + 전용 토큰.
+   재실 토큰(studio-presence)과 같은 패턴이지만 별도 토큰이라 유출 시 이것만 폐기하면 된다.
+   내주는 값은 촬영 당일 현장에서 실제로 필요한 것만: 시간·고객·상품·인원·장소·준비메모·현장 수납액. */
+const DASHBOARD_TOKEN_PROP='DASHBOARD_TOKEN';
+function getOrCreateDashboardToken_(){
+  const p=PropertiesService.getScriptProperties();
+  let token=String(p.getProperty(DASHBOARD_TOKEN_PROP)||'').trim();
+  if(!token){
+    token=Utilities.getUuid().replace(/-/g,'')+'_'+Date.now().toString(36);
+    p.setProperty(DASHBOARD_TOKEN_PROP,token);
+  }
+  return token;
+}
+function isValidDashboardToken_(token){
+  return String(token||'').trim()===getOrCreateDashboardToken_();
+}
+
+/* 요청사항 메모의 [키:값] 토큰을 현장에서 읽기 쉬운 줄로 바꾼다.
+   예: "[백일촬영] [배경1:white][배경2:grey] [가족구성:부모2+아이1]" → ['백일촬영','배경 white·grey','가족구성 부모2+아이1'] */
+function _dashboardPrepLines_(memo){
+  const raw=String(memo||'').trim();
+  if(!raw) return [];
+  const out=[];
+  const bg=[];
+  const tokens=raw.match(/\[[^\]]+\]/g)||[];
+  tokens.forEach(function(t){
+    const inner=t.slice(1,-1).trim();
+    const sep=inner.indexOf(':');
+    if(sep<0){ out.push(inner); return; }
+    const key=inner.slice(0,sep).trim(), val=inner.slice(sep+1).trim();
+    if(/^배경\d*$/.test(key)){ bg.push(val); return; }
+    out.push(key+' '+val);
+  });
+  if(bg.length) out.unshift('배경 '+bg.join('·'));
+  // 토큰 밖의 자유 서술(예: 아이 이름)도 남긴다
+  const freeText=raw.replace(/\[[^\]]+\]/g,' ').replace(/\s+/g,' ').trim();
+  if(freeText) out.push(freeText);
+  return out;
+}
+
+function buildTodayBoard_(dateStr){
+  const tz=CONFIG.TIMEZONE;
+  const now=new Date();
+  const today=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+  const shoots=[];
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'');
+    if(dt.slice(0,10)!==today) return;
+    const hhmm=dt.slice(11,16);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+    const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+    const unpaid=/미결제|offen|unpaid/i.test(payMethod);
+    shoots.push({
+      rowIndex:idx+2,
+      time:hhmm||'--:--',
+      timeUnset:(!hhmm||hhmm==='00:00'),
+      durationMin:getBookingDurationMinFromRow_(row,60),
+      name:String(row[BOOKING_COL['고객명']]||''),
+      phone:String(row[BOOKING_COL['연락처']]||''),
+      product:String(row[BOOKING_COL['상품']]||''),
+      itemGroup:String(row[BOOKING_COL['촬영종류']]||''),
+      people:String(row[BOOKING_COL['인원']]||''),
+      location:parseBookingLocationFromRow_(row)||'',
+      status:status,
+      total:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']])),
+      deposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+      depositPaid:depositPaid,
+      balance:balance,
+      payMethod:payMethod,
+      dueOnSite:(unpaid||!depositPaid)?balance:balance,   // 현장에서 받을 금액 = 잔금
+      prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']])
+    });
+  });
+  shoots.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+
+  // 지금 시각 기준 다음 촬영
+  const nowHm=Utilities.formatDate(now,tz,'HH:mm');
+  let next=null;
+  for(let i=0;i<shoots.length;i++){
+    if(shoots[i].timeUnset) continue;
+    if(shoots[i].time>=nowHm){ next=shoots[i]; break; }
+  }
+  const warnings=[];
+  shoots.forEach(function(s){
+    if(s.timeUnset) warnings.push(`${s.name}님 촬영 시간이 미정입니다`);
+    if(!s.depositPaid&&s.deposit>0) warnings.push(`${s.name}님 계약금 ${formatEuroAmount_(s.deposit)}€ 미입금`);
+  });
+  return {
+    ok:true,
+    date:today,
+    weekday:['일','월','화','수','목','금','토'][new Date(today+'T12:00:00').getDay()],
+    serverTime:Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss'),
+    count:shoots.length,
+    dueTotal:shoots.reduce(function(a,s){return a+(s.balance||0);},0),
+    next:next?{time:next.time,name:next.name,product:next.product}:null,
+    shoots:shoots,
+    warnings:warnings
+  };
+}
+
+function listUnifiedInquiriesAdmin(token,includeClosed){
+  assertAdmin_(token);
+  return buildUnifiedInquiries_({includeClosed:!!includeClosed});
+}
+
+function buildUnifiedInquiries_(opts){
+  const o=opts||{};
+  const includeClosed=!!o.includeClosed;
+  const items=[];
+  const sheets=ensureSheets_();
+
+  // ① 홈페이지 문의 리드
+  try{
+    const lSh=sheets.leadSheet;
+    const lLast=lSh.getLastRow();
+    if(lLast>1){
+      const rows=lSh.getRange(2,1,lLast-1,LEAD_HEADERS.length).getValues();
+      rows.forEach(function(row,idx){
+        const status=String(row[LEAD_COL['상태']]||'신규').trim();
+        const open=INQUIRY_OPEN_LEAD_.indexOf(status)>-1;
+        if(!open&&!includeClosed) return;
+        const at=row[LEAD_COL['접수일시']];
+        items.push({
+          kind:'lead', kindLabel:'홈페이지 문의',
+          rowIndex:idx+2, id:'',
+          submittedAt:String(parseDateSafe_(at).str||'').slice(0,16),
+          ageDays:_inquiryAgeDays_(at),
+          status:status, open:open,
+          name:String(row[LEAD_COL['이름']]||''), company:'',
+          type:String(row[LEAD_COL['문의종류']]||''),
+          email:String(row[LEAD_COL['이메일']]||''), phone:String(row[LEAD_COL['전화']]||''),
+          shootDate:String(row[LEAD_COL['희망일정']]||''), location:String(row[LEAD_COL['장소']]||''),
+          summary:String(row[LEAD_COL['메시지']]||'').replace(/\s+/g,' ').slice(0,160),
+          memo:String(row[LEAD_COL['관리메모']]||''),
+          action:'portfolio-lead-update'
+        });
+      });
+    }
+  }catch(e){Logger.log('unified inquiries: lead skipped '+e.message);}
+
+  // ② 상담 설문
+  try{
+    const cSh=sheets.consultationSheet;
+    const cLast=cSh.getLastRow();
+    if(cLast>1){
+      const rows=cSh.getRange(2,1,cLast-1,CONSULTATION_HEADERS.length).getValues();
+      rows.forEach(function(row,idx){
+        const status=String(row[CONSULTATION_COL['상태']]||'신규').trim();
+        const open=INQUIRY_OPEN_CONSULT_.indexOf(status)>-1;
+        if(!open&&!includeClosed) return;
+        const at=row[CONSULTATION_COL['접수일시']];
+        items.push({
+          kind:'consult', kindLabel:'상담 설문',
+          rowIndex:idx+2, id:String(row[CONSULTATION_COL['상담ID']]||''),
+          submittedAt:String(parseDateSafe_(at).str||'').slice(0,16),
+          ageDays:_inquiryAgeDays_(at),
+          status:status, open:open,
+          name:String(row[CONSULTATION_COL['고객명']]||''),
+          company:String(row[CONSULTATION_COL['회사명']]||''),
+          type:String(row[CONSULTATION_COL['상담유형']]||''),
+          email:String(row[CONSULTATION_COL['이메일']]||''), phone:String(row[CONSULTATION_COL['연락처']]||''),
+          shootDate:String(parseDateSafe_(row[CONSULTATION_COL['촬영예정일']]).str||'').slice(0,10),
+          location:String(row[CONSULTATION_COL['촬영장소']]||''),
+          summary:String(row[CONSULTATION_COL['요약']]||'').replace(/\s+/g,' ').slice(0,160),
+          memo:String(row[CONSULTATION_COL['관리메모']]||''),
+          action:'consult-update'
+        });
+      });
+    }
+  }catch(e){Logger.log('unified inquiries: consult skipped '+e.message);}
+
+  /* 예약 대조 — 이미 성사된 문의를 '방치'로 세지 않기 위해. 예약장부는 한 번만 읽는다. */
+  try{
+    const bSh=getDbSheet();
+    const bLast=bSh.getLastRow();
+    const bookingRows=bLast>1?bSh.getRange(2,1,bLast-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+    items.forEach(function(inq){
+      inq.booking=findBookingMatchForInquiry_(inq,bookingRows);
+      // 예약이 잡혔는데 리드/상담 상태가 아직 미처리면 정리 대상으로 표시한다
+      inq.needsConvertFix=!!(inq.booking&&inq.open&&inq.status!=='예약전환');
+    });
+  }catch(e){Logger.log('unified inquiries: booking match skipped '+e.message);}
+
+  // 오래 방치된 것부터 — 브리핑에서 위로 올라와야 할 순서
+  items.sort(function(a,b){
+    const av=a.ageDays==null?-1:a.ageDays, bv=b.ageDays==null?-1:b.ageDays;
+    if(av!==bv) return bv-av;
+    return String(b.submittedAt).localeCompare(String(a.submittedAt));
+  });
+  const open=items.filter(function(i){return i.open;});
+  return {
+    ok:true,
+    items:items,
+    open:open.length,
+    stale:open.filter(function(i){return i.ageDays!=null&&i.ageDays>=INQUIRY_STALE_DAYS_&&!i.booking;}).length,
+    convertFix:open.filter(function(i){return i.needsConvertFix;}).length,
+    byKind:{lead:items.filter(function(i){return i.kind==='lead';}).length,
+            consult:items.filter(function(i){return i.kind==='consult';}).length}
+  };
+}
+// 이 일수를 넘게 답이 없으면 브리핑에서 붉게 강조한다(이홍규 38일·왕혜연 56일 방치 사고 기준)
+const INQUIRY_STALE_DAYS_=3;
+
 function listPortfolioLeadsAdmin(token, limit){
   assertAdmin_(token);
   const sh=ensureSheets_().leadSheet;
@@ -4580,26 +4883,46 @@ function _sendConsultationAdminEmail_(c,rowIndex){
 }
 
 // 에이전트 리드 적재 — 인스타 댓글/DM 등 외부 리드를 리드 시트에 기록 (comment_guard 연동, ref로 중복 방지)
+/* 외부 리드 적재. 원래는 인스타 댓글용이라 이름·메시지만 받았는데, 메일함에 묻힌 문의를
+   장부로 되살릴 때(2026-08-26 복구 작업) **연락처와 원래 접수일이 없으면 쓸모가 없다** —
+   사장님이 답장하려면 이메일이 필요하고, 브리핑이 '며칠 방치'를 세려면 원래 날짜가 필요하다.
+   그래서 email/phone/preferredDate/location/submittedAt 을 받고, `upsert:true` 면 같은 ref 행을
+   덮어쓴다. 덮어쓸 때 **상태·관리메모·최근관리일시는 보존**한다(사장님이 손댄 값을 지우지 않는다). */
 function addLeadForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
   const sh=ensureLeadSheet_(ensureSheets_().ss);
   const ref=String(payload.ref||'').slice(0,160);           // permalink 등 고유키
+  let targetRow=0, existing=null;
   if(ref){
     const vals=sh.getDataRange().getValues();
     for(let i=1;i<vals.length;i++){
-      if(String(vals[i][LEAD_COL['관리메모']]||'').indexOf(ref)>-1) return {ok:true,skipped:'duplicate',ref:ref};
+      if(String(vals[i][LEAD_COL['관리메모']]||'').indexOf(ref)>-1){ targetRow=i+1; existing=vals[i]; break; }
     }
+    if(targetRow&&!payload.upsert) return {ok:true,skipped:'duplicate',ref:ref,rowIndex:targetRow};
   }
+  const stamp=String(payload.submittedAt||'').trim()
+    || Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const row=new Array(LEAD_HEADERS.length).fill('');
-  row[LEAD_COL['접수일시']]=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-  row[LEAD_COL['상태']]='신규';
+  row[LEAD_COL['접수일시']]=stamp;
+  row[LEAD_COL['상태']]=existing?String(existing[LEAD_COL['상태']]||'신규'):'신규';   // 사장님이 바꾼 상태 보존
   row[LEAD_COL['이름']]=String(payload.name||'').slice(0,80);
+  row[LEAD_COL['이메일']]=String(payload.email||'').slice(0,120);
+  // 예약 장부와 동일한 정규화 — 이걸 안 하면 시트가 '01724573970' 을 숫자로 읽어 **앞자리 0이 날아간다**
+  row[LEAD_COL['전화']]=neutralizeFormula_(normalizePhoneForLedger_(payload.phone,payload.phoneCountry||'+49')).slice(0,40);
   row[LEAD_COL['언어']]=String(payload.lang||'').slice(0,5);
   row[LEAD_COL['문의종류']]=String(payload.inquiryType||'인스타 문의').slice(0,40);
+  row[LEAD_COL['희망일정']]=String(payload.preferredDate||'').slice(0,60);
+  row[LEAD_COL['장소']]=String(payload.location||'').slice(0,80);
   row[LEAD_COL['메시지']]=String(payload.message||'').slice(0,500);
   row[LEAD_COL['출처']]=String(payload.source||'instagram-comment').slice(0,60);
-  row[LEAD_COL['관리메모']]=ref?('ref:'+ref):'';
+  row[LEAD_COL['관리메모']]=existing?String(existing[LEAD_COL['관리메모']]||'')
+                                   :(ref?('ref:'+ref):'');
+  if(existing&&LEAD_COL['최근관리일시']!=null) row[LEAD_COL['최근관리일시']]=existing[LEAD_COL['최근관리일시']]||'';
+  if(targetRow){
+    sh.getRange(targetRow,1,1,LEAD_HEADERS.length).setValues([neutralizeRow_(row)]);
+    return {ok:true,updated:true,rowIndex:targetRow,ref:ref};
+  }
   sh.appendRow(neutralizeRow_(row));
   return {ok:true,added:true,rowIndex:sh.getLastRow(),ref:ref};
 }
@@ -15285,7 +15608,12 @@ function _buildDailyBriefingData_(){
   let travelFeeGaps={count:0,items:[],ledgerRows:0};
   try{ travelFeeGaps=_scanTravelFeeGaps_(rows,now); }
   catch(e){Logger.log('briefing travelFeeGaps fail: '+e.message);_briefFail_(sectionFailures,'출장비 누락',e);}
-  return {ok:true,date:today,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
+  // 문의·상담 통합 — 리드가 브리핑에 아예 안 잡히던 구멍을 막는다(이홍규 38일 방치 사고)
+  let inquiries={open:0,stale:0,items:[]};
+  try{ inquiries=buildUnifiedInquiries_({}); }
+  catch(e){ Logger.log('briefing inquiries skipped: '+e.message); _briefFail_(sectionFailures,'문의·상담',e); }
+
+  return {ok:true,date:today,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -15449,11 +15777,33 @@ function buildDailyBriefingEmailHtml_(b){
     }
   }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
-  if(b.consultations&&b.consultations.open>0){
-    actions.push(line(`💼 미처리 상담 <b>${b.consultations.open}건</b> — Claude에게 "상담 견적 초안 만들어줘"`));
-    (b.consultations.items||[]).forEach(function(c){
-      actions.push(line(`&nbsp;&nbsp;· ${esc(c.status)} — <b>${esc(c.company||c.name)}</b> (${esc(c.type)}) ${esc(String(c.submittedAt).slice(5,16))}`));
+  /* 문의·상담 통합 — 홈페이지 문의(리드)가 브리핑에 아예 안 잡혀 38일·56일씩 방치된 사고에서 출발.
+     오래 묵은 순으로 세우고, 3일 넘게 답이 없는 건은 붉게 세운다. */
+  if(b.inquiries&&b.inquiries.open>0){
+    const inq=b.inquiries;
+    const staleText=inq.stale>0?` — <b style="color:#b91c1c;">${inq.stale}건은 ${INQUIRY_STALE_DAYS_}일 넘게 답장이 없습니다</b>`:'';
+    const fixText=inq.convertFix>0?` · <b style="color:#b45309;">${inq.convertFix}건은 이미 예약이 잡혀 있어 상태 정리만 필요합니다</b>`:'';
+    actions.push(line(`📨 미처리 문의·상담 <b>${inq.open}건</b>${staleText}${fixText}`));
+    (inq.items||[]).filter(function(i){return i.open;}).slice(0,8).forEach(function(i){
+      const age=i.ageDays==null?'':(i.ageDays===0?'오늘':`${i.ageDays}일째`);
+      // 예약이 이미 잡힌 건은 '방치'가 아니다 — 붉게 세우지 않고 정리 안내만 붙인다
+      const aged=!i.booking&&i.ageDays!=null&&i.ageDays>=INQUIRY_STALE_DAYS_;
+      const who=esc(i.company||i.name||'-');
+      const contact=esc(i.email||i.phone||'');
+      const matched=i.booking
+        ? `<br>&nbsp;&nbsp;&nbsp;&nbsp;<b style="color:#047857;">✅ 예약 있음</b> — 행 ${i.booking.rowIndex} `
+          +`${esc(i.booking.name)} · ${esc(i.booking.dateTime)} · ${esc(i.booking.status)} `
+          +`<span style="color:#94a3b8;">(${i.booking.via==='email'?'이메일':'전화'} 일치)</span>`
+          +`${i.needsConvertFix?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#b45309;">→ 문의 상태를 <b>예약전환</b>으로 정리해 주세요</span>`:''}`
+        : '';
+      actions.push(line(`&nbsp;&nbsp;· ${esc(i.kindLabel)} · ${esc(i.status)} — <b>${who}</b>`
+        +`${i.type?` (${esc(i.type)})`:''}`
+        +`${age?` <b style="color:${aged?'#b91c1c':'#64748b'};">${esc(age)}</b>`:''}`
+        +`${contact?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#64748b;">${contact}</span>`:''}`
+        +matched
+        +`${i.summary?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#94a3b8;">${esc(i.summary.slice(0,90))}</span>`:''}`));
     });
+    if(inq.open>8) actions.push(line(`&nbsp;&nbsp;외 ${inq.open-8}건 — Claude에게 "문의 목록 보여줘"`));
   }
   parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
   // 3) 미수 잔금
