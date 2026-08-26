@@ -16,9 +16,43 @@
 
   /* ===== 문항 정의 ===== */
   // kind: 'single' | 'multi' | 'urls' | 'text'
+  /* 공통 문항 — 상품군과 무관하게 앞(head)·뒤(tail)에 붙는다.
+     `free`: 칩 아래 자유입력 한 칸을 더 연다. 선택지로 못 담는 맥락을 받되 강요하지는 않는다. */
+  var COMMON = {
+    head: [
+      { id: 'occasion', opt: true, kind: 'multi',
+        t: { ko: '이번 촬영을 하게 된 계기가 있으신가요?', en: 'What brings you to this shoot?', de: 'Was ist der Anlass für dieses Shooting?' },
+        free: { ko: '괜찮으시면 한 줄로 들려주세요 — 어떤 이야기인지 알면 컷 구성과 디렉션이 달라집니다.',
+                en: 'A sentence is enough. Knowing the story changes how we frame and direct.',
+                de: 'Ein Satz genügt. Die Geschichte verändert Bildaufbau und Regie.' },
+        c: [
+          ['anniversary', '기념일 — 생일 · 결혼기념일 · 백일 · 돌', 'An anniversary — birthday, wedding, 100 days', 'Ein Jubiläum — Geburtstag, Hochzeitstag, 100 Tage'],
+          ['milestone', '인생의 전환점 — 졸업 · 이직 · 이사 · 새 출발', 'A turning point — graduation, new job, moving', 'Ein Wendepunkt — Abschluss, neuer Job, Umzug'],
+          ['record', '지금 이 모습을 기록해 두고 싶어서', 'To record how we are right now', 'Um festzuhalten, wie wir jetzt sind'],
+          ['need', '필요해서 — 서류 · 지원 · 업무용', 'Because I need it — documents, application, work', 'Weil ich sie brauche — Dokumente, Bewerbung, Beruf'],
+          ['gift', '선물하려고', 'As a gift', 'Als Geschenk'],
+          ['family', '가족이 모이는 드문 기회라서', 'A rare chance with family together', 'Eine seltene Gelegenheit mit der Familie'],
+          ['nospecial', '특별한 이유는 없어요', 'No particular reason', 'Kein besonderer Anlass']
+        ] }
+    ],
+    tail: [
+      { id: 'deadline', opt: true, kind: 'single',
+        t: { ko: '결과물이 언제까지 필요하신가요?', en: 'When do you need the photos by?', de: 'Bis wann brauchen Sie die Fotos?' },
+        free: { ko: '마감이 정해져 있으면 날짜를 적어 주세요 — 보정 순서를 그에 맞춰 잡습니다.',
+                en: 'If there is a fixed date, write it here — we schedule retouching around it.',
+                de: 'Bei festem Termin bitte Datum angeben — wir planen die Retusche danach.' },
+        c: [
+          ['relaxed', '급하지 않아요', 'No rush', 'Keine Eile'],
+          ['twoweeks', '2주 안에 받고 싶어요', 'Within two weeks', 'Innerhalb von zwei Wochen'],
+          ['month', '한 달 안에 받으면 충분해요', 'Within a month is fine', 'Innerhalb eines Monats reicht'],
+          ['fixed', '정해진 마감일이 있어요', 'There is a fixed deadline', 'Es gibt einen festen Termin']
+        ] }
+    ]
+  };
+
   var Q = {
     prof: [
-      { id: 'usage', kind: 'multi', t: { ko: '사진을 어디에 쓰시나요?', en: 'What will the photos be used for?', de: 'Wofür werden die Fotos verwendet?' }, c: [
+      { id: 'usage', opt: true, kind: 'multi', t: { ko: '사진을 어디에 쓰시나요?', en: 'What will the photos be used for?', de: 'Wofür werden die Fotos verwendet?' }, c: [
         ['linkedin', '이력서 · Bewerbung', 'CV / job application', 'Bewerbung / Lebenslauf'],
         ['company', '회사 프로필 · 홈페이지', 'Company profile / website', 'Firmenprofil / Website'],
         ['sns', 'SNS · 프로필 사진', 'Social / profile picture', 'Social Media / Profilbild'],
@@ -44,20 +78,26 @@
         ['sky', '하늘색 — 산뜻하고 밝은 인상', 'Sky blue — fresh and light', 'Himmelblau — frisch und leicht'],
         ['pink', '핑크 — 화사하고 부드러운 인상', 'Pink — bright and gentle', 'Rosa — hell und sanft']
       ] },
-      { id: 'expression', kind: 'single', t: { ko: '표정 방향', en: 'Expression', de: 'Gesichtsausdruck' }, c: [
+      { id: 'expression', opt: true, kind: 'single', t: { ko: '표정 방향', en: 'Expression', de: 'Gesichtsausdruck' }, c: [
         ['smile', '미소 — 치아가 보이게', 'Smile — showing teeth', 'Lächeln — mit Zähnen'],
         ['soft', '옅은 미소 — 입은 다문 채', 'Soft smile — closed lips', 'Leichtes Lächeln — geschlossene Lippen'],
         ['neutral', '진지 · 뉴트럴', 'Serious / neutral', 'Ernst / neutral'],
         ['mixed', '촬영하며 다양하게', 'A mix during the session', 'Gemischt während des Shootings']
       ] },
-      { id: 'framing', kind: 'multi', t: { ko: '프레이밍', en: 'Framing', de: 'Bildausschnitt' }, c: [
+      { id: 'framing', opt: true, kind: 'multi', t: { ko: '프레이밍', en: 'Framing', de: 'Bildausschnitt' }, c: [
         ['headshot', '헤드샷 — 어깨 위', 'Headshot — above shoulders', 'Headshot — ab Schulter'],
         ['upper', '상반신', 'Upper body', 'Oberkörper'],
         ['hands', '반신 — 손 포즈 포함', 'Half body — with hand poses', 'Halbkörper — mit Handposen'],
         ['full', '전신', 'Full body', 'Ganzkörper'],
         ['mixed', '다양하게', 'A mix', 'Gemischt']
       ] },
-      { id: 'retouch', kind: 'multi', t: { ko: '보정에서 지켜줬으면 하는 것', en: 'Retouching preferences', de: 'Wünsche zur Retusche' }, c: [
+      { id: 'outfits', opt: true, kind: 'single', t: { ko: '의상은 몇 벌 준비하시나요?', en: 'How many outfits will you bring?', de: 'Wie viele Outfits bringen Sie mit?' }, c: [
+        ['one', '1벌 — 갈아입지 않습니다', 'One — no change', 'Eines — kein Wechsel'],
+        ['two', '2벌', 'Two', 'Zwei'],
+        ['three', '3벌 이상', 'Three or more', 'Drei oder mehr'],
+        ['ask', '몇 벌이 좋을지 추천해 주세요', 'Please advise how many', 'Bitte empfehlen Sie mir die Anzahl']
+      ] },
+      { id: 'retouch', opt: true, kind: 'multi', t: { ko: '보정에서 지켜줬으면 하는 것', en: 'Retouching preferences', de: 'Wünsche zur Retusche' }, c: [
         ['skin', '피부결은 자연스럽게 유지', 'Keep skin texture natural', 'Hauttextur natürlich lassen'],
         ['keepmarks', '점 · 흉터는 살려주세요', 'Keep moles / scars', 'Muttermale / Narben behalten'],
         ['glasses', '안경 착용 — 반사 주의', 'Wearing glasses — watch reflections', 'Brille — Reflexe beachten'],
@@ -84,7 +124,7 @@
         ['sky', '하늘색 — 산뜻하고 밝은', 'Sky blue — fresh and light', 'Himmelblau — frisch und leicht'],
         ['pink', '핑크 — 화사하고 부드러운', 'Pink — bright and gentle', 'Rosa — hell und sanft']
       ] },
-      { id: 'combos', kind: 'multi', t: { ko: '꼭 남기고 싶은 조합', en: 'Combinations you want for sure', de: 'Wichtige Konstellationen' }, c: [
+      { id: 'combos', opt: true, kind: 'multi', t: { ko: '꼭 남기고 싶은 조합', en: 'Combinations you want for sure', de: 'Wichtige Konstellationen' }, c: [
         ['childSolo', '아이 단독', 'Child alone', 'Kind allein'],
         ['whole', '가족 전체', 'Whole family', 'Ganze Familie'],
         ['parentsChild', '부모 + 아이', 'Parents + child', 'Eltern + Kind'],
@@ -93,14 +133,21 @@
         ['couple', '부부 단독', 'Couple alone', 'Paar allein'],
         ['detail', '손 · 발 같은 디테일 컷', 'Detail shots — hands, feet', 'Detailaufnahmen — Hände, Füße']
       ] },
-      { id: 'kids', kind: 'multi', t: { ko: '아이 컨디션 참고 사항', en: 'About the children', de: 'Hinweise zu den Kindern' }, c: [
+      { id: 'kids', opt: true, kind: 'multi', t: { ko: '아이 컨디션 참고 사항', en: 'About the children', de: 'Hinweise zu den Kindern' }, c: [
         ['nap', '낮잠 시간대는 피했습니다', 'Avoided nap time', 'Schlafenszeit vermieden'],
         ['snack', '간식을 챙겨 갑니다', 'Bringing snacks', 'Snacks werden mitgebracht'],
         ['shy', '낯가림이 있습니다', 'Shy with strangers', 'Fremdelt'],
         ['active', '가만히 있기 어려워합니다', 'Finds it hard to sit still', 'Kann schwer stillsitzen'],
         ['none', '해당 없음', 'None', 'Keine']
       ] },
-      { id: 'props', kind: 'multi', t: { ko: '소품 · 의상 (백일 · 돌 촬영이면)', en: 'Props / outfits (100-day or 1st birthday)', de: 'Requisiten / Outfits (100 Tage / 1. Geburtstag)' }, c: [
+      { id: 'access', opt: true, kind: 'multi', t: { ko: '오시는 길에 참고할 것이 있나요?', en: 'Anything we should know about your arrival?', de: 'Gibt es etwas zu Ihrer Anreise zu beachten?' }, c: [
+        ['firstvisit', '스튜디오는 처음 방문합니다', 'First time visiting the studio', 'Erster Besuch im Studio'],
+        ['stroller', '유모차를 가져갑니다', 'Bringing a stroller', 'Wir bringen einen Kinderwagen'],
+        ['stairs', '계단 이용이 어려운 분이 있습니다', 'Someone has difficulty with stairs', 'Jemand hat Schwierigkeiten mit Treppen'],
+        ['split', '인원이 나눠서 도착할 예정입니다', 'We will arrive at different times', 'Wir kommen zu unterschiedlichen Zeiten'],
+        ['none', '해당 없음', 'None', 'Keine']
+      ] },
+      { id: 'props', opt: true, kind: 'multi', t: { ko: '소품 · 의상 (백일 · 돌 촬영이면)', en: 'Props / outfits (100-day or 1st birthday)', de: 'Requisiten / Outfits (100 Tage / 1. Geburtstag)' }, c: [
         ['studioHanbok', '스튜디오 한복 사용', 'Use studio hanbok', 'Studio-Hanbok nutzen'],
         ['ownHanbok', '한복을 직접 가져갑니다', 'Bringing our own hanbok', 'Eigenen Hanbok mitbringen'],
         ['cake', '케이크 지참', 'Bringing a cake', 'Torte mitbringen'],
@@ -111,7 +158,7 @@
     ],
 
     wed: [
-      { id: 'usage', kind: 'multi', t: { ko: '사진 사용 목적', en: 'How the photos will be used', de: 'Verwendung der Fotos' }, c: [
+      { id: 'usage', opt: true, kind: 'multi', t: { ko: '사진 사용 목적', en: 'How the photos will be used', de: 'Verwendung der Fotos' }, c: [
         ['invitation', '청첩장 · 모바일 청첩장', 'Invitation card', 'Einladungskarte'],
         ['album', '웨딩 앨범', 'Wedding album', 'Hochzeitsalbum'],
         ['sns', 'SNS', 'Social media', 'Social Media'],
@@ -136,12 +183,12 @@
         ['cool', '쿨톤 — 청량하고 맑게', 'Cool — crisp and clear', 'Kühl — frisch und klar'],
         ['bw', '흑백 컷도 함께 원해요', 'Include black & white', 'Auch Schwarz-Weiß gewünscht']
       ] },
-      { id: 'posed', kind: 'single', t: { ko: '연출 비율', en: 'Posed vs candid', de: 'Gestellt oder ungestellt' }, c: [
+      { id: 'posed', opt: true, kind: 'single', t: { ko: '연출 비율', en: 'Posed vs candid', de: 'Gestellt oder ungestellt' }, c: [
         ['posed', '포즈 연출 위주 — 디렉션을 많이 주세요', 'Mostly posed — please direct us', 'Überwiegend gestellt — bitte anleiten'],
         ['balanced', '반반', 'A balance of both', 'Ausgewogen'],
         ['candid', '자연스러운 스냅 위주 — 지켜봐 주세요', 'Mostly candid — just observe us', 'Überwiegend ungestellt — einfach begleiten']
       ] },
-      { id: 'moments', kind: 'multi', t: { ko: '꼭 담을 순간', en: 'Moments to capture for sure', de: 'Momente, die nicht fehlen dürfen' }, c: [
+      { id: 'moments', opt: true, kind: 'multi', t: { ko: '꼭 담을 순간', en: 'Moments to capture for sure', de: 'Momente, die nicht fehlen dürfen' }, c: [
         ['details', '드레스 · 부케 디테일', 'Dress / bouquet details', 'Kleid / Blumendetails'],
         ['prep', '준비 과정 · 메이크업', 'Getting ready', 'Vorbereitung / Make-up'],
         ['entrance', '입장', 'Entrance', 'Einzug'],
@@ -151,7 +198,7 @@
         ['group', '단체사진', 'Group photo', 'Gruppenfoto'],
         ['night', '해질녘 · 야간 컷', 'Sunset / night shots', 'Sonnenuntergang / Nachtaufnahmen']
       ] },
-      { id: 'concerns', kind: 'multi', t: { ko: '신경 쓰이는 부분', en: 'Anything you are concerned about', de: 'Worauf sollen wir achten' }, c: [
+      { id: 'concerns', opt: true, kind: 'multi', t: { ko: '신경 쓰이는 부분', en: 'Anything you are concerned about', de: 'Worauf sollen wir achten' }, c: [
         ['angle', '피하고 싶은 각도가 있습니다', 'There is an angle to avoid', 'Es gibt einen Winkel zu vermeiden'],
         ['camerashy', '둘 중 한 명이 카메라를 어색해합니다', 'One of us is camera-shy', 'Eine·r von uns ist kamerascheu'],
         ['height', '키 차이 보정 팁을 원합니다', 'Tips for height difference', 'Tipps zum Größenunterschied'],
@@ -204,7 +251,7 @@
     }
   };
 
-  var state = { id: '', lang: 'ko', ctx: null, questions: [], answers: {}, sending: false };
+  var state = { id: '', lang: 'ko', ctx: null, questions: [], answers: {}, free: {}, sending: false };
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (v) {
     return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) {
@@ -244,14 +291,24 @@
           + esc(choiceLabel(c)) + '</button>';
       }).join('');
       var hasImg = q.c.some(function (c) { return !!c[4]; });
+      var freeHtml = '';
+      if (q.free) {
+        freeHtml = '<p class="hint free-hint">' + esc(q.free[state.lang] || q.free.ko) + '</p>'
+          + '<textarea class="q-free" data-free="' + esc(q.id) + '" rows="2">' + esc(state.free[q.id] || '') + '</textarea>';
+      }
       return '<section class="q" data-qid="' + esc(q.id) + '">'
         + '<h2><span class="q-num">' + (i + 1) + '</span>' + esc(q.t[state.lang] || q.t.ko)
+        + (q.opt ? '<small class="q-opt">' + esc(t('optional')) + '</small>' : '')
         + (q.kind === 'multi' ? '<small>' + (state.lang === 'ko' ? '복수 선택 가능' : state.lang === 'de' ? 'Mehrfachauswahl' : 'multiple choice') + '</small>' : '')
         + '</h2>'
         + '<div class="' + (hasImg ? 'q-cards' : 'q-chips') + '">' + cards + '</div>'
+        + freeHtml
         + '</section>';
     }).join('');
 
+    $('questions').querySelectorAll('[data-free]').forEach(function (ta) {
+      ta.addEventListener('input', function () { state.free[ta.dataset.free] = ta.value; });
+    });
     $('questions').querySelectorAll('[data-q]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var qid = btn.dataset.q, val = btn.dataset.v;
@@ -274,8 +331,9 @@
     var parts = state.questions.map(function (q) {
       var sel = state.answers[q.id] || [];
       if (!sel.length) return '';
-      var labels = q.c.filter(function (c) { return sel.indexOf(c[0]) > -1; }).map(function (c) { return c[1]; }); // 요약은 항상 한국어(사장님이 본다)
-      return (q.t.ko || q.id) + ' ' + labels.join('·');
+      var labels = q.c.filter(function (c) { return sel.indexOf(c[0]) > -1; }).map(function (c) { return c[1].split(' — ')[0]; }); // 요약은 항상 한국어(사장님이 본다) · 단서는 빼고 이름만
+      var extra = String(state.free[q.id] || '').trim();
+      return (q.t.ko || q.id) + ' ' + labels.join('·') + (extra ? '(' + extra.replace(/\s+/g, ' ').slice(0, 80) + ')' : '');
     }).filter(Boolean);
     var note = String($('noteInput').value || '').trim();
     if (note) parts.push('메모 ' + note.replace(/\s+/g, ' ').slice(0, 120));
@@ -289,7 +347,8 @@
   /* ===== 제출 ===== */
   function submit() {
     if (state.sending) return;
-    var missing = state.questions.filter(function (q) { return !(state.answers[q.id] || []).length; });
+    // 선택 문항(opt)은 진행을 막지 않는다 — 전부 필수면 5분 안에 못 끝낸다
+    var missing = state.questions.filter(function (q) { return !q.opt && !(state.answers[q.id] || []).length; });
     if (missing.length) {
       var el = document.querySelector('.q[data-qid="' + missing[0].id + '"]');
       setBanner(t('required'), 'error');
@@ -312,7 +371,8 @@
       requestId: 'prep-' + state.id.slice(-12) + '-' + Date.now(),
       data: {
         id: state.id, lang: state.lang,
-        answers: state.answers, summary: buildSummary(),
+        // 서버는 answers 만 저장한다 — 자유입력을 그 안에 넣어야 재방문 때 복원된다
+        answers: { choices: state.answers, free: state.free }, summary: buildSummary(),
         links: links, note: String($('noteInput').value || '').trim()
       }
     };
@@ -375,10 +435,11 @@
     state.ctx = ctx;
     state.lang = (['ko', 'en', 'de'].indexOf(ctx.lang) > -1) ? ctx.lang : 'ko';
     var group = ctx.itemGroup;
-    state.questions = Q[group] || [];
+    state.questions = COMMON.head.concat(Q[group] || []).concat(COMMON.tail);
     if (!ctx.supported || !state.questions.length) { applyStaticCopy(); showError(t('unsupported')); return; }
     if (ctx.answers && typeof ctx.answers === 'object') {
       state.answers = ctx.answers.choices || ctx.answers;
+      if (ctx.answers.free && typeof ctx.answers.free === 'object') state.free = ctx.answers.free;
       if (ctx.answers.note) $('noteInput').value = ctx.answers.note;
       (ctx.answers.links || []).forEach(function (u, i) { if (i < 3) $('ref' + (i + 1)).value = u; });
     }

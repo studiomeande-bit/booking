@@ -67,6 +67,7 @@ h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em
 }
 .q h2 label { font-weight: 500; }
 .q h2 small { font-size: 11px; color: var(--ink-soft); font-weight: 400; }
+.q h2 small.q-opt { border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 .q-num {
   flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
   background: var(--ink); color: var(--cream);
@@ -95,6 +96,10 @@ h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em
 .q-card img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #efe8dc; }
 .q-card span { display: block; padding: 9px 11px; font-size: 12.5px; line-height: 1.45; }
 .q-card.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink) inset; }
+
+/* 칩 아래 자유입력 — 선택지로 못 담는 맥락을 받되 강요하지 않는다(전부 선택 항목) */
+.free-hint { margin: 12px 0 6px 0; }
+.q-free { width: 100%; }
 
 .q input[type="url"], .q textarea {
   width: 100%; font: inherit; font-size: 14px; color: var(--ink);
