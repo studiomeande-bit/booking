@@ -36,6 +36,19 @@
         ] }
     ],
     tail: [
+      { id: 'printplan', opt: true, kind: 'multi',
+        t: { ko: '인화나 액자 계획이 있으신가요?', en: 'Are you planning prints or a frame?', de: 'Planen Sie Abzüge oder einen Rahmen?' },
+        free: { ko: '미리 알면 촬영할 때 여백을 그에 맞춰 둡니다 — 나중에 잘라내지 않아도 되도록.',
+                en: 'Knowing in advance lets us leave the right margins so nothing has to be cropped later.',
+                de: 'Vorab bekannt, lassen wir passende Ränder — so muss später nichts beschnitten werden.' },
+        c: [
+        ['none', '아직 계획 없어요', 'No plans yet', 'Noch keine Pläne'],
+        ['smallprint', '작은 인화 몇 장', 'A few small prints', 'Ein paar kleine Abzüge'],
+        ['frameV', '세로 액자', 'Portrait frame', 'Hochformat-Rahmen'],
+        ['frameH', '가로 액자', 'Landscape frame', 'Querformat-Rahmen'],
+        ['album', '앨범 · 포토북', 'Album / photobook', 'Album / Fotobuch'],
+        ['ask', '어떤 게 좋을지 추천해 주세요', 'Please recommend something', 'Bitte empfehlen Sie etwas']
+      ] },
       { id: 'deadline', opt: true, kind: 'single',
         t: { ko: '결과물이 언제까지 필요하신가요?', en: 'When do you need the photos by?', de: 'Bis wann brauchen Sie die Fotos?' },
         free: { ko: '마감이 정해져 있으면 날짜를 적어 주세요 — 보정 순서를 그에 맞춰 잡습니다.',
@@ -52,6 +65,27 @@
 
   var Q = {
     prof: [
+      { id: 'feel', kind: 'multi', max: 3,
+        t: { ko: '사진 속에서 어떤 사람으로 보이고 싶으신가요?', en: 'How would you like to come across?', de: 'Wie möchten Sie wirken?' },
+        free: { ko: '고르신 인상에 맞춰 표정·자세·프레이밍을 잡습니다. 딱 맞는 말이 없으면 직접 적어 주세요.', en: 'We direct expression, posture and framing to match. If none fit, write your own.', de: 'Wir richten Ausdruck, Haltung und Bildausschnitt danach. Falls nichts passt, schreiben Sie gern selbst.' },
+        c: [
+        ['trust', '신뢰감 있는', 'Trustworthy', 'Vertrauenswürdig'],
+        ['professional', '전문적인', 'Professional', 'Professionell'],
+        ['approachable', '다가가기 쉬운', 'Approachable', 'Zugänglich'],
+        ['warm', '따뜻한', 'Warm', 'Warmherzig'],
+        ['calm', '차분한', 'Calm', 'Ruhig'],
+        ['confident', '자신감 있는', 'Confident', 'Selbstbewusst'],
+        ['friendly', '친근한', 'Friendly', 'Freundlich'],
+        ['neat', '단정한', 'Neat', 'Gepflegt'],
+        ['refined', '세련된', 'Refined', 'Elegant'],
+        ['intellectual', '지적인', 'Intellectual', 'Intellektuell'],
+        ['relaxed', '편안한', 'Relaxed', 'Entspannt'],
+        ['energetic', '활기찬', 'Energetic', 'Energiegeladen'],
+        ['gentle', '부드러운', 'Gentle', 'Sanft'],
+        ['capable', '유능한', 'Capable', 'Kompetent'],
+        ['distinctive', '개성 있는', 'Distinctive', 'Eigenständig'],
+        ['fresh', '젊고 산뜻한', 'Fresh and youthful', 'Frisch und jung']
+      ] },
       { id: 'usage', opt: true, kind: 'multi', t: { ko: '사진을 어디에 쓰시나요?', en: 'What will the photos be used for?', de: 'Wofür werden die Fotos verwendet?' }, c: [
         ['linkedin', '이력서 · Bewerbung', 'CV / job application', 'Bewerbung / Lebenslauf'],
         ['company', '회사 프로필 · 홈페이지', 'Company profile / website', 'Firmenprofil / Website'],
@@ -61,7 +95,7 @@
         ['personal', '개인 소장 · 기념', 'Personal keepsake', 'Persönliche Erinnerung'],
         ['other', '기타', 'Other', 'Sonstiges']
       ] },
-      { id: 'mood', kind: 'single', t: { ko: '원하는 분위기', en: 'Preferred mood', de: 'Gewünschte Stimmung' }, c: [
+      { id: 'mood', kind: 'single', opt: true, t: { ko: '원하는 분위기', en: 'Preferred mood', de: 'Gewünschte Stimmung' }, c: [
         ['classic', '클래식 포멀 — 정장, 정면, 단정한 조명', 'Classic formal — suit, front-facing, clean lighting', 'Klassisch formell — Anzug, frontal, klares Licht'],
         ['bizcasual', '비즈니스 캐주얼 — 셔츠·니트, 밝은 조명, 가벼운 미소', 'Business casual — shirt/knit, bright light, light smile', 'Business casual — Hemd/Strick, helles Licht, leichtes Lächeln'],
         ['natural', '내추럴 — 자연광 느낌, 부드러운 그림자', 'Natural — daylight feel, soft shadows', 'Natürlich — Tageslicht, weiche Schatten'],
@@ -91,12 +125,6 @@
         ['full', '전신', 'Full body', 'Ganzkörper'],
         ['mixed', '다양하게', 'A mix', 'Gemischt']
       ] },
-      { id: 'outfits', opt: true, kind: 'single', t: { ko: '의상은 몇 벌 준비하시나요?', en: 'How many outfits will you bring?', de: 'Wie viele Outfits bringen Sie mit?' }, c: [
-        ['one', '1벌 — 갈아입지 않습니다', 'One — no change', 'Eines — kein Wechsel'],
-        ['two', '2벌', 'Two', 'Zwei'],
-        ['three', '3벌 이상', 'Three or more', 'Drei oder mehr'],
-        ['ask', '몇 벌이 좋을지 추천해 주세요', 'Please advise how many', 'Bitte empfehlen Sie mir die Anzahl']
-      ] },
       { id: 'retouch', opt: true, kind: 'multi', t: { ko: '보정에서 지켜줬으면 하는 것', en: 'Retouching preferences', de: 'Wünsche zur Retusche' }, c: [
         ['skin', '피부결은 자연스럽게 유지', 'Keep skin texture natural', 'Hauttextur natürlich lassen'],
         ['keepmarks', '점 · 흉터는 살려주세요', 'Keep moles / scars', 'Muttermale / Narben behalten'],
@@ -107,7 +135,28 @@
     ],
 
     stud: [
-      { id: 'mood', kind: 'single', t: { ko: '원하는 분위기', en: 'Preferred mood', de: 'Gewünschte Stimmung' }, c: [
+      { id: 'feel', kind: 'multi', max: 3,
+        t: { ko: '사진이 어떤 느낌이었으면 하시나요?', en: 'What feeling should the photos have?', de: 'Welches Gefühl sollen die Fotos haben?' },
+        free: { ko: '고르신 느낌에 맞춰 빛과 연출을 잡습니다. 딱 맞는 말이 없으면 직접 적어 주세요.', en: 'We shape light and direction to match. If none fit, write your own.', de: 'Wir richten Licht und Regie danach aus. Falls nichts passt, schreiben Sie gern selbst.' },
+        c: [
+        ['warm', '따뜻한', 'Warm', 'Warmherzig'],
+        ['cosy', '포근한', 'Cosy', 'Behaglich'],
+        ['bright', '밝은', 'Bright', 'Hell'],
+        ['lovely', '사랑스러운', 'Lovely', 'Liebenswert'],
+        ['natural', '자연스러운', 'Natural', 'Natürlich'],
+        ['relaxed', '편안한', 'Relaxed', 'Entspannt'],
+        ['lively', '활기찬', 'Lively', 'Lebendig'],
+        ['playful', '장난스러운', 'Playful', 'Verspielt'],
+        ['gentle', '잔잔한', 'Gentle', 'Sanft'],
+        ['calm', '차분한', 'Calm', 'Ruhig'],
+        ['affectionate', '다정한', 'Affectionate', 'Liebevoll'],
+        ['crisp', '산뜻한', 'Fresh', 'Frisch'],
+        ['classic', '클래식한', 'Classic', 'Klassisch'],
+        ['understated', '담백한', 'Understated', 'Schlicht'],
+        ['charming', '아기자기한', 'Charming', 'Niedlich'],
+        ['touching', '뭉클한', 'Touching', 'Berührend']
+      ] },
+      { id: 'mood', kind: 'single', opt: true, t: { ko: '원하는 분위기', en: 'Preferred mood', de: 'Gewünschte Stimmung' }, c: [
         ['bright', '밝고 화사 — 그림자 옅게', 'Bright and airy — light shadows', 'Hell und luftig — weiche Schatten'],
         ['warm', '따뜻한 톤 — 베이지 · 크림, 포근한 색', 'Warm tones — beige/cream, cosy', 'Warme Töne — Beige/Creme, gemütlich'],
         ['calm', '차분한 무드 — 딥톤, 부드러운 음영', 'Calm — deep tones, soft shading', 'Ruhig — dunkle Töne, weiche Schattierung'],
@@ -140,6 +189,29 @@
         ['active', '가만히 있기 어려워합니다', 'Finds it hard to sit still', 'Kann schwer stillsitzen'],
         ['none', '해당 없음', 'None', 'Keine']
       ] },
+      { id: 'kidname', opt: true, kind: 'multi',
+        when: function (ctx) { return ctx.itemGroup === 'stud' || ['kids', 'baby'].indexOf(ctx.ageGroup) > -1; },
+        t: { ko: '아이를 뭐라고 불러드리면 될까요?', en: 'What should we call your child?', de: 'Wie sollen wir Ihr Kind ansprechen?' },
+        free: { ko: '평소 부르는 이름이나 애칭을 적어 주세요 — 그 이름으로 부르면 아이 반응이 확실히 달라집니다.',
+                en: 'Write the name or nickname you use at home — children respond very differently to it.',
+                de: 'Bitte den Namen oder Kosenamen aus dem Alltag — Kinder reagieren darauf ganz anders.' },
+        c: [
+        ['korean', '한국어 이름으로', 'Korean name', 'Koreanischer Name'],
+        ['german', '독일어 이름으로', 'German name', 'Deutscher Name'],
+        ['nickname', '애칭으로', 'A nickname', 'Ein Kosename']
+      ] },
+      { id: 'pet', opt: true, kind: 'multi',
+        when: function (ctx) { return (ctx.optionKeys || []).indexOf('dog') > -1; },
+        t: { ko: '함께 오는 반려동물에 대해 알려주세요', en: 'Tell us about the pet joining you', de: 'Erzählen Sie uns von Ihrem Haustier' },
+        free: { ko: '이름과 성격을 적어 주시면 촬영 순서를 그에 맞춰 잡습니다 — 대체로 초반에 먼저 찍습니다.',
+                en: 'Name and temperament help us plan the order — pets usually go first.',
+                de: 'Name und Wesen helfen bei der Reihenfolge — Tiere kommen meist zuerst dran.' },
+        c: [
+        ['calm', '낯선 곳에서도 차분한 편', 'Calm in new places', 'Ruhig an fremden Orten'],
+        ['excited', '흥분을 잘 합니다', 'Gets excited easily', 'Wird schnell aufgeregt'],
+        ['shy', '낯을 가립니다', 'Shy with strangers', 'Scheu gegenüber Fremden'],
+        ['treats', '간식으로 시선을 끌 수 있어요', 'Treats get their attention', 'Leckerlis lenken die Aufmerksamkeit']
+      ] },
       { id: 'access', opt: true, kind: 'multi', t: { ko: '오시는 길에 참고할 것이 있나요?', en: 'Anything we should know about your arrival?', de: 'Gibt es etwas zu Ihrer Anreise zu beachten?' }, c: [
         ['firstvisit', '스튜디오는 처음 방문합니다', 'First time visiting the studio', 'Erster Besuch im Studio'],
         ['stroller', '유모차를 가져갑니다', 'Bringing a stroller', 'Wir bringen einen Kinderwagen'],
@@ -158,6 +230,27 @@
     ],
 
     wed: [
+      { id: 'feel', kind: 'multi', max: 3,
+        t: { ko: '그날이 어떤 느낌으로 남았으면 하시나요?', en: 'How should the day feel in the photos?', de: 'Wie soll sich der Tag in den Fotos anfühlen?' },
+        free: { ko: '고르신 느낌에 맞춰 빛과 색, 어떤 순간을 좇을지가 달라집니다. 딱 맞는 말이 없으면 직접 적어 주세요.', en: 'It shapes the light, the colour and which moments we chase. If none fit, write your own.', de: 'Das prägt Licht, Farbe und die Auswahl der Momente. Falls nichts passt, schreiben Sie gern selbst.' },
+        c: [
+        ['romantic', '로맨틱한', 'Romantic', 'Romantisch'],
+        ['anticipation', '설레는', 'Full of anticipation', 'Voller Vorfreude'],
+        ['elegant', '우아한', 'Elegant', 'Elegant'],
+        ['radiant', '화사한', 'Radiant', 'Strahlend'],
+        ['lyrical', '서정적인', 'Lyrical', 'Poetisch'],
+        ['gentle', '잔잔한', 'Gentle', 'Sanft'],
+        ['understated', '담백한', 'Understated', 'Schlicht'],
+        ['dramatic', '드라마틱한', 'Dramatic', 'Dramatisch'],
+        ['classic', '클래식한', 'Classic', 'Klassisch'],
+        ['modern', '모던한', 'Modern', 'Modern'],
+        ['natural', '자연스러운', 'Natural', 'Natürlich'],
+        ['warm', '따뜻한', 'Warm', 'Warmherzig'],
+        ['crisp', '청량한', 'Crisp', 'Frisch'],
+        ['dreamy', '몽환적인', 'Dreamy', 'Verträumt'],
+        ['touching', '뭉클한', 'Touching', 'Berührend'],
+        ['joyful', '유쾌한', 'Joyful', 'Fröhlich']
+      ] },
       { id: 'usage', opt: true, kind: 'multi', t: { ko: '사진 사용 목적', en: 'How the photos will be used', de: 'Verwendung der Fotos' }, c: [
         ['invitation', '청첩장 · 모바일 청첩장', 'Invitation card', 'Einladungskarte'],
         ['album', '웨딩 앨범', 'Wedding album', 'Hochzeitsalbum'],
@@ -166,7 +259,7 @@
         ['parents', '부모님 액자', 'Framed print for parents', 'Bilderrahmen für die Eltern'],
         ['thanks', '감사 카드 · 답례품', 'Thank-you cards', 'Dankeskarten']
       ] },
-      { id: 'mood', kind: 'single', t: { ko: '전체 무드', en: 'Overall mood', de: 'Gesamtstimmung' }, c: [
+      { id: 'mood', kind: 'single', opt: true, t: { ko: '전체 무드', en: 'Overall mood', de: 'Gesamtstimmung' }, c: [
         ['romantic', '클래식 로맨틱 — 부드러운 빛, 정돈된 포즈', 'Classic romantic — soft light, arranged poses', 'Klassisch romantisch — weiches Licht, geordnete Posen'],
         ['film', '필름 감성 — 그레인, 웜톤, 자연스러운 색빠짐', 'Film look — grain, warm, faded colour', 'Filmlook — Korn, warm, sanft entsättigt'],
         ['cinematic', '시네마틱 — 강한 대비, 딥톤, 와이드 구도', 'Cinematic — contrast, deep tones, wide framing', 'Cinematic — Kontrast, dunkle Töne, weite Bildführung'],
@@ -176,7 +269,7 @@
         ['serene', '잔잔한 내추럴 — 은은한 빛, 차분한 색', 'Serene natural — gentle light, calm colour', 'Ruhig natürlich — sanftes Licht, ruhige Farben'],
         ['vintage', '빈티지 — 낮은 채도, 따뜻한 노란기', 'Vintage — low saturation, warm yellow cast', 'Vintage — geringe Sättigung, warmer Gelbstich']
       ] },
-      { id: 'colorTone', kind: 'single', t: { ko: '색감 방향', en: 'Colour direction', de: 'Farbrichtung' }, c: [
+      { id: 'colorTone', kind: 'single', opt: true, t: { ko: '색감 방향', en: 'Colour direction', de: 'Farbrichtung' }, c: [
         ['warm', '웜톤 — 따뜻하고 포근하게', 'Warm — cosy and golden', 'Warm — gemütlich und golden'],
         ['neutral', '뉴트럴 — 실제 색에 충실하게', 'Neutral — true to life', 'Neutral — naturgetreu'],
         ['muted', '무디 · 저채도 — 차분하게', 'Muted — calm, desaturated', 'Gedämpft — ruhig, entsättigt'],
@@ -299,7 +392,9 @@
       return '<section class="q" data-qid="' + esc(q.id) + '">'
         + '<h2><span class="q-num">' + (i + 1) + '</span>' + esc(q.t[state.lang] || q.t.ko)
         + (q.opt ? '<small class="q-opt">' + esc(t('optional')) + '</small>' : '')
-        + (q.kind === 'multi' ? '<small>' + (state.lang === 'ko' ? '복수 선택 가능' : state.lang === 'de' ? 'Mehrfachauswahl' : 'multiple choice') + '</small>' : '')
+        + (q.kind === 'multi' ? '<small>' + (q.max
+            ? (state.lang === 'ko' ? q.max + '개까지' : state.lang === 'de' ? 'bis zu ' + q.max : 'up to ' + q.max)
+            : (state.lang === 'ko' ? '복수 선택 가능' : state.lang === 'de' ? 'Mehrfachauswahl' : 'multiple choice')) + '</small>' : '')
         + '</h2>'
         + '<div class="' + (hasImg ? 'q-cards' : 'q-chips') + '">' + cards + '</div>'
         + freeHtml
@@ -316,10 +411,13 @@
         var cur = state.answers[qid] || [];
         if (q.kind === 'single') {
           state.answers[qid] = cur.indexOf(val) > -1 ? [] : [val];
+        } else if (cur.indexOf(val) > -1) {
+          state.answers[qid] = cur.filter(function (v) { return v !== val; });
         } else {
-          state.answers[qid] = cur.indexOf(val) > -1
-            ? cur.filter(function (v) { return v !== val; })
-            : cur.concat([val]);
+          // max 가 있으면 가장 먼저 고른 것을 밀어낸다 — 상한에서 버튼이 죽으면 고장으로 읽힌다
+          var next = cur.concat([val]);
+          if (q.max && next.length > q.max) next = next.slice(next.length - q.max);
+          state.answers[qid] = next;
         }
         renderQuestions();
       });
@@ -435,7 +533,8 @@
     state.ctx = ctx;
     state.lang = (['ko', 'en', 'de'].indexOf(ctx.lang) > -1) ? ctx.lang : 'ko';
     var group = ctx.itemGroup;
-    state.questions = COMMON.head.concat(Q[group] || []).concat(COMMON.tail);
+    state.questions = COMMON.head.concat(Q[group] || []).concat(COMMON.tail)
+      .filter(function (q) { return typeof q.when !== 'function' || q.when(ctx); });   // 조건부 문항
     if (!ctx.supported || !state.questions.length) { applyStaticCopy(); showError(t('unsupported')); return; }
     if (ctx.answers && typeof ctx.answers === 'object') {
       state.answers = ctx.answers.choices || ctx.answers;
