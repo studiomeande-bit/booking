@@ -6750,6 +6750,21 @@ function closeModal(){document.getElementById('editModal').classList.remove('ope
 function appendEditMemo(t){const el=document.getElementById('edit_memo');el.value=(el.value?el.value+'\n':'')+t;}
 function appendMemo(t){const el=document.getElementById('m_memo');el.value=(el.value?el.value+'\n':'')+t;}
 
+/* 저장 후 "고객에게 메일이 나갔는지"를 사장님이 바로 알 수 있게 한다.
+   변경 안내 메일은 diff 가 있을 때만 나가므로, 안 나간 경우도 조용히 넘어가지 않고 표시한다. */
+const CHANGE_MAIL_FIELD_LABELS={date:'촬영 일시',product:'상품',people:'인원',location:'촬영 장소',total:'총 금액',deposit:'계약금',balance:'잔금'};
+function reportChangeMail(res){
+  const m=res&&res.changeMail;
+  if(!m||typeof showToast!=='function') return;
+  if(m.sent){
+    const names=(m.fields||[]).map(k=>CHANGE_MAIL_FIELD_LABELS[k]||k).join(', ');
+    showToast('고객에게 변경 안내 메일 발송 — '+(names||'변경 내용'),'ok');
+  } else if(m.reason==='NO_EMAIL'){
+    showToast('고객 이메일이 없어 변경 안내를 보내지 못했습니다','warn');
+  } else if(m.reason&&m.reason.indexOf('ERROR')===0){
+    showToast('변경은 저장됐지만 안내 메일 발송 실패: '+m.reason,'error');
+  }
+}
 function saveEdit(){
   const d={};
   ['rowIndex','status','name','phone','email','location','address','price','deposit','balance','payMethod','depPayMethod','paymentLinkType','paymentLinkGroup','paymentLinkedRows','paymentSplitDetails','paymentMemo','extraItem','memo','balanceDate'].forEach(f=>{
@@ -6786,9 +6801,12 @@ function saveEdit(){
   const origDate=document.getElementById('edit_origDate').value||'';
   const newDateStr=newDate+' '+newTime;
   const dateChanged=newDate&&(newDateStr.slice(0,16)!==origDate.slice(0,16));
+  // 일정도 함께 바뀌면 변경 안내 메일은 억제한다 — 뒤이어 나가는 일정변경 메일이 통지를 맡는다(중복 방지)
+  d.__silent=!!dateChanged;
   // 먼저 기본 필드 저장, 날짜 변경이면 reschedule 추가 실행
   google.script.run
-    .withSuccessHandler(()=>{
+    .withSuccessHandler((saveRes)=>{
+      reportChangeMail(saveRes);
       if(dateChanged){
         // ISO 형식으로 변환해서 전달 (Berlin time)
         const isoStr=newDate+'T'+newTime+':00';
