@@ -2063,13 +2063,13 @@ function getCopy() {
   return COPY[state.lang] || COPY.ko;
 }
 
+/* 상담 창구는 홈페이지 문의 폼으로 통합됐다 (2026-08-26) — 실제 문의가 전부 그쪽으로 들어왔고,
+   여기서만 도달되던 /consultation 은 유입이 사실상 없었다. 언어별 경로로 바로 보낸다.
+   (구 /consultation URL 도 netlify 에서 301 로 넘어가지만, 링크는 처음부터 새 주소를 가리킨다.) */
+const CONTACT_PATH_BY_LANG = { ko: '/ko/contact/', en: '/en/contact/', de: '/contact/' };
 function getConsultationUrl() {
-  const url = new URL('/consultation/', globalThis.location.origin);
-  url.searchParams.set('lang', state.lang);
-  if (state.selectedGroup) url.searchParams.set('from', state.selectedGroup);
-  if (state.eventCategory) url.searchParams.set('event', state.eventCategory);
-  if (state.selectedProduct?.id) url.searchParams.set('product', state.selectedProduct.id);
-  return `${url.pathname}${url.search}`;
+  const path = CONTACT_PATH_BY_LANG[state.lang] || CONTACT_PATH_BY_LANG.de;
+  return `https://studio-mean.com${path}`;
 }
 
 function syncConsultationLinks() {

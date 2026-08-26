@@ -156,6 +156,44 @@
               <textarea id="contact-message" name="message" placeholder="촬영 목적, 인원, 사용처, 원하는 분위기나 필요한 결과물을 편하게 적어 주세요." required></textarea>
             </div>
 
+            <!-- 상담 유형 추가 문항 — 웨딩·기업·영상에서만 펼쳐진다 (2026-08-26 문의·상담 페이지 통합).
+                 짧은 문의(여권·프로필)에 긴 설문을 강요하면 전환만 떨어지므로 유형별로 깊이를 나눈다. -->
+            <div class="field" id="consult-extra" hidden>
+              <div style="border:1px solid #d8d2c6;border-radius:12px;padding:16px 18px;background:#faf7f1;">
+                <div style="font-weight:600;margin-bottom:4px;">상담이 필요한 촬영이시네요</div>
+                <p style="font-size:14px;line-height:1.6;color:#6b6154;margin:0 0 14px;">웨딩·기업·영상은 아래를 알려주시면 견적과 답변이 훨씬 빨라집니다. 모르시는 항목은 비워 두셔도 됩니다.</p>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="contact-budget">예산대</label>
+                    <select id="contact-budget" name="budget">
+                  <option>미정</option>
+                  <option>~500€</option>
+                  <option>500–1,000€</option>
+                  <option>1,000–2,000€</option>
+                  <option>2,000€ 이상</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="contact-deliverables">필요한 결과물</label>
+                    <select id="contact-deliverables" name="deliverables">
+                  <option>미정</option>
+                  <option>사진만</option>
+                  <option>영상만</option>
+                  <option>사진 + 영상</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="contact-scope">촬영 범위 · 소요 시간</label>
+                  <input id="contact-scope" name="scope" type="text" placeholder="예: 본식 6시간 / 행사 반나절 / 프리웨딩 2시간">
+                </div>
+                <div class="field" id="consult-company-field">
+                  <label for="contact-company">회사 · 단체명</label>
+                  <input id="contact-company" name="company" type="text" placeholder="기업·기관 문의인 경우">
+                </div>
+              </div>
+            </div>
+
             <label class="checkbox-line" for="contact-consent">
               <input id="contact-consent" name="privacy_consent" type="checkbox" required>
               <span><a href="../../datenschutz/">개인정보 처리 안내</a>를 읽었고, 문의 답변을 위해 제 정보가 처리되는 것에 동의합니다.</span>
@@ -167,6 +205,25 @@
               <a class="button-ghost" href="https://wa.me/4917660939400" target="_blank" rel="noopener">WhatsApp 문의</a>
             </div>
           </form>
+          <script>
+            /* 프로젝트 종류에 따라 상담 문항을 펼친다. 값이 안 맞으면 조용히 숨겨 둔 채로 두므로
+               구형 브라우저/JS 차단 환경에서도 기본 문의는 그대로 제출된다. */
+            (function () {
+              var TRIGGERS = ["웨딩", "필름 / 영상", "기업 / 행사"];
+              var CORPORATE = "기업 / 행사";
+              var sel = document.getElementById('contact-type');
+              var box = document.getElementById('consult-extra');
+              var comp = document.getElementById('consult-company-field');
+              if (!sel || !box) return;
+              function sync() {
+                var v = String(sel.value || '').trim();
+                box.hidden = TRIGGERS.indexOf(v) === -1;
+                if (comp) comp.hidden = (v !== CORPORATE);
+              }
+              sel.addEventListener('change', sync);
+              sync();
+            })();
+          </script>
         </section>
 
         <aside class="contact-rail">
