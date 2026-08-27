@@ -1,7 +1,22 @@
-import { buildPayloadUrl, buildUrl, parseJsonResponse } from './api-core.js';
+import { buildPayloadUrl, buildUrl, parseJsonResponse, postPayload } from './api-core.js';
+
+/* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
+   GET + ?payload= 는 URL 길이 한계에 걸린다 — 실측 2026-08-27: URL 약 12,000자 초과 시 구글이 HTTP 400.
+   한글은 URL 인코딩에서 1자가 9자가 되므로 요청사항 한글 1,300자 남짓이면 넘긴다. 상세 = api-core.js 주석.
+   조회 계열(quote·contact-lookup·address-lookup·gutschein-validate 등)은 payload 가 짧아 GET 을 유지한다. */
 
 async function requestJson(url) {
-  const response = await fetch(url, { cache: 'no-store' });
+  let response;
+  try {
+    response = await fetch(url, { cache: 'no-store' });
+  } catch (error) {
+    /* URL 이 너무 길면 브라우저가 요청 자체를 못 보내고 'Failed to fetch' 로 죽는다.
+       그 문구가 그대로 화면에 뜨면 고객은 원인을 알 수 없다(2026-08-27 실제 신고). */
+    if (error?.message === 'Failed to fetch') {
+      throw new Error('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+    }
+    throw error;
+  }
   return parseJsonResponse(response);
 }
 
@@ -45,11 +60,11 @@ export function fetchReturnEligibility(data) {
 }
 
 export function submitBooking(data, requestId) {
-  return requestJson(buildPayloadUrl('booking', data, { requestId }));
+  return postPayload('booking', data, { requestId });
 }
 
 export function submitWalkinIntake(data, requestId) {
-  return requestJson(buildPayloadUrl('walkin-intake', data, { requestId }));
+  return postPayload('walkin-intake', data, { requestId });
 }
 
 export function fetchWalkinToken() {
@@ -57,11 +72,11 @@ export function fetchWalkinToken() {
 }
 
 export function submitConsultation(data, requestId) {
-  return requestJson(buildPayloadUrl('consultation', data, { requestId }));
+  return postPayload('consultation', data, { requestId });
 }
 
 export function joinWaitlist(data, requestId) {
-  return requestJson(buildPayloadUrl('waitlist-join', data, { requestId }));
+  return postPayload('waitlist-join', data, { requestId });
 }
 
 export function lookupContact(data) {
