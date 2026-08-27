@@ -15,10 +15,13 @@ const COPY = {
   guideTitle: 'Einlösung',
   guideCopy: 'Bitte zeigen Sie im Studio den QR-Code oder den Code vor. Unser Team prüft den Gutschein und verrechnet ihn bei der Buchung.',
   guideNotes: [
-    'Dieser Gutschein kann für Fotografie Dienstleistungen von Studio_mean verwendet werden.',
-    'Eine Kombination mit Rabatt- oder Sonderaktionen ist jedoch nicht möglich.',
-    'Dieser Gutschein ist ab dem Ausstellungsdatum für 3 Jahre gültig.',
-    'Der Gutschein ist nicht rückerstattbar.'
+    /* PDF 약관과 같은 문구를 유지한다 — SPV 분류의 근거(독일 내 제공·개인 전용)가 고객 대면물에
+       빠지면 분류 근거가 약해진다. '발행일로부터 3년'은 실제 유효기한(발행연도+3년의 12/31,
+       §§195·199 BGB)과 달라서 삭제 — 구체적 날짜는 위 GÜLTIG BIS 로 이미 표시된다. */
+    'Gültig für Fotografie-Leistungen von Studio mean, erbracht in Deutschland.',
+    'Nur für private Nutzung, nicht für unternehmerische Zwecke.',
+    'Keine Barauszahlung, nicht mit anderen Aktionen kombinierbar.',
+    'Restguthaben wird bei Teileinlösung als neuer Gutscheincode übertragen.'
   ],
   copyButton: 'Code kopieren',
   copied: 'Code kopiert.',
