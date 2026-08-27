@@ -592,7 +592,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="nav-group">
       <div class="nav-group-label">고객</div>
       <button type="button" class="nav-item" data-tab="leads" onclick="switchTab('leads');loadPortfolioLeads()">문의 리드</button>
-      <button type="button" class="nav-item" data-tab="consultation" onclick="switchTab('consultation');loadConsultations()">상담</button>
+      <button type="button" class="nav-item" data-tab="consultation" onclick="switchTab('consultation');loadConsultations()">문의·상담</button>
       <button type="button" class="nav-item" data-tab="marketing" onclick="switchTab('marketing')">마케팅</button>
       <button type="button" class="nav-item" data-tab="instareview" onclick="switchTab('instareview');loadInstaReview()">인스타 검수</button>
     </div>
@@ -863,13 +863,30 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     <div class="card">
       <div class="card-head">
         <div>
-          <div class="card-title">상담 관리</div>
-          <div class="card-sub">웨딩, 기업, 행사 상담 설문과 회의 내용을 기록하고 실제 예약으로 전환합니다.</div>
+          <div class="card-title">문의 · 상담</div>
+          <div class="card-sub">홈페이지 문의(리드)와 상담 설문을 한 곳에서 봅니다. 아래 표는 상담 설문 상세입니다.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <a class="btn btn-outline btn-sm" href="https://booking.studio-mean.com/consultation/" target="_blank" rel="noopener">상담 페이지</a>
           <button class="btn btn-primary btn-sm" onclick="createConsultationFromAdmin()">상담 직접등록</button>
           <button class="btn btn-outline btn-sm" onclick="loadConsultations()">새로고침</button>
+        </div>
+      </div>
+      <!-- 문의·상담 통합 목록 — 리드 시트 + 상담 시트를 합쳐 '답장 안 한 것'을 한눈에 (2026-08-26) -->
+      <div id="inquiryUnifiedBox" style="margin:0 0 16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          <b style="font-size:13px;color:#334155;">미처리 문의·상담</b>
+          <span id="inquirySummaryLabel" style="font-size:12px;color:#64748b;"></span>
+          <label style="font-size:12px;color:#64748b;display:inline-flex;align-items:center;gap:5px;margin:0;">
+            <input type="checkbox" id="inquiryIncludeClosed" style="width:auto;margin:0;" onchange="loadUnifiedInquiries()"> 종결 포함
+          </label>
+          <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadUnifiedInquiries()">새로고침</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>출처</th><th>접수</th><th>상태</th><th>고객</th><th>연락처</th><th>내용</th><th>예약 대조</th></tr></thead>
+            <tbody id="inquiryUnifiedBody"><tr><td colspan="7" style="color:#94a3b8;">불러오는 중입니다...</td></tr></tbody>
+          </table>
         </div>
       </div>
       <div class="filter-bar">
@@ -1758,7 +1775,20 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>권종</label><select id="g_voucherType" onchange="syncGutscheinTaxDefaults(true);refreshGutscheinForm()"><option value="amount">금액권</option><option value="product">상품권</option></select></div>
       </div>
       <div id="g_amountWrap" class="form-group"><label>금액 (€)</label><input type="number" id="g_amount" min="0" step="0.01" placeholder="100.00"></div>
-      <div id="g_productWrap" class="form-group" style="display:none;"><label>상품 선택</label><select id="g_productId" onchange="syncGutscheinProductPrice()"></select><div id="g_productHint" style="margin-top:6px;font-size:12px;color:#64748b;"></div></div>
+      <div id="g_productWrap" style="display:none;">
+        <div class="form-group"><label>상품 선택</label><select id="g_productId" onchange="syncGutscheinProductPrice()"></select></div>
+        <div class="form-row">
+          <div class="form-group"><label>인원</label><input type="number" id="g_people" min="1" max="10" step="1" value="1" onchange="syncGutscheinProductPrice()"></div>
+          <div class="form-group"><label>옵션</label>
+            <div id="g_options" style="display:flex;gap:14px;flex-wrap:wrap;padding-top:8px;font-size:13px;">
+              <label style="font-weight:400;"><input type="checkbox" class="g-opt" value="dog" onchange="syncGutscheinProductPrice()"> 반려동물 +15€</label>
+              <label style="font-weight:400;"><input type="checkbox" class="g-opt" value="bg" onchange="syncGutscheinProductPrice()"> 추가 배경 +20€</label>
+              <label style="font-weight:400;"><input type="checkbox" class="g-opt" value="outfit" onchange="syncGutscheinProductPrice()"> 추가 의상 +20€</label>
+            </div>
+          </div>
+        </div>
+        <div id="g_productHint" style="margin-top:6px;font-size:12px;color:#64748b;"></div>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>발행일</label><input type="date" id="g_issuedAt" onchange="syncGutscheinValidUntilDefault()"></div>
         <div class="form-group"><label>유효기한</label><input type="date" id="g_validUntil"></div>
@@ -1797,6 +1827,37 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     </div>
   </div>
 
+  <!-- 잔금 확인 — prompt() 3연타를 대체 (2026-08-26). 결제수단을 드롭다운으로 고정해
+       '카드'/'card'/'카드결제' 가 뒤섞여 정산 대조가 깨지는 것을 막는다. -->
+  <div class="modal-overlay" id="balanceConfirmModal">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-title">잔금 확인</div>
+      <input type="hidden" id="bc_rowIndex" value="">
+      <div id="bc_info" class="form-note-box" style="font-size:13px;line-height:1.7;color:#334155;"></div>
+      <div class="form-row" style="margin-top:14px;">
+        <div class="form-group"><label>결제 금액 (€) *</label>
+          <input type="number" id="bc_amount" step="0.01" min="0"></div>
+        <div class="form-group"><label>결제수단 *</label>
+          <select id="bc_payMethod">
+            <option>현금</option>
+            <option>카드</option>
+            <option>계좌이체</option>
+            <option>마이리얼트립</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label>결제일 *</label>
+        <input type="date" id="bc_paidDate">
+        <div class="modal-note" id="bc_dateHint" style="margin-top:6px;"></div>
+      </div>
+      <div class="modal-panel" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;font-size:12px;">
+        예약장부에 기록되고 회계 장부에 반영됩니다. <b>고객에게 메일은 나가지 않습니다.</b>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeBalanceConfirmModal()">취소</button>
+        <button class="btn btn-primary" id="bc_submitBtn" onclick="submitBalanceConfirm()">확인 처리</button>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="gutscheinApplyModal">
     <div class="modal" style="max-width:620px;">
       <div class="modal-title">예약에 굿샤인 적용</div>
@@ -5386,7 +5447,60 @@ function consultationStatusBadge(status){
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;background:${c[0]};color:${c[1]};font-size:11px;font-weight:800;">${escapeAdminHtml(s)}</span>`;
 }
 
+/* 문의·상담 통합 목록. 리드(홈페이지 문의)는 그동안 어드민 어디에도 안 보였다 —
+   상담 탭만 있어서 문의가 묻혔다(이홍규 38일 방치). 예약 대조 결과도 함께 띄운다. */
+function renderUnifiedInquiries(data){
+  const body=document.getElementById('inquiryUnifiedBody');
+  if(!body) return;
+  const items=(data&&data.items)||[];
+  const label=document.getElementById('inquirySummaryLabel');
+  if(label){
+    const bits=[`미처리 ${data&&data.open||0}건`];
+    if(data&&data.stale>0) bits.push(`<b style="color:#b91c1c;">${data.stale}건 답장 지연</b>`);
+    if(data&&data.convertFix>0) bits.push(`<b style="color:#b45309;">${data.convertFix}건 상태 정리 필요</b>`);
+    label.innerHTML=bits.join(' · ');
+  }
+  if(!items.length){
+    body.innerHTML='<tr><td colspan="7" style="color:#94a3b8;">표시할 문의가 없습니다.</td></tr>';
+    return;
+  }
+  body.innerHTML=items.map(function(i){
+    const esc=function(v){return String(v==null?'':v).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+    const aged=!i.booking&&i.ageDays!=null&&i.ageDays>=3&&i.open;
+    const age=i.ageDays==null?'':(i.ageDays===0?'오늘':i.ageDays+'일째');
+    const kindTag=i.kind==='lead'
+      ? '<span style="background:#eff6ff;color:#1d4ed8;padding:2px 6px;border-radius:4px;font-size:11px;">홈페이지</span>'
+      : '<span style="background:#f0fdf4;color:#047857;padding:2px 6px;border-radius:4px;font-size:11px;">상담설문</span>';
+    const bk=i.booking
+      ? `<span style="color:#047857;font-weight:700;">✅ 행 ${i.booking.rowIndex}</span><br>`
+        +`<span style="font-size:11px;color:#64748b;">${esc(i.booking.name)} · ${esc(i.booking.dateTime)} · ${esc(i.booking.status)}<br>`
+        +`(${i.booking.via==='email'?'이메일':'전화'} 일치)</span>`
+        +(i.needsConvertFix?'<br><span style="font-size:11px;color:#b45309;">→ 예약전환으로 정리</span>':'')
+      : '<span style="color:#cbd5e1;">-</span>';
+    return `<tr>
+      <td>${kindTag}</td>
+      <td style="font-size:12px;">${esc(String(i.submittedAt).slice(0,10))}<br><span style="color:${aged?'#b91c1c':'#94a3b8'};font-weight:${aged?'700':'400'};">${esc(age)}</span></td>
+      <td style="font-size:12px;">${esc(i.status)}</td>
+      <td><b>${esc(i.company||i.name)}</b><br><span style="font-size:11px;color:#64748b;">${esc(i.type)}</span></td>
+      <td style="font-size:11px;">${esc(i.email)}<br>${esc(i.phone)}</td>
+      <td style="font-size:11px;color:#475569;max-width:280px;">${esc(String(i.summary||'').slice(0,110))}<br><span style="color:#94a3b8;">${esc(i.shootDate)} ${esc(i.location)}</span></td>
+      <td style="font-size:12px;">${bk}</td>
+    </tr>`;
+  }).join('');
+}
+
+function loadUnifiedInquiries(){
+  const body=document.getElementById('inquiryUnifiedBody');
+  if(body) body.innerHTML='<tr><td colspan="7" style="color:#94a3b8;">불러오는 중입니다...</td></tr>';
+  const inc=!!(document.getElementById('inquiryIncludeClosed')&&document.getElementById('inquiryIncludeClosed').checked);
+  google.script.run
+    .withSuccessHandler(function(res){ if(res&&res.ok) renderUnifiedInquiries(res); })
+    .withFailureHandler(function(e){ handleApiError(e); if(body) body.innerHTML='<tr><td colspan="7" style="color:#b91c1c;">불러오지 못했습니다.</td></tr>'; })
+    .listUnifiedInquiriesAdmin(adminToken,inc);
+}
+
 function loadConsultations(silent){
+  loadUnifiedInquiries();
   const body=document.getElementById('consultTableBody');
   if(body&&!silent) body.innerHTML='<tr><td colspan="8" style="color:#94a3b8;">상담 내역을 불러오는 중입니다...</td></tr>';
   google.script.run
@@ -11408,24 +11522,54 @@ function balanceQuickAction(c){
   return `<button class="btn btn-sm" style="font-size:11px;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;" onclick="confirmBookingBalance(${c.rowIndex})">잔금확인</button>`;
 }
 function confirmBookingBalance(rowIndex){
-  const c=allCustomers.find(x=>x.rowIndex===rowIndex);if(!c)return;
+  const c=allCustomers.find(x=>x.rowIndex===rowIndex);
+  if(!c){showToast('예약을 찾지 못했습니다.','warn');return;}
   const bal=adminMoneyValue(c.balance);
   const shootDate=String(c.dateStr||'').slice(0,10);
   const today=new Date();
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-  const paidDate=prompt(`잔금 결제일 (YYYY-MM-DD)\n· 촬영 당일: ${shootDate||'-'}\n· 오늘: ${todayStr}`, shootDate||todayStr);
-  if(paidDate===null) return;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(paidDate).trim())){showToast('날짜 형식이 올바르지 않습니다.','warn');return;}
-  const payMethod=prompt('결제수단 (현금/카드/계좌이체)','현금');
-  if(payMethod===null) return;
-  const amountStr=prompt('결제 금액 (€)',String(bal||''));
-  if(amountStr===null) return;
-  if(!confirm(`${c.name}님 잔금 ${amountStr}€ · ${String(paidDate).trim()} · ${payMethod}\n확인 처리할까요?`)) return;
-  google.script.run
-    .withSuccessHandler(res=>{showToast(`잔금 확인됨 — ${res.amount}€ (${res.paidDate})`,'ok');loadAll();})
-    .withFailureHandler(handleApiError)
-    .confirmBookingBalanceAdmin(adminToken,rowIndex,{paidDate:String(paidDate).trim(),payMethod:String(payMethod).trim(),amount:amountStr});
+  document.getElementById('bc_rowIndex').value=rowIndex;
+  document.getElementById('bc_info').innerHTML=
+    `<b>${escapeAdminHtml(c.name||'')}</b>님 · ${escapeAdminHtml(c.product||'')}`
+    +`<br>촬영 ${escapeAdminHtml(shootDate||'-')} · 장부 잔금 <b>${bal||0}€</b>`
+    +`<br>행 ${rowIndex} · 현재 결제수단 ${escapeAdminHtml(c.payMethod||'-')}`;
+  document.getElementById('bc_amount').value=bal||'';
+  // 촬영 당일 수령이 기본 — 은행 CSV 대조 시 귀속이 어긋나지 않게 실제 수령일을 쓴다
+  document.getElementById('bc_paidDate').value=shootDate||todayStr;
+  document.getElementById('bc_dateHint').textContent=
+    `촬영 당일 ${shootDate||'-'} / 오늘 ${todayStr} — 실제로 받은 날로 맞춰 주세요.`;
+  const sel=document.getElementById('bc_payMethod');
+  const cur=String(c.payMethod||'').trim();
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:'현금';
+  document.getElementById('balanceConfirmModal').classList.add('open');
 }
+
+function closeBalanceConfirmModal(){
+  document.getElementById('balanceConfirmModal').classList.remove('open');
+  document.getElementById('bc_rowIndex').value='';
+}
+
+function submitBalanceConfirm(){
+  const rowIndex=parseInt(document.getElementById('bc_rowIndex').value,10);
+  const amount=String(document.getElementById('bc_amount').value||'').trim();
+  const payMethod=String(document.getElementById('bc_payMethod').value||'').trim();
+  const paidDate=String(document.getElementById('bc_paidDate').value||'').trim();
+  if(!rowIndex){showToast('예약 행이 없습니다.','warn');return;}
+  if(!amount||Number(amount)<=0){showToast('결제 금액을 입력해 주세요.','warn');return;}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)){showToast('결제일을 선택해 주세요.','warn');return;}
+  const btn=document.getElementById('bc_submitBtn');
+  btn.disabled=true; btn.textContent='처리 중…';
+  google.script.run
+    .withSuccessHandler(res=>{
+      btn.disabled=false; btn.textContent='확인 처리';
+      closeBalanceConfirmModal();
+      showToast(`잔금 확인됨 — ${res.amount}€ · ${res.paidDate}`,'ok');
+      loadAll();
+    })
+    .withFailureHandler(e=>{ btn.disabled=false; btn.textContent='확인 처리'; handleApiError(e); })
+    .confirmBookingBalanceAdmin(adminToken,rowIndex,{paidDate:paidDate,payMethod:payMethod,amount:amount});
+}
+
 function confirmBookingDeposit(rowIndex){
   const c=allCustomers.find(x=>x.rowIndex===rowIndex);if(!c)return;
   const amount=getAdminEffectiveDeposit(c);
@@ -13333,23 +13477,28 @@ function toLocalDateInputValue(date){
   const day=String(d.getDate()).padStart(2,'0');
   return `${year}-${month}-${day}`;
 }
+/* SPV(Einzweck-Gutschein) 단일 체제 — 2026-08-27 확정. 상품권/금액권 구분 없이 전부 SPV.
+   ⚠️ 서버(_normalizeGutscheinTaxType_)가 저장 시 항상 SPV 로 덮어쓴다. 여기서 MPV 를 보여 주면
+   화면과 저장값이 어긋나 사장님이 잘못된 과세시점을 믿게 된다 — 반드시 서버와 같은 값을 낸다.
+   근거·판단은 docs/gutschein-tax-memo.md 결론절. */
 function getGutscheinTaxAutoMeta(voucherType){
-  const taxType=voucherType==='product'?'SPV':'MPV';
-  const taxRecognition=taxType==='SPV'?'issue':'redeem';
+  const taxType='SPV';
+  const taxRecognition='issue';
   const taxRateAtIssue=19;
-  const taxDecisionNote=voucherType==='product'
-    ? `Systemvorschlag: produktgebundener Einzweck-Gutschein; Studio mean, Deutschland, MwSt. ${taxRateAtIssue}%, Besteuerung bei Ausgabe.`
-    : `Systemvorschlag: flexibler Mehrzweck-Gutschein; Besteuerung bei Einlösung, MwSt.-Satz bei Ausgabe dokumentiert: ${taxRateAtIssue}%.`;
+  const kind=voucherType==='product'?'produktgebundener Gutschein':'Wertgutschein';
+  const taxDecisionNote=`${kind} als Einzweck-Gutschein (§ 3 Abs. 14 UStG). Ort: Studio mean, Deutschland. `
+    +`Steuersatz: ${taxRateAtIssue}%. Besteuerung bei Ausgabe. Nutzungsbedingungen begrenzen die Einloesung `
+    +`auf Fotografie-Leistungen von Studio mean in Deutschland und auf private Nutzung — dadurch stehen Ort und Steuer bei Ausgabe fest.`;
   return {
     taxType,
     taxRecognition,
     taxRateAtIssue,
     taxDecisionNote,
-    taxTypeLabel:taxType==='SPV'?'SPV · Einzweck-Gutschein':'MPV · Mehrzweck-Gutschein',
-    taxRecognitionLabel:taxRecognition==='issue'?'bei Ausgabe':'bei Einlösung',
-    taxMemo:taxType==='SPV'
-      ? 'Automatisch als SPV geführt: Umsatzsteuer entsteht bei Ausgabe des produktgebundenen Gutscheins.'
-      : 'Automatisch als MPV geführt: Umsatzsteuer entsteht erst bei Einlösung des Wertgutscheins.'
+    taxTypeLabel:'SPV · Einzweck-Gutschein',
+    taxRecognitionLabel:'bei Ausgabe',
+    taxMemo:'Einzweck-Gutschein (§ 3 Abs. 14 UStG): Die Umsatzsteuer entsteht bei Ausgabe. '
+      +'Ort und Steuersatz stehen durch die Nutzungsbedingungen fest — Fotografie-Leistungen von Studio mean, '
+      +'erbracht in Deutschland, ausschliesslich fuer private Nutzung, 19% MwSt.'
   };
 }
 function buildGutscheinProductOptions(selectedId){
@@ -13402,6 +13551,13 @@ function syncGutscheinTaxDefaults(force){
 function syncGutscheinTaxRecognitionFromType(){
   syncGutscheinTaxDefaults();
 }
+function readGutscheinOptionKeys(){
+  return Array.from(document.querySelectorAll('#g_options .g-opt:checked')).map(el=>el.value);
+}
+function setGutscheinOptionKeys(keys){
+  const set=new Set((keys||[]).map(k=>String(k||'').trim()).filter(Boolean));
+  document.querySelectorAll('#g_options .g-opt').forEach(el=>{ el.checked=set.has(el.value); });
+}
 function syncGutscheinProductPrice(){
   const select=document.getElementById('g_productId');
   const hint=document.getElementById('g_productHint');
@@ -13411,7 +13567,22 @@ function syncGutscheinProductPrice(){
     hint.textContent='상품권은 현재 상품 시트 가격으로 고정 저장됩니다.';
     return;
   }
-  hint.textContent=`현재 저장될 상품: ${product.nameKo||product.nameDe||product.nameEn||product.id} · ${formatEuroDisplay(product.p||0)} · ${product.d||0}분`;
+  /* 예상가만 보여준다 — 확정 금액은 서버가 calculateQuote_ 로 다시 계산해 저장한다(가격 규칙은 거기 하나뿐).
+     여기 숫자가 서버와 다르면 서버가 맞다. */
+  const people=Math.max(1,parseInt(document.getElementById('g_people')?.value,10)||1);
+  const optKeys=readGutscheinOptionKeys();
+  const OPT={dog:15,bg:20,outfit:20};
+  const OPT_LABEL={dog:'반려동물',bg:'추가 배경',outfit:'추가 의상'};
+  let est=Number(product.p||0)||0;
+  if(String(product.t||'')==='group'&&people>2) est+=(people-2)*30;
+  optKeys.forEach(k=>{ if(OPT[k]) est+=OPT[k]; });
+  const bits=[];
+  if(people>1) bits.push(people+'인');
+  optKeys.forEach(k=>{ if(OPT_LABEL[k]) bits.push(OPT_LABEL[k]); });
+  hint.innerHTML=`저장될 상품: <b>${product.nameKo||product.nameDe||product.nameEn||product.id}</b>`
+    +(bits.length?` · ${bits.join(' · ')}`:'')
+    +` · 예상 <b>${formatEuroDisplay(est)}</b> · ${product.d||0}분`
+    +`<br><span style="color:#94a3b8;">금액은 저장 시 서버가 확정합니다. 굿샤인 PDF에는 금액이 아니라 구성만 인쇄됩니다.</span>`;
 }
 function refreshGutscheinForm(){
   const mode=document.getElementById('g_mode')?.value||'create';
@@ -13459,6 +13630,8 @@ function openGutscheinCreateModal(){
   document.getElementById('g_voucherType').value='amount';
   document.getElementById('g_amount').value='100';
   document.getElementById('g_productId').innerHTML=buildGutscheinProductOptions('');
+  document.getElementById('g_people').value=1;
+  setGutscheinOptionKeys([]);
   document.getElementById('g_issuedAt').value=toLocalDateInputValue(new Date());
   document.getElementById('g_validUntil').value='';
   document.getElementById('g_purchaserName').value='';
@@ -13493,6 +13666,8 @@ function openGutscheinEditModal(code){
       document.getElementById('g_voucherType').value=g.voucherType||'amount';
       document.getElementById('g_amount').value=Number(g.amount||0)||0;
       document.getElementById('g_productId').innerHTML=buildGutscheinProductOptions(g.productId||'');
+      document.getElementById('g_people').value=Math.max(1,parseInt(g.people,10)||1);
+      setGutscheinOptionKeys(g.optionKeys||[]);
       document.getElementById('g_issuedAt').value=g.issuedAt||'';
       document.getElementById('g_validUntil').value=g.validUntil||'';
       document.getElementById('g_purchaserName').value=g.purchaserName||'';
@@ -13524,6 +13699,8 @@ function buildGutscheinPayload(){
     issueMode:document.getElementById('g_issueMode').value,
     voucherType:document.getElementById('g_voucherType').value,
     productId:document.getElementById('g_productId').value,
+    people:Math.max(1,parseInt(document.getElementById('g_people')?.value,10)||1),
+    optionKeys:readGutscheinOptionKeys(),
     amount:Number(document.getElementById('g_amount').value)||0,
     issuedAt:document.getElementById('g_issuedAt').value,
     validUntil:document.getElementById('g_validUntil').value,

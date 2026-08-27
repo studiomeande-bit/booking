@@ -218,7 +218,7 @@ function vatExemptNoteText_(lang,docKind,country){
   };
   return map[String(lang||'de').slice(0,2)]||map.de;
 }
-const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시'];
+const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시','옵션키','인원'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
 const GUTSCHEIN_HOLD_TTL_MIN=15;
@@ -931,6 +931,16 @@ function handlePublicApiRequest_(route,method,e){
     if(route==='init'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/init');
       return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
+    }
+    /* 웹앱 컨테이너 예열 — 응답 내용에 의미는 없고, 웹앱 경로를 실제로 한 번 통과시키는 것이 목적이다.
+       실측(2026-08-27): 콜드 34.6초 / 웜 6초. 아침 첫 고객이 34초를 기다리다 떠나는 걸 막는다.
+       내부 트리거와 홈페이지가 호출한다. 토큰이 필요 없다 — 하는 일이 없고 데이터를 내지 않는다. */
+    if(route==='warmup'){
+      const wT0=Date.now();
+      const primed=[];
+      try{ getInitDataCustomer(); primed.push('init'); }catch(err){ Logger.log('warmup init skipped: '+err.message); }
+      return jsonOk_({warm:true,primedMs:Date.now()-wT0,primed:primed,
+        at:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')});
     }
     if(route==='calendar-batch'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/calendar-batch');
@@ -1673,7 +1683,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='gutschein-get') return jsonOk_(getGutscheinAdmin(token,String(payload.code||'')));
         if(action==='gutschein-create') return jsonOk_(createGutscheinAdmin(token,payload.data||payload));
         if(action==='gutschein-update') return jsonOk_(updateGutscheinAdmin(token,String(payload.code||''),payload.data||payload));
-        if(action==='gutschein-cancel') return jsonOk_(cancelGutscheinAdmin(token,String(payload.code||''),String(payload.reason||'')));
+        if(action==='gutschein-cancel') return jsonOk_(cancelGutscheinAdmin(token,String(payload.code||''),String(payload.reason||''),payload.force===true||String(payload.force||'')==='true'));
         if(action==='gutschein-apply-preview'){
           // 적용 전 미리보기 — 차감액·적용후 총액·잔금을 시트 변경 없이 계산
           return jsonOk_(previewGutscheinApplyAdmin(token,payload.bookingRowIndex,String(payload.code||'')));
@@ -2250,6 +2260,7 @@ function handlePublicApiRequest_(route,method,e){
             note:'분류만 변경했습니다 — 금액·상품·일정은 그대로입니다. 슬롯 캐시 무효화됨.'});
         }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
+        if(action==='booking-add-pass-country') return jsonOk_(addPassCountryForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // ✏️변경계: 추가일정(이동일·다일차) 등록/교체. 같은 날짜의 기존 이벤트는 흡수(중복 생성 없음). 고객 메일 미발송.
         if(action==='booking-set-extra-days') return jsonOk_(setBookingExtraDaysForAgent_(token,payload||{}));
@@ -5010,18 +5021,33 @@ function buildDayClose_(dateStr){
   const amt=function(x){return x.amount||0;};
   const gross=function(x){return x.gross||0;};
 
-  /* 결제수단별 대조. 현금은 짝이 '현금장부'인데 수기 기입이라 비어 있는 게 흔하다 —
-     그래서 diff 를 경고로 올리되 성격을 구분해 둔다. */
+  /* 은행 CSV 는 사장님이 주기적으로 넣는다. 마지막 거래일보다 뒤의 날짜를 대조하면
+     '계좌이체 €550 이 없다'는 거짓 경고가 난다 — 실제로는 아직 안 가져온 것뿐이다. */
+  let bankThrough='';
+  try{
+    getSettlementTransactions_('','',sheets.settlementSheet).forEach(function(tx){
+      if(tx.source==='deutschebank' && tx.date>bankThrough) bankThrough=tx.date;
+    });
+  }catch(e){}
+  const bankStale=!!bankThrough && day>bankThrough;
+
+  /* 결제수단별 대조.
+     ⚠ 현금은 **짝이 없다.** 현금장부(getCashLedgerAdmin)는 예약·인화 시트에서 현금 건을
+     자동으로 끌어다 쓰고, 시트에 직접 적는 건 수기 항목뿐이다. 그래서 "현금 수납이
+     현금장부에 없다"는 비교는 구조상 항상 어긋난다 — 대조하지 않고 금액만 보여준다.
+     현금의 유일한 진짜 대조는 서랍 실물이다. */
   const BUCKETS=[
-    {key:'card',label:'카드',pair:'SumUp'},
-    {key:'bank',label:'계좌이체',pair:'은행 입금'},
-    {key:'cash',label:'현금',pair:'현금장부'},
-    {key:'other',label:'기타',pair:'—'}
+    {key:'card',label:'카드',pair:'SumUp',pairable:true},
+    {key:'bank',label:'계좌이체',pair:'은행 입금',pairable:true},
+    {key:'cash',label:'현금',pair:'서랍 실물',pairable:false},
+    {key:'other',label:'기타',pair:'—',pairable:false}
   ];
   const compare=BUCKETS.map(function(b){
     const l=byBucket(ledger,b.key,amt);
     const t=byBucket(txs,b.key,gross);
+    const stale=(b.key==='bank')&&bankStale;
     return {bucket:b.key,label:b.label,pair:b.pair,
+            pairable:b.pairable&&!stale,stale:stale,
             ledger:l,actual:t,diff:roundCurrency_(l-t)};
   }).filter(function(c){return c.ledger>0.005||c.actual>0.005;});
 
@@ -5031,18 +5057,18 @@ function buildDayClose_(dateStr){
 
   const warnings=[];
   compare.forEach(function(c){
-    if(Math.abs(c.diff)<=0.005) return;
-    if(c.bucket==='cash'){
-      warnings.push(c.diff>0
-        ? `현금 ${formatEuroAmount_(c.diff)}€ 가 현금장부에 안 잡혀 있습니다`
-        : `현금장부가 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다`);
-    }else if(c.bucket==='other'){
+    if(c.bucket==='other'&&c.ledger>0.005){
       warnings.push(`결제수단 미지정 수납 ${formatEuroAmount_(c.ledger)}€ — 수단을 지정해 주세요`);
-    }else{
-      warnings.push(c.diff>0
-        ? `${c.label} ${formatEuroAmount_(c.diff)}€ 가 ${c.pair}에 없습니다`
-        : `${c.pair}에 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다 — 미기록 수납일 수 있습니다`);
+      return;
     }
+    if(c.stale){
+      warnings.push(`은행 CSV 가 ${bankThrough} 까지만 들어와 있어 계좌이체 ${formatEuroAmount_(c.ledger)}€ 는 아직 대조할 수 없습니다`);
+      return;
+    }
+    if(!c.pairable||Math.abs(c.diff)<=0.005) return;
+    warnings.push(c.diff>0
+      ? `${c.label} ${formatEuroAmount_(c.diff)}€ 가 ${c.pair}에 없습니다`
+      : `${c.pair}에 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다 — 미기록 수납일 수 있습니다`);
   });
   const unlinked=txs.filter(function(t){return t.source!=='cash'&&!t.linked;});
   if(unlinked.length) warnings.push(`장부에 연결 안 된 거래 ${unlinked.length}건 (${formatEuroAmount_(sum(unlinked,gross))}€)`);
@@ -5053,7 +5079,8 @@ function buildDayClose_(dateStr){
     serverTime:Utilities.formatDate(new Date(),tz,'yyyy-MM-dd HH:mm:ss'),
     expectedTotal:expectedTotal,ledgerTotal:ledgerTotal,actualTotal:actualTotal,
     diff:roundCurrency_(ledgerTotal-actualTotal),
-    balanced:compare.every(function(c){return Math.abs(c.diff)<=0.005;}),
+    balanced:compare.every(function(c){return !c.pairable||Math.abs(c.diff)<=0.005;}),
+    bankThrough:bankThrough,bankStale:bankStale,
     expected:expected,ledger:ledger,transactions:txs,compare:compare,
     unlinkedCount:unlinked.length,warnings:warnings,
     _ms:Date.now()-_t0
@@ -6134,6 +6161,10 @@ function getOrCreateStudioPresenceToken_(){
 function isValidStudioPresenceToken_(token){
   return String(token||'').trim()===getOrCreateStudioPresenceToken_();
 }
+
+/* 예열은 **라이브 배포**를 데워야 의미가 있다. ScriptApp.getService().getUrl() 은 실행 맥락에 따라
+   HEAD 배포를 가리킬 수 있어 엉뚱한 컨테이너를 데울 수 있다 — 그래서 여기서는 상수를 쓴다. */
+const GAS_LIVE_EXEC_URL_='https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
 
 function getScriptExecUrl_(){
   const url=String(ScriptApp.getService().getUrl()||'').trim();
@@ -14333,6 +14364,127 @@ function setBookingTimeForAgent_(token,payload){
 
 // 예약 총결제액 정정 (매출 소급 정정·예외 대응). 회계장부는 매출 gross를 '총결제액'에서 읽으므로
 // 이 값만 맞추면 net/MwSt는 자동 파생된다(별도 저장 안 함). 취소/환불건 차단, 감사메모 1줄 기록.
+/* ===== 여권 현장 국가 추가 =====
+   손님이 와서 "한국 것도 같이 뽑아 주세요" 하는 경우가 잦다. 그 자리에서 국가를 더하고
+   금액을 맞추는 한 번의 동작으로 끝내기 위한 액션(오늘 촬영 보드에서 호출).
+
+   가격 근거는 calculateQuote_ 의 여권 계산과 같다 — **사람 단위**로 1인 €30 + (그 사람의 국가수-1)×€5.
+   그래서 "2명:독일" 그룹에 한국을 더하면 두 사람 모두 국가가 늘어 +€10 이다.
+
+   국가는 옵션 열이 아니라 요청사항의 `[국가별 신청] 1명:독일` 토큰에 들어 있다(예약 프런트가 그렇게 쓴다).
+   토큰을 갱신하고, 무슨 일이 있었는지 감사 한 줄을 남긴다. 고객 메일은 나가지 않는다 — 손님이 앞에 있다. */
+const PASS_EXTRA_COUNTRY_FEE_=5;
+const PASS_COUNTRY_LABELS_={KR:'한국',DE:'독일',JP:'일본',CN:'중국',US:'미국',OTHER:'기타'};
+
+function _passCountryLabel_(v){
+  const s=String(v||'').trim();
+  if(!s) return '';
+  return PASS_COUNTRY_LABELS_[s.toUpperCase()]||s;   // 코드(KR)든 한글(한국)이든 받는다
+}
+
+function _parsePassCountryMemo_(memo){
+  const m=String(memo||'').match(/\[국가별 신청\][^\n]*/);
+  if(!m) return {found:false,groups:[],raw:''};
+  const body=m[0].replace(/^\[국가별 신청\]\s*/,'');
+  const groups=body.split(',').map(function(seg){
+    const g=String(seg||'').trim().match(/^(\d+)\s*명\s*:\s*(.+)$/);
+    if(!g) return null;
+    return {people:Math.max(1,parseInt(g[1],10)||1),
+            countries:g[2].split('+').map(function(x){return x.trim();}).filter(Boolean)};
+  }).filter(Boolean);
+  return {found:true,groups:groups,raw:m[0]};
+}
+
+function _formatPassCountryMemo_(groups){
+  const rows=groups.filter(function(g){return g.countries.length;})
+    .map(function(g){return g.people+'명:'+g.countries.join('+');}).join(', ');
+  return rows?('[국가별 신청] '+rows):'';
+}
+
+function addPassCountryForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약은 수정할 수 없습니다.');
+  if(String(row[BOOKING_COL['촬영종류']]||'').trim()!=='pass'){
+    throw new Error('여권/비자 예약에서만 국가를 추가할 수 있습니다 (현재: '+row[BOOKING_COL['촬영종류']]+').');
+  }
+
+  const rawCountries=Array.isArray(payload.countries)?payload.countries
+    :String(payload.countries||'').split(/[,+|]/);
+  const wanted=rawCountries.map(_passCountryLabel_).filter(Boolean);
+  const note=String(payload.memo||'').trim().slice(0,200);
+  if(!wanted.length && !note) throw new Error('추가할 국가(countries) 또는 메모(memo)가 필요합니다.');
+
+  const fee=(payload.unitPrice!=null&&isFinite(Number(payload.unitPrice)))
+    ? roundCurrency_(Number(payload.unitPrice)) : PASS_EXTRA_COUNTRY_FEE_;
+  const bookingPeople=Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1);
+
+  let memo=String(row[BOOKING_COL['요청사항']]||'');
+  const parsed=_parsePassCountryMemo_(memo);
+  const added=[];
+  let groupPeople=bookingPeople;
+
+  if(wanted.length){
+    const groups=parsed.groups.slice();
+    /* people 을 지정하면 그 그룹, 아니면 첫 그룹. 그룹이 없으면 예약 인원 전체를 한 그룹으로 본다.
+       새 사람을 만들지는 않는다 — 그건 인원 추가(€30)라 다른 작업이고, 조용히 섞이면 안 된다. */
+    const want=parseInt(payload.people,10)||0;
+    let target=want?groups.filter(function(g){return g.people===want;})[0]:null;
+    if(!target) target=groups[0];
+    if(!target){ target={people:bookingPeople,countries:[]}; groups.push(target); }
+    groupPeople=target.people;
+    wanted.forEach(function(c){ if(target.countries.indexOf(c)===-1){ target.countries.push(c); added.push(c); } });
+    const token2=_formatPassCountryMemo_(groups);
+    if(token2) memo=parsed.found?memo.replace(parsed.raw,token2):[token2,memo].filter(Boolean).join('\n');
+  }
+
+  const delta=roundCurrency_(fee*added.length*groupPeople);
+  const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const newTotal=roundCurrency_(prevTotal+delta);
+  const depositAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+  /* 잔금 셀의 '35|CARD|날짜' 꼬리는 보존한다 — 지우면 언제 무엇으로 받았는지가 사라진다 */
+  const prevBalanceRaw=String(row[BOOKING_COL['잔금']]||'');
+  const balanceTail=prevBalanceRaw.indexOf('|')>-1?prevBalanceRaw.slice(prevBalanceRaw.indexOf('|')):'';
+  const prevBalance=roundCurrency_(parseMoneyValue_(prevBalanceRaw.split('|')[0]));
+  const newBalance=roundCurrency_(Math.max(0,newTotal-depositAmt));
+
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'MM-dd HH:mm');
+  const auditBits=[];
+  if(added.length) auditBits.push('국가 +'+added.join('+')+(groupPeople>1?(' ('+groupPeople+'명)'):''));
+  if(delta>0) auditBits.push('+'+formatEuroAmount_(delta)+'€ → 총 '+formatEuroAmount_(newTotal)+'€');
+  if(note) auditBits.push(note);
+  /* 아무것도 안 바뀌었으면(이미 있는 국가를 또 누른 경우) 줄을 남기지 않는다 —
+     빈 '[현장추가 …]' 가 쌓이면 메모가 읽을 수 없게 된다. */
+  const changed=auditBits.length>0;
+  if(changed) memo=[memo.trim(),'[현장추가 '+stamp+'] '+auditBits.join(' · ')].filter(Boolean).join('\n');
+
+  if(changed) sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memo);
+  if(delta>0){
+    sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
+    if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
+    sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(balanceTail?(newBalance+balanceTail):newBalance);
+    if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+  }
+  try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
+
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
+    changed:changed,
+    addedCountries:added,skipped:wanted.filter(function(c){return added.indexOf(c)===-1;}),
+    groupPeople:groupPeople,unitPrice:fee,delta:delta,
+    prevTotal:prevTotal,total:newTotal,prevBalance:prevBalance,balance:newBalance,
+    countryLine:_formatPassCountryMemo_(_parsePassCountryMemo_(memo).groups)};
+}
+
 function setBookingAmountForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -17670,6 +17822,9 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
         const recognition=_normalizeGutscheinTaxRecognition_(gRow[GUTSCHEIN_COL['과세시점']],taxType);
         let gDate='',gGross=0,gLabel='';
         if(recognition==='issue'){
+          /* 잔액 이월행은 새 매출이 아니다 — 상위 코드가 발행 시점에 전액 과세됐다.
+             이 가드가 없으면 부분 사용 한 번에 잔액만큼 매출이 부풀려진다. */
+          if(String(gRow[GUTSCHEIN_COL['발행방식']]||'').trim()==='residual') return;
           const sold=String(gRow[GUTSCHEIN_COL['구매자등록여부']]||'').trim()==='Y'||String(gRow[GUTSCHEIN_COL['판매등록일']]||'').trim();
           if(!sold) return;
           gDate=(parseDateSafe_(gRow[GUTSCHEIN_COL['판매등록일']]||gRow[GUTSCHEIN_COL['발행일']]).str||'').slice(0,10);
@@ -30319,6 +30474,30 @@ function warmupCacheTrigger(){
       getCachedMonthEvents_(d.getFullYear(),d.getMonth(),true);
     }catch(e){ Logger.log('warmup events '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message); }
   }
+  _pingWebAppWarmup_();
+}
+
+/* 캐시 워밍만으로는 /exec 첫 호출의 34초가 안 잡힌다 — **트리거는 웹앱과 다른 컨테이너에서 돌기 때문**이다.
+   그래서 라이브 배포 URL 자체를 두드려 웹앱 경로를 통과시킨다.
+
+   빈도: 이 트리거는 5분마다 돌지만 핑은 **10분에 한 번**만 보낸다(하루 약 84회).
+   UrlFetchApp 이 응답을 기다리는 ~5초가 전부 트리거 실행시간으로 잡히는데, 소비자 계정 한도가
+   하루 90분이고 SumUp 동기화(15분)·모닝리포트 등이 이미 쓰고 있어 여유를 남긴다.
+   야간(22~08시)은 건너뛴다 — 그 시간대 첫 방문은 어차피 드물고, 한도를 거기 쓸 이유가 없다.
+
+   ⚠️ 구글이 인스턴스를 얼마나 오래 살려 두는지는 공개돼 있지 않다. 10분 간격이 항상 콜드를 막는다는
+   보장은 없다 — 효과는 실제 응답시간으로 확인해야 한다. */
+function _pingWebAppWarmup_(){
+  try{
+    const now=new Date();
+    const h=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'H'));
+    const m=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'m'));
+    if(h<8||h>=22) return;
+    if(m%10>=5) return;
+    const url=GAS_LIVE_EXEC_URL_+'?api=warmup&_ts='+Date.now();
+    const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,followRedirects:true});
+    Logger.log('warmup ping '+res.getResponseCode());
+  }catch(e){ Logger.log('warmup ping skipped: '+e.message); }
 }
 
 function setupWarmupTrigger(){
@@ -32968,24 +33147,34 @@ function generateGutscheinCode_(){
   return code;
 }
 
+/* ===== SPV(Einzweck-Gutschein) 단일 체제 — 2026-08-27 확정 =====
+   § 3 Abs. 14 UStG 의 SPV 요건은 '공급 장소'와 '세액'이 발행 시점에 둘 다 확정될 것이다.
+   굿샤인 약관(§ 3 Abs. 13 Nr. 2 UStG — "Bedingungen für die Nutzung" 도 굿샤인의 일부)으로
+   ① Studio mean 의 사진 촬영 서비스 ② 독일 내 제공 ③ 개인 고객 전용(사업자 사업목적 사용 불가)
+   을 못 박아 장소·세율(19%)을 확정시킨다. ③ 이 § 3a Abs. 2 UStG(사업자 수령인 → 수령지 과세)로
+   공급지가 국외로 새는 구멍을 막는 핵심 조건이다.
+
+   운영 근거: Studio mean 은 § 20 Istversteuerung(입금기준) + EÜR(§ 11 EStG 현금기준)이라
+   소득세·부가세가 모두 현금 기준이다. SPV 는 과세시점(발행)이 입금시점과 일치해 한 해에 끝나지만,
+   MPV 는 같은 돈을 EÜR(입금연도)과 부가세(상환연도) 두 해로 쪼개 선수금 관리를 강요한다.
+   또 오분류 위험이 비대칭이다 — SPV 로 보고 MPV 였으면 조기납부(무해), MPV 로 보고 SPV 였으면
+   과소신고(§ 233a AO 이자). 그래서 SPV 로 통일한다. 상세 = docs/gutschein-tax-memo.md */
 function _guessGutscheinTaxType_(voucherType){
-  return voucherType==='product' ? 'SPV' : 'MPV';
+  return 'SPV';
 }
 
 function _guessGutscheinTaxRecognition_(taxType){
-  return taxType==='SPV' ? 'issue' : 'redeem';
+  return 'issue';   /* SPV 단일 체제: 과세는 항상 발행(판매) 시점 */
 }
 
+/* SPV 단일 체제의 마지막 관문 — 시트에 'MPV'/'TBD' 가 저장돼 있거나 페이로드로 들어와도 SPV 로 되돌린다.
+   구 데이터·수기 입력·에이전트 호출이 MPV 로 새는 경로를 여기서 전부 막는다. */
 function _normalizeGutscheinTaxType_(taxType, voucherType){
-  const raw=String(taxType||'').trim().toUpperCase();
-  if(raw==='SPV'||raw==='MPV'||raw==='TBD') return raw;
-  return _guessGutscheinTaxType_(voucherType);
+  return 'SPV';
 }
 
 function _normalizeGutscheinTaxRecognition_(recognition, taxType){
-  const raw=String(recognition||'').trim().toLowerCase();
-  if(raw==='issue'||raw==='redeem'||raw==='review') return raw;
-  return _guessGutscheinTaxRecognition_(taxType);
+  return 'issue';
 }
 
 function _normalizeGutscheinTaxRate_(rate){
@@ -32997,19 +33186,19 @@ function _normalizeGutscheinTaxRate_(rate){
 function _buildGutscheinTaxDecisionNote_(voucherType,taxType,taxRecognition,taxRate){
   const typeLabel=taxType==='SPV'?'Einzweck-Gutschein':(taxType==='MPV'?'Mehrzweck-Gutschein':'TBD');
   const timingLabel=taxRecognition==='issue'?'Ausgabe':(taxRecognition==='redeem'?'Einloesung':'manuelle Pruefung');
-  if(voucherType==='product'){
-    return `Systemvorschlag: produktgebundener ${typeLabel}; Studio mean als Leistungserbringer, Deutschland, MwSt. ${taxRate}%, Besteuerung bei ${timingLabel}.`;
-  }
-  return `Systemvorschlag: flexibler Wertgutschein als ${typeLabel}; Besteuerung bei ${timingLabel}, MwSt.-Satz bei Ausgabe dokumentiert: ${taxRate}%.`;
+  const kind=voucherType==='product'?'produktgebundener Gutschein':'Wertgutschein';
+  return `${kind} als ${typeLabel} (§ 3 Abs. 14 UStG). Ort: Studio mean, Deutschland. Steuersatz: ${taxRate}%. `
+    +`Besteuerung bei ${timingLabel}. Nutzungsbedingungen begrenzen die Einloesung auf Fotografie-Leistungen `
+    +`von Studio mean in Deutschland und auf private Nutzung — dadurch stehen Ort und Steuer bei Ausgabe fest.`;
 }
 
 function _guessGutscheinTaxMeta_(voucherType){
   const taxType=_guessGutscheinTaxType_(voucherType);
   const taxRecognition=_guessGutscheinTaxRecognition_(taxType);
   const taxRateAtIssue=19;
-  const taxMemo=taxType==='SPV'
-    ? 'Automatisch als SPV geführt: Die Umsatzsteuer entsteht bei Ausgabe des produktgebundenen Gutscheins.'
-    : 'Automatisch als MPV geführt: Die Umsatzsteuer entsteht erst bei Einlösung des Wertgutscheins.';
+  const taxMemo='Einzweck-Gutschein (§ 3 Abs. 14 UStG): Die Umsatzsteuer entsteht bei Ausgabe. '
+    +'Ort und Steuersatz stehen durch die Nutzungsbedingungen fest — Fotografie-Leistungen von Studio mean, '
+    +'erbracht in Deutschland, ausschliesslich fuer private Nutzung, 19% MwSt.';
   const taxDecisionNote=_buildGutscheinTaxDecisionNote_(voucherType,taxType,taxRecognition,taxRateAtIssue);
   return {taxType,taxRecognition,taxMemo,taxRateAtIssue,taxDecisionNote};
 }
@@ -33017,9 +33206,12 @@ function _guessGutscheinTaxMeta_(voucherType){
 function _buildDefaultGutscheinValidUntil_(issueDate){
   const parsed=parseDateSafe_(issueDate||new Date()).obj;
   const base=parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
-  const d=new Date(base.getTime());
-  d.setMonth(d.getMonth()+CONFIG.GUTSCHEIN_VALID_MONTHS);
-  return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  /* §§ 195, 199 Abs. 1 BGB — 소멸시효 3년은 '청구권이 생긴 해의 말'부터 기산된다.
+     발행일+36개월로 자르면 법정 시효보다 짧아지고(2026-08-13 발행 → 08-13 만료 vs 법정 12-31),
+     법정보다 짧은 기한은 § 307 Abs.1 S.1 BGB 로 무효 → 결국 법정기간이 적용된다.
+     짧게 적어 놓고 무효가 되느니 처음부터 법정기간(발행연도+3년의 12/31)에 맞춘다. */
+  const years=Math.round(CONFIG.GUTSCHEIN_VALID_MONTHS/12)||3;
+  return (Number(Utilities.formatDate(base,CONFIG.TIMEZONE,'yyyy'))+years)+'-12-31';
 }
 
 function normalizeGutscheinDateCell_(value){
@@ -33048,6 +33240,8 @@ function gutscheinRowToObject_(row,rowIndex){
     voucherType:normalizeGutscheinType_(row[GUTSCHEIN_COL['타입']]),
     productId:String(row[GUTSCHEIN_COL['상품ID']]||'').trim(),
     productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
+    optionKeys:_parseGutscheinOptionKeys_(row[GUTSCHEIN_COL['옵션키']]),
+    people:Math.max(1,parseInt(row[GUTSCHEIN_COL['인원']],10)||1),
     purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
     purchaserEmail:String(row[GUTSCHEIN_COL['구매자이메일']]||'').trim(),
     recipientName:String(row[GUTSCHEIN_COL['받는분명']]||'').trim(),
@@ -33169,24 +33363,57 @@ function getPublicGutscheinTicket_(code){
   return buildPublicGutscheinTicketPayload_(g);
 }
 
-function _getGutscheinProductMeta_(productId){
+function _getGutscheinProductMeta_(productId, people, optionKeys){
   const pid=String(productId||'').trim();
-  if(!pid) return {id:'',name:'',price:0};
+  const ppl=Math.max(1,parseInt(people,10)||1);
+  const keys=(optionKeys||[]).filter(Boolean);
+  const empty={id:'',name:'',price:0,people:ppl,optionKeys:keys,composition:''};
+  if(!pid) return empty;
   const products=getCachedProducts_();
   const found=products.find(function(p){return String(p.id||'').trim()===pid;});
-  if(!found) return {id:pid,name:'',price:0};
+  if(!found) return Object.assign({},empty,{id:pid});
+  let price=Math.round((Number(found.p||0)||0)*100)/100;
+  /* 가격은 예약 견적 엔진을 그대로 재사용한다 — 인원 추가(+30/인)·옵션(반려동물 15·배경 20·의상 20)
+     규칙이 한 군데(calculateQuote_)에만 있어야 상품가가 바뀌어도 굿샤인이 따라간다.
+     ⚠️ date 를 넘기지 않는다: 주말할증·이벤트할인·시니어·얼리버드는 촬영일에 의존하는데
+     굿샤인은 발행 시점에 액면가가 확정돼야 한다(SPV = 발행 시 과세). 기본가만 쓴다. */
+  try{
+    const q=calculateQuote_({itemId:pid,people:ppl,optionKeys:keys});
+    if(q&&isFinite(Number(q.totalPrice))&&Number(q.totalPrice)>0) price=roundCurrency_(Number(q.totalPrice));
+  }catch(e){ Logger.log('굿샤인 상품가 계산 실패 ('+pid+'): '+e.message); }
   return {
     id:String(found.id||'').trim(),
     name:String(found.nameDe||found.nameEn||found.nameKo||'').trim(),
-    price:Math.round((Number(found.p||0)||0)*100)/100
+    price:price,
+    people:ppl,
+    optionKeys:keys,
+    composition:_gutscheinCompositionDe_(ppl,keys)
   };
+}
+
+/* 굿샤인 액면 구성 표기(독일어) — PDF·메일이 같은 문자열을 쓴다.
+   "3 Personen · mit Haustier" 처럼 상품명 아래 한 줄로 붙는다. */
+function _gutscheinCompositionDe_(people,optionKeys){
+  const parts=[];
+  const ppl=Math.max(1,parseInt(people,10)||1);
+  if(ppl>1) parts.push(ppl+' Personen');
+  const map={dog:'mit Haustier',bg:'zusätzlicher Hintergrund',outfit:'extra Outfit'};
+  (optionKeys||[]).forEach(function(k){ if(map[k]) parts.push(map[k]); });
+  return parts.join(' · ');
+}
+
+function _parseGutscheinOptionKeys_(v){
+  if(Array.isArray(v)) return v.map(function(x){return String(x||'').trim();}).filter(Boolean);
+  return String(v||'').split(/[|,]/).map(function(x){return x.trim();}).filter(Boolean);
 }
 
 function _buildGutscheinPayloadFromRequest_(payload, existing){
   payload=payload||{};
   const base=existing||{};
   const voucherType=normalizeGutscheinType_(payload.voucherType!=null?payload.voucherType:base.voucherType);
-  const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId);
+  const vPeople=Math.max(1,parseInt(payload.people!=null?payload.people:base.people,10)||1);
+  const vOptionKeys=_parseGutscheinOptionKeys_(payload.optionKeys!=null?payload.optionKeys:base.optionKeys);
+  const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId,vPeople,vOptionKeys);
   const taxMeta=_guessGutscheinTaxMeta_(voucherType);
   const amountRaw=voucherType==='product'
     ? productMeta.price
@@ -33219,6 +33446,10 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
     voucherType,
     productId:voucherType==='product' ? productMeta.id : '',
     productSnapshot,
+    /* 인원·옵션은 상품권에서만 의미가 있다 — 금액권은 액면 그대로라 구성이 없다 */
+    people:voucherType==='product' ? productMeta.people : 1,
+    optionKeys:voucherType==='product' ? productMeta.optionKeys : [],
+    composition:voucherType==='product' ? productMeta.composition : '',
     amount,
     issueMode,
     issuedAt,
@@ -33244,7 +33475,8 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
 function buildGutscheinEmailDefaults_(g){
   const code=g.code||'{{code}}';
   const valueLabel=g.voucherType==='product'
-    ? (g.productSnapshot||'Studio mean Gutschein')
+    ? [(g.productSnapshot||'Studio mean Gutschein'),
+       (g.composition||_gutscheinCompositionDe_(g.people,g.optionKeys)||'')].filter(Boolean).join(' · ')
     : `€${Number(g.amount||0).toFixed(2)}`;
   const customerName=String(g.purchaserName||g.recipientName||'').trim();
   const ticketUrl=buildGutscheinTicketUrl_(code);
@@ -33314,6 +33546,10 @@ function _getGutscheinLogoDataUri_(){
 function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? String(g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
+  /* 상품권만 구성(인원·옵션)을 표기한다. 금액권은 액면이 곧 내용이라 붙일 게 없다.
+     금액은 상품권에 찍지 않는다 — 선물이기도 하고, 액수를 찍으면 '크레딧'으로 읽혀
+     부분사용·잔액 논쟁을 부른다(상품권을 고른 이유가 그걸 없애는 것). */
+  const compositionLabel=isProduct ? String(g.composition||_gutscheinCompositionDe_(g.people,g.optionKeys)||'') : '';
   const taxType=_normalizeGutscheinTaxType_(g.taxType,g.voucherType);
   const taxRate=_normalizeGutscheinTaxRate_(g.taxRateAtIssue);
   const taxNotice=taxType==='SPV'
@@ -33325,7 +33561,7 @@ function buildGutscheinHtml_(g){
   const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const logoDataUri=_getGutscheinLogoDataUri_();
   const t={
-    valid:'Verfallsdatum',
+    valid:'Gültig bis',
     title:'Geschenk\ngutschein',
     forLabel:'Für :',
     imprint:'Studio_mean',
@@ -33333,7 +33569,11 @@ function buildGutscheinHtml_(g){
     footerLine2:'Tel : +49 176 6093 9400'
   };
   const recipientText=String(g.recipientName||'').trim() || ' ';
-  const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
+  /* 독일 문서 표기: 31.12.2029 (yyyy/mm/dd 는 독일 고객에게 낯설고 월·일이 헷갈린다) */
+  const validLabel=escapeHtml_((function(){
+    const m=String(g.validUntil||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : String(g.validUntil||'');
+  })());
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
 <style>
@@ -33361,7 +33601,8 @@ body{width:105mm;margin:0 auto;background:#fff}
 .caption-copy{display:grid;gap:1.4mm}
 .script-title{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:18.5pt;line-height:.98;letter-spacing:-.03em;color:var(--ink);white-space:pre-line;max-width:100%}
 .voucher-note{font-size:6.4pt;line-height:1.22;color:var(--muted);text-align:left}
-.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'17.5pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:.5mm}
+.voucher-note .value{display:block;font-size:${isProduct?(String(amountLabel).length>18?'9pt':'10.5pt'):'17.5pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:.5mm}
+.voucher-note .composition{display:block;font-size:6.9pt;font-weight:500;line-height:1.2;color:var(--ink);margin:-.2mm 0 .7mm}
 .front-qr{display:grid;justify-items:center}
 .front-qr .qr-box{width:24mm;height:24mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.4mm;border:1px solid rgba(45,36,29,.18)}
 .front-qr .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
@@ -33391,6 +33632,7 @@ body{width:105mm;margin:0 auto;background:#fff}
           <div class="script-title">${t.title}</div>
           <div class="voucher-note">
             <span class="value">${escapeHtml_(amountLabel)}</span>
+            ${compositionLabel?`<span class="composition">${escapeHtml_(compositionLabel)}</span>`:''}
             ${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}
           </div>
         </div>
@@ -33401,9 +33643,9 @@ body{width:105mm;margin:0 auto;background:#fff}
     </div>
     <div class="front-footer">
       <ul class="notes">
-        <li>${escapeHtml_('Gültig für Studio_mean Fotografie Dienstleistungen.')}</li>
-        <li>${escapeHtml_('3 Jahre gültig, nur nach Terminvereinbarung einlösbar.')}</li>
-        <li>${escapeHtml_('Nicht mit anderen Aktionen kombinierbar, keine Barauszahlung.')}</li>
+        <li>${escapeHtml_('Gültig für Fotografie-Leistungen von Studio mean, erbracht in Deutschland.')}</li>
+        <li>${escapeHtml_('Nur für private Nutzung, nicht für unternehmerische Zwecke.')}</li>
+        <li>${escapeHtml_('Einlösung nur nach Terminvereinbarung. Keine Barauszahlung, nicht mit anderen Aktionen kombinierbar.')}</li>
         ${isProduct?'':`<li>${escapeHtml_('Restguthaben wird bei Teileinlösung als neuer Gutscheincode übertragen.')}</li>`}
         <li>${escapeHtml_(taxNotice)}</li>
       </ul>
@@ -33516,50 +33758,42 @@ function createGutscheinAdmin(token, payload){
     const nowTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
     const stockCreatedAt=data.issueMode==='재고인쇄' ? nowTs : '';
     const saleRegisteredAt=data.buyerRegistered==='Y' ? nowTs : '';
-    gutscheinSheet.appendRow([
-      code,
-      data.voucherType,
-      data.productId,
-      data.productSnapshot,
-      data.purchaserName,
-      data.purchaserEmail,
-      data.recipientName,
-      data.message,
-      data.amount,
-      data.issuedAt,
-      data.validUntil,
-      data.status,
-      data.buyerRegistered,
-      'N',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      stockCreatedAt,
-      saleRegisteredAt,
-      data.issueMode,
-      qrValue,
-      '',
-      '',
-      defaults.subject,
-      defaults.body,
-      '',
-      data.lang,
-      data.paymentMethod,
-      data.saleChannel,
-      data.taxType,
-      data.taxRecognition,
-      data.taxMemo,
-      data.adminMemo,
-      data.taxRateAtIssue,
-      data.taxDecisionNote,
-      '',
-      '',
-      ''
-    ]);
+    /* 열 이름으로 기록한다 — 위치 기반 배열이었을 때는 GUTSCHEIN_HEADERS 에 열을 하나만 더해도
+       조용히 어긋났다(hold 필드가 뒤에 있어 배열이 헤더보다 짧았다). 인덱스 트랩 제거. */
+    const newRow=new Array(GUTSCHEIN_HEADERS.length).fill('');
+    const put=function(h,v){ if(GUTSCHEIN_COL[h]!=null) newRow[GUTSCHEIN_COL[h]]=v; };
+    put('코드',code);
+    put('타입',data.voucherType);
+    put('상품ID',data.productId);
+    put('상품명스냅샷',data.productSnapshot);
+    put('옵션키',(data.optionKeys||[]).join('|'));
+    put('인원',data.people||1);
+    put('구매자명',data.purchaserName);
+    put('구매자이메일',data.purchaserEmail);
+    put('받는분명',data.recipientName);
+    put('메시지',data.message);
+    put('발행금액(€)',data.amount);
+    put('발행일',data.issuedAt);
+    put('유효기한',data.validUntil);
+    put('상태',data.status);
+    put('구매자등록여부',data.buyerRegistered);
+    put('사용여부','N');
+    put('재고생성일',stockCreatedAt);
+    put('판매등록일',saleRegisteredAt);
+    put('발행방식',data.issueMode);
+    put('QR값',qrValue);
+    put('메일제목',defaults.subject);
+    put('메일본문',defaults.body);
+    put('언어',data.lang);
+    put('결제수단',data.paymentMethod);
+    put('판매채널',data.saleChannel);
+    put('세무분류',data.taxType);
+    put('과세시점',data.taxRecognition);
+    put('세무메모',data.taxMemo);
+    put('관리메모',data.adminMemo);
+    put('발행시점세율',data.taxRateAtIssue);
+    put('세무판단근거',data.taxDecisionNote);
+    gutscheinSheet.appendRow(newRow);
     const rowIndex=gutscheinSheet.getLastRow();
     const gutschein=Object.assign({},data,{code,qrValue,rowIndex,mailSubject:defaults.subject,mailBody:defaults.body,status:data.status,buyerRegistered:data.buyerRegistered});
     const pdf=_persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,gutschein);
@@ -33590,6 +33824,8 @@ function updateGutscheinAdmin(token, code, payload){
   set('타입',data.voucherType);
   set('상품ID',data.productId);
   set('상품명스냅샷',data.productSnapshot);
+  set('옵션키',(data.optionKeys||[]).join('|'));
+  set('인원',data.people||1);
   set('구매자명',data.purchaserName);
   set('구매자이메일',data.purchaserEmail);
   set('받는분명',data.recipientName);
@@ -33619,7 +33855,7 @@ function updateGutscheinAdmin(token, code, payload){
   return {ok:true,code:existing.code};
 }
 
-function cancelGutscheinAdmin(token, code, reason){
+function cancelGutscheinAdmin(token, code, reason, force){
   assertAdmin_(token);
   const targetCode=extractGutscheinCode_(code);
   if(!targetCode) throw new Error('굿샤인 코드를 확인해 주세요.');
@@ -33628,17 +33864,28 @@ function cancelGutscheinAdmin(token, code, reason){
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const existing=gutscheinRowToObject_(found.row,found.rowIndex);
   if(existing.used || existing.status===GUTSCHEIN_STATUS.USED || existing.linkedBookingRow){
-    throw new Error('이미 사용된 굿샤인은 취소할 수 없습니다.');
+    /* 정상 경로는 `booking-refund` + `method:'gutschein'`(바우처 복원)이다 — 예약을 되돌리며 함께 푼다.
+       다만 연결 예약행이 **이미 삭제된** 뒤에는 그 경로를 쓸 수 없고, 지금까지 잘못 기록된 상환을
+       되돌릴 방법이 전혀 없었다(SPV 체제에선 그 행이 장부에 매출로 남는다).
+       그래서 force 를 좁게 연다: 사유 필수 + 관리메모에 흔적을 남긴다. 예약이 살아 있다면 force 대신
+       바우처 복원을 써야 한다 — 그래야 예약 금액도 같이 맞는다. */
+    if(!force){
+      throw new Error('이미 사용된 굿샤인은 취소할 수 없습니다. '
+        +'연결 예약이 살아 있으면 booking-refund(method:"gutschein")로 바우처를 복원하세요. '
+        +'예약이 이미 삭제돼 복원할 수 없는 경우에만 {"force":true,"reason":"..."} 로 강제 취소합니다.');
+    }
+    if(!String(reason||'').trim()) throw new Error('force 취소에는 reason(사유)이 반드시 필요합니다.');
   }
   if(existing.status===GUTSCHEIN_STATUS.CANCELLED){
     return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,alreadyCancelled:true};
   }
   const cancelledAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const note=String(reason||'').trim();
-  const adminMemoParts=[String(existing.adminMemo||'').trim(),`[${cancelledAt}] Gutschein 취소${note?` · ${note}`:''}`].filter(Boolean);
+  const forced=!!force&&(existing.used||existing.status===GUTSCHEIN_STATUS.USED||existing.linkedBookingRow);
+  const adminMemoParts=[String(existing.adminMemo||'').trim(),`[${cancelledAt}] Gutschein 취소${forced?'(강제·사용완료 상태에서)':''}${note?` · ${note}`:''}`].filter(Boolean);
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.CANCELLED);
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(adminMemoParts.join('\n'));
-  return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt};
+  return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt,forced:forced};
 }
 
 function deleteGutscheinAdmin(token, code){
@@ -33912,7 +34159,10 @@ function _applyGutscheinToBookingCore_(bookingRowIndex, rawCode, method){
     let residual=null;
     const appliedTaxType=_normalizeGutscheinTaxType_(g.taxType,g.voucherType);
     const residualAmount=Math.max(0,roundCurrency_((Number(g.amount)||0)-preview.calculations.discountAmount));
-    if(appliedTaxType==='MPV'&&residualAmount>=0.01){
+    /* SPV 체제에서도 잔액은 반드시 이월한다 — 부분 사용 후 잔액을 소멸시키는 약관은 § 307 BGB
+       무효 소지가 크다. 이중과세는 이월행을 장부에서 제외하는 방식으로 막는다(발행방식='residual').
+       상위 코드가 발행 시점에 이미 전액 과세됐기 때문이다. */
+    if(residualAmount>=0.01){
       try{
         residual=_issueResidualGutschein_(gutscheinSheet,g,residualAmount,bookingRowIndex,appliedAt);
         const memoAfter=String(bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).getValue()||'');
@@ -33957,10 +34207,11 @@ function _issueResidualGutschein_(gutscheinSheet,parent,amount,bookingRowIndex,a
   set('언어',parent.lang||'de');
   set('결제수단',parent.paymentMethod||'');
   set('판매채널','잔액이월');
-  set('세무분류','MPV');
-  set('과세시점','redeem');
+  set('세무분류','SPV');
+  set('과세시점','issue');
   set('발행시점세율',19);
-  set('세무판단근거',`상위 ${parent.code} 부분사용 잔액 이월 (MPV·사용 시점 과세, 판매대금은 상위 코드에 귀속)`);
+  set('세무판단근거',`상위 ${parent.code} 부분사용 잔액 이월. 판매대금은 상위 코드 발행 시점에 이미 전액 과세됐으므로 `
+    +`이 행은 회계장부에서 제외된다(발행방식=residual) — 이중과세 방지.`);
   set('관리메모',`상위 굿샤인 ${parent.code} · 예약행 ${bookingRowIndex} 부분사용 잔액`);
   gutscheinSheet.appendRow(row);
   return {code:code,amount:amount,rowIndex:gutscheinSheet.getLastRow()};
