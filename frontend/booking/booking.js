@@ -6678,6 +6678,75 @@ function resetBookingFlow() {
 }
 
 // 독일어 성공 가이드 — 그룹별 핵심 안내 (한/영 상세 가이드의 컴팩트 독일어판)
+/* 돌상·백일상 + 아기 한복 안내. ko/en/de 한 곳에서 만든다 — 예전엔 한국어만 상세하고
+   영어는 한 줄, 독일어는 아예 없었다(독일어 성공화면이 별도 함수라 이 블록이 안 붙었다).
+   무료 범위: 돌상은 프로필 프로페셔널(€130)부터, 스튜디오/스냅은 전 상품.
+   한복은 아기 촬영 전부 무료 대여지만 **스튜디오 내 착용만** — 외부 반출이 안 되므로
+   야외·홈 스냅은 고객이 직접 준비해야 한다. */
+function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
+  const g = String(product?.g || '');
+  if (!hasBabyBirthday || !(g === 'stud' || g === 'snap' || g === 'prof')) return '';
+  const dolFree = g !== 'prof' || product.id === 'pp';
+  const hanbokFree = g === 'stud' || g === 'prof';   // 스튜디오 촬영에서만 대여 가능
+  const L = lang === 'de' ? 'de' : lang === 'en' ? 'en' : 'ko';
+  const T = {
+    ko: {
+      title: dolFree ? '🎂 돌상/백일상 무료 셋팅 안내' : '🎂 돌상/백일상 셋팅 안내',
+      lead: (dolFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 프로페셔널 이상으로 예약해 주세요.') + ' 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.',
+      incT: '포함 항목',
+      inc: ['돌상 테이블 기본 구성 및 소품 연출', '배경과 톤에 맞춘 기본 배치']
+        .concat(hanbokFree ? ['<b>아기 한복 무료 대여</b> — 스튜디오 안에서 착용하며, 외부 반출은 어렵습니다'] : []),
+      brgT: '준비해 오시면 좋은 항목',
+      brg: (hanbokFree
+        ? ['의상 1~2벌, 신발, 머리띠/헤어 소품', '한복 안에 입을 <b>흰색 이너</b>']
+        : ['아기 한복 — 야외·홈 촬영은 대여가 어려워 직접 준비해 주세요', '의상 1~2벌, 신발, 머리띠/헤어 소품'])
+        .concat(['원하실 경우 떡, 케이크, 과일 같은 실제 음식', '돌잡이 소품이나 의미 있는 개인 소품']),
+      noteT: '사전 요청 및 유의사항',
+      note: ['원하시는 스타일이 있다면 참고 이미지 1~3장을 미리 보내주세요.', '특정 색감/테마가 있으면 예약 시 알려주시면 맞춰 준비합니다.', '특수 테마, 대형 장식, 풍선/꽃장식, 맞춤 제작 소품은 추가 비용이 발생할 수 있습니다.', '셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.']
+    },
+    en: {
+      title: dolFree ? '🎂 Dol / 100-Day Table — included' : '🎂 Dol / 100-Day Table Setup',
+      lead: (dolFree ? 'A dol / 100-day table setup is included at no extra cost.' : 'The free dol / 100-day table setup is included from <b>Profile Professional (€130)</b> upwards. It is not part of the package you selected — please book Professional or above if you would like it.') + ' The setup is styled for photography; catering or a full birthday banquet is not included.',
+      incT: 'Included',
+      inc: ['Table setup with basic props and styling', 'Arrangement matched to the backdrop and tone']
+        .concat(hanbokFree ? ['<b>Baby hanbok rental, free of charge</b> — worn at the studio; it cannot be taken off site'] : []),
+      brgT: 'Good to bring',
+      brg: (hanbokFree
+        ? ['1-2 outfits, shoes, headband or hair accessories', 'A <b>white inner layer</b> to wear under the hanbok']
+        : ['A baby hanbok — rentals cannot leave the studio, so please bring your own for outdoor and home sessions', '1-2 outfits, shoes, headband or hair accessories'])
+        .concat(['Real food such as rice cake, cake or fruit, if you would like it', 'Doljabi items or personal keepsakes']),
+      noteT: 'Requests and notes',
+      note: ['Send 1-3 reference images beforehand if you have a style in mind.', 'Tell us about a specific colour or theme when you book and we will prepare accordingly.', 'Special themes, large decorations, balloon or floral styling and custom-made props may cost extra.', 'Please arrive about 10 minutes early so we can finish the setup.']
+    },
+    de: {
+      title: dolFree ? '🎂 Dol- / 100-Tage-Tisch — inklusive' : '🎂 Dol- / 100-Tage-Tisch',
+      lead: (dolFree ? 'Die Dekoration für den Dol- bzw. 100-Tage-Tisch ist ohne Aufpreis enthalten.' : 'Der kostenlose Dol- / 100-Tage-Tisch ist ab <b>Profil Professional (€130)</b> enthalten. In Ihrem gewählten Paket ist er nicht dabei — bitte buchen Sie Professional oder höher, wenn Sie ihn möchten.') + ' Die Dekoration dient der Aufnahme; Catering oder ein vollständiges Festessen sind nicht enthalten.',
+      incT: 'Enthalten',
+      inc: ['Tischdekoration mit Grundausstattung und Requisiten', 'Abstimmung auf Hintergrund und Bildton']
+        .concat(hanbokFree ? ['<b>Kostenloser Hanbok-Verleih für das Kind</b> — Tragen im Studio; eine Mitnahme nach außen ist nicht möglich'] : []),
+      brgT: 'Bitte mitbringen',
+      brg: (hanbokFree
+        ? ['1-2 Outfits, Schuhe, Haarband oder Haarschmuck', 'Ein <b>weißes Innenteil</b> für unter den Hanbok']
+        : ['Einen Hanbok für das Kind — Leihstücke dürfen das Studio nicht verlassen, bringen Sie für Outdoor- und Home-Shootings bitte einen eigenen mit', '1-2 Outfits, Schuhe, Haarband oder Haarschmuck'])
+        .concat(['Auf Wunsch echte Speisen wie Reiskuchen, Kuchen oder Obst', 'Doljabi-Gegenstände oder persönliche Erinnerungsstücke']),
+      noteT: 'Wünsche und Hinweise',
+      note: ['Senden Sie uns vorab 1-3 Referenzbilder, wenn Sie eine bestimmte Vorstellung haben.', 'Nennen Sie uns bei der Buchung Ihre Wunschfarben oder Ihr Thema — wir bereiten es entsprechend vor.', 'Besondere Themen, große Dekorationen, Ballon- oder Blumenschmuck und Sonderanfertigungen können Mehrkosten verursachen.', 'Bitte kommen Sie rund 10 Minuten früher, damit wir den Aufbau fertigstellen können.']
+    }
+  }[L];
+  const ul = (items) => `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+  return `
+    <section class="result-guide-box">
+      <h4 class="result-guide-title">${T.title}</h4>
+      <div class="result-guide-body">
+        <p>${T.lead}</p>
+        <h5>${T.incT}</h5>${ul(T.inc)}
+        <h5>${T.brgT}</h5>${ul(T.brg)}
+        <h5>${T.noteT}</h5>${ul(T.note)}
+      </div>
+    </section>
+  `;
+}
+
 function buildGermanSuccessGuideHtml(product) {
   const g = String(product?.g || '');
   const bullets = [];
@@ -6717,6 +6786,14 @@ const PARTNER_CTA_COPY = {
   email: { ko: '메일로 문의', en: 'Send an email', de: 'Per E-Mail anfragen' },
   phone: { ko: '전화로 문의', en: 'Call', de: 'Anrufen' },
   web: { ko: '바로 상담하기', en: 'Get in touch', de: 'Kontakt aufnehmen' }
+};
+/* 아기 촬영에서만 붙는 한 줄. 무료 돌상·한복을 방금 안내해 놓고 바로 아래에 대여 업체를
+   보여주면, 무료로 받을 수 있는 걸 돈 주고 빌리는 고객이 생긴다. 무료 범위는 위 안내가
+   상품별로 이미 정확하므로 여기서 다시 쓰지 않고 그쪽을 가리킨다. */
+const PARTNER_BABY_NOTE = {
+  ko: '기본 돌상·백일상과 아기 한복은 위 안내대로 준비해 드립니다. 더 특별한 상차림이나 한복을 원하시는 분만 아래를 참고해 주세요.',
+  en: 'The basic table setup and baby hanbok are covered as described above. The partners below are only for those who would like something more elaborate.',
+  de: 'Die Grunddekoration und der Hanbok für das Kind sind wie oben beschrieben abgedeckt. Die folgenden Partner sind nur für alle gedacht, die sich etwas Aufwendigeres wünschen.'
 };
 const PARTNER_BLOCK_COPY = {
   title: { ko: '함께 준비하시면 좋은 곳', en: 'Recommended partners', de: 'Empfohlene Partner' },
@@ -6772,6 +6849,13 @@ function buildPartnerSectionHtml(payload) {
   const list = getPartnersForSuccess(payload);
   if (!list.length) return '';
   const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  const p = state.selectedProduct;
+  const babyText = [p?.nameKo, p?.nameEn, p?.nameDe, p?.id].filter(Boolean).join(' ');
+  const isBabyCtx = !!(payload.surveyKeys?.includes('baby') || payload.babyType === 'baekil' || payload.babyType === 'dol'
+    || /돌\s*촬영|돌상|돌잔치|백일|1st\s*Birthday|1\.\s*Geburtstag|100.?day/i.test(babyText));
+  /* 무료 제공이 있는 스튜디오 계열에서만 붙인다 — 돌잔치 출장(biz)은 고객이 직접 준비한다. */
+  const babyNote = (isBabyCtx && ['stud', 'snap', 'prof'].includes(String(p?.g || '')))
+    ? `<p class="partner-note" style="margin:0 0 10px;">${escapeHtml(PARTNER_BABY_NOTE[lang])}</p>` : '';
   const rows = list.map((p) => {
     const desc = (lang === 'en' ? p.descEn : lang === 'de' ? p.descDe : p.descKo) || p.descKo || '';
     const meta = [p.langs ? (lang === 'ko' ? `상담 ${p.langs}` : p.langs) : '', p.area].filter(Boolean).join(' · ');
@@ -6795,6 +6879,7 @@ function buildPartnerSectionHtml(payload) {
     <section class="result-guide-box">
       <h4 class="result-guide-title">${PARTNER_BLOCK_COPY.title[lang]}</h4>
       <div class="result-guide-body">
+        ${babyNote}
         ${rows}
         <p class="partner-note">${PARTNER_BLOCK_COPY.note[lang]}</p>
       </div>
@@ -6817,7 +6902,10 @@ document.addEventListener('click', (event) => {
 });
 
 function getSuccessGuideHtml(payload) {
-  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct) + buildPartnerSectionHtml(payload);
+  const deBaby = payload.surveyKeys?.includes('baby') || payload.babyType === 'baekil' || payload.babyType === 'dol';
+  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct)
+    + buildDolTableGuideHtml(state.selectedProduct, 'de', deBaby)
+    + buildPartnerSectionHtml(payload);
   const product = state.selectedProduct;
   if (!product) return '';
   const isKo = state.lang === 'ko';
@@ -6975,40 +7063,8 @@ function getSuccessGuideHtml(payload) {
     `);
   }
 
-  // 무료 돌상은 프로필 프로페셔널(€130)부터 — 스튜디오/스냅은 전 상품 해당, 프로필은 pp만
-  const dolTableFree = product.g !== 'prof' || product.id === 'pp';
-  if (hasBabyBirthday && (product.g === 'stud' || product.g === 'snap' || product.g === 'prof')) {
-    sections.push(`
-      <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? (dolTableFree ? '🎂 돌상/백일상 무료 셋팅 안내' : '🎂 돌상/백일상 셋팅 안내') : 'Dol / 100-Day Table Setup'}</h4>
-        <div class="result-guide-body">
-          ${isKo ? `
-            <p>${dolTableFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 프로페셔널 이상으로 예약해 주세요.'} 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.</p>
-            <h5>포함 항목</h5>
-            <ul>
-              <li>돌상 테이블 기본 구성 및 소품 연출</li>
-              <li>배경과 톤에 맞춘 기본 배치</li>
-            </ul>
-            <h5>준비해 오시면 좋은 항목</h5>
-            <ul>
-              <li>아기 한복/의상, 신발, 머리띠/헤어 소품</li>
-              <li>원하실 경우 떡, 케이크, 과일 같은 실제 음식</li>
-              <li>돌잡이 소품이나 의미 있는 개인 소품</li>
-            </ul>
-            <h5>사전 요청 및 유의사항</h5>
-            <ul>
-              <li>원하시는 스타일이 있다면 참고 이미지 1~3장을 미리 보내주세요.</li>
-              <li>특정 색감/테마가 있으면 예약 시 알려주시면 맞춰 준비합니다.</li>
-              <li>특수 테마, 대형 장식, 풍선/꽃장식, 맞춤 제작 소품은 추가 비용이 발생할 수 있습니다.</li>
-              <li>셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.</li>
-            </ul>
-          ` : `
-            <p>${dolTableFree ? 'A simple dol / 100-day table setup is included for free.' : 'The free dol / 100-day table setup is included from <b>Profile Professional (€130)</b> and up — it is not part of your current package, so please book Professional or higher if you would like it.'} Please share reference images in advance if you have a specific theme in mind.</p>
-          `}
-        </div>
-      </section>
-    `);
-  }
+  const dolGuide = buildDolTableGuideHtml(product, isKo ? 'ko' : 'en', hasBabyBirthday);
+  if (dolGuide) sections.push(dolGuide);
 
   if (PRINT_INFO_GROUPS.has(product.g)) {
     sections.push(`

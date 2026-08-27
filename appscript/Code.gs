@@ -1660,6 +1660,10 @@ function handlePublicApiRequest_(route,method,e){
           assertAdmin_(token);
           return jsonOk_(payload.fresh?buildTodayBoard_(payload.date):buildTodayBoardCached_(payload.date));
         }
+        if(action==='day-close'){
+          assertAdmin_(token);
+          return jsonOk_(buildDayClose_(payload.date));
+        }
         if(action==='inquiry-list'){
           assertAdmin_(token);
           return jsonOk_(buildUnifiedInquiries_({includeClosed:!!payload.includeClosed}));
@@ -3451,6 +3455,14 @@ const PARTNER_CTA_I18N_={
   web:{ko:'바로 상담하기','en':'Get in touch',de:'Kontakt aufnehmen'}
 };
 
+/* 아기 촬영에서만 붙는 한 줄 — 무료 돌상·한복을 안내해 놓고 바로 아래 대여 업체를 보여주면
+   무료로 받을 수 있는 걸 돈 주고 빌리는 고객이 생긴다. 무료 범위는 위 아기 촬영 안내가
+   이미 정확하므로 여기서 다시 쓰지 않고 그쪽을 가리킨다. */
+const PARTNER_BABY_NOTE_={
+  ko:'기본 돌상·백일상과 아기 한복은 위 안내대로 준비해 드립니다. 더 특별한 상차림이나 한복을 원하시는 분만 아래를 참고해 주세요.',
+  en:'The basic table setup and baby hanbok are covered as described above. The partners below are only for those who would like something more elaborate.',
+  de:'Die Grunddekoration und der Hanbok für das Kind sind wie oben beschrieben abgedeckt. Die folgenden Partner sind nur für alle gedacht, die sich etwas Aufwendigeres wünschen.'
+};
 const PARTNER_BLOCK_I18N_={
   title:{ko:'함께 준비하시면 좋은 곳',en:'Recommended partners',de:'Empfohlene Partner'},
   note:{ko:'Studio mean은 소개만 드리며 각 업체의 예약·결제에는 관여하지 않습니다.',
@@ -3520,8 +3532,14 @@ function buildPartnerMailBlockHtml_(ctx,lang,placement){
       +ctas
       +'</div>';
   }).join('');
+  /* 아기 맥락이면 무료 안내 한 줄을 업체 목록 앞에 둔다. 돌잔치 출장(biz)은 무료 제공이
+     없으므로 붙이지 않는다 — 없는 무료를 약속하면 현장에서 곤란해진다. */
+  const bc=ctx||{};
+  const babyNote=(bc.isBabyBirthday&&['stud','snap','prof'].indexOf(String(bc.itemGroup||'').trim().toLowerCase())>-1)
+    ? '<div style="color:#4b5563;font-size:12px;margin:0 0 10px;">'+escapeHtmlForEmail_(PARTNER_BABY_NOTE_[L])+'</div>' : '';
   return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;">'
     +'<div style="font-weight:800;color:#111827;margin:0 0 10px;">'+PARTNER_BLOCK_I18N_.title[L]+'</div>'
+    +babyNote
     +rows
     +'<div style="color:#94a3b8;font-size:11px;margin-top:6px;">'+PARTNER_BLOCK_I18N_.note[L]+'</div>'
     +'</div>';
@@ -4848,6 +4866,197 @@ function buildTodayBoard_(dateStr){
     pickups:(function(){ try{ return readPickupsForDate_(today); }catch(e){ return []; } })(),
     warnings:warnings,
     _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
+  };
+}
+
+/* ── 하루 마감 대조 ────────────────────────────────────────────────
+   "오늘 받을 돈"과 "실제로 들어온 돈"을 맞춰본다. 세 층으로 나눠 본다:
+
+     ① 받을 예정 — 오늘 촬영 중 잔금이 남은 건
+     ② 장부 기록 — 오늘 수납 처리한 것(예약 계약금·잔금, 인화/보정 추가금)
+     ③ 실제 거래 — 결제대조 시트의 오늘 입금(SumUp·은행) + 현금장부 오늘 입금
+
+   **결제수단별로 대조해야 의미가 있다.** 장부 총액과 거래 총액을 그냥 빼면
+   현금 수납만큼 항상 벌어진다(현금은 SumUp·은행에 안 나온다). 그래서
+   카드↔SumUp / 계좌↔은행 / 현금↔현금장부 로 갈라 놓는다.
+
+   조회 전용이다 — 아무것도 쓰지 않는다. */
+function _dayCloseBucket_(payMethod){
+  const pm=String(payMethod||'').trim();
+  if(isCashPayMethod_(pm)) return 'cash';
+  if(/카드|card|sumup|ec[- ]?karte|kredit/i.test(pm)) return 'card';
+  if(/이체|überweisung|ueberweisung|transfer|bank|paypal/i.test(pm)) return 'bank';
+  return 'other';
+}
+
+function buildDayClose_(dateStr){
+  const _t0=Date.now();
+  const tz=CONFIG.TIMEZONE;
+  const day=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
+  const sheets=ensureSheets_();
+
+  const sh=sheets.bookingSheet;
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+
+  const expected=[];   // ① 오늘 받을 예정
+  const ledger=[];     // ② 오늘 수납 기록
+  rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
+    const name=String(row[BOOKING_COL['고객명']]||'');
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    const cancelled=isBookingCancelledStatus_(status);
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'');
+    const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+    const balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+
+    // ① 오늘 촬영 · 잔금 남음 · 아직 수납 안 됨
+    if(!cancelled && dt.slice(0,10)===day){
+      const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+      if(balance>0.005 && !balancePaid){
+        expected.push({rowIndex:rowIndex,name:name,time:dt.slice(11,16),
+                       product:String(row[BOOKING_COL['상품']]||''),
+                       amount:balance,payMethod:payMethod,
+                       bucket:_dayCloseBucket_(payMethod)});
+      }
+    }
+
+    // ② 오늘 계약금 입금 처리
+    if(String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y'){
+      const dd=String(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||'').slice(0,10);
+      if(dd===day){
+        const paid=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금입금금액']]))
+                 || roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+        const dm=String(row[BOOKING_COL['계약금수단']]||'').trim()||payMethod;
+        if(paid>0.005) ledger.push({kind:'계약금',rowIndex:rowIndex,name:name,
+          amount:paid,payMethod:dm,bucket:_dayCloseBucket_(dm),
+          shootDate:dt.slice(0,10),cancelled:cancelled});
+      }
+    }
+    // ② 오늘 잔금 수납 처리
+    if(balancePaid){
+      const bd=String(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||'').slice(0,10);
+      if(bd===day){
+        const paid=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]))
+                 || roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+        if(paid>0.005) ledger.push({kind:'잔금',rowIndex:rowIndex,name:name,
+          amount:paid,payMethod:payMethod,bucket:_dayCloseBucket_(payMethod),
+          shootDate:dt.slice(0,10),cancelled:cancelled});
+      }
+    }
+  });
+
+  // ② 인화·보정 추가금 — 실제 수납일은 메모의 [수납] 스탬프가 정본(주문일과 다를 수 있다)
+  try{
+    const pRows=sheets.printSheet.getDataRange().getValues();
+    const pMap=getPrintSheetColMap_(sheets.printSheet);
+    for(let r=1;r<pRows.length;r++){
+      const n=normalizePrintRow_(pRows[r],r+1,pMap);
+      if(/취소|환불|cancel/i.test(String(n.status||''))) continue;
+      if(isPrintRowUnpaid_(n)) continue;
+      const amount=roundCurrency_(parseMoneyValue_(n.total));
+      if(amount<=0.005) continue;
+      const paidDate=printRowPaidDate_(n.memo)
+        ||(parseDateSafe_(n.salesDate||n.dateStr).str||'').slice(0,10);
+      if(paidDate!==day) continue;
+      ledger.push({kind:'추가금',rowIndex:r+1,name:String(n.name||''),
+        amount:amount,payMethod:String(n.payMethod||''),
+        bucket:_dayCloseBucket_(n.payMethod),shootDate:'',cancelled:false});
+    }
+  }catch(e){Logger.log('day-close: print skipped '+e.message);}
+
+  // ③ 결제대조 — 오늘 들어온 입금. SumUp 정산 입금(카드 대금이 은행으로 넘어온 것)은
+  //    같은 돈이 두 번 세어지므로 뺀다.
+  const txs=[];
+  try{
+    getSettlementTransactions_(day,day,sheets.settlementSheet).forEach(function(tx){
+      if(Number(tx.gross||0)<=0.005) return;
+      if(String(tx.matchStatus||'')==='sumup_payout') return;
+      if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) return;
+      txs.push({rowIndex:tx.rowIndex,source:tx.source,
+        bucket:tx.source==='sumup'?'card':'bank',
+        time:String(tx.importedAt||'').slice(11,16),
+        counterparty:tx.counterparty||tx.description||'',
+        gross:roundCurrency_(tx.gross),net:roundCurrency_(tx.net),
+        matchStatus:tx.matchStatus||'',matchTarget:tx.matchTarget||'',
+        matchRow:String(tx.matchRow||'').trim(),
+        linked:!!String(tx.matchRow||'').trim()});
+    });
+  }catch(e){Logger.log('day-close: settlement skipped '+e.message);}
+
+  // ③ 현금장부 수기 입금
+  try{
+    const cSh=sheets.cashSheet;
+    const cLast=cSh.getLastRow();
+    if(cLast>1){
+      const cRows=cSh.getRange(2,1,cLast-1,CASH_HEADERS.length).getValues();
+      cRows.forEach(function(row,idx){
+        if(String(row[CASH_COL['구분']]||'').trim()!=='입금') return;
+        if(/취소/.test(String(row[CASH_COL['상태']]||''))) return;
+        const d=String(parseDateSafe_(row[CASH_COL['일자']]).str||'').slice(0,10);
+        if(d!==day) return;
+        const amt=roundCurrency_(parseMoneyValue_(row[CASH_COL['입금']]));
+        if(amt<=0.005) return;
+        txs.push({rowIndex:idx+2,source:'cash',bucket:'cash',time:'',
+          counterparty:String(row[CASH_COL['상대방']]||row[CASH_COL['내용']]||''),
+          gross:amt,net:amt,matchStatus:'',matchTarget:'',matchRow:'',linked:true});
+      });
+    }
+  }catch(e){Logger.log('day-close: cash skipped '+e.message);}
+
+  const sum=function(arr,f){return roundCurrency_(arr.reduce(function(a,x){return a+(f?f(x):0);},0));};
+  const byBucket=function(arr,b,f){return sum(arr.filter(function(x){return x.bucket===b;}),f);};
+  const amt=function(x){return x.amount||0;};
+  const gross=function(x){return x.gross||0;};
+
+  /* 결제수단별 대조. 현금은 짝이 '현금장부'인데 수기 기입이라 비어 있는 게 흔하다 —
+     그래서 diff 를 경고로 올리되 성격을 구분해 둔다. */
+  const BUCKETS=[
+    {key:'card',label:'카드',pair:'SumUp'},
+    {key:'bank',label:'계좌이체',pair:'은행 입금'},
+    {key:'cash',label:'현금',pair:'현금장부'},
+    {key:'other',label:'기타',pair:'—'}
+  ];
+  const compare=BUCKETS.map(function(b){
+    const l=byBucket(ledger,b.key,amt);
+    const t=byBucket(txs,b.key,gross);
+    return {bucket:b.key,label:b.label,pair:b.pair,
+            ledger:l,actual:t,diff:roundCurrency_(l-t)};
+  }).filter(function(c){return c.ledger>0.005||c.actual>0.005;});
+
+  const ledgerTotal=sum(ledger,amt);
+  const actualTotal=sum(txs,gross);
+  const expectedTotal=sum(expected,amt);
+
+  const warnings=[];
+  compare.forEach(function(c){
+    if(Math.abs(c.diff)<=0.005) return;
+    if(c.bucket==='cash'){
+      warnings.push(c.diff>0
+        ? `현금 ${formatEuroAmount_(c.diff)}€ 가 현금장부에 안 잡혀 있습니다`
+        : `현금장부가 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다`);
+    }else if(c.bucket==='other'){
+      warnings.push(`결제수단 미지정 수납 ${formatEuroAmount_(c.ledger)}€ — 수단을 지정해 주세요`);
+    }else{
+      warnings.push(c.diff>0
+        ? `${c.label} ${formatEuroAmount_(c.diff)}€ 가 ${c.pair}에 없습니다`
+        : `${c.pair}에 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다 — 미기록 수납일 수 있습니다`);
+    }
+  });
+  const unlinked=txs.filter(function(t){return t.source!=='cash'&&!t.linked;});
+  if(unlinked.length) warnings.push(`장부에 연결 안 된 거래 ${unlinked.length}건 (${formatEuroAmount_(sum(unlinked,gross))}€)`);
+  if(expectedTotal>0.005) warnings.push(`아직 안 받은 잔금 ${expected.length}건 ${formatEuroAmount_(expectedTotal)}€`);
+
+  return {
+    ok:true,date:day,
+    serverTime:Utilities.formatDate(new Date(),tz,'yyyy-MM-dd HH:mm:ss'),
+    expectedTotal:expectedTotal,ledgerTotal:ledgerTotal,actualTotal:actualTotal,
+    diff:roundCurrency_(ledgerTotal-actualTotal),
+    balanced:compare.every(function(c){return Math.abs(c.diff)<=0.005;}),
+    expected:expected,ledger:ledger,transactions:txs,compare:compare,
+    unlinkedCount:unlinked.length,warnings:warnings,
+    _ms:Date.now()-_t0
   };
 }
 
@@ -10771,9 +10980,9 @@ function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
       ? `<b>👶 영유아 여권 / 비자사진 촬영 조건 안내</b><br>• 아기를 눕힌 상태에서 밝은 단색 배경으로 촬영합니다.<br>• 얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자가 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.<br>• 영유아는 성인보다 규정이 일부 완화 적용되며 한국 여권과 독일 비자에 함께 사용할 수 있도록 촬영합니다.`
       : `<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.`;
   }
-  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• 한복 시: 흰색 이너 필수<br>• ⭐ 돌상/백일상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
-  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• Hanbok: white inner required<br>• ⭐ Free dol / 100-day table (Profile Professional €130 & up)`:'';
-  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• Hanbok: weißes Innenteil erforderlich<br>• ⭐ Kostenloser Dol-/100-Tage-Tisch (ab Profil Professional €130)`:'';
+  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• ⭐ 아기 한복 무료 대여 (스튜디오 촬영 한정 · 외부 반출 불가) — 안에 입을 흰색 이너만 준비해 주세요<br>• ⭐ 돌상/백일상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
+  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• ⭐ Free baby hanbok rental (studio sessions only, cannot leave the studio) — just bring a white inner layer<br>• ⭐ Free dol / 100-day table (Profile Professional €130 & up)`:'';
+  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• ⭐ Kostenloser Hanbok-Verleih fürs Kind (nur im Studio, keine Mitnahme) — bitte nur ein weißes Innenteil mitbringen<br>• ⭐ Kostenloser Dol-/100-Tage-Tisch (ab Profil Professional €130)`:'';
   if(itemGroup==='prof'){
     if(L==='en')return`<b>📸 Profile Shoot Guide</b><br>1) Share purpose (LinkedIn/CV/SNS) and mood. Send 1-3 reference images.<br>2) Solid colour tops (white/navy/black/beige). No large logos. Bring 1-2 options.<br>3) Arrive 5-10 min early.${bEn}`;
     if(L==='de')return`<b>📸 Profil-Shooting Hinweise</b><br>1) Zweck (LinkedIn/Lebenslauf/SNS) und Stimmung mitteilen. 1-3 Referenzbilder senden.<br>2) Einfarbige Oberteile. Keine großen Logos. 1-2 Optionen mitbringen.<br>3) 5-10 Minuten früher ankommen.${bDe}`;
@@ -33950,6 +34159,14 @@ function sendPassportPhotosAdmin(token, rowIndex, payload){
     const folderResult=resolvePassportDeliveryFolder_(payload,name,dateStr);
     if(!folderResult.ok)return folderResult;
     const driveUrl=String(folderResult.url||'').trim();
+    /* dryRun — 앱(오늘 촬영 보드)에서 원탭으로 부르는 ⚠️외부발송이라, 무엇이 누구에게 갈지
+       먼저 보여주고 확인받는다. 발송·권한부여·메모 기록을 전부 건너뛴다(2026-08-27). */
+    if(payload.dryRun===true){
+      return{ok:true,dryRun:true,name:name,email:email,lang:lang,product:product,
+             date:dateStr,driveUrl:driveUrl,
+             folderName:String(folderResult.name||''),
+             fileCount:Number((folderResult.permissionStats||{}).files||0)};
+    }
     const permissionStats=folderResult.permissionStats||{folders:0,files:0,errors:[]};
     const permissionSummary=`폴더 ${permissionStats.folders||0}개${permissionStats.files?`, 파일 ${permissionStats.files}개`:''}`;
     const safeName=escapeHtml_(name);
