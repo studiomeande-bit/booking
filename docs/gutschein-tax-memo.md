@@ -253,3 +253,83 @@ PDF 또는 상세에 아래 중 하나를 넣는 것이 좋다.
 - 언제 실제 사용되었는지
 
 이 6가지만 정확히 남으면, 이후 세무사 검토와 회계 반영이 훨씬 쉬워진다.
+
+---
+
+## 결론 (2026-08-27) — MPV 단일 체제 확정
+
+이 문서는 그동안 "세무사 검토를 전제로 한다"고만 적혀 있었다. 법령·행정해석 원문을 직접 대조해
+**결론을 확정한다.** 세무사 확인은 여전히 권장이지만, 운영을 멈출 이유는 없다.
+
+### 1. 판정 기준은 '공급자 수'가 아니라 '장소 + 세액'
+
+`§ 3 Abs. 14 UStG` 원문:
+
+> "…bei dem **der Ort** der Lieferung oder der sonstigen Leistung … **und die für diese Umsätze
+> geschuldete Steuer** zum Zeitpunkt der Ausstellung des Gutscheins **feststehen**, ist ein
+> Einzweck-Gutschein."
+
+즉 SPV 요건은 **두 가지가 모두** 발행 시점에 확정돼 있을 것이다. "단일 공급자면 무조건 SPV"라는
+설명이 돌아다니지만 조문에 그런 요건은 없다 — 백화점 상품권(공급자 하나, 세율 7%/19% 혼재)이
+MPV인 것이 그 반증이다.
+
+### 2. Studio mean 금액권은 MPV — 장소가 확정되지 않는다
+
+ZDH 『Steuerliche Behandlung von Gutscheinen』 Merkblatt의 **Möbeltischlerei 사례**가 우리와 같은 구조다
+(독일 소재 단일 사업자, 전 품목 19%):
+
+> "Ob hier ein Einzweck-Gutschein vorliegt, **kann zweifelhaft sein**, da Möbel zwar grundsätzlich dem
+> Regelsteuersatz unterliegen, die Ware aber auch **von Kunden aus der Schweiz gekauft werden könnte**,
+> was dann in Deutschland zu einer **steuerfreien Ausfuhrlieferung** führen würde."
+
+같은 Merkblatt는 `§ 3a Abs. 2 UStG`(사업자 수령인 → 수령인 소재지 과세)를 장소 불확정 사유로 명시한다.
+
+우리 사정은 이 사례보다 **더 강하다.** 가정이 아니라 실제로 국외 비과세 매출이 있다
+(2025년 6.062,50 € — 제3국 법인 고객). 굿샤인은 양도 가능(`übertragbar`)하므로 발행 시점에
+최종 사용자가 개인인지 제3국 사업자인지 알 수 없다 → **공급 장소가 확정되지 않는다 → MPV.**
+
+**따라서 MPV 분류는 '보수적 선택'이 아니라 법적으로 옳은 분류다.**
+
+### 3. 상품 지정권(SPV)을 접은 이유
+
+같은 Merkblatt의 Fleischerei 사례(점심 식사 전용·매장 내 소비 한정 상품권)는 진짜 SPV다 —
+급부가 계약상 못 박혀 있어 장소·세액이 확정되기 때문. Studio mean의 상품 지정권도 이에 가까워
+SPV로 판정될 여지가 크고, 그 경우:
+
+> "Auch bei **Nichtausführung** der sich aus dem Gutschein ergebenden Leistung wird die Besteuerung
+> aus systematischen Gründen **nicht rückgängig gemacht** werden können."
+
+= 팔린 분기에 부가세가 확정되고, 고객이 끝내 안 써도 **되돌릴 수 없다.** 현금은 안 들어왔는데
+세금이 먼저 나가는 구조. 그래서 **상품 지정권 발행을 차단**하고 금액권(MPV)만 남긴다.
+`_guessGutscheinTaxType_` / `_normalizeGutscheinTaxType_` 가 항상 `MPV`를 반환하고,
+`voucherType:'product'` 는 발행 단계에서 거부된다.
+
+미사용 MPV는 **매출이 아니라 부채**다. 사용 시점에만 장부에 오른다(`buildAccountingLedger_` 굿샤인 패스).
+
+### 4. ⚠️ 유효기한 — 실제로 틀려 있었다 (수정 완료)
+
+- `§ 195 BGB` 일반 소멸시효 3년, **`§ 199 Abs. 1 BGB` 기산점은 "청구권이 생긴 **해의 말**"**.
+- 따라서 2026-08-13 발행 굿샤인의 법정 사용 가능 기한은 **2029-12-31** 이다. 2029-08-13이 아니다.
+- 기존 구현은 `발행일 + 36개월` → 법정 시효보다 **4개월 반 짧았다.**
+- 법정 시효보다 짧은 AGB상 기한은 `§ 307 Abs. 1 S. 1 BGB` 로 **무효**이고, 무효가 되면 결국
+  법정기간이 적용된다. 짧게 적어 놓아 봐야 효력이 없고 분쟁 소지만 남는다.
+- **수정**: `_buildDefaultGutscheinValidUntil_` → `발행연도 + 3년`의 `12-31`.
+  PDF 문구 `'3 Jahre gültig …'` → `'Einlösung nur nach Terminvereinbarung.'`
+  (구체적 날짜는 이미 `Gültig bis` 로 인쇄된다).
+- 발행 잔액이 0인 상태(발행 2건 = 사용완료 1·취소 1)라 **소급 대상 없음.**
+
+### 5. 그대로 둬도 되는 것
+
+- `keine Barauszahlung` — 상품권 일반 관행, 유효.
+- 부분 사용 시 잔액을 새 코드로 이월 — 잔액 소멸은 분쟁 소지가 크므로 현재 구현이 맞다.
+- 유효기한 경과 후에도 `§ 812 BGB` 로 가액반환(일실이익 공제)을 청구당할 수 있다 — 만료를
+  '공짜 수익'으로 계산하지 말 것.
+
+### 남은 것
+
+- 세무사 확인은 **선택**으로 내린다. 위 근거로 자체 판단을 문서화했고, 판단 근거는 굿샤인 행마다
+  `세무판단근거` 열에 저장된다.
+- 상품 지정권을 다시 팔고 싶어지면 그때는 SPV 체제(발행 시 과세)를 함께 켜야 한다 — 지금은 막혀 있다.
+
+**출처**: `§ 3 Abs. 13–15 UStG` · `§§ 195, 199, 307, 812 BGB` · `UStAE 3.17` (BMF-Schreiben 2020-11-02) ·
+ZDH Merkblatt "Steuerliche Behandlung von Gutscheinen".
