@@ -3363,7 +3363,7 @@ const PARTNER_SEED_ROWS=[
    'LAON Floral Design — 부케와 행사 꽃장식. 상담 후 진행됩니다.',
    'LAON Floral Design — bouquets and floral styling for celebrations, arranged after a consultation.',
    'LAON Floral Design — Brautsträuße und florale Dekoration für Feiern, nach Beratungstermin.',
-   'KO','Kronberg im Taunus','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
+   'KO','','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
    'wed,baby,biz','success,mail,dolmail,consult',2,'Y','인스타 프로필: LAON Floral Design · 명함 "Jetzt einen Beratungstermin vereinbaren" · WhatsApp +49 176 30152733 (사장님 확인: 이 번호가 정본) · Werkstatt 13, 61476 Kronberg'],
   ['cozyjoo','메이크업·드레스','cozyjoo',
    'K-뷰티 메이크업 아티스트. 웨딩·촬영 메이크업과 드레스 대여.',
