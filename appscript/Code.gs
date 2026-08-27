@@ -218,7 +218,7 @@ function vatExemptNoteText_(lang,docKind,country){
   };
   return map[String(lang||'de').slice(0,2)]||map.de;
 }
-const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시','옵션키','인원'];
+const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시','옵션키','인원','결제참조','정산행'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
 const GUTSCHEIN_HOLD_TTL_MIN=15;
@@ -1705,6 +1705,7 @@ function handlePublicApiRequest_(route,method,e){
             String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
         }
         if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-gutschein-match') return jsonOk_(applySettlementGutscheinMatchAdmin(token,payload));
         if(action==='settlement-mark-nonbooking'){
           /* ✏️ **예약이 아닌 입금**을 review 큐에서 내린다 — 굿샤인 판매대금처럼 예약장부에
              대응 행이 없는 거래는 `settlement-apply-match` 로는 영영 처리할 수 없고,
@@ -5918,6 +5919,11 @@ function ensureGutscheinSheet_(ss){
   } else {
     const lastCol=sh.getLastColumn();
     if(lastCol<GUTSCHEIN_HEADERS.length){
+      /* ① 그리드를 먼저 넓힌다. 안 넓히면 아래 setValues 가 throw 하고, 이 함수는
+         getGutscheinSheet_ 의 유일한 관문이라 굿샤인 발행·조회·적용이 한꺼번에 죽는다
+         (ensureBookingSheet_ 가 같은 이유로 이미 이렇게 한다). */
+      const need=GUTSCHEIN_HEADERS.length-sh.getMaxColumns();
+      if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
       sh.getRange(1,lastCol+1,1,GUTSCHEIN_HEADERS.length-lastCol).setValues([GUTSCHEIN_HEADERS.slice(lastCol)]);
     }
   }
@@ -20036,6 +20042,78 @@ function getSettlementBookingCandidatesForTx_(tx,bookingSheet,options){
   return [];
 }
 
+/* ===== 결제대조 ↔ 굿샤인 판매 연결 =====
+   왜 있나: 2026-08-13 SumUp €185(TAAA4RS7U33)은 굿샤인 T9Z7-5RKQ-RMG6(왕예원) **판매대금**인데
+   매칭보드가 예약 후보 8건을 전부 1순위로 올렸다. 굿샤인 시트와 결제대조 시트 사이에 연결이
+   없어서(연결 컬럼 자체가 없었다) 후보를 예약에서만 찾았기 때문이다.
+   이제 예약 후보를 만들기 **전에** 굿샤인을 먼저 본다. */
+function _readGutscheinSaleRows_(gutscheinSheetOpt){
+  try{
+    const sh=gutscheinSheetOpt||getGutscheinSheet_();
+    if(sh.getLastRow()<2) return [];
+    return sh.getDataRange().getValues().slice(1).map(function(row,i){return {row:row,rowIndex:i+2};});
+  }catch(e){ Logger.log('굿샤인 시트 읽기 실패(매칭보드): '+e.message); return []; }
+}
+
+function getSettlementGutscheinCandidatesForTx_(tx,gutscheinRows){
+  if(!tx || Number(tx.gross||0)<=0) return [];
+  if(tx.source!=='sumup' && tx.source!=='deutschebank') return [];
+  // SumUp 정산 입금(묶음 payout)은 개별 판매가 아니다 — 개별 굿샤인에 붙이면 안 된다
+  if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) return [];
+  const rows=gutscheinRows||[];
+  if(!rows.length) return [];
+  const wantBucket=tx.source==='sumup' ? 'card' : 'bank';
+  const txDate=String(tx.date||'').slice(0,10);
+  const gross=roundCurrency_(Number(tx.gross||0));
+  const txRef=String(tx.paymentRef||'').trim().toUpperCase();
+  const out=[];
+  rows.forEach(function(entry){
+    const row=entry.row;
+    const status=String(row[GUTSCHEIN_COL['상태']]||'').trim();
+    // 재고(미판매)는 돈이 들어온 적이 없고, 취소는 대조 대상이 아니다
+    if(status===GUTSCHEIN_STATUS.STOCK||status===GUTSCHEIN_STATUS.CANCELLED) return;
+    // 잔액 이월행도 입금이 없다 — 상위 코드 판매대금이 이미 매칭됐다
+    if(String(row[GUTSCHEIN_COL['발행방식']]||'').trim()==='residual') return;
+    if(String(row[GUTSCHEIN_COL['정산행']]||'').trim()) return; // 이미 연결됨
+    const amount=roundCurrency_(parseMoneyValue_(row[GUTSCHEIN_COL['발행금액(€)']]));
+    const ref=String(row[GUTSCHEIN_COL['결제참조']]||'').trim().toUpperCase();
+    const soldAt=(parseDateSafe_(row[GUTSCHEIN_COL['판매등록일']]||row[GUTSCHEIN_COL['발행일']]).str||'').slice(0,10);
+    const exactRef=!!(txRef&&ref&&txRef===ref);
+    let dayGap=0;
+    if(!exactRef){
+      if(Math.abs(amount-gross)>0.005) return;                       // 발행금액 == tx.gross
+      if(!soldAt||!txDate) return;
+      dayGap=daysBetweenDates_(soldAt,txDate);
+      if(Math.abs(dayGap)>3) return;                                 // 판매등록일 ±3일
+      const pm=String(row[GUTSCHEIN_COL['결제수단']]||'').trim();
+      // 수단이 적혀 있을 때만 계열을 따진다 — 비어 있는 옛 행을 배제하면 오히려 못 찾는다
+      if(pm && _dayCloseBucket_(pm)!==wantBucket) return;
+    }else if(soldAt&&txDate){
+      dayGap=daysBetweenDates_(soldAt,txDate);
+    }
+    out.push({
+      kind:'gutschein',
+      kindLabel:'굿샤인 판매',
+      rowIndex:entry.rowIndex,
+      code:extractGutscheinCode_(row[GUTSCHEIN_COL['코드']]),
+      purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
+      productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
+      amount:amount,
+      txAmount:gross,
+      amountDelta:roundCurrency_(gross-amount),
+      soldAt:soldAt,
+      dayGap:dayGap,
+      payMethod:String(row[GUTSCHEIN_COL['결제수단']]||'').trim(),
+      status:status,
+      exactRef:exactRef,
+      // 결제참조 정확일치가 최우선, 그다음 날짜 근접
+      score:(exactRef?1000:500)-Math.abs(dayGap)*10
+    });
+  });
+  out.sort(function(a,b){return b.score-a.score;});
+  return out;
+}
+
 function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
   const opts=options||{};
   const candidates=getSettlementBookingCandidatesForTx_(tx,bookingSheet,opts);
@@ -20045,6 +20123,20 @@ function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
   const reviewReason=String(tx.matchStatus||'')==='matched'
     ? null
     : analyzeSettlementReviewReason_(tx,bookingSheet,{candidates:reasonCandidates,includeNear:true,limit:Number(opts.limit||6)||6});
+  const gutscheinCandidates=getSettlementGutscheinCandidatesForTx_(tx,
+    opts.gutscheinRows!=null?opts.gutscheinRows:_readGutscheinSaleRows_());
+  /* 굿샤인 후보가 잡히면 예약 후보는 **강등**한다 — 숨기지는 않는다.
+     굿샤인 쪽이 오탐일 수 있어서(같은 금액의 진짜 예약 입금) 사장님이 여전히 예약을 고를 수 있어야 한다. */
+  const demote=gutscheinCandidates.length>0;
+  const shownCandidates=demote
+    ? candidates.map(function(c){
+        return Object.assign({},c,{demoted:true,score:Math.max(0,Number(c.score||0)-100)});
+      })
+    : candidates;
+  const warning=demote
+    ? '이 입금은 굿샤인 판매대금일 수 있습니다 ('+gutscheinCandidates.map(function(g){return g.code;}).join(', ')
+      +'). 예약 후보는 참고용으로 강등했습니다 — 예약으로 매칭하려면 confirm 이 필요합니다.'
+    : '';
   return {
     rowIndex:tx.rowIndex,
     hash:tx.hash,
@@ -20065,7 +20157,9 @@ function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
     accountingClass:tx.accountingClass,
     memo:tx.memo,
     reviewReason:reviewReason,
-    candidates:candidates
+    warning:warning,
+    gutscheinCandidates:gutscheinCandidates,
+    candidates:shownCandidates
   };
 }
 
@@ -20086,16 +20180,21 @@ function getSettlementMatchBoardAdmin(token,startDate,endDate,source,includeMatc
       if(a.date===b.date) return Math.abs(Number(b.gross||0))-Math.abs(Number(a.gross||0));
       return a.date>b.date?-1:1;
     });
+  // 굿샤인 시트는 한 번만 읽어 전 거래에 재사용한다 — 건당 재읽기면 시트 read 가 80번이다
+  const gutscheinRows=_readGutscheinSaleRows_();
   const items=txs.slice(0,80).map(function(tx){
-    return buildSettlementMatchBoardItem_(tx,sheets.bookingSheet,{includeNear:true,limit:8});
+    return buildSettlementMatchBoardItem_(tx,sheets.bookingSheet,{includeNear:true,limit:8,gutscheinRows:gutscheinRows});
   });
   const candidateCount=items.reduce(function(sum,item){return sum+(item.candidates||[]).length;},0);
+  const gutscheinFlagged=items.filter(function(item){return (item.gutscheinCandidates||[]).length>0;});
   return {
     ok:true,
     source:src||'all',
     includeMatched:!!includeMatched,
     count:items.length,
     candidateCount:candidateCount,
+    gutscheinFlaggedCount:gutscheinFlagged.length,
+    warnings:gutscheinFlagged.map(function(item){return {rowIndex:item.rowIndex,date:item.date,gross:item.gross,warning:item.warning};}),
     items:items,
     summary:summarizeSettlementImport_(getSettlementTransactions_(startDate,endDate,sheets.settlementSheet),'all')
   };
@@ -20140,6 +20239,15 @@ function applySettlementBookingMatchAdmin(token,payload){
   if(Number(tx.gross||0)<=0) throw new Error('입금 거래만 예약장부에 연결할 수 있습니다.');
   if(tx.source!=='sumup' && tx.source!=='deutschebank') throw new Error('지원하지 않는 거래 소스입니다.');
   if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) throw new Error('SumUp 정산 입금은 개별 예약에 직접 연결하지 않습니다.');
+  /* 굿샤인 판매대금을 예약 입금으로 잘못 매칭하는 사고 차단 (08-13 €185 사례).
+     막되 못 뚫게 하지는 않는다 — 같은 금액의 진짜 예약 입금일 수도 있어서 confirm 으로 넘긴다. */
+  const gutscheinHits=getSettlementGutscheinCandidatesForTx_(tx,_readGutscheinSaleRows_());
+  const confirmed=payload.confirm===true||String(payload.confirm||'')==='true';
+  if(gutscheinHits.length && !confirmed){
+    throw new Error('이 입금은 굿샤인 판매대금으로 보입니다 ('
+      +gutscheinHits.map(function(g){return g.code+' '+g.amount+'€';}).join(', ')
+      +'). 굿샤인이 맞으면 settlement-gutschein-match 로 연결하세요. 그래도 예약으로 매칭하려면 confirm:true 를 함께 보내주세요.');
+  }
   const candidate=findManualSettlementCandidate_(tx,sheets.bookingSheet,payload.bookingRowIndex,payload.kind);
   if(!candidate) throw new Error('선택한 예약이 이 결제금액과 맞지 않습니다. 금액이 다른 경우 예약 장부 금액을 먼저 확인해 주세요.');
   const importedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
@@ -20177,6 +20285,57 @@ function applySettlementBookingMatchAdmin(token,payload){
     summary:summarizeSettlementImport_(txs,'all'),
     reviewItems:getSettlementReviewItems_(txs)
   };
+}
+
+/* 결제대조 거래 ↔ 굿샤인 판매 확정. 양쪽을 **함께** 채운다 —
+   한쪽만 채우면 다음 매칭보드에서 같은 거래가 또 후보로 올라온다.
+   ‼️ 회계분류는 '굿샤인 매출' 이다. '비매출입금' 이 아니다 — 우리 굿샤인은 SPV 라
+   판매가 곧 과세매출이고, 장부(buildAccountingLedger_)도 발행 시점에 같은 분류로 잡는다.
+   net/USt 19% 분해는 장부 쪽에서 한다(여기는 분류만 심는다). */
+function applySettlementGutscheinMatchAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sheets=ensureSheets_();
+  const ref=getSettlementTransactionByRow_(sheets.settlementSheet,payload.settlementRowIndex||payload.rowIndex);
+  const tx=ref.tx;
+  if(Number(tx.gross||0)<=0) throw new Error('입금 거래만 굿샤인 판매에 연결할 수 있습니다.');
+  const code=extractGutscheinCode_(payload.code||'');
+  if(!code) throw new Error('굿샤인 코드를 입력해 주세요.');
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다: '+code);
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  const confirmed=payload.confirm===true||String(payload.confirm||'')==='true';
+  const already=String(found.row[GUTSCHEIN_COL['정산행']]||'').trim();
+  if(already && Number(already)!==Number(ref.rowIndex)){
+    throw new Error('이 굿샤인은 이미 결제대조 행 '+already+' 에 연결되어 있습니다.');
+  }
+  const gross=roundCurrency_(Number(tx.gross||0));
+  const amountDelta=roundCurrency_(gross-Number(g.amount||0));
+  if(Math.abs(amountDelta)>0.005 && !confirmed){
+    throw new Error('금액이 다릅니다 (거래 '+gross+'€ / 굿샤인 발행 '+g.amount+'€). 그래도 연결하려면 confirm:true 를 보내주세요.');
+  }
+  if(payload.dryRun===true){
+    return {dryRun:true,settlementRowIndex:ref.rowIndex,gutscheinRowIndex:found.rowIndex,code:g.code,
+      amount:g.amount,gross:gross,amountDelta:amountDelta,
+      note:'연결하지 않았습니다. dryRun 없이 다시 실행하세요.'};
+  }
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['정산행']+1).setValue(ref.rowIndex);
+  // 거래의 결제참조를 굿샤인에 심어 둔다 — 다음부터는 금액·날짜 휴리스틱 없이 정확일치로 잡힌다
+  if(!String(found.row[GUTSCHEIN_COL['결제참조']]||'').trim() && String(tx.paymentRef||'').trim()){
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['결제참조']+1).setValue(String(tx.paymentRef||'').trim());
+  }
+  updateSettlementMatchRow_(sheets.settlementSheet,ref.rowIndex,{
+    status:'matched',
+    target:'굿샤인 판매',
+    rowIndex:found.rowIndex,
+    accountingClass:'굿샤인 매출',
+    memo:['굿샤인 판매대금',g.code,g.purchaserName||'',gross+'€',
+      Math.abs(amountDelta)>0.005?('금액차 '+amountDelta+'€ 확인승인'):''].filter(Boolean).join(' · ')
+  });
+  return {ok:true,settlementRowIndex:ref.rowIndex,gutscheinRowIndex:found.rowIndex,
+    code:g.code,amount:g.amount,gross:gross,amountDelta:amountDelta,
+    accountingClass:'굿샤인 매출'};
 }
 
 function normalizePaymentImportSource_(source){
@@ -33241,6 +33400,8 @@ function gutscheinRowToObject_(row,rowIndex){
     productId:String(row[GUTSCHEIN_COL['상품ID']]||'').trim(),
     productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
     optionKeys:_parseGutscheinOptionKeys_(row[GUTSCHEIN_COL['옵션키']]),
+    paymentRef:String(row[GUTSCHEIN_COL['결제참조']]||'').trim(),
+    settlementRow:String(row[GUTSCHEIN_COL['정산행']]||'').trim(),
     people:Math.max(1,parseInt(row[GUTSCHEIN_COL['인원']],10)||1),
     purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
     purchaserEmail:String(row[GUTSCHEIN_COL['구매자이메일']]||'').trim(),
@@ -33431,6 +33592,9 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
   const paymentMethod=String(payload.paymentMethod!=null?payload.paymentMethod:base.paymentMethod||'').trim();
   const saleChannel=String(payload.saleChannel!=null?payload.saleChannel:base.saleChannel||'').trim();
   const adminMemo=String(payload.adminMemo!=null?payload.adminMemo:base.adminMemo||'').trim();
+  /* 판매대금 트랜잭션 ID(SumUp TAAA… / 은행 참조). 매칭보드가 이 값으로 굿샤인 판매를
+     예약 입금과 구별한다 — 없으면 금액·날짜 휴리스틱으로 떨어진다. */
+  const paymentRef=String(payload.paymentRef!=null?payload.paymentRef:base.paymentRef||'').trim();
   const buyerRegistered=(purchaserName||purchaserEmail)?'Y':'N';
   const desiredStatus=String(payload.status!=null?payload.status:'').trim();
   const status=desiredStatus
@@ -33461,6 +33625,7 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
     lang,
     paymentMethod,
     saleChannel,
+    paymentRef,
     adminMemo,
     buyerRegistered,
     status,
@@ -33787,6 +33952,7 @@ function createGutscheinAdmin(token, payload){
     put('언어',data.lang);
     put('결제수단',data.paymentMethod);
     put('판매채널',data.saleChannel);
+    put('결제참조',data.paymentRef);
     put('세무분류',data.taxType);
     put('과세시점',data.taxRecognition);
     put('세무메모',data.taxMemo);
@@ -34037,6 +34203,34 @@ function _bookingMatchesGutschein_(row, g){
   return bookingProductName && bookingProductName===String(g.productSnapshot||'').trim();
 }
 
+/* 굿샤인 B2B 차단 — 약관의 '개인 전용(사업자 사업목적 불가)' 을 코드로 강제한다.
+   우리 굿샤인은 SPV(Einzweck, §3 Abs.14 UStG)라 **발행 시점에 전액 과세**한다. 그 전제는
+   공급지가 독일로 확정돼 있다는 것인데, 수령자가 사업자면 §3a Abs.2 로 공급지가 사업자
+   소재지로 넘어가 **그 건의 SPV 근거가 사후에 무너진다.** 약관에만 적어 두고 코드가 안 막으면
+   실효성이 없다(실제 국외 B2B 매출이 있는 스튜디오다). 그래서 여기서 막는다.
+
+   판정은 두 종류다:
+   - 확정 신호(사업자송장필요·사업자명·USt-IdNr·§3a 면세 발행) — 사업자임이 데이터로 확정된 건.
+   - 촬영종류 'biz' — 기업·행사 그룹.
+   ⚠️ 'wed' 는 일부러 뺐다. 개인 웨딩이 정상적으로 들어가는 그룹이고 우리 계약 체계도
+   B2C Fotografenvertrag 로 다룬다 — 막으면 선물용 굿샤인을 통째로 죽인다.
+   반대로 개인 웨딩이 접수 경로 탓에 'biz' 로 잘못 들어가는 사고가 있다(행228·236 사례).
+   그런 건은 booking-set-itemgroup 으로 촬영종류를 먼저 바로잡고 적용하면 통과한다. */
+function _detectBookingBusinessSignal_(row){
+  const val=function(h){ return BOOKING_COL[h]!=null ? String(row[BOOKING_COL[h]]||'').trim() : ''; };
+  if(val('사업자송장필요').toUpperCase()==='Y') return '사업자 송장(Rechnung) 발행이 요청된 예약입니다';
+  if(val('사업자명')) return '사업자명이 등록되어 있습니다 ('+val('사업자명')+')';
+  if(val('사업자VAT번호')) return 'USt-IdNr 가 등록되어 있습니다';
+  if(BOOKING_COL['부가세모드']!=null && isVatExempt_(row[BOOKING_COL['부가세모드']])) return '§3a Abs.2 면세(netto)로 발행되는 예약입니다';
+  if(val('촬영종류')==='biz') return '기업·행사(biz) 예약입니다';
+  return '';
+}
+
+function _assertGutscheinAllowedForBooking_(row){
+  const reason=_detectBookingBusinessSignal_(row);
+  if(reason) throw new Error('굿샤인은 개인 고객 전용입니다(약관 기준). 사업자 예약에는 사용할 수 없습니다. — '+reason);
+}
+
 function previewGutscheinApplyAdmin(token, bookingRowIndex, rawCode){
   assertAdmin_(token);
   return _previewGutscheinApplyCore_(bookingRowIndex, rawCode);
@@ -34051,6 +34245,7 @@ function _previewGutscheinApplyCore_(bookingRowIndex, rawCode){
   if(!bookingRow||!bookingRow[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다.');
   if(isBookingCancelledStatus_(bookingRow[BOOKING_COL['상태']])) throw new Error('취소된 예약에는 적용할 수 없습니다.');
   if(String(bookingRow[BOOKING_COL['굿샤인코드']]||'').trim()) throw new Error('이미 다른 굿샤인이 적용된 예약입니다.');
+  _assertGutscheinAllowedForBooking_(bookingRow); // preview 에서 먼저 막는다 — apply 에서만 막으면 고객이 마지막에 튕긴다
   const found=_findGutscheinRow_(gutscheinSheet,code);
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const g=gutscheinRowToObject_(found.row,found.rowIndex);
