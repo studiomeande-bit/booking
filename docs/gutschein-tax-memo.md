@@ -350,5 +350,17 @@ ZDH 『Steuerliche Behandlung von Gutscheinen』 Merkblatt의 **Möbeltischlerei
 - MPV로 되돌리려면 약관에서 "개인 전용"·"독일 내 제공"을 빼야 한다 — 그때는 반대로 장소가
   불확정해지므로 MPV가 맞다. **약관과 분류는 한 몸이다.**
 
+### 8. 상품권 구성(인원·옵션) — 2026-08-27 추가
+
+상품권은 `상품 + 인원 + 옵션` 조합으로 발행한다. 액면가는 `calculateQuote_` 가 계산하되
+**촬영일을 넘기지 않는다** — 주말할증·이벤트할인·시니어·얼리버드가 붙으면 발행 시점 액면가가
+흔들리는데, SPV는 **발행 시점에 세액이 확정**돼야 하기 때문이다(§ 3 Abs. 14 UStG).
+
+세율은 인원·옵션과 무관하게 전부 19%라 SPV 요건에 영향이 없다.
+
+PDF에는 **금액을 인쇄하지 않고 구성만** 표기한다(`Studio Basic` / `3 Personen · mit Haustier`).
+액수를 찍으면 '크레딧'으로 읽혀 부분 사용·잔액 논쟁을 부르는데, 상품권을 쓰는 이유가 그 논쟁을
+없애는 것이다. 액면가는 시트에 저장돼 과세·장부에 쓰인다.
+
 **출처**: `§ 3 Abs. 13–15 UStG` · `§ 20 UStG` · `§§ 195, 199, 307, 812 BGB` · `§ 233a AO` ·
 `UStAE 3.17` (BMF-Schreiben 2020-11-02) · ZDH Merkblatt "Steuerliche Behandlung von Gutscheinen".
