@@ -63,6 +63,21 @@ const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;
 const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PRINT_COL=CONFIG.PRINT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const BOOKING_STATUS_POSTPONED = '촬영연기';
+
+/* ===== 계좌 정보 단일 출처 (2026-08-26) =====
+   이전엔 확정메일·캘린더 라벨·인보이스·견적서·계약서 2종에 계좌가 각각 하드코딩돼 있었고,
+   그 사이 **예약금 리마인더 한 곳만 계좌가 통째로 빠져** 있었다 — 고객이 입금할 방법 없이
+   3일 뒤 자동취소가 나갔다(김혜수 2026-08-16 → 08-19). 계좌가 바뀌면 이제 여기만 고치면 된다.
+   ⚠️ 은행 CSV 분류 로직(classifyBankCashMovement_ · upsertBankOutExpense_ · 월마감 체크 등)에도
+   'Deutsche Bank' 문자열이 있지만 그건 **거래내역을 매칭하는 값**이지 우리 계좌 표기가 아니다.
+   절대 여기로 묶지 말 것 — 바꾸면 은행 임포트가 조용히 깨진다. */
+const STUDIO_BANK = {
+  holder: 'Taewoong Min',
+  bank: 'Deutsche Bank',
+  iban: 'DE11 5007 0010 0659 1176 00',   // 고객 안내용(공백 구분)
+  ibanCompact: 'DE11500700100659117600', // 인보이스·견적서 등 서류용
+  bic: 'DEUTDEFFXXX'
+};
 const BOOKING_STATUS_CANCELLED = '취소됨';
 const BOOKING_REVENUE_STATUSES = ['확정됨','촬영완료','셀렉완료','작업완료'];
 const DEPOSIT_ONSITE_EXCEPTION_MARKER = '현장결제예외';
@@ -1616,6 +1631,11 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='consult-appointment-cancel') return jsonOk_(cancelConsultationAppointmentAdmin(token,payload.rowIndex,payload));
         if(action==='consult-note') return jsonOk_(addConsultationMeetingNoteAdmin(token,payload.rowIndex,String(payload.note||''),String(payload.nextAction||'')));
         if(action==='portfolio-lead-list') return jsonOk_(listPortfolioLeadsAdmin(token,payload.limit||60));
+        /* 촬영 준비 설문 현황 — 다가오는 촬영 중 대상 상품의 작성/미작성. daysAhead 기본 21일 */
+        if(action==='prep-status'){
+          assertAdmin_(token);
+          return jsonOk_(listPrepSurveyStatusAdmin(token,payload.daysAhead||21));
+        }
         /* 문의·상담 통합 목록 — 리드 시트 + 상담 시트를 한 목록으로. 기본은 미처리만,
            includeClosed:true 로 전체. 오래 방치된 순으로 정렬돼 답장 누락을 바로 잡아낸다. */
         if(action==='dashboard-token'){
@@ -1628,9 +1648,17 @@ function handlePublicApiRequest_(route,method,e){
           PropertiesService.getScriptProperties().deleteProperty(DASHBOARD_TOKEN_PROP);
           return jsonOk_({ok:true,rotated:true,token:getOrCreateDashboardToken_()});
         }
+        if(action==='booking-shoot-mark'){
+          // 촬영 시작/종료 기록. kind: start|end|clear
+          return jsonOk_(setBookingShootMarkAdmin(token,payload||{}));
+        }
+        if(action==='booking-delay-set'){
+          // 당일 지연 기록 — 예약일시·캘린더·고객 메일은 건드리지 않는다
+          return jsonOk_(setBookingDelayAdmin(token,payload||{}));
+        }
         if(action==='today-board'){
           assertAdmin_(token);
-          return jsonOk_(buildTodayBoard_(payload.date));
+          return jsonOk_(payload.fresh?buildTodayBoard_(payload.date):buildTodayBoardCached_(payload.date));
         }
         if(action==='inquiry-list'){
           assertAdmin_(token);
@@ -2407,7 +2435,27 @@ function handlePublicApiRequest_(route,method,e){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/today-board');
       const tbP=(e&&e.parameter)||{};
       if(!isValidDashboardToken_(tbP.token)) return jsonError_('UNAUTHORIZED','Invalid dashboard token');
-      return jsonOk_(buildTodayBoard_(tbP.date));
+      return jsonOk_(tbP.fresh?buildTodayBoard_(tbP.date):buildTodayBoardCached_(tbP.date));
+    }
+    if(route==='prep-get'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/prep-get');
+      const pg=(e&&e.parameter)||{};
+      const pgReq=getPublicPayloadFromRequest_(e);
+      const pgRef=String((pgReq.payload&&pgReq.payload.id)||pg.id||'').trim();
+      if(!pgRef) return jsonError_('INVALID_ARGUMENT','Missing id');
+      const pgRes=getPrepSurveyForCustomer_(pgRef);
+      if(!pgRes.ok) return jsonError_(pgRes.code||'NOT_FOUND',pgRes.message||'not found');
+      return jsonOk_(pgRes);
+    }
+    if(route==='prep-submit'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/prep-submit');
+      const psReq=getPublicPayloadFromRequest_(e);
+      const psBody=psReq.body||{};
+      const psPayload=psReq.payload||{};
+      assertPublicRequestId_((psBody&&psBody.requestId)||psPayload.requestId);
+      const psRef=String(psPayload.id||((e&&e.parameter)||{}).id||'').trim();
+      if(!psRef) return jsonError_('INVALID_ARGUMENT','Missing id');
+      return jsonOk_(savePrepSurvey_(psRef,psPayload));
     }
     if(route==='consultation'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/consultation');
@@ -2752,7 +2800,10 @@ function assertPublicConsultationPayload_(payload,body){
   const email=String(payload&&payload.email||'').trim();
   const phone=String(payload&&payload.phone||'').trim();
   const consultationType=String((payload&&payload.consultationType)||(payload&&payload.type)||'').trim();
-  if(!name||!email||email.indexOf('@')<0||!phone||!consultationType) throw new Error('상담 필수 항목이 누락되었습니다.');
+  /* 전화는 필수에서 뺐다 (2026-08-26) — 홈페이지 문의 폼이 상담 라우트를 함께 쓰는데 그 폼은
+     전화가 선택 항목이다(김정음 웨딩 문의도 전화 미기재였다). 답장은 이메일로 충분하다.
+     상담 설문 페이지는 자체 프런트에서 여전히 전화를 요구한다. */
+  if(!name||!email||email.indexOf('@')<0||!consultationType) throw new Error('상담 필수 항목이 누락되었습니다.');
   if(!((payload&&payload.privacyConsent)||(payload&&payload.privacy_consent))) throw new Error('개인정보 동의가 필요합니다.');
 }
 
@@ -3303,9 +3354,9 @@ function ensureAutomationLogSheet_(ss){
    우리가 임의로 지어낸 홍보 문구가 아니라 업체 자신의 표현이라 사실관계가 틀릴 여지가 적다. */
 const PARTNER_SEED_ROWS=[
   ['gaontable','돌상·한복','가온테이블',
-   '독일·유럽 백일상, 돌상, 한복 대여.',
-   'Baekil and dol table settings and hanbok rental across Germany and Europe.',
-   'Baekil- und Dol-Tischdekoration sowie Hanbok-Verleih in Deutschland und Europa.',
+   '독일·유럽 백일상, 돌상, 한복 대여. 지역·행사 일자·아기 성별을 알려주시면 대여 가능한 상차림과 한복 사진을 보내드립니다.',
+   'Baekil and dol table settings and hanbok rental across Germany and Europe. Send your region, event date and the baby\u2019s gender to receive photos of the available settings and hanbok.',
+   'Baekil- und Dol-Tischdekoration sowie Hanbok-Verleih in Deutschland und Europa. Mit Region, Termin und Geschlecht des Kindes erhalten Sie Fotos der verfügbaren Tischdekorationen und Hanbok.',
    'KO','','https://open.kakao.com/o/s6crDMbi','https://www.instagram.com/gaontable.eu/',
    'baby','success,mail,dolmail,consult',1,'Y','인스타 프로필: 가온테이블 / 독일및유럽 백일상 돌상 한복대여'],
   ['laonblumen','플로리스트','라온 블루멘',
@@ -4416,14 +4467,263 @@ function _dashboardPrepLines_(memo){
   return out;
 }
 
+/* ===== 당일 운영 상태(지연) =====
+   고객이 늦게 오면 그날 남은 일정이 통째로 밀린다. 그런데 예약장부의 예약일시를 실제로 바꾸면
+   캘린더·확정메일·변경안내까지 딸려 나가서 "10분 늦었다"에 쓸 수 있는 도구가 아니다.
+   그래서 **예약일시는 손대지 않고** 당일 운영 메모로만 지연을 들고 있는다.
+   저장은 스크립트 속성 `dayops_YYYY-MM-DD` (JSON). 하루치가 수십 바이트라 부담이 없고,
+   쓸 때마다 오래된 날짜를 정리한다. 영구 기록이 필요한 일정 변경은 booking-reschedule 이 담당. */
+const DAY_OPS_PREFIX_='dayops_';
+const DAY_OPS_KEEP_DAYS_=14;
+
+function _dayOpsKey_(dateStr){ return DAY_OPS_PREFIX_+String(dateStr||'').slice(0,10); }
+
+function readDayOps_(dateStr){
+  try{
+    const raw=PropertiesService.getScriptProperties().getProperty(_dayOpsKey_(dateStr));
+    if(!raw) return {};
+    const o=JSON.parse(raw);
+    return (o&&typeof o==='object')?o:{};
+  }catch(e){ return {}; }
+}
+
+function writeDayOps_(dateStr,obj){
+  const props=PropertiesService.getScriptProperties();
+  props.setProperty(_dayOpsKey_(dateStr),JSON.stringify(obj||{}));
+  // 오래된 날짜 정리 — 방치하면 속성이 계속 쌓인다
+  try{
+    const cutoff=Utilities.formatDate(
+      new Date(Date.now()-DAY_OPS_KEEP_DAYS_*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    Object.keys(props.getProperties()).forEach(function(k){
+      if(k.indexOf(DAY_OPS_PREFIX_)!==0) return;
+      if(k.slice(DAY_OPS_PREFIX_.length)<cutoff) props.deleteProperty(k);
+    });
+  }catch(e){ Logger.log('dayops prune skipped: '+e.message); }
+}
+
+/* 지연 분 설정. minutes 는 절대값(누적이 아니다) — 0 이면 지연 해제.
+   arrived 는 실제 도착 시각(HH:MM, 선택) — 나중에 "왜 밀렸나"를 되짚을 때 쓴다. */
+/* 촬영 시작·종료 기록 (2026-08-26 사장님 요청: "촬영 시작 버튼을 누르면 현재시간·소요시간").
+   시작을 누르면 **지연이 자동 계산된다** — +5분 버튼을 여러 번 누르는 것보다 정확하다.
+   여기도 예약일시는 건드리지 않는다(당일 운영 메모). */
+/* ===== 촬영 운영 기록 (영구) =====
+   dayops(스크립트 속성)는 14일 뒤 지워진다. 그런데 촬영 시작/종료로 생기는 **실측 소요시간**은
+   쌓이면 상품별 소요시간을 실측으로 교정할 수 있는 자산이다 — 지금 예약 슬롯의
+   `여권 15분 / 스튜디오 Basic 30분` 이 추정인지 실측인지 알 수 없다. 슬롯이 정확해지면
+   겹침·지연이 구조적으로 줄어든다. **소급이 불가능해서** 기록만이라도 먼저 남긴다
+   (리포트는 나중에, 2026-08-27 기획 F항).
+   append-only 라 기존 흐름에 영향이 없고, 같은 예약이 여러 줄이면 마지막이 최신이다. */
+const SHOOT_LOG_SHEET_NAME='촬영운영기록';
+const SHOOT_LOG_HEADERS=['기록일시','촬영일','예약장부행','고객명','촬영종류','상품','인원',
+                         '예정시각','예정소요분','시작시각','종료시각','실제소요분','지연분','비고'];
+
+function ensureShootLogSheet_(ss){
+  let sh=ss.getSheetByName(SHOOT_LOG_SHEET_NAME);
+  if(!sh){
+    sh=ss.insertSheet(SHOOT_LOG_SHEET_NAME);
+    sh.appendRow(SHOOT_LOG_HEADERS);
+    sh.getRange(1,1,1,SHOOT_LOG_HEADERS.length).setFontWeight('bold').setBackground('#f8fafc');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function appendShootLog_(dateStr,rowIndex,ops,note){
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ensureShootLogSheet_(ss);
+    const bSh=getDbSheet();
+    const row=bSh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const sched=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(11,16);
+    const a=_hmToMin_(ops&&ops.started), b=_hmToMin_(ops&&ops.ended);
+    sh.appendRow(neutralizeRow_([
+      Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+      dateStr, rowIndex,
+      String(row[BOOKING_COL['고객명']]||''),
+      String(row[BOOKING_COL['촬영종류']]||''),
+      String(row[BOOKING_COL['상품']]||''),
+      String(row[BOOKING_COL['인원']]||''),
+      sched,
+      getBookingDurationMinFromRow_(row,60),
+      String((ops&&ops.started)||''),
+      String((ops&&ops.ended)||''),
+      (a!=null&&b!=null&&b>=a)?(b-a):'',
+      (ops&&isFinite(ops.delay))?Number(ops.delay):0,
+      String(note||'')
+    ]));
+  }catch(e){ Logger.log('shoot log skipped: '+e.message); }
+}
+
+function setBookingShootMarkAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const kind=String(payload.kind||'start').trim();      // start | end | clear
+  const date=String(payload.date||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? payload.date : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const nowHm=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'HH:mm');
+  const at=String(payload.at||'').match(/^\d{2}:\d{2}$/)?payload.at:nowHm;
+
+  const ops=readDayOps_(date);
+  const cur=ops[String(rIdx)]||{delay:0,arrived:'',note:''};
+
+  if(kind==='clear'){
+    delete cur.started; delete cur.ended; cur.delay=0;
+    if(!cur.arrived&&!cur.note) delete ops[String(rIdx)]; else ops[String(rIdx)]=cur;
+  }else if(kind==='end'){
+    cur.ended=at;
+  }else{
+    cur.started=at;
+    delete cur.ended;
+    // 예정 시각과의 차이를 지연으로 자동 반영 (늦게 시작한 경우만)
+    try{
+      const sh=getDbSheet();
+      const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+      const sched=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(11,16);
+      const a=_hmToMin_(sched), b=_hmToMin_(at);
+      if(a!=null&&b!=null&&b>a) cur.delay=b-a;
+    }catch(e){ Logger.log('shoot-start delay auto skipped: '+e.message); }
+  }
+  if(kind!=='clear'){
+    cur.at=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+    ops[String(rIdx)]=cur;
+  }
+  writeDayOps_(date,ops);
+  invalidateTodayBoardCache_(date);
+  // 영구 기록 — 시작·종료만 남긴다(clear 는 기록할 게 없다)
+  if(kind==='start'||kind==='end') appendShootLog_(date,rIdx,cur,kind==='end'?'종료':'시작');
+  return {ok:true,date:date,rowIndex:rIdx,kind:kind,at:at,delay:cur.delay||0};
+}
+
+function setBookingDelayAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const date=String(payload.date||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? payload.date : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  let minutes=parseInt(payload.minutes,10);
+  if(!isFinite(minutes)) minutes=0;
+  if(minutes<-240||minutes>480) throw new Error('지연 분이 범위를 벗어났습니다(-240~480).');
+  const ops=readDayOps_(date);
+  if(minutes===0&&!payload.arrived&&!payload.note){
+    delete ops[String(rIdx)];
+  }else{
+    ops[String(rIdx)]={
+      delay:minutes,
+      arrived:String(payload.arrived||'').slice(0,5),
+      note:String(payload.note||'').slice(0,120),
+      at:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
+    };
+  }
+  writeDayOps_(date,ops);
+  invalidateTodayBoardCache_(date);
+  return {ok:true,date:date,rowIndex:rIdx,minutes:minutes};
+}
+
+// "HH:MM" → 분. 못 읽으면 null
+function _hmToMin_(hm){
+  const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  return parseInt(m[1],10)*60+parseInt(m[2],10);
+}
+function _minToHm_(v){
+  if(v==null) return '';
+  const x=((v%1440)+1440)%1440;
+  return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0');
+}
+
+/* 15초 캐시. 사장님이 화면을 켜 두면 1분마다 갱신 + 앞뒤 날짜 프리페치가 돌아서
+   같은 날을 반복해 읽는다. 쓰기(지연·시작·잔금) 직후엔 무효화해 즉시 반영된다. */
+const TODAY_BOARD_CACHE_SEC_=15;
+function _todayBoardCacheKey_(d){ return 'todayboard_'+String(d||'').slice(0,10); }
+function invalidateTodayBoardCache_(d){
+  try{ CacheService.getScriptCache().remove(_todayBoardCacheKey_(d)); }catch(e){}
+}
+function buildTodayBoardCached_(dateStr){
+  const today=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const cache=CacheService.getScriptCache();
+  const key=_todayBoardCacheKey_(today);
+  try{
+    const hit=cache.get(key);
+    if(hit){ const o=JSON.parse(hit); o._cached=true; return o; }
+  }catch(e){}
+  const out=buildTodayBoard_(today);
+  try{ cache.put(key,JSON.stringify(out),TODAY_BOARD_CACHE_SEC_); }catch(e){}
+  return out;
+}
+
+/* 촬영 준비 설문 요약·레퍼런스 — 예약장부행으로 찾는다.
+   설문은 `/prep` 에서 받아 `촬영준비설문` 시트에 쌓이는데, **분위기·레퍼런스는 촬영 직전에
+   가장 필요한 정보**인데도 보드가 못 보여주고 있었다(2026-08-27 기획 A안 B항). */
+function readPrepByBookingRow_(rowIndexes){
+  const want={};
+  (rowIndexes||[]).forEach(function(r){ want[String(r)]=null; });
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(PREP_SHEET_NAME);
+    if(!sh||sh.getLastRow()<2) return want;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,PREP_HEADERS.length).getValues();
+    // 같은 예약에 여러 번 제출될 수 있어 마지막 것이 이긴다
+    rows.forEach(function(r){
+      const key=String(parseInt(r[PREP_COL['예약장부행']],10)||0);
+      if(!(key in want)) return;
+      want[key]={
+        submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+        updatedAt:String(parseDateSafe_(r[PREP_COL['수정일시']]).str||'').slice(0,16),
+        summary:String(r[PREP_COL['요약']]||'').trim(),
+        refLinks:String(r[PREP_COL['참고링크']]||'')
+          .split(/[\s,]+/).map(function(x){return x.trim();})
+          .filter(function(x){return /^https?:\/\//i.test(x);}).slice(0,8)
+      };
+    });
+  }catch(e){ Logger.log('prep lookup skipped: '+e.message); }
+  return want;
+}
+
+/* 그날의 픽업(수령) 예정 — 스튜디오에 **사람이 있어야 하는 일정**인데 보드에 없었다.
+   촬영 사이에 픽업이 끼면 미리 알아야 한다. 셀렉 시트의 픽업일시를 그날짜로 걸러 온다. */
+function readPickupsForDate_(dateStr){
+  const out=[];
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+    if(!sh||sh.getLastRow()<2) return out;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    rows.forEach(function(r,i){
+      const at=String(parseDateSafe_(r[SELECT_COL['픽업일시']]).str||'');
+      if(at.slice(0,10)!==dateStr) return;
+      const doneAt=String(parseDateSafe_(r[SELECT_COL['수령완료일시']]).str||'').slice(0,16);
+      out.push({
+        selectRowIndex:i+2,
+        bookingRowIndex:parseInt(r[SELECT_COL['예약장부행']],10)||0,
+        time:at.slice(11,16),
+        name:String(r[SELECT_COL['고객명']]||''),
+        product:String(r[SELECT_COL['상품']]||''),
+        method:String(r[SELECT_COL['수령방식']]||''),
+        status:String(r[SELECT_COL['상태']]||''),
+        doneAt:doneAt,
+        done:!!doneAt
+      });
+    });
+    out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+  }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
+  return out;
+}
+
 function buildTodayBoard_(dateStr){
+  const _t0=Date.now(); const _t={};
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
   const today=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
     ? dateStr : Utilities.formatDate(now,tz,'yyyy-MM-dd');
-  const sh=getDbSheet();
-  const last=sh.getLastRow();
+  const sh=getDbSheet();               _t.getDbSheet=Date.now()-_t0;
+  const last=sh.getLastRow();          _t.getLastRow=Date.now()-_t0;
   const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+  _t.readRows=Date.now()-_t0; _t.rowCount=rows.length;
+  const dayOps=readDayOps_(today);     _t.dayOps=Date.now()-_t0;
   const shoots=[];
   rows.forEach(function(row,idx){
     const status=String(row[BOOKING_COL['상태']]||'').trim();
@@ -4453,23 +4753,86 @@ function buildTodayBoard_(dateStr){
       balance:balance,
       payMethod:payMethod,
       dueOnSite:(unpaid||!depositPaid)?balance:balance,   // 현장에서 받을 금액 = 잔금
-      prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']])
+      prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
+      // 당일 운영: 지연 분·실제 도착. 예약일시는 그대로 두고 표시만 밀린다
+      delayMin:(function(){ const o=dayOps[String(idx+2)]; return o&&isFinite(o.delay)?Number(o.delay):0; })(),
+      arrivedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.arrived?String(o.arrived):''; })(),
+      delayNote:(function(){ const o=dayOps[String(idx+2)]; return o&&o.note?String(o.note):''; })(),
+      startedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.started?String(o.started):''; })(),
+      endedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.ended?String(o.ended):''; })(),
+      /* 이름을 누르면 뜨는 상세 보기용 (2026-08-26 사장님 요청).
+         현장에서 확인하는 값이라 원문 메모까지 그대로 넘긴다 — 파싱된 칩만으론 놓치는 게 생긴다. */
+      detail:{
+        dateTime:dt,
+        email:String(row[BOOKING_COL['이메일']]||''),
+        bookingType:BOOKING_COL['예약유형']!=null?String(row[BOOKING_COL['예약유형']]||''):'',
+        depositMethod:BOOKING_COL['계약금수단']!=null?String(row[BOOKING_COL['계약금수단']]||''):'',
+        depositPaidAt:BOOKING_COL['계약금입금일']!=null?String(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||'').slice(0,10):'',
+        balancePaid:BOOKING_COL['잔금결제여부']!=null?String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y':false,
+        memoRaw:String(row[BOOKING_COL['요청사항']]||''),
+        /* 예약 세부내역(추가항목)은 요청사항 원문과 내용이 겹쳐 중복이라 빼기로 했다(2026-08-27 사장님 지적).
+           응답에서 가장 큰 덩어리이기도 해서 전송량도 함께 줄었다. 다시 필요하면 이 줄만 되살리면 된다. */
+        confirmedAt:BOOKING_COL['확정일시']!=null?String(parseDateSafe_(row[BOOKING_COL['확정일시']]).str||'').slice(0,16):'',
+        marketing:BOOKING_COL['마케팅동의']!=null?String(row[BOOKING_COL['마케팅동의']]||''):'',
+        isReturn:BOOKING_COL['재방문']!=null?String(row[BOOKING_COL['재방문']]||'').trim()==='재방문':false
+      }
     });
   });
+  _t.scanRows=Date.now()-_t0;
+
+  // 준비 설문 — 촬영 직전에 필요한 분위기·레퍼런스
+  try{
+    const prepMap=readPrepByBookingRow_(shoots.map(function(s){return s.rowIndex;}));
+    shoots.forEach(function(s){ s.prepSurvey=prepMap[String(s.rowIndex)]||null; });
+  }catch(e){ Logger.log('prep attach skipped: '+e.message); }
+  _t.prep=Date.now()-_t0;
+
   shoots.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+
+  /* 지연을 반영한 '실제 시각'과 다음 촬영까지의 여유를 계산한다.
+     여유가 음수면 겹친다 — 고객이 늦게 왔을 때 가장 먼저 알아야 하는 값이다. */
+  shoots.forEach(function(s){
+    const base=_hmToMin_(s.time);
+    s.effStartMin=(base==null)?null:base+(s.delayMin||0);
+    s.effTime=(s.effStartMin==null)?s.time:_minToHm_(s.effStartMin);
+    s.effEndMin=(s.effStartMin==null)?null:s.effStartMin+(s.durationMin||60);
+    s.effEndTime=(s.effEndMin==null)?'':_minToHm_(s.effEndMin);
+    // 실제로 걸린 시간 — 시작·종료가 다 찍혔을 때만
+    const a=_hmToMin_(s.startedAt), b=_hmToMin_(s.endedAt);
+    s.actualMin=(a!=null&&b!=null&&b>=a)?(b-a):null;
+  });
+  for(let i=0;i<shoots.length;i++){
+    const cur=shoots[i];
+    let nxt=null;
+    for(let j=i+1;j<shoots.length;j++){
+      if(shoots[j].effStartMin!=null){ nxt=shoots[j]; break; }
+    }
+    // 키를 아예 빼면 안 된다 — 클라이언트(Swift)는 키 하나가 없어도 디코딩이 통째로 실패한다
+    if(cur.effEndMin==null||!nxt){ cur.gapToNextMin=null; cur.overlapsNext=false; cur.nextName=''; continue; }
+    cur.gapToNextMin=nxt.effStartMin-cur.effEndMin;
+    cur.overlapsNext=cur.gapToNextMin<0;
+    cur.nextName=nxt.name;
+  }
 
   // 지금 시각 기준 다음 촬영
   const nowHm=Utilities.formatDate(now,tz,'HH:mm');
   let next=null;
   for(let i=0;i<shoots.length;i++){
     if(shoots[i].timeUnset) continue;
-    if(shoots[i].time>=nowHm){ next=shoots[i]; break; }
+    // 지연이 반영된 실제 시각으로 판단한다 — 밀린 촬영을 '지났다'고 세면 안 된다
+    if((shoots[i].effTime||shoots[i].time)>=nowHm){ next=shoots[i]; break; }
   }
   const warnings=[];
   shoots.forEach(function(s){
     if(s.timeUnset) warnings.push(`${s.name}님 촬영 시간이 미정입니다`);
     if(!s.depositPaid&&s.deposit>0) warnings.push(`${s.name}님 계약금 ${formatEuroAmount_(s.deposit)}€ 미입금`);
+    if(s.delayMin>0) warnings.push(`${s.name}님 ${s.delayMin}분 지연 — 실제 ${s.effTime} 시작`);
+    if(s.overlapsNext) warnings.push(`${s.name}님 촬영이 다음(${s.nextName}님)과 ${Math.abs(s.gapToNextMin)}분 겹칩니다`);
   });
+  try{
+    const pk=readPickupsForDate_(today).filter(function(p){return !p.done;});
+    if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
+  }catch(e){}
   return {
     ok:true,
     date:today,
@@ -4477,9 +4840,14 @@ function buildTodayBoard_(dateStr){
     serverTime:Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss'),
     count:shoots.length,
     dueTotal:shoots.reduce(function(a,s){return a+(s.balance||0);},0),
-    next:next?{time:next.time,name:next.name,product:next.product}:null,
+    next:next?{time:next.effTime||next.time,scheduled:next.time,name:next.name,
+               product:next.product,delayMin:next.delayMin||0}:null,
+    delayedCount:shoots.filter(function(s){return (s.delayMin||0)!==0;}).length,
+    overlapCount:shoots.filter(function(s){return !!s.overlapsNext;}).length,
     shoots:shoots,
-    warnings:warnings
+    pickups:(function(){ try{ return readPickupsForDate_(today); }catch(e){ return []; } })(),
+    warnings:warnings,
+    _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
   };
 }
 
@@ -10255,9 +10623,9 @@ const PARKING_2='https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8';
 const PARKING_3='https://maps.app.goo.gl/S7zA3hEstWqhGhkUA';
 
 const EMAIL_I18N={
-  ko:{greeting:n=>`안녕하세요, <b>${n}</b>님.`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청이 접수되었습니다`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
-  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Same-day reshoot discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Same-day reshoot discount applied automatically!'},
-  de:{greeting:n=>`Guten Tag, <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
+  ko:{greeting:n=>`안녕하세요, <b>${n}</b>님.`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: '+STUDIO_BANK.holder+'<br>은행: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청이 접수되었습니다`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
+  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: '+STUDIO_BANK.holder+'<br>Bank: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Same-day reshoot discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Same-day reshoot discount applied automatically!'},
+  de:{greeting:n=>`Guten Tag, <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: '+STUDIO_BANK.holder+'<br>Bank: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
 };
 
 function _isExternalBookingItemGroup_(itemGroup){
@@ -11141,10 +11509,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'현장에서 현금 또는 카드로 결제 가능합니다.',
       depositTitle:'계약금 입금 안내',
       depositDue:'예약 확정 후 10일 이내 입금을 부탁드립니다.',
-      bank:'은행: Deutsche Bank',
-      account:'예금주: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'은행: '+STUDIO_BANK.bank,
+      account:'예금주: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'송금 사유: 예약자명 + 촬영일',
       invoice:'인보이스가 필요하시면 방문 전 미리 알려 주세요.',
       maps:'오시는 길',
@@ -11169,10 +11537,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'Payment by cash or card is possible on site.',
       depositTitle:'Deposit bank details',
       depositDue:'Please transfer the deposit within 10 days after confirmation.',
-      bank:'Bank: Deutsche Bank',
-      account:'Account holder: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'Bank: '+STUDIO_BANK.bank,
+      account:'Account holder: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'Reference: Your name + shoot date',
       invoice:'If you need an invoice, please let us know before your visit.',
       maps:'Directions',
@@ -11197,10 +11565,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'Zahlung vor Ort per Karte oder Bargeld möglich.',
       depositTitle:'Kontodaten für die Anzahlung',
       depositDue:'Bitte überweisen Sie die Anzahlung innerhalb von 10 Tagen nach Bestätigung.',
-      bank:'Bank: Deutsche Bank',
-      account:'Kontoinhaber: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'Bank: '+STUDIO_BANK.bank,
+      account:'Kontoinhaber: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'Verwendungszweck: Name + Aufnahmedatum',
       invoice:'Falls Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',
       maps:'Wegbeschreibung',
@@ -11487,7 +11855,8 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const {obj:dt}=parseDateSafe_(timeRaw);
   const formattedTime=Utilities.formatDate(dt,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const allCountries=(passCountries||[]).join(', ');
-  const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup})
+  const guide=prepSurveyMailBlockHtml_(itemGroup,lang||'ko',eventId)
+    +_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup})
     +buildPartnerMailBlockHtml_(partnerContextFrom_(itemGroup,[prodLocal,details&&details.extraItem].filter(Boolean).join(' '),surveyKeys||[],(details&&details.babyType)||''),lang||'ko','mail');
   const dep=roundCurrency_(toNumberOrZero_(depositAmount));
   const bal=roundCurrency_(toNumberOrZero_(balanceAmount));
@@ -14770,7 +15139,7 @@ function searchBookingsForAgent_(token,query){
 function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
   const rIdx=deletedRowIndex;
   const sh=sheets.bookingSheet;
-  const fixed={select:0,travel:0,paymentLinks:0};
+  const fixed={select:0,travel:0,paymentLinks:0,prep:0};
   const fixColumn=function(sheet,colIdx){
     const last=sheet.getLastRow();
     if(last<2||colIdx==null) return 0;
@@ -14788,6 +15157,26 @@ function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
     const selSh=ensureSelectSheet_(sheets.ss);
     if(selSh) fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
   }catch(e){Logger.log('row-delete select fix fail: '+e.message);}
+  /* 촬영 준비 설문 — 삭제된 행의 답변은 지우고 뒤 행 참조는 한 칸 당긴다.
+     이걸 안 하면 다음 예약이 같은 행번호를 받았을 때 **남의 설문 답변을 물려받는다**. */
+  try{
+    const pSh=ensurePrepSheet_(sheets.ss);
+    const pLast=pSh?pSh.getLastRow():0;
+    if(pSh&&pLast>1){
+      const rng=pSh.getRange(2,PREP_COL['예약장부행']+1,pLast-1,1);
+      const vals=rng.getValues();
+      const toDelete=[];
+      let n=0;
+      for(let i=0;i<vals.length;i++){
+        const v=parseInt(vals[i][0],10);
+        if(v===rIdx){ toDelete.push(i+2); continue; }
+        if(isFinite(v)&&v>rIdx){ vals[i][0]=v-1; n++; }
+      }
+      if(n) rng.setValues(vals);
+      toDelete.sort(function(a,b){return b-a;}).forEach(function(rn){pSh.deleteRow(rn);});
+      fixed.prep=n+toDelete.length;
+    }
+  }catch(e){Logger.log('row-delete prep fix fail: '+e.message);}
   try{
     const tSh=sheets.ss.getSheetByName('출장장부');
     if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
@@ -14880,7 +15269,29 @@ function getBookingForAgent_(token,rowIndex){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다.');
   const row=sh.getRange(rIdx,1,1,sh.getLastColumn()).getValues()[0];
   if(!row||(!row[BOOKING_COL['예약일시']]&&!row[BOOKING_COL['고객명']])) throw new Error('빈 예약 행입니다.');
-  return {ok:true,booking:_bookingRowToAgentObject_(row,rIdx)};
+  const booking=_bookingRowToAgentObject_(row,rIdx);
+  /* 촬영 준비 설문 답변을 함께 실어 준다 — 캘린더 요약만으로는 자유입력 전문이 안 보인다.
+     설문이 없거나 대상 상품이 아니면 조용히 생략(기존 응답 형태를 깨지 않는다). */
+  try{
+    if(isPrepTargetGroup_(row[BOOKING_COL['촬영종류']])){
+      const pSh=ensurePrepSheet_(sh.getParent());
+      const pRow=_findPrepRow_(pSh,rIdx);
+      if(pRow){
+        const r=pSh.getRange(pRow,1,1,PREP_HEADERS.length).getValues()[0];
+        if(String(r[PREP_COL['고객명']]||'').trim()===String(row[BOOKING_COL['고객명']]||'').trim()){
+          let ans=null; try{ ans=JSON.parse(String(r[PREP_COL['답변JSON']]||'{}')); }catch(e){}
+          booking.prepSurvey={
+            submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+            updatedAt:String(parseDateSafe_(r[PREP_COL['수정일시']]).str||'').slice(0,16),
+            summary:String(r[PREP_COL['요약']]||''),
+            links:String(r[PREP_COL['참고링크']]||'').split('\n').filter(Boolean),
+            free:(ans&&ans.free)||{}
+          };
+        }
+      }
+    }
+  }catch(e){Logger.log('booking-get prep attach skipped row '+rIdx+': '+e.message);}
+  return {ok:true,booking:booking};
 }
 
 // 에이전트용 상태 변경 — 취소/환불 계열은 별도 플로우(메일·환불)가 있어 여기서 차단
@@ -15609,11 +16020,20 @@ function _buildDailyBriefingData_(){
   try{ travelFeeGaps=_scanTravelFeeGaps_(rows,now); }
   catch(e){Logger.log('briefing travelFeeGaps fail: '+e.message);_briefFail_(sectionFailures,'출장비 누락',e);}
   // 문의·상담 통합 — 리드가 브리핑에 아예 안 잡히던 구멍을 막는다(이홍규 38일 방치 사고)
+  /* 촬영 준비 설문 미작성 — 설문을 만들어 놓고 안 채워진 걸 아무도 안 알려주면 같은 구멍이 생긴다.
+     과도한 재촉은 안 한다: **D-7 이내**만 본다(그 전엔 아직 시간이 있다). */
+  let prepPending={count:0,items:[]};
+  try{
+    const ps=buildPrepSurveyStatus_(7);
+    const pend=(ps.items||[]).filter(function(i){return !i.submitted;});
+    prepPending={count:pend.length,items:pend.slice(0,6)};
+  }catch(e){ Logger.log('briefing prep skipped: '+e.message); _briefFail_(sectionFailures,'준비설문',e); }
+
   let inquiries={open:0,stale:0,items:[]};
   try{ inquiries=buildUnifiedInquiries_({}); }
   catch(e){ Logger.log('briefing inquiries skipped: '+e.message); _briefFail_(sectionFailures,'문의·상담',e); }
 
-  return {ok:true,date:today,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
+  return {ok:true,date:today,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -15779,6 +16199,14 @@ function buildDailyBriefingEmailHtml_(b){
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   /* 문의·상담 통합 — 홈페이지 문의(리드)가 브리핑에 아예 안 잡혀 38일·56일씩 방치된 사고에서 출발.
      오래 묵은 순으로 세우고, 3일 넘게 답이 없는 건은 붉게 세운다. */
+  if(b.prepPending&&b.prepPending.count>0){
+    actions.push(line(`📝 촬영 준비 설문 미작성 <b>${b.prepPending.count}건</b> (D-7 이내)`));
+    (b.prepPending.items||[]).forEach(function(pp){
+      const urgent=pp.daysToShoot<=2;
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(pp.name)}</b>님 · ${esc(String(pp.dateTime).slice(5,16))} ${esc(pp.product)} — `
+        +`<b style="color:${urgent?'#b91c1c':'#64748b'};">D-${pp.daysToShoot}</b>`));
+    });
+  }
   if(b.inquiries&&b.inquiries.open>0){
     const inq=b.inquiries;
     const staleText=inq.stale>0?` — <b style="color:#b91c1c;">${inq.stale}건은 ${INQUIRY_STALE_DAYS_}일 넘게 답장이 없습니다</b>`:'';
@@ -16040,6 +16468,8 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
 // 잔금 결제 확인 — 결제일 자유 지정 (촬영 당일 포함 과거/미래 모두 허용)
 function confirmBookingBalanceAdmin(token,rIdx,payload){
   assertAdmin_(token);
+  // 오늘 보드가 즉시 반영되도록 (캐시 15초를 기다리지 않게)
+  try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
   payload=payload||{};
   const sh=getDbSheet();
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
@@ -20750,6 +21180,241 @@ function summarizeSettlementImport_(transactions,source){
 }
 
 /* ====== 사진 셀렉 시스템 ====== */
+/* ===== 촬영 준비 설문 (2026-08-26) =====
+   그동안 확정메일이 "레퍼런스 1~3장 보내주세요"라고 **부탁만** 했다 — 회수율이 낮고, 오더라도
+   카톡·메일·DM 에 흩어져 촬영 당일 다시 물어야 했다. 구조화된 한 페이지로 받아 캘린더 설명에
+   자동으로 실어 촬영 당일 폰에서 바로 보이게 한다.
+   토큰은 예약행 ref(createBookingRowActionRef_)를 그대로 쓴다 — @830 에서 상품·금액 변경에도
+   안 깨지도록 고쳐 뒀으므로 설문 링크가 중간에 죽지 않는다.
+   문항 정의는 **프런트에만** 둔다. 프런트가 id·라벨·요약문을 함께 보내고 서버는 저장만 한다
+   (문항이 서버에도 있으면 3개국어 문구가 두 곳에서 갈라진다). */
+const PREP_SHEET_NAME='촬영준비설문';
+const PREP_HEADERS=['예약장부행','제출일시','수정일시','언어','촬영종류','상품','고객명','촬영일시','답변JSON','요약','참고링크'];
+const PREP_COL=PREP_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
+// 설문 대상 — 여권은 규격 촬영이고 기업은 상담 파이프라인이 따로 있어 제외
+const PREP_TARGET_GROUPS_=['prof','stud','wed','snap'];
+
+function listPrepSurveyStatusAdmin(token,daysAhead){
+  assertAdmin_(token);
+  return buildPrepSurveyStatus_(daysAhead);
+}
+
+/* 본체 — 토큰 검사 없음. 브리핑은 트리거로 도는 서버측 코드라 어드민 토큰이 없다. */
+function buildPrepSurveyStatus_(daysAhead){
+  const days=Math.max(1,Math.min(parseInt(daysAhead,10)||21,120));
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  if(last<2) return {ok:true,items:[],pending:0};
+  const rows=sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const prepSh=ensurePrepSheet_(sh.getParent());
+  const prepLast=prepSh.getLastRow();
+  const done={};
+  if(prepLast>1){
+    prepSh.getRange(2,1,prepLast-1,PREP_HEADERS.length).getValues().forEach(function(r){
+      done[parseInt(r[PREP_COL['예약장부행']],10)]={
+        submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+        summary:String(r[PREP_COL['요약']]||'')
+      };
+    });
+  }
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const limit=Utilities.formatDate(new Date(Date.now()+days*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const items=[];
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(['대기중','확정됨','변경대기'].indexOf(status)<0) return;
+    const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(!isPrepTargetGroup_(itemGroup)) return;
+    const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+    const day=dStr.slice(0,10);
+    if(!day||day<today||day>limit) return;
+    const rowIndex=idx+2;
+    const hit=done[rowIndex]||null;
+    items.push({
+      rowIndex:rowIndex, name:String(row[BOOKING_COL['고객명']]||''),
+      dateTime:dStr.slice(0,16), itemGroup:itemGroup,
+      product:String(row[BOOKING_COL['상품']]||''),
+      daysToShoot:Math.round((new Date(day+'T00:00:00')-new Date(today+'T00:00:00'))/86400000),
+      submitted:!!hit, submittedAt:hit?hit.submittedAt:'', summary:hit?hit.summary:'',
+      url:buildPrepSurveyUrl_(rowIndex,row)
+    });
+  });
+  items.sort(function(a,b){return String(a.dateTime).localeCompare(String(b.dateTime));});
+  return {ok:true,items:items,pending:items.filter(function(i){return !i.submitted;}).length};
+}
+
+function ensurePrepSheet_(ss){
+  let sh=ss.getSheetByName(PREP_SHEET_NAME);
+  if(!sh){
+    sh=ss.insertSheet(PREP_SHEET_NAME);
+    sh.appendRow(PREP_HEADERS);
+    sh.getRange(1,1,1,PREP_HEADERS.length).setFontWeight('bold').setBackground('#f8fafc');
+  }
+  return sh;
+}
+
+/* 확정메일에 들어갈 준비설문 버튼. 대상 상품이 아니거나 캘린더 이벤트가 없으면 조용히 빈 문자열 —
+   기존 메일 흐름을 깨지 않는다. */
+function buildPrepSurveyUrlByEventId_(eventId){
+  if(!eventId) return '';
+  try{
+    const sh=getDbSheet(),data=sh.getDataRange().getValues();
+    const idx=data.slice(1).findIndex(function(r){return String(r[BOOKING_COL['캘린더ID']]||'').trim()===String(eventId).trim();});
+    if(idx===-1) return '';
+    return buildPrepSurveyUrl_(idx+2,data[idx+1]);
+  }catch(e){ Logger.log('prep url by eventId 실패: '+e.message); return ''; }
+}
+
+function prepSurveyMailBlockHtml_(itemGroup,lang,eventId){
+  if(!isPrepTargetGroup_(itemGroup)) return '';
+  const url=buildPrepSurveyUrlByEventId_(eventId);
+  if(!url) return '';
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const t={
+    ko:{title:'촬영 준비 설문',
+        body:'원하시는 분위기와 배경, 꼭 담고 싶은 장면을 미리 알려주시면 촬영이 한결 수월합니다. 선택만 하시면 되고 5분이면 끝납니다 — 참고 이미지 링크도 여기에 함께 남기실 수 있습니다.',
+        btn:'📝 촬영 준비 설문 작성하기'},
+    en:{title:'Shoot preparation form',
+        body:'Telling us the mood, background and moments you want in advance makes the session go much smoother. It is mostly tapping — about five minutes, and you can add reference links there too.',
+        btn:'📝 Open the preparation form'},
+    de:{title:'Vorbereitungsformular',
+        body:'Wenn Sie uns Stimmung, Hintergrund und gewünschte Momente vorab mitteilen, läuft das Shooting deutlich entspannter. Meist nur Antippen — etwa fünf Minuten, Referenzlinks können Sie dort ebenfalls angeben.',
+        btn:'📝 Formular öffnen'}
+  }[L];
+  const safeUrl=url.replace(/&/g,'&amp;');
+  return '<div style="background:#faf7f1;border:1px solid #e6ddcf;border-radius:12px;padding:16px 18px;margin:14px 0;">'
+    +'<div style="font-weight:700;color:#201c1f;margin-bottom:6px;">'+t.title+'</div>'
+    +'<div style="font-size:13px;color:#6d5a49;line-height:1.7;">'+t.body+'</div>'
+    +'<div style="margin-top:14px;"><a href="'+safeUrl+'" style="display:inline-block;padding:12px 22px;background:#201c1f;color:#faf7f1;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">'+t.btn+'</a></div>'
+    +'</div>';
+}
+
+function isPrepTargetGroup_(itemGroup){
+  return PREP_TARGET_GROUPS_.indexOf(String(itemGroup||'').trim())>-1;
+}
+
+function buildPrepSurveyUrl_(rowIndex,row){
+  return 'https://booking.studio-mean.com/prep/?id='+encodeURIComponent(createBookingRowActionRef_(rowIndex,row));
+}
+
+function _findPrepRow_(sh,bookingRowIndex){
+  const last=sh.getLastRow();
+  if(last<2) return 0;
+  const col=sh.getRange(2,PREP_COL['예약장부행']+1,last-1,1).getValues();
+  for(let i=0;i<col.length;i++){ if(parseInt(col[i][0],10)===bookingRowIndex) return i+2; }
+  return 0;
+}
+
+// 고객용 조회 — 예약 맥락 + 기존 답변. 취소된 예약은 열지 않는다.
+function getPrepSurveyForCustomer_(ref){
+  const found=findBookingRowByActionRef_(ref);
+  if(!found) return {ok:false,code:'NOT_FOUND',message:'예약을 찾을 수 없거나 링크가 유효하지 않습니다.'};
+  const row=found.row;
+  const status=String(row[BOOKING_COL['상태']]||'').trim();
+  if(isBookingCancelledStatus_(status)) return {ok:false,code:'CANCELLED',message:'취소된 예약입니다.'};
+  const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+  const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+  const sh=ensurePrepSheet_(found.sheet.getParent());
+  const prepRow=_findPrepRow_(sh,found.rowIndex);
+  let answers=null,submittedAt='';
+  if(prepRow){
+    const r=sh.getRange(prepRow,1,1,PREP_HEADERS.length).getValues()[0];
+    /* 행번호는 예약 삭제로 재사용될 수 있다 — 고객명이 다르면 남의 답변이므로 안 보여준다
+       (참조 보정이 정리하지만, 정리 전 잔재까지 막는 마지막 가드). */
+    const sameCustomer=String(r[PREP_COL['고객명']]||'').trim()===String(row[BOOKING_COL['고객명']]||'').trim();
+    if(sameCustomer){
+      submittedAt=String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16);
+      try{ answers=JSON.parse(String(r[PREP_COL['답변JSON']]||'{}')); }catch(e){ answers=null; }
+    }
+  }
+  const products=getCachedProducts_();
+  const product=products.find(function(p){return p.nameKo===row[BOOKING_COL['상품']];});
+  const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase().trim();
+  return {
+    ok:true,
+    lang:lang,
+    name:String(row[BOOKING_COL['고객명']]||''),
+    itemGroup:itemGroup,
+    supported:isPrepTargetGroup_(itemGroup),
+    product:product?(lang==='en'?product.nameEn:(lang==='de'?product.nameDe:product.nameKo)):String(row[BOOKING_COL['상품']]||''),
+    date:dStr.slice(0,10), time:dStr.slice(11,16),
+    people:String(row[BOOKING_COL['인원']]||''),
+    location:parseBookingLocationFromRow_(row)||'',
+    memo:String(row[BOOKING_COL['요청사항']]||''),
+    /* 문항 노출 조건에 쓴다 — 아이 호칭은 촬영 대상이 영유아·키즈일 때만, 반려동물 문항은
+       예약에서 dog 옵션(+€15)을 고른 경우에만 띄운다. 상품군만으로는 키즈 프로필을 못 가린다. */
+    ageGroup:String(parseBookingAgeGroupFromRow_(row)||'').trim(),
+    optionKeys:parseBookingOptionKeysFromRow_(row)||[],
+    answers:answers, submittedAt:submittedAt,
+    studioAddress:STUDIO_ADDRESS, adminEmail:CONFIG.ADMIN_EMAIL
+  };
+}
+
+/* 제출 — 같은 예약행이면 덮어쓴다(촬영 전까지 몇 번이든 고칠 수 있어야 한다).
+   요약문은 프런트가 만든 것을 그대로 저장하고 캘린더 설명에도 같은 문장을 싣는다. */
+function savePrepSurvey_(ref,payload){
+  const found=findBookingRowByActionRef_(ref);
+  if(!found) throw new Error('예약을 찾을 수 없거나 링크가 유효하지 않습니다.');
+  const row=found.row;
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약입니다.');
+  const p=payload||{};
+  const answers=p.answers&&typeof p.answers==='object'?p.answers:{};
+  const summary=String(p.summary||'').slice(0,900);
+  const links=(Array.isArray(p.links)?p.links:[]).map(function(u){return String(u||'').trim();})
+    .filter(function(u){return /^https?:\/\//i.test(u);}).slice(0,3);
+  const ss=found.sheet.getParent();
+  const sh=ensurePrepSheet_(ss);
+  const now=_nowStamp_();
+  const prepRow=_findPrepRow_(sh,found.rowIndex);
+  const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+  const values=new Array(PREP_HEADERS.length).fill('');
+  values[PREP_COL['예약장부행']]=found.rowIndex;
+  values[PREP_COL['제출일시']]=prepRow?sh.getRange(prepRow,PREP_COL['제출일시']+1).getValue()||now:now;
+  values[PREP_COL['수정일시']]=now;
+  values[PREP_COL['언어']]=String(p.lang||row[BOOKING_COL['언어']]||'ko');
+  values[PREP_COL['촬영종류']]=String(row[BOOKING_COL['촬영종류']]||'');
+  values[PREP_COL['상품']]=String(row[BOOKING_COL['상품']]||'');
+  values[PREP_COL['고객명']]=String(row[BOOKING_COL['고객명']]||'');
+  values[PREP_COL['촬영일시']]=dStr.slice(0,16);
+  values[PREP_COL['답변JSON']]=JSON.stringify(answers).slice(0,45000);
+  values[PREP_COL['요약']]=summary;
+  values[PREP_COL['참고링크']]=links.join('\n');
+  if(prepRow) sh.getRange(prepRow,1,1,PREP_HEADERS.length).setValues([neutralizeRow_(values)]);
+  else sh.appendRow(neutralizeRow_(values));
+
+  // 캘린더 설명에 요약을 실어 촬영 당일 폰에서 바로 보이게 한다
+  try{ appendPrepSummaryToCalendar_(row,summary,links); }
+  catch(e){ Logger.log('prep calendar append failed row '+found.rowIndex+': '+e.message); }
+  return {ok:true,rowIndex:found.rowIndex,saved:true};
+}
+
+/* 캘린더 설명의 [준비설문] 블록만 교체한다 — 사장님이 손으로 쓴 다른 메모를 지우면 안 된다. */
+const PREP_CAL_MARK_='[준비설문]';
+function appendPrepSummaryToCalendar_(row,summary,links){
+  const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+  if(!eventId||!summary) return;
+  // ⚠️ CONFIG.CALENDAR_ID 는 없는 키다 — 상수명은 MAIN_CALENDAR_ID (오타로 조용히 실패했던 자리)
+  const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  if(!cal) return;
+  // 외부 동기화 이벤트는 getEventById 로 안 잡힌다 — 날짜 경유 되찾기까지 쓰는 공용 헬퍼 사용
+  const dayStr=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+  const ev=getCalendarEventByIdOnDate_(cal,eventId,dayStr);
+  if(!ev) return;
+  const block=PREP_CAL_MARK_+' '+summary+((links&&links.length)?('\n[참고링크] '+links.join(' ')):'');
+  const desc=String(ev.getDescription()||'');
+  const idx=desc.indexOf(PREP_CAL_MARK_);
+  let next;
+  if(idx>-1){
+    // 기존 블록의 끝 = 다음 빈 줄 또는 문서 끝
+    const rest=desc.slice(idx);
+    const end=rest.indexOf('\n\n');
+    next=desc.slice(0,idx)+block+(end>-1?rest.slice(end):'');
+  } else {
+    next=desc?(desc.replace(/\s+$/,'')+'\n\n'+block):block;
+  }
+  ev.setDescription(next);
+}
+
 const SELECT_SHEET_NAME='사진셀렉';
 const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -28080,7 +28745,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:1
     Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland<br><br>
     Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>
     Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941<br>
-    Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX
+    ${STUDIO_BANK.bank}<br>IBAN: ${STUDIO_BANK.ibanCompact}<br>BIC: ${STUDIO_BANK.bic}
   </div>
 </div>
 <div class="inv-meta">
@@ -28100,7 +28765,7 @@ ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="
 </div>
 ${vatExempt?`<div class="vat-note-exempt">${escapeHtml_(vatExemptNoteText_(L,'invoice',inv.vatExemptCountry))}</div>`:''}
 ${(inv.showMemo===true&&inv.memo)?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div>${escapeHtml_(inv.memo)}</div></div>`:''}
-<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
+<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>${STUDIO_BANK.bank}<br>IBAN: ${STUDIO_BANK.ibanCompact}<br>BIC: ${STUDIO_BANK.bic}</div></div></div>
 </div></body></html>`;
 }
 
@@ -29547,6 +30212,29 @@ function flagAndCancelOverdueDepositBookings_(){
   });
 }
 
+/* 계약금 계좌 블록. 2026-08-26 점검에서 **예약금 리마인더 메일에 계좌번호가 없던 것**을 발견해 신설.
+   한국어본은 "아래 계좌로 입금을 부탁드립니다" 라고 해놓고 정작 IBAN 대신 스튜디오 이메일 주소를
+   보여줬고, 영어·독일어본엔 계좌 정보가 아예 없었다 — 고객이 입금할 방법이 없는 채로 3일 뒤
+   자동취소가 나갔다(김혜수 2026-08-16 리마인더 → 08-19 자동취소).
+   ⚠️ 같은 계좌 정보가 EMAIL_TEXT 의 confirmed_deposit_note 와 getConfirmCalendarLabels_ 에도 있다.
+   계좌가 바뀌면 **세 곳을 함께** 고쳐야 한다. */
+function _depositBankBlockHtml_(lang){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const t={
+    ko:{title:'💳 계약금 입금 계좌',holder:'예금주',bank:'은행',ref:'송금 사유',refVal:'예약자명 + 촬영일'},
+    en:{title:'💳 Deposit bank details',holder:'Account holder',bank:'Bank',ref:'Reference',refVal:'Your name + shoot date'},
+    de:{title:'💳 Anzahlungskonto',holder:'Kontoinhaber',bank:'Bank',ref:'Verwendungszweck',refVal:'Name + Aufnahmedatum'}
+  }[L];
+  return '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;">'
+    +'<b style="color:#1d4ed8;">'+t.title+'</b><br>'
+    +t.holder+': '+STUDIO_BANK.holder+'<br>'
+    +t.bank+': '+STUDIO_BANK.bank+'<br>'
+    +'IBAN: <b>'+STUDIO_BANK.iban+'</b><br>'
+    +'BIC: <b>'+STUDIO_BANK.bic+'</b><br>'
+    +t.ref+': '+t.refVal
+    +'</div>';
+}
+
 function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(!email || email.indexOf('@')<0 || email.indexOf('수기')>=0) return;
@@ -29571,8 +30259,9 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   <li>💶 예약금: <b>€${depositStr}</b></li>
   <li>⏳ 예약 확정 후 <b>${ageDays}일</b> 경과 — ${remainingDays}일 이내 미입금 시 <b>자동 취소</b>됩니다.</li>
 </ul>
-<p>아래 계좌로 예약금 입금을 부탁드립니다:<br><b>Studio mean</b> · <i>studio.mean.de@gmail.com</i></p>
-<p>이미 입금하신 경우 이 메일은 무시해 주세요.</p>
+<p>아래 계좌로 예약금 입금을 부탁드립니다.</p>
+${_depositBankBlockHtml_('ko')}
+<p>이미 입금하셨거나 현장 결제로 협의하신 경우에는 이 메일을 무시하셔도 됩니다.</p>
 ${_getSignatureHtml()}`,
     en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p>
 <p>This is a reminder that your <b>deposit has not yet been received</b>.</p>
@@ -29582,7 +30271,9 @@ ${_getSignatureHtml()}`,
   <li>💶 Deposit: <b>€${depositStr}</b></li>
   <li>⏳ <b>${ageDays} days</b> since confirmation — the booking will be auto-cancelled if unpaid within ${remainingDays} more day(s).</li>
 </ul>
-<p>Please complete the deposit payment. If already sent, kindly ignore this message.</p>
+<p>Please transfer the deposit to the account below.</p>
+${_depositBankBlockHtml_('en')}
+<p>If you have already paid, or agreed to pay on site, kindly ignore this message.</p>
 ${_getSignatureHtml()}`,
     de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p>
 <p>dies ist eine Erinnerung, dass Ihre <b>Anzahlung noch nicht eingegangen</b> ist.</p>
@@ -29592,7 +30283,9 @@ ${_getSignatureHtml()}`,
   <li>💶 Anzahlung: <b>€${depositStr}</b></li>
   <li>⏳ <b>${ageDays} Tage</b> seit Bestätigung — Bei Nichtzahlung innerhalb weiterer ${remainingDays} Tage erfolgt automatische Stornierung.</li>
 </ul>
-<p>Bitte überweisen Sie die Anzahlung. Falls bereits erfolgt, ignorieren Sie diese Nachricht.</p>
+<p>Bitte überweisen Sie die Anzahlung auf das folgende Konto.</p>
+${_depositBankBlockHtml_('de')}
+<p>Falls die Zahlung bereits erfolgt ist oder Zahlung vor Ort vereinbart wurde, ignorieren Sie diese Nachricht bitte.</p>
 ${_getSignatureHtml()}`
   };
   try{sendTrackedEmail_({to:email,subject:subj[L],htmlBody:body[L]});}
@@ -30501,7 +31194,7 @@ function buildQuoteHtml_(q){
   const customerEmail=q.email?`<div>E-Mail: ${escapeHtml_(q.email)}</div>`:'';
   const customerAddr=q.billingAddress||q.customerAddress?`<div style="white-space:pre-line;">${escapeHtml_(q.billingAddress||q.customerAddress)}</div>`:'';
   const vatLine=(opt.showVatId&&q.vatId)?`<div>USt-IdNr: ${escapeHtml_(q.vatId)}</div>`:'';
-  const bankHtml='Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX';
+  const bankHtml=STUDIO_BANK.bank+'<br>IBAN: '+STUDIO_BANK.ibanCompact+'<br>BIC: '+STUDIO_BANK.bic;
   const showDiscountRow=opt.showDiscount&&totals.discount>0;
   const showDepositRow=opt.showDeposit&&Number(q.depositAmount)>0;
   const logoHtml=getInvoiceLogoHtml_();
@@ -34111,7 +34804,7 @@ ${vatRow}
 <tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
 ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry)):T.bank}</p>
+<p class="bank">${STUDIO_BANK.bank} · IBAN: ${STUDIO_BANK.iban} · BIC: ${STUDIO_BANK.bic}<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry)):T.bank}</p>
 <h2>${T.a5t}</h2><p>${T.a5}</p>
 <h2>${T.a6t}</h2><p>${T.a6}</p>
 <h2>${T.a7t}</h2><p>${T.a7(escapeHtml_(String(c.usageScope||'').trim()||T.usageDefault),escapeHtml_(String(c.retention||'').trim()||T.retentionDefault))}</p>
@@ -34261,7 +34954,7 @@ function buildDrehvertragBodyHtml_(c){
 <tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
 ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${T.bank}</p>
+<p class="bank">${STUDIO_BANK.bank} · IBAN: ${STUDIO_BANK.iban} · BIC: ${STUDIO_BANK.bic}<br>${T.bank}</p>
 <h2>${T.a5t}</h2><p>${T.a5}</p>
 <h2>${T.a6t}</h2><p>${T.a6}</p>
 <h2>${T.a7t}</h2><p>${art7}</p>
