@@ -77,6 +77,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/dress"
+  to = "/dress/index.html"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/"
   [headers.values]
@@ -209,6 +215,18 @@
   for = "/consultation/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/dress/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+# 사진 캐시 — .jpg 는 전역 규칙이 없어 안 넣으면 28장이 매번 재요청된다
+[[headers]]
+  for = "/dress/photos/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
 
 [[headers]]
   for = "/*.png"

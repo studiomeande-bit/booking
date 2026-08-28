@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Studio mean · 웨딩드레스 무료대여</title>
+  <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Cormorant+Garamond:ital,wght@0,500;1,400;1,500&display=swap">
+  <link rel="stylesheet" href="/dress/dress.css?v=15f70d9868">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://studio-mean.com/" target="_blank" rel="noopener">Studio_mean</a>
+    <div class="lang-panel" aria-label="언어 선택">
+      <button type="button" class="lang-btn active" data-lang="ko">한국어</button>
+      <button type="button" class="lang-btn" data-lang="en">EN</button>
+      <button type="button" class="lang-btn" data-lang="de">DE</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- 전 내용은 dress.js 가 copy-3lang 데이터에서 렌더한다.
+         손으로 문자열을 나열하면 언어 전환에서 한 줄씩 빠진다(HANDOFF §3-5) -->
+    <header class="page-head" id="pageHead"></header>
+    <nav class="index" id="indexStrip" aria-label="드레스 목록"></nav>
+    <div id="records"></div>
+    <section class="props" id="propsSec"></section>
+    <section class="practical" id="guideSec"></section>
+  </main>
+
+  <footer class="foot" id="siteFoot">
+    <span>Studio mean · Holzweg-Passage 3, 61440 Oberursel</span>
+    <a href="mailto:studio.mean.de@gmail.com">studio.mean.de@gmail.com</a>
+    <p class="foot-note" id="footNote"></p>
+  </footer>
+
+  <div class="lb" id="lightbox" aria-modal="true" role="dialog">
+    <button type="button" id="lbClose" aria-label="닫기">×</button>
+    <img id="lbImg" alt="">
+  </div>
+
+  <script src="/site-analytics.js?v=91301f4520"></script>
+  <script src="/dress/dress.js?v=4f554d2342"></script>
+</body>
+</html>
