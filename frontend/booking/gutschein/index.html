@@ -9,14 +9,14 @@
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
   <base href="/gutschein/">
-  <link rel="preload" href="./gutschein.min.css?v=bc448f3f86" as="style">
+  <link rel="preload" href="./gutschein.min.css?v=d2d7e96d22" as="style">
   <link rel="icon" href="../studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean mobiles Gutschein-Ticket">
   <meta property="og:title" content="Studio mean Mobiles Gutschein-Ticket">
   <meta property="og:description" content="Mobiles Gutschein-Ticket von Studio mean öffnen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./gutschein.min.css?v=bc448f3f86">
+  <link rel="stylesheet" href="./gutschein.min.css?v=d2d7e96d22">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -89,10 +89,33 @@
         </div>
       </section>
     </section>
+
+    <!-- 스튜디오 전용 — 키가 이 기기에 저장돼 있을 때만 JS 가 연다. 고객에겐 안 보인다 -->
+    <section id="studioSetup" class="panel studio-panel hidden">
+      <div class="panel-title">스튜디오 키 등록</div>
+      <p class="panel-copy">이 기기를 스튜디오 기기로 등록합니다. 어드민 → 설정의 자동화 API 키를 붙여넣으세요.</p>
+      <input id="studioKeyInput" class="studio-input" type="password" autocomplete="off" placeholder="자동화 API 키">
+      <button id="studioKeySave" type="button" class="studio-btn">이 기기에 저장</button>
+    </section>
+
+    <section id="studioPanel" class="panel studio-panel hidden">
+      <div class="panel-title">예약에 적용 <span class="studio-tag">스튜디오 전용</span></div>
+      <div class="studio-row">
+        <input id="studioSearchInput" class="studio-input" type="search" autocomplete="off" placeholder="고객명 검색">
+        <button id="studioSearchBtn" type="button" class="studio-btn">검색</button>
+      </div>
+      <div id="studioResults" class="studio-results"></div>
+      <div id="studioPreview" class="studio-preview hidden">
+        <p id="studioPreviewBody" class="panel-copy"></p>
+        <button id="studioApplyBtn" type="button" class="studio-btn studio-btn-primary">이 예약에 적용</button>
+      </div>
+      <p id="studioMsg" class="studio-msg" aria-live="polite"></p>
+      <button id="studioKeyClear" type="button" class="studio-clear">이 기기에서 키 삭제</button>
+    </section>
   </main>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script type="module" src="./gutschein.min.js?v=89b92f248c"></script>
+  <script type="module" src="./gutschein.min.js?v=cd96c10efa"></script>
 </body>
 </html>

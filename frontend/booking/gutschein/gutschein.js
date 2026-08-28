@@ -1,4 +1,5 @@
 import { fetchGutscheinTicket } from '../../shared/api-booking.js';
+import { CONFIG } from '../../shared/config.js';
 import { escapeHtml } from '../../shared/utils.js';
 
 const COPY = {
@@ -202,6 +203,150 @@ function bindUi() {
   els.copyCodeBtn.addEventListener('click', copyCode);
 }
 
+/* ===== 스튜디오 전용: QR 스캔 → 그 자리에서 예약에 적용 =====
+   고객 페이지에 사장님용 버튼을 얹는 구조라 노출 규칙이 전부다:
+   - 자동화 키가 이 브라우저 localStorage 에 있을 때만 패널이 보인다(고객 폰에는 절대 안 뜸).
+   - 키 등록은 ?studio=1 로 진입했을 때만 입력폼 노출. 키는 파일·코드에 안 박고 이 기기에만 저장
+     (오늘촬영 보드와 같은 모델). 유출 의심 시 어드민에서 키 재발급하면 즉시 무효.
+   - 서버 권한은 erp-agent 가 그대로 검증한다 — 이 UI 는 편의 껍데기일 뿐 새 권한이 아니다. */
+const STUDIO_KEY = 'sm_studio_key';
+
+function getStudioKey() {
+  try { return String(globalThis.localStorage?.getItem(STUDIO_KEY) || '').trim(); } catch { return ''; }
+}
+
+async function agentCall(action, extra) {
+  const key = getStudioKey();
+  const res = await fetch(`${CONFIG.apiBaseUrl}?api=erp-agent&_ts=${Date.now()}`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ data: { ...extra, apiKey: key, agentAction: action } })
+  });
+  const payload = await res.json();
+  if (!payload.ok) throw new Error(payload.error?.message || '처리에 실패했습니다.');
+  return payload.data || {};
+}
+
+const studio = { booking: null, preview: null };
+
+function studioMsg(text, isError) {
+  els.studioMsg.textContent = text || '';
+  els.studioMsg.classList.toggle('is-error', !!isError);
+}
+
+function renderStudioResults(list) {
+  els.studioResults.innerHTML = '';
+  if (!list.length) { studioMsg('검색 결과가 없습니다. 이름 일부로 다시 검색해 보세요.', true); return; }
+  list.forEach((b) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'studio-result';
+    btn.innerHTML = `<b>${escapeHtml(b.name || '')}</b> · ${escapeHtml(String(b.dateTime || '').slice(0, 16))}<br>` +
+      `<span>${escapeHtml(String(b.product || ''))} · 총 ${formatMoney(b.total)} · 행 ${b.rowIndex}</span>`;
+    btn.addEventListener('click', () => pickBooking(b));
+    els.studioResults.appendChild(btn);
+  });
+}
+
+async function studioSearch() {
+  const kw = String(els.studioSearchInput.value || '').trim();
+  if (kw.length < 2) { studioMsg('고객명을 두 글자 이상 입력해 주세요.', true); return; }
+  studioMsg('예약을 찾는 중…');
+  els.studioPreview.classList.add('hidden');
+  studio.booking = null;
+  try {
+    const r = await agentCall('booking-search', { query: { keyword: kw, limit: 5 } });
+    renderStudioResults((r.bookings || []).filter((b) => !/취소/.test(String(b.status || ''))));
+    if ((r.bookings || []).length) studioMsg('적용할 예약을 선택하세요.');
+  } catch (e) { studioMsg(e.message, true); }
+}
+
+async function pickBooking(b) {
+  studio.booking = b;
+  studioMsg(`${b.name}님 예약에 적용 금액을 계산 중…`);
+  try {
+    const r = await agentCall('gutschein-apply-preview', { bookingRowIndex: b.rowIndex, code: state.ticket.code });
+    const c = r.calculations || r;
+    studio.preview = c;
+    els.studioPreviewBody.innerHTML =
+      `<b>${escapeHtml(b.name)}</b>님 · ${escapeHtml(String(b.product || ''))}<br>` +
+      `차감 <b>${formatMoney(c.discountAmount)}</b> → 총액 ${formatMoney(c.adjustedTotal)}` +
+      (Number(c.adjustedDeposit) ? ` · 계약금 ${formatMoney(c.adjustedDeposit)}` : '') +
+      ` · 잔금 ${formatMoney(c.remainingBalanceAfterDeposit ?? c.finalBalance)}`;
+    els.studioPreview.classList.remove('hidden');
+    studioMsg('내용 확인 후 적용을 눌러 주세요.');
+  } catch (e) { studioMsg(e.message, true); }
+}
+
+async function studioApply() {
+  if (!studio.booking) return;
+  els.studioApplyBtn.disabled = true;
+  studioMsg('적용 중…');
+  try {
+    const r = await agentCall('gutschein-apply', {
+      bookingRowIndex: studio.booking.rowIndex,
+      code: state.ticket.code,
+      expectName: studio.booking.name
+    });
+    let done = `✅ 적용 완료 — 차감 ${formatMoney(r.discountAmount)}, 적용 후 총액 ${formatMoney(r.adjustedTotal)}.`;
+    if (r.residualCode) done += ` 잔액 ${formatMoney(r.residualAmount)}은 새 코드 ${r.residualCode} 로 이월되었습니다.`;
+    studioMsg(done);
+    els.studioPreview.classList.add('hidden');
+    els.studioResults.innerHTML = '';
+    await loadTicket();          // 상태 배지가 '사용됨'으로 바뀐다
+    els.studioPanel.classList.remove('hidden');
+  } catch (e) {
+    studioMsg(e.message, true);
+    els.studioApplyBtn.disabled = false;
+  }
+}
+
+function saveStudioKey() {
+  const v = String(els.studioKeyInput.value || '').trim();
+  if (v.length < 10) { studioMsg('키가 너무 짧습니다.', true); return; }
+  try { globalThis.localStorage.setItem(STUDIO_KEY, v); } catch {}
+  els.studioSetup.classList.add('hidden');
+  renderStudioPanel();
+}
+
+function clearStudioKey() {
+  try { globalThis.localStorage.removeItem(STUDIO_KEY); } catch {}
+  els.studioPanel.classList.add('hidden');
+}
+
+function renderStudioPanel() {
+  const params = new URLSearchParams(globalThis.location.search);
+  const wantSetup = params.get('studio') === '1';
+  const hasKey = !!getStudioKey();
+  if (wantSetup && !hasKey) { els.studioSetup.classList.remove('hidden'); return; }
+  if (!hasKey) return;                                   // 고객 화면 — 아무것도 안 보임
+  if (!state.ticket || state.ticket.displayState !== 'active') return;   // 사용가능일 때만
+  els.studioPanel.classList.remove('hidden');
+}
+
+function bindStudioUi() {
+  els.studioPanel = document.querySelector('#studioPanel');
+  els.studioSetup = document.querySelector('#studioSetup');
+  els.studioKeyInput = document.querySelector('#studioKeyInput');
+  els.studioKeySave = document.querySelector('#studioKeySave');
+  els.studioSearchInput = document.querySelector('#studioSearchInput');
+  els.studioSearchBtn = document.querySelector('#studioSearchBtn');
+  els.studioResults = document.querySelector('#studioResults');
+  els.studioPreview = document.querySelector('#studioPreview');
+  els.studioPreviewBody = document.querySelector('#studioPreviewBody');
+  els.studioApplyBtn = document.querySelector('#studioApplyBtn');
+  els.studioMsg = document.querySelector('#studioMsg');
+  els.studioKeyClear = document.querySelector('#studioKeyClear');
+  if (!els.studioPanel) return;
+  els.studioKeySave.addEventListener('click', saveStudioKey);
+  els.studioSearchBtn.addEventListener('click', studioSearch);
+  els.studioSearchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') studioSearch(); });
+  els.studioApplyBtn.addEventListener('click', studioApply);
+  els.studioKeyClear.addEventListener('click', clearStudioKey);
+}
+
 bindUi();
+bindStudioUi();
 renderStaticCopy();
-loadTicket();
+loadTicket().then(renderStudioPanel);
