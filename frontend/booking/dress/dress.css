@@ -55,7 +55,7 @@ h1{font-weight:300;letter-spacing:-.022em;font-size:clamp(1.8rem,4.2vw,2.7rem);
 .index{display:grid;grid-template-columns:repeat(6,1fr);gap:clamp(8px,1.4vw,18px);
   padding:clamp(24px,4vw,42px) 0 clamp(10px,2vw,20px)}
 .index a{text-decoration:none;display:block}
-.index img{width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--paper);
+.index img{width:100%;height:auto;aspect-ratio:2/3;object-fit:cover;background:var(--paper);
   border:1px solid var(--line-soft);filter:saturate(.96);transition:opacity .25s}
 .index a:hover img,.index a:focus-visible img{opacity:.72}
 .index span{display:block;font-family:var(--dp);font-size:.92rem;color:var(--ink-soft);margin-top:.5em;letter-spacing:.04em}
@@ -79,7 +79,7 @@ h1{font-weight:300;letter-spacing:-.022em;font-size:clamp(1.8rem,4.2vw,2.7rem);
 .plate{margin:0;position:relative}
 .plate button{padding:0;border:1px solid var(--line-soft);background:var(--paper);
   width:100%;display:block;cursor:zoom-in;font:inherit}
-.plate img{width:100%;aspect-ratio:2/3;object-fit:cover}
+.plate img{width:100%;height:auto;aspect-ratio:2/3;object-fit:cover}
 .plate figcaption{font-size:.6rem;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-top:.6em}
 .plate button:hover img{opacity:.9}
 
