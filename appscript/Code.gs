@@ -2267,11 +2267,14 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-set-extra-days') return jsonOk_(setBookingExtraDaysForAgent_(token,payload||{}));
         // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
         if(action==='booking-confirm-deposit'){
-          // ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 함수 내부에서 무조건 나간다(payload 억제 불가, 이미 입금완료면 스킵).
+          /* ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 나간다. `notify:false` 로 억제 가능
+             (촬영 후 현장수령분 사후 기록 등). `payMethod` 로 실제 수단(현금·카드·계좌이체)을 남겨야
+             현금 수납이 현금장부에 잡힌다 — 생략하면 현장결제 건은 종전대로 현금장부 미포함. */
           const bdIdx=parseInt(payload.rowIndex,10);
           if(!bdIdx||bdIdx<2||bdIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
           assertBookingRowName_(bdIdx,payload.expectName);
-          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount,{paidDate:payload.paidDate}));
+          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount,
+            {paidDate:payload.paidDate,payMethod:payload.payMethod,notify:payload.notify,skipMail:payload.skipMail}));
         }
         if(action==='booking-cancel'){
           // ⚠️외부발송: 취소 안내 메일 + 해당 날짜 대기자 알림 메일 자동. 캘린더 삭제·환불 이벤트 기록, issueInvoice 참이면 취소/환불 인보이스(연번 소모).
@@ -16860,6 +16863,20 @@ function confirmBookingBalanceAdmin(token,rIdx,payload){
   return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod};
 }
 
+/* 현장수령 계약금은 '현금이냐 카드냐'가 장부를 가른다 — 계약금수단 열의 문자열이 곧 분류 기준이고
+   (isCashPayMethod_ → 현금장부, _dayCloseBucket_ → 일마감 버킷), 그동안 입금확인 시 '현장결제' 한
+   덩어리로 굳어져 **현금 수납이 현금장부에 영영 안 잡혔다**(2026-08-29 김혜수 €50, 실물 금고 불일치).
+   isCashPayMethod_ 정규식에 '현장결제'를 더하는 건 오답이다 — 카드 현장결제까지 현금으로 새서
+   현금장부 과대 + SumUp 이중계상이 된다. 수단 자체를 기록하는 것만이 정답. */
+function normalizeDepositPayMethod_(value){
+  const raw=String(value||'').trim();
+  if(!raw) return '';
+  if(/현금|cash|bar/i.test(raw)) return '현금';
+  if(/카드|card|sumup|karte|kredit/i.test(raw)) return '카드';
+  if(/계좌|이체|überweisung|ueberweisung|transfer|bank|iban/i.test(raw)) return '계좌이체';
+  throw new Error('payMethod 는 현금·카드·계좌이체 중 하나여야 합니다: '+raw);
+}
+
 function confirmBookingDepositAdmin(token,rIdx,amount,options){
   assertAdmin_(token);
   const opts=options||{};
@@ -16871,6 +16888,8 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
   const alreadyPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
   const paidAmount=parseMoneyValue_(amount)||deposit;
   const currentDepositMethod=String(row[BOOKING_COL['계약금수단']]||'').trim();
+  const isOnsiteException=currentDepositMethod===DEPOSIT_ONSITE_EXCEPTION_MARKER;
+  const payMethod=normalizeDepositPayMethod_(opts.payMethod);
   const now=new Date();
   /* 입금일은 **실제 입금일**을 쓸 수 있어야 한다 — 은행 CSV 를 나중에 대조하면 확인 시점과
      실제 입금일이 며칠 어긋나고, 분기 귀속이 흔들린다(2026-08-06 실측: 7/28·7/30 입금을
@@ -16887,8 +16906,14 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
   if(BOOKING_COL['계약금']!=null && /입금전/.test(String(row[BOOKING_COL['계약금']]||''))){
     sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(paidAmount);
   }
-  if(BOOKING_COL['계약금수단']!=null && currentDepositMethod===DEPOSIT_ONSITE_EXCEPTION_MARKER){
-    sh.getRange(rIdx,BOOKING_COL['계약금수단']+1).setValue('현장결제');
+  /* 계약금수단에 **실제 수단**을 굳힌다. 현장결제 건은 '현장결제(현금)'처럼 현장 수령 사실도 함께
+     보존한다 — 괄호 안 수단만으로 현금장부/카드 버킷이 정확히 갈린다. payMethod 미지정이면 종전과
+     동일하게 '현장결제'(현금장부 미포함) — 하위호환. */
+  const savedDepositMethod=isOnsiteException
+    ? (payMethod?'현장결제('+payMethod+')':'현장결제')
+    : payMethod;
+  if(BOOKING_COL['계약금수단']!=null && savedDepositMethod){
+    sh.getRange(rIdx,BOOKING_COL['계약금수단']+1).setValue(savedDepositMethod);
   }
   if(BOOKING_COL['입금경고일시']!=null) sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
   if(BOOKING_COL['Lexware결제상태']!=null){
@@ -16899,10 +16924,16 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
     sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   }
   const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  /* 촬영이 끝난 뒤 현장수령분을 장부에만 사후 기록하는 경우가 있다 — 그때 '예약금 입금 확인' 안내가
+     한밤중에 고객에게 나가면 안 된다. 사전 입금 확인(기본값)은 종전대로 발송. */
+  const suppressMail=opts.notify===false||opts.notify==='false'||agentBoolFlag_(opts.skipMail);
   const mailResult=alreadyPaid
     ? {requested:false,sent:false,skippedReason:'ALREADY_CONFIRMED'}
-    : sendDepositConfirmationEmail_(rIdx,rowAfter,paidAmount,paidAt);
-  return{ok:true,paidAmount:paidAmount,paidAt:paidAt,mailResult:mailResult};
+    : suppressMail
+      ? {requested:false,sent:false,skippedReason:'SUPPRESSED_BY_CALLER'}
+      : sendDepositConfirmationEmail_(rIdx,rowAfter,paidAmount,paidAt);
+  return{ok:true,paidAmount:paidAmount,paidAt:paidAt,
+    depositMethod:savedDepositMethod||currentDepositMethod,mailResult:mailResult};
 }
 
 function markBookingDepositOnsiteExceptionAdmin(token,rIdx,note){
