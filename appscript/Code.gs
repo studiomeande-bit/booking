@@ -4142,6 +4142,17 @@ function getOperationsChecklistAdmin(token, payload){
     };
   });
 
+  runCheck('flow-gaps','흐름 자가진단(확인메일·보정SLA)','select',function(){
+    const g=buildOpsFlowGaps_();
+    const n=g.receiptGaps.length+g.retouchOverdue.length;
+    return {
+      status:g.receiptGaps.length?'fail':(g.retouchOverdue.length?'warn':'ok'),
+      detail:n?('접수확인 미발송 의심 '+g.receiptGaps.length+'건 · 보정 21일 지연 '+g.retouchOverdue.length+'건')
+             :'셀렉 제출↔확인메일 대조 정상 · 보정 지연 없음',
+      extra:g
+    };
+  });
+
   runCheck('select','셀렉/보정 재수정','select',function(){
     const sh=ensureSelectSheet_(sheets.ss);
     const last=sh.getLastRow();
@@ -13237,7 +13248,7 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
       en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${amountLine}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
       de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${amountLine}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
     };
-    sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+    sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.ko,htmlBody:bodies[lang]||bodies.ko});
     return;
   }
   const subjects={
@@ -13250,7 +13261,7 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
     en:`Hello ${name},<br><br>Unfortunately we could not approve your reschedule request this time.<br><br>📅 Current booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Your booking will remain on the current schedule. If you would like to discuss other options, please reply to this email or contact studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`,
     de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung konnte diesmal leider nicht bestätigt werden.<br><br>📅 Aktueller Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Ihre Buchung bleibt beim aktuellen Termin. Wenn Sie andere Optionen besprechen möchten, antworten Sie bitte auf diese E-Mail oder schreiben Sie an studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`
   };
-  sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+  sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.ko,htmlBody:bodies[lang]||bodies.ko});
 }
 
 function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo,allowConflict){
@@ -16674,7 +16685,10 @@ function _buildDailyBriefingData_(){
   try{ inquiries=buildUnifiedInquiries_({}); }
   catch(e){ Logger.log('briefing inquiries skipped: '+e.message); _briefFail_(sectionFailures,'문의·상담',e); }
 
-  return {ok:true,date:today,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
+  let flowGaps={receiptGaps:[],retouchOverdue:[]};
+  try{ flowGaps=buildOpsFlowGaps_(); }
+  catch(e){ Logger.log('briefing flowGaps skipped: '+e.message); _briefFail_(sectionFailures,'흐름진단',e); }
+  return {ok:true,date:today,flowGaps:flowGaps,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -16796,6 +16810,18 @@ function buildDailyBriefingEmailHtml_(b){
     });
     actions.push(line(`&nbsp;&nbsp;· <a href="${SELECT_HANDOVER_PAGE_BASE}" style="color:#2563eb;">수령 확인 페이지 열기</a>`
       +`${b.handoverPending.count>(b.handoverPending.items||[]).length?(' · 외 '+(b.handoverPending.count-(b.handoverPending.items||[]).length)+'건'):''}`));
+  }
+  if(b.flowGaps&&b.flowGaps.receiptGaps&&b.flowGaps.receiptGaps.length){
+    actions.push(line(`🚨 <b style="color:#b91c1c;">셀렉 접수확인 메일 미발송 의심 ${b.flowGaps.receiptGaps.length}건</b> — 고객이 제출했는데 확인 메일 발송 기록이 없습니다`));
+    b.flowGaps.receiptGaps.forEach(function(g){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(g.name)}</b>님 · 제출 ${esc(String(g.submittedAt).slice(5))} (셀렉행 ${g.rowIndex})`));
+    });
+  }
+  if(b.flowGaps&&b.flowGaps.retouchOverdue&&b.flowGaps.retouchOverdue.length){
+    actions.push(line(`⏰ 보정 지연 <b>${b.flowGaps.retouchOverdue.length}건</b> — 제출 후 21일 경과(고객 안내 "2~3주" 초과), 아직 작업대기`));
+    b.flowGaps.retouchOverdue.forEach(function(g){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(g.name)}</b>님 · 제출 ${esc(String(g.submittedAt).slice(5))} — <b style="color:#b91c1c;">${g.days}일째</b>`));
+    });
   }
   if(b.selectNotSent&&b.selectNotSent.count>0){
     actions.push(line(`📷 셀렉 미발송 <b>${b.selectNotSent.count}건</b> — 촬영이 끝났는데 셀렉 링크가 안 나갔습니다`));
@@ -16950,6 +16976,52 @@ function briefingActionCount_(b){
     +((b.sectionFailures&&b.sectionFailures.length)||0);
 }
 
+/* ===== 운영 흐름 자가진단 (2026-08-31) =====
+   셀렉 접수확인 메일이 3주간 조용히 죽어 있던 사고에서 출발 — 코드가 "보냈다고 믿는" 것과
+   "실제 발송 로그"를 대조한다. 개별 메일 함수를 고칠 때마다 여기가 안전망이 된다.
+   ① receiptGaps: 최근 7일 셀렉 제출 건 중, 메일로그에 접수/수정 확인 '성공' 기록이 없는 것
+   ② retouchOverdue: 작업대기 상태로 제출 21일 경과 (고객 약속 "보정 2~3주" 초과) */
+function buildOpsFlowGaps_(){
+  const out={receiptGaps:[],retouchOverdue:[]};
+  const tz=CONFIG.TIMEZONE, now=new Date();
+  const today=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const d7=Utilities.formatDate(new Date(now.getTime()-7*86400000),tz,'yyyy-MM-dd');
+  const d21=Utilities.formatDate(new Date(now.getTime()-21*86400000),tz,'yyyy-MM-dd');
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rows=selSh.getLastRow()>1?selSh.getDataRange().getValues().slice(1):[];
+  const logSh=sheets.messageLogSheet;
+  const lLast=logSh.getLastRow();
+  const lN=Math.min(900,Math.max(0,lLast-1));
+  const logs=lN?logSh.getRange(lLast-lN+1,1,lN,MESSAGE_LOG_HEADERS.length).getValues():[];
+  const okMail=logs.filter(function(r){return String(r[MESSAGE_LOG_COL['상태']]||'')==='성공';});
+  rows.forEach(function(r,i){
+    const name=String(r[SELECT_COL['고객명']]||'').trim();
+    const email=String(r[SELECT_COL['이메일']]||'').trim();
+    const status=String(r[SELECT_COL['상태']]||'').trim();
+    const sub=String(parseDateSafe_(r[SELECT_COL['제출일시']]).str||'');
+    if(!sub) return;
+    // ① 접수확인 대조 — 이메일이 있는 고객만(무이메일·수기는 안 가는 게 정상)
+    if(sub.slice(0,10)>=d7 && email.indexOf('@')>0 && email.indexOf('수기')<0){
+      const hasReceipt=okMail.some(function(m){
+        const t=String(m[MESSAGE_LOG_COL['제목']]||'');
+        return (t.indexOf('셀렉 접수 완료')>-1||t.indexOf('셀렉 수정 접수')>-1
+                ||t.indexOf('Selection Received')>-1||t.indexOf('Selection Updated')>-1
+                ||t.indexOf('Fotoauswahl erhalten')>-1||t.indexOf('Fotoauswahl aktualisiert')>-1)
+          && name && t.indexOf(name)>-1
+          && String(m[MESSAGE_LOG_COL['일시']]||'')>=sub.slice(0,16);
+      });
+      if(!hasReceipt) out.receiptGaps.push({rowIndex:i+2,name:name,submittedAt:sub.slice(0,16)});
+    }
+    // ② 보정 SLA — 작업대기인데 제출 21일 경과
+    if(status==='작업대기' && sub.slice(0,10)<=d21){
+      out.retouchOverdue.push({rowIndex:i+2,name:name,submittedAt:sub.slice(0,10),
+        days:Math.abs(daysBetweenDates_(today,sub.slice(0,10)))});
+    }
+  });
+  return out;
+}
+
 function sendDailyBriefingEmail_(){
   const b=_buildDailyBriefingData_();
   const html=buildDailyBriefingEmailHtml_(b);
@@ -17051,7 +17123,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
   const balanceText=balance>0?formatEuroAmount_(balance)+'€':'';
   const paidAtText=String(paidAt||'').trim();
   const subject={
-    ko:`[Studio mean] 예약금 입금 확인 안내 — ${name}님`,
+    ko:`[Studio mean] 계약금 입금 확인 안내 — ${name}님`,
     en:`[Studio mean] Deposit received — ${name}`,
     de:`[Studio mean] Anzahlung erhalten — ${name}`
   };
@@ -17059,7 +17131,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
     ko:[
       ['상품',product],
       ['촬영일시',shootAt],
-      ['확인된 예약금',paidText],
+      ['확인된 계약금',paidText],
       ['확인일',paidAtText],
       balanceText?['잔금',balanceText]:null
     ],
@@ -17082,7 +17154,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
     return `<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:140px;border-bottom:1px solid #e2e8f0;font-size:12px;">${escapeHtml_(pair[0])}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${escapeHtml_(pair[1])}</td></tr>`;
   }).join('');
   const intro={
-    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p><p>보내주신 예약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
+    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p><p>보내주신 계약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
     en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p><p>We have received your deposit. Your booking remains confirmed.</p>`,
     de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p><p>Ihre Anzahlung ist eingegangen. Ihre Buchung bleibt bestätigt.</p>`
   };
@@ -17384,10 +17456,10 @@ function cleanStaleBookingDepositMemo_(memo, options){
   options=options||{};
   let cleaned=raw;
   if(options.cleanAutoCancel){
-    cleaned=cleaned.replace(/\s*\[자동취소\]\s*예약\s*(?:확정\s*후|일로부터)?\s*10일\s*내\s*예약금\s*미확인\s*/g,' ');
+    cleaned=cleaned.replace(/\s*\[자동취소\]\s*예약\s*(?:확정\s*후|일로부터)?\s*10일\s*내\s*(?:계약금|예약금)\s*미확인\s*/g,' ');
   }
   if(options.cleanWarning){
-    cleaned=cleaned.replace(/\s*\[입금경고\]\s*예약\s*(?:확정\s*후|일로부터)?\s*(?:5|7)일\s*내\s*예약금\s*미확인\s*/g,' ');
+    cleaned=cleaned.replace(/\s*\[입금경고\]\s*예약\s*(?:확정\s*후|일로부터)?\s*(?:5|7)일\s*내\s*(?:계약금|예약금)\s*미확인\s*/g,' ');
   }
   if(options.cleanPaidConfirm){
     cleaned=cleaned.replace(/\s*(?:계약금|예약금)\s*입금\s*확인됨\s*/g,' ');
@@ -17863,8 +17935,8 @@ function sendPostponedRescheduleLinkAdmin(token,bookingRowIndex,memo){
   };
   sendTrackedEmail_({
     to:email,
-    subject:subjects[lang]||subjects.de,
-    htmlBody:bodies[lang]||bodies.de
+    subject:subjects[lang]||subjects.ko,
+    htmlBody:bodies[lang]||bodies.ko
   },{type:'재예약링크',customerName:name,email,ref:rowRef,meta:{bookingRowIndex}});
   const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
@@ -23627,7 +23699,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const bonusCount=normalizeSelectMarketingBonusCount_(marketingBonusCount,data.itemGroup,data.product,data.payMethod);
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
-  const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — Dear ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
+  const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
   if(data.isReshoot){subj.ko='[재촬영본 추가] '+subj.ko;subj.en='[Re-shoot added] '+subj.en;subj.de='[Neue Aufnahmen] '+subj.de;}
   else if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
   // 재촬영 안내가 일반 재발송 문구보다 우선 — "빠른 제출" 대신 "재촬영본이 합쳐졌으니 함께 골라주세요"
@@ -29927,18 +29999,21 @@ function sendInvoiceEmailInternal_(inv, subject, body, mailLang){
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const rowIndex=idx+2;
   const currentRow=rows[idx+1]||[];
-  const effectiveLang='de';
+  /* 메일 문구는 mailLang(미지정 시 de)으로, 어드민이 넘긴 subject/body 는 그대로 존중한다 —
+     종전엔 'de' 하드코딩 + 인자 무시로 ko/en 문구가 도달 불가였다(2026-08-31 전수 점검 개선 2).
+     PDF 는 세무문서(Rechnung) 일관성을 위해 계속 de 로 생성한다. */
+  const effectiveLang=['ko','en','de'].indexOf(String(mailLang||'').trim())>-1?String(mailLang).trim():'de';
   const invoiceForOutput=Object.assign({}, inv, {
     name:normalizeInvoiceCustomerName_(inv.name||''),
     total:getInvoiceGrossTotalForOutput_(inv),
     lang:effectiveLang
   });
   const defaults=buildInvoiceEmailDefaults_(invoiceForOutput, effectiveLang);
-  const finalSubject=String(defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
-  const finalBody=String(defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const finalSubject=String(subject||defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const finalBody=String(body||defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
   let pdf;
   try{
-    pdf=createInvoicePdf_(invoiceForOutput, effectiveLang);
+    pdf=createInvoicePdf_(invoiceForOutput, 'de');
   }catch(pdfErr){
     throw new Error('PDF 생성 오류: '+String(pdfErr&&pdfErr.message||pdfErr));
   }
@@ -31390,13 +31465,13 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   const depositStr=(Math.round(deposit*100)/100).toFixed(2);
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const subj={
-    ko:`[Studio mean] 예약금 입금 리마인더 — ${name}님`,
+    ko:`[Studio mean] 계약금 입금 리마인더 — ${name}님`,
     en:`[Studio mean] Deposit payment reminder — ${name}`,
     de:`[Studio mean] Erinnerung Anzahlung — ${name}`
   };
   const body={
     ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p>
-<p>현재 예약건의 <b>예약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
+<p>현재 예약건의 <b>계약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
 <ul>
   <li>📷 상품: ${escapeHtml_(product)}</li>
   <li>📅 촬영일시: ${escapeHtml_(shootAt)}</li>
@@ -31442,7 +31517,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['상태']+1).setValue('취소됨');
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['자동취소일시']+1).setValue(nowStr);
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
-  const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
+  const cancelMemo='[자동취소] 예약 확정 후 10일 내 계약금 미확인';
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
   if(eventId&&deleteBookingCalendarEventById_(eventId)){ // 실패 시 ID 보존 → 정합 점검이 재시도
@@ -31455,13 +31530,26 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(email && email.includes('@') && !email.includes('수기')){
     try{
-      sendTrackedEmail_({
-        to:email,
-        subject:'[Studio mean] 예약이 자동 취소되었습니다',
-        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약 확정 후 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
-      });
+      // 유일하게 한국어 단일이던 고객 메일 — en/de 고객이 취소를 못 알아듣는 문제(2026-08-31 전수 점검)
+      const acLang=String(row[BOOKING_COL['언어']]||'ko').trim()||'ko';
+      const acName=escapeHtml_(String(row[BOOKING_COL['고객명']]||''));
+      const acSubj={ko:'[Studio mean] 예약이 자동 취소되었습니다',
+        en:'[Studio mean] Your booking has been cancelled automatically',
+        de:'[Studio mean] Ihre Buchung wurde automatisch storniert'};
+      const acBody={
+        ko:`안녕하세요 ${acName}님,<br><br>예약 확정 후 10일 이내 계약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`,
+        en:`Hello ${acName},<br><br>We did not receive your deposit within 10 days of confirmation, so your booking has been cancelled automatically.<br>If you would still like a session, please make a new booking — we would be happy to see you.<br><br>${_getSignatureHtml()}`,
+        de:`Guten Tag ${acName},<br><br>da die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingegangen ist, wurde Ihre Buchung automatisch storniert.<br>Wenn Sie weiterhin einen Termin wünschen, buchen Sie gern neu — wir freuen uns auf Sie.<br><br>${_getSignatureHtml()}`};
+      sendTrackedEmail_({to:email,subject:acSubj[acLang]||acSubj.ko,htmlBody:acBody[acLang]||acBody.ko});
     }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
   }
+  /* 슬롯이 실제로 풀리는 취소인데 대기자 알림만 빠져 있던 경로(전수 점검 개선 7) —
+     수동 취소 2경로와 동일하게 같은 날짜·상품군 대기자에게 알린다. */
+  try{
+    const acDate=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    const acGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(acDate) notifyWaitlistForDate_(acDate,acGroup);
+  }catch(e){Logger.log('autoCancel waitlist notify: '+e.message);}
 }
 
 function debugListAutoCancelledBookings_(){ // 🔒 _접미사: 익명 google.script.run 노출 차단
@@ -31567,7 +31655,7 @@ function sendBookingReminders_(){
       en:{subject:`[Studio mean] A reminder for tomorrow's session — ${name}`,body:`Hello ${name},<br><br>This is a friendly reminder that your session at Studio mean is scheduled for tomorrow.<br><br>📅 <b>Date & Time</b> ${dateStr}<br>🛍 <b>Service</b> ${product}<br><br>${directionHtml}${arrivalLine.en}<br><br>If anything changes or you have a question before tomorrow, simply reply to this email or contact us at ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.en}<br><br>${_getSignatureHtml()}`},
       de:{subject:`[Studio mean] Erinnerung an Ihren Termin morgen — ${name}`,body:`Guten Tag, ${name},<br><br>wir möchten Sie freundlich an Ihren morgigen Fototermin bei Studio mean erinnern.<br><br>📅 <b>Datum & Uhrzeit</b> ${dateStr}<br>🛍 <b>Leistung</b> ${product}<br><br>${directionHtml}${arrivalLine.de}<br><br>Falls sich kurzfristig etwas ändert oder Sie noch eine Frage haben, antworten Sie gern direkt auf diese E-Mail oder erreichen uns unter ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.de}<br><br>${_getSignatureHtml()}`}
     };
-    const msg=T[lang]||T.de;
+    const msg=T[lang]||T.ko;
     try{
       sendTrackedEmail_({to:email,subject:msg.subject,htmlBody:msg.body});
       props.setProperty(remKey,Utilities.formatDate(new Date(),tz,'yyyy-MM-dd'));
