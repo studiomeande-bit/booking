@@ -2395,6 +2395,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
         if(action==='insta-publisher-status') return jsonOk_(instaPublisherStatusForAgent_(token));
         if(action==='insta-publisher-install') return jsonOk_(instaPublisherInstallForAgent_(token));
+        if(action==='insta-publisher-dryrun') return jsonOk_(instaPublisherDryRunForAgent_(token));
         if(action==='insta-publisher-set-secrets') return jsonOk_(instaPublisherSetSecretsForAgent_(token,payload.data||payload||{}));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action+' — 사용 가능한 액션 목록은 actions-list 액션으로 확인하세요');
       }finally{
@@ -2547,6 +2548,16 @@ function normalizeEmailAddress_(email){
   const value=String(email||'').trim().replace(/\s+/g,'').toLowerCase();
   if(!value || value.indexOf('수기등록')!==-1) return String(email||'').trim();
   return value;
+}
+
+/* 이메일 셀 오염 가드 (2026-08-31) — 개행·부속 텍스트가 섞여 저장되면 고객 신원 키가 쪼개진다
+   (실측: 김지훈 3분신 — 이메일 셀에 '\n분류=여권사진…'). 첫 줄에서 이메일 패턴만 취한다. */
+function sanitizeEmailForLedger_(email){
+  const raw=String(email||'').trim();
+  if(!raw) return '';
+  const firstLine=raw.split(/[\r\n]/)[0].trim();
+  const m=firstLine.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+  return (m?m[0]:firstLine).slice(0,80);
 }
 
 function normalizePhoneForLedger_(phone, defaultCountryCode){
@@ -11564,6 +11575,7 @@ function processForm(data){
   try{
     if(!data.name||!data.phone||!data.email) throw new Error('필수 정보 누락');
     data.phone=normalizePhoneForLedger_(data.phone,data.phoneCountry||data.countryCode||'+49');
+    data.email=sanitizeEmailForLedger_(data.email);
     data.email=normalizeEmailAddress_(data.email);
     data.address=normalizeAddressText_(data.address);
     data.businessInvoiceEmail=normalizeEmailAddress_(data.businessInvoiceEmail);
