@@ -2261,7 +2261,12 @@ function handlePublicApiRequest_(route,method,e){
             note:'분류만 변경했습니다 — 금액·상품·일정은 그대로입니다. 슬롯 캐시 무효화됨.'});
         }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
+        if(action==='select-schedule-migrate') return jsonOk_(migrateSelectSchedules_(payload||{}));
+        if(action==='customer-list') return jsonOk_(buildCustomerDirectory_(payload.keyword||''));
+        if(action==='tax-record-add') return jsonOk_(addTaxRecord_(payload||{}));
+        if(action==='tax-record-list') return jsonOk_(Object.assign(listTaxLedger_(),{recon:(function(){const r=buildTaxReconciliation_();return {unpaid:r.unpaid,unlinked:r.unlinked,privateLinked:r.privateLinked};})()}));
         if(action==='booking-add-pass-country') return jsonOk_(addPassCountryForAgent_(token,payload||{}));
+        if(action==='products-list') return jsonOk_(listProductsForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // ✏️변경계: 추가일정(이동일·다일차) 등록/교체. 같은 날짜의 기존 이벤트는 흡수(중복 생성 없음). 고객 메일 미발송.
         if(action==='booking-set-extra-days') return jsonOk_(setBookingExtraDaysForAgent_(token,payload||{}));
@@ -4508,12 +4513,42 @@ function _dashboardPrepLines_(memo){
    쓸 때마다 오래된 날짜를 정리한다. 영구 기록이 필요한 일정 변경은 booking-reschedule 이 담당. */
 const DAY_OPS_PREFIX_='dayops_';
 const DAY_OPS_KEEP_DAYS_=14;
+/* 저장소를 스크립트 속성 → '당일운영' 시트로 옮겼다(2026-08-31). 이유: 오늘촬영 보드를
+   별도 경량 스크립트(board-api)로 분리했는데, 스크립트 속성은 프로젝트 간 공유가 안 돼
+   지연·시작 기록이 보드에서 사라진다. 시트는 양쪽 다 읽는다. 읽기는 레거시 속성 폴백 유지. */
+const DAY_OPS_SHEET_NAME_='당일운영';
 
 function _dayOpsKey_(dateStr){ return DAY_OPS_PREFIX_+String(dateStr||'').slice(0,10); }
 
+function _dayOpsSheet_(create){
+  const ss=ensureSheets_().ss;
+  let sh=ss.getSheetByName(DAY_OPS_SHEET_NAME_);
+  if(!sh&&create){
+    sh=ss.insertSheet(DAY_OPS_SHEET_NAME_);
+    sh.appendRow(['날짜','JSON']);
+    sh.setFrozenRows(1);
+    try{ sh.hideSheet(); }catch(e){}
+  }
+  return sh||null;
+}
+
 function readDayOps_(dateStr){
+  const d=String(dateStr||'').slice(0,10);
   try{
-    const raw=PropertiesService.getScriptProperties().getProperty(_dayOpsKey_(dateStr));
+    const sh=_dayOpsSheet_(false);
+    if(sh&&sh.getLastRow()>1){
+      const rows=sh.getRange(2,1,sh.getLastRow()-1,2).getValues();
+      for(let i=rows.length-1;i>=0;i--){
+        if(String(rows[i][0]).slice(0,10)===d){
+          const o=JSON.parse(String(rows[i][1]||'{}'));
+          return (o&&typeof o==='object')?o:{};
+        }
+      }
+    }
+  }catch(e){}
+  // 레거시 폴백 — 이전 배포에서 속성에 남은 오늘치가 사라지면 안 된다
+  try{
+    const raw=PropertiesService.getScriptProperties().getProperty(_dayOpsKey_(d));
     if(!raw) return {};
     const o=JSON.parse(raw);
     return (o&&typeof o==='object')?o:{};
@@ -4521,17 +4556,34 @@ function readDayOps_(dateStr){
 }
 
 function writeDayOps_(dateStr,obj){
-  const props=PropertiesService.getScriptProperties();
-  props.setProperty(_dayOpsKey_(dateStr),JSON.stringify(obj||{}));
-  // 오래된 날짜 정리 — 방치하면 속성이 계속 쌓인다
+  const d=String(dateStr||'').slice(0,10);
+  const json=JSON.stringify(obj||{});
   try{
-    const cutoff=Utilities.formatDate(
-      new Date(Date.now()-DAY_OPS_KEEP_DAYS_*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
-    Object.keys(props.getProperties()).forEach(function(k){
-      if(k.indexOf(DAY_OPS_PREFIX_)!==0) return;
-      if(k.slice(DAY_OPS_PREFIX_.length)<cutoff) props.deleteProperty(k);
-    });
-  }catch(e){ Logger.log('dayops prune skipped: '+e.message); }
+    const sh=_dayOpsSheet_(true);
+    const last=sh.getLastRow();
+    let wrote=false;
+    if(last>1){
+      const dates=sh.getRange(2,1,last-1,1).getValues();
+      for(let i=dates.length-1;i>=0;i--){
+        if(String(dates[i][0]).slice(0,10)===d){
+          sh.getRange(i+2,2).setValue(json); wrote=true; break;
+        }
+      }
+      // 오래된 날짜 정리 — 하루 한 행이라 몇 줄 안 된다
+      const cutoff=Utilities.formatDate(
+        new Date(Date.now()-DAY_OPS_KEEP_DAYS_*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      for(let i=dates.length-1;i>=0;i--){
+        if(String(dates[i][0]).slice(0,10)<cutoff) sh.deleteRow(i+2);
+      }
+    }
+    if(!wrote) sh.appendRow([d,json]);
+    // 같은 날짜의 레거시 속성은 시트가 정본이 된 순간 지운다(폴백 오염 방지)
+    try{ PropertiesService.getScriptProperties().deleteProperty(_dayOpsKey_(d)); }catch(e){}
+  }catch(e){
+    // 시트 쓰기가 실패하면 종전 방식으로라도 남긴다 — 지연 기록을 잃는 것보다 낫다
+    try{ PropertiesService.getScriptProperties().setProperty(_dayOpsKey_(d),json); }catch(e2){}
+    Logger.log('dayops sheet write failed, prop fallback: '+e.message);
+  }
 }
 
 /* 지연 분 설정. minutes 는 절대값(누적이 아니다) — 0 이면 지연 해제.
@@ -4732,6 +4784,7 @@ function readPickupsForDate_(dateStr){
       out.push({
         selectRowIndex:i+2,
         bookingRowIndex:parseInt(r[SELECT_COL['예약장부행']],10)||0,
+        sessionId:String(r[SELECT_COL['세션ID']]||''),   // 앱에서 수령완료(select-handover-done) 처리용
         time:at.slice(11,16),
         name:String(r[SELECT_COL['고객명']]||''),
         product:String(r[SELECT_COL['상품']]||''),
@@ -4746,6 +4799,75 @@ function readPickupsForDate_(dateStr){
   return out;
 }
 
+/* ===== 고객 디렉터리 (2026-08-29) =====
+   예약장부를 사람 단위로 접는다. 별도 시트를 만들지 않는다 — 장부가 이미 진실원장이고,
+   사본 시트는 하루 만에 어긋난다. 신원 키는 문의 매칭과 동일: 전화 뒤 9자리 → 이메일 → 이름.
+   (이름만 일치는 동명이인 오탐이 커서 마지막 수단으로만.) */
+function _customerKeyForRow_(row){
+  const p=_inqPhoneKey_(row[BOOKING_COL['연락처']]);
+  if(p) return 'p:'+p;
+  const e=_inqEmailKey_(row[BOOKING_COL['이메일']]);
+  if(e) return 'e:'+e;
+  const n=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+  return n?('n:'+n):'';
+}
+
+function buildCustomerDirectory_(keyword){
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+  const map={};
+  rows.forEach(function(row,idx){
+    if(!String(row[BOOKING_COL['고객명']]||'').trim()) return;
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;   // 취소는 방문이 아니다
+    const key=_customerKeyForRow_(row);
+    if(!key) return;
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    const entry=map[key]||(map[key]={key:key,name:'',phone:'',email:'',visits:0,firstVisit:'',lastVisit:'',
+      totalSpend:0,history:[]});
+    entry.visits++;
+    entry.totalSpend=roundCurrency_(entry.totalSpend+parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+    if(!entry.firstVisit||dt<entry.firstVisit) entry.firstVisit=dt;
+    if(dt>entry.lastVisit){
+      entry.lastVisit=dt;
+      /* 표시 이름·연락처는 가장 최근 예약 기준 — 개명·번호 변경을 따라간다 */
+      entry.name=String(row[BOOKING_COL['고객명']]||'').trim();
+      entry.phone=String(row[BOOKING_COL['연락처']]||'').trim();
+      entry.email=String(row[BOOKING_COL['이메일']]||'').trim();
+    }
+    entry.history.push({date:dt,product:String(row[BOOKING_COL['상품']]||'').trim(),
+      group:String(row[BOOKING_COL['촬영종류']]||'').trim(),status:status,rowIndex:idx+2});
+  });
+  let list=Object.keys(map).map(function(k){
+    const e=map[k];
+    e.history.sort(function(a,b){return b.date<a.date?-1:1;});
+    e.history=e.history.slice(0,12);
+    return e;
+  });
+  const kw=String(keyword||'').trim().toLowerCase();
+  if(kw){
+    const kwPhone=_inqDigits_(kw);
+    list=list.filter(function(e){
+      return e.name.toLowerCase().indexOf(kw)>-1
+        || (kwPhone&&_inqDigits_(e.phone).indexOf(kwPhone)>-1)
+        || e.email.toLowerCase().indexOf(kw)>-1;
+    });
+  }
+  list.sort(function(a,b){return b.lastVisit<a.lastVisit?-1:1;});
+  return {ok:true,total:list.length,customers:list.slice(0,300)};
+}
+
+function listCustomerDirectoryAdmin(token,keyword){
+  assertAdmin_(token);
+  return buildCustomerDirectory_(keyword);
+}
+
+function listTravelLogAdmin(token,startDate,endDate){
+  assertAdmin_(token);
+  return buildTravelKmLogForAgent_(startDate,endDate);
+}
+
 function buildTodayBoard_(dateStr){
   const _t0=Date.now(); const _t={};
   const tz=CONFIG.TIMEZONE;
@@ -4757,6 +4879,19 @@ function buildTodayBoard_(dateStr){
   const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
   _t.readRows=Date.now()-_t0; _t.rowCount=rows.length;
   const dayOps=readDayOps_(today);     _t.dayOps=Date.now()-_t0;
+  /* 방문 이력 인덱스 — 오늘 카드마다 "첫 방문인지, 몇 번째인지, 전엔 뭘 찍었는지"를 붙인다.
+     같은 rows 배열을 한 번 더 접을 뿐이라 비용은 무시할 수준(수백 행). */
+  const custHist={};
+  rows.forEach(function(row,idx){
+    if(isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))) return;
+    const key=_customerKeyForRow_(row);
+    if(!key) return;
+    (custHist[key]||(custHist[key]=[])).push({
+      date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      rowIndex:idx+2});
+  });
+  _t.custIndex=Date.now()-_t0;
   const shoots=[];
   rows.forEach(function(row,idx){
     const status=String(row[BOOKING_COL['상태']]||'').trim();
@@ -4785,8 +4920,26 @@ function buildTodayBoard_(dateStr){
       depositPaid:depositPaid,
       balance:balance,
       payMethod:payMethod,
-      dueOnSite:(unpaid||!depositPaid)?balance:balance,   // 현장에서 받을 금액 = 잔금
+      /* 현장 수령액 = 잔금 + (계약금 미입금이면 계약금). 김혜수 사례(2026-08-29):
+         [계약금예외]로 계약금 50 미입금·잔금 260 → 현장 수령은 310 인데 260 만 표시됐다.
+         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다. */
+      dueOnSite:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
+      /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
+      visitCount:(function(){
+        const key=_customerKeyForRow_(row);
+        if(!key||!custHist[key]) return 0;
+        return custHist[key].filter(function(h){return h.date<today;}).length;
+      })(),
+      prevShoots:(function(){
+        const key=_customerKeyForRow_(row);
+        if(!key||!custHist[key]) return [];
+        return custHist[key]
+          .filter(function(h){return h.date<today;})
+          .sort(function(a,b){return b.date<a.date?-1:1;})
+          .slice(0,3)
+          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+h.product;});
+      })(),
       // 당일 운영: 지연 분·실제 도착. 예약일시는 그대로 두고 표시만 밀린다
       delayMin:(function(){ const o=dayOps[String(idx+2)]; return o&&isFinite(o.delay)?Number(o.delay):0; })(),
       arrivedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.arrived?String(o.arrived):''; })(),
@@ -4872,7 +5025,7 @@ function buildTodayBoard_(dateStr){
     weekday:['일','월','화','수','목','금','토'][new Date(today+'T12:00:00').getDay()],
     serverTime:Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss'),
     count:shoots.length,
-    dueTotal:shoots.reduce(function(a,s){return a+(s.balance||0);},0),
+    dueTotal:shoots.reduce(function(a,s){return a+(s.dueOnSite!=null?s.dueOnSite:(s.balance||0));},0),
     next:next?{time:next.effTime||next.time,scheduled:next.time,name:next.name,
                product:next.product,delayMin:next.delayMin||0}:null,
     delayedCount:shoots.filter(function(s){return (s.delayMin||0)!==0;}).length,
@@ -14574,6 +14727,33 @@ function assertBookingRowName_(rIdx,expectName){
   if(nm!==en) throw new Error('행 고객명 불일치: 행='+nm+' / 기대='+en);
 }
 
+/* 라이브 상품 카탈로그 — 앱의 상품 변경 드롭다운용.
+   ⚠️ 정본은 '상품설정' 시트다. Code.gs 안의 상품 배열은 라이브에 반영되지 않는 씨앗값이라
+   클라이언트가 상품을 하드코딩하면 시트에서 가격을 고쳐도 앱만 옛 값을 쓰게 된다.
+   가격(p)은 **1인 기준 참고가**다 — 실제 금액은 인원·날짜(주말할증)·옵션에 따라 달라지므로
+   반드시 booking-change-product 의 dryRun 으로 확정 금액을 받아야 한다. */
+function listProductsForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const includeAll=payload.includeAll===true;
+  const items=getCachedProducts_().filter(function(it){
+    if(!includeAll && !isPublicBookingProduct_(it)) return false;   // 마이리얼트립 등 제외
+    return true;
+  }).map(function(it){
+    return {id:it.id,group:it.g,type:it.t,name:String(it.nameKo||''),
+            price:Number(it.p||0),durationMin:Number(it.d||0),prepMin:Number(it.prep||0),
+            // 총액 0(상담견적/커스텀)은 booking-change-product 가 거부한다 — 앱에서 미리 비활성화
+            changeable:Number(it.p||0)>0 && it.t!=='custom'};
+  });
+  const groups=[];
+  items.forEach(function(it){ if(groups.indexOf(it.group)===-1) groups.push(it.group); });
+  return {ok:true,count:items.length,groups:groups,items:items,
+          // 옵션은 calculateQuote_ 에 하드코딩돼 있다(시트 아님) — 값이 바뀌면 여기도 같이 고칠 것
+          options:[{key:'dog',label:'반려동물',price:15},
+                   {key:'bg',label:'배경 추가',price:20},
+                   {key:'outfit',label:'의상 추가',price:20}]};
+}
+
 function changeBookingProductForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -14613,6 +14793,23 @@ function changeBookingProductForAgent_(token,payload){
   const newTotal=roundCurrency_(quote.totalPrice);
   const newDeposit=roundCurrency_(quote.depositAmount);
   const newBalance=roundCurrency_(quote.balanceAmount);
+
+  /* 미리보기 — 아무것도 쓰지 않고 변경 전/후만 돌려준다.
+     현장 앱에서 "€170 → €220, 잔금 €120 → €170" 을 먼저 보여주고 확인받기 위한 것.
+     금액은 반드시 여기서 받아야 한다(인원·주말할증·옵션이 다 반영된 값). */
+  if(payload.dryRun===true){
+    return {ok:true,dryRun:true,rowIndex:rIdx,
+      name:String(row[BOOKING_COL['고객명']]||''),
+      previousProduct:prevProduct,previousTotal:prevTotal,
+      previousDeposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+      previousBalance:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']])),
+      previousPeople:parseInt(row[BOOKING_COL['인원']],10)||1,
+      product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
+      people:quote.people,total:newTotal,deposit:newDeposit,balance:newBalance,
+      durationMin:quote.totalDuration,passAddon:passAddon,
+      depositPaid:String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y',
+      balancePaid:String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'};
+  }
 
   // 예약행 갱신 (촬영종류/상품/인원/옵션/총결제액/계약금/잔금 + 브루토 미러)
   sh.getRange(rIdx,BOOKING_COL['촬영종류']+1).setValue(quote.itemGroup);
@@ -15507,30 +15704,70 @@ function searchBookingsForAgent_(token,query){
    여러 건 삭제 시 호출자는 행번호 큰 것부터 지우며 삭제 1건마다 이 함수를 불러야 한다.
    정확히 삭제행을 가리키던 참조는 보정 불가 — 호출자가 먼저 정리하거나 감수한다. */
 function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
+  /* 예약행을 하나 지우면 아래 행들이 한 칸씩 올라온다 — 다른 시트에 저장된 '예약행 번호'가 전부 어긋난다.
+     보정하지 않으면 인보이스·계약서·굿샤인·견적이 **다른 고객을 가리키게 된다.** 빈 링크보다 나쁘다.
+
+     규칙 두 가지:
+       ① 삭제행보다 **큰** 참조 → -1 (행이 올라간 만큼)
+       ② 삭제행을 **정확히** 가리키던 참조 → **비운다**
+     ②를 안 하면 그 참조는 삭제행 자리로 올라온 '다음 고객'을 가리킨다.
+
+     회계·법적 기록(인보이스·계약서·견적)은 **행을 지우지 않는다** — 링크만 끊는다.
+     예외는 촬영 준비 설문뿐: 답변은 예약 없이는 의미가 없고, 같은 행번호를 물려받은 다음 고객이
+     남의 답변을 보게 되므로 행째로 지운다.
+
+     2026-08-27: 원래 4곳(select·prep·travel·결제연결행)만 보정하고 있었다. 굿샤인으로 결제된 예약을
+     지웠더니 굿샤인이 삭제된 행번호를 그대로 든 채 고아가 되는 걸 실제로 확인 → 전 참조로 확대. */
   const rIdx=deletedRowIndex;
   const sh=sheets.bookingSheet;
-  const fixed={select:0,travel:0,paymentLinks:0,prep:0};
+  const ss=sheets.ss;
+  const fixed={select:0,travel:0,paymentLinks:0,prep:0,
+    gutschein:0,invoice:0,quote:0,contract:0,consultation:0,marketing:0,shootLog:0,messageLog:0,thread:0};
+
+  /* 한 열의 예약행 참조를 보정한다. 반환값은 (이동 + 끊음) 합계. */
   const fixColumn=function(sheet,colIdx){
+    if(!sheet||colIdx==null) return 0;
     const last=sheet.getLastRow();
-    if(last<2||colIdx==null) return 0;
+    if(last<2) return 0;
     const rng=sheet.getRange(2,colIdx+1,last-1,1);
     const vals=rng.getValues();
     let n=0;
     for(let i=0;i<vals.length;i++){
-      const v=parseInt(vals[i][0],10);
-      if(isFinite(v)&&v>rIdx){vals[i][0]=v-1;n++;}
+      const raw=vals[i][0];
+      if(raw===''||raw===null||raw===undefined) continue;
+      const v=parseInt(raw,10);
+      if(!isFinite(v)) continue;
+      if(v>rIdx){ vals[i][0]=v-1; n++; }
+      else if(v===rIdx){ vals[i][0]=''; n++; }   // 끊는다 — 다음 고객을 가리키게 두지 않는다
     }
     if(n) rng.setValues(vals);
     return n;
   };
-  try{
-    const selSh=ensureSelectSheet_(sheets.ss);
-    if(selSh) fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
-  }catch(e){Logger.log('row-delete select fix fail: '+e.message);}
+
+  /* 시트 하나가 없거나 헤더가 달라도 나머지 보정이 멈추면 안 된다 — 개별 try 로 감싼다. */
+  const safeFix=function(key,label,getSheet,colIdx){
+    try{
+      const sheet=getSheet();
+      fixed[key]=fixColumn(sheet,colIdx);
+    }catch(e){ Logger.log('row-delete '+label+' fix fail: '+e.message); }
+  };
+
+  safeFix('select','select',function(){return ensureSelectSheet_(ss);},SELECT_COL['예약장부행']);
+  safeFix('travel','travel',function(){return ss.getSheetByName('출장장부');},TRAVEL_COL['예약장부행']);
+  safeFix('gutschein','gutschein',function(){return ensureGutscheinSheet_(ss);},GUTSCHEIN_COL['연결예약행']);
+  safeFix('invoice','invoice',function(){return ensureInvoiceSheet_(ss);},INVOICE_COL['예약행번호']);
+  safeFix('quote','quote',function(){return ensureQuoteSheet_(ss);},QUOTE_COL['연결예약행']);
+  safeFix('contract','contract',function(){return getContractSheet_();},CONTRACT_COL['연결예약행']);
+  safeFix('consultation','consultation',function(){return ensureConsultationSheet_(ss);},CONSULTATION_COL['연결예약행']);
+  safeFix('marketing','marketing',function(){return ensureMarketingScheduleSheet_(ss);},MARKETING_SCHEDULE_COL['예약장부행']);
+  safeFix('shootLog','shootLog',function(){return ensureShootLogSheet_(ss);},SHOOT_LOG_HEADERS.indexOf('예약장부행'));
+  safeFix('messageLog','messageLog',function(){return ensureMessageLogSheet_(ss);},MESSAGE_LOG_COL['예약행']);
+  safeFix('thread','thread',function(){return ensureThreadSheet_(ss);},THREAD_COL['예약행']);
+
   /* 촬영 준비 설문 — 삭제된 행의 답변은 지우고 뒤 행 참조는 한 칸 당긴다.
      이걸 안 하면 다음 예약이 같은 행번호를 받았을 때 **남의 설문 답변을 물려받는다**. */
   try{
-    const pSh=ensurePrepSheet_(sheets.ss);
+    const pSh=ensurePrepSheet_(ss);
     const pLast=pSh?pSh.getLastRow():0;
     if(pSh&&pLast>1){
       const rng=pSh.getRange(2,PREP_COL['예약장부행']+1,pLast-1,1);
@@ -15547,11 +15784,8 @@ function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
       fixed.prep=n+toDelete.length;
     }
   }catch(e){Logger.log('row-delete prep fix fail: '+e.message);}
-  try{
-    const tSh=sheets.ss.getSheetByName('출장장부');
-    if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
-  }catch(e){Logger.log('row-delete travel fix fail: '+e.message);}
-  // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정
+
+  // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정(삭제행 토큰은 제거)
   try{
     const last=sh.getLastRow();
     if(last>1&&BOOKING_COL['결제연결행']!=null){
@@ -15561,10 +15795,14 @@ function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
       for(let i=0;i<vals.length;i++){
         const raw=String(vals[i][0]||'').trim();
         if(!raw) continue;
-        const out=raw.split(/([,\s]+)/).map(function(tok){
-          const v=parseInt(tok,10);
-          return (/^\d+$/.test(tok.trim())&&isFinite(v)&&v>rIdx)?String(v-1):tok;
-        }).join('');
+        const out=raw.split(',').map(function(tok){
+          const t=tok.trim();
+          if(!/^\d+$/.test(t)) return tok;
+          const v=parseInt(t,10);
+          if(v>rIdx) return String(v-1);
+          if(v===rIdx) return '';          // 끊는다
+          return tok;
+        }).filter(function(t){return String(t).trim()!=='';}).join(',');
         if(out!==raw){vals[i][0]=out;n++;}
       }
       if(n) rng.setValues(vals);
@@ -16392,6 +16630,39 @@ function _buildDailyBriefingData_(){
   // 문의·상담 통합 — 리드가 브리핑에 아예 안 잡히던 구멍을 막는다(이홍규 38일 방치 사고)
   /* 촬영 준비 설문 미작성 — 설문을 만들어 놓고 안 채워진 걸 아무도 안 알려주면 같은 구멍이 생긴다.
      과도한 재촉은 안 한다: **D-7 이내**만 본다(그 전엔 아직 시간이 있다). */
+  /* 셀렉 마감 경고 — 마감 7일 전부터, 경과 건은 계속. **연락처를 함께 싣는다**:
+     이메일 무응답이 문제의 본질이므로 다음 수단은 전화·카카오다(사장님 지시 2026-08-28).
+     이메일이 무효(수기등록)라 리마인드가 아예 못 나간 건도 여기서만 보인다. */
+  let selectDeadline={count:0,items:[]};
+  try{
+    const _sdSh=ensureSelectSheet_(sh.getParent());   // 이 스코프엔 ss 가 없다 — sh=getDbSheet() 뿐
+    const _sdRows=_sdSh.getDataRange().getValues().slice(1);
+    const _sdToday=today;
+    const _sdItems=[];
+    _sdRows.forEach(function(r){
+      if(String(r[SELECT_COL['상태']]||'')!=='대기중') return;
+      if(String(r[SELECT_COL['제출일시']]||'').trim()) return;
+      /* 좀비 가드 — 연결 예약이 종결이면 경고 대상 아님(리마인드 루프와 같은 판정) */
+      const _bIdx=parseInt(r[SELECT_COL['예약장부행']],10)||0;
+      if(_bIdx>=2&&_bIdx-1<rows.length){
+        const _bst=String(rows[_bIdx-1][BOOKING_COL['상태']]||'').trim();
+        if(_bst==='작업완료'||_bst==='취소됨'||_bst==='자동취소') return;
+      }
+      const dl=String(parseDateSafe_(r[SELECT_COL['셀렉마감일']]).str||'').slice(0,10);
+      if(!dl) return;
+      const days=Math.round((new Date(dl+'T12:00:00')-new Date(_sdToday+'T12:00:00'))/86400000);
+      if(days>7) return;
+      const email=String(r[SELECT_COL['이메일']]||'');
+      _sdItems.push({name:String(r[SELECT_COL['고객명']]||''),
+        phone:String(r[SELECT_COL['연락처']]||''),
+        deadline:dl,daysLeft:days,
+        stage:parseInt(r[SELECT_COL['최종알림단계']])||0,
+        noEmail:!(email.indexOf('@')>-1&&email.indexOf('수기등록')<0)});
+    });
+    _sdItems.sort(function(a,b){return a.daysLeft-b.daysLeft;});
+    selectDeadline={count:_sdItems.length,items:_sdItems.slice(0,8)};
+  }catch(e){ Logger.log('briefing selectDeadline skipped: '+e.message); _briefFail_(sectionFailures,'셀렉마감',e); }
+
   let prepPending={count:0,items:[]};
   try{
     const ps=buildPrepSurveyStatus_(7);
@@ -16403,7 +16674,7 @@ function _buildDailyBriefingData_(){
   try{ inquiries=buildUnifiedInquiries_({}); }
   catch(e){ Logger.log('briefing inquiries skipped: '+e.message); _briefFail_(sectionFailures,'문의·상담',e); }
 
-  return {ok:true,date:today,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
+  return {ok:true,date:today,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -16569,6 +16840,14 @@ function buildDailyBriefingEmailHtml_(b){
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
   /* 문의·상담 통합 — 홈페이지 문의(리드)가 브리핑에 아예 안 잡혀 38일·56일씩 방치된 사고에서 출발.
      오래 묵은 순으로 세우고, 3일 넘게 답이 없는 건은 붉게 세운다. */
+  if(b.selectDeadline&&b.selectDeadline.count>0){
+    actions.push(line(`⏰ 셀렉 마감 임박·경과 <b>${b.selectDeadline.count}건</b> — 메일 무응답이면 전화·카카오로`));
+    (b.selectDeadline.items||[]).forEach(function(sd){
+      const overdue=sd.daysLeft<0;
+      const when=overdue?`마감 <b style="color:#dc2626;">${-sd.daysLeft}일 경과</b>`:(sd.daysLeft===0?'<b style="color:#dc2626;">오늘 마감</b>':`D-${sd.daysLeft}`);
+      actions.push(line(`&nbsp;&nbsp;· ${esc(sd.name)}님 · ${when} (~${esc(sd.deadline)}) · 📞 <a href="tel:${esc(String(sd.phone||'').replace(/[^+\d]/g,''))}" style="color:#0066cc;text-decoration:none;">${esc(sd.phone||'연락처 없음')}</a>${sd.noEmail?' · <b style="color:#dc2626;">이메일 무효 — 메일 못 감</b>':''}${sd.stage>=2?' · 최종통지 발송됨':''}`));
+    });
+  }
   if(b.prepPending&&b.prepPending.count>0){
     actions.push(line(`📝 촬영 준비 설문 미작성 <b>${b.prepPending.count}건</b> (D-7 이내)`));
     (b.prepPending.items||[]).forEach(function(pp){
@@ -19521,6 +19800,117 @@ function sampleAccountingCloseRows_(rows,limit){
   });
 }
 
+/* ===== 세금대장 (2026-08-29) =====
+   설계 원칙: **돈은 지출장부 한 곳에만 있다.** 은행 동기화가 Finanzamt 출금을 이미
+   '세금/공과금' 경비로 기장하므로(Q1 879,34 · Q2 586,60 실확인), 세금대장은 금액을 다시 계상하지
+   않는다 — 세목·귀속기간·신고↔납부 대사와 EÜR 구분(가드)만 담는 메타 계층이다.
+   이렇게 하면 이중계상이 구조적으로 불가능하다.
+
+   EÜR구분이 핵심 가드다:
+   - 공제   : USt 납부(UStVA·연간)와 그 부대비용 — EÜR Betriebsausgabe. 지출장부 행과 연결.
+   - 사적   : **ESt·SolZ 선납/정산 — 경비가 아니다(사적 인출).** 은행 동기화가 Finanzamt 출금을
+              무조건 경비로 잡으므로, 사적 행이 지출장부에 연결돼 있으면 월마감이 blocker 로 세운다.
+              (2024 정정으로 ESt +480~600 고지가 예정돼 있어 곧 실제로 온다.)
+   - 비공제 : Gewerbesteuer 등 — 사업세지만 EÜR 공제 불가. */
+const TAX_LEDGER_SHEET='세금대장';
+const TAX_LEDGER_HEADERS=['세목','귀속기간','신고일','신고액(€)','납부기한','납부일','납부액(€)','EÜR구분','지출행','참조','메모','등록일시'];
+const TAX_COL=TAX_LEDGER_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
+const TAX_KINDS_=['UStVA','USt연간','ESt선납','ESt정산','SolZ','GewSt','부대비용(USt)','기타'];
+const TAX_EUER_={'UStVA':'공제','USt연간':'공제','부대비용(USt)':'공제','ESt선납':'사적','ESt정산':'사적','SolZ':'사적','GewSt':'비공제','기타':'공제'};
+
+function ensureTaxLedgerSheet_(ss){
+  let sh=ss.getSheetByName(TAX_LEDGER_SHEET);
+  if(!sh){
+    sh=ss.insertSheet(TAX_LEDGER_SHEET);
+    sh.appendRow(TAX_LEDGER_HEADERS);
+    sh.getRange(1,1,1,TAX_LEDGER_HEADERS.length).setFontWeight('bold').setBackground('#fef3c7');
+    sh.setFrozenRows(1);
+  } else if(sh.getLastColumn()<TAX_LEDGER_HEADERS.length){
+    sh.getRange(1,sh.getLastColumn()+1,1,TAX_LEDGER_HEADERS.length-sh.getLastColumn())
+      .setValues([TAX_LEDGER_HEADERS.slice(sh.getLastColumn())]);
+  }
+  return sh;
+}
+
+function _taxRowToObject_(row,rowIndex){
+  return {rowIndex:rowIndex,kind:String(row[TAX_COL['세목']]||'').trim(),
+    period:String(row[TAX_COL['귀속기간']]||'').trim(),
+    filedAt:String(parseDateSafe_(row[TAX_COL['신고일']]).str||'').slice(0,10),
+    filedAmount:roundCurrency_(parseMoneyValue_(row[TAX_COL['신고액(€)']])),
+    dueDate:String(parseDateSafe_(row[TAX_COL['납부기한']]).str||'').slice(0,10),
+    paidAt:String(parseDateSafe_(row[TAX_COL['납부일']]).str||'').slice(0,10),
+    paidAmount:roundCurrency_(parseMoneyValue_(row[TAX_COL['납부액(€)']])),
+    euer:String(row[TAX_COL['EÜR구분']]||'').trim(),
+    expenseRow:parseInt(row[TAX_COL['지출행']],10)||0,
+    ref:String(row[TAX_COL['참조']]||'').trim(),
+    memo:String(row[TAX_COL['메모']]||'').trim()};
+}
+
+function listTaxLedger_(){
+  const sh=ensureTaxLedgerSheet_(ensureSheets_().ss);
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,TAX_LEDGER_HEADERS.length).getValues():[];
+  const items=rows.map(function(r,i){return _taxRowToObject_(r,i+2);})
+    .filter(function(t){return t.kind;});
+  items.sort(function(a,b){return (b.paidAt||b.filedAt||'')<(a.paidAt||a.filedAt||'')?-1:1;});
+  return {ok:true,count:items.length,items:items};
+}
+
+function addTaxRecord_(payload){
+  payload=payload||{};
+  const kind=String(payload.kind||'').trim();
+  if(TAX_KINDS_.indexOf(kind)===-1) throw new Error('세목은 다음 중 하나여야 합니다: '+TAX_KINDS_.join(', '));
+  const period=String(payload.period||'').trim();
+  if(!period) throw new Error('귀속기간(period)이 필요합니다. 예: 2026-Q3, 2025');
+  const euer=String(payload.euer||TAX_EUER_[kind]||'공제').trim();
+  if(['공제','사적','비공제'].indexOf(euer)===-1) throw new Error("EÜR구분은 공제/사적/비공제 중 하나입니다.");
+  const sh=ensureTaxLedgerSheet_(ensureSheets_().ss);
+  /* 같은 세목+귀속기간은 한 행 — 신고 따로, 납부 따로 들어와도 합쳐진다(멱등) */
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,TAX_LEDGER_HEADERS.length).getValues():[];
+  let rIdx=-1;
+  rows.forEach(function(r,i){
+    if(String(r[TAX_COL['세목']]||'').trim()===kind&&String(r[TAX_COL['귀속기간']]||'').trim()===period) rIdx=i+2;
+  });
+  const nowTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  const setCell=function(h,v){ if(v!==undefined&&v!==null&&v!=='') sh.getRange(rIdx,TAX_COL[h]+1).setValue(v); };
+  if(rIdx===-1){
+    const row=new Array(TAX_LEDGER_HEADERS.length).fill('');
+    row[TAX_COL['세목']]=kind; row[TAX_COL['귀속기간']]=period; row[TAX_COL['EÜR구분']]=euer;
+    row[TAX_COL['등록일시']]=nowTs;
+    sh.appendRow(row);
+    rIdx=sh.getLastRow();
+  }
+  setCell('신고일',String(payload.filedAt||'').slice(0,10));
+  if(payload.filedAmount!=null&&payload.filedAmount!=='') setCell('신고액(€)',roundCurrency_(Number(payload.filedAmount)));
+  setCell('납부기한',String(payload.dueDate||'').slice(0,10));
+  setCell('납부일',String(payload.paidAt||'').slice(0,10));
+  if(payload.paidAmount!=null&&payload.paidAmount!=='') setCell('납부액(€)',roundCurrency_(Number(payload.paidAmount)));
+  setCell('EÜR구분',euer);
+  if(payload.expenseRow) setCell('지출행',parseInt(payload.expenseRow,10)||'');
+  setCell('참조',String(payload.ref||''));
+  setCell('메모',String(payload.memo||''));
+  return Object.assign({ok:true},_taxRowToObject_(sh.getRange(rIdx,1,1,TAX_LEDGER_HEADERS.length).getValues()[0],rIdx));
+}
+
+function listTaxLedgerAdmin(token){ assertAdmin_(token); return listTaxLedger_(); }
+
+/* 세금 대사 — 월마감·어드민이 같이 쓴다.
+   ① 신고했고 기한이 지났는데 납부 기록이 없다 → 미납 경고
+   ② 공제 구분인데 지출행 연결이 없다 → 은행 CSV 미임포트/기장 누락 (USt2025 228,76이 지금 이 상태)
+   ③ **사적(ESt 등)인데 지출행이 연결돼 있다 → EÜR 오염** — 가장 위험한 상태 */
+function buildTaxReconciliation_(){
+  const t=listTaxLedger_();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const unpaid=[],unlinked=[],privateLinked=[];
+  (t.items||[]).forEach(function(x){
+    if(x.filedAmount>0.005&&!x.paidAt&&x.dueDate&&x.dueDate<today) unpaid.push(x);
+    if(x.euer==='공제'&&x.paidAmount>0.005&&!x.expenseRow) unlinked.push(x);
+    if(x.euer==='사적'&&x.expenseRow) privateLinked.push(x);
+  });
+  return {items:t.items,unpaid:unpaid,unlinked:unlinked,privateLinked:privateLinked};
+}
+
 function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
   assertAdmin_(token);
   const sd=String(startDate||'').slice(0,10);
@@ -19564,6 +19954,28 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
       sample:sampleAccountingCloseRows_(rows,3)
     });
   }
+  try{
+    const taxRecon=buildTaxReconciliation_();
+    addCheck('tax_private_in_expense','세금 EÜR 오염 (사적 세금이 경비로)',
+      taxRecon.privateLinked.length?'fail':'ok',taxRecon.privateLinked.length,
+      taxRecon.privateLinked.reduce(function(a,x){return a+x.paidAmount;},0),
+      taxRecon.privateLinked.length
+        ? 'ESt 등 사적 세금이 지출장부에 연결돼 있습니다: '+taxRecon.privateLinked.map(function(x){return x.kind+' '+x.period;}).join(', ')+' — 해당 지출행을 삭제하거나 연결을 끊어야 EÜR이 맞습니다.'
+        : '사적 세금이 경비로 계상된 건이 없습니다.','accounting',{},'세금대장');
+    addCheck('tax_unpaid','세금 미납 (기한 경과)',
+      taxRecon.unpaid.length?'fail':'ok',taxRecon.unpaid.length,
+      taxRecon.unpaid.reduce(function(a,x){return a+x.filedAmount;},0),
+      taxRecon.unpaid.length
+        ? taxRecon.unpaid.map(function(x){return x.kind+' '+x.period+' €'+x.filedAmount+' (기한 '+x.dueDate+')';}).join(' · ')
+        : '기한 경과 미납 세금이 없습니다.','accounting',{},'세금대장');
+    addCheck('tax_expense_link','세금 납부 ↔ 지출장부 연결',
+      taxRecon.unlinked.length?'warn':'ok',taxRecon.unlinked.length,
+      taxRecon.unlinked.reduce(function(a,x){return a+x.paidAmount;},0),
+      taxRecon.unlinked.length
+        ? '납부됐지만 지출장부에 아직 없는 세금: '+taxRecon.unlinked.map(function(x){return x.kind+' '+x.period+' €'+x.paidAmount;}).join(' · ')+' — 대개 은행 CSV 미임포트입니다.'
+        : '공제 대상 납부가 모두 지출장부와 연결돼 있습니다.','accounting',{},'세금대장');
+  }catch(e){ addCheck('tax_recon','세금 대사','warn',0,0,'세금대장 대사 실패: '+e.message,'accounting',{},''); }
+
   addCheck(
     'settlement_import',
     '결제 CSV 가져오기',
@@ -20278,6 +20690,29 @@ function applySettlementBookingMatchAdmin(token,payload){
     throw new Error('이 입금은 굿샤인 판매대금으로 보입니다 ('
       +gutscheinHits.map(function(g){return g.code+' '+g.amount+'€';}).join(', ')
       +'). 굿샤인이 맞으면 settlement-gutschein-match 로 연결하세요. 그래도 예약으로 매칭하려면 confirm:true 를 함께 보내주세요.');
+  }
+  /* force 재바인딩 (2026-08-29) — 자동매칭이 같은 금액(여권 35 ×4)을 순번 무시하고 엉뚱한 예약에
+     붙인 실사고: 노유경 카드 35가 Sol Jung 행에, 최예준 돈이 **전날 이미 결제 완료된** 임채원 행에
+     이중으로 붙었다. 분할결제(220+35=잔금 255)도 단건 금액 검증으로는 통과 불가.
+     → force:true + reason 필수. 금액 검증을 건너뛰고 지정 행에 직접 바인딩하되, 입금확인 반영은
+     하지 않는다(예약행 결제 기록은 별도 확정 절차가 정본) — 정산행 메모에 사유가 남는다. */
+  const forceBind=(payload.force===true||String(payload.force||'')==='true');
+  if(forceBind){
+    const fReason=String(payload.reason||'').trim();
+    if(!fReason) throw new Error('force 매칭에는 reason(사유)이 필요합니다.');
+    const fRow=parseInt(payload.bookingRowIndex,10)||0;
+    if(fRow<2) throw new Error('bookingRowIndex가 필요합니다.');
+    const bRow=sheets.bookingSheet.getRange(fRow,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const bName=String(bRow[BOOKING_COL['고객명']]||'').trim();
+    if(!bName) throw new Error('예약행 '+fRow+' 에 고객명이 없습니다.');
+    updateSettlementMatchRow_(sheets.settlementSheet,ref.rowIndex,{
+      status:'matched',
+      target:'예약/매출',
+      rowIndex:fRow,
+      accountingClass:classifyBookingAccounting_(String(bRow[BOOKING_COL['촬영종류']]||''),String(bRow[BOOKING_COL['상품']]||'')),
+      memo:['수동확정(force)',bName,Number(tx.gross||0)+'€',fReason].filter(Boolean).join(' · ')
+    });
+    return {ok:true,forced:true,settlementRowIndex:ref.rowIndex,bookingRowIndex:fRow,name:bName,gross:tx.gross};
   }
   const candidate=findManualSettlementCandidate_(tx,sheets.bookingSheet,payload.bookingRowIndex,payload.kind);
   if(!candidate) throw new Error('선택한 예약이 이 결제금액과 맞지 않습니다. 금액이 다른 경우 예약 장부 금액을 먼저 확인해 주세요.');
@@ -21124,8 +21559,15 @@ function scoreBookingPaymentDateProximity_(tx,row,kind,bookingDateTime){
     if(shootGap===0) score+=22;
     else if(shootGap<=1) score+=18;
     else if(shootGap<=3) score+=10;
-    if(timeGapMin<=180) score+=14;
-    else if(timeGapMin<=360) score+=8;
+    /* 같은 날 같은 금액이 여러 건일 때(여권 €35 ×4, 2026-08-29 실측) 시간 근접이
+       순위를 갈라야 한다. 종전 ≤180분 한 버킷(+14)은 그날 후보 전원에게 같은 점수를 줘서
+       이름 노이즈가 순서를 정했다 — 노유경 결제가 Sol Jung 행에 붙은 원인.
+       단 간격을 6점 이상으로 벌려 ambiguous(±5) 판정도 함께 풀리게 한다.
+       ponytail: 절대값 근접만 본다(결제가 촬영 전인지 후인지는 안 따짐) — 오판이 또 나오면 방향 가중 추가 */
+    if(timeGapMin<=45) score+=22;
+    else if(timeGapMin<=120) score+=16;
+    else if(timeGapMin<=240) score+=10;
+    else if(timeGapMin<=420) score+=5;
   }
   return {score:score,referenceDate:refDate,dayGap:shootGap,referenceDayGap:refGap,timeGapMin:minutesBetweenDateTimes_(tx&&tx.dateTime,bookingDateTime)};
 }
@@ -21292,6 +21734,10 @@ function matchSumupBookingPayment_(tx,options){
   /* 예약 1건의 같은 결제 자리는 거래 1건만 채운다 — 같은 날 같은 금액 카드결제 2건이 한 예약의
      잔금을 동시에 물던 사고(2026-03 실측 4쌍). 선점된 예약이면 이 거래는 review 로 남긴다. */
   if(opts.claimedEntries && opts.claimedEntries['booking|'+String(candidate.rowIndex||'')]) return null;
+  /* 이미 결제 완료된 자리인데 기록된 결제일이 이 거래일과 다르면, 이 거래는 그 결제가 아니다.
+     2026-08-29 실측: 전날 결제 완료된 임채원 행이 최예준 €35 거래를 '이미 반영됨'으로 삼켰다.
+     같은 날짜의 이미결제(당일 수기 입금확인 뒤 SumUp 동기화)는 종전대로 붙는다. */
+  if(candidate.alreadyPaid && Number(candidate.referenceDayGap||0)>0) return null;
   const exactAmount=Number(candidate.amountDelta||0)<=0.05;
   const cardLike=/카드|sumup|card|karte/i.test(String(candidate.payMethod||''));
   const closePaymentDate=(Number(candidate.referenceDayGap||9999)<=10) ||
@@ -22504,18 +22950,34 @@ function normalizeSelectBaseRetouchCount_(value,fallback){
   return isNaN(fb)||fb<0 ? 0 : fb;
 }
 
+/* 셀렉 마감 체계 (2026-08-28 법 검토 반영, docs/select-deadline-legal.md 요지):
+   - 마감 = 발송일 + 3개월. 약관 '전달 파일은 납품 후 3개월 보관 후 삭제' 와 일치시킨다.
+     (구: +1개월 — 약관보다 짧아 근거가 없었다)
+   - 리마인드1 = +2주(부드러운 재안내), 리마인드2 = +6주(**최종 통지** — 마감일·보관본 삭제·
+     보정 제공 의무 종료를 명시. § 642/643 BGB 협력의무 구조).
+   - 3차 슬롯은 비운다 — 무응답 3통째부터는 메일이 아니라 **다른 채널**(전화·카카오)이 답이고,
+     그건 아침 브리핑의 셀렉 마감 경고(연락처 포함)가 맡는다. */
 function _selectSchedule_(baseDate){
   const d=new Date(baseDate);
   const deadline=new Date(d);
-  deadline.setMonth(deadline.getMonth()+1);
+  deadline.setMonth(deadline.getMonth()+3);
+  const reminder1=new Date(d.getTime()+14*86400000);
   const reminder2=new Date(d.getTime()+42*86400000);
-  const reminder3=new Date(d.getTime()+56*86400000);
   return {
     deadline: Utilities.formatDate(deadline,CONFIG.TIMEZONE,'yyyy-MM-dd'),
-    reminder1: Utilities.formatDate(deadline,CONFIG.TIMEZONE,'yyyy-MM-dd'),
+    reminder1: Utilities.formatDate(reminder1,CONFIG.TIMEZONE,'yyyy-MM-dd'),
     reminder2: Utilities.formatDate(reminder2,CONFIG.TIMEZONE,'yyyy-MM-dd'),
-    reminder3: Utilities.formatDate(reminder3,CONFIG.TIMEZONE,'yyyy-MM-dd')
+    reminder3: ''
   };
+}
+
+// 'yyyy-MM-dd' → 언어별 표기 (ko 2026년 11월 28일 / de 28.11.2026 / en 그대로)
+function _selectDateLabel_(iso,lang){
+  const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return String(iso||'');
+  if(lang==='de') return m[3]+'.'+m[2]+'.'+m[1];
+  if(lang==='en') return m[1]+'-'+m[2]+'-'+m[3];
+  return Number(m[1])+'년 '+Number(m[2])+'월 '+Number(m[3])+'일';
 }
 
 // 웨딩급(암트/돌잔치/프리웨딩) 셀렉 세션의 추가 보정 단가 기본값은 €20, 그 외 €10 (biz-event-product-redesign.md §5-4)
@@ -22732,11 +23194,23 @@ function findDriveFoldersForCustomerDate_(customerName,dateStr){
       try{var it=DriveApp.getFoldersByName(name);while(it.hasNext())addFolder(it.next(),100,'exact');}catch(e){}
     });
 
-    // 못 찾으면 내 드라이브 전체를 순회해 날짜 prefix로 필터
+    /* 못 찾으면 이름 검색 쿼리로 좁혀서 본다.
+       구현 이력: 원래 DriveApp.getFolders() 로 **내 드라이브 전체를 순회**했다 — 실측 14~25초였고
+       폴더가 늘수록 계속 느려지는 구조(2026-08-29 여권 전달 에러의 절반이 이 지연이었다).
+       searchFolders('title contains ...') 는 서버 인덱스를 타므로 수백 배 좁게 돈다. */
     if(results.length===0){
-      var all=DriveApp.getFolders();
-      while(all.hasNext()){
-        var f=all.next();
+      var pool=[];
+      var poolSeen=new Set();
+      var pushPool=function(it){ while(it.hasNext()&&pool.length<200){ var pf=it.next(); if(!poolSeen.has(pf.getId())){ poolSeen.add(pf.getId()); pool.push(pf); } } };
+      dateTokens.forEach(function(token){
+        if(!token) return;
+        try{ pushPool(DriveApp.searchFolders("title contains '"+String(token).replace(/'/g,"\\'")+"'")); }catch(e){}
+      });
+      if(customer){
+        try{ pushPool(DriveApp.searchFolders("title contains '"+customer.replace(/'/g,"\\'")+"'")); }catch(e){}
+      }
+      for(var pi=0;pi<pool.length;pi++){
+        var f=pool[pi];
         var n=f.getName();
         var norm=normalizeDriveFolderSearchText_(n);
         var datePrefix=dateTokens.some(function(token){
@@ -22744,9 +23218,11 @@ function findDriveFoldersForCustomerDate_(customerName,dateStr){
         });
         var dateHit=dateTokens.some(function(token){return token&&(n.indexOf(token)>=0||norm.indexOf(normalizeDriveFolderSearchText_(token))>=0);});
         var customerHit=customerNorm&&norm.indexOf(customerNorm)>=0;
+        /* ⚠️ 고객명이 안 맞는 폴더는 후보로 내지 않는다 — 같은 날짜라는 이유만으로
+           **다른 고객의 폴더**가 후보에 올라 잘못 전달될 뻔했다(2026-08-29 최예준 건에
+           Sol Jung 폴더가 후보로 뜸). 날짜만 맞는 건 단서가 아니라 함정이다. */
         if(datePrefix&&customerHit) addFolder(f,90,'date_customer');
         else if(dateHit&&customerHit) addFolder(f,80,'date_customer_contains');
-        else if(datePrefix) addFolder(f,55,'date_prefix');
         else if(customerHit) addFolder(f,40,'customer');
       }
     }
@@ -23166,10 +23642,17 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir Retusche und Druck einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
   })[L]:'';
   const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Hello <b>${data.name}</b>,`,de:`Guten Tag, <b>${data.name}</b>,`};
+  /* 기한 고지 — 최종 통지에서 '약관에 따라' 라고 말하려면 첫 메일부터 기한이 보였어야 한다 */
+  const _dlIso=_selectSchedule_(new Date()).deadline;
+  const _dlNote={
+    ko:`<br><span style="color:#64748b;font-size:13px;">셀렉은 <b>${_selectDateLabel_(_dlIso,'ko')}</b>까지 접수 부탁드립니다. 기한이 지나면 약관에 따라 보관 파일이 삭제될 수 있습니다.</span>`,
+    en:`<br><span style="color:#64748b;font-size:13px;">Please submit your selection by <b>${_selectDateLabel_(_dlIso,'en')}</b>. After this date, stored files may be deleted as per our terms.</span>`,
+    de:`<br><span style="color:#64748b;font-size:13px;">Bitte reichen Sie Ihre Auswahl bis zum <b>${_selectDateLabel_(_dlIso,'de')}</b> ein. Danach können gespeicherte Dateien gemäß den Bedingungen gelöscht werden.</span>`
+  };
   const intro={
-    ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.`,
-    en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.`,
-    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.`
+    ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.${_dlNote.ko}`,
+    en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.${_dlNote.en}`,
+    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.${_dlNote.de}`
   };
   const steps={
     ko:['📂 촬영 사진 확인 (드라이브 링크)',`✅ 마케팅 동의 여부 선택${bonusCount>0?` (동의 시 보너스 ${bonusCount}장 추가)`:''}`,'🖼 보정 받을 사진 번호 입력','📮 기본 제공 출력 사이즈 확인 및 필요한 추가 인화 입력','📤 최종 제출'],
@@ -25855,6 +26338,43 @@ function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchA
   sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
 }
 
+/* 기존 '대기중' 세션의 마감·알림일을 새 체계(+2주/+6주/3개월)로 재산정하는 1회성 마이그레이션.
+   - 이미 지난 리마인드1 날짜는 비운다(뒤늦은 '2주 리마인드' 방지 — 다음 대상은 바로 최종통지).
+   - 마감이 너무 임박/경과면 오늘+21일로 민다: 최종 통지에는 합리적 유예가 있어야 한다(§ 643 BGB 취지).
+   - 최종통지(2차)를 이미 받은 건은 날짜를 건드리지 않는다 — 이미 고지한 마감을 소급 변경하지 않는다. */
+function migrateSelectSchedules_(payload){
+  const dryRun=!(payload.dryRun===false||String(payload.dryRun||'')==='false');
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues().slice(1);
+  const tz=CONFIG.TIMEZONE;
+  const today=new Date();
+  const todayStr=Utilities.formatDate(today,tz,'yyyy-MM-dd');
+  const minDeadline=Utilities.formatDate(new Date(today.getTime()+21*86400000),tz,'yyyy-MM-dd');
+  const out=[];
+  rows.forEach(function(r,i){
+    if(String(r[SELECT_COL['상태']]||'')!=='대기중') return;
+    if(String(r[SELECT_COL['제출일시']]||'').trim()) return;
+    const stage=parseInt(r[SELECT_COL['최종알림단계']])||0;
+    if(stage>=2) return;   // 이미 최종통지 나감 — 고지된 마감 유지
+    const created=parseDateSafe_(r[SELECT_COL['생성일시']]).obj;
+    if(!created||isNaN(created.getTime())) return;
+    const sched=_selectSchedule_(created);
+    const newDeadline=sched.deadline<minDeadline?minDeadline:sched.deadline;
+    const r1=(sched.reminder1<=todayStr||stage>=1)?'':sched.reminder1;
+    const r2=sched.reminder2<todayStr?todayStr:sched.reminder2;
+    out.push({row:i+2,name:String(r[SELECT_COL['고객명']]||''),stage:stage,
+      oldDeadline:String(parseDateSafe_(r[SELECT_COL['셀렉마감일']]).str||'').slice(0,10),
+      newDeadline:newDeadline,reminder1:r1||'(생략)',reminder2:r2});
+    if(!dryRun){
+      selSh.getRange(i+2,SELECT_COL['셀렉마감일']+1).setValue(newDeadline);
+      selSh.getRange(i+2,SELECT_COL['1차알림일']+1).setValue(r1);
+      selSh.getRange(i+2,SELECT_COL['2차알림일']+1).setValue(r2);
+      selSh.getRange(i+2,SELECT_COL['3차알림일']+1).setValue('');
+    }
+  });
+  return {ok:true,dryRun:dryRun,count:out.length,items:out};
+}
+
 function _sendSelectReminderEmail_(row, stage){
   const email=String(row[SELECT_COL['이메일']]||'');
   if(!email||!email.includes('@')) return;
@@ -25864,16 +26384,34 @@ function _sendSelectReminderEmail_(row, stage){
   const selectUrl=buildSelectSessionUrl_(sessionId,row[SELECT_COL['페이지버전']]);
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
   const deadline=String(row[SELECT_COL['셀렉마감일']]||'');
-  const stageText={ko:`${stage}차`,en:`Reminder ${stage}`,de:`Erinnerung ${stage}`};
+  /* 2차부터는 최종 통지다 — 마감일·보관본 삭제·보정 의무 종료를 명시해야 § 643 BGB 식으로
+     의무 종료가 깨끗해진다(2026-08-28 법 검토). 문구를 빼면 고객이 소멸시효 3년 안에
+     "돈 낸 보정 어디 갔냐"고 올 여지가 남는다. */
+  const isFinal=stage>=2;
+  const dl=_selectDateLabel_(deadline,lang);
   const subj={
-    ko:`[Studio mean] 사진 셀렉 리마인드 (${stage}차) — ${name}님`,
-    en:`[Studio mean] Photo selection reminder (${stage}) — ${name}`,
-    de:`[Studio mean] Erinnerung zur Fotoauswahl (${stage}) — ${name}`
+    ko:isFinal?`[Studio mean] 사진 셀렉 최종 안내 — ${name}님 (마감 ${dl})`
+              :`[Studio mean] 사진 셀렉 리마인드 — ${name}님`,
+    en:isFinal?`[Studio mean] Final notice: photo selection — ${name} (deadline ${dl})`
+              :`[Studio mean] Photo selection reminder — ${name}`,
+    de:isFinal?`[Studio mean] Letzte Erinnerung: Fotoauswahl — ${name} (Frist ${dl})`
+              :`[Studio mean] Erinnerung zur Fotoauswahl — ${name}`
+  };
+  const stageText={
+    ko:isFinal?'최종 안내':'리마인드',
+    en:isFinal?'Final notice':'Reminder',
+    de:isFinal?'Letzte Erinnerung':'Erinnerung'
   };
   const intro={
-    ko:`안녕하세요, <b>${name}</b>님.<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다. ${deadline?`마감일은 <b>${deadline}</b>입니다.`:''}`,
-    en:`Hello <b>${name}</b>,<br><br>Your photo selection is still pending. ${deadline?`The current deadline is <b>${deadline}</b>.`:''}`,
-    de:`Guten Tag, <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen. ${deadline?`Die aktuelle Frist ist <b>${deadline}</b>.`:''}`
+    ko:isFinal
+      ?`안녕하세요, <b>${name}</b>님.<br><br>사진 셀렉이 아직 접수되지 않아 마지막으로 안내드립니다.<br><b>${dl}</b>까지 셀렉이 접수되지 않으면, 예약 시 동의하신 약관에 따라 <b>보관 중인 파일은 삭제되며 보정 제공 의무도 함께 종료</b>됩니다.<br>이미 전달드린 원본 파일은 계속 사용하실 수 있습니다.<br><br>사정이 있어 시간이 더 필요하시면 이 메일로 편하게 회신해 주세요 — 기한을 조정해 드리겠습니다.`
+      :`안녕하세요, <b>${name}</b>님.<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다.${deadline?` 셀렉 마감일은 <b>${dl}</b>입니다.`:''}`,
+    en:isFinal
+      ?`Hello <b>${name}</b>,<br><br>This is our final notice regarding your photo selection.<br>If we do not receive your selection by <b>${dl}</b>, the stored files will be deleted and our retouching obligation will end, as set out in the terms you agreed to at booking.<br>The original files already delivered to you remain yours to keep.<br><br>If you need more time, simply reply to this email — we are happy to extend the deadline.`
+      :`Hello <b>${name}</b>,<br><br>Your photo selection is still pending.${deadline?` The selection deadline is <b>${dl}</b>.`:''}`,
+    de:isFinal
+      ?`Guten Tag, <b>${name}</b>,<br><br>dies ist unsere letzte Erinnerung zu Ihrer Fotoauswahl.<br>Geht Ihre Auswahl nicht bis zum <b>${dl}</b> ein, werden die gespeicherten Dateien gemäß den bei der Buchung akzeptierten Bedingungen gelöscht und unsere Retusche-Verpflichtung endet.<br>Die bereits übermittelten Originaldateien bleiben selbstverständlich bei Ihnen.<br><br>Falls Sie mehr Zeit benötigen, antworten Sie einfach auf diese E-Mail — wir verlängern die Frist gern.`
+      :`Guten Tag, <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen.${deadline?` Die Auswahlfrist ist der <b>${dl}</b>.`:''}`
   };
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
   <div style="background:#2D2A26;padding:20px 24px;color:#fff;font-weight:700;">📷 Studio mean · ${stageText[lang]||stageText.ko}</div>
@@ -26970,9 +27508,19 @@ function autoSelectDailyCheck(){
   }catch(e){Logger.log('autoSelectDailyCheck 촬영완료전환 오류:'+e.message);}
 
   // 1. 발송 후 단계별 리마인드
+  /* 좀비 가드(2026-08-28 김연선·김혜연 사례) — 같은 예약에 완료된 셀렉 행이 따로 있는데
+     '대기중' 중복 행이 남아 있으면, 작업이 끝난 고객에게 "셀렉이 안 됐다"는 메일이 나간다.
+     셀렉 행만 보지 말고 **연결 예약의 상태**를 함께 본다: 작업완료·취소면 리마인드 대상이 아니다. */
+  const _bkStatusAll=bookSh.getRange(2,BOOKING_COL['상태']+1,Math.max(1,bookSh.getLastRow()-1),1).getValues();
+  const _bkTerminal=function(bIdx){
+    if(!bIdx||bIdx<2||bIdx-2>=_bkStatusAll.length) return false;
+    const st=String(_bkStatusAll[bIdx-2][0]||'').trim();
+    return st==='작업완료'||st==='취소됨'||st==='자동취소';
+  };
   selRows.forEach((r,i)=>{
     const status=String(r[SELECT_COL['상태']]||'');
     if(status!=='대기중') return;
+    if(_bkTerminal(parseInt(r[SELECT_COL['예약장부행']],10)||0)) return;
     try{
       const stage=parseInt(r[SELECT_COL['최종알림단계']])||0;
       const reminderTargets=[
@@ -33784,14 +34332,14 @@ function buildGutscheinHtml_(g){
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:105mm 148mm;margin:0}
 body{width:105mm;margin:0 auto;background:#fff}
-.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 7mm;background:#fff;page-break-after:always;overflow:hidden}
+.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 10.5mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
 .layout{height:100%;display:grid}
 .front .layout{grid-template-rows:auto 1fr auto;gap:3.2mm}
 .back .layout{grid-template-rows:auto 1fr;gap:4mm}
 .meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.2pt;line-height:1.2;color:var(--muted);letter-spacing:.05em}
-.polaroid{width:100%;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;gap:3mm}
-.film-window{width:100%;min-height:68mm;background:var(--panel);border:1px solid var(--panel-line);display:flex;align-items:center;justify-content:center}
+.polaroid{width:100%;height:100%;min-height:0;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;grid-template-rows:1fr auto;gap:3mm}
+.film-window{width:100%;height:100%;min-height:0;background:var(--panel);border:1px solid var(--panel-line);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .film-window img{width:42%;height:auto;opacity:.16}
 .polaroid-caption{display:grid;grid-template-columns:1fr 24mm;align-items:end;gap:3mm}
 .caption-copy{display:grid;gap:1.4mm}
@@ -33807,7 +34355,7 @@ body{width:105mm;margin:0 auto;background:#fff}
 .notes li{margin:.2mm 0}
 .logo-footer{text-align:center}
 .brand-logo{width:34mm;height:auto;display:block;margin:0 auto}
-.footer-line{margin-top:.8mm;font-size:6.2pt;line-height:1.14;color:var(--ink)}
+.footer-line{margin-top:1.4mm;font-size:6.2pt;line-height:1.14;color:var(--ink)}
 .field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:16pt;line-height:1;color:var(--ink)}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .7mm 0;font-size:12.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:5.5mm}
 .note-card{position:relative;width:100%;height:100%;border:1px solid rgba(45,36,29,.16);background:#fff;padding:3.5mm 3.5mm 15mm;display:grid;grid-template-rows:1fr auto;gap:4mm}

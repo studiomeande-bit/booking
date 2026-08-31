@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-08-29 Europe/Berlin
+Updated: 2026-08-31 Europe/Berlin
 
 ## Immediate
 
@@ -61,6 +61,37 @@ Updated: 2026-08-29 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+
+### Code.gs 분리(board-api) + 정산 랭킹 + 오늘촬영 운영 디벨롭 (2026-08-31, @896 + board-api v1)
+
+- **실측**: 시트 작업이 전혀 없는 `?api=warmup` 조차 4.5~8초 — /exec 고정비는 2MB 스크립트 로드가 맞다.
+  파일 분할로는 안 줄어(같은 프로젝트는 전체 로드) **별도 경량 프로젝트**가 유일한 해법.
+- **board-api 신설** (`appscript-board/`, 새 GAS 프로젝트): 오늘촬영 보드 **읽기 전용** 경로만 탑재.
+  - `Board.gs`는 **생성 파일** — `node scripts/build-board-api.mjs` 가 Code.gs에서 보드 경로의
+    호출 클로저(함수 37·상수 14)를 자동 추출. 손 복사 드리프트 방지(셀렉 v1/v2 전례).
+  - `Shim.gs`: 라우팅 + 인증(자동화 키의 **SHA-256 다이제스트만** 저장, 최초 1회 신뢰) +
+    DB 해석(이름+예약장부 헤더+최신수정 — 백업 사본 회피, ID 캐시).
+  - ⚠️ **오너 1클릭 필요**: 새 프로젝트라 스코프 승인 전엔 /exec가 승인 페이지를 반환.
+    승인 전까지 앱은 메인으로 자동 폴백(기능 무손실). 승인 감시 + 다이제스트 자동 등록 스크립트 상주.
+- **dayops(지연·시작기록) 저장소 이전**: 스크립트 속성 → `당일운영` 시트(숨김). 속성은 프로젝트 간
+  공유 불가라 board-api가 지연 기록을 못 읽는 문제의 근본 해결. 읽기는 레거시 속성 폴백 유지,
+  시트 쓰기 실패 시 속성 폴백. 왕복 검증 완료(9/1 빈 보드에 기록→해제).
+- **레거시 Admin.html 은퇴**: 코드 참조 0건 확인(doGet은 AdminV2만 서빙) → `appscript-retired/`로
+  이동, clasp push로 원격에서도 제거(GAS 버전 히스토리에 잔존). 배포 시 "의도치 않은 Admin.html
+  변경 확인" 함정도 함께 소멸.
+- **정산 자동매칭 랭킹(0-B①)**: 같은 날 동일 금액 여러 건(8/29 여권 €35×4 오배정 실측)의 근본 원인
+  두 가지 수정 — ① 시간 근접이 한 버킷(≤180분 +14)이라 전원 동점 → **6점 간격 등급**(≤45/120/240/420분)
+  으로 시간이 순위를 가르고 ambiguous(±5)도 풀림. ② **이미 결제된 행이 결제일이 다른 거래를
+  '이미 반영됨'으로 삼키던 것 차단**(전일 결제 임채원이 최예준 거래를 소비) — referenceDayGap>0이면
+  auto-match 거부, review로. 매칭보드(시트 재독, 시간정보 없음)는 종전과 동일 동작.
+- **오늘촬영 앱 운영 디벨롭** (빌드 완료):
+  - 잔금/계약금 수령 시 **계약금도 같은 수단으로 기록**(`payMethod`) + 입금확인 메일 `notify:false` —
+    @895 현장수령 현금 계약금의 현금장부 편입을 앱 경로에서 완성. 문구도 "메일 안 나감"으로 정정.
+  - **board-api 고속 경로 + 메인 자동 폴백** (실패·미승인 시 무감 폴백, 키 오류 메시지는 보존).
+  - **픽업 행 「수령 완료」 버튼** — 서버 pickups에 `sessionId` 추가, `select-handover-done`
+    (방문수령·notify:false·확인 다이얼로그). 어드민 안 열고 보드에서 종결.
+- 로드맵 문서 중복 정리: 8-23판 전체가 555행에 한 번 더 붙어 "## Done Recently"가 2개였다 → 병합.
 
 ### 🔴 현장수령 계약금 — 현금장부 영구 누락 + 메일 강제발송 근본수리 (2026-08-29 밤, @895)
 
@@ -592,69 +623,6 @@ init → calendar → slots → quote → submit 로 최소 5회 왕복이라 �
 - ⚠️ 진행 중 **다른 세션이 같은 Code.gs를 동시 편집**해 @868(유효기한 수정)이 @869로 덮여 소실됐다.
   @870에서 재적용. 굿샤인 작업은 한 세션에서만 할 것.
 
-# Update Roadmap
-
-Updated: 2026-08-23 Europe/Berlin
-
-## Immediate
-
-1. ~~Booking end-to-end verification~~ → **완료 (2026-08-02, Update 4 릴리스 게이트)**: 라이브 합성 예약 1건으로 Netlify 제출→시트행→캘린더(버퍼 슬롯 차단 실증)→고객·관리자 메일까지 통과, 정리(booking-delete)·슬롯 원복까지 확인. 상세는 `docs/update-4-plan.md`
-- 잔여(오너): Apps Script 200버전 한도 정리 — 배포 자체는 계속 가능한 상태
-
-2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
-
-3. Receivables cleanup → 전수 검증 완료 (2026-07-16, @603): 미수 19건 €4,855.50 → 5건 €1,787.50
-- 정리 13건: SumUp/은행 증거 6건(Jenna·최성열·정주희·황영목 288+10 분할이체·정채연·Kim yoonsuh) + 현금 완납 추정 7건(손유정·김진아·김수은·김영서·이세은·조미정·차수진, 상태완료+현장결제 관행, evidenceStatus로 구분 기록)
-- 신규 에이전트 액션 `booking-confirm-balance` (paidDate/amount/payMethod/evidenceStatus) — confirmBookingBalanceAdmin 재사용
-- 부수 효과: Jenna·Kim yoonsuh 결제수단 현금→카드 정정으로 현금장부 이중집계 €600 해소 (totalIn 4,608→4,008)
-- ~~Sae-Jin Choi €210(카드 7/11)~~ → 사장님 확인(2026-07-16): GIROCARD €230 = 잔금 €210 + **팁 €20** — 잔금결제금액 230으로 확정(@606). 팁 €20은 사장님 지시로 수기 매출 행213 "Trinkgeld (카드결제 팁)"로 별도 등록(작업완료·sumup 증거) — 사업자 본인 수령 팁 과세 매출 처리 선례
-- **미수는 HSAD €892.50 1건뿐 (2026-07-17 사장님 확인: "이것 외 미수 없음")**. STMIN-260013, payMethod "미결제(offen)" — daily-briefing/회계 openAmount 집계에도 유일 미수로 확인됨.
-  - ~~사장님 확인 4건~~ → 전부 입금 완료로 종결(2026-07-17): 장진욱(행17 현금)·송영미(행9 카드)·조재연(행4 카드, 잔금 이미 €0)·박지은(행168 계좌이체) — 결제수단이 이미 찍혀 있어 **시스템 미수 집계에 애초 미포함**. SumUp 4~5월/은행 CSV 자동매칭 증거만 없던 것 → 사장님 확인으로 대체, 백필 불요. 장부 수정 없음(이미 결제 처리 상태)
-- 정산(settlement) 리뷰 큐 140건 정리는 별도 트랙 → **소진 (2026-08-03 확인)**: 최근 14일 review 0건, 미수는 2건 €330(정다은·박지은, 둘 다 잔금)뿐. 트랙 종료
-
-## Next
-
-6. ~~Gutschein V2 customer redemption design~~ → 전항목 배포 완료 (2026-07-14, Done Recently 참조). 실전 코드 적용 1회 확인만 남음
-
-7. ~~Calendar performance follow-up~~ → **트랙 종료 (2026-07-31)**
-- ~~measure current month / next month / third month load gap~~ → 월 이벤트 캐시(@709)로 4s 검증, 프런트 프리페치 적용
-- ~~tune month-summary cache TTL~~ → getCachedMonthEvents_ 120초 확정
-- ~~refine background prefetch order~~ → 현재 달 우선 + 다음 2달 백그라운드
-- ~~reduce visual confusion while loading later months~~ → 완료 (2026-07-31): 예약가능 날짜 0인 달 명확 안내(3개국어) + 자동선택 휴무일 제외 버그 픽스 + 크림톤 스켈레톤. 트랙 종료
-
-8. ~~Select real-session verification~~ → **완료 (2026-08-02 게이트)**: 실세션(차수진 KJHYDb8…)에서 링크 열기·복원·서비스컷 렌더 확인, 조회 경로는 읽기 전용
-- ~~open existing session link / restore existing submission / submit update flow / extra prints / success screen~~ → 게이트 통과
-- ~~서비스컷이 v2에 미구현이던 버그~~ → v2 포팅 완료 (2026-07-15, 8f166ab): 무료 보정 슬롯+안내+복원+제출 왕복. **오너 확인 필요**: 어드민에서 serviceCutCount N 설정한 v2 세션 열어 서비스컷 N슬롯 표시 확인
-- 서비스컷 perk 결정 대기: v1의 "서비스컷당 기본 10×15 인화 무료(차액청구)"는 v2 디커플드 모델상 미이식(v2 보너스도 인화 미포함) — 원하면 백엔드 작업으로 추가 가능
-
-9. Mail content cleanup — **완료 (2026-08-02 검수)**
-- ~~reduce repeated text across pending / confirmed / follow-up mails~~ → 1B 접수메일 다이어트(여권만 풀가이드)·결제블록 dedupe·팔로우업 3종 `_followupCommonHtml_` 공용화 (7/15)
-- ~~unify Korean / English / German tone~~ → 인사말·움라우트·제목 통일 (7/15), 감사/돌추천/기념일(B5) 3개국어 톤 일관 확인 (8/2)
-- ~~verify pre-wedding / passport infant / dol guide content balance~~ → wed/pass 가이드 패리티 (7/15), 돌상 무료조건 문구는 Professional €130 조건으로 갱신 (8/2)
-- ~~보정 요청 가이드 예시가 "자연스럽게"(가이드가 경계하는 바로 그 모호어)를 사용~~ → 구체 문구로 재작성 완료 (2026-07-15, 8f166ab): 부위+방향+원본유지 경계. v1/v2 가이드·placeholder 5곳, BAD 예시는 의도적 유지
-
-## Later
-
-10. Corporate / Event product redesign (2026-07-15 Phase 1 배포 완료)
-- proposal: `docs/biz-event-product-redesign.md` — 2트랙(B2C 예약형/B2B 상담형) 구조 사장님 확정
-- ~~Phase 1~~: 단가표 노출 제거(프론트+백엔드) + 하이브리드 모드 + 어드민 수기입력 전환 — 라이브 검증 완료 (8a680be, @582)
-- ~~① 가족파티 고정가~~ → dolp €350/토 €400 신설·배포 완료 (2026-07-15, 0a84f7b·@583). amt 변형은 상담 유지(사장님), 프리미엄 10×15 €3 유지(사장님)
-- ~~④ 단가표 비노출 저장~~ → 스킬 레퍼런스 파일에 저장 완료 (2026-07-15). 견적 작성 시 netto×1.19
-- Phase 2+3 → **Update 4로 확정** (2026-07-16 사장님 승인): `docs/update-4-plan.md` — 첫 메뉴 B2B/B2C 분리(사장님 지시), 프리웨딩↔웨딩본식 구분, 설명문 개선, B2B 상담형 전환(상담 설문 인프라 재사용), 견적 드래프트는 에이전트 경로만, 계약금 인보이스 명시 실행형, ~~Drehvertrag→Update 5~~ → **v1 배포 완료 (2026-08-02, @717~720)**: `docs/drehvertrag-pipeline.md` — B2B·본식·€500+ 대상, create→send→온라인 전자서명→서명본 PDF, contract-pending 큐
-
-11. Final design pass (2026-07-15 부분 완료)
-- ~~booking success screen polish~~ → 2026-07-27 완료: 디자인 패스 세션이 이미 핵심(체크 원형·중앙 정렬, booking.css "성공 화면 폴리시" 블록)을 적용해 둔 상태였고, 남은 흠(홀수 개 요약 그리드에서 금액 옆 빈 칸)만 마지막 항목 전체폭 스팬으로 마감
-- ~~select design alignment with booking~~ → 사장님 결정으로 종결: 셀렉은 크림+그린 톤 유지 (의도된 무드 구분)
-- ~~spacing / typography consistency review~~ → 폰트 스택 통일 완료 (Noto Sans KR 우선)
-- ~~mobile safe-area and in-app browser polish~~ → select viewport-fit=cover + safe-area insets 적용 완료
-
-12. ~~Ops checklist refresh~~ → docs/ops-checklist.md 작성 완료 (2026-07-15: 배포 절차·주의사항·회귀 체크리스트)
-
-14. 은행 데이터 공백 감지 → **배포 완료 (2026-08-03, @724)**: `docs/bank-data-gap-detection.md` — 7월 지출 0건(은행 CSV 미임포트) 사고에서 출발. 브리핑 21일 공백 경고 + 월마감 blocker 2종(은행거래·지출). **오너 액션: 7월 이후 은행 CSV 임포트 필요**
-
-13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
-
-## Done Recently
 
 - **erp-agent 동시 요청이 서로의 세션을 지우던 버그 (2026-08-27, @869)** ⚠️ 오래 숨어 있던 것
   - 증상: 앱 화면에 `세션이 만료되었습니다. 다시 로그인해주세요.` — 같은 순간 CLI 단건은 정상.
