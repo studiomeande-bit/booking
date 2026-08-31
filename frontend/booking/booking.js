@@ -1770,7 +1770,7 @@ function wireEvents() {
   els.profileAgeInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.studioFamilyInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
-  els.reshootingConsent?.addEventListener('change', refreshStepLocks);
+  els.reshootingConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
@@ -2881,10 +2881,16 @@ function getContractSubmissionData(formData = new FormData(els.form)) {
   };
 }
 
+/* '필수 항목 전체 선택'은 그 순간 필수인 항목을 전부 커버해야 한다.
+   재촬영 동의(영아·키즈 필수, 스텝2 소속)가 빠져 있어서 — 고객이 스텝5에서 전체 선택을 누르고
+   제출하면 "재촬영 약관에 동의해 주세요"에 막히는데 그 체크박스는 세 단계 앞 화면 밖에 있었다
+   ("동의가 안 눌린다" 신고의 정체, 2026-08-31). 필수일 때만 함께 체크한다 —
+   필수가 아닌데 미리 켜 두면 약관을 보지 않은 동의가 된다. */
 function toggleAllRequired(event) {
   const checked = !!event?.target?.checked;
   if (els.form.elements.contractTermsConsent) els.form.elements.contractTermsConsent.checked = checked;
   if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
+  if (needsReshootingConsent() && els.reshootingConsent) els.reshootingConsent.checked = checked;
   syncSelectAllRequired();
 }
 
@@ -2893,7 +2899,8 @@ function syncSelectAllRequired() {
   if (!el) return;
   const contract = !!els.form.elements.contractTermsConsent?.checked;
   const gdpr = !!els.form.elements.gdprConsent?.checked;
-  el.checked = contract && gdpr;
+  const reshoot = !needsReshootingConsent() || !!els.reshootingConsent?.checked;
+  el.checked = contract && gdpr && reshoot;
 }
 
 function syncConsentVisibility() {
@@ -6579,6 +6586,15 @@ async function onSubmit(event) {
           : '재촬영 약관에 동의해 주세요.',
       'error'
     );
+    // 체크박스가 세 단계 앞(스텝2)에 있어 배너만으로는 못 찾는다 — 데려가서 보여준다
+    try {
+      const field = document.getElementById('reshootingField');
+      field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field?.animate(
+        [{ boxShadow: '0 0 0 3px rgba(181,76,45,.55)' }, { boxShadow: '0 0 0 0 rgba(181,76,45,0)' }],
+        { duration: 1600, iterations: 2 }
+      );
+    } catch (e) {}
     return;
   }
   if (payload.babyName) {
