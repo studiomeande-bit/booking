@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-08-31T10:43:51.636Z
- * 포함 함수 37개 / 상수 14개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-08-31T17:26:45.448Z
+ * 포함 함수 38개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -234,6 +234,25 @@ function readPickupsForDate_(dateStr){
   return out;
 }
 
+const LEGACY_VISIT_SHEET_NAME_='과거방문';
+
+const LEGACY_VISIT_HEADERS_=['방문일','고객명','상품메모','출처'];
+
+function readLegacyVisitsByName_(){
+  const out={};
+  try{
+    const sh=ensureSheets_().ss.getSheetByName(LEGACY_VISIT_SHEET_NAME_);
+    if(!sh||sh.getLastRow()<2) return out;
+    sh.getRange(2,1,sh.getLastRow()-1,LEGACY_VISIT_HEADERS_.length).getValues().forEach(function(r){
+      const key=normalizeReturnName_(r[1]);
+      const date=String(parseDateSafe_(r[0]).str||'').slice(0,10);
+      if(!key||!date) return;
+      (out[key]||(out[key]=[])).push({date:date,product:String(r[2]||'').trim()});
+    });
+  }catch(e){ Logger.log('legacy visits read skipped: '+e.message); }
+  return out;
+}
+
 function _customerKeyForRow_(row){
   const p=_inqPhoneKey_(row[BOOKING_COL['연락처']]);
   if(p) return 'p:'+p;
@@ -262,6 +281,20 @@ function buildTodayBoard_(dateStr){
     const key=_customerKeyForRow_(row);
     if(!key) return;
     (custHist[key]||(custHist[key]=[])).push({
+      date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      rowIndex:idx+2});
+  });
+  // 과거방문(pre-ERP 백필) — 이름 매칭으로 오늘 고객의 재방문 횟수에 합산 (3회차 혜택 판정)
+  const legacyByName=readLegacyVisitsByName_();
+  /* 이름 합집합 인덱스 — 같은 고객이 예약마다 다른 전화/이메일을 써서 신원이 쪼개진 경우
+     (실측: 김지훈 3분신) 혜택 판정이 어긋난다. 키 기반과 이름 기반을 rowIndex로 합쳐 센다. */
+  const custHistByName={};
+  rows.forEach(function(row,idx){
+    if(isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))) return;
+    const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+    if(!nm) return;
+    (custHistByName[nm]||(custHistByName[nm]=[])).push({
       date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
       product:String(row[BOOKING_COL['상품']]||'').trim(),
       rowIndex:idx+2});
@@ -303,17 +336,28 @@ function buildTodayBoard_(dateStr){
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
       visitCount:(function(){
         const key=_customerKeyForRow_(row);
-        if(!key||!custHist[key]) return 0;
-        return custHist[key].filter(function(h){return h.date<today;}).length;
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; let n=0;
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; n++;
+        });
+        n+=(legacyByName[nm]||[]).filter(function(v){return v.date<today;}).length;
+        return n;
       })(),
       prevShoots:(function(){
         const key=_customerKeyForRow_(row);
-        if(!key||!custHist[key]) return [];
-        return custHist[key]
-          .filter(function(h){return h.date<today;})
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; const merged=[];
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; merged.push(h);
+        });
+        (legacyByName[nm]||[]).forEach(function(v){ if(v.date<today) merged.push(v); });
+        return merged
           .sort(function(a,b){return b.date<a.date?-1:1;})
           .slice(0,3)
-          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+h.product;});
+          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+(h.product||'');});
       })(),
       // 당일 운영: 지연 분·실제 도착. 예약일시는 그대로 두고 표시만 밀린다
       delayMin:(function(){ const o=dayOps[String(idx+2)]; return o&&isFinite(o.delay)?Number(o.delay):0; })(),

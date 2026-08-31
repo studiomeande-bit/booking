@@ -2263,6 +2263,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
         if(action==='select-schedule-migrate') return jsonOk_(migrateSelectSchedules_(payload||{}));
         if(action==='customer-list') return jsonOk_(buildCustomerDirectory_(payload.keyword||''));
+        if(action==='legacy-visit-import') return jsonOk_(importLegacyVisitsAdmin(token,payload||{}));
         if(action==='tax-record-add') return jsonOk_(addTaxRecord_(payload||{}));
         if(action==='tax-record-list') return jsonOk_(Object.assign(listTaxLedger_(),{recon:(function(){const r=buildTaxReconciliation_();return {unpaid:r.unpaid,unlinked:r.unlinked,privateLinked:r.privateLinked};})()}));
         if(action==='booking-add-pass-country') return jsonOk_(addPassCountryForAgent_(token,payload||{}));
@@ -2552,6 +2553,9 @@ function normalizePhoneForLedger_(phone, defaultCountryCode){
   let raw=String(phone||'').trim();
   if(!raw) return '';
   let value=raw.replace(/[^\d+]/g,'');
+  // 숫자가 사실상 없는 입력(문자만 등)에 국가코드를 붙이면 장부에 '+49' 단독으로 남아 연락 불가 + 고객 키 오염 —
+  // 원문을 그대로 보존해 사람이 알아보게 한다 (2026-08-31 전수 리뷰)
+  if(value.replace(/\D/g,'').length<6) return raw.slice(0,40);
   if(value.indexOf('00')===0) value='+'+value.slice(2);
   const country=String(defaultCountryCode||'+49').trim().replace(/[^\d+]/g,'')||'+49';
   if(value.charAt(0)!=='+'){
@@ -4810,6 +4814,64 @@ function readPickupsForDate_(dateStr){
   return out;
 }
 
+/* ===== 과거방문 (pre-ERP 백필, 2026-08-31) =====
+   장부는 2026-01-02부터지만 실제 운영은 2025-10부터다(애플 '사진촬영 일정' 캘린더 실측 116건).
+   재방문 횟수(3회차 혜택)가 이 공백을 못 보면 단골이 신규로 계산된다.
+   ⚠️ 캘린더 기록엔 연락처가 없어 **이름 정규화 매칭**만 가능 — 동명이인 오합산 위험은
+   수용한다(혜택 판정용이지 돈 계산이 아니다). 시트가 정본, 수정은 시트에서 직접. */
+const LEGACY_VISIT_SHEET_NAME_='과거방문';
+const LEGACY_VISIT_HEADERS_=['방문일','고객명','상품메모','출처'];
+function ensureLegacyVisitSheet_(ss){
+  let sh=ss.getSheetByName(LEGACY_VISIT_SHEET_NAME_);
+  if(!sh){
+    sh=ss.insertSheet(LEGACY_VISIT_SHEET_NAME_);
+    sh.appendRow(LEGACY_VISIT_HEADERS_);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function readLegacyVisitsByName_(){
+  const out={};
+  try{
+    const sh=ensureSheets_().ss.getSheetByName(LEGACY_VISIT_SHEET_NAME_);
+    if(!sh||sh.getLastRow()<2) return out;
+    sh.getRange(2,1,sh.getLastRow()-1,LEGACY_VISIT_HEADERS_.length).getValues().forEach(function(r){
+      const key=normalizeReturnName_(r[1]);
+      const date=String(parseDateSafe_(r[0]).str||'').slice(0,10);
+      if(!key||!date) return;
+      (out[key]||(out[key]=[])).push({date:date,product:String(r[2]||'').trim()});
+    });
+  }catch(e){ Logger.log('legacy visits read skipped: '+e.message); }
+  return out;
+}
+function importLegacyVisitsAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rows=Array.isArray(payload.rows)?payload.rows:[];
+  const dryRun=payload.dryRun!==false&&String(payload.dryRun||'')!=='false';
+  const sh=ensureLegacyVisitSheet_(ensureSheets_().ss);
+  const existing=new Set();
+  if(sh.getLastRow()>1){
+    sh.getRange(2,1,sh.getLastRow()-1,2).getValues().forEach(function(r){
+      existing.add(String(parseDateSafe_(r[0]).str||'').slice(0,10)+'|'+normalizeReturnName_(r[1]));
+    });
+  }
+  const toAdd=[];
+  rows.forEach(function(r){
+    const date=String(r.date||'').slice(0,10);
+    const name=String(r.name||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!name) return;
+    const key=date+'|'+normalizeReturnName_(name);
+    if(existing.has(key)) return;
+    existing.add(key);
+    toAdd.push([date,name,String(r.product||'').trim().slice(0,80),String(r.source||'apple-cal').slice(0,30)]);
+  });
+  if(!dryRun&&toAdd.length){
+    sh.getRange(sh.getLastRow()+1,1,toAdd.length,LEGACY_VISIT_HEADERS_.length).setValues(toAdd);
+  }
+  return {ok:true,dryRun:dryRun,received:rows.length,added:toAdd.length,skippedDup:rows.length-toAdd.length};
+}
+
 /* ===== 고객 디렉터리 (2026-08-29) =====
    예약장부를 사람 단위로 접는다. 별도 시트를 만들지 않는다 — 장부가 이미 진실원장이고,
    사본 시트는 하루 만에 어긋난다. 신원 키는 문의 매칭과 동일: 전화 뒤 9자리 → 이메일 → 이름.
@@ -4850,6 +4912,23 @@ function buildCustomerDirectory_(keyword){
     entry.history.push({date:dt,product:String(row[BOOKING_COL['상품']]||'').trim(),
       group:String(row[BOOKING_COL['촬영종류']]||'').trim(),status:status,rowIndex:idx+2});
   });
+  /* 과거방문(pre-ERP) 병합 — 이름 정규화 매칭. 장부 고객과 이름이 같으면 그 고객의 방문으로 합산,
+     없으면 이름 키 단독 고객으로 남긴다(연락처가 없어 그 이상은 불가). */
+  try{
+    const legacy=readLegacyVisitsByName_();
+    const byName={};
+    Object.keys(map).forEach(function(k){ const nm=normalizeReturnName_(map[k].name); if(nm&&!byName[nm]) byName[nm]=map[k]; });
+    Object.keys(legacy).forEach(function(nm){
+      const entry=byName[nm]||map['n:'+nm]||(map['n:'+nm]={key:'n:'+nm,name:legacy[nm][0]&&legacy[nm].length?nm:nm,phone:'',email:'',visits:0,firstVisit:'',lastVisit:'',totalSpend:0,history:[]});
+      legacy[nm].forEach(function(v){
+        entry.visits++;
+        if(!entry.firstVisit||v.date<entry.firstVisit) entry.firstVisit=v.date;
+        if(v.date>entry.lastVisit&&!entry.name) entry.lastVisit=v.date;
+        entry.history.push({date:v.date,product:v.product||'(과거방문)',group:'',status:'과거방문',rowIndex:0});
+      });
+      if(!entry.name) entry.name=nm;
+    });
+  }catch(e){ Logger.log('directory legacy merge skipped: '+e.message); }
   let list=Object.keys(map).map(function(k){
     const e=map[k];
     e.history.sort(function(a,b){return b.date<a.date?-1:1;});
@@ -4902,6 +4981,20 @@ function buildTodayBoard_(dateStr){
       product:String(row[BOOKING_COL['상품']]||'').trim(),
       rowIndex:idx+2});
   });
+  // 과거방문(pre-ERP 백필) — 이름 매칭으로 오늘 고객의 재방문 횟수에 합산 (3회차 혜택 판정)
+  const legacyByName=readLegacyVisitsByName_();
+  /* 이름 합집합 인덱스 — 같은 고객이 예약마다 다른 전화/이메일을 써서 신원이 쪼개진 경우
+     (실측: 김지훈 3분신) 혜택 판정이 어긋난다. 키 기반과 이름 기반을 rowIndex로 합쳐 센다. */
+  const custHistByName={};
+  rows.forEach(function(row,idx){
+    if(isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))) return;
+    const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+    if(!nm) return;
+    (custHistByName[nm]||(custHistByName[nm]=[])).push({
+      date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      rowIndex:idx+2});
+  });
   _t.custIndex=Date.now()-_t0;
   const shoots=[];
   rows.forEach(function(row,idx){
@@ -4939,17 +5032,28 @@ function buildTodayBoard_(dateStr){
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
       visitCount:(function(){
         const key=_customerKeyForRow_(row);
-        if(!key||!custHist[key]) return 0;
-        return custHist[key].filter(function(h){return h.date<today;}).length;
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; let n=0;
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; n++;
+        });
+        n+=(legacyByName[nm]||[]).filter(function(v){return v.date<today;}).length;
+        return n;
       })(),
       prevShoots:(function(){
         const key=_customerKeyForRow_(row);
-        if(!key||!custHist[key]) return [];
-        return custHist[key]
-          .filter(function(h){return h.date<today;})
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; const merged=[];
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; merged.push(h);
+        });
+        (legacyByName[nm]||[]).forEach(function(v){ if(v.date<today) merged.push(v); });
+        return merged
           .sort(function(a,b){return b.date<a.date?-1:1;})
           .slice(0,3)
-          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+h.product;});
+          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+(h.product||'');});
       })(),
       // 당일 운영: 지연 분·실제 도착. 예약일시는 그대로 두고 표시만 밀린다
       delayMin:(function(){ const o=dayOps[String(idx+2)]; return o&&isFinite(o.delay)?Number(o.delay):0; })(),
@@ -11501,8 +11605,17 @@ function processForm(data){
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,bookingLocation)){
       // 캘린더 읽기 실패로 막힌 것이면 '마감'이 아니라 일시 오류다 — 고객이 재시도하도록 구분해서 알린다
-      if(CAL_READ_FAILED_) throw new Error('예약 시스템이 일정을 일시적으로 확인할 수 없습니다. 1분 후 다시 시도해 주세요.');
-      throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
+      const _slotErrLang=(data&&(data.lang==='en'||data.lang==='de'))?data.lang:'ko';
+      if(CAL_READ_FAILED_) throw new Error({
+        ko:'예약 시스템이 일정을 일시적으로 확인할 수 없습니다. 1분 후 다시 시도해 주세요.',
+        en:'We could not verify the calendar just now. Please try again in a minute.',
+        de:'Der Kalender konnte gerade nicht geprüft werden. Bitte versuchen Sie es in einer Minute erneut.'
+      }[_slotErrLang]);
+      throw new Error({
+        ko:'예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.',
+        en:'This time slot has just been taken. Please choose another time.',
+        de:'Dieser Termin ist leider soeben vergeben worden. Bitte wählen Sie eine andere Uhrzeit.'
+      }[_slotErrLang]);
     }
     // skipCache=true — 제출 시점의 확정모드·추천상태는 캐시가 아니라 실시간 캘린더로 판정한다
     const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup, true);
@@ -12262,13 +12375,53 @@ function getBookingConsentNoticeHtml_(lang,details){
   return `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#7c2d12;"><b>${copy.title}</b><br>${copy.body}</div>`;
 }
 
+/* 확정 시점의 이전 방문 수 — 장부(이메일→이름) + 과거방문(이름). 취소 제외.
+   전화가 이 함수까지 안 내려와 이메일·이름 매칭만 쓴다(혜택 판정용 근사치). */
+function countPriorVisitsForIdentity_(name,email){
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  if(last<2) return 0;
+  const rows=sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const emailKey=_inqEmailKey_(email);
+  const nameKey=normalizeReturnName_(name);
+  let n=0;
+  rows.forEach(function(r){
+    if(isBookingCancelledStatus_(String(r[BOOKING_COL['상태']]||''))) return;
+    const d=String(parseDateSafe_(r[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    if(!d||d>=today) return;
+    const em=_inqEmailKey_(r[BOOKING_COL['이메일']]);
+    if((emailKey&&em===emailKey)||(nameKey&&normalizeReturnName_(r[BOOKING_COL['고객명']])===nameKey)) n++;
+  });
+  try{
+    const legacy=readLegacyVisitsByName_()[nameKey]||[];
+    n+=legacy.filter(function(v){return v.date<today;}).length;
+  }catch(e){}
+  return n;
+}
+
 function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,passCountries,surveyKeys,depositAmount,balanceAmount,eventId,details){
   if(!email||email.includes('수기등록')) return;
   const T=EMAIL_I18N[lang||'ko']||EMAIL_I18N.ko;
   const {obj:dt}=parseDateSafe_(timeRaw);
   const formattedTime=Utilities.formatDate(dt,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const allCountries=(passCountries||[]).join(', ');
-  const guide=prepSurveyMailBlockHtml_(itemGroup,lang||'ko',eventId)
+  /* 3회차 이상 재방문 혜택 안내 (2026-08-31 승인) — 과거방문(pre-ERP) 포함 이름·이메일로 셈.
+     톤은 조용하게: 판촉이 아니라 알아봄. */
+  let benefitHtml='';
+  try{
+    if(itemGroup!=='biz'&&itemGroup!=='마이리얼트립'){
+      const prior=countPriorVisitsForIdentity_(name,email);
+      if(prior>=2){
+        const bT={
+          ko:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">벌써 <b>${prior+1}번째</b> 걸음이시네요. 감사의 뜻으로 촬영 당일 <b>시그니처 인화 한 장</b>을 준비해 드립니다.<br>스튜디오·프로필·가족 촬영을 계획하실 땐 <b>€20</b>을 저희가 보탭니다 — 예약 메모에 '재방문'이라고 한 줄만 남겨 주세요.</div>`,
+          en:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">This is already your <b>${prior+1}th</b> visit with us. As a small thank-you, a <b>signature print</b> will be ready for you on the day.<br>Planning a studio, profile or family session? We will add <b>€20</b> — just mention 'returning' in your booking note.</div>`,
+          de:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">Dies ist bereits Ihr <b>${prior+1}. Besuch</b> bei uns. Als kleines Dankeschön liegt am Aufnahmetag ein <b>Signature-Abzug</b> für Sie bereit.<br>Bei einem Studio-, Profil- oder Familienshooting legen wir <b>20 €</b> dazu — vermerken Sie einfach 'Wiederkehr' bei der Buchung.</div>`};
+        benefitHtml=bT[lang||'ko']||bT.ko;
+      }
+    }
+  }catch(e){ Logger.log('benefit block skipped: '+e.message); }
+  const guide=benefitHtml+prepSurveyMailBlockHtml_(itemGroup,lang||'ko',eventId)
     +_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup})
     +buildPartnerMailBlockHtml_(partnerContextFrom_(itemGroup,[prodLocal,details&&details.extraItem].filter(Boolean).join(' '),surveyKeys||[],(details&&details.babyType)||''),lang||'ko','mail');
   const dep=roundCurrency_(toNumberOrZero_(depositAmount));
@@ -35315,24 +35468,35 @@ function sendPassportPhotosAdmin(token, rowIndex, payload){
       en:'※ Validity: 6 months from shoot date (German authorities)',
       de:'※ Gültigkeit: 6 Monate ab Aufnahmedatum (deutsche Behörden)'
     };
+    /* 여권은 리뷰 요청을 전달 메일에 싣는다(사진 받는 순간이 가장 자연스럽다 — 2026-08-31 사장님).
+       아래에서 촬영후감사메일발송일시를 스탬프해 별도 감사메일(1~14일 후)이 중복으로 안 나간다. */
+    const reviewUrl=_getReviewLinks_().google;
+    const reviewBlock={
+      ko:`<p style="margin:16px 0;">사진이 마음에 드셨다면, 구글 리뷰 한 줄이 저희에게 큰 힘이 됩니다.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">구글 리뷰 남기기</a></p>`,
+      en:`<p style="margin:16px 0;">If you are happy with your photos, a short Google review would mean a lot to us.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">Leave a Google review</a></p>`,
+      de:`<p style="margin:16px 0;">Wenn Ihnen die Fotos gefallen, freuen wir uns sehr über eine kurze Google-Bewertung.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">Google-Bewertung schreiben</a></p>`
+    };
     const body={
       ko:`<p>안녕하세요, <b>${safeName}</b>님.<br>촬영해 드린 여권사진을 전달드립니다.</p>
 <p>📁 <b>사진 폴더:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 상품: ${safeProduct}<br>📅 촬영일: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.ko}</p>
+${reviewBlock.ko}
 <p>이용해 주셔서 감사합니다.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
       en:`<p>Hello <b>${safeName}</b>,<br>please find your passport photos below.</p>
 <p>📁 <b>Photo folder:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Product: ${safeProduct}<br>📅 Shoot date: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.en}</p>
+${reviewBlock.en}
 <p>Thank you.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
       de:`<p>Guten Tag, <b>${safeName}</b>,<br>hier sind Ihre Passfotos.</p>
 <p>📁 <b>Fotoordner:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Produkt: ${safeProduct}<br>📅 Aufnahmedatum: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.de}</p>
+${reviewBlock.de}
 <p>Vielen Dank.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`
     };
     const L=(lang==='en'||lang==='de')?lang:'ko';
@@ -35343,6 +35507,14 @@ ${safeNote?`<p>📝 ${safeNote}</p>`:''}
     const existing=String(row[memoCol]||'');
     const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${folderResult.name?' · '+folderResult.name:''} · 링크 편집 권한 적용 (${permissionSummary})${note?' ('+note+')':''}`;
     sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
+    /* 리뷰 요청이 이 메일에 실렸으므로 별도 감사메일(1~14일 후 자동)이 또 나가면 이중 요청이 된다 —
+       감사메일 타임스탬프를 여기서 스탬프해 그 잡이 자연 스킵되게 한다(2026-08-31). */
+    try{
+      const thanksCol=BOOKING_COL['촬영후감사메일발송일시'];
+      if(thanksCol!=null&&!String(row[thanksCol]||'').trim()){
+        sh.getRange(rowIndex,thanksCol+1).setValue(stamp+' (여권 전달메일에 리뷰 포함)');
+      }
+    }catch(e){}
     const sheets=ensureSheets_();
     const selSh=ensureSelectSheet_(sheets.ss);
     const selRows=selSh.getDataRange().getValues();
