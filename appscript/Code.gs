@@ -5575,8 +5575,8 @@ function _sendConsultationAppointmentUpdateEmail_(c,appt,mode){
       ? `Hello ${escapeHtml_(c.name)},<br><br>The following consultation appointment has been cancelled.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><br>If you would like to arrange a new time, simply reply to this email.<br><br>${_getSignatureHtml()}`
       : `Hello ${escapeHtml_(c.name)},<br><br>Your consultation appointment has been scheduled as follows.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><b>Location/link</b>: ${escapeHtml_(location||'-')}<br><br>If anything needs to be changed, simply reply to this email.<br><br>${_getSignatureHtml()}`,
     de:isCancel
-      ? `Guten Tag, ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren mochten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
-      : `Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geandert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      ? `Guten Tag, ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren möchten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      : `Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geändert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:email,subject:subject[L],htmlBody:body[L]},{
@@ -17074,7 +17074,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
       ['Paket',product],
       ['Termin',shootAt],
       ['Erhaltene Anzahlung',paidText],
-      ['Bestaetigt am',paidAtText],
+      ['Bestätigt am',paidAtText],
       balanceText?['Restbetrag',balanceText]:null
     ]
   };
@@ -23689,7 +23689,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     ${resendNotice}
     <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:20px;">${intro[L]}</p>
     <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:20px;">
-      <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">${L==='ko'?'진행 순서':L==='en'?'How it works':'So gehts'}</div>
+      <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">${L==='ko'?'진행 순서':L==='en'?'How it works':'So geht’s'}</div>
       ${stepsHtml}
     </div>
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:20px;font-size:13px;color:#15803d;">
@@ -26229,7 +26229,7 @@ function submitPhotoSelection(sessionId,sub){
     bumpCalCacheVer_();
     _sendSelectSubmitAlert(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});
     if(!sub.suppressCustomerEmail){
-      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);try{logMessage_({channel:'select',direction:'outbound',type:'receipt',to:String(row[3]||''),subject:'셀렉 접수확인 메일 실패 — '+row[2],status:'실패',meta:{error:String(e.message||e)}});}catch(_){}}
     }
     return{
       ok:true,
@@ -26319,12 +26319,19 @@ function _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,e
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉] ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html});
 }
 
-function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery,photocard,printUpgradeItems){
+/* ⚠️ 2026-08-31 수리: 본문이 volumeDiscount 를 쓰는데 시그니처에 인자가 없어 ReferenceError 로
+   **매 제출마다 조용히 죽던 메일**(볼륨 할인 도입 2026-08-09 이후 고객 접수확인 미발송 —
+   호출부 try/catch 가 삼켰다). isUpdate=true 면 '수정 접수' 문구로 나간다(종전엔 수정 시 무통지). */
+function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery,photocard,printUpgradeItems,volumeDiscount,isUpdate){
   const email=String(row[3]||'');if(!email||!email.includes('@'))return;
   const lang=String(row[10]||'ko');
-  const subj={ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
+  const subj=isUpdate
+    ? {ko:`[Studio mean] ✏️ 사진 셀렉 수정 접수 — ${row[2]}님`,en:`[Studio mean] ✏️ Photo Selection Updated — ${row[2]}`,de:`[Studio mean] ✏️ Fotoauswahl aktualisiert — ${row[2]}`}
+    : {ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
   const greet={ko:`안녕하세요, <b>${row[2]}</b>님.`,en:`Hello <b>${row[2]}</b>,`,de:`Guten Tag, <b>${row[2]}</b>,`};
-  const intro={ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl wurde eingegangen. Bitte überprüfen Sie die Details unten.'};
+  const intro=isUpdate
+    ? {ko:'수정하신 사진 셀렉 내용이 접수되었습니다. 아래 내용이 최종 기준입니다.',en:'Your updated photo selection has been received. The details below are now final.',de:'Ihre aktualisierte Fotoauswahl ist eingegangen. Die folgenden Angaben sind nun maßgeblich.'}
+    : {ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl ist eingegangen. Bitte überprüfen Sie die Details unten.'};
   const photoListHtml=`<ul style="margin:6px 0 0;padding-left:18px;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul>`;
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
   const printListHtml=printChargeItems.length?`<ul style="margin:6px 0 0;padding-left:18px;">${printChargeItems.map(formatSelectPrintItemHtml_).join('')}</ul>`:'';
@@ -26333,8 +26340,14 @@ function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchA
     : '';
   const photocardListHtml=photocard?buildSelectPhotocardHtml_(photocard):'';
   const deliveryLine=getSelectDeliveryCustomerLine_(delivery,lang);
-  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}건 (${extraPrintsAmt}€)<br>`:''}${(volumeDiscount&&volumeDiscount.total>0)?`• <b style="color:#0e7a4f;">${lang==='ko'?'볼륨 할인':lang==='de'?'Mengenrabatt':'Volume discount'}: -${volumeDiscount.total}€</b>${volumeDiscount.retouch&&volumeDiscount.retouch.discount>0?` · ${lang==='ko'?'보정':'Retouch'} -${volumeDiscount.retouch.percent}%`:''}${volumeDiscount.print&&volumeDiscount.print.discount>0?` · ${lang==='ko'?'인화':lang==='de'?'Druck':'Prints'} -${volumeDiscount.print.percent}%`:''}<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
+  const cntLabel=(n)=>lang==='ko'?`${n}장`:String(n);
+  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${cntLabel(photos.length)}</b>${extraRetouch>0?` (+${cntLabel(extraRetouch)} × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}${lang==='ko'?'건':''} (${extraPrintsAmt}€)<br>`:''}${(volumeDiscount&&volumeDiscount.total>0)?`• <b style="color:#0e7a4f;">${lang==='ko'?'볼륨 할인':lang==='de'?'Mengenrabatt':'Volume discount'}: -${volumeDiscount.total}€</b>${volumeDiscount.retouch&&volumeDiscount.retouch.discount>0?` · ${lang==='ko'?'보정':'Retouch'} -${volumeDiscount.retouch.percent}%`:''}${volumeDiscount.print&&volumeDiscount.print.discount>0?` · ${lang==='ko'?'인화':lang==='de'?'Druck':'Prints'} -${volumeDiscount.print.percent}%`:''}<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b><br><span style="color:#64748b;">${lang==='ko'?'추가 금액은 사진 수령 시 결제해 주시면 됩니다 (현금·카드).':lang==='en'?'The extra amount is payable when you receive your photos (cash or card).':'Der Aufpreis wird bei der Abholung Ihrer Fotos fällig (bar oder Karte).'}</span>`:''}</div>`;
+  const footer={
+    ko:'보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com',
+    en:'Retouching takes about 2–3 weeks. Questions: studio.mean.de@gmail.com',
+    de:'Die Bearbeitung dauert ca. 2–3 Wochen. Fragen: studio.mean.de@gmail.com'
+  };
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">${footer[lang]||footer.ko}</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
   sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
 }
 
@@ -26418,8 +26431,8 @@ function _sendSelectReminderEmail_(row, stage){
   <div style="padding:24px;font-size:14px;line-height:1.8;color:#334155;">
     ${intro[lang]||intro.ko}
     <div style="margin:18px 0;display:flex;flex-direction:column;gap:10px;">
-      ${driveLink?`<a href="${driveLink}" style="display:block;text-align:center;background:#f1f5f9;color:#1e293b;padding:12px 18px;text-decoration:none;border-radius:8px;border:1px solid #e2e8f0;">촬영 사진 보기</a>`:''}
-      <a href="${selectUrl}" style="display:block;text-align:center;background:#2D2A26;color:#fff;padding:14px 18px;text-decoration:none;border-radius:8px;font-weight:700;">사진 셀렉 제출하기</a>
+      ${driveLink?`<a href="${driveLink}" style="display:block;text-align:center;background:#f1f5f9;color:#1e293b;padding:12px 18px;text-decoration:none;border-radius:8px;border:1px solid #e2e8f0;">${lang==='en'?'View your photos':lang==='de'?'Fotos ansehen':'촬영 사진 보기'}</a>`:''}
+      <a href="${selectUrl}" style="display:block;text-align:center;background:#2D2A26;color:#fff;padding:14px 18px;text-decoration:none;border-radius:8px;font-weight:700;">${lang==='en'?'Submit your selection':lang==='de'?'Auswahl abschicken':'사진 셀렉 제출하기'}</a>
     </div>
     <div style="font-size:12px;color:#64748b;">문의: ${CONFIG.ADMIN_EMAIL}</div>
   </div></div>`;
@@ -26502,6 +26515,11 @@ function updatePhotoSelection(sessionId,sub){
     const printChargeItems=displayPrints||[];
     const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
     sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정] ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html});
+    /* 수정 제출에도 고객 확인 메일 — 종전엔 관리자만 알고 고객은 무통지였다(2026-08-31).
+       금액이 바뀌는 행동이라 최종 기준이 어느 쪽인지 고객에게도 남아야 한다. */
+    if(!sub.suppressCustomerEmail){
+      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)},true);}catch(e){Logger.log('셀렉 수정 고객 메일 오류:'+e.message);try{logMessage_({channel:'select',direction:'outbound',type:'receipt',to:String(row[3]||''),subject:'셀렉 수정확인 메일 실패 — '+row[2],status:'실패',meta:{error:String(e.message||e)}});}catch(_){}}
+    }
     return{
       ok:true,
       totalExtra,
