@@ -486,20 +486,18 @@ function applyPageSize(){
 }
 /* ============================================================ ORDER — ERP 작업지시서 → 로컬/드라이브 원본 매칭 → 자동 출력 셋업 */
 const PRINT_SIZE_MM = {
-  basic_10x15:{w:100,h:150,label:'시그니처 10×15'}, premium_10x15:{w:100,h:150,label:'파인아트 10×15'},
+  basic_10x15:{w:100,h:150,label:'10×15cm'}, premium_10x15:{w:100,h:150,label:'프리미엄 10×15'},
   photocard_single:{w:55,h:85,label:'포토카드(단면)'}, photocard_double:{w:55,h:85,label:'포토카드(양면)'},
-  basic_a4:{w:210,h:297,label:'시그니처 A4'}, premium_a4:{w:210,h:297,label:'파인아트 A4'},
-  premium_a3:{w:297,h:420,label:'파인아트 A3'}, premium_a3plus:{w:329,h:483,label:'파인아트 A3+'}
+  basic_a4:{w:210,h:297,label:'A4'}, premium_a4:{w:210,h:297,label:'프리미엄 A4'},
+  premium_a3:{w:297,h:420,label:'A3'}, premium_a3plus:{w:329,h:483,label:'A3+'}
 };
-/* 상위 등급(파인아트=구 프리미엄) 라벨 인식. 신규 명칭 누락 시 시그니처 용지로 잘못 출력되므로 반드시 함께 유지. */
-const PREMIUM_LABEL_RE=/prem|프리미엄|파인아트|fine\s*art|fineart/;
 function normNum(s){return String(s||'').trim().toLowerCase().replace(/\.[a-z0-9]+$/,'');}
 function numTail(s){const m=normNum(s).match(/(\d+)\s*$/);return m?String(parseInt(m[1],10)):'';}
 function normPrintId(v){v=String(v||'').trim();if(PRINT_SIZE_MM[v])return v;const low=v.toLowerCase();
   if(/a3\s*\+|a3plus/.test(low))return 'premium_a3plus'; if(/a3/.test(low))return 'premium_a3';
-  if(/a4/.test(low))return PREMIUM_LABEL_RE.test(low)?'premium_a4':'basic_a4';
+  if(/a4/.test(low))return /prem|프리미엄/.test(low)?'premium_a4':'basic_a4';
   if(/photocard|포토카드/.test(low))return /double|양면/.test(low)?'photocard_double':'photocard_single';
-  if(/10.?15|4.?6|kg|엽서/.test(low))return PREMIUM_LABEL_RE.test(low)?'premium_10x15':'basic_10x15';
+  if(/10.?15|4.?6|kg|엽서/.test(low))return /prem|프리미엄/.test(low)?'premium_10x15':'basic_10x15';
   return 'basic_10x15';}
 function parseOrder(text){let d;try{d=JSON.parse(text);}catch(e){throw new Error('JSON 파싱 실패');}
   const arr=Array.isArray(d)?d:(d.existingPrints||d.prints||d.lines||d.order||[]);
@@ -542,38 +540,82 @@ function renderOrder(){
   if(rec){ state.fill.id=rec.id; renderFill(); }
   else page.appendChild(hint('⚠ 미매칭 · 원본 파일 없음<br><b>'+line.photoNum+'</b><br>원본을 더 불러오세요'));
 }
+/* ── 원본 폴더 영구 핸들 (File System Access) ──
+   매번 폴더 탐색으로 다시 들어가는 게 주문 흐름에서 가장 큰 반복 마찰이었다(2026-08-31).
+   핸들을 IndexedDB에 저장해 두면 다음부터 「지난 폴더」 한 번으로 다시 불러온다
+   (크롬이 권한 확인을 물으면 클릭 1회). 미지원 브라우저는 종전 폴더 선택으로 폴백. */
+const FSDB="smphoto-fs";
+function _idb(){return new Promise((res,rej)=>{const r=indexedDB.open(FSDB,1);r.onupgradeneeded=()=>r.result.createObjectStore("h");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function _idbSet(k,v){const db=await _idb();return new Promise((res,rej)=>{const t=db.transaction("h","readwrite");t.objectStore("h").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
+async function _idbGet(k){const db=await _idb();return new Promise((res,rej)=>{const t=db.transaction("h","readonly");const g=t.objectStore("h").get(k);g.onsuccess=()=>res(g.result);g.onerror=()=>rej(g.error);});}
+async function addFilesFromHandle(dir){
+  const files=[];
+  async function walk(d,dep){ for await(const e of d.values()){ if(files.length>=800) return;
+    if(e.kind==="file"&&/\.(jpe?g|png|webp|tiff?)$/i.test(e.name)){ try{files.push(await e.getFile());}catch(_){}}
+    else if(e.kind==="directory"&&dep<2){ await walk(e,dep+1); } } }
+  await walk(dir,0);
+  if(files.length) addFiles(files);
+  return files.length;
+}
+async function pickFolderPersist(){
+  if(!window.showDirectoryPicker){
+    const inp=document.createElement('input');inp.type='file';inp.multiple=true;inp.webkitdirectory=true;
+    inp.addEventListener('change',ev=>addFiles(ev.target.files));inp.click();return;
+  }
+  try{
+    const h=await showDirectoryPicker({mode:"read"});
+    try{await _idbSet("lastFolder",h);}catch(_){}
+    const n=await addFilesFromHandle(h);
+    if(!n)alert("이미지 파일을 찾지 못했습니다: "+h.name);
+  }catch(e){ if(e&&e.name!=="AbortError")alert("폴더 열기 실패: "+(e.message||e)); }
+}
+async function reloadLastFolder(){
+  try{
+    const h=await _idbGet("lastFolder");
+    if(!h){alert("저장된 폴더가 없습니다. 먼저 「폴더 선택」을 한 번 사용하세요.");return;}
+    let p=await h.queryPermission({mode:"read"});
+    if(p!=="granted") p=await h.requestPermission({mode:"read"});
+    if(p!=="granted") return;
+    const n=await addFilesFromHandle(h);
+    if(!n)alert("이미지 파일을 찾지 못했습니다: "+h.name);
+  }catch(e){ alert("지난 폴더 불러오기 실패: "+(e.message||e)); }
+}
 function renderOrderPanel(){
   const q=orderQueue(), st=orderStats(), cur=q.length?q[Math.min(state.order.idx,q.length-1)]:null;
   const rows=q.map((l,i)=>{const sz=PRINT_SIZE_MM[l.printId]||{}, rec=matchRec(l.photoNum);
     let bw=sz.w,bh=sz.h; if(rec&&rec.w>rec.h){bw=sz.h;bh=sz.w;} const dpi=rec?effDPI(rec.w,rec.h,bw,bh,'cover'):0;
-    return `<div class="oq ${i===state.order.idx?'cur':''}" data-i="${i}"><span class="onum">${l.photoNum}</span><span class="osz">${sz.label||l.printId} ×${l.qty}${l.finish==='border'?' · 🔲테두리':''}</span>${rec?dpiBadge(dpi,state.dpi):'<span class="dpi-badge bad">✗없음</span>'}</div>`;}).join('');
+    return `<div class="oq ${i===state.order.idx?'cur':''}" data-i="${i}"><span class="onum">${l.photoNum}</span><span class="osz">${sz.label||l.printId} ×${l.qty}${l.finish==='border'?' · 🔲테두리':''}${l.included?' · <b style="color:#7a5c3e">포함분</b>':''}</span>${rec?dpiBadge(dpi,state.dpi):'<span class="dpi-badge bad">✗없음</span>'}</div>`;}).join('');
+  /* 실제 흐름 순서대로: ① 주문 고르기(ERP) → ② 원본 폴더 → ③ 출력.
+     수동 붙여넣기·URL 설정은 예외 경로라 접어 둔다(2026-08-31 사장님 — "불러오기가 번거로움"). */
   propsMount.innerHTML=`<div class="props"><header>주문 인화 (ERP) <span style="text-transform:none;letter-spacing:0">${st.matched}/${st.total} 매칭</span></header><div class="body">
-    <label class="f">① 주문(작업지시서) 붙여넣기</label>
-    <textarea id="ord_json" rows="3" class="ord-ta" placeholder='[{"photoNum":"IMG_0045","printId":"basic_10x15","qty":2}]'>${(state.order.raw||'').replace(/</g,'&lt;')}</textarea>
-    <div class="row" style="margin-top:6px"><button class="btn sm" id="ord_apply">주문 적용</button><button class="btn sm" id="ord_file">.json 파일</button></div>
-    <input type="file" id="ord_fileInput" accept=".json,application/json" hidden>
-    <label class="f" style="margin-top:11px">② 원본 파일 (로컬 · 드라이브 다운로드)</label>
-    <div class="row"><button class="btn sm" id="ord_pick">파일 선택</button><button class="btn sm" id="ord_folder">폴더 선택</button></div>
-    <div class="hint" style="padding:4px 0 0">${state.library.length}장 로드됨 · 파일명↔사진번호 자동 매칭</div>
-    ${q.length?`<label class="f" style="margin-top:11px">③ 인화 큐 (사이즈별) — 클릭해 이동</label>
+    <label class="f">① 주문 고르기 — 최근 셀렉 주문</label>
+    <div class="row"><select id="ord_sid_pick" style="flex:2"><option value="">최근 주문 세션 선택…</option></select><button class="btn sm" id="ord_list_refresh" style="flex:1">🔄 목록</button></div>
+    <div class="hint" style="padding:4px 0 0">고르면 바로 불러옵니다 — 보정본 전원에 <b>시그니처 10×15 포함분</b>이 자동으로 채워집니다.</div>
+    <label class="f" style="margin-top:11px">② 원본 파일 (보정본 폴더)</label>
+    <div class="row"><button class="btn sm" id="ord_refolder" style="flex:1.2">↺ 지난 폴더</button><button class="btn sm" id="ord_folder">폴더 선택</button><button class="btn sm" id="ord_pick">파일</button></div>
+    <div class="hint" style="padding:4px 0 0">${state.library.length}장 로드됨 · 파일명↔사진번호 자동 매칭 · 「지난 폴더」는 클릭 1번</div>
+    ${q.length?`<label class="f" style="margin-top:11px">③ 인화 큐 — 클릭해 이동</label>
     <div class="oqlist">${rows}</div>
     <div class="ostep"><button class="btn sm" id="ord_prev">◀</button><span class="olvl">${state.order.idx+1} / ${q.length}</span><button class="btn sm" id="ord_next">▶</button></div>
     <div class="row" style="margin-top:7px"><button class="btn sm" id="ord_autoone" style="flex:1">🖨️ 이 장 자동출력</button><button class="btn sm" id="ord_autoall" style="flex:1">🖨️ 전체 자동출력 (${st.sheets}장)</button></div>
-    <div class="hint" id="ord_helper_note" style="padding:4px 0 0">시스템 자동출력: 인화지=<b>${(state.media||'').replace(/</g,'&lt;')}</b> · 사이즈·여백없음 자동 · lp로 EPSON 직접 (헬퍼 필요)</div>
+    <div class="hint" id="ord_helper_note" style="padding:4px 0 0">시스템 자동출력: 인화지=<b>${(state.media||'').replace(/</g,'&lt;')}</b> · 같은 용지끼리 묶어 교체 최소화 · 색/위치 보정 적용 · EPSON 직접</div>
     <button class="btn sm" id="ord_pdf" style="margin-top:7px">📄 주문 전체 멀티페이지 PDF</button>
-    ${cur?(isCardId(cur.printId)?(()=>{const cap=cardCapacity(),sheets=Math.ceil(cur.qty/cap),dbl=cur.printId==='photocard_double';return `<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · 포토카드 <b>55×85mm</b> · <b>${cur.qty}장</b><br><b>ET-18100은 카드 급지 불가</b> → ${(state.order.cardSheet||'A4').split(' ')[0]} 1장에 <b>${cap}장</b> 갱 인쇄 후 <b>재단</b>. ${cur.qty}장 = <b>${sheets}시트</b>.${dbl?'<br>⚠ 양면(더블)은 뒷면 이미지로 2차 인쇄 필요.':''}</div><label class="f">갱 시트 (ET-18100)</label><div class="seg"><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A4')?'on':''}" data-s="A4 (210×297)">A4·9장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3 ')?'on':''}" data-s="A3 (297×420)">A3·20장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3+')?'on':''}" data-s="A3+ (329×483)">A3+·25장</button></div>`;})():`<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · ${(PRINT_SIZE_MM[cur.printId]||{}).label} · <b>${cur.qty}장</b> → 인쇄 대화상자 <b>매수 ${cur.qty}</b>로.</div>`):''}
+    ${cur?(isCardId(cur.printId)?(()=>{const cap=cardCapacity(),sheets=Math.ceil(cur.qty/cap),dbl=cur.printId==='photocard_double';return `<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · 포토카드 <b>55×85mm</b> · <b>${cur.qty}장</b><br><b>ET-18100은 카드 급지 불가</b> → ${(state.order.cardSheet||'A4').split(' ')[0]} 1장에 <b>${cap}장</b> 갱 인쇄 후 <b>재단</b>. ${cur.qty}장 = <b>${sheets}시트</b>.${dbl?'<br>⚠ 양면(더블)은 뒷면 이미지로 2차 인쇄 필요.':''}</div><label class="f">갱 시트 (ET-18100)</label><div class="seg"><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A4')?'on':''}" data-s="A4 (210×297)">A4·9장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3 ')?'on':''}" data-s="A3 (297×420)">A3·20장</button><button class="cardsheet ${(state.order.cardSheet||'').startsWith('A3+')?'on':''}" data-s="A3+ (329×483)">A3+·25장</button></div>`;})():`<div class="hint" style="padding:6px 0 0">현재: <b>${cur.photoNum}</b> · ${(PRINT_SIZE_MM[cur.printId]||{}).label} · <b>${cur.qty}장</b></div>`):''}
     ${st.total-st.matched>0?`<div class="hint" style="padding:6px 0 0;color:#c98">⚠ 미매칭 ${st.total-st.matched}건 — 원본을 더 불러오세요.</div>`:''}`:''}
-    <label class="f" style="margin-top:11px">④ ERP 직결 (호스팅 시 자동 로드)</label>
-    <input type="text" id="ord_erpBase" placeholder="GAS /exec URL (호스팅 후 입력)" value="${(localStorage.getItem('smphoto:erpBase')||ERP_BASE||'').replace(/"/g,'&quot;')}">
-    <div class="row" style="margin-top:6px"><select id="ord_sid_pick" style="flex:2"><option value="">최근 주문 세션 선택…</option></select><button class="btn sm" id="ord_list_refresh" style="flex:1">🔄 목록</button></div>
+    <details style="margin-top:12px"><summary class="hint" style="cursor:pointer">고급 — 세션ID 직접 입력 · 주문 붙여넣기 · 서버 주소</summary>
     <div class="row" style="margin-top:6px"><input type="text" id="ord_sid" placeholder="셀렉 세션 ID" style="flex:2" value="${(state.order.sid||'').replace(/"/g,'&quot;')}"><button class="btn sm" id="ord_fetch" style="flex:1">불러오기</button></div>
-    <div class="hint" style="padding:6px 0 0">호스팅(예: print.studio-mean.com) 후 세션ID로 <b>주문 자동 로드</b>. file://·미호스팅 시 CORS로 실패 — 그땐 위 붙여넣기/로컬 사용. 사진 원본은 로컬 매칭 권장(고해상). 드롭다운은 암호로 보호됩니다(최초 1회 입력, 이 기기에 저장).</div>
+    <textarea id="ord_json" rows="3" class="ord-ta" style="margin-top:6px" placeholder='[{"photoNum":"IMG_0045","printId":"basic_10x15","qty":2}]'>${(state.order.raw||'').replace(/</g,'&lt;')}</textarea>
+    <div class="row" style="margin-top:6px"><button class="btn sm" id="ord_apply">주문 적용</button><button class="btn sm" id="ord_file">.json 파일</button></div>
+    <input type="file" id="ord_fileInput" accept=".json,application/json" hidden>
+    <input type="text" id="ord_erpBase" style="margin-top:6px" placeholder="GAS /exec URL" value="${(localStorage.getItem('smphoto:erpBase')||ERP_BASE||'').replace(/"/g,'&quot;')}">
+    </details>
   </div></div>`;
   $("#ord_apply").addEventListener('click',()=>{try{const l=parseOrder($("#ord_json").value);state.order.lines=l;state.order.raw=$("#ord_json").value;state.order.idx=0;render();fit();}catch(e){alert('주문 형식 오류: '+e.message);}});
   $("#ord_file").addEventListener('click',()=>$("#ord_fileInput").click());
   $("#ord_fileInput").addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{state.order.lines=parseOrder(rd.result);state.order.raw=rd.result;state.order.idx=0;render();fit();}catch(err){alert('주문 파일 오류: '+err.message);}};rd.readAsText(f);e.target.value='';});
   $("#ord_pick").addEventListener('click',()=>$("#file").click());
-  $("#ord_folder").addEventListener('click',()=>{const inp=document.createElement('input');inp.type='file';inp.multiple=true;inp.webkitdirectory=true;inp.addEventListener('change',ev=>addFiles(ev.target.files));inp.click();});
+  $("#ord_folder").addEventListener('click',pickFolderPersist);
+  $("#ord_refolder").addEventListener('click',reloadLastFolder);
   const list=document.querySelector('.oqlist'); if(list)list.addEventListener('click',e=>{const r=e.target.closest('.oq');if(r)setOrderIdx(+r.dataset.i);});
   if($("#ord_prev"))$("#ord_prev").addEventListener('click',()=>setOrderIdx(state.order.idx-1));
   if($("#ord_next"))$("#ord_next").addEventListener('click',()=>setOrderIdx(state.order.idx+1));
@@ -603,15 +645,18 @@ function drawFittedCanvas(ctx,img,dx,dy,dw,dh,fit,posX,posY,rotDeg,zoom,fw,fcolo
   const rw=iw*s,rh=ih*s,ox=-iw2/2+(iw2-rw)*(posX==null?0.5:posX),oy=-ih2/2+(ih2-rh)*(posY==null?0.5:posY);
   ctx.imageSmoothingQuality="high";ctx.drawImage(img,ox,oy,rw,rh);ctx.restore();
 }
-async function renderPageCanvas(dpi){
+/* useCal=true → 프린터 보정(색 게인·감마·샤프닝)을 구워 넣는다. 자동출력(헬퍼) 전용.
+   내보내기(PNG/PDF 다운로드)는 보정 없는 디자인 원본이 맞으므로 기본 false 유지.
+   ⚠ 이 구분이 없어서 자동출력이 무보정으로 나갔다 — "색감이 실제 프린트와 안 맞아"의 원인(2026-08-31). */
+async function renderPageCanvas(dpi,useCal){
   const [pw,ph]=paperMm(), ppm=dpi/25.4, CW=Math.round(pw*ppm), CH=Math.round(ph*ppm);
   const cvs=document.createElement("canvas");cvs.width=CW;cvs.height=CH;const ctx=cvs.getContext("2d");
   ctx.imageSmoothingQuality="high";ctx.fillStyle=state.bg;ctx.fillRect(0,0,CW,CH);
-  const media=MEDIA[state.media]||"none", neutral={rGain:100,gGain:100,bGain:100,gamma:100,sharpen:0}, mm=v=>v*ppm, cache=new Map();
+  const media=MEDIA[state.media]||"none", CAL=useCal?state.cal:{rGain:100,gGain:100,bGain:100,gamma:100,sharpen:0}, mm=v=>v*ppm, cache=new Map();
   await drawTextureCanvas(ctx,CW,CH,ppm); // 종이 질감(사진 아래)
   const fw=state.frame.on?state.frame.w*ppm:0, fc=state.frame.color;
   const getEl=async(src,adj)=>{const k=src+"|"+JSON.stringify(adj)+"|"+media;if(cache.has(k))return cache.get(k);
-    const need=!(isDefaultAdj(adj)&&media==="none");const durl=need?await bakeImage(src,adj,media,neutral):src;const el=await loadImage(durl);cache.set(k,el);return el;};
+    const need=!(isDefaultAdj(adj)&&media==="none"&&!calNeedsBake(CAL));const durl=need?await bakeImage(src,adj,media,CAL):src;const el=await loadImage(durl);cache.set(k,el);return el;};
   const cut=(x,y,w,h)=>{ctx.strokeStyle="rgba(120,120,120,.85)";ctx.lineWidth=Math.max(1,0.2*ppm);ctx.setLineDash([2*ppm,1.5*ppm]);ctx.strokeRect(mm(x),mm(y),mm(w),mm(h));ctx.setLineDash([]);};
   if(state.mode==="free"){for(const it of state.items){const im=imgById(it.src);if(!im)continue;const el=await getEl(im.src,it.adj);await drawItemFramed(ctx,el,it,mm,fw,fc);}}
   else if(state.mode==="fill"||(state.mode==="order"&&!state.order._card)){const im=imgById(state.fill.id);if(im){const el=await getEl(im.src,state.fill.adj);drawFittedCanvas(ctx,el,0,0,CW,CH,"cover",state.fill.ox/100,state.fill.oy/100,0,state.fill.zoom,fw,fc);}}
@@ -693,8 +738,25 @@ function _orderItemDpi(line){
   let bw=sz.w,bh=sz.h; if(rec.w>rec.h){bw=sz.h;bh=sz.w;}
   return Math.round(effDPI(rec.w,rec.h,bw,bh,"cover"));
 }
+/* 프린터 기하 보정(오프셋·배율)을 렌더 캔버스에 적용 — 브라우저 인쇄의 --print-tf(CSS transform)와
+   같은 의미(translate 후 중앙 기준 scale). 헬퍼 PDF 경로엔 CSS가 안 먹으므로 여기서 굽는다.
+   "중앙 정렬이 실제 프린트와 안 맞아"(2026-08-31)의 수리 지점. */
+function applyCalGeometry(cvs,dpi){
+  const c=state.cal;
+  if(c.offX===0&&c.offY===0&&c.scaleX===100&&c.scaleY===100) return cvs;
+  const ppm=dpi/25.4, out=document.createElement("canvas");
+  out.width=cvs.width; out.height=cvs.height;
+  const ctx=out.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,out.width,out.height);   // 밀려서 드러나는 영역 = 인화지 흰색
+  ctx.imageSmoothingQuality="high";
+  const cx=out.width/2, cy=out.height/2;
+  ctx.translate(c.offX*ppm, c.offY*ppm);
+  ctx.translate(cx,cy); ctx.scale(c.scaleX/100, c.scaleY/100); ctx.translate(-cx,-cy);
+  ctx.drawImage(cvs,0,0);
+  return out;
+}
 async function _sendPrint(line,results){
-  const cvs=await renderPageCanvas(state.dpi), pm=paperMm();
+  const cvs=applyCalGeometry(await renderPageCanvas(state.dpi,true),state.dpi), pm=paperMm();
   const pdf=makePDFmultiPage([{jpeg:cvs.toDataURL("image/jpeg",0.92),iw:cvs.width,ih:cvs.height,pwMm:pm[0],phMm:pm[1]}]);
   const b64=await _blobToB64(pdf);
   const spec={pdfBase64:b64, sizeKey:line.printId, mediaName:state.media, borderless:true, copies:line.qty, jobName:"studio "+line.photoNum};
@@ -702,6 +764,32 @@ async function _sendPrint(line,results){
   const rv=j&&j.resolved;
   results.push((j&&j.ok?"✅ ":"❌ ")+line.photoNum+" → "+(rv?(rv.PageSize+" · 미디어"+rv.MediaType+(rv.borderless?" · 여백없음":"")+" ×"+rv.copies):((j&&j.error)||"실패")));
   return !!(j&&j.ok);
+}
+/* ── 즉석 자동출력: 지금 화면(모든 모드)을 그대로 헬퍼로 ──
+   여권·워크인처럼 주문 없는 인화가 잦은데 자동출력 버튼이 '주문' 모드에만 있어
+   매번 인쇄 대화상자를 거쳤다(2026-08-31 사장님 — "즉석 인화가 불편"). */
+/* L판(89×127)은 ET-18100 드라이버에 낱장 규격이 없어(롤 전용) 자동출력 미지원 — 대화상자 인쇄로 안내 */
+const HELPER_SIZE_BY_MM={ "102x152":"10x15","210x297":"a4","297x420":"a3","329x483":"a3plus",
+  "127x178":"2l","216x279":"letter","148x210":"a5","105x148":"a6","100x148":"hagaki" };
+function helperSizeKey(){
+  const [pw,ph]=paperMm(), a=Math.min(pw,ph), b=Math.max(pw,ph);
+  return HELPER_SIZE_BY_MM[Math.round(a)+"x"+Math.round(b)]||null;
+}
+async function autoprintCurrentPage(btn){
+  await pingPrintHelper();
+  if(!_helperOk){ alert("로컬 프린터 헬퍼에 연결할 수 없습니다.\n인화 헬퍼가 실행 중인지 확인해 주세요."); return; }
+  const sizeKey=helperSizeKey();
+  if(!sizeKey){ alert("이 용지("+state.paper+")는 시스템 자동출력 미지원입니다.\n아래 「인쇄 (대화상자)」를 사용하세요."); return; }
+  if(btn){btn.disabled=true;btn.textContent="⏳ 출력 중…";}
+  try{
+    const cvs=applyCalGeometry(await renderPageCanvas(state.dpi,true),state.dpi), pm=paperMm();
+    const pdf=makePDFmultiPage([{jpeg:cvs.toDataURL("image/jpeg",0.92),iw:cvs.width,ih:cvs.height,pwMm:pm[0],phMm:pm[1]}]);
+    const b64=await _blobToB64(pdf);
+    const spec={pdfBase64:b64,sizeKey:sizeKey,mediaName:state.media,borderless:!!state.borderless,copies:1,jobName:"studio quick"};
+    let j; try{ const r=await fetch(PRINT_HELPER_URL+"/print",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}); j=await r.json(); }catch(e){ j={ok:false,error:e.message||String(e)}; }
+    if(j&&j.ok){ const rv=j.resolved||{}; if(btn)btn.textContent="✅ 전송됨 ("+(rv.PageSize||sizeKey)+")"; setTimeout(()=>{if(btn){btn.textContent="⚡ 시스템 자동출력";btn.disabled=false;}},2500); }
+    else{ alert("자동출력 실패: "+((j&&(j.error||j.stderr))||"헬퍼 오류")); if(btn){btn.textContent="⚡ 시스템 자동출력";btn.disabled=false;} }
+  }catch(e){ alert("자동출력 실패: "+(e.message||e)); if(btn){btn.textContent="⚡ 시스템 자동출력";btn.disabled=false;} }
 }
 // 자동출력 성공 후 ERP에 '출력완료' 기록(재인화 방지·추적). 최근주문 passcode로 게이트.
 async function _recordPrintDone(count, results){
@@ -737,8 +825,11 @@ async function autoprintViaHelper(all){
   if(warns.length && !confirm("출력 전 점검\n\n"+warns.join("\n")+"\n\n그래도 진행할까요?")) return;
   // ── 용지 크기별 그룹 배치 (교체 지점에서 일시정지) ──
   const savedIdx=state.order.idx, results=[]; let printedSheets=0;
+  /* 같은 용지는 큐 순서와 무관하게 한 묶음으로 — 10×15, A4, 10×15 순이면 종전엔 교체가 3번이었다.
+     크기별로 정렬해 교체를 용지 종류당 1번으로 줄인다(실제 교체 동선, 2026-08-31 사장님 지적). */
+  const sortedIdx=[...targetIdx].sort((a,b)=>String(q[a].printId).localeCompare(String(q[b].printId)));
   const groups=[]; let cur=null;
-  targetIdx.forEach(i=>{ const pid=q[i].printId; if(!cur||cur.pid!==pid){cur={pid,idxs:[]};groups.push(cur);} cur.idxs.push(i); });
+  sortedIdx.forEach(i=>{ const pid=q[i].printId; if(!cur||cur.pid!==pid){cur={pid,idxs:[]};groups.push(cur);} cur.idxs.push(i); });
   const btns=[$("#ord_autoone"),$("#ord_autoall")]; btns.forEach(b=>{if(b)b.disabled=true;});
   try{
     for(let g=0; g<groups.length; g++){
@@ -772,8 +863,18 @@ async function fetchErpSession(){
     const url=base+(base.includes("?")?"&":"?")+"api=select-session&id="+encodeURIComponent(id)+"&_ts="+Date.now();
     const r=await fetch(url,{cache:"no-store"}); const j=await r.json();
     const d=j&&(j.data||j), prints=(d&&d.existingPrints)||[];
-    if(!Array.isArray(prints)||!prints.length){alert("이 세션에 인화 주문(existingPrints)이 없습니다.");}
-    state.order.lines=prints.map(p=>({photoNum:String(p.photoNum??p.num??p.photo??"").trim(),printId:normPrintId(p.printId??p.printType??p.size),qty:Math.max(1,Number(p.qty??p.quantity??1)||1),finish:(String(p.finish||(p.border?"border":""))==="border")?"border":"full"})).filter(l=>l.photoNum);
+    const lines=(Array.isArray(prints)?prints:[]).map(p=>({photoNum:String(p.photoNum??p.num??p.photo??"").trim(),printId:normPrintId(p.printId??p.printType??p.size),qty:Math.max(1,Number(p.qty??p.quantity??1)||1),finish:(String(p.finish||(p.border?"border":""))==="border")?"border":"full"})).filter(l=>l.photoNum);
+    /* 보정본은 전부 시그니처 10×15 인화가 포함된다(보너스·서비스컷 포함 — 사장님 확정 2026-08-31).
+       고객 주문(existingPrints)에 아무 인화 라인도 없는 보정본은 포함분 10×15 를 자동으로 채운다.
+       이미 어떤 크기든 라인이 있는 사진은 건드리지 않는다(크레딧을 큰 사이즈에 쓴 경우 이중 방지). */
+    const photoNums=(Array.isArray(d&&d.existingPhotos)?d.existingPhotos:[])
+      .map(p=>String((p&&typeof p==="object")?(p.num??p.photoNum??""):(p??"")).trim()).filter(Boolean);
+    const covered=new Set(lines.map(l=>l.photoNum));
+    const included=photoNums.filter(n=>!covered.has(n))
+      .map(n=>({photoNum:n,printId:"basic_10x15",qty:1,finish:"full",included:true}));
+    state.order.lines=lines.concat(included);
+    if(!state.order.lines.length){alert("이 세션에 인화 주문도 보정본 목록도 없습니다.");}
+    else if(included.length){setTimeout(()=>alert("포함분 자동 추가\n\n보정본 "+photoNums.length+"장 중 주문에 없던 "+included.length+"장에 시그니처 10×15(포함)를 채웠습니다."),40);}
     state.order.printDoneAt=(d&&d.printDoneAt)||"";
     state.order.idx=0; render(); fit();
     if(state.order.printDoneAt){ setTimeout(()=>alert("⚠ 이미 출력한 세션입니다\n\n출력완료: "+state.order.printDoneAt+((d&&d.printDoneCount)?(" · "+d.printDoneCount+"장"):"")+"\n\n재인화(재출력)가 맞으면 그대로 진행하세요."),60); }
@@ -1560,6 +1661,7 @@ function drawRuler(){const c=$("#ruler");if(!state.view.ruler){c.style.display="
   g.moveTo(ox+.5,0);g.lineTo(ox+.5,20);g.moveTo(ex+.5,0);g.lineTo(ex+.5,20);g.moveTo(0,oy+.5);g.lineTo(20,oy+.5);g.moveTo(0,ey+.5);g.lineTo(20,ey+.5);g.stroke();}
 
 $("#printBtn").addEventListener("click",e=>{printBaked(e.currentTarget);});
+$("#autoPrintBtn").addEventListener("click",e=>{autoprintCurrentPage(e.currentTarget);});
 
 /* ---------- start ---------- */
 /* ---------- theme (라이트 / 프로 다크) ---------- */
