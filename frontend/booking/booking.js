@@ -1715,6 +1715,13 @@ function wireEvents() {
     els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().slotGridEmpty)}</div>`;
     goToStep(3);
     await refreshQuote();
+    // 스텝2에서 인원·옵션을 바꿔 총소요가 달라졌으면 이전에 고른 시간은 무효 — 화면만 지워지고 상태가 남아 그대로 제출되던 문제
+    if (state.selectedSlot && state.slotPickedDuration !== getCalendarDuration()) {
+      state.selectedSlot = '';
+      state.selectedSlotMeta = null;
+      state.bookingRequestId = null;
+      updateSubmitState();
+    }
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
@@ -1803,6 +1810,12 @@ function wireEvents() {
     handleQuoteInputChange();
   });
   els.generalPeopleCustom?.addEventListener('input', handleQuoteInputChange);
+  els.generalPeopleCustom?.addEventListener('change', () => {
+    const v = parseInt(els.generalPeopleCustom.value, 10) || 0;
+    if (v > 0 && v <= 5) { els.generalPeople.value = String(v); els.generalPeopleCustom.classList.add('hidden-field'); }
+    else els.generalPeopleCustom.value = String(Math.max(6, Math.min(99, v || 6)));
+    handleQuoteInputChange();
+  });
   els.passAddonToggle?.addEventListener('change', () => {
     els.passAddonPeopleField?.classList.toggle('hidden-field', !els.passAddonToggle.checked);
     handleQuoteInputChange();
@@ -2380,11 +2393,33 @@ function applyCopy() {
         ? 'Nachshooting-Einwilligung (Pflicht) — Wenn das Kind am Drehtag wegen Schüchternheit oder Verfassung nicht normal mitmachen kann, kann innerhalb von 4 Wochen ein Nachshooting für 30% des Ursprungspreises vereinbart werden.'
         : '재촬영 약관 동의 (필수) — 촬영 당일 아이의 낯가림이나 컨디션 난조로 정상 진행이 어려울 경우, 원 촬영 비용의 30%를 추가 지불하고 4주 이내 재촬영 일정을 잡을 수 있습니다.';
   }
+  // 굿샤인 입력 UI — EN/DE 고객에게 한국어 그대로 노출되던 부분(2026-08-31)
+  setText('gutscheinCopy', state.lang === 'en'
+    ? 'Have a Studio mean gift voucher? Enter the code and apply it.'
+    : state.lang === 'de'
+      ? 'Sie haben einen Studio mean Gutschein? Code eingeben und anwenden.'
+      : 'Studio mean 상품권(Gutschein)이 있다면 코드를 입력하고 적용해 주세요.');
+  setText('gutscheinApplyBtn', state.lang === 'en' ? 'Apply' : state.lang === 'de' ? 'Einlösen' : '적용');
+  const gIn = document.getElementById('gutscheinCodeInput');
+  if (gIn) gIn.placeholder = state.lang === 'ko' ? '예: SM-XXXXXX' : 'z.B. SM-XXXXXX';
   renderPeopleOptions();
   renderWeekdayHeader();
   renderReturnNotice();
   renderNoticePanel();
   renderPromoHighlightPanel();
+  // 이미 렌더된 달력·슬롯 배지가 이전 언어로 잔류하지 않게 캐시로 재렌더
+  try {
+    if (state.selectedProduct && els.calendarGrid && !els.calendarGrid.classList.contains('empty-state')) {
+      const dur = getCalendarDuration();
+      const monthKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${dur}`;
+      const monthData = state.calendarCache.get(monthKey);
+      if (monthData) renderCalendar(monthData);
+      if (state.selectedDate) {
+        const cs = getCachedSlots(`${state.selectedDate}_${state.selectedProduct.g}_${dur}`);
+        if (Array.isArray(cs)) renderSlots(cs);
+      }
+    }
+  } catch (e) {}
   syncConsentVisibility();
   syncSelectAllRequired();
   renderContractPriceSummary();
@@ -2852,14 +2887,19 @@ function renderContractPriceSummary() {
   const snapshot = getContractPriceSnapshot();
   const quoteLabel = getContractQuoteLabel();
   const value = (amount) => snapshot.quoteOnly ? quoteLabel : formatContractBruttoAmount(amount);
+  const L = state.lang === 'en'
+    ? { reg: 'Regular price', gut: 'Gift voucher', total: 'Total', dep: 'Deposit', bal: 'Balance' }
+    : state.lang === 'de'
+      ? { reg: 'Regulär', gut: 'Gutschein', total: 'Gesamtbetrag', dep: 'Anzahlung', bal: 'Restbetrag' }
+      : { reg: '정상가 / Regulär', gut: '상품권 / Gutschein', total: '총 비용 / Gesamtbetrag', dep: '계약금 / Anzahlung', bal: '잔금 / Restbetrag' };
   const rows = [];
   if (snapshot.gutschein) {
-    rows.push(['정상가 / Regulär', formatContractBruttoAmount(snapshot.gutschein.originalTotal)]);
-    rows.push([`상품권 / Gutschein (${snapshot.gutschein.code})`, `-${formatContractBruttoAmount(snapshot.gutschein.discountAmount)}`]);
+    rows.push([L.reg, formatContractBruttoAmount(snapshot.gutschein.originalTotal)]);
+    rows.push([`${L.gut} (${snapshot.gutschein.code})`, `-${formatContractBruttoAmount(snapshot.gutschein.discountAmount)}`]);
   }
-  rows.push(['총 비용 / Gesamtbetrag', value(snapshot.total)]);
-  rows.push(['계약금 / Anzahlung', value(snapshot.deposit)]);
-  rows.push(['잔금 / Restbetrag', value(snapshot.balance)]);
+  rows.push([L.total, value(snapshot.total)]);
+  rows.push([L.dep, value(snapshot.deposit)]);
+  rows.push([L.bal, value(snapshot.balance)]);
   box.innerHTML = rows.map(([label, amount]) => `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(amount)}</div>`).join('');
 }
 
@@ -4276,7 +4316,13 @@ function renderPeopleOptions() {
       .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, product))}</option>`)
       .concat(`<option value="custom">${state.lang === 'en' ? '6+ people (enter manually)' : state.lang === 'de' ? 'Ab 6 Personen direkt eingeben' : '6명 이상 직접입력'}</option>`)
       .join('');
-    if (currentGeneralCount > 5) {
+    /* 고객이 직접입력 칸에 타이핑하는 도중에는 값·표시를 건드리지 않는다 —
+       매 키입력의 재렌더가 '1'을 치는 순간 6으로 되돌려 12명 입력이 불가능했다(2026-08-31 전수 리뷰).
+       클램프는 change(블러) 시점에만. */
+    if (document.activeElement === els.generalPeopleCustom) {
+      els.generalPeople.value = 'custom';
+      els.generalPeopleCustom.classList.remove('hidden-field');
+    } else if (currentGeneralCount > 5) {
       els.generalPeople.value = 'custom';
       if (els.generalPeopleCustom) {
         els.generalPeopleCustom.value = String(currentGeneralCount);
@@ -5196,7 +5242,7 @@ function listAvailableDatesForMonthData(data, year, month) {
   const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
   const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const result = [];
   for (let day = 1; day <= daysInMonth; day += 1) {
@@ -5256,11 +5302,11 @@ async function findEarliestAvailableSlot(product, duration) {
     const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
     for (const dateKey of candidateDates) {
       const slotKey = `${dateKey}_${product.g}_${duration}`;
-      let slots = state.slotCache.get(slotKey);
+      let slots = getCachedSlots(slotKey);
       if (!Array.isArray(slots)) {
         try {
           slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g });
-          state.slotCache.set(slotKey, slots);
+          setCachedSlots(slotKey, slots);
         } catch (error) {
           console.error(error);
           slots = [];
@@ -5284,10 +5330,25 @@ async function updateEarliestSlotBox() {
   const token = ++state.earliestSlotToken;
   state.earliestSlotInfo = { loading: true };
   renderEarliestSlotBox();
-  const nextInfo = await findEarliestAvailableSlot(state.selectedProduct, getCalendarDuration());
+  let nextInfo = null;
+  try { nextInfo = await findEarliestAvailableSlot(state.selectedProduct, getCalendarDuration()); }
+  catch (e) { console.error(e); nextInfo = null; } // 실패 시 '로딩 중'에 영영 머무르지 않는다
   if (token !== state.earliestSlotToken) return;
   state.earliestSlotInfo = nextInfo || null;
   renderEarliestSlotBox();
+}
+
+/* 기타 국가 입력칸을 여권 패널(스텝2) 안으로 옮긴다 — 원래 스텝4 폼 안에 있어
+   'OTHER 선택 → 스텝2에서 잠김 ↔ 입력칸은 스텝4' 상호 데드락으로 예약이 영구히 막혔다(2026-08-31).
+   input에 form="bookingForm"이 있어 폼 밖으로 나가도 FormData/elements에 그대로 잡힌다. */
+function placeOtherCountryField(group) {
+  if (!els.otherCountryField) return;
+  const passportHint = document.getElementById('passportHint');
+  if (group === 'pass' && passportHint) {
+    if (passportHint.nextElementSibling !== els.otherCountryField) passportHint.insertAdjacentElement('afterend', els.otherCountryField);
+  } else if (els.babyNameField && els.babyNameField.nextElementSibling !== els.otherCountryField) {
+    els.babyNameField.insertAdjacentElement('afterend', els.otherCountryField);
+  }
 }
 
 function syncConditionalFields() {
@@ -5299,7 +5360,11 @@ function syncConditionalFields() {
   syncPassportPersonCountries();
   els.addressField?.classList.toggle('hidden-field', needsBusinessInvoice);
   els.businessInvoiceFields?.classList.toggle('hidden-field', !needsBusinessInvoice);
-  els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
+  const showOtherCountry = group === 'pass' && state.selectedCountries.includes('OTHER');
+  els.otherCountryField.classList.toggle('hidden-field', !showOtherCountry);
+  // 숨길 때 값을 비운다 — OTHER 해제 후 잔존한 국가명이 장부·확인메일에 저장되던 문제(2026-08-31)
+  if (!showOtherCountry && els.form?.elements?.otherCountry?.value) els.form.elements.otherCountry.value = '';
+  placeOtherCountryField(group);
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed' || group === 'biz'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
@@ -5447,7 +5512,21 @@ function renderPassportCountries() {
     });
   });
   els.passportCountries.querySelectorAll('[data-passport-config-custom]').forEach((input) => {
-    input.addEventListener('input', () => setPassportConfigPeople(Number(input.dataset.passportConfigCustom), Math.max(6, Number(input.value || 6))));
+    // 타이핑 중에는 재렌더 없이 상태·견적만 갱신 — 재렌더가 포커스를 죽여 6명 초과 입력이 불가능했다(2026-08-31)
+    input.addEventListener('input', () => {
+      const idx = Number(input.dataset.passportConfigCustom);
+      syncPassportConfigs();
+      if (!state.passportConfigs[idx]) return;
+      state.passportConfigs[idx].people = Math.max(1, parseInt(input.value, 10) || 6);
+      syncPassportPersonCountries();
+      handleQuoteInputChange().then(() => refreshStepLocks());
+    });
+    input.addEventListener('change', () => {
+      const idx = Number(input.dataset.passportConfigCustom);
+      const v = Math.max(6, Math.min(99, parseInt(input.value, 10) || 6));
+      input.value = String(v);
+      setPassportConfigPeople(idx, v);
+    });
   });
   els.passportCountries.querySelectorAll('[data-remove-config]').forEach((button) => {
     button.addEventListener('click', () => removePassportConfig(Number(button.dataset.removeConfig)));
@@ -5787,15 +5866,28 @@ async function prefetchNextCalendarMonth() {
    서버 슬롯 계산이 느린 그룹(스튜디오 자동오픈 ~8초)에서 클릭 지연을 숨긴다. loadSlotsForDate 가
    캐시를 먼저 보므로, 프리페치된 날짜는 클릭 즉시 렌더된다. 이미 캐시/진행중이면 no-op(중복 방지).
    실패는 조용히 무시 — 실제 클릭 시 loadSlotsForDate 가 다시 시도한다. 렌더/토큰은 건드리지 않음. */
+const SLOT_CACHE_TTL_MS = 4 * 60 * 1000; // 세션 무기한 캐시가 오래 머문 고객에게 stale '가능' 슬롯을 보여주던 문제(2026-08-31 전수 리뷰)
+function getCachedSlots(slotKey) {
+  const hit = state.slotCache.get(slotKey);
+  if (!hit) return undefined;
+  if (Array.isArray(hit)) return hit; // 구형 엔트리 호환
+  if (Date.now() - (hit.savedAt || 0) > SLOT_CACHE_TTL_MS) { state.slotCache.delete(slotKey); return undefined; }
+  return hit.slots;
+}
+function setCachedSlots(slotKey, slots) {
+  state.slotCache.set(slotKey, { slots, savedAt: Date.now() });
+}
+
 function prefetchSlotsForDate(dateKey) {
   if (!state.selectedProduct || !dateKey) return null;
   const duration = getCalendarDuration();
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
-  if (state.slotCache.has(slotKey)) return Promise.resolve(state.slotCache.get(slotKey));
+  const cachedPrefetch = getCachedSlots(slotKey);
+  if (cachedPrefetch !== undefined) return Promise.resolve(cachedPrefetch);
   const existing = state.slotPrefetchInFlight.get(slotKey);
   if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
   const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g })
-    .then((slots) => { if (!state.slotCache.has(slotKey)) state.slotCache.set(slotKey, slots); return slots; })
+    .then((slots) => { setCachedSlots(slotKey, slots); return slots; })
     .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
   state.slotPrefetchInFlight.set(slotKey, promise);
   return promise;
@@ -5809,7 +5901,7 @@ async function loadSlotsForDate(dateKey) {
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
-  const cachedSlots = state.slotCache.get(slotKey);
+  const cachedSlots = getCachedSlots(slotKey);
   if (Array.isArray(cachedSlots)) {
     if (token !== state.slotRequestToken) return;
     els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: dateLabel });
@@ -5827,7 +5919,7 @@ async function loadSlotsForDate(dateKey) {
       slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
     }
     if (token !== state.slotRequestToken) return;
-    state.slotCache.set(slotKey, slots);
+    setCachedSlots(slotKey, slots);
   } catch (error) {
     if (token !== state.slotRequestToken) return;
     console.error(error);
@@ -5861,7 +5953,7 @@ function renderCalendar(data) {
   const unavail = new Set(unavailSource);
   const closed = new Set(closedSource);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   const cells = [];
@@ -5908,7 +6000,7 @@ function getNearestAvailableDate(data) {
   const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
   const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
@@ -5989,6 +6081,8 @@ function bindSlotButtons(entries) {
     button.addEventListener('click', () => {
       state.selectedSlot = button.dataset.time;
       state.selectedSlotMeta = entryMap.get(state.selectedSlot) || null;
+      state.slotPickedDuration = getCalendarDuration(); // 스텝2로 돌아가 소요시간이 바뀌면 이 슬롯은 무효
+      state.bookingRequestId = null; // 입력이 바뀌었으니 새 제출 시도로 취급
       els.slotGrid.querySelectorAll('.slot-btn[data-time]').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
       els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: formatDateLabel(state.selectedDate) });
       updateSubmitState();
@@ -6259,7 +6353,8 @@ function scheduleContactLookup() {
 function getSelectedDuration() {
   const p = state.selectedProduct;
   if (!p) return 0;
-  return Number(p.totalDur || p.duration || p.dur || 0) || 0;
+  // 상품엔 totalDur/duration 필드가 없다(대기자 총소요가 항상 0으로 저장되던 원인) — 견적 총소요, 없으면 상품 d
+  return Number(state.quote?.totalDuration || 0) || Number(p.d || 0) || 0;
 }
 
 function renderReview() {
@@ -6308,7 +6403,7 @@ function renderReview() {
       getBabyTypeLabel(state.babyType) || (state.lang === 'en' ? 'Please choose 100 Days or 1st Birthday' : state.lang === 'de' ? 'Bitte 100 Tage oder 1. Geburtstag wählen' : '백일/돌 중 선택 필요')
     ]);
   }
-  const babyName = String(els.form.elements.babyName?.value || '').trim();
+  const babyName = needsBabyNameForBooking(state.selectedProduct) ? String(els.form.elements.babyName?.value || '').trim() : '';
   if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
     const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
@@ -6400,12 +6495,13 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !needsBabyNameForBooking(product) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const phoneDigitsOk = (String(formData.get('phone') || '').replace(/\D/g, '').length >= 6); // 숫자 없는 전화가 '+49'로 저장되던 문제
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
     || (businessInvoice.companyName
       && businessInvoice.companyAddress
       && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
-  els.submitBtn.disabled = !(name && phone && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
+  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -6447,8 +6543,12 @@ async function onSubmit(event) {
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const eventCategoryLabel = state.selectedProduct.g === 'biz' ? getSelectedEventCategoryLabel() : '';
   const businessDetailsText = state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '';
+  /* requestId는 같은 시도의 재제출(타임아웃 재클릭)에 재사용해야 서버 중복 가드가 작동한다 —
+     클릭마다 새로 만들면 가드가 영원히 안 걸려 이중 예약이 가능했다(2026-08-31 전수 리뷰).
+     입력이 바뀌면(슬롯 재선택 등) 새 시도로 보고 재발급한다. */
+  state.bookingRequestId = state.bookingRequestId || createRequestId('booking');
   const payload = {
-    requestId: createRequestId('booking'),
+    requestId: state.bookingRequestId,
     itemId: state.selectedProduct.id,
     date: state.selectedDate,
     time: state.selectedSlot,
@@ -6458,7 +6558,8 @@ async function onSubmit(event) {
     email: String(formData.get('email') || '').trim(),
     address: businessInvoice.needed ? businessInvoice.companyAddress : String(formData.get('address') || '').trim(),
     payerName: String(formData.get('payerName') || '').trim(),
-    babyName: String(formData.get('babyName') || '').trim(),
+    // 연령·분위기를 되돌린 뒤 잔존한 아기 이름이 성인 예약 메모에 실리지 않게 필수 조건으로 게이트
+    babyName: needsBabyNameForBooking(state.selectedProduct) ? String(formData.get('babyName') || '').trim() : '',
     profileAge: getProfileAgeValue(),
     studioFamilyMembers: getStudioFamilyValue(),
     memo: '',
@@ -6469,7 +6570,7 @@ async function onSubmit(event) {
       ? [...new Set(state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
       : [],
     passPersonCountries: state.selectedProduct.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [],
-    otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
+    otherCountry: state.selectedProduct.g === 'pass' && state.selectedCountries.includes('OTHER') ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
     eventCategory: state.selectedProduct.g === 'biz' ? state.eventCategory : '',
     businessDetails: state.selectedProduct.g === 'biz'
@@ -6600,6 +6701,10 @@ async function onSubmit(event) {
   if (payload.babyName) {
     payload.memo = `[아기 이름: ${payload.babyName}] ${payload.memo}`.trim();
   }
+  // 재촬영 동의는 클라이언트 게이트뿐이라 서버에 흔적이 없었다 — 분쟁 대비 메모에 굳힌다
+  if (needsReshootingConsent(state.selectedProduct) && els.reshootingConsent?.checked) {
+    payload.memo = `[재촬영약관동의] ${payload.memo}`.trim();
+  }
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = getCopy().submitLoading;
   try {
@@ -6612,6 +6717,7 @@ async function onSubmit(event) {
     }
     renderSubmitResult(payload, result);
     setBanner(getCopy().submitDone, 'success');
+    state.bookingRequestId = null;
     els.form.reset();
     state.selectedSlot = '';
     state.selectedSlotMeta = null;
@@ -6621,7 +6727,17 @@ async function onSubmit(event) {
     updateSubmitState();
   } catch (error) {
     console.error(error);
-    setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+    if (/Duplicate submission/i.test(String(error?.message || ''))) {
+      // 직전 제출이 실제로는 접수됐는데 응답만 유실된 경우 — 오류가 아니라 안내로
+      setBanner(state.lang === 'en'
+        ? 'This request was already received — please check your email for the confirmation.'
+        : state.lang === 'de'
+          ? 'Diese Anfrage ist bereits eingegangen — bitte prüfen Sie Ihre E-Mail.'
+          : '이미 접수된 요청입니다 — 확인 메일함을 확인해 주세요. 메일이 없으면 잠시 후 다시 시도해 주세요.', 'success');
+      state.bookingRequestId = null;
+    } else {
+      setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+    }
   } finally {
     els.submitBtn.textContent = getCopy().submitLabel;
     updateSubmitState();

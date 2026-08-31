@@ -1375,6 +1375,7 @@ function buildSubmitPayload() {
     time: state.selectedSlot,
     name: String(els.form.elements.name.value || '').trim(),
     phone: String(els.form.elements.phone.value || '').trim(),
+    phoneCountry: /^\s*0?10[-\s.]?\d/.test(String(els.form.elements.phone.value || '')) ? '+82' : '+49',
     email: String(els.form.elements.email.value || '').trim(),
     address: String(els.form.elements.address.value || '').trim(),
     memo: detailMemo,
