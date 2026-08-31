@@ -33042,6 +33042,20 @@ function buildDataQualityAuditForAgent_(){
     // '수기등록'은 접두 매칭: '수기등록(메일없음)' 같은 변형이 5건 실측(2026-08-17)
     if(email&&!/^수기등록/.test(email)&&email!=='-'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       add('예약장부',rowIndex,name,'이메일 형식 오류',email);
+    /* 전화 위생 (2026-08-31 신원 쪼개짐 사태의 근본 신호) — 깨진 번호('+49' 단독·'170' 등,
+       숫자 6자리 미만)와 보이지 않는 유니코드 방향문자(고도영 케이스)는 고객 신원 키를 쪼갠다.
+       '-'는 이메일과 같은 "없음" 관행이라 제외. */
+    const phoneRaw=String(r[BOOKING_COL['연락처']]||'').trim();
+    /* 초기 수기·마이그레이션 행(1~4월, 50건+)이 이미 깨진 채(원본 소실) 존재 — 상시 경보는 피로만 남긴다.
+       방문 집계는 이름 합산(@903)으로 무해화됐으므로, 입구 가드(@901) 이후 '새로' 생기는 것만 잡는다.
+       마이리얼트립은 플랫폼 중개라 전화가 원래 없다('+82' 플레이스홀더 관행) — 제외. */
+    const isMrtRow=String(r[BOOKING_COL['촬영종류']]||'').indexOf('마이리얼트립')>-1||/마이리얼트립/.test(String(r[BOOKING_COL['상품']]||''));
+    if(phoneRaw&&phoneRaw!=='-'&&!isMrtRow&&d.str&&d.str.slice(0,10)>='2026-05-01'){
+      if(phoneRaw.replace(/\D/g,'').length<6)
+        add('예약장부',rowIndex,name,'전화번호 불완전(신원 쪼개짐 위험)',phoneRaw);
+      else if(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(phoneRaw))
+        add('예약장부',rowIndex,name,'전화에 보이지 않는 문자',phoneRaw);
+    }
     const total=parseMoneyValue_(r[BOOKING_COL['총결제액']]);
     // 계약금 셀은 '50|DB|2026-03-06' 복합 표기가 있다 — 금액은 첫 세그먼트만 (김지훈 행18·신비아 행98 오탐)
     /* 계약금·잔금 **양쪽 모두** '170|DB|2026-01-24' 복합 표기가 있다. 계약금만 분리하고
