@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-08-31T17:26:45.448Z
- * 포함 함수 38개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-02T15:01:22.147Z
+ * 포함 함수 42개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -72,6 +72,64 @@ function normalizeBookingStatus_(status){
 function isBookingCancelledStatus_(status){
   const s=normalizeBookingStatus_(status);
   return s===BOOKING_STATUS_CANCELLED || s==='자동취소';
+}
+
+function getPrintSheetColMap_(sh) {
+  const headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), CONFIG.PRINT_HEADERS.length)).getValues()[0] || [];
+  const map = {};
+  headers.forEach((h, i) => { if (h) map[String(h).trim()] = i; });
+  return map;
+}
+
+function isPrintRowUnpaid_(normalized){
+  const pm=String((normalized&&normalized.payMethod)||'').trim();
+  if(!pm) return false;
+  return /미결제|unpaid|offen/i.test(pm);
+}
+
+function normalizePrintRow_(row, rowIdx, colMap) {
+  const hasLegacyHeader =
+    colMap['매출날짜'] === 1 &&
+    row[colMap['매출날짜']] &&
+    !String(row[colMap['매출날짜']]).match(/^\d{4}-\d{2}-\d{2}/);
+
+  if (hasLegacyHeader) {
+    const legacyItems = String(row[4] || '').trim();
+    const legacyRetouch = String(row[5] || '').trim();
+    const legacyMemo = String(row[9] || '').trim();
+    return {
+      rowIdx,
+      dateStr: parseDateSafe_(row[0]).str,
+      salesDate: parseDateSafe_(row[1]).str.slice(0,10),
+      name: String(row[2] || ''),
+      phone: String(row[3] || ''),
+      items: legacyItems || (legacyMemo && !/셀렉:/i.test(legacyMemo) ? legacyMemo : ''),
+      retouchItems: legacyRetouch,
+      qty: Number(row[6] || 0) || 0,
+      total: Number(row[7] || 0) || 0,
+      payMethod: String(row[8] || ''),
+      memo: String(row[9] || ''),
+      status: String(row[10] || '완료')
+    };
+  }
+
+  const itemText = String(row[colMap['인화항목']] || '').trim();
+  const retouchText = String(row[colMap['보정항목']] || '').trim();
+  const memoText = String(row[colMap['메모']] || '').trim();
+  return {
+    rowIdx,
+    dateStr: parseDateSafe_(row[colMap['주문일시']] || '').str,
+    salesDate: String(row[colMap['매출날짜']] || '').trim(),
+    name: String(row[colMap['고객명']] || ''),
+    phone: String(row[colMap['연락처']] || ''),
+    items: itemText || (memoText && !/셀렉:/i.test(memoText) ? memoText : ''),
+    retouchItems: retouchText,
+    qty: Number(row[colMap['총수량']] || 0) || 0,
+    total: Number(row[colMap['금액']] || 0) || 0,
+    payMethod: String(row[colMap['결제수단']] || ''),
+    memo: String(row[colMap['메모']] || ''),
+    status: String(row[colMap['상태']] || '완료')
+  };
 }
 
 function getDbSheet() { return ensureSheets_().bookingSheet; }
@@ -229,6 +287,67 @@ function readPickupsForDate_(dateStr){
         done:!!doneAt
       });
     });
+    /* ── 픽업 결제 컨텍스트(2026-09-02) ─────────────────────────────
+       픽업 카드에서 잔금·추가금을 바로 수령하려면 "얼마가 남았고 무엇으로 받았는지"가
+       보드에 실려 와야 한다. 잔금은 예약행(잔금결제여부·잔금·결제수단), 추가금은
+       인화주문의 세션 주문행(세션당 1행)이 정본. 마이리얼트립은 플랫폼 결제라
+       현장 수령이 없다 — mrt 플래그로 앱이 수령 버튼을 숨긴다.
+       board-api 셔틀의 ensureSheets_ 에는 printSheet 가 없어 이름 폴백을 둔다.
+       픽업은 하루 0~3건이라 행 단위 읽기 비용은 무시할 수준. */
+    if(out.length){
+      const bkSh=getDbSheet();
+      let printSh=null;
+      try{ printSh=ensureSheets_().printSheet||ss.getSheetByName(CONFIG.PRINT_SHEET); }catch(e){}
+      // 인화주문은 빌드당 1회만 전체 읽기 — 픽업 N건이 각자 전체 스캔하지 않게 호이스트
+      let printData=null,pMap=null;
+      const loadPrint_=function(){
+        if(printData!==null||!printSh) return;
+        try{ pMap=getPrintSheetColMap_(printSh); printData=printSh.getDataRange().getValues(); }
+        catch(e){ printData=[]; Logger.log('pickup print read skipped: '+e.message); }
+      };
+      out.forEach(function(p){
+        p.balanceDue=0;p.balancePaid=false;p.payMethod='';p.mrt=false;
+        p.extraDue=0;p.extraPayMethod='';
+        // 잔금 컨텍스트(예약행) — 실패해도 추가금 읽기는 계속한다(별도 try)
+        try{
+          if(p.bookingRowIndex>1){
+            const row=bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+            if(row&&row[BOOKING_COL['고객명']]&&!isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))){
+              const pm=String(row[BOOKING_COL['결제수단']]||'').trim();
+              p.payMethod=pm;
+              p.mrt=pm==='마이리얼트립'||String(row[BOOKING_COL['촬영종류']]||'').trim()==='마이리얼트립';
+              /* 미수 판정은 **결제수단 문구**가 정본이다(브리핑 미수 목록과 동일 규칙) — 플래그는
+                 역사 행 다수에서 백필되지 않았다(2026-07-30 플래그 기준 전환 → 기수납 68건 €5,700+
+                 미수 홍수 실측 후 롤백). 수납 후 수단(현금/카드/계좌이체) 기록 자체가 완료 표시. */
+              const pmUnpaid=(pm===''||/미결제|unpaid|offen/i.test(pm));
+              p.balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'||!pmUnpaid;
+              const bal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+              if(!p.balancePaid&&!p.mrt&&bal>0.005) p.balanceDue=bal;
+            }
+          }
+        }catch(e){ Logger.log('pickup balance ctx skipped(row '+p.bookingRowIndex+'): '+e.message); }
+        // 추가금 컨텍스트(인화주문) — MRT 도 추가보정·인화는 현장 수납이라 mrt 게이트를 걸지 않는다
+        try{
+          if(p.sessionId){
+            loadPrint_();
+            if(printData&&printData.length>1&&pMap&&pMap['메모']!==undefined){
+              const sid=p.sessionId;
+              for(let i=1;i<printData.length;i++){
+                const tag=selectPrintMemoTag_(printData[i][pMap['메모']]);
+                if(!tag||(tag!==sid&&tag!==sid.slice(0,8))) continue;
+                const n=normalizePrintRow_(printData[i],i+1,pMap);
+                const amt=roundCurrency_(Number(n.total)||0);
+                if(amt>0.005&&!/취소|환불|cancel/i.test(String(n.status||''))){
+                  if(isPrintRowUnpaid_(n)) p.extraDue=amt;
+                  else p.extraPayMethod=String(n.payMethod||'').trim();
+                }
+                break;
+              }
+            }
+          }
+        }catch(e){ Logger.log('pickup extra ctx skipped('+p.sessionId+'): '+e.message); }
+      });
+    }
     out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
   }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
   return out;
@@ -434,10 +553,13 @@ function buildTodayBoard_(dateStr){
     if(s.delayMin>0) warnings.push(`${s.name}님 ${s.delayMin}분 지연 — 실제 ${s.effTime} 시작`);
     if(s.overlapsNext) warnings.push(`${s.name}님 촬영이 다음(${s.nextName}님)과 ${Math.abs(s.gapToNextMin)}분 겹칩니다`);
   });
+  // 픽업은 한 번만 읽는다 — 결제 컨텍스트(인화주문 스캔 포함)를 경고문용으로 중복 계산하지 않게
+  let pickupsToday=[];
   try{
-    const pk=readPickupsForDate_(today).filter(function(p){return !p.done;});
+    pickupsToday=readPickupsForDate_(today);
+    const pk=pickupsToday.filter(function(p){return !p.done;});
     if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
-  }catch(e){}
+  }catch(e){ pickupsToday=[]; }
   return {
     ok:true,
     date:today,
@@ -450,7 +572,7 @@ function buildTodayBoard_(dateStr){
     delayedCount:shoots.filter(function(s){return (s.delayMin||0)!==0;}).length,
     overlapCount:shoots.filter(function(s){return !!s.overlapsNext;}).length,
     shoots:shoots,
-    pickups:(function(){ try{ return readPickupsForDate_(today); }catch(e){ return []; } })(),
+    pickups:pickupsToday,
     warnings:warnings,
     _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
   };
@@ -638,3 +760,8 @@ const SELECT_SHEET_NAME='사진셀렉';
 const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+
+function selectPrintMemoTag_(memo){
+  const m=String(memo||'').match(/^\s*셀렉\s*:\s*([A-Za-z0-9_-]+)/);
+  return m?m[1]:'';
+}
