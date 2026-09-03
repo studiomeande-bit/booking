@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-02T15:01:22.147Z
- * 포함 함수 42개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-03T14:10:22.319Z
+ * 포함 함수 43개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -185,18 +185,26 @@ function _dayOpsSheet_(create){
   return sh||null;
 }
 
+function _dayOpsCellDate_(v){ return parseDateSafe_(v).str.slice(0,10); }
+
 function readDayOps_(dateStr){
   const d=String(dateStr||'').slice(0,10);
   try{
     const sh=_dayOpsSheet_(false);
     if(sh&&sh.getLastRow()>1){
       const rows=sh.getRange(2,1,sh.getLastRow()-1,2).getValues();
-      for(let i=rows.length-1;i>=0;i--){
-        if(String(rows[i][0]).slice(0,10)===d){
-          const o=JSON.parse(String(rows[i][1]||'{}'));
-          return (o&&typeof o==='object')?o:{};
-        }
+      /* 같은 날짜 행이 여러 개면(비교 결함 시절의 append 잔재) 오래된 것부터 병합 —
+         갈라져 저장된 시작/종료 기록이 여기서 다시 합쳐진다. 새 행이 이긴다. */
+      let merged=null;
+      for(let i=0;i<rows.length;i++){
+        if(_dayOpsCellDate_(rows[i][0])!==d) continue;
+        let o=null;
+        try{ o=JSON.parse(String(rows[i][1]||'{}')); }catch(e){ continue; }
+        if(!o||typeof o!=='object') continue;
+        if(!merged) merged={};
+        Object.keys(o).forEach(function(k){ merged[k]=Object.assign(merged[k]||{},o[k]); });
       }
+      if(merged) return merged;
     }
   }catch(e){}
   // 레거시 폴백 — 이전 배포에서 속성에 남은 오늘치가 사라지면 안 된다
