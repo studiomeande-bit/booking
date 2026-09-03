@@ -62,6 +62,20 @@ Updated: 2026-08-31 Europe/Berlin
 
 ## Done Recently
 
+### 결제대조 합산 매칭 `settlement-mark-bundle` — 거래 1건 → 예약행 N개(팁 행 포함) (2026-09-03, @NNN)
+- 사고: 최새진 2026-07-11 SumUp €230(정산행 311) = row203 잔금 210 + row212 Trinkgeld 20 을 **한 번의 카드결제**로 받은 것.
+  `apply-match` 는 1:1 정확일치, `mark-split` 은 정산행 N → 예약 1(정반대 방향)이라 둘 다 못 잡고,
+  `mark-nonbooking` 은 회계분류가 틀어진다 → 팁을 카드로 같이 받은 건은 **영영 review**. 7월 월마감 `settlement_review` fail(1건 €230)의 정체.
+- 신규 `settlement-mark-bundle`: parts 대상 금액 **합계 == gross(±0.01)** + parts **고객명 전부 동일**(+expectName, 대소문자·공백 무시) + 같은 행 중복 금지 + 1건·환불 거래 거부.
+  dryRun 기본(`confirm:"MATCH"`). 정산행에 매칭행=대표(첫 part) · 매칭대상=`예약장부 합산(203 잔금 210 + 212 전액 20)` · 메모에 전체 조합 · 회계분류=대표 행 예약매출.
+  **예약장부는 읽기만** — mark-split 과 같은 원칙(이미 카드·작업완료로 반영된 행을 또 반영하면 이중계상).
+- 매칭보드·검토목록(`analyzeSettlementReviewReason_`): 정확일치 후보가 없을 때 **같은 날·같은 고객명 예약행 조합**(행당 계약금|잔금|전액 하나, 6행 상한 완전탐색)을 찾아
+  일치하면 사유 `bundle_candidate` + `bundleCandidates[].payload`(그대로 실행 가능)로 제안. `amount_delta` 대신 뜬다. '같은 날' = 예약일시 또는 계약금/잔금 입금일이 거래일.
+  금액 읽기는 `bookingKindAmount_` 하나로 통일(mark-split 도 같은 함수) — 후보는 되는데 실행은 거부되는 어긋남 방지.
+- 회귀 잠금: `node scripts/check-settlement-bundle.mjs` — Code.gs 원본 함수를 떼어내 가짜 시트로(후보 탐색 8 · 사유 판정 4 · 거부 7종 · 예약장부 불변).
+- 라이브: 311 → [203 balance, 212 full] 표시 후 7월 보드 review 0건 · 7월 월마감 settlement_review 1→0 · 두 예약행 불변.
+- 알려진 노출(범위 밖, 기존 mark-split·nonbooking 과 동일): `settlement-refresh` 는 수동 표시를 보호하지 않아 그 기간을 재대조하면 review 로 되돌아갈 수 있다 — 재매칭 보호는 별도 이관 건(task_7c92890f ②)에서 함께.
+
 ### 픽업 잔금·추가금 수령 (오늘촬영 앱, 2026-09-02, 메인 @910 · board-api @4)
 
 - **사장님 요청**: "픽업 수령에도 잔금 수령 기능 + 어느 결제수단으로 받았는지 확인". 마이리얼트립은

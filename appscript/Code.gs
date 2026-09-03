@@ -1705,6 +1705,7 @@ function handlePublicApiRequest_(route,method,e){
             String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
         }
         if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-mark-bundle') return jsonOk_(markSettlementBundleAdmin(token,payload)); // ✏️ 거래 1건 → 예약행 N개 합산(팁 행 포함) 표시. 예약장부 불변 — 함수 주석 참조
         if(action==='settlement-gutschein-match') return jsonOk_(applySettlementGutscheinMatchAdmin(token,payload));
         if(action==='settlement-mark-nonbooking'){
           /* ✏️ **예약이 아닌 입금**을 review 큐에서 내린다 — 굿샤인 판매대금처럼 예약장부에
@@ -1766,10 +1767,7 @@ function handlePublicApiRequest_(route,method,e){
           if(expectName&&expectName!==bookingName){
             return jsonError_('NAME_MISMATCH','행 '+bri+' 고객명이 "'+bookingName+'" 입니다(기대: "'+expectName+'").');
           }
-          /* 목표 금액 — 계약금·잔금 셀은 '298|DB|날짜' 복합 표기라 첫 세그먼트만 쓴다 */
-          const seg=function(col){return parseMoneyValue_(String(bRow[BOOKING_COL[col]]||'').split('|')[0]);};
-          const targetAmount=kind==='full'?parseMoneyValue_(bRow[BOOKING_COL['총결제액']])
-            :(kind==='deposit'?seg('계약금'):seg('잔금'));
+          const targetAmount=bookingKindAmount_(bRow,kind);
           if(!(targetAmount>0)) return jsonError_('BAD_REQUEST','예약행의 '+kind+' 금액을 읽지 못했습니다.');
           const txs=[];
           let sum=0;
@@ -19897,6 +19895,24 @@ function analyzeSettlementReviewReason_(tx,bookingSheetOpt,options){
       ? opts.candidates
       : getSettlementBookingCandidatesForTx_(t,bookingSheetOpt,{includeNear:true,limit:6});
     const exact=candidates.filter(function(c){return Number(c.amountDelta||0)<=0.05;});
+    /* 합산결제(거래 1건 = 예약행 N개, 팁 포함)는 단건 후보로는 영영 amount_delta 다 —
+       정확일치 후보가 없을 때만 같은 날·같은 고객명 조합을 찾는다(예약시트 1회 추가 읽기). */
+    if(!exact.length){
+      const bundles=findSettlementBundleCandidates_(t,bookingSheetOpt);
+      if(bundles.length){
+        const b=bundles[0];
+        const bundleReason=createSettlementReviewReason_(
+          'bundle_candidate',
+          '합산결제 후보',
+          `${b.name}님 예약행 ${b.parts.length}개의 금액 합계가 이 거래와 일치합니다 — ${b.label}.`,
+          'settlement-mark-bundle 로 묶어 매칭하세요(dryRun 먼저). 예약장부는 읽기만 하며, 이미 반영된 행이면 표시만 정리됩니다.',
+          'warn',
+          candidates
+        );
+        bundleReason.bundleCandidates=bundles;
+        return bundleReason;
+      }
+    }
     const top=candidates[0]||null;
     const topExact=top && Number(top.amountDelta||0)<=0.05;
     const topCloseDate=top && (Number(top.referenceDayGap||9999)<=10 || Number(top.dayGap||9999)<=1 || Number(top.timeGapMin||999999)<=360);
@@ -20007,7 +20023,8 @@ function getSettlementReviewItems_(transactions,bookingSheetOpt){
         reasonDetail:reason.reasonDetail,
         actionHint:reason.actionHint,
         severity:reason.severity,
-        candidatePreview:reason.candidatePreview
+        candidatePreview:reason.candidatePreview,
+        bundleCandidates:reason.bundleCandidates||[]
       };
     });
 }
@@ -20837,6 +20854,7 @@ function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
     accountingClass:tx.accountingClass,
     memo:tx.memo,
     reviewReason:reviewReason,
+    bundleCandidates:(reviewReason&&reviewReason.bundleCandidates)||[],
     warning:warning,
     gutscheinCandidates:gutscheinCandidates,
     candidates:shownCandidates
@@ -20988,6 +21006,152 @@ function applySettlementBookingMatchAdmin(token,payload){
     summary:summarizeSettlementImport_(txs,'all'),
     reviewItems:getSettlementReviewItems_(txs)
   };
+}
+
+/* 예약행에서 kind(balance/deposit/full)의 대상 금액 — 계약금·잔금 셀은 '298|DB|날짜' 복합 표기라 첫 세그먼트만 쓴다.
+   mark-split · mark-bundle · 합산 후보 탐색이 전부 이 하나를 쓴다(셋이 다른 값을 읽으면 후보는 되는데 실행은 거부되는 어긋남이 생긴다). */
+function bookingKindAmount_(bRow,kind){
+  const seg=function(col){return parseMoneyValue_(String(bRow[BOOKING_COL[col]]||'').split('|')[0]);};
+  const k=String(kind||'balance');
+  if(k==='full') return parseMoneyValue_(bRow[BOOKING_COL['총결제액']]);
+  return k==='deposit'?seg('계약금'):seg('잔금');
+}
+
+function settlementBundleLabel_(parts){
+  return '예약장부 합산('+parts.map(function(p){return p.bookingRowIndex+' '+p.kindLabel+' '+p.amount;}).join(' + ')+')';
+}
+
+/* 합산결제 후보 — 같은 날·같은 고객명 예약행들의 (계약금|잔금|전액) 조합 합계가 거래 gross 와 일치하면 제안한다.
+   왜 있나: 최새진 2026-07-11 카드 €230 = row203 잔금 210 + row212 Trinkgeld 20. 단건 후보는 210(차이 20)이
+   최선이라 영영 amount_delta 였다. 팁 행은 총액≤100 이라 계약금이 없어 '전액'으로 자연히 들어온다.
+   '같은 날' = 예약일시 또는 계약금/잔금 입금일이 거래일과 같은 행. 한 행은 옵션 하나만(또는 제외) 고르는
+   완전탐색 — 그룹당 6행 상한(4^6). 결과는 행 수 적은 조합부터 최대 3개. */
+function findSettlementBundleCandidates_(tx,bookingSheetOpt){
+  const gross=roundCurrency_(Number(tx&&tx.gross||0));
+  const txDate=String(tx&&tx.date||'').slice(0,10);
+  if(gross<=0||!txDate) return [];
+  let sh=bookingSheetOpt||null;
+  if(!sh){ try{ sh=ensureSheets_().bookingSheet; }catch(e){ return []; } }
+  if(!sh||sh.getLastRow()<2) return [];
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const groups={};
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    if(!name) return;
+    const total=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+    if(total<=0) return;
+    const dateOf=function(v){return (parseDateSafe_(v).str||'').slice(0,10);};
+    const bookingDate=dateOf(row[BOOKING_COL['예약일시']]);
+    if(bookingDate!==txDate&&dateOf(row[BOOKING_COL['잔금입금일']])!==txDate&&dateOf(row[BOOKING_COL['계약금입금일']])!==txDate) return;
+    const deposit=roundCurrency_(getEffectiveBookingDeposit_(row));
+    const balance=roundCurrency_(bookingKindAmount_(row,'balance')||Math.max(0,total-deposit));
+    const paidDeposit=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    const paidBalance=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+    const opts=(deposit>0
+      ? [{kind:'deposit',amount:deposit,alreadyPaid:paidDeposit},{kind:'balance',amount:balance,alreadyPaid:paidBalance},{kind:'full',amount:total,alreadyPaid:paidBalance}]
+      : [{kind:'full',amount:total,alreadyPaid:paidBalance}]).filter(function(o){return o.amount>0;});
+    const key=normalizeAccountingName_(name);
+    (groups[key]=groups[key]||[]).push({
+      base:{bookingRowIndex:idx+2,name:name,product:String(row[BOOKING_COL['상품']]||'').trim(),
+        group:String(row[BOOKING_COL['촬영종류']]||'').trim(),bookingDate:bookingDate,status:status},
+      opts:opts
+    });
+  });
+  const found=[];
+  Object.keys(groups).forEach(function(key){
+    const g=groups[key].slice(0,6);
+    if(g.length<2) return;
+    const walk=function(i,picked,sum){
+      if(i===g.length){
+        if(picked.length>=2&&Math.abs(roundCurrency_(sum)-gross)<=0.011) found.push(picked.slice());
+        return;
+      }
+      walk(i+1,picked,sum);                       // 이 행은 제외
+      g[i].opts.forEach(function(o){
+        picked.push(Object.assign({},g[i].base,{kind:o.kind,kindLabel:settlementCandidateKindLabel_(o.kind),amount:o.amount,alreadyPaid:o.alreadyPaid}));
+        walk(i+1,picked,sum+o.amount);
+        picked.pop();
+      });
+    };
+    walk(0,[],0);
+  });
+  found.sort(function(a,b){return a.length-b.length;});
+  return found.slice(0,3).map(function(parts){
+    return {
+      kind:'bundle',
+      kindLabel:'합산결제',
+      name:parts[0].name,
+      sum:gross,
+      parts:parts,
+      label:settlementBundleLabel_(parts),
+      // 그대로 settlement-mark-bundle 에 넣으면 실행된다(dryRun 은 confirm 을 빼면 된다)
+      payload:{settlementRowIndex:tx.rowIndex,parts:parts.map(function(p){return {bookingRowIndex:p.bookingRowIndex,kind:p.kind};}),expectName:parts[0].name,confirm:'MATCH'}
+    };
+  });
+}
+
+/* ✏️ 합산결제 정리 `settlement-mark-bundle` (2026-09-03) — 거래 **1건**이 예약장부 **여러 행**의 금액을
+   한 번에 담은 경우(최새진 2026-07-11 카드 €230 = row203 잔금 210 + row212 Trinkgeld 20).
+   apply-match 는 1:1 정확일치, mark-split 은 정산행 N개→예약 1건(정반대 방향)이라 둘 다 못 잡고,
+   mark-nonbooking 은 회계분류가 틀어진다 → 팁을 카드로 함께 받은 건은 영영 review 로 남는다. 그 구멍을 메운다.
+   **예약장부는 읽기만 한다**(mark-split 과 같은 원칙 — 이미 카드·작업완료로 반영된 행을 또 반영하면 이중계상).
+   안전장치: ① parts 대상 금액 합계 == 거래 gross(±0.01) ② parts 고객명 전부 동일(+expectName, 팁 행도 같은 이름)
+   ③ 같은 예약행 중복 지목 금지. confirm:'MATCH' 없으면 dryRun. 정산행에는 대표 행(첫 part)을 매칭행으로,
+   매칭대상에 전체 조합을 적는다. 회계분류는 대표 행 기준 예약매출. */
+function markSettlementBundleAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.settlementRowIndex,10)||0;
+  if(rIdx<2) throw new Error('settlementRowIndex 가 필요합니다.');
+  const parts=Array.isArray(payload.parts)?payload.parts:[];
+  if(parts.length<2) throw new Error('parts 에 예약행이 최소 2개 필요합니다(1건이면 settlement-mark-split).');
+  const sh=ensureSheets_();
+  const ref=getSettlementTransactionByRow_(sh.settlementSheet,rIdx);
+  const tx=ref.tx;
+  const gross=roundCurrency_(Number(tx.gross||0));
+  if(gross<=0) throw new Error('행 '+rIdx+' 은 입금 거래가 아닙니다(총액 '+gross+').');
+  const seen={};
+  const resolved=parts.map(function(p){
+    const bri=parseInt(p&&p.bookingRowIndex,10)||0;
+    if(bri<2) throw new Error('parts[].bookingRowIndex 가 필요합니다.');
+    if(seen[bri]) throw new Error('예약행 '+bri+' 이 parts 에 두 번 있습니다.');
+    seen[bri]=true;
+    const kind=String(p.kind||'balance').trim().toLowerCase();
+    if(['balance','deposit','full'].indexOf(kind)===-1) throw new Error('kind 는 balance / deposit / full 중 하나여야 합니다(행 '+bri+').');
+    const bRow=sh.bookingSheet.getRange(bri,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const name=String(bRow[BOOKING_COL['고객명']]||'').trim();
+    if(!name) throw new Error('예약 행 '+bri+' 을 찾지 못했습니다.');
+    const amount=roundCurrency_(bookingKindAmount_(bRow,kind));
+    if(!(amount>0)) throw new Error('예약행 '+bri+' 의 '+kind+' 금액을 읽지 못했습니다.');
+    return {bookingRowIndex:bri,name:name,kind:kind,kindLabel:settlementCandidateKindLabel_(kind),amount:amount,
+      product:String(bRow[BOOKING_COL['상품']]||'').trim(),group:String(bRow[BOOKING_COL['촬영종류']]||'').trim(),
+      status:String(bRow[BOOKING_COL['상태']]||'').trim()};
+  });
+  const headName=resolved[0].name;
+  const sameName=function(a,b){return normalizeAccountingName_(a)===normalizeAccountingName_(b);};
+  if(resolved.some(function(p){return !sameName(p.name,headName);})){
+    throw new Error('NAME_MISMATCH: parts 고객명이 서로 다릅니다 — '+resolved.map(function(p){return '행'+p.bookingRowIndex+' '+p.name;}).join(' / ')+'. 팁 행도 같은 고객명이어야 합니다.');
+  }
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName&&!sameName(expectName,headName)) throw new Error('NAME_MISMATCH: 예약 고객명이 "'+headName+'" 입니다(기대: "'+expectName+'").');
+  const sum=roundCurrency_(resolved.reduce(function(s,p){return s+p.amount;},0));
+  const label=settlementBundleLabel_(resolved);
+  if(Math.abs(sum-gross)>0.011) throw new Error('AMOUNT_MISMATCH: parts 합계 '+sum+'€ 가 거래 총액 '+gross+'€ 와 다릅니다 — '+label);
+  const out={settlementRowIndex:ref.rowIndex,date:String(tx.date||'').slice(0,10),gross:gross,name:headName,sum:sum,parts:resolved,target:label};
+  if(payload.dryRun===true||String(payload.confirm||'')!=='MATCH'){
+    return Object.assign({dryRun:true},out,{note:'표시하지 않았습니다. confirm:"MATCH" 로 실행하세요. 예약장부는 건드리지 않습니다.'});
+  }
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  updateSettlementMatchRow_(sh.settlementSheet,ref.rowIndex,{
+    status:'matched',target:label,rowIndex:resolved[0].bookingRowIndex,
+    accountingClass:classifyBookingAccounting_(resolved[0].group,resolved[0].product),
+    memo:['합산결제 '+resolved.length+'행',headName,
+      resolved.map(function(p){return '행'+p.bookingRowIndex+' '+p.kindLabel+' '+p.amount+'€';}).join(' + ')+' = '+gross+'€',
+      '장부 반영 완료 — 수동 확인 '+stamp].join(' · ')
+  });
+  return Object.assign({ok:true},out,{note:'결제대조 매칭 표시만 바꿨습니다. 예약장부는 그대로입니다.'});
 }
 
 /* 결제대조 거래 ↔ 굿샤인 판매 확정. 양쪽을 **함께** 채운다 —
