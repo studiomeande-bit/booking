@@ -19522,14 +19522,22 @@ function importPaymentCsvAdmin(token, payload){
       errors.push({row:idx+2,message:String(e&&e.message||e)});
     }
   });
-  let created=0, updated=0, matched=0, review=0, feeExpensesCreated=0, feeExpensesUpdated=0;
+  let created=0, updated=0, matched=0, review=0, feeExpensesCreated=0, feeExpensesUpdated=0, feeExpensesSkipped=0;
   let bankExpenseResult={created:0,updated:0,skipped:0,excluded:0,review:0,confirmed:0,totalGross:0};
-  const feeExpenseMap=(source==='sumup' && createFeeExpenses)
-    ? getSumupFeeExpenseMap_(sheets.expenseSheet)
-    : null;
+  const feeExpenseMap=!createFeeExpenses ? null
+    : (source==='sumup' ? getSumupFeeExpenseMap_(sheets.expenseSheet) : getBankFeeExpenseMap_(sheets.expenseSheet));
+  const prevByRow={};
+  existingSettlements.forEach(function(t){ prevByRow[t.rowIndex]=t; });
   transactions.forEach(function(tx){
-    const rowValues=buildSettlementSheetRow_(tx,importedAt);
     const found=findSettlementRow_(existingIndex,tx);
+    /* 사람이 확정한 대조 표시(예약 아님·분할·수동 대사·굿샤인)는 재임포트가 지우지 않는다 — 같은 기간 CSV 를
+       다시 넣는 일은 흔하고(6/1~8/31 파일로 6·7월 재임포트), 자동 판정은 어차피 아래 재매칭이 다시 정한다. */
+    const prev=found.rowIndex ? prevByRow[found.rowIndex] : null;
+    if(prev && isManualSettlementMark_(prev)){
+      tx.matchStatus=prev.matchStatus; tx.matchTarget=prev.matchTarget; tx.matchRow=prev.matchRow;
+      tx.accountingClass=prev.accountingClass||tx.accountingClass; tx.memo=prev.memo;
+    }
+    const rowValues=buildSettlementSheetRow_(tx,importedAt);
     if(found.rowIndex){
       sh.getRange(found.rowIndex,1,1,rowValues.length).setValues([rowValues]);
       registerSettlementRow_(existingIndex,tx,found.refKey,found.rowIndex);
@@ -19542,10 +19550,13 @@ function importPaymentCsvAdmin(token, payload){
     }
     if(tx.matchStatus==='matched'||tx.matchStatus==='sumup_payout'||tx.matchStatus==='expense_matched') matched++;
     else review++;
-    if(source==='sumup' && createFeeExpenses && Number(tx.fee||0)>0){
-      const feeResult=upsertSumupFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap);
+    if(createFeeExpenses && Number(tx.fee||0)>0){
+      const feeResult=source==='sumup'
+        ? upsertSumupFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap)
+        : upsertBankFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap);
       if(feeResult.created) feeExpensesCreated++;
       if(feeResult.updated) feeExpensesUpdated++;
+      if(feeResult.skipped) feeExpensesSkipped++;
     }
   });
   if(createBankExpenses){
@@ -19573,6 +19584,7 @@ function importPaymentCsvAdmin(token, payload){
     rematchedRows:periodRefresh.updated,
     feeExpensesCreated,
     feeExpensesUpdated,
+    feeExpensesSkipped,
     bankExpensesCreated:bankExpenseResult.created,
     bankExpensesUpdated:bankExpenseResult.updated,
     bankExpensesSkipped:bankExpenseResult.skipped,
@@ -19664,7 +19676,7 @@ function applySumupBookingMatchesAdmin(token,startDate,endDate){
   const sumupPaymentResult={matched:0,updated:0,skipped:0,totalGross:0};
   let scanned=0, matched=0, review=0, changed=0;
   txs.forEach(function(tx){
-    if(tx.source!=='sumup' || Number(tx.gross||0)<=0) return;
+    if(tx.source!=='sumup' || Number(tx.gross||0)<=0 || isManualSettlementMark_(tx)) return;
     scanned++;
     const rowOffset=tx.rowIndex-2;
     if(rowOffset<0 || rowOffset>=rows.length) return;
@@ -19715,6 +19727,17 @@ function applySumupBookingMatchesAdmin(token,startDate,endDate){
   };
 }
 
+/* 사람이 확정한 대조 표시 — 자동 재매칭(settlement-refresh · sumup-sync 의 기간 재매칭 · CSV 재임포트 · SumUp 일괄
+   적용)이 덮어쓰면 안 된다. 표시 액션이 남기는 흔적으로 식별한다: mark-nonbooking('예약 아님 · …'),
+   gutschein-match('굿샤인 판매'), mark-split/apply-match/force('수동 확인'·'수동 대사'·'수동매칭'·'수동확정').
+   실사고 2026-09-01: 정산행 384 '예약 아님' 표시가 sumup-sync(lookback 3일)의 기간 재매칭에 review 로 되돌아갔다 —
+   같은 날 표시한 SumUp 정산입금 3건(08-05·17·24)은 창 밖이라 살아남았을 뿐이다. 자동 메모엔 '수동'이 없다. */
+function isManualSettlementMark_(tx){
+  const target=String(tx&&tx.matchTarget||'').trim();
+  if(target.indexOf('예약 아님 ·')===0 || target==='굿샤인 판매') return true;
+  return /수동/.test(String(tx&&tx.memo||''));
+}
+
 function refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting){
   sheets=sheets||ensureSheets_();
   const sh=sheets.settlementSheet;
@@ -19724,13 +19747,15 @@ function refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting)
   const entries=(accounting&&accounting.entries)||[];
   const rows=sh.getRange(2,1,sh.getLastRow()-1,SETTLEMENT_HEADERS.length).getValues();
   const txs=getSettlementTransactions_(startDate,endDate,sh);
+  // 사람이 확정한 표시는 재배정 대상에서 뺀다(요약·검토목록엔 그대로 포함)
+  const autoTxs=txs.filter(function(tx){return !isManualSettlementMark_(tx);});
   let updated=0;
   const baseOpts={bookingSheet:sheets.bookingSheet,applyBankDeposits:false,applySumupPayments:false};
   /* 장부 건 1개 : 거래 1개. 1차로 각 거래의 최선 후보를 뽑고, **점수 높은 순으로** 선점시킨다.
      선점당한 거래는 남은 후보로 다시 찾는다 — 날짜가 딱 맞는 쪽이 이기고, 애매한 쪽이 review 로
      남는 게 옳다(먼저 온 순서로 주면 하루 어긋난 거래가 정답 자리를 뺏는다). */
   const claimed={};
-  const prelim=txs.map(function(tx){
+  const prelim=autoTxs.map(function(tx){
     return {tx:tx, match:matchSettlementTransaction_(tx,entries,txs,baseOpts)};
   }).sort(function(a,b){
     return (Number(b.match&&b.match.score||0))-(Number(a.match&&a.match.score||0));
@@ -20872,6 +20897,7 @@ function getSettlementMatchBoardAdmin(token,startDate,endDate,source,includeMatc
       if(includeMatched) return true;
       if(String(tx.matchStatus||'')==='matched' && String(tx.matchRow||'').trim()) return false;
       if(String(tx.matchStatus||'')==='sumup_payout') return false;
+      if(isManualSettlementMark_(tx)) return false;   // '예약 아님' 등 사람이 해소한 건은 미결이 아니다
       return true;
     })
     .sort(function(a,b){
@@ -21432,14 +21458,29 @@ function normalizeDeutscheBankCsvRow_(row,filename){
   const counterparty=String(pickCsvValue_(row,['Auftraggeber/Empfänger','Auftraggeber Empfaenger','Auftraggeber/Begünstigter','Auftraggeber Beguenstigter','Beguenstigter/Zahlungspflichtiger','Begünstigter/Zahlungspflichtiger','Name','Counterparty','Zahlungspflichtiger','Empfaenger','Empfänger','Beguenstigter','Begünstigter'])||'').trim();
   const purpose=String(pickCsvValue_(row,['Verwendungszweck','Purpose','Beschreibung','Description','Buchungstext','Text','Vorgang/Verwendungszweck'])||'').trim();
   const ref=String(pickCsvValue_(row,['Kundenreferenz','Mandatsreferenz','End-to-End-Referenz','Referenz','Reference','IBAN'])||'').trim();
+  /* 해외송금 착금(Auslandsüberweisung, AUSL.ZAHL.) — 은행이 수수료를 **원천 차감**해 Betrag 에는 착금액만 온다.
+     Verwendungszweck 의 `AMT+EUR<송금액> FEE+EUR<수수료>` 를 읽어 gross=송금액 / fee=수수료 / net=착금액 으로
+     나눈다(SumUp 행과 같은 구조). 매출·매칭은 송금액(gross) 기준, 수수료는 별도 비용(upsertBankFeeExpense_).
+     실사례 2026-08-31 휘슬러 코리아: AMT+EUR300,00 FEE+EUR5,50 → 착금 294,50 — 종전엔 294,50 이 gross 로 들어가
+     예약 계약금 300 과 영영 매칭이 안 됐다(정산행 384). 송금액−수수료≠착금액이면 파싱 오류로 보고 손대지 않는다.
+     국외 B2B 송금(휘슬러 잔금·호민상사·SkyinQ)마다 반복되는 패턴. */
+  let gross=amount, fee=0;
+  if(amount>0){
+    const amt=purpose.match(/AMT\+EUR([\d.,]+)/i);
+    const fe=purpose.match(/FEE\+EUR([\d.,]+)/i);
+    if(amt&&fe){
+      const a=parseLocaleMoney_(amt[1]), f=parseLocaleMoney_(fe[1]);
+      if(a>0 && f>0 && Math.abs((a-f)-amount)<=0.011){ gross=a; fee=f; }
+    }
+  }
   return {
     date,
     payoutDate:valueDate,
     type:amount>=0?'은행입금':'은행출금',
     counterparty,
     description:purpose||filename,
-    gross:amount,
-    fee:0,
+    gross:gross,
+    fee:fee,
     net:amount,
     currency:String(pickCsvValue_(row,['Waehrung','Währung','Currency'])||'EUR').trim()||'EUR',
     paymentRef:ref,
@@ -21466,11 +21507,21 @@ function settlementDescriptionForKey_(desc){
   return (/\.csv$/i.test(d) || /^kontoumsaetze/i.test(d) || /^kontoums(ä|ae)tze/i.test(d)) ? '' : d;
 }
 
+/* 신원 금액 — SumUp 은 gross(수수료는 payout 후 채워지는 사후값이라 제외). 은행 행은 **착금액(Betrag)** = gross−fee:
+   해외송금은 수수료가 원천 차감돼 gross(송금액)는 파싱 결과일 뿐이고, 은행이 기록한 불변값은 착금액이다.
+   gross 를 그대로 쓰면 AUSL 수수료 파싱 전후로 해시가 달라져 재임포트가 같은 거래를 새 행으로 만든다
+   (정산행 384: 294,50 으로 저장 → 파싱 후 300/5,50 도 같은 행으로 찾혀야 한다). 수수료 0 인 은행 행은 종전과 동일. */
+function settlementIdentityAmount_(source,tx){
+  const gross=Number(tx&&tx.gross||0);
+  if(String(source||'')!=='deutschebank') return gross;
+  return Math.round((gross-(Number(tx&&tx.fee||0)||0))*100)/100;
+}
+
 function settlementIdentityKey_(source,tx){
   return [
     String(source||''),
     String(tx&&tx.date||''),
-    Number(tx&&tx.gross||0).toFixed(2),
+    settlementIdentityAmount_(source,tx).toFixed(2),
     String(tx&&tx.paymentRef||''),
     String(tx&&tx.bankRef||''),
     String(tx&&tx.counterparty||''),
@@ -21520,6 +21571,7 @@ function getSettlementIndex_(sh){
     const idKey=settlementIdentityKey_(source,{
       date:parseDateSafe_(row[SETTLEMENT_COL['거래일']]).str.slice(0,10),
       gross:parseMoneyValue_(row[SETTLEMENT_COL['총액(Brutto)']]),
+      fee:parseMoneyValue_(row[SETTLEMENT_COL['수수료']]),
       paymentRef:row[SETTLEMENT_COL['결제참조']],
       bankRef:row[SETTLEMENT_COL['은행참조']],
       counterparty:row[SETTLEMENT_COL['상대방']],
@@ -21644,6 +21696,7 @@ function dedupeSettlementRowsAdmin(token,opts){
       const tx={
         date:k.date,
         gross:k.gross,
+        fee:Math.round((Number(row[SETTLEMENT_COL['수수료']])||0)*100)/100,   // 은행 착금액 신원(settlementIdentityAmount_)
         paymentRef:String(row[SETTLEMENT_COL['결제참조']]||''),
         bankRef:String(row[SETTLEMENT_COL['은행참조']]||''),
         counterparty:String(row[SETTLEMENT_COL['상대방']]||''),
@@ -22407,8 +22460,71 @@ function upsertSumupFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
   return {created:true,updated:false};
 }
 
+/* ── 은행 송금수수료(원천차감) 자동기장 — SumUp 수수료(upsertSumupFeeExpense_)와 같은 경로 ──
+   ID 는 정산행 해시(은행 행은 착금액 기준이라 재임포트에도 불변). vendor Deutsche Bank · 분류 은행수수료 ·
+   VAT 없음(§4 Nr.8 UStG, net=gross). **같은 날짜·같은 금액의 Deutsche Bank 수기 기장이 이미 있으면 만들지 않는다**
+   — 2026-08-31 €5,50 은 손으로 먼저 넣었다(지출행 208). 수기 행은 손대지 않는다(ID 도 안 심는다). */
+function bankFeeExpenseId_(tx){ return 'bank_fee:'+String(tx&&tx.hash||''); }
+
+function getBankFeeExpenseMap_(expenseSheet){
+  const sh=expenseSheet || ensureSheets_().expenseSheet;
+  const out={byId:{},byDateAmount:{}};
+  if(sh.getLastRow()<2) return out;
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.EXPENSE_HEADERS.length).getValues();
+  rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
+    const id=String(row[12]||'').trim();
+    if(id.indexOf('bank_fee:')===0 && !out.byId[id]) out.byId[id]=rowIndex;
+    if(!/deutsche\s*bank/i.test(String(row[1]||''))) return;
+    const key=parseDateSafe_(row[0]).str.slice(0,10)+'|'+(Math.round(parseMoneyValue_(row[4])*100)/100).toFixed(2);
+    if(!out.byDateAmount[key]) out.byDateAmount[key]=rowIndex;
+  });
+  return out;
+}
+
+function upsertBankFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
+  const sh=expenseSheetOpt || ensureSheets_().expenseSheet;
+  const fee=Math.round((Number(tx.fee)||0)*100)/100;
+  if(fee<=0) return {created:false,updated:false,skipped:false};
+  const map=feeMapOpt || getBankFeeExpenseMap_(sh);
+  const feeId=bankFeeExpenseId_(tx);
+  const dateKey=String(tx.date||'').slice(0,10)+'|'+fee.toFixed(2);
+  const existingRow=Number(map.byId[feeId]||0);
+  if(!existingRow && map.byDateAmount[dateKey]){
+    return {created:false,updated:false,skipped:true,rowIndex:map.byDateAmount[dateKey]};
+  }
+  const gross=Math.round((Number(tx.gross)||0)*100)/100;
+  const values=[
+    tx.date,
+    'Deutsche Bank',
+    '은행수수료',
+    'Überweisungsgebühr(원천차감) · '+String(tx.counterparty||'').slice(0,80)+' · 송금액 '+gross+'€',
+    fee,
+    fee,
+    0,
+    'Deutsche Bank 차감',
+    '자동반영 · 송금수수료 원천차감(착금 '+(Math.round((gross-fee)*100)/100)+'€) · '+(tx.filename||''),
+    '',
+    '확정',
+    '은행수수료',
+    feeId,
+    '미전송',
+    ''
+  ];
+  if(existingRow){
+    // 자동 행 갱신은 금액·설명 열만 — 증빙링크·상태 같은 사람이 채운 열은 보존한다
+    sh.getRange(existingRow,1,1,7).setValues([values.slice(0,7)]);
+    return {created:false,updated:true,rowIndex:existingRow};
+  }
+  sh.appendRow(values);
+  const rowIndex=sh.getLastRow();
+  map.byId[feeId]=rowIndex;
+  map.byDateAmount[dateKey]=rowIndex;
+  return {created:true,updated:false,rowIndex:rowIndex};
+}
+
 function isLocalGeneratedExpenseId_(value){
-  return /^(sumup_fee|bank_out):/.test(String(value||'').trim());
+  return /^(sumup_fee|bank_fee|bank_out):/.test(String(value||'').trim());
 }
 
 function getExpenseImportIdMap_(expenseSheet,prefix){

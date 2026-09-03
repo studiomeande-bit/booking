@@ -9,6 +9,10 @@
  *
  * 그래서 재구현이 아니라 Code.gs **원본 소스를 떼어내** 가짜 시트 위에서 돌린다.
  * 사용법:  node scripts/check-settlement-dedupe.mjs        (불일치 시 exit 1)
+ *
+ * 2026-09-03 추가: ① 해외송금(AUSL.ZAHL.) 수수료 파싱 — gross 300 / fee 5,50 / net 294,50(정산행 384 실사례)과
+ * 파싱 전후 **해시 불변**(은행 신원금액 = 착금액), 송금수수료 지출 자동기장의 수기행 중복 금지.
+ * ② 사람이 확정한 대조 표시('예약 아님 ·'·분할·수동 대사·굿샤인)를 settlement-refresh 가 되돌리지 않는 가드.
  */
 process.env.TZ = 'Europe/Berlin';   // 날짜 파싱이 로컬 TZ 에 흔들리지 않게 GAS 와 동일 고정
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -46,7 +50,10 @@ const FNS = [
   'makeSettlementSeqCounter_', 'buildSettlementSheetRow_', 'dedupeSettlementRowsAdmin',
   'sumupFeeExpenseId_', 'sumupFeeExpenseDesc_', 'getSumupFeeExpenseMap_', 'findSumupFeeExpenseRow_',
   'upsertSumupFeeExpense_', 'parseDateSafe_', 'formatDateMinute_', '_canFormatDateFast_', 'formatDateMinuteFast_',
-  'settlementMatchLedgerWindow_',
+  'settlementMatchLedgerWindow_', 'settlementDescriptionForKey_', 'settlementIdentitySlot_', 'settlementIdentityAmount_',
+  'normalizeCsvHeader_', 'pickCsvValue_', 'parseCsvDate_', 'parseLocaleMoney_', 'normalizeDeutscheBankCsvRow_',
+  'bankFeeExpenseId_', 'getBankFeeExpenseMap_', 'upsertBankFeeExpense_',
+  'isManualSettlementMark_', 'refreshSettlementMatchesForPeriod_', 'getSettlementTransactions_', 'summarizeSettlementImport_',
   'settlementEntryKey_', 'matchSettlementTransaction_', 'parseMoneyValue_', 'daysBetweenDates_', 'normalizeAccountingName_',
   'parseDateOnly_',
 ];
@@ -57,6 +64,7 @@ const MATCH_STUBS = `
 function findSumupPayoutMatch_(){ return null; }
 function matchBankInBookingPayment_(){ return null; }
 function matchSumupBookingPayment_(){ return null; }
+function getSettlementReviewItems_(){ return []; }
 `;
 
 const HARNESS = `
@@ -127,7 +135,8 @@ const MODULE = [
     getSettlementIndex_, findSettlementRow_, registerSettlementRow_, makeSettlementSeqCounter_,
     buildSettlementSheetRow_, dedupeSettlementRowsAdmin, getSumupFeeExpenseMap_, upsertSumupFeeExpense_,
     sumupFeeExpenseId_, findSumupFeeExpenseRow_, settlementMatchLedgerWindow_,
-    matchSettlementTransaction_, settlementEntryKey_ };`,
+    matchSettlementTransaction_, settlementEntryKey_, settlementIdentityAmount_, normalizeDeutscheBankCsvRow_,
+    upsertBankFeeExpense_, getBankFeeExpenseMap_, isManualSettlementMark_, refreshSettlementMatchesForPeriod_ };`,
 ].join('\n\n');
 
 async function load(src) {
@@ -218,6 +227,10 @@ async function runScenarios(M, rec) {
     rec('payout전후: 2회차 updated=1', r2.updated, 1);
     rec('payout전후: 총 1행', sh.getLastRow() - 1, 1);
     rec('payout전후: 최신값 반영', String(sh.rows[1][4]), '2026-07-26');
+    // 폴백(ref 키·신원슬롯)이 행을 찾아 줘도 **저장 해시 자체**가 회차마다 달라지면 안 된다(rehash·정리 액션 기준값)
+    const hb = M.buildSettlementHash_('sumup', Object.assign({ source: 'sumup' }, before), null, 0);
+    const ha = M.buildSettlementHash_('sumup', Object.assign({ source: 'sumup' }, after), null, 0);
+    rec('payout전후: 해시 불변', hb === ha, true);
   }
 
   // ── 2) 같은 동기화 3회 반복 — created 는 계속 0 ─────────────────────────
@@ -359,6 +372,8 @@ async function runScenarios(M, rec) {
     // 정본은 payoutDate 가 채워진 행
     const kept = sh.rows.slice(1).find((r) => String(r[12]) === 'TAAA4EQ2BV6');
     rec('정리 실행: payout 채워진 행 보존', String(kept[4]), '2026-07-26');
+    // rehash 는 직접 검사 — 신원슬롯 폴백이 행을 찾아 줘도 저장 해시가 옛 산식이면 정리·rehash 기준값이 어긋난다
+    rec('정리 실행: 정본 해시가 신규 산식으로 갱신', String(kept[19]), M.buildSettlementHash_('sumup', Object.assign({ source: 'sumup' }, dupB), null, 0));
 
     // 정리 직후 동기화가 다시 중복을 만들면 안 된다 (rehash 가 신규 산식으로 갱신됐는지)
     const after = runImport(M, sh, [dupB, other], 'sumup');
@@ -448,6 +463,109 @@ async function runMatchScenarios(M, rec) {
   }
 }
 
+// ── 11~13) 해외송금(AUSL.ZAHL.) 수수료 — 실사례 2026-08-31 휘슬러 코리아(정산행 384) ──────────
+const AUSL_ROW = {
+  'Buchungstag': '31.8.2026', 'Wert': '31.8.2026', 'Umsatzart': 'Auslandsüberweisung',
+  'Begünstigter / Auftraggeber': 'FISSLER KOREA TEHERAN RO 40 7 13FLOOR',
+  'Verwendungszweck': 'AUSL.ZAHL. 03MX260831203458AMT+EUR300,00 FEE+EUR5,50 SVWZ+BNF TEL.+49 176 6093 9400 /OCMT/EUR300,00/ /34089000499238 BIC:KOEXKRSEXXX',
+  'IBAN / Kontonummer': '', 'BIC': '', 'Kundenreferenz': '1340OTT260800651', 'Mandatsreferenz': '', 'Gläubiger ID': '',
+  'Fremde Gebühren': '', 'Betrag': '294,5', 'Abweichender Empfänger': '', 'Anzahl der Aufträge': '', 'Anzahl der Schecks': '',
+  'Soll': '', 'Haben': '294,5', 'Währung': 'EUR',
+};
+async function runAuslScenarios(M, rec) {
+  const tx = M.normalizeDeutscheBankCsvRow_(AUSL_ROW, 'k.csv');
+  rec('AUSL: gross=송금액 300', tx.gross, 300);
+  rec('AUSL: fee=5.5', tx.fee, 5.5);
+  rec('AUSL: net=착금 294.5', tx.net, 294.5);
+  rec('AUSL: 날짜·유형', [tx.date, tx.type], ['2026-08-31', '은행입금']);
+  // 천단위 표기(휘슬러 잔금 2.500,00 같은 건)
+  const big = M.normalizeDeutscheBankCsvRow_(Object.assign({}, AUSL_ROW, { 'Verwendungszweck': 'AUSL.ZAHL. XAMT+EUR2.500,00 FEE+EUR12,50 SVWZ+X', 'Betrag': '2.487,5', 'Haben': '2.487,5' }), 'k.csv');
+  rec('AUSL: 천단위 송금액 2500', [big.gross, big.fee, big.net], [2500, 12.5, 2487.5]);
+  // 송금액−수수료≠착금액이면 손대지 않는다(파싱 오류 방어)
+  const bad = M.normalizeDeutscheBankCsvRow_(Object.assign({}, AUSL_ROW, { 'Betrag': '290', 'Haben': '290' }), 'k.csv');
+  rec('AUSL: 산식 불일치면 원본 유지', [bad.gross, bad.fee, bad.net], [290, 0, 290]);
+  // 일반 SEPA 입금은 종전과 동일
+  const sepa = M.normalizeDeutscheBankCsvRow_(Object.assign({}, AUSL_ROW, { 'Umsatzart': 'SEPA-Gutschrift', 'Verwendungszweck': 'Kim Nari Fotoshooting', 'Betrag': '240', 'Haben': '240' }), 'k.csv');
+  rec('SEPA: 수수료 없음', [sepa.gross, sepa.fee, sepa.net], [240, 0, 240]);
+
+  // ── 12) 해시 불변 — 파싱 전(294.5/0)으로 저장된 행 384 를 파싱 후(300/5.5) 재임포트가 **갱신**한다 ──
+  {
+    const sh = new M.FakeSheet(SH, []);
+    const before = { date: '2026-08-31', payoutDate: '2026-08-31', gross: 294.5, fee: 0, net: 294.5, paymentRef: '1340OTT260800651', bankRef: '1340OTT260800651', counterparty: tx.counterparty, description: tx.description, type: '은행입금' };
+    const r1 = runImport(M, sh, [before], 'deutschebank');
+    const after = Object.assign({}, before, { gross: 300, fee: 5.5, net: 294.5 });
+    const r2 = runImport(M, sh, [after], 'deutschebank');
+    rec('AUSL 해시: 파싱 전 생성 1', r1.created, 1);
+    rec('AUSL 해시: 파싱 후 created=0/updated=1', [r2.created, r2.updated], [0, 1]);
+    rec('AUSL 해시: 1행 · gross 300 · fee 5.5 · net 294.5', [sh.getLastRow() - 1, Number(sh.rows[1][8]), Number(sh.rows[1][9]), Number(sh.rows[1][10])], [1, 300, 5.5, 294.5]);
+    const r3 = runImport(M, sh, [after], 'deutschebank');
+    rec('AUSL 해시: 3회차도 created=0', r3.created, 0);
+    rec('AUSL 해시: 파싱 전후 해시 동일', M.buildSettlementHash_('deutschebank', before, null, 0) === M.buildSettlementHash_('deutschebank', after, null, 0), true);
+    rec('AUSL 해시: 시트 저장 해시도 동일', String(sh.rows[1][19]), M.buildSettlementHash_('deutschebank', before, null, 0));
+    rec('신원금액: sumup 은 gross(수수료 무시)', M.settlementIdentityAmount_('sumup', { gross: 43, fee: 0.86 }), 43);
+    rec('신원금액: 은행은 착금액', M.settlementIdentityAmount_('deutschebank', { gross: 300, fee: 5.5 }), 294.5);
+  }
+
+  // ── 13) 송금수수료 지출 자동기장 — 수기 기장(2026-08-31 €5,50 지출행 208)이 있으면 만들지 않는다 ──
+  {
+    const feeTx = Object.assign({ source: 'deutschebank', filename: 'k.csv', hash: 'abc123' }, tx);
+    const manual = new Array(EH.length).fill('');
+    manual[0] = '2026-08-31'; manual[1] = 'Deutsche Bank'; manual[2] = '기타';
+    manual[3] = 'Auslandsüberweisung 수취수수료 — FISSLER KOREA €300 입금분'; manual[4] = 5.5; manual[5] = 5.5; manual[6] = 0; manual[7] = '계좌이체'; manual[10] = '확정'; manual[11] = '기타';
+    const esh = new M.FakeSheet(EH, [manual]);
+    const r = M.upsertBankFeeExpense_(feeTx, esh);
+    rec('은행수수료: 수기 행 있으면 skipped', [r.created, r.updated, r.skipped, r.rowIndex], [false, false, true, 2]);
+    rec('은행수수료: 지출 1행 유지', esh.getLastRow() - 1, 1);
+    rec('은행수수료: 수기 행 불변(ID 안 심음)', [String(esh.rows[1][2]), String(esh.rows[1][12])], ['기타', '']);
+    // 수기 행이 없으면 자동 생성, 재임포트는 갱신만
+    const esh2 = new M.FakeSheet(EH, []);
+    const a = M.upsertBankFeeExpense_(feeTx, esh2);
+    const b = M.upsertBankFeeExpense_(feeTx, esh2);
+    rec('은행수수료: 신규 생성 후 재실행은 갱신', [a.created, b.created, b.updated], [true, false, true]);
+    rec('은행수수료: 1행', esh2.getLastRow() - 1, 1);
+    const row = esh2.rows[1];
+    rec('은행수수료: 값(거래처·분류·금액·VAT0·상태·ID)', [row[1], row[2], row[4], row[5], row[6], row[10], row[11], row[12]], ['Deutsche Bank', '은행수수료', 5.5, 5.5, 0, '확정', '은행수수료', 'bank_fee:abc123']);
+    esh2.rows[1][9] = 'https://drive/evidence';
+    M.upsertBankFeeExpense_(feeTx, esh2);
+    rec('은행수수료: 갱신이 증빙링크 보존', esh2.rows[1][9], 'https://drive/evidence');
+    // 같은 날 다른 금액의 Deutsche Bank 지출(계좌유지비 등)은 막지 않는다
+    const other = manual.slice(); other[4] = 12.9;
+    rec('은행수수료: 같은 날 다른 금액은 생성', M.upsertBankFeeExpense_(feeTx, new M.FakeSheet(EH, [other])).created, true);
+    rec('은행수수료: fee 0 무시', M.upsertBankFeeExpense_(Object.assign({}, feeTx, { fee: 0 }), new M.FakeSheet(EH, [])).created, false);
+  }
+}
+
+// ── 14) 수기 표시 보호 — settlement-refresh 가 '예약 아님'·분할·굿샤인 행을 되돌리지 않는다(정산행 384 실사고) ──
+async function runManualMarkScenarios(M, rec) {
+  const mk = (over) => M.buildSettlementSheetRow_(Object.assign({
+    source: 'deutschebank', filename: 'k.csv', date: '2026-08-31', payoutDate: '2026-08-31', type: '은행입금', counterparty: 'X', description: 'Y',
+    gross: 100, fee: 0, net: 100, currency: 'EUR', paymentRef: '', bankRef: '', matchStatus: 'review', matchTarget: '', matchRow: '', accountingClass: '', memo: '입금 매칭 검토 필요', hash: 'h',
+  }, over || {}), '2026-09-01 06:00:00');
+  const nonbooking = mk({ gross: 294.5, net: 294.5, counterparty: 'FISSLER KOREA', matchStatus: 'matched', matchTarget: '예약 아님 · 예약 계약금 대응(수수료차감)', accountingClass: '예약 계약금 대응(수수료차감)', memo: '예약 아님 · … · 수동 확인 2026-09-02', hash: 'h384' });
+  const payout = mk({ date: '2026-08-24', gross: 611.38, net: 611.38, counterparty: 'Studio_mean', matchStatus: 'matched', matchTarget: '예약 아님 · SumUp 정산입금', accountingClass: 'SumUp 정산입금', memo: '예약 아님 · SumUp 정산입금 · 수동 확인 2026-09-01', hash: 'h391' });
+  const split = mk({ date: '2026-08-02', gross: 288, net: 288, matchStatus: 'matched', matchTarget: '예약장부 잔금(분할)', matchRow: 210, accountingClass: '촬영 매출', memo: '분할이체 1/2 · 예약장부 잔금(분할) · 황영목 · 288€ (합계 298€) · 장부 반영 완료 — 수동 확인 2026-04-02', hash: 'hs' });
+  const gutschein = mk({ date: '2026-08-13', source: 'sumup', gross: 185, net: 185, matchStatus: 'matched', matchTarget: '굿샤인 판매', matchRow: 7, accountingClass: '굿샤인 매출', memo: '굿샤인 판매대금 · T9Z7-5RKQ-RMG6 · 185€', hash: 'hg' });
+  const plain = mk({ date: '2026-08-20', gross: 50, net: 50, hash: 'hp' });
+  const autoMatched = mk({ date: '2026-08-21', gross: 60, net: 60, matchStatus: 'matched', matchTarget: '예약/매출', matchRow: 300, memo: '자동매칭 · 촬영예약 · 홍길동', hash: 'ha' });
+  const sh = new M.FakeSheet(SH, [nonbooking, payout, split, gutschein, plain, autoMatched]);
+  const snap = (r) => [String(r[14]), String(r[15]), String(r[16]), String(r[17]), String(r[18])];
+  const before = [1, 2, 3, 4].map((i) => snap(sh.rows[i]));
+  const res = M.refreshSettlementMatchesForPeriod_({ settlementSheet: sh, bookingSheet: null }, '2026-08-01', '2026-08-31', { entries: [] });
+  rec('수기표시: 예약 아님(384형) 불변', snap(sh.rows[1]), before[0]);
+  rec('수기표시: SumUp 정산입금(391형) 불변', snap(sh.rows[2]), before[1]);
+  rec('수기표시: 분할이체 불변', snap(sh.rows[3]), before[2]);
+  rec('수기표시: 굿샤인 판매 불변', snap(sh.rows[4]), before[3]);
+  rec('수기표시: 일반 review 는 review 유지', String(sh.rows[5][14]), 'review');
+  rec('수기표시: 자동 matched 는 재판정(장부 비면 review)', String(sh.rows[6][14]), 'review');
+  rec('수기표시: 갱신 카운트 = 자동행 1', res.updated, 1);
+  rec('수기표시: 요약엔 수기행 포함(matched 4)', res.summary.matched, 4);
+  rec('수기표시: 판정 함수', [
+    M.isManualSettlementMark_({ matchTarget: '예약 아님 · x' }), M.isManualSettlementMark_({ memo: '은행입금 수동매칭 · …' }),
+    M.isManualSettlementMark_({ memo: '수동확정(force) · …' }), M.isManualSettlementMark_({ matchTarget: '굿샤인 판매' }),
+    M.isManualSettlementMark_({ memo: '은행입금 자동매칭 · 예약장부 계약금' }), M.isManualSettlementMark_({ matchStatus: 'sumup_payout', memo: 'SumUp 정산 입금 매칭 · 2026-08-24' }),
+  ], [true, true, true, true, false, false]);
+}
+
 // ── 구조 검증 — 실제 임포트 루프가 같은 함수를 쓰는지 소스에서 못박는다 ──────
 const STRUCTURE = [
   ['CSV 임포트가 통합 인덱스를 쓴다', /const existingIndex=getSettlementIndex_\(sh\);/],
@@ -473,6 +591,7 @@ const STRUCTURE = [
   }],
   ['ref 키는 sumup 전용', /function settlementRefKey_\(source,ref\)\{[\s\S]{0,300}?if\(s!=='sumup'\) return '';/],
   ['은행 지출 upsert 가 구 해시도 조회한다', /importMap\[expenseId\] \|\| importMap\['bank_out:'\+buildSettlementHashLegacy_\('deutschebank',tx\)\]/],
+  ['legacy 해시 폴백 유지(신원슬롯과 이중 방어)', /const legacy=tx\.source\+'\|'\+buildSettlementHashLegacy_\(tx\.source,tx\);\n\s*if\(index\.byHash\[legacy\]\) return \{rowIndex:index\.byHash\[legacy\],refKey:refKey\};/],
   ['정리 액션 기본이 dryRun', /const dryRun=opts\.dryRun!==false;/],
   ['에이전트 액션 등록', /action==='settlement-dedupe'/],
   ['재매칭 에이전트 액션 등록', /action==='settlement-rematch'/],
@@ -481,7 +600,13 @@ const STRUCTURE = [
   ['동기화 응답에 rematched 를 싣는다', /\n    rematched,\n/],
   ['재매칭은 넓힌 장부 창을 쓴다', /const win=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const ledger=buildAccountingLedger_\(win\.start,win\.end,false,sheets\);/],
   ['어드민 재매칭도 넓힌 창을 쓴다', /const win=settlementMatchLedgerWindow_\(startDate,endDate\);\n\s*const accounting=buildAccountingLedger_\(win\.start,win\.end,false,sheets\);/],
-  ['배정 루프가 점수 내림차순으로 선점한다', /const prelim=txs\.map\(function\(tx\)\{[\s\S]{0,400}?\.sort\(function\(a,b\)\{\n\s*return \(Number\(b\.match&&b\.match\.score\|\|0\)\)-\(Number\(a\.match&&a\.match\.score\|\|0\)\);/],
+  ['배정 루프가 점수 내림차순으로 선점한다', /const prelim=autoTxs\.map\(function\(tx\)\{[\s\S]{0,400}?\.sort\(function\(a,b\)\{\n\s*return \(Number\(b\.match&&b\.match\.score\|\|0\)\)-\(Number\(a\.match&&a\.match\.score\|\|0\)\);/],
+  ['SumUp 일괄적용 루프도 수기표시를 건너뛴다', /if\(tx\.source!=='sumup' \|\| Number\(tx\.gross\|\|0\)<=0 \|\| isManualSettlementMark_\(tx\)\) return;/],
+  ['매칭보드가 수기 해소 건을 미결로 올리지 않는다', /if\(isManualSettlementMark_\(tx\)\) return false;/],
+  ['CSV 재임포트가 기존 행의 수기표시를 보존한다', /const prev=found\.rowIndex \? prevByRow\[found\.rowIndex\] : null;\n\s*if\(prev && isManualSettlementMark_\(prev\)\)\{/],
+  ['CSV 임포트가 은행 송금수수료도 지출장부에 기장한다', /: upsertBankFeeExpense_\(tx,sheets\.expenseSheet,feeExpenseMap\);/],
+  ['bank_fee ID 를 로컬 생성 ID 로 인식한다', /return \/\^\(sumup_fee\|bank_fee\|bank_out\):\/\.test/],
+  ['정산 인덱스 재구성이 수수료를 읽는다(은행 착금액 신원)', /fee:parseMoneyValue_\(row\[SETTLEMENT_COL\['수수료'\]\]\),/],
   ['선점당한 거래는 남은 후보로 재탐색한다', /if\(match&&match\.entryKey&&claimed\[match\.entryKey\]\)\{[\s\S]{0,300}?claimedEntries:claimed/],
   ['배정 후 claimed 에 등록한다', /if\(match&&match\.entryKey\) claimed\[match\.entryKey\]=true;/],
   ['카드 결제기록 경로도 선점을 지킨다', /function matchSumupBookingPayment_[\s\S]{0,900}?if\(opts\.claimedEntries && opts\.claimedEntries\['booking\|'\+String\(candidate\.rowIndex\|\|''\)\]\) return null;/],
@@ -504,9 +629,8 @@ const FAULTS = [
   ['ref 키를 은행까지 허용(서로 다른 이체가 한 행으로 뭉개짐)',
     /if\(s!=='sumup'\) return '';/,
     "if(!s) return '';"],
-  ['legacy 해시 폴백 제거(배포 직후 전량 신규행)',
-    /const legacy=tx\.source\+'\|'\+buildSettlementHashLegacy_\(tx\.source,tx\);\n\s*if\(index\.byHash\[legacy\]\) return \{rowIndex:index\.byHash\[legacy\],refKey:refKey\};/,
-    ''],
+  /* 'legacy 해시 폴백 제거' 결함주입은 2026-09-03 삭제 — 신원슬롯 폴백(settlementIdentitySlot_)이 구버전 행을
+     상위집합으로 잡아 시나리오로는 감지 불가. 존재는 아래 구조 검증(legacy 해시 폴백 유지)으로 못박는다. */
   /* registerSettlementRow_ 는 여기서 결함주입 대상이 아니다 — seq 번호 매기기가 이미 배치 안 충돌을
      막고 있어 등록을 빼도 현재 시나리오로는 차이가 안 난다(보험성 코드). 구조 검증에서 호출 존재만
      못박는다. 없애도 되는 코드로 오해하지 말 것: seq 규칙이 바뀌면 즉시 필요해진다. */
@@ -543,6 +667,18 @@ const FAULTS = [
   ['정리 후 rehash 생략(다음 동기화가 또 중복 생성)',
     /result\.settlement\.rehashed=rehash\.length;/,
     'result.settlement.rehashed=rehash.length; rehash.length=0;'],
+  ['AUSL 수수료 파싱 제거(착금액이 gross 로 들어가 계약금 300 과 영영 불일치)',
+    /if\(a>0 && f>0 && Math\.abs\(\(a-f\)-amount\)<=0\.011\)\{ gross=a; fee=f; \}/,
+    ''],
+  ['은행 신원금액을 gross 로 회귀(수수료 파싱 전후 해시가 달라져 재임포트가 새 행)',
+    /if\(String\(source\|\|''\)!=='deutschebank'\) return gross;\n\s*return Math\.round\(\(gross-\(Number\(tx&&tx\.fee\|\|0\)\|\|0\)\)\*100\)\/100;/,
+    'return gross;'],
+  ['은행수수료 수기 기장 중복 검사 제거(재임포트마다 €5,50 이중계상)',
+    /if\(!existingRow && map\.byDateAmount\[dateKey\]\)\{/,
+    'if(false){'],
+  ['재매칭 수기표시 가드 제거(예약 아님 표시가 review 로 되돌아감)',
+    /const autoTxs=txs\.filter\(function\(tx\)\{return !isManualSettlementMark_\(tx\);\}\);/,
+    'const autoTxs=txs;'],
 ];
 
 // ── 실행 ────────────────────────────────────────────────────────────────────
@@ -559,6 +695,8 @@ const check = (name, actual, expected) => {
 await runScenarios(M, check);
 await runWindowScenarios(M, check);
 await runMatchScenarios(M, check);
+await runAuslScenarios(M, check);
+await runManualMarkScenarios(M, check);
 rmSync(dir, { recursive: true, force: true });
 
 let structureCount = 0;
@@ -573,8 +711,9 @@ if (failures) {
   process.exit(1);
 }
 console.log(`행동 시나리오 ${count}건 + 구조 검증 ${structureCount}건`);
-console.log('✅ payout 전후 재동기화·재임포트·구버전행·은행 IBAN·수수료 ID·정리 액션 모두 정확.');
+console.log('✅ payout 전후 재동기화·재임포트·구버전행·은행 IBAN·수수료 ID·정리 액션·해외송금 수수료·수기표시 보호 모두 정확.');
 
+const undetected = [];
 for (const [label, pattern, replacement] of FAULTS) {
   if (!pattern.test(MODULE)) {
     console.error(`\n❌ 결함주입 대상 패턴을 못 찾음: ${label} (원본 변경 시 검증기 동기화 필요)`);
@@ -590,12 +729,19 @@ for (const [label, pattern, replacement] of FAULTS) {
     await runScenarios(bm, collect);
     await runWindowScenarios(bm, collect);
     await runMatchScenarios(bm, collect);
+    await runAuslScenarios(bm, collect);
+    await runManualMarkScenarios(bm, collect);
   } catch (e) { diffs.push('예외: ' + e.message); }
   rmSync(bd, { recursive: true, force: true });
   if (!diffs.length) {
     console.error(`\n❌ 결함을 심었는데 통과: ${label}`);
-    process.exit(1);
+    undetected.push(label);
+    continue;
   }
   console.log(`   결함 감지 OK — ${label} (${diffs.length}개 실패)`);
+}
+if (undetected.length) {
+  console.error(`\n❌ 감지 못 한 결함 ${undetected.length}/${FAULTS.length}건 — 시나리오를 보강하세요.`);
+  process.exit(1);
 }
 console.log(`✅ 결함 주입 ${FAULTS.length}/${FAULTS.length} 모두 감지`);
