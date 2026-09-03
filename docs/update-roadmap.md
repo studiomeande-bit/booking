@@ -62,7 +62,7 @@ Updated: 2026-08-31 Europe/Berlin
 
 ## Done Recently
 
-### 결제대조 합산 매칭 `settlement-mark-bundle` — 거래 1건 → 예약행 N개(팁 행 포함) (2026-09-03, @NNN)
+### 결제대조 합산 매칭 `settlement-mark-bundle` — 거래 1건 → 예약행 N개(팁 행 포함) (2026-09-03, @912)
 - 사고: 최새진 2026-07-11 SumUp €230(정산행 311) = row203 잔금 210 + row212 Trinkgeld 20 을 **한 번의 카드결제**로 받은 것.
   `apply-match` 는 1:1 정확일치, `mark-split` 은 정산행 N → 예약 1(정반대 방향)이라 둘 다 못 잡고,
   `mark-nonbooking` 은 회계분류가 틀어진다 → 팁을 카드로 같이 받은 건은 **영영 review**. 7월 월마감 `settlement_review` fail(1건 €230)의 정체.
