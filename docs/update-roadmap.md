@@ -62,6 +62,17 @@ Updated: 2026-08-31 Europe/Berlin
 
 ## Done Recently
 
+### 결제대조 — 해외송금 수수료 파싱 + '예약 아님' 수기표시 재매칭 보호 (2026-09-03 아침, @913 → 합본 @914)
+
+- **문제 ①** Deutsche Bank 해외송금 착금(AUSL.ZAHL.)은 수수료가 원천 차감돼 Betrag 에 착금액만 온다 — 휘슬러 코리아 계약금 €300 이 294,50 으로 들어가(정산행 384) 예약 row227 계약금과 영영 불일치. 운영 세션이 `booking-confirm-deposit` + 수기 지출(행 208, €5,50) + `settlement-mark-nonbooking` 으로 임시 처리.
+- **수리 ①** `normalizeDeutscheBankCsvRow_` 가 Verwendungszweck 의 `AMT+EUR<송금액> FEE+EUR<수수료>` 를 읽어 gross=송금액 / fee / net=착금액(SumUp 행과 같은 구조). 송금액−수수료≠착금액이면 원본 유지. 은행 행 **신원금액 = 착금액(gross−fee)** (`settlementIdentityAmount_`) → 파싱 전후 해시 불변, 재임포트가 기존 행을 갱신(8월 재임포트 created 0 / updated 38 실측). 송금수수료는 `upsertBankFeeExpense_` 로 자동기장(Deutsche Bank · 은행수수료 · VAT 0 · ID `bank_fee:<해시>`) — 같은 날짜·금액의 Deutsche Bank 수기 기장이 있으면 생성 안 함(feeExpensesSkipped 1, 중복 0 실측).
+- **문제 ②** `settlement-mark-nonbooking` 표시(matched · 매칭행 '')가 재매칭에 review 로 되돌아감. 원인: `refreshSettlementMatchesForPeriod_` 가 기간 내 전 행을 무조건 재판정 — 384(08-31)만 강등된 건 **sumup-sync(lookback 3일) 재매칭 창**에 들어갔기 때문이고, SumUp 정산입금 3건(08-05/17/24)은 창 밖이라 살아남은 것(후보 유무와 무관).
+- **수리 ②** `isManualSettlementMark_` — 매칭대상 '예약 아님 ·'·'굿샤인 판매', 메모 '수동…'(mark-split / apply-match / force / mark-bundle) 행은 refresh · sumup-sync 재매칭 · SumUp 일괄적용 · CSV 재임포트가 손대지 않고, 매칭보드 미결에서도 제외. 전용 status 도입 대신 가드 방식(월마감 `settlement_review`·보드 필터 변경 최소).
+- **실측(09-03)**: 8월 재임포트(createBankDeposits/Expenses false) → 384 gross 300 / fee 5,50 / net 294,50 · 표시 보존 → `settlement-apply-match` 384→row227 계약금(정확일치 통과, 이미 반영됨) → `settlement-refresh` 8월 updated 0, 391/401/413 유지 → `accounting-month-close` 8월 settlement_review ok(0건, 사적인출 3건 제외) · ready true.
+- 회귀: `node scripts/check-settlement-dedupe.mjs` — **그간 실행 불가였음**(Code.gs 에 나중에 들어간 `settlementDescriptionForKey_`/`settlementIdentitySlot_` 가 하네스에 없었음) 보강 + AUSL 파싱·해시 불변·수수료 멱등·수기표시 보호 시나리오, 결함주입 4건 추가(신원슬롯 폴백이 가리던 해시 결함 2건은 직접 검증으로 전환, 결함 루프는 전건 보고). 91+35, 결함 19/19.
+- ⚠ 배포 사고: @912(합산결제 mark-bundle, busy-khorana 세션)가 09:29 에 나간 직후 09:33 @913 을 이 워크트리에서 밀어 **@912 가 약 12분간 live 에서 빠짐** → busy-khorana 브랜치 위로 리베이스해 @914 합본으로 복원(양쪽 회귀 91+35 / 33 통과). 교훈: `clasp deployments` 버전이 probe 때(@911)와 다르면 push 전에 멈출 것.
+- 남은 것: 지출행 208(수기 €5,50)은 카테고리 '기타' 그대로 — 원하면 `expense-update` 로 은행수수료로 정정. 10월 휘슬러 잔금 €2.500 착금부터 gross/fee 자동 분리 + 수수료 자동기장(수기 기장 하지 말 것).
+
 ### 결제대조 합산 매칭 `settlement-mark-bundle` — 거래 1건 → 예약행 N개(팁 행 포함) (2026-09-03, @912)
 - 사고: 최새진 2026-07-11 SumUp €230(정산행 311) = row203 잔금 210 + row212 Trinkgeld 20 을 **한 번의 카드결제**로 받은 것.
   `apply-match` 는 1:1 정확일치, `mark-split` 은 정산행 N → 예약 1(정반대 방향)이라 둘 다 못 잡고,
