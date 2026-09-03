@@ -85,7 +85,7 @@ Updated: 2026-08-31 Europe/Berlin
   금액 읽기는 `bookingKindAmount_` 하나로 통일(mark-split 도 같은 함수) — 후보는 되는데 실행은 거부되는 어긋남 방지.
 - 회귀 잠금: `node scripts/check-settlement-bundle.mjs` — Code.gs 원본 함수를 떼어내 가짜 시트로(후보 탐색 8 · 사유 판정 4 · 거부 7종 · 예약장부 불변).
 - 라이브: 311 → [203 balance, 212 full] 표시 후 7월 보드 review 0건 · 7월 월마감 settlement_review 1→0 · 두 예약행 불변.
-- 알려진 노출(범위 밖, 기존 mark-split·nonbooking 과 동일): `settlement-refresh` 는 수동 표시를 보호하지 않아 그 기간을 재대조하면 review 로 되돌아갈 수 있다 — 재매칭 보호는 별도 이관 건(task_7c92890f ②)에서 함께.
+- ~~알려진 노출: `settlement-refresh` 가 수동 표시를 보호하지 않음~~ → **@914 `isManualSettlementMark_`(메모 '수동…' 가드)로 해소** — 실측 09-03 12:20: `settlement-refresh` 2026-07-11 단일일 updated 0, 311(합산)·312(수동매칭) 표시 보존.
 
 ### 픽업 잔금·추가금 수령 (오늘촬영 앱, 2026-09-02, 메인 @910 · board-api @4)
 
