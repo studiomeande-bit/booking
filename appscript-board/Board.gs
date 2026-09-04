@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-03T14:10:22.319Z
- * 포함 함수 43개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-04T18:59:16.670Z
+ * 포함 함수 48개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -85,6 +85,15 @@ function isPrintRowUnpaid_(normalized){
   const pm=String((normalized&&normalized.payMethod)||'').trim();
   if(!pm) return false;
   return /미결제|unpaid|offen/i.test(pm);
+}
+
+function printRowPayRequestedAt_(memo){
+  const s=String(memo||'');
+  const re=/\[결제요청(해제)?\]\s*(\d{4}-\d{2}-\d{2})?/g;
+  let m,last=null;
+  while((m=re.exec(s))) last=m;
+  if(!last||last[1]) return '';
+  return last[2]||'';
 }
 
 function normalizePrintRow_(row, rowIdx, colMap) {
@@ -295,69 +304,113 @@ function readPickupsForDate_(dateStr){
         done:!!doneAt
       });
     });
-    /* ── 픽업 결제 컨텍스트(2026-09-02) ─────────────────────────────
-       픽업 카드에서 잔금·추가금을 바로 수령하려면 "얼마가 남았고 무엇으로 받았는지"가
-       보드에 실려 와야 한다. 잔금은 예약행(잔금결제여부·잔금·결제수단), 추가금은
-       인화주문의 세션 주문행(세션당 1행)이 정본. 마이리얼트립은 플랫폼 결제라
-       현장 수령이 없다 — mrt 플래그로 앱이 수령 버튼을 숨긴다.
-       board-api 셔틀의 ensureSheets_ 에는 printSheet 가 없어 이름 폴백을 둔다.
-       픽업은 하루 0~3건이라 행 단위 읽기 비용은 무시할 수준. */
-    if(out.length){
-      const bkSh=getDbSheet();
-      let printSh=null;
-      try{ printSh=ensureSheets_().printSheet||ss.getSheetByName(CONFIG.PRINT_SHEET); }catch(e){}
-      // 인화주문은 빌드당 1회만 전체 읽기 — 픽업 N건이 각자 전체 스캔하지 않게 호이스트
-      let printData=null,pMap=null;
-      const loadPrint_=function(){
-        if(printData!==null||!printSh) return;
-        try{ pMap=getPrintSheetColMap_(printSh); printData=printSh.getDataRange().getValues(); }
-        catch(e){ printData=[]; Logger.log('pickup print read skipped: '+e.message); }
-      };
-      out.forEach(function(p){
-        p.balanceDue=0;p.balancePaid=false;p.payMethod='';p.mrt=false;
-        p.extraDue=0;p.extraPayMethod='';
-        // 잔금 컨텍스트(예약행) — 실패해도 추가금 읽기는 계속한다(별도 try)
-        try{
-          if(p.bookingRowIndex>1){
-            const row=bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
-            if(row&&row[BOOKING_COL['고객명']]&&!isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))){
-              const pm=String(row[BOOKING_COL['결제수단']]||'').trim();
-              p.payMethod=pm;
-              p.mrt=pm==='마이리얼트립'||String(row[BOOKING_COL['촬영종류']]||'').trim()==='마이리얼트립';
-              /* 미수 판정은 **결제수단 문구**가 정본이다(브리핑 미수 목록과 동일 규칙) — 플래그는
-                 역사 행 다수에서 백필되지 않았다(2026-07-30 플래그 기준 전환 → 기수납 68건 €5,700+
-                 미수 홍수 실측 후 롤백). 수납 후 수단(현금/카드/계좌이체) 기록 자체가 완료 표시. */
-              const pmUnpaid=(pm===''||/미결제|unpaid|offen/i.test(pm));
-              p.balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'||!pmUnpaid;
-              const bal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
-              if(!p.balancePaid&&!p.mrt&&bal>0.005) p.balanceDue=bal;
-            }
-          }
-        }catch(e){ Logger.log('pickup balance ctx skipped(row '+p.bookingRowIndex+'): '+e.message); }
-        // 추가금 컨텍스트(인화주문) — MRT 도 추가보정·인화는 현장 수납이라 mrt 게이트를 걸지 않는다
-        try{
-          if(p.sessionId){
-            loadPrint_();
-            if(printData&&printData.length>1&&pMap&&pMap['메모']!==undefined){
-              const sid=p.sessionId;
-              for(let i=1;i<printData.length;i++){
-                const tag=selectPrintMemoTag_(printData[i][pMap['메모']]);
-                if(!tag||(tag!==sid&&tag!==sid.slice(0,8))) continue;
-                const n=normalizePrintRow_(printData[i],i+1,pMap);
-                const amt=roundCurrency_(Number(n.total)||0);
-                if(amt>0.005&&!/취소|환불|cancel/i.test(String(n.status||''))){
-                  if(isPrintRowUnpaid_(n)) p.extraDue=amt;
-                  else p.extraPayMethod=String(n.payMethod||'').trim();
-                }
-                break;
-              }
-            }
-          }
-        }catch(e){ Logger.log('pickup extra ctx skipped('+p.sessionId+'): '+e.message); }
-      });
-    }
+    if(out.length){ const enrich=_selectPayContextReader_(); out.forEach(enrich); }
     out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
   }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
+  return out;
+}
+
+function _selectPayContextReader_(){
+  const ss=ensureSheets_().ss;
+  const bkSh=getDbSheet();
+  let printSh=null;
+  try{ printSh=ensureSheets_().printSheet||ss.getSheetByName(CONFIG.PRINT_SHEET); }catch(e){}
+  let printData=null,pMap=null;
+  const loadPrint_=function(){
+    if(printData!==null||!printSh) return;
+    try{ pMap=getPrintSheetColMap_(printSh); printData=printSh.getDataRange().getValues(); }
+    catch(e){ printData=[]; Logger.log('select pay ctx print read skipped: '+e.message); }
+  };
+  return function(p){
+    p.balanceDue=0;p.balancePaid=false;p.payMethod='';p.mrt=false;
+    p.extraDue=0;p.extraPayMethod='';p.payRequestedAt='';
+    // 잔금 컨텍스트(예약행) — 실패해도 추가금 읽기는 계속한다(별도 try)
+    try{
+      if(p.bookingRowIndex>1){
+        const row=bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+        if(row&&row[BOOKING_COL['고객명']]&&!isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))){
+          const pm=String(row[BOOKING_COL['결제수단']]||'').trim();
+          p.payMethod=pm;
+          p.mrt=pm==='마이리얼트립'||String(row[BOOKING_COL['촬영종류']]||'').trim()==='마이리얼트립';
+          const pmUnpaid=(pm===''||/미결제|unpaid|offen/i.test(pm));
+          p.balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'||!pmUnpaid;
+          const bal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+          if(!p.balancePaid&&!p.mrt&&bal>0.005) p.balanceDue=bal;
+        }
+      }
+    }catch(e){ Logger.log('select balance ctx skipped(row '+p.bookingRowIndex+'): '+e.message); }
+    // 추가금 컨텍스트(인화주문)
+    try{
+      if(p.sessionId){
+        loadPrint_();
+        if(printData&&printData.length>1&&pMap&&pMap['메모']!==undefined){
+          const sid=p.sessionId;
+          for(let i=1;i<printData.length;i++){
+            const tag=selectPrintMemoTag_(printData[i][pMap['메모']]);
+            if(!tag||(tag!==sid&&tag!==sid.slice(0,8))) continue;
+            const n=normalizePrintRow_(printData[i],i+1,pMap);
+            p.payRequestedAt=printRowPayRequestedAt_(n.memo);
+            const amt=roundCurrency_(Number(n.total)||0);
+            if(amt>0.005&&!/취소|환불|cancel/i.test(String(n.status||''))){
+              if(isPrintRowUnpaid_(n)) p.extraDue=amt;
+              else p.extraPayMethod=String(n.payMethod||'').trim();
+            }
+            break;
+          }
+        }
+      }
+    }catch(e){ Logger.log('select extra ctx skipped('+p.sessionId+'): '+e.message); }
+  };
+}
+
+function readShipQueue_(){
+  const out=[];
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+    if(!sh||sh.getLastRow()<2) return out;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    let bookStatus=[];
+    try{
+      const bSh=getDbSheet(),bLast=bSh.getLastRow();
+      if(bLast>1) bookStatus=bSh.getRange(2,BOOKING_COL['상태']+1,bLast-1,1).getValues();
+    }catch(e){}
+    rows.forEach(function(r,i){
+      if(!r[0]) return;
+      if(String(r[SELECT_COL['수령방식']]||'').trim()!=='mail') return;
+      if(!String(r[SELECT_COL['제출일시']]||'').trim()) return;
+      if(!isSelectHandoverOpen_(r)) return;
+      const st=String(r[SELECT_COL['상태']]||'').trim();
+      if(st==='우편발송'||isSelectFinalLockedStatus_(st)) return;
+      const bri=parseInt(r[SELECT_COL['예약장부행']],10)||0;
+      if(bri>=2&&bookStatus[bri-2]&&String(bookStatus[bri-2][0]||'').trim()==='취소됨') return;
+      const printDoneAt=SELECT_COL['출력완료일시']!=null?String(parseDateSafe_(r[SELECT_COL['출력완료일시']]).str||'').slice(0,16):'';
+      out.push({
+        selectRowIndex:i+2,
+        bookingRowIndex:bri,
+        sessionId:String(r[SELECT_COL['세션ID']]||''),
+        name:String(r[SELECT_COL['고객명']]||''),
+        product:String(r[SELECT_COL['상품']]||''),
+        status:st,
+        printed:!!printDoneAt||st==='출력',
+        printDoneAt:printDoneAt,
+        submittedAt:String(parseDateSafe_(r[SELECT_COL['제출일시']]).str||'').slice(0,10),
+        mailAddress:String(r[SELECT_COL['우편주소']]||'').trim()
+      });
+    });
+    if(out.length){
+      const enrich=_selectPayContextReader_();
+      out.forEach(function(p){
+        enrich(p);
+        const due=roundCurrency_((p.balanceDue||0)+(p.extraDue||0));
+        p.stage=!p.printed?'출력대기':(due>0?(p.payRequestedAt?'입금대기':'결제요청대기'):'발송가능');
+      });
+      const order={'발송가능':0,'입금대기':1,'결제요청대기':2,'출력대기':3};
+      out.sort(function(a,b){
+        return (order[a.stage]-order[b.stage])||String(a.submittedAt).localeCompare(String(b.submittedAt));
+      });
+    }
+  }catch(e){ Logger.log('ship queue skipped: '+e.message); }
   return out;
 }
 
@@ -568,6 +621,15 @@ function buildTodayBoard_(dateStr){
     const pk=pickupsToday.filter(function(p){return !p.done;});
     if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
   }catch(e){ pickupsToday=[]; }
+  // 우편발송 큐 — 날짜와 무관한 현재 백로그라 오늘 보드에만
+  let shipQueue=[];
+  if(today===Utilities.formatDate(now,tz,'yyyy-MM-dd')){
+    try{
+      shipQueue=readShipQueue_();
+      const ready=shipQueue.filter(function(q){return q.stage==='발송가능';});
+      if(ready.length) warnings.push(`발송 가능 ${ready.length}건 — ${ready.map(function(q){return q.name;}).join(', ')}`);
+    }catch(e){ shipQueue=[]; }
+  }
   return {
     ok:true,
     date:today,
@@ -581,6 +643,7 @@ function buildTodayBoard_(dateStr){
     overlapCount:shoots.filter(function(s){return !!s.overlapsNext;}).length,
     shoots:shoots,
     pickups:pickupsToday,
+    shipQueue:shipQueue,
     warnings:warnings,
     _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
   };
@@ -769,7 +832,20 @@ const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락�
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
+function isSelectFinalLockedStatus_(status){
+  const s=String(status||'').trim();
+  return ['최종작업완료','작업완료'].indexOf(s)>-1;
+}
+
 function selectPrintMemoTag_(memo){
   const m=String(memo||'').match(/^\s*셀렉\s*:\s*([A-Za-z0-9_-]+)/);
   return m?m[1]:'';
+}
+
+function isSelectHandoverOpen_(row){
+  if(SELECT_COL['수령완료일시']==null) return true;
+  const handoverAt=parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16);
+  if(!handoverAt) return true;
+  const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
+  return !!(printAt&&printAt>handoverAt);
 }
