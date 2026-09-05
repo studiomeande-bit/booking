@@ -5717,6 +5717,7 @@ function renderProductDetail() {
     ${detailIntro ? `<div class="detail-copy product-detail-intro">${escapeHtml(detailIntro)}</div>` : ''}
     ${getSnapRetouchScopeNote(state.selectedProduct) ? `<div class="detail-copy snap-scope-note">${escapeHtml(getSnapRetouchScopeNote(state.selectedProduct))}</div>` : ''}
     ${businessSummary}
+    ${getDolHintHtml(state.selectedProduct)}
     ${getPartnerHintHtml(state.selectedProduct)}
     ${compositionHtml}
     ${renderPrintInfoSection(state.selectedProduct)}
@@ -6964,6 +6965,19 @@ function getPartnersForSuccess(payload) {
 /* 상품 상세의 한 줄 안내 — "드레스·메이크업이 포함인가요?" 문의를 줄이는 목적.
    여기는 아직 **결정 단계**라 링크를 걸지 않는다(예약을 방해하지 않는다). 실제 소개는
    예약을 마친 뒤 성공 화면과 메일에서 한다. */
+/* 프로필 Basic/Business 상세의 한 줄 — 돌상/백일상 셋팅은 프로페셔널부터라는 것을 **고르는 단계**에서 알린다.
+   성공 화면·메일과 같은 규칙(사장님 확인 2026-09-05). 상품설정 시트 문구는 안 건드린다. */
+function getDolHintHtml(product) {
+  if (!product || String(product.g || '') !== 'prof' || product.id === 'pp') return '';
+  const copy = {
+    ko: '돌상/백일상 셋팅은 프로필 프로페셔널(€130)부터 무료로 제공됩니다. 이 상품에는 포함되지 않습니다.',
+    en: 'The dol / 100-day table is included free from Profile Professional (€130) and up. It is not included in this product.',
+    de: 'Der Dol-/100-Tage-Tisch ist ab Profil Professional (€130) kostenlos enthalten. In diesem Produkt ist er nicht enthalten.'
+  };
+  const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  return `<div class="detail-copy partner-hint">${escapeHtml(copy[lang])}</div>`;
+}
+
 function getPartnerHintHtml(product) {
   if (!product) return '';
   const g = String(product.g || '').toLowerCase();
