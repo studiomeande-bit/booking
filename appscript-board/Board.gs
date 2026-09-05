@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-04T18:59:16.670Z
+ * 생성 시각: 2026-09-05T13:57:11.130Z
  * 포함 함수 48개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -513,6 +513,7 @@ function buildTodayBoard_(dateStr){
          종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다. */
       dueOnSite:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
+      loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
       visitCount:(function(){
         const key=_customerKeyForRow_(row);

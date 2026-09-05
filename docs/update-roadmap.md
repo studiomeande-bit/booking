@@ -62,6 +62,21 @@ Updated: 2026-08-31 Europe/Berlin
 
 ## Done Recently
 
+### 개발 잔여 3종: booking-search 필터·수기정정 스탬프·3회차 혜택 원탭 (2026-09-05, @924 · board-api @7)
+
+- **booking-search**: 최상위 keyword/dateFrom/dateTo 가 조용히 무시되던 함정(query 안에만 유효) 해소 —
+  `payload.query||payload.filters||payload`. 기간 지정 시 한도·기본값 1000(기본 30 이 '전수'로 오판되던
+  사고 재발 방지), 응답에 `truncated`·`limit` 추가.
+- **수기 정정 흔적**: 어드민 인화내역 수정 모달 저장 시 금액·결제수단이 바뀌면 메모에 `[금액정정 날짜] a→b€` /
+  `[결제수단정정 날짜] a→b` 자동 스탬프(현주현 27→13 은 메일로 역추적해야 했음). 모달의 **빈 결제수단을
+  '미결제'로 기본 선택하던 기존 버그** 수리(저장만 해도 기수납 행이 미수로 뒤집히던 경로).
+  예약 메모 전체 교체 시 감사줄 보존(`preserveAuditMemoLines_`) — booking-get 300자 절단 메모를 되쓰면
+  `[3회차혜택]` 토큰이 사라져 멱등 가드가 열리는 경로 차단.
+- **3회차 혜택 원탭** `booking-loyalty-credit`(-20€): 서버 재판정(countPriorVisitsForIdentity_) + 가드 —
+  잔금 기수납 거부(초과수납이 어디에도 안 남음), 여권·biz·MRT 제외(확정메일 약속 범위), 스크립트 락(더블탭
+  -40 방지), 메모 토큰 멱등. booking-set-amount 코어 재사용(감사메모·잔금·캘린더). 앱 🎁 버튼은 같은
+  조건 + 낙관 숨김. 검증 50에이전트 확정 7건 전부 수리 후 배포.
+
 ### 그래프 갱신 + 실측 소요시간 리포트 + 날짜셀 린터 (2026-09-04 밤, @920–@921)
 
 - **/graphify 갱신**: 백엔드 Code.gs 가 그래프에 통째로 없었음(.gs 미인식) → `graphify-src/appscript/*.js` 미러로
