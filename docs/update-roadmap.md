@@ -60,6 +60,8 @@ Updated: 2026-08-31 Europe/Berlin
 
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
+15. 전기 오토바이 구매 검토 → **초안 (2026-09-07, 사장님 결정 대기)**: `docs/electric-motorbike-purchase.md` — 출장 km 절감만으론 본전 불가(연 ~€350), 자동차 대체·개인 이동 대체·75% 특별상각(2027년 말 취득분까지) 조합일 때만 성립. 면허(B196)·자동차 처분·보관/충전·예산 답변 후 세무사 질의(이륜차 상각·0.25% 룰) → 확정 시 travel-log 차량 구분 등 ERP 작업 승격
+
 ## Done Recently
 
 ### 프로필 Basic/Business 돌상·백일상 미포함 명시 (2026-09-05, @925 + 프런트)
