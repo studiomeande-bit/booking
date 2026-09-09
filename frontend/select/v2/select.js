@@ -37,7 +37,10 @@ const PRINT_OPTIONS = [
   { id: 'basic_a4', label: '시그니처 A4', retouched: 10, additional: 15 },
   { id: 'premium_a4', label: '파인아트 A4', retouched: 15, additional: 20 },
   { id: 'premium_a3', label: '파인아트 A3', retouched: 32, additional: 38 },
-  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 }
+  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 },
+  // 액자는 인화가 아니라 추가금 — 쿼터·크레딧 밖이고 원본/보정본 단가가 같다(서버 PRINT_LABELS 와 동일).
+  { id: 'frame_a4', label: '액자 (A4 인화용 · 마운트 포함)', retouched: 29, additional: 29 },
+  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 }
 ];
 
 // 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
@@ -45,6 +48,12 @@ const PRINT_TIER_SAMPLE_ID = { signature: 'basic_10x15', fineart: 'premium_10x15
 // 같은 사이즈의 시그니처 ↔ 파인아트 대응 SKU. 차액 표시(표시 전용)에만 쓰고 계산에는 관여하지 않는다.
 
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
+/* 서비스컷·보너스 크레딧(€3)에서 제외할 SKU — 액자는 인화가 아니라 완성품 추가금이다.
+   ⚠ 서버 Code.gs selectPrintCreditExempt_ 와 규칙이 일치해야 한다(다르면 화면가≠청구가). */
+function printCreditExempt(printId) {
+  return /^frame_/.test(String(printId || ''));
+}
+
 const PRINT_SIZE_MM_V2 = {
   basic_10x15: [100, 150], premium_10x15: [100, 150],
   basic_a4: [210, 297], premium_a4: [210, 297],
@@ -136,7 +145,7 @@ function computePrintAnnotations() {
     if (r.typeId === PRINT_NONE_ID) return;
     // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
-    const skipQuota = /^photocard_/.test(r.typeId);
+    const skipQuota = /^photocard_|^frame_/.test(r.typeId);
     for (let k = 0; k < r.qty; k += 1) {
       units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false, skipQuota });
     }
@@ -174,7 +183,7 @@ function computePrintAnnotations() {
       if (unitCharge <= 0) a.includedQty += 1;
       else { a.quotaDiffQty += 1; a.quotaCredit += u.credit; }
     }
-    if (unitCharge > 0 && r.numKey && serviceCredit[r.numKey] > 0 && serviceCreditsRemaining > 0) {
+    if (unitCharge > 0 && r.numKey && serviceCredit[r.numKey] > 0 && serviceCreditsRemaining > 0 && !printCreditExempt(r.typeId)) {
       const disc = Math.min(unitCharge, basicPrintCredit);
       if (disc > 0) {
         unitCharge = Math.max(0, unitCharge - disc);
@@ -184,7 +193,7 @@ function computePrintAnnotations() {
         serviceCreditsRemaining -= 1;
       }
     }
-    if (unitCharge > 0 && r.numKey && bonusCredit[r.numKey] > 0 && bonusCreditsRemaining > 0) {
+    if (unitCharge > 0 && r.numKey && bonusCredit[r.numKey] > 0 && bonusCreditsRemaining > 0 && !printCreditExempt(r.typeId)) {
       const disc = Math.min(unitCharge, basicPrintCredit);
       if (disc > 0) {
         unitCharge = Math.max(0, unitCharge - disc);
@@ -349,6 +358,7 @@ const els = {
   deliveryReviewBlock: document.getElementById('deliveryReviewBlock'),
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
+  framePickupOnlyNote: document.getElementById('framePickupOnlyNote'),
   pickupScheduler: document.getElementById('pickupScheduler'),
   pickupDeferredNote: document.getElementById('pickupDeferredNote'),
   pickupExistingLine: document.getElementById('pickupExistingLine'),
@@ -1374,14 +1384,25 @@ function setDeliveryMethod(value) {
   updateReview();
 }
 
+/* 액자는 유리가 들어가 우편 발송을 하지 않는다(사장님 확정 2026-09-09). 주문에 액자가 하나라도
+   있으면 우편 수령을 잠그고 픽업으로 고정한다. ⚠ 서버 submitPhotoSelection 에도 같은 가드가 있다 —
+   화면만 막으면 구 번들·직접 호출로 우편 주문이 들어온다. */
+function orderHasFrame() {
+  return (state.prints || []).some((p) => /^frame_/.test(normalizePrintTypeId(p && p.printId)));
+}
+
 function syncDeliveryUi() {
   const deliveryRequired = requiresDeliverySelection();
   if (!deliveryRequired) state.deliveryMethod = '';
+  const pickupOnly = deliveryRequired && orderHasFrame();
+  if (pickupOnly) state.deliveryMethod = 'pickup';
   const method = deliveryRequired ? state.deliveryMethod : '';
+  els.framePickupOnlyNote?.classList.toggle('hidden', !pickupOnly);
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
-    input.disabled = !deliveryRequired;
+    input.disabled = !deliveryRequired || (pickupOnly && input.value !== 'pickup');
     input.checked = input.value === method;
   });
+  els.deliveryMailCard?.classList.toggle('is-disabled', pickupOnly);
   els.deliveryReviewBlock?.classList.toggle('hidden', !deliveryRequired);
   els.deliveryPickupCard?.classList.toggle('active', method === 'pickup');
   els.deliveryMailCard?.classList.toggle('active', method === 'mail');
@@ -2656,6 +2677,9 @@ function thumbHtmlForNum(num) {
 
 // 가장자리 마감(풀프레임/테두리) 토글 + 용지 비율 프리뷰. 인화앱 주문모드가 이 값대로 자동 셋팅한다.
 function printFinishHtml(index, print) {
+  /* 액자 행은 가장자리 마감을 고르지 않는다 — 마운트가 인화 가장자리를 덮는 물건이라
+     full/border 선택이 결과에 아무 영향이 없다. 선택지를 주면 고객이 오해한다. */
+  if (/^frame_/.test(normalizePrintTypeId(print.printId))) return '';
   const finish = print.finish === 'border' ? 'border' : 'full';
   const asp = printAspect(print.printId);
   // 저장된 값에 _r/_e 접미어가 붙어 있을 수 있어 등급 조회 전에 정규화한다.

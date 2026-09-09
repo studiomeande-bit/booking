@@ -64,6 +64,7 @@ const SERVER_MODULE = [
   extractFn(gs, 'mergeSelectPrintItems_'),
   /* 서비스컷·보너스 번호 빌더 — 하네스가 직접 배열을 만들면 실제 호출부(priceSelectPrints_)의
      규칙(보너스에서 isService 를 뺀다)을 재현하지 못해 없는 불일치가 생긴다. 원본을 그대로 쓴다. */
+  extractFn(gs, 'selectPrintCreditExempt_'),
   extractFn(gs, 'buildSelectServiceCutNums_'),
   extractFn(gs, 'buildSelectMarketingBonusNums_'),
   /* 마케팅 보너스 크레딧 의존성 — 2026-08-07 에 computeSelectDecoupledPrints_ 안으로 들어왔는데
@@ -102,6 +103,7 @@ const CLIENT_MODULE = [
   extractFn(v2, 'printNumKey'),
   extractFn(v2, 'isRetouchedPhotoNum'),
   extractFn(v2, 'getServiceCutCount'),
+  extractFn(v2, 'printCreditExempt'),
   extractFn(v2, 'getMarketingBonusCount'),
   extractFn(v2, 'getQuotaCreditValue'),
   extractFn(v2, 'computePrintAnnotations'),
@@ -140,7 +142,7 @@ try {
 }
 
 /* ── 시나리오 ──────────────────────────────────────────────────────────── */
-const SKUS = ['basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'print_none'];
+const SKUS = ['basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'frame_a4', 'frame_a3', 'print_none'];
 const PRODUCTS = ['pb', 'pp', 'sb', 'sp', 'sprm', 'ob', 'op', 'wp', 'amtp'];
 
 // 재현 가능한 의사난수(LCG) — 실패 케이스를 그대로 다시 돌릴 수 있어야 한다.
@@ -201,6 +203,23 @@ const REGRESSIONS = [
     prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 2 }, { photoNum: 'A3', printId: 'basic_10x15', qty: 1 }] }
 ];
 
+/* 액자 회귀(2026-09-09 도입) — 액자는 ①포함 쿼터를 소진·상쇄하지 않고 ②서비스컷·보너스
+   크레딧도 받지 않는다. 세 규칙 중 하나만 한쪽에 빠져도 여기서 깨진다. */
+REGRESSIONS.push(
+  // sb 쿼터=basic_a4×1+basic_10x15×2. 파인아트A3 보정본 32 − 최대크레딧(basic_a4 보정 10) = 22, 액자 35 는 그대로 → 57
+  { name: '액자는 쿼터를 삼키지 않는다', productKey: 'sb', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
+    expectTotal: 57,
+    prints: [{ photoNum: 'A1', printId: 'frame_a3', qty: 1 }, { photoNum: 'A1', printId: 'premium_a3', qty: 1 }] },
+  // 서비스컷이 있어도 액자에는 €3 이 붙지 않는다 → 29 그대로
+  { name: '액자는 서비스컷 크레딧을 받지 않는다', productKey: 'sb', retouchNums: ['A1'], serviceCutCount: 1, serviceNums: ['A1'],
+    expectTotal: 29,
+    prints: [{ photoNum: 'A1', printId: 'frame_a4', qty: 1 }] },
+  // op 쿼터 넉넉 → 10×15 는 무료로 흡수. 액자가 쿼터를 먹었다면 35-3=32 가 됐을 것 → 35 여야 한다
+  { name: '액자는 보너스 크레딧도 받지 않는다', productKey: 'op', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
+    marketing: 'Y', marketingBonusCount: 2, bonusNums: ['A1'], expectTotal: 35,
+    prints: [{ photoNum: 'A1', printId: 'frame_a3', qty: 1 }, { photoNum: 'A1', printId: 'basic_10x15', qty: 1 }] }
+);
+
 const RANDOM_N = 4000;
 /* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
    (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */
@@ -229,6 +248,11 @@ for (const fx of fixtures) {
   try { s = runServer(fx); } catch (e) { fails.push({ fx, msg: `서버 실행 오류: ${e.message}` }); continue; }
   try { c = runClient(fx); } catch (e) { fails.push({ fx, msg: `클라이언트 실행 오류: ${e.message}` }); continue; }
 
+  /* ⓪ 기대 총액이 명시된 케이스는 값 자체가 맞는지 본다 — 서버와 화면이 똑같이 틀릴 수도 있다. */
+  if (fx.expectTotal !== undefined && r2(s.amount) !== r2(fx.expectTotal)) {
+    fails.push({ fx, msg: `기대 총액 불일치 — 서버 €${r2(s.amount)} ≠ 기대 €${r2(fx.expectTotal)}` });
+    continue;
+  }
   // ① 총액
   if (r2(s.amount) !== r2(c.amount)) {
     fails.push({ fx, msg: `총액 불일치 — 서버 €${r2(s.amount)} ≠ 화면 €${r2(c.amount)}` });

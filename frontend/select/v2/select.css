@@ -236,6 +236,12 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+/* 액자가 담기면 우편 수령 카드를 잠근다 — 라디오는 JS 가 disabled 로 막고, 여기선 그게 보이게만 한다. */
+.radio-card.is-disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  background: var(--sm-surface-sunken);
+}
 .radio-card.active {
   background: var(--sm-brand-ink);
   color: #fff;

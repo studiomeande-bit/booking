@@ -18,7 +18,10 @@ export const PRINT_CATALOG = [
   { id: 'basic_a4',        cm: '21 × 29.7 cm',  additional: 15, name: { ko: '시그니처 A4',     en: 'Signature A4',            de: 'Signature-Abzug A4' } },
   { id: 'premium_a4',      cm: '21 × 29.7 cm',  additional: 20, name: { ko: '파인아트 A4',      en: 'Fine Art A4',             de: 'FineArt-Druck A4' } },
   { id: 'premium_a3',      cm: '29.7 × 42 cm',  additional: 38, name: { ko: '파인아트 A3',      en: 'Fine Art A3',             de: 'FineArt-Druck A3' } },
-  { id: 'premium_a3plus',  cm: '32.9 × 48.3 cm', additional: 48, name: { ko: '파인아트 A3+',    en: 'Fine Art A3+',            de: 'FineArt-Druck A3+' } }
+  { id: 'premium_a3plus',  cm: '32.9 × 48.3 cm', additional: 48, name: { ko: '파인아트 A3+',    en: 'Fine Art A3+',            de: 'FineArt-Druck A3+' } },
+  // 액자(추가금) — 인화 위에 얹는 완성품. cm 는 프레임 외곽 규격이다.
+  { id: 'frame_a4',        cm: '30 × 40 cm',    additional: 29, name: { ko: '액자 (A4 인화용)',  en: 'Frame (for A4 print)',    de: 'Rahmen (für A4-Druck)' } },
+  { id: 'frame_a3',        cm: '40 × 50 cm',    additional: 35, name: { ko: '액자 (A3 인화용)',  en: 'Frame (for A3 print)',    de: 'Rahmen (für A3-Druck)' } }
 ];
 
 // 카탈로그 항목의 현지화된 이름.
