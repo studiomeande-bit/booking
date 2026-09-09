@@ -62,18 +62,32 @@ const SERVER_MODULE = [
   extractFn(gs, 'selectQuotaCredit_'),
   extractFn(gs, 'selectPhotoNumKey_'),
   extractFn(gs, 'mergeSelectPrintItems_'),
+  /* 서비스컷·보너스 번호 빌더 — 하네스가 직접 배열을 만들면 실제 호출부(priceSelectPrints_)의
+     규칙(보너스에서 isService 를 뺀다)을 재현하지 못해 없는 불일치가 생긴다. 원본을 그대로 쓴다. */
+  extractFn(gs, 'buildSelectServiceCutNums_'),
+  extractFn(gs, 'buildSelectMarketingBonusNums_'),
+  /* 마케팅 보너스 크레딧 의존성 — 2026-08-07 에 computeSelectDecoupledPrints_ 안으로 들어왔는데
+     이 하네스에 이식되지 않아, 서버 모듈이 통째로 ReferenceError 로 죽고 4011건 전부
+     '불일치'로 찍히고 있었다(2026-09-09 발견). 검증기가 조용히 무의미해지는 전형적 실패다. */
+  extractFn(gs, 'getDefaultSelectMarketingBonusCount_'),
+  extractFn(gs, 'normalizeSelectMarketingBonusCount_'),
   extractFn(gs, 'computeSelectDecoupledPrints_'),
   // 하네스가 채우는 부분: 상품키는 fixture 가 직접 주고, 쿼터는 위 실제 표에서 읽는다.
-  `const SELECT_COL={'촬영종류':0,'상품':1,'서비스컷수':2};`,
+  `const SELECT_COL={'촬영종류':0,'상품':1,'서비스컷수':2,'마케팅보너스수':3};`,
   `function getSelectIncludedPrintQuota_(key){
   const q=SELECT_INCLUDED_PRINT_QUOTA_BY_PRODUCT_[key];
   return q?q.map(function(i){return{id:i.id,qty:parseInt(i.qty,10)||0};}):null;
 }`,
+  /* 실제 제출 경로(priceSelectPrints_ Code.gs:25217~)와 같은 순서로 호출한다 —
+     photos[] 하나에서 serviceNums·bonusNums 를 원본 빌더로 뽑고, 미동의면 보너스를 비운다. */
   `export function run(fx){
-  const row=[fx.productKey,'(상품)',fx.serviceCutCount];
+  const row=[fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
   const retouchSet={};
   (fx.retouchNums||[]).forEach(function(n){retouchSet[selectPhotoNumKey_(n)]=true;});
-  return computeSelectDecoupledPrints_(fx.prints,row,retouchSet,fx.serviceNums||[]);
+  const photos=fx.photos||[];
+  const serviceNums=buildSelectServiceCutNums_(photos);
+  const bonusNums=fx.marketing==='Y'?buildSelectMarketingBonusNums_(photos):[];
+  return computeSelectDecoupledPrints_(fx.prints,row,retouchSet,serviceNums,bonusNums);
 }`
 ].join('\n\n');
 
@@ -88,6 +102,7 @@ const CLIENT_MODULE = [
   extractFn(v2, 'printNumKey'),
   extractFn(v2, 'isRetouchedPhotoNum'),
   extractFn(v2, 'getServiceCutCount'),
+  extractFn(v2, 'getMarketingBonusCount'),
   extractFn(v2, 'getQuotaCreditValue'),
   extractFn(v2, 'computePrintAnnotations'),
   `let state={photos:[],prints:[],session:{},lang:'ko'};`,
@@ -101,11 +116,10 @@ const CLIENT_MODULE = [
   `export function run(fx){
   state={
     lang:'ko',
-    session:{productKey:fx.productKey,serviceCutCount:fx.serviceCutCount},
+    marketing:fx.marketing,
+    session:{productKey:fx.productKey,serviceCutCount:fx.serviceCutCount,marketingBonusCount:fx.marketingBonusCount},
     // 보정 리스트: 보정 대상 번호(서비스컷도 보정 리스트에 들어간다)
-    photos:(fx.retouchNums||[]).map(function(n){
-      return {num:n,isService:(fx.serviceNums||[]).indexOf(n)>=0,isBonus:false};
-    }),
+    photos:fx.photos||[],
     prints:fx.prints
   };
   const ann=computePrintAnnotations();
@@ -142,6 +156,11 @@ function makeFixture(i) {
      둘을 같게 맞추면 서버의 serviceCreditsRemaining 상한을 한 번도 밟지 못해,
      상한이 통째로 사라져도 검증기가 통과해 버린다(실측으로 확인한 커버리지 구멍). */
   const serviceNums = retouchNums.slice(0, Math.floor(rnd() * (retouchNums.length + 1)));
+  /* 마케팅 보너스 축도 흔든다 — 동의 여부·보너스 상한·보너스로 표시된 번호를 각각 독립으로 뽑아야
+     '상한 캡'과 '서비스컷과 겹치지 않게 빼기' 두 규칙이 실제로 밟힌다. */
+  const marketing = rnd() < 0.5 ? 'Y' : 'N';
+  const marketingBonusCount = Math.floor(rnd() * 4);
+  const bonusNums = retouchNums.slice(0, Math.floor(rnd() * (retouchNums.length + 1)));
   const prints = Array.from({ length: Math.floor(rnd() * 6) }, () => ({
     // 출력 대상은 보정본(A#)일 수도, 원본(B#)일 수도 있다
     photoNum: rnd() < 0.6 ? pick(retouchNums) : `B${1 + Math.floor(rnd() * 3)}`,
@@ -149,7 +168,10 @@ function makeFixture(i) {
     qty: 1 + Math.floor(rnd() * 3),
     finish: rnd() < 0.5 ? 'border' : 'full'
   }));
-  return { productKey, retouchNums, serviceCutCount, serviceNums, prints };
+  const photos = retouchNums.map((n) => ({
+    num: n, isService: serviceNums.indexOf(n) >= 0, isBonus: bonusNums.indexOf(n) >= 0
+  }));
+  return { productKey, retouchNums, serviceCutCount, serviceNums, marketing, marketingBonusCount, bonusNums, photos, prints };
 }
 
 /* 손으로 고른 회귀 케이스 — 과거 실제로 깨졌던 조합을 고정해 둔다. */
@@ -180,8 +202,20 @@ const REGRESSIONS = [
 ];
 
 const RANDOM_N = 4000;
+/* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
+   (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */
+const withPhotos = (fx) => (fx.photos ? fx : {
+  ...fx,
+  marketing: fx.marketing || 'N',
+  marketingBonusCount: fx.marketingBonusCount ?? 0,
+  photos: (fx.retouchNums || []).map((n) => ({
+    num: n,
+    isService: (fx.serviceNums || []).indexOf(n) >= 0,
+    isBonus: (fx.bonusNums || []).indexOf(n) >= 0
+  }))
+});
 const fixtures = [
-  ...REGRESSIONS,
+  ...REGRESSIONS.map(withPhotos),
   ...Array.from({ length: RANDOM_N }, (_, i) => ({ name: `random#${i}`, ...makeFixture(i) }))
 ];
 
