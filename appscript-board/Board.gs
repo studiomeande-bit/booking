@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-05T13:57:11.130Z
- * 포함 함수 48개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-09T17:13:58.242Z
+ * 포함 함수 49개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -60,6 +60,8 @@ const CONFIG = {
 };
 
 const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+
+const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
 const BOOKING_STATUS_CANCELLED = '취소됨';
 
@@ -363,6 +365,34 @@ function _selectPayContextReader_(){
   };
 }
 
+function readTodayWalkins_(dateStr){
+  const out=[];
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(CONFIG.WALKIN_SHEET);
+    if(!sh||sh.getLastRow()<2) return out;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    rows.forEach(function(r,i){
+      const at=String(parseDateSafe_(r[WALKIN_COL['접수일시']]).str||'');
+      if(at.slice(0,10)!==dateStr) return;
+      const st=String(r[WALKIN_COL['상태']]||'').trim()||'신규';
+      if(st==='예약등록'||st==='처리완료'||st==='취소') return;
+      out.push({
+        rowIndex:i+2,
+        time:at.slice(11,16),
+        name:String(r[WALKIN_COL['고객명']]||'').trim(),
+        phone:String(r[WALKIN_COL['연락처']]||'').trim(),
+        email:String(r[WALKIN_COL['이메일']]||'').trim(),
+        service:String(r[WALKIN_COL['서비스표시명']]||r[WALKIN_COL['서비스분류']]||'').trim(),
+        status:st,
+        memo:String(r[WALKIN_COL['요청사항']]||'').trim().slice(0,120)
+      });
+    });
+    out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+  }catch(e){ Logger.log('walkin queue skipped: '+e.message); }
+  return out;
+}
+
 function readShipQueue_(){
   const out=[];
   try{
@@ -622,6 +652,12 @@ function buildTodayBoard_(dateStr){
     const pk=pickupsToday.filter(function(p){return !p.done;});
     if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
   }catch(e){ pickupsToday=[]; }
+  // 워크인 접수 — 그날 현장 접수분(예약장부 전환 전)
+  let walkins=[];
+  try{
+    walkins=readTodayWalkins_(today);
+    if(walkins.length) warnings.push(`워크인 접수 ${walkins.length}건 — ${walkins.map(function(w){return w.name||'(이름없음)';}).join(', ')} · 예약장부 등록 대기`);
+  }catch(e){ walkins=[]; }
   // 우편발송 큐 — 날짜와 무관한 현재 백로그라 오늘 보드에만
   let shipQueue=[];
   if(today===Utilities.formatDate(now,tz,'yyyy-MM-dd')){
@@ -644,6 +680,7 @@ function buildTodayBoard_(dateStr){
     overlapCount:shoots.filter(function(s){return !!s.overlapsNext;}).length,
     shoots:shoots,
     pickups:pickupsToday,
+    walkins:walkins,
     shipQueue:shipQueue,
     warnings:warnings,
     _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
