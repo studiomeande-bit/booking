@@ -225,9 +225,12 @@ async function loadMonth(year, month) {
   els.calStatus.textContent = copy().loading;
   els.calGrid.innerHTML = '';
   try {
-    const res = await fetchCalendarBatch({ year, month, totalDur: state.duration, itemGroup: ITEM_GROUP });
-    const closed = (res && (res.closedDates || res.closed || [])) || [];
-    state.closedDates = new Set(closed);
+    /* calendar-batch 의 month 는 JS getMonth() 와 같은 0-based 다(promo.js 와 동일).
+       응답은 `${year}_${0based}` 로 한 겹 더 감싸여 있고, 키는 unavail/closed 다. */
+    const m0 = month - 1;
+    const res = await fetchCalendarBatch({ year, month: m0, totalDur: state.duration, itemGroup: ITEM_GROUP });
+    const data = (res && res[`${year}_${m0}`]) || res || {};
+    state.closedDates = new Set([...(data.closed || []), ...(data.unavail || [])].map(String));
     els.calStatus.textContent = '';
   } catch {
     state.closedDates = new Set();
@@ -271,7 +274,7 @@ async function pickDate(iso) {
   els.slotStatus.textContent = copy().loading;
   try {
     const res = await fetchSlots({ date: iso, totalDur: state.duration, itemGroup: ITEM_GROUP });
-    const slots = (res && (res.slots || res.available || [])) || [];
+    const slots = Array.isArray(res) ? res : (Array.isArray(res?.slots) ? res.slots : []);
     if (!slots.length) {
       els.slotStatus.textContent = copy().noSlots;
       return;
