@@ -494,6 +494,12 @@ const PRINT_SIZE_MM = {
 function normNum(s){return String(s||'').trim().toLowerCase().replace(/\.[a-z0-9]+$/,'');}
 function numTail(s){const m=normNum(s).match(/(\d+)\s*$/);return m?String(parseInt(m[1],10)):'';}
 function normPrintId(v){v=String(v||'').trim();if(PRINT_SIZE_MM[v])return v;const low=v.toLowerCase();
+  /* 액자는 인화 SKU 가 아니다 — a4/a3 판정보다 먼저 잡아야 basic_a4 로 떨어지지 않는다(큐 제외는 orderQueue).
+     ⚠ 앵커·등급어 배제가 둘 다 필요하다. `/^frame|액자|rahmen/` 는 대안에 ^ 가 안 붙어
+     'A4 rahmenlos'(액자 없음)를 액자로, '액자용 파인아트 A3'(액자에 넣을 인화)를 액자로 오인해
+     **인화 한 장이 경고 없이 큐에서 사라진다**. 한글은 \b 가 안 먹어 뒤에 한글이 안 오는지로 본다. */
+  if((/^frame_|(^|\s)액자(?![가-힣])|(^|\s)(rahmen|frame)\b/.test(low))&&!/파인아트|시그니처|fine\s*art|signature/.test(low))
+    return /a3/.test(low)?'frame_a3':'frame_a4';
   if(/a3\s*\+|a3plus/.test(low))return 'premium_a3plus'; if(/a3/.test(low))return 'premium_a3';
   if(/a4/.test(low))return /prem|프리미엄/.test(low)?'premium_a4':'basic_a4';
   if(/photocard|포토카드/.test(low))return /double|양면/.test(low)?'photocard_double':'photocard_single';
@@ -510,8 +516,16 @@ function matchRec(photoNum){const k=normNum(photoNum),t=numTail(photoNum);
   let r=state.library.find(x=>normNum(x.name)===k); if(r)return r;
   if(t){r=state.library.find(x=>numTail(x.name)===t); if(r)return r;}
   return null;}
-function orderQueue(){const k=Object.keys(PRINT_SIZE_MM);return state.order.lines.slice().sort((a,b)=>k.indexOf(a.printId)-k.indexOf(b.printId));}
-function orderStats(){const q=orderQueue();let matched=0,sheets=0;q.forEach(l=>{if(matchRec(l.photoNum))matched++;sheets+=l.qty;});return{total:q.length,matched,sheets};}
+/* 액자(frame_a4·frame_a3)는 인화가 아니라 인화물 위에 얹는 완성품 추가금 — 출력할 사진이 없다.
+   붙여넣기(parseOrder)와 ERP 세션(fetchErpSession) 두 경로가 모두 여기로 모이므로 큐에서 한 번만 뺀다.
+   조립 지시는 어드민/인화주문 시트에 그대로 남는다. */
+function isFrameId(id){return /^frame_/.test(String(id||''));}
+function orderQueue(){const k=Object.keys(PRINT_SIZE_MM);return state.order.lines.filter(l=>!isFrameId(l.printId)).sort((a,b)=>k.indexOf(a.printId)-k.indexOf(b.printId));}
+function orderStats(){const q=orderQueue();let matched=0,sheets=0;q.forEach(l=>{if(matchRec(l.photoNum))matched++;sheets+=l.qty;});
+  // 몇 건이 큐에서 빠졌는지 UI에 그대로 보여준다 — 조용히 사라지면 "액자 주문이 왜 없지"가 된다.
+  const frameLines=state.order.lines.filter(l=>isFrameId(l.printId));
+  const frames=frameLines.reduce((n,l)=>n+(l.qty||1),0);
+  return{total:q.length,matched,sheets,frames,frameNums:frameLines.map(l=>l.photoNum).filter(Boolean)};}
 function setOrderIdx(i){const q=orderQueue();state.order.idx=Math.max(0,Math.min(i,q.length-1));render();fit();}
 function syncPaperUI(){const ps=$("#paper");if(ps)ps.value=state.paper;const cwr=$("#customWrap");if(cwr)cwr.style.display=PAPERS[state.paper]==="custom"?'block':'none';
   if($("#cw"))$("#cw").value=state.cw; if($("#ch"))$("#ch").value=state.ch;
@@ -522,7 +536,7 @@ function cardCapacity(){ // ET-18100 갱 시트에 들어가는 55×85 카드 �
   return Math.max(1,Math.floor((p[0]+g)/(55+g)))*Math.max(1,Math.floor((p[1]+g)/(85+g)));}
 function renderOrder(){
   const q=orderQueue();
-  if(!q.length){page.appendChild(hint('① 주문(작업지시서)을 붙여넣고<br>② 원본 파일을 불러오면<br>사이즈별로 자동 셋업됩니다'));return;}
+  if(!q.length){const fr=orderStats().frames;page.appendChild(hint(fr?('🖼 액자 '+fr+'건만 있는 주문입니다<br>액자는 조립 항목이라 인화 큐에서 제외됩니다<br>출력할 사진이 없습니다'):'① 주문(작업지시서)을 붙여넣고<br>② 원본 파일을 불러오면<br>사이즈별로 자동 셋업됩니다'));return;}
   const line=q[Math.min(state.order.idx,q.length-1)], sz=PRINT_SIZE_MM[line.printId]||{w:100,h:150}, rec=matchRec(line.photoNum);
   const card=isCardId(line.printId); state.order._card=card;
   if(card){ // ET-18100은 55×85 카드 급지 불가 → 갱 시트(A4)에 타일 + 재단선, 인쇄 후 컷팅
@@ -594,6 +608,7 @@ function renderOrderPanel(){
     <label class="f" style="margin-top:11px">② 원본 파일 (보정본 폴더)</label>
     <div class="row"><button class="btn sm" id="ord_refolder" style="flex:1.2">↺ 지난 폴더</button><button class="btn sm" id="ord_folder">폴더 선택</button><button class="btn sm" id="ord_pick">파일</button></div>
     <div class="hint" style="padding:4px 0 0">${state.library.length}장 로드됨 · 파일명↔사진번호 자동 매칭 · 「지난 폴더」는 클릭 1번</div>
+    ${st.frames?`<div class="hint" style="padding:6px 0 0"><b>🖼 액자 ${st.frames}건은 인화 큐에서 제외</b>${st.frameNums.length?` — 사진 <b>${st.frameNums.join(', ')}</b>`:''} · 조립 항목이라 출력물이 없습니다 (어드민·인화주문 시트 참고)</div>`:''}
     ${q.length?`<label class="f" style="margin-top:11px">③ 인화 큐 — 클릭해 이동</label>
     <div class="oqlist">${rows}</div>
     <div class="ostep"><button class="btn sm" id="ord_prev">◀</button><span class="olvl">${state.order.idx+1} / ${q.length}</span><button class="btn sm" id="ord_next">▶</button></div>
@@ -869,7 +884,7 @@ async function fetchErpSession(){
        이미 어떤 크기든 라인이 있는 사진은 건드리지 않는다(크레딧을 큰 사이즈에 쓴 경우 이중 방지). */
     const photoNums=(Array.isArray(d&&d.existingPhotos)?d.existingPhotos:[])
       .map(p=>String((p&&typeof p==="object")?(p.num??p.photoNum??""):(p??"")).trim()).filter(Boolean);
-    const covered=new Set(lines.map(l=>l.photoNum));
+    const covered=new Set(lines.filter(l=>!isFrameId(l.printId)).map(l=>l.photoNum));  // 액자만 있는 사진은 아직 인화가 없는 것
     const included=photoNums.filter(n=>!covered.has(n))
       .map(n=>({photoNum:n,printId:"basic_10x15",qty:1,finish:"full",included:true}));
     state.order.lines=lines.concat(included);
