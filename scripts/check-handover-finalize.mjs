@@ -52,6 +52,7 @@ const MODULE = [
   extractFn(gs, 'normalizeBookingStatus_'),
   extractFn(gs, 'isBookingCancelledStatus_'),
   extractFn(gs, 'isSelectHandoverOpen_'),
+  extractFn(gs, 'agentBoolFlag_'),          // 마감 억제 스위치(skipFinalize/finalize) 정규화
   extractLine(gs, 'var HANDOVER_METHODS_='),
   extractLine(gs, 'var HANDOVER_FINALIZE_METHODS_='),
   extractFn(gs, 'finalizeSelectRowCore_'),   // 마감 3종 세트 공용 헬퍼 (Core·우편 D+7 이 공유)
@@ -121,6 +122,28 @@ const CASES = [
   { name: 'skipFinalize:true → 마감 안 함',
     fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령', skipFinalize: true } },
     expect: { statusWritten: '', booking: '셀렉완료' } },
+
+  /* 킬스위치 별칭 — finalize:false 가 조용히 무시되어 예약행까지 작업완료로 넘어간 사고(2026-08-25) 재발 방지.
+     '수령은 했지만 후속 작업(추가 인화·재보정)이 남은' 건을 표현하는 유일한 수단이다. */
+  { name: 'finalize:false → 마감 안 함 (skipFinalize 별칭)',
+    fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령', finalize: false } },
+    expect: { statusWritten: '', booking: '셀렉완료' } },
+
+  { name: "finalize:'false' (문자열) → 마감 안 함",
+    fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령', finalize: 'false' } },
+    expect: { statusWritten: '', booking: '셀렉완료' } },
+
+  { name: "skipFinalize:'true' (문자열) → 마감 안 함",
+    fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령', skipFinalize: 'true' } },
+    expect: { statusWritten: '', booking: '셀렉완료' } },
+
+  { name: 'finalize:true → 마감 (명시적 온)',
+    fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령', finalize: true } },
+    expect: { statusWritten: '최종작업완료', booking: '작업완료' } },
+
+  { name: '플래그 미지정 → 현행대로 마감 (어드민·휴대폰 버튼 하위호환)',
+    fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '셀렉완료', info: { method: '방문수령' } },
+    expect: { statusWritten: '최종작업완료', booking: '작업완료' } },
 
   { name: '취소된 예약 → 예약장부 안 건드림',
     fx: { status: '출력', deliveryMethod: 'pickup', printDoneAt: PRINTED, bookingStatus: '취소됨', info: { method: '방문수령' } },

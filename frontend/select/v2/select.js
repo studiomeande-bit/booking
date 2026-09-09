@@ -32,12 +32,15 @@ const PRINT_OPTIONS = [
   { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
   { id: 'basic_10x15', label: '시그니처 10×15cm', retouched: 3, additional: 4 },
   { id: 'premium_10x15', label: '파인아트 10×15cm', retouched: 6, additional: 8 },
-  { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
-  { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
+  { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 6 },
+  { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 7, additional: 9 },
   { id: 'basic_a4', label: '시그니처 A4', retouched: 10, additional: 15 },
   { id: 'premium_a4', label: '파인아트 A4', retouched: 15, additional: 20 },
-  { id: 'premium_a3', label: '파인아트 A3', retouched: 35, additional: 50 },
-  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 45, additional: 60 }
+  { id: 'premium_a3', label: '파인아트 A3', retouched: 32, additional: 38 },
+  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 },
+  // 액자는 인화가 아니라 추가금 — 쿼터·크레딧 밖이고 원본/보정본 단가가 같다(서버 PRINT_LABELS 와 동일).
+  { id: 'frame_a4', label: '액자 (A4 인화용 · 마운트 포함)', retouched: 29, additional: 29 },
+  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 }
 ];
 
 // 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
@@ -45,6 +48,12 @@ const PRINT_TIER_SAMPLE_ID = { signature: 'basic_10x15', fineart: 'premium_10x15
 // 같은 사이즈의 시그니처 ↔ 파인아트 대응 SKU. 차액 표시(표시 전용)에만 쓰고 계산에는 관여하지 않는다.
 
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
+/* 서비스컷·보너스 크레딧(€3)에서 제외할 SKU — 액자는 인화가 아니라 완성품 추가금이다.
+   ⚠ 서버 Code.gs selectPrintCreditExempt_ 와 규칙이 일치해야 한다(다르면 화면가≠청구가). */
+function printCreditExempt(printId) {
+  return /^frame_/.test(String(printId || ''));
+}
+
 const PRINT_SIZE_MM_V2 = {
   basic_10x15: [100, 150], premium_10x15: [100, 150],
   basic_a4: [210, 297], premium_a4: [210, 297],
@@ -136,7 +145,7 @@ function computePrintAnnotations() {
     if (r.typeId === PRINT_NONE_ID) return;
     // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
-    const skipQuota = /^photocard_/.test(r.typeId);
+    const skipQuota = /^photocard_|^frame_/.test(r.typeId);
     for (let k = 0; k < r.qty; k += 1) {
       units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false, skipQuota });
     }
@@ -174,7 +183,7 @@ function computePrintAnnotations() {
       if (unitCharge <= 0) a.includedQty += 1;
       else { a.quotaDiffQty += 1; a.quotaCredit += u.credit; }
     }
-    if (unitCharge > 0 && r.numKey && serviceCredit[r.numKey] > 0 && serviceCreditsRemaining > 0) {
+    if (unitCharge > 0 && r.numKey && serviceCredit[r.numKey] > 0 && serviceCreditsRemaining > 0 && !printCreditExempt(r.typeId)) {
       const disc = Math.min(unitCharge, basicPrintCredit);
       if (disc > 0) {
         unitCharge = Math.max(0, unitCharge - disc);
@@ -184,7 +193,7 @@ function computePrintAnnotations() {
         serviceCreditsRemaining -= 1;
       }
     }
-    if (unitCharge > 0 && r.numKey && bonusCredit[r.numKey] > 0 && bonusCreditsRemaining > 0) {
+    if (unitCharge > 0 && r.numKey && bonusCredit[r.numKey] > 0 && bonusCreditsRemaining > 0 && !printCreditExempt(r.typeId)) {
       const disc = Math.min(unitCharge, basicPrintCredit);
       if (disc > 0) {
         unitCharge = Math.max(0, unitCharge - disc);
@@ -349,6 +358,7 @@ const els = {
   deliveryReviewBlock: document.getElementById('deliveryReviewBlock'),
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
+  framePickupOnlyNote: document.getElementById('framePickupOnlyNote'),
   pickupScheduler: document.getElementById('pickupScheduler'),
   pickupDeferredNote: document.getElementById('pickupDeferredNote'),
   pickupExistingLine: document.getElementById('pickupExistingLine'),
@@ -581,6 +591,8 @@ function wireEvents() {
   }
   if (els.gallerySelectDownloadAllBtn) {
     els.gallerySelectDownloadAllBtn.addEventListener('click', downloadAllPhotos);
+  const starredListBtn = document.getElementById('galleryStarredListBtn');
+  if (starredListBtn) starredListBtn.addEventListener('click', downloadStarredList);
   }
   els.starFilters.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1372,14 +1384,25 @@ function setDeliveryMethod(value) {
   updateReview();
 }
 
+/* 액자는 유리가 들어가 우편 발송을 하지 않는다(사장님 확정 2026-09-09). 주문에 액자가 하나라도
+   있으면 우편 수령을 잠그고 픽업으로 고정한다. ⚠ 서버 submitPhotoSelection 에도 같은 가드가 있다 —
+   화면만 막으면 구 번들·직접 호출로 우편 주문이 들어온다. */
+function orderHasFrame() {
+  return (state.prints || []).some((p) => /^frame_/.test(normalizePrintTypeId(p && p.printId)));
+}
+
 function syncDeliveryUi() {
   const deliveryRequired = requiresDeliverySelection();
   if (!deliveryRequired) state.deliveryMethod = '';
+  const pickupOnly = deliveryRequired && orderHasFrame();
+  if (pickupOnly) state.deliveryMethod = 'pickup';
   const method = deliveryRequired ? state.deliveryMethod : '';
+  els.framePickupOnlyNote?.classList.toggle('hidden', !pickupOnly);
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
-    input.disabled = !deliveryRequired;
+    input.disabled = !deliveryRequired || (pickupOnly && input.value !== 'pickup');
     input.checked = input.value === method;
   });
+  els.deliveryMailCard?.classList.toggle('is-disabled', pickupOnly);
   els.deliveryReviewBlock?.classList.toggle('hidden', !deliveryRequired);
   els.deliveryPickupCard?.classList.toggle('active', method === 'pickup');
   els.deliveryMailCard?.classList.toggle('active', method === 'mail');
@@ -1405,14 +1428,29 @@ function getRegularPhotos() {
 
 // 마케팅 보너스를 제외한 보정 선택 수가 기본 포함 장수를 초과하면 유료.
 // 갤러리 별점 선택과 직접 추가 모두 같은 기준으로 계산한다.
-function getRetouchExtraCount() {
+/* 무료 한도 = 기본 포함 + **남는 마케팅 보너스** (서버 computeSelectExtraRetouch_ 와 동일 규칙).
+ * 보너스 칸을 따로 채우지 않아도 기본 N + 보너스 M = N+M 장까지 무료다 — 종전엔 보너스 칸이
+ * 비어 있는데 16번째 갤러리 선택에 +10€ 가 붙어 고객 혼란을 만들었다(2026-08-25 강예슬).
+ * 채워진 보너스 행(num/note 있음)만 슬롯을 소비하고, 빈 행은 placeholder 로 무시한다. */
+function getRetouchFreeLimit() {
   const included = Number(state.session?.baseRetouchCount || 0);
+  if (state.marketing !== 'Y') return included;
+  const cap = getMarketingBonusCount();
+  let filled = 0;
+  state.photos.forEach((p) => {
+    if (p.isBonus && !p.isService && (String(p.num || '').trim() || String(p.note || '').trim())) filled += 1;
+  });
+  return included + Math.max(0, cap - Math.min(filled, cap));
+}
+
+function getRetouchExtraCount() {
+  const freeLimit = getRetouchFreeLimit();
   let nonBonusIndex = 0;
   let paid = 0;
   state.photos.forEach((p) => {
     if (p.isBonus) return;
     nonBonusIndex += 1;
-    if (nonBonusIndex > included) paid += 1;
+    if (nonBonusIndex > freeLimit) paid += 1;
   });
   return paid;
 }
@@ -1420,12 +1458,12 @@ function getRetouchExtraCount() {
 // 해당 사진 항목이 유료(+€)인지 판정
 function isPhotoPaid(photo, photoIndex) {
   if (photo.isBonus) return false;
-  const included = Number(state.session?.baseRetouchCount || 0);
+  const freeLimit = getRetouchFreeLimit();
   let nonBonusPosition = 0;
   for (let i = 0; i <= photoIndex; i += 1) {
     if (!state.photos[i].isBonus) nonBonusPosition += 1;
   }
-  return nonBonusPosition > included;
+  return nonBonusPosition > freeLimit;
 }
 
 /* ===== 볼륨 할인 (2026-08-09) — 서버 computeSelectVolumeDiscount_ 미러 =====
@@ -1604,8 +1642,8 @@ function applyGalleryPayload(res, options = {}) {
   state.photos.forEach((ph) => {
     if (ph.isBonus) return;
     const key = stripExt(ph.num);
-    if (key && state.gallery.byKey.has(key) && !state.gallery.ratings.has(key)) {
-      state.gallery.ratings.set(key, 5);
+    if (key && state.gallery.byKey.has(key) && getStarOf(key) === 0) {
+      state.gallery.ratings.set(ratingKey(key), 5);
     }
   });
   state.gallery.loaded = true;
@@ -1782,16 +1820,25 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushRatingsSave();
 });
 
+/* 별점 맵 키는 **항상 소문자 정규화**로 통일한다.
+ * 서버 복원(existingRatings)은 소문자 키로 넣는데 조회는 원본 케이스로 하고 있었다 —
+ * 재방문 세션에서 찜 66장이 픽커에 0장으로 보인 원인(2026-08-25 강예슬).
+ * 맵 접근만 이 두 함수로 정규화하고, DOM 갱신 등 부수 호출엔 원본 키를 그대로 넘긴다. */
+function ratingKey(photoKey) {
+  return String(photoKey || '').trim().toLowerCase();
+}
+
 function getStarOf(photoKey) {
-  return state.gallery.ratings.get(photoKey) || 0;
+  return state.gallery.ratings.get(ratingKey(photoKey)) || 0;
 }
 
 function setStarFor(photoKey, star) {
   if (!photoKey) return;
   const s = Math.max(0, Math.min(5, Number(star) || 0));
   const prev = getStarOf(photoKey);
-  if (s === 0) state.gallery.ratings.delete(photoKey);
-  else state.gallery.ratings.set(photoKey, s);
+  const rk = ratingKey(photoKey);
+  if (s === 0) state.gallery.ratings.delete(rk);
+  else state.gallery.ratings.set(rk, s);
   syncPhotosFromRatings(photoKey, prev, s);
   scheduleRatingsSave();
   renderGalleryCell(photoKey);
@@ -2319,7 +2366,34 @@ function stripExt(name) {
 /* ========================================================================
  * 다운로드
  * ====================================================================== */
+/* 찜(별점) 목록을 파일명 텍스트로 저장 — 별점 높은 순.
+   Drive 는 선택 파일만 묶은 ZIP 을 못 만들므로(2GB 이슈·API 제한) 사진 자체가 아니라
+   **파일명 목록**을 준다. 고객은 이 목록으로 Drive 폴더에서 검색해 받거나 스튜디오에 전달한다. */
+function downloadStarredList() {
+  const c = copy();
+  const rows = state.gallery.photos
+    .map((p) => ({ name: p.name, star: getStarOf(stripExt(p.name)) }))
+    .filter((x) => x.star > 0)
+    .sort((a, b) => b.star - a.star || String(a.name).localeCompare(String(b.name)));
+  // 갤러리가 아직 다 안 불렸으면 별점 맵에만 있는 키도 포함(파일명 확장자 없이라도 목록에 남긴다)
+  const seen = new Set(rows.map((x) => ratingKey(stripExt(x.name))));
+  state.gallery.ratings.forEach((star, key) => {
+    if (!seen.has(key)) rows.push({ name: key, star });
+  });
+  if (!rows.length) { alert(c.starredListEmpty); return; }
+  const lines = [c.starredListHeader(rows.length), ''].concat(rows.map((x) => `${'★'.repeat(x.star)}	${x.name}`));
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `starred_${state.sessionId || 'select'}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
 function downloadAllPhotos() {
+  { const d=document.querySelector('#zipDownloadPanel details'); if (d) d.open = true; }
   if (state.previewMode) {
     alert(copy().downloadPreviewAlert);
     return;
@@ -2348,10 +2422,14 @@ function buildZipListHtml(zips) {
       <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📦 ${escapeHtml(z.name)}</span>
       <span style="flex:none;color:#8a8375;">${escapeHtml(z.size)} ⬇</span>
     </a>`).join('');
+  /* 접이식(2026-08-25 레이아웃 정리) — 펼친 목록이 갤러리 위 공간을 크게 차지했다.
+     기본은 접힘, 제목 클릭으로 펼친다. '전체 다운로드' 버튼도 이 패널로 스크롤한다. */
   return `
-    <div style="font-weight:700;margin-bottom:6px;">${escapeHtml(c.zipListTitle(zips.length))}</div>
-    <div style="display:grid;gap:6px;">${rows}</div>
-    <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>`;
+    <details class="zip-panel-details">
+      <summary style="font-weight:700;cursor:pointer;list-style:revert;">${escapeHtml(c.zipListTitle(zips.length))}</summary>
+      <div style="display:grid;gap:6px;margin-top:8px;">${rows}</div>
+      <div style="margin-top:8px;font-size:12px;color:#8a8375;">${escapeHtml(c.zipListNote)}</div>
+    </details>`;
 }
 
 function renderZipDownloadPanel() {
@@ -2413,6 +2491,17 @@ function openPrintPicker(index) {
 
 /* 보정 단계용 — 찜(별점) 사진에서 보정할 사진을 담는다. 토글식 다중 선택이라 픽커가 닫히지 않는다.
    기본 필터는 '별점만'(찜에서 고르는 게 모델), 찜이 없으면 전체. */
+/* 사진번호 입력란용 — 찜 썸네일에서 골라 그 행의 번호를 채운다(단일 선택 후 닫힘).
+   타이핑 대신 눈으로 고르게 해 달라는 요청(2026-08-25 사장님). */
+function openAssignPicker(photoIndex) {
+  printPickerMode = 'assign';
+  printPickerTarget = Number(photoIndex);
+  const starred = state.gallery.photos.some((p) => getStarOf(stripExt(p.name)) > 0)
+    || state.gallery.ratings.size > 0;
+  printPickerFilter = starred ? 'starred' : 'all';
+  openPickerShared();
+}
+
 function openRetouchPicker() {
   printPickerMode = 'retouch';
   printPickerTarget = -1;
@@ -2448,21 +2537,51 @@ function renderPrintPicker() {
     }, 700);
     return;
   }
+  /* 첫 배치(loaded) 이후에도 전체 로드가 끝날 때까지 배치가 계속 붙는다.
+     ⚠ 진행 중에 그리드를 재렌더하면 안 된다 — grid.innerHTML 재생성마다 로딩 중이던
+     Drive 썸네일이 abort 되어 부분 디코드 상태(여러 사진 가로줄 찢김)로 화면에 남는다
+     (2026-08-25 강예슬, 1차 수정 후에도 배치 재렌더 경로로 재발).
+     진행 중엔 **그리드 밖 텍스트만**(필터 칩 카운트·하단 안내) 갱신하고,
+     전체 로드가 끝난 시점에 **한 번만** 재렌더한다 — 그때는 이미지가 캐시에 있어 안 끊긴다. */
+  if (!state.gallery.fullLoaded && !renderPrintPicker._waitingFull) {
+    renderPrintPicker._waitingFull = true;
+    const tick = () => {
+      const ov = document.getElementById('printPicker');
+      if (!ov || !ov.classList.contains('open')) { renderPrintPicker._waitingFull = false; return; }
+      if (state.gallery.fullLoaded) {
+        renderPrintPicker._waitingFull = false;
+        renderPrintPicker();   // 최종 1회 — 전체 사진·별점 반영
+        return;
+      }
+      // 그리드는 두고 카운트 칩만 최신화
+      const starredNow = state.gallery.photos.reduce((n2, p) => n2 + (getStarOf(stripExt(p.name)) > 0 ? 1 : 0), 0);
+      const starBtn = document.querySelector('#printPickerChips [data-pp-filter="starred"]');
+      if (starBtn) starBtn.textContent = copy().printPickerFilterStarred(starredNow);
+      setTimeout(tick, 900);
+    };
+    setTimeout(tick, 900);
+  }
   const term = String(document.getElementById('printPickerSearch')?.value || '').toLowerCase().trim();
   let list = state.gallery.photos;
   if (term) list = list.filter((p) => String(p.name || '').toLowerCase().includes(term));
   if (printPickerFilter === 'starred') list = list.filter((p) => getStarOf(stripExt(p.name)) > 0);
+  else if (/^[1-5]$/.test(printPickerFilter)) list = list.filter((p) => getStarOf(stripExt(p.name)) === Number(printPickerFilter));
   /* 별점(1차 셀렉) 사진 우선 정렬 — 점수 높은 순, 같은 점수면 원래 순서. 찜해 둔 사진을
      맨 위에서 바로 보고 고르라는 취지(사장님 확정 2026-08-09). 별점 없는 사진도 뒤에 그대로. */
   list = list.map((p, i) => ({ p, i, star: getStarOf(stripExt(p.name)) }))
     .sort((a, b) => (b.star - a.star) || (a.i - b.i))
     .map((x) => x.p);
-  const starredCount = state.gallery.photos.reduce((n, p) => n + (getStarOf(stripExt(p.name)) > 0 ? 1 : 0), 0);
+  const starBuckets = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  state.gallery.photos.forEach((p) => { const st = getStarOf(stripExt(p.name)); if (st >= 1 && st <= 5) starBuckets[st] += 1; });
+  const starredCount = starBuckets[1] + starBuckets[2] + starBuckets[3] + starBuckets[4] + starBuckets[5];
   const chips = document.getElementById('printPickerChips');
   if (chips) {
     chips.innerHTML = [
       `<button type="button" class="star-filter${printPickerFilter === 'all' ? ' active' : ''}" data-pp-filter="all">${escapeHtml(c.printPickerFilterAll)}</button>`,
-      `<button type="button" class="star-filter${printPickerFilter === 'starred' ? ' active' : ''}" data-pp-filter="starred">${escapeHtml(c.printPickerFilterStarred(starredCount))}</button>`
+      `<button type="button" class="star-filter${printPickerFilter === 'starred' ? ' active' : ''}" data-pp-filter="starred">${escapeHtml(c.printPickerFilterStarred(starredCount))}</button>`,
+      /* 점수별 필터(2026-08-25 요청) — 그 점수가 실제로 있는 것만 노출, 라벨은 갤러리 starBadge 재사용 */
+      ...[5, 4, 3, 2, 1].filter((n2) => starBuckets[n2] > 0).map((n2) =>
+        `<button type="button" class="star-filter${printPickerFilter === String(n2) ? ' active' : ''}" data-pp-filter="${n2}">${escapeHtml(c.starBadge(n2))} (${starBuckets[n2]})</button>`)
     ].join('');
     chips.querySelectorAll('[data-pp-filter]').forEach((b) => {
       b.addEventListener('click', () => { printPickerFilter = b.dataset.ppFilter; renderPrintPicker(); });
@@ -2488,17 +2607,50 @@ function renderPrintPicker() {
         ${retouchMode && marked ? `<div class="picker-picked-badge">✓ ${escapeHtml(c.retouchPickedBadge)}</div>` : ''}
         <div class="gallery-name">${escapeHtml(p.name)}</div>
         <button type="button" class="print-picker-cell-pick" data-pick-key="${escapeHtml(key)}" aria-label="${escapeHtml(p.name)}"></button>
+        <button type="button" class="gallery-zoom picker-zoom" data-zoom-key="${escapeHtml(key)}" aria-label="${escapeHtml(c.galleryZoomAria)}" title="${escapeHtml(c.galleryZoomTitle)}">${escapeHtml(c.galleryZoom)}</button>
       </div>`;
   }).join('') + (list.length > visible.length
     ? `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.printPickerMore(list.length - visible.length))}</div>`
     : (visible.length ? '' : `<div class="empty-state" style="grid-column:1/-1;">${escapeHtml(c.galleryNoPhotos)}</div>`));
+  /* 확대(크게 보기) — 본문 갤러리와 같은 라이트박스를 연다. 라이트박스는 픽커보다
+     DOM 뒤라 위에 뜨고, 닫으면 픽커가 그대로 남는다(2026-08-25 요청). */
+  grid.querySelectorAll('.picker-zoom').forEach((btn) => {
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLightboxByKey(btn.dataset.zoomKey); });
+  });
   grid.querySelectorAll('[data-pick-key]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.pickKey || '';
       if (printPickerMode === 'retouch') {
-        // 토글 다중 선택 — 픽커를 닫지 않고 배지·제목 카운트만 갱신 (반영은 닫을 때 일괄)
+        /* 토글 시 **전체 재렌더 금지** — renderPrintPicker() 를 부르면 grid.innerHTML 이
+           통째로 재생성되어 로딩 중이던 Drive 썸네일 120장이 클릭마다 끊기고 재요청된다.
+           그 결과 여러 사진의 가로줄이 섞인 찢김이 화면에 남았다(2026-08-25 강예슬 실화면).
+           해당 셀의 표시와 제목 카운트만 갱신한다. */
         togglePhotoInRetouch(key);
-        renderPrintPicker();
+        const cell = btn.closest('.gallery-cell');
+        const marked = isPhotoInRetouch(key);
+        if (cell) {
+          cell.classList.toggle('is-current', marked);
+          let badge = cell.querySelector('.picker-picked-badge');
+          if (marked && !badge) {
+            badge = document.createElement('div');
+            badge.className = 'picker-picked-badge';
+            badge.textContent = `✓ ${c.retouchPickedBadge}`;
+            cell.appendChild(badge);
+          } else if (!marked && badge) {
+            badge.remove();
+          }
+        }
+        const titleNow = document.getElementById('printPickerTitleText');
+        if (titleNow) titleNow.textContent = c.retouchPickerTitle(state.photos.filter((ph) => !ph.isBonus).length);
+        return;
+      }
+      if (printPickerMode === 'assign') {
+        const ph = state.photos[printPickerTarget];
+        if (ph) ph.num = key;
+        closePrintPicker();
+        renderPhotos();
+        updateReview();
+        updateSubmitState();
         return;
       }
       if (printPickerTarget >= 0 && state.prints[printPickerTarget]) {
@@ -2525,6 +2677,9 @@ function thumbHtmlForNum(num) {
 
 // 가장자리 마감(풀프레임/테두리) 토글 + 용지 비율 프리뷰. 인화앱 주문모드가 이 값대로 자동 셋팅한다.
 function printFinishHtml(index, print) {
+  /* 액자 행은 가장자리 마감을 고르지 않는다 — 마운트가 인화 가장자리를 덮는 물건이라
+     full/border 선택이 결과에 아무 영향이 없다. 선택지를 주면 고객이 오해한다. */
+  if (/^frame_/.test(normalizePrintTypeId(print.printId))) return '';
   const finish = print.finish === 'border' ? 'border' : 'full';
   const asp = printAspect(print.printId);
   // 저장된 값에 _r/_e 접미어가 붙어 있을 수 있어 등급 조회 전에 정규화한다.
@@ -2683,6 +2838,11 @@ function renderPhotos() {
   }).join('');
 
   els.photoList.querySelectorAll('[data-photo-num]').forEach((input) => {
+    /* 빈 입력란을 클릭하면 찜 픽커가 떠서 썸네일로 고른다. 값이 이미 있으면 그냥 편집
+       (수기 입력을 막지 않는다 — 픽커는 빈 칸의 진입로일 뿐). */
+    input.addEventListener('click', () => {
+      if (!String(input.value || '').trim()) openAssignPicker(Number(input.dataset.photoNum));
+    });
     input.addEventListener('input', () => {
       state.photos[Number(input.dataset.photoNum)].num = input.value;
       // 썸네일만 갱신하기 위해 해당 row만 교체
@@ -3254,9 +3414,35 @@ function validateStep1() {
   return true;
 }
 
+/* 보너스·서비스 슬롯은 '안 쓰면 비워 두는 자리'다. 서버(computeSelectExtraRetouch_)도 빈 행은
+   슬롯을 소비하지 않는 placeholder 로 보고, 남은 마케팅 보너스는 일반 선택 초과분을 대신 흡수한다.
+   그런데 프런트만 '모든 행을 채워야 다음'이라, 마케팅에 동의하고 무료 슬롯을 다 쓰지 않은 고객은
+   자기 사진을 전부 채우고도 버튼이 죽어 있었다(2026-08-26 신고 · 재현 확인). 이 카드들엔 삭제
+   버튼조차 없어 빠져나갈 길도 없었다. → 완전히 빈 무료 슬롯은 진행을 막지 않는다.
+   단 '반쯤 채운' 행(번호만/요청만)은 실수이므로 계속 막는다. */
+function isRetouchRowComplete(photo) {
+  return !!String(photo?.num || '').trim() && !!String(photo?.note || '').trim();
+}
+function isRetouchRowEmpty(photo) {
+  return !String(photo?.num || '').trim() && !String(photo?.note || '').trim();
+}
+function findIncompleteRetouchIndex() {
+  return state.photos.findIndex((photo) => {
+    if (photo?.isBonus && isRetouchRowEmpty(photo)) return false;   // 미사용 무료 슬롯 — 통과
+    return !isRetouchRowComplete(photo);
+  });
+}
+function countCompleteRetouchRows() {
+  return state.photos.filter(isRetouchRowComplete).length;
+}
+// 안 쓰고 남은 서비스 컷 수 — 마케팅 보너스와 달리 서버가 흡수해 주지 않아 그대로 소멸한다
+function countUnusedServiceSlots() {
+  return state.photos.filter((photo) => photo?.isService && isRetouchRowEmpty(photo)).length;
+}
+
 function validateStep2() {
-  if (!state.photos.length) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
-  const invalid = state.photos.findIndex((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim());
+  if (countCompleteRetouchRows() < 1) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
+  const invalid = findIncompleteRetouchIndex();
   if (invalid >= 0) {
     setBanner(copy().errRetouchRow(invalid + 1), 'error');
     return false;
@@ -3276,11 +3462,123 @@ function validateStep3() {
   return true;
 }
 
+/* ===== 조건 미충족 안내 =====
+   버튼을 비활성으로 잠그면 고객에겐 '이유 없이 죽은 버튼'이라 고장으로 읽힌다 — 실제로
+   "셀렉과 내용을 다 넣었는데 다음으로 안 넘어간다" 신고가 그렇게 들어왔다(2026-08-26).
+   그래서 버튼은 항상 누를 수 있게 두고, 누르면 **무엇이 · 어디가** 문제인지
+   배너 문구 + 해당 칸으로 스크롤 + 테두리 강조 + 포커스로 직접 짚어 준다. (사장님 지시) */
+function highlightProblem(el) {
+  if (!el) return;
+  // goStep 이 맨 위로 스크롤한 직후에도 지지 않도록 한 틱 뒤에 이동한다
+  globalThis.setTimeout(() => {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { try { el.scrollIntoView(); } catch (_e) {} }
+  }, 80);
+  el.classList.add('field-problem');
+  globalThis.setTimeout(() => el.classList.remove('field-problem'), 2800);
+  const focusTarget = (el.matches && el.matches('input,textarea,select')) ? el : (el.querySelector && el.querySelector('input,textarea,select'));
+  if (focusTarget) globalThis.setTimeout(() => { try { focusTarget.focus({ preventScroll: true }); } catch (_) {} }, 520);
+}
+
+/* 미충족 항목을 **전부** 모은다. 하나만 알려 주면 고치고 또 막히는 일이 반복된다.
+   각 항목은 {message, el} — el 은 눌렀을 때 이동할 대상. */
+function collectStepProblems(step) {
+  const c = copy();
+  const pick = (sel) => document.querySelector(sel);
+  const out = [];
+  const push = (message, el) => { if (message) out.push({ message, el: el || null }); };
+
+  if (step === 1) {
+    if (!state.marketing) push(c.errPickMarketing, pick('#marketingBox'));
+    const regularCount = state.photos.filter((p) => !p.isBonus).length;
+    if (state.gallery.ratings.size < 1 && regularCount < 1) push(c.errRateAtLeastOne, pick('#galleryGrid'));
+  }
+
+  if (step === 2) {
+    if (countCompleteRetouchRows() < 1) push(c.errRetouchAtLeastOne, pick('#pickRetouchBtn') || pick('#photoList'));
+    state.photos.forEach((photo, i) => {
+      if (photo && photo.isBonus && isRetouchRowEmpty(photo)) return;   // 안 쓴 무료 슬롯은 문제가 아니다
+      if (isRetouchRowComplete(photo)) return;
+      const numEl = pick(`[data-photo-num="${i}"]`);
+      const noteEl = pick(`[data-photo-note="${i}"]`);
+      const emptyNum = numEl && !String(numEl.value || '').trim();
+      push(c.errRetouchRow(i + 1), emptyNum ? numEl : (noteEl || numEl));
+    });
+    const photocard = getPhotocardWarning();
+    if (photocard) push(photocard, pick('#photocardBox'));
+  }
+
+  if (step === 3) {
+    state.prints.forEach((print, i) => {
+      if (String(print.photoNum || '').trim()) return;
+      push(c.errPrintRow(i + 1), pick(`[data-print-photo="${i}"]`) || pick('#printList'));
+    });
+  }
+
+  if (step === 4 && requiresDeliverySelection()) {
+    if (!state.deliveryMethod) push(c.errPickDelivery, pick('#deliveryChoiceBox'));
+    else if (state.deliveryMethod === 'mail') {
+      const mailName = getMailNameForSubmission();
+      const mailAddress = getMailAddressForSubmission();
+      if (!mailName) push(c.warnMailName, pick('#mailNameInput'));
+      if (!mailAddress) push(c.warnMailAddress, pick('#mailAddressInput'));
+      if (mailName && mailAddress && (!MAIL_LATIN_RE.test(mailName) || !MAIL_LATIN_RE.test(mailAddress))) push(c.warnMailLatin, pick('#mailAddressInput'));
+      if (mailAddress && !hasMailAddressPostalCity(mailAddress)) push(c.warnMailPostal, pick('#mailAddressInput'));
+    }
+  }
+  return out;
+}
+
+function closeBlockedModal() {
+  const existing = document.getElementById('blockedModal');
+  if (existing) existing.remove();
+}
+
+/* 버튼을 눌렀을 때 뜨는 안내 팝업 (2026-08-26 사장님 지시).
+   목록의 각 항목을 누르면 팝업이 닫히고 그 칸으로 스크롤·강조·포커스된다. */
+function showBlockedModal(problems) {
+  closeBlockedModal();
+  const list = (problems || []).filter((p) => p && p.message);
+  if (!list.length) return;
+  const c = copy();
+  const shown = list.slice(0, 6);            // 너무 길면 팝업이 스크롤 덩어리가 된다
+  const rest = list.length - shown.length;
+  const wrap = document.createElement('div');
+  wrap.id = 'blockedModal';
+  wrap.className = 'blocked-modal';
+  wrap.innerHTML = `
+    <div class="blocked-card" role="dialog" aria-modal="true" aria-labelledby="blockedModalTitle">
+      <div class="blocked-title" id="blockedModalTitle">${escapeHtml(c.blockedTitle)}</div>
+      <p class="blocked-intro">${escapeHtml(c.blockedIntro(list.length))}</p>
+      <ol class="blocked-list">${shown.map((p, i) => `<li><button type="button" data-blocked-idx="${i}">${escapeHtml(p.message)}</button></li>`).join('')}</ol>
+      ${rest > 0 ? `<p class="blocked-rest">+ ${rest}</p>` : ''}
+      <div class="blocked-actions">
+        <button type="button" class="ghost-btn" data-blocked-close>${escapeHtml(c.blockedClose)}</button>
+        <button type="button" class="primary-btn" data-blocked-go>${escapeHtml(c.blockedGo)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const jumpTo = (index) => {
+    const target = shown[index] && shown[index].el;
+    closeBlockedModal();
+    highlightProblem(target);
+  };
+  wrap.querySelectorAll('[data-blocked-idx]').forEach((btn) => {
+    btn.addEventListener('click', () => jumpTo(Number(btn.dataset.blockedIdx)));
+  });
+  wrap.querySelector('[data-blocked-go]').addEventListener('click', () => jumpTo(0));
+  wrap.querySelector('[data-blocked-close]').addEventListener('click', closeBlockedModal);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeBlockedModal(); });   // 바깥 클릭으로 닫기
+  const onEsc = (e) => { if (e.key === 'Escape') { closeBlockedModal(); globalThis.removeEventListener('keydown', onEsc); } };
+  globalThis.addEventListener('keydown', onEsc);
+  globalThis.setTimeout(() => { try { wrap.querySelector('[data-blocked-go]').focus(); } catch (_) {} }, 60);
+}
+
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
-  if (step === 2 && !validateStep1()) return;
-  if (step === 3 && !validateStep2()) return;
-  if (step === 4 && !validateStep3()) return;
+  if (step === 2 && !validateStep1()) { showBlockedModal(collectStepProblems(1)); return; }
+  if (step === 3 && !validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
+  if (step === 4 && !validateStep3()) { showBlockedModal(collectStepProblems(3)); return; }
   if (state.submitted) return;
   state.step = step;
   els.progressRow.classList.remove('hidden');
@@ -3301,8 +3599,8 @@ function goStep(step) {
 
 function canSubmit() {
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
-  if (!state.photos.length) return false;
-  if (state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())) return false;
+  if (countCompleteRetouchRows() < 1) return false;
+  if (findIncompleteRetouchIndex() >= 0) return false;
   if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
   if (!requiresDeliverySelection()) return true;
@@ -3315,11 +3613,20 @@ function canSubmit() {
   return true;
 }
 
+/* 아직 조건이 안 찬 버튼도 **누를 수 있게** 둔다 — 눌렀을 때 이유를 짚어 주는 편이
+   비활성으로 침묵하는 것보다 낫다. 시각적으로만 '아직 덜 됐음'을 표시한다.
+   이미 제출된 세션만 진짜로 잠근다(중복 제출 방지). */
+function markStepBtn(btn, ready) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.classList.toggle('needs-input', !ready);
+}
 function updateSubmitState() {
-  if (els.step1NextBtn) els.step1NextBtn.disabled = !canProceedStep1();
-  if (els.step2NextBtn) els.step2NextBtn.disabled = !canProceedStep2();
-  if (els.step3NextBtn) els.step3NextBtn.disabled = !canProceedStep3();
-  els.submitBtn.disabled = !canSubmit() || state.submitted;
+  markStepBtn(els.step1NextBtn, canProceedStep1());
+  markStepBtn(els.step2NextBtn, canProceedStep2());
+  markStepBtn(els.step3NextBtn, canProceedStep3());
+  markStepBtn(els.submitBtn, canSubmit());
+  els.submitBtn.disabled = state.submitted;
   renderStepWarnings();
 }
 
@@ -3331,9 +3638,8 @@ function canProceedStep1() {
 }
 
 function canProceedStep2() {
-  if (!state.photos.length) return false;
-  return !state.photos.some((photo) => !String(photo.num || '').trim() || !String(photo.note || '').trim())
-    && !getPhotocardWarning();
+  if (countCompleteRetouchRows() < 1) return false;   // 실제로 고른 사진이 최소 1장
+  return findIncompleteRetouchIndex() < 0 && !getPhotocardWarning();
 }
 
 function canProceedStep3() {
@@ -3348,13 +3654,19 @@ function renderStepWarnings() {
     : !state.marketing
       ? c.warnMarketing(bonusCount)
       : c.warnNoStars;
+  const incompleteIdx = findIncompleteRetouchIndex();
+  const unusedService = countUnusedServiceSlots();
   const step2Message = canProceedStep2()
-    ? ''
-    : !state.photos.length
+    // 진행은 되지만 서비스 컷은 안 쓰면 그대로 소멸한다(보너스와 달리 흡수 안 됨) — 알려만 준다
+    ? (unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
+    : countCompleteRetouchRows() < 1
       ? c.warnNoRetouch
       : getPhotocardWarning()
         ? getPhotocardWarning()
-        : c.warnRetouchIncomplete;
+        // "다 넣었는데 안 넘어감"을 막으려면 몇 번 칸인지 짚어야 한다
+        : incompleteIdx >= 0
+          ? c.errRetouchRow(incompleteIdx + 1)
+          : c.warnRetouchIncomplete;
   const step3Message = canProceedStep3() ? '' : c.warnPrintNumbers;
   const step4Message = canSubmit()
     ? ''
@@ -3435,7 +3747,10 @@ function buildMockGalleryPhotos(n) {
  * 제출
  * ====================================================================== */
 async function onSubmit() {
-  if (!validateStep2() || !validateStep3() || !validateDeliverySelection()) return;
+  // 문제가 이전 단계에 있으면 그 단계로 되돌린 뒤 짚어 준다(숨은 패널은 스크롤해도 안 보인다)
+  if (!validateStep2()) { goStep(2); showBlockedModal(collectStepProblems(2)); return; }
+  if (!validateStep3()) { goStep(3); showBlockedModal(collectStepProblems(3)); return; }
+  if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
   if (state.previewMode) {
     alert(copy().previewSubmitAlert);
     return;

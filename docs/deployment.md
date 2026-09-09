@@ -49,3 +49,5 @@ Recommended:
 
 - `booking` and `select` are intentionally self-contained static folders so each Netlify site can publish independently
 - shared frontend helpers are duplicated per site on purpose at this stage to avoid cross-directory publish issues
+
+- 배포 전 체크: `node scripts/check-sheet-date-compare.mjs` — 시트 날짜셀을 parseDateSafe_ 없이 slice 하는 패턴 적발(위반 시 exit 1).

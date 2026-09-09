@@ -177,3 +177,47 @@ function checkInstaConnection() {
   Logger.log('연결 OK: @' + info.username + ' (팔로워 ' + info.followers_count + ')');
   return info;
 }
+
+/* ── erp-agent 연동 — 편집기를 열지 않고 상태 확인·트리거 설치 ────────────────
+   토큰 값 자체는 절대 반환하지 않는다. 존재 여부(boolean)만 알린다. */
+
+function instaPublisherStatusForAgent_(token) {
+  assertAdmin_(token);
+  var props = PropertiesService.getScriptProperties();
+  var hasToken = !!props.getProperty('IG_ACCESS_TOKEN');
+  var hasUser = !!props.getProperty('IG_USER_ID');
+  var trig = ScriptApp.getProjectTriggers().filter(function (t) {
+    return t.getHandlerFunction() === 'publishDueInstaCarousels';
+  }).length;
+  var account = '';
+  if (hasToken && hasUser) {
+    try { account = '@' + igCall_(igProp_('IG_USER_ID'), { fields: 'username' }).username; }
+    catch (e) { account = '연결 실패: ' + e.message.slice(0, 120); }
+  }
+  return { ok: true, hasToken: hasToken, hasUserId: hasUser, triggers: trig, account: account };
+}
+
+function instaPublisherInstallForAgent_(token) {
+  assertAdmin_(token);
+  var props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('IG_ACCESS_TOKEN') || !props.getProperty('IG_USER_ID')) {
+    throw new Error('스크립트 속성 IG_ACCESS_TOKEN / IG_USER_ID 를 먼저 등록하세요.');
+  }
+  return { ok: true, message: installInstaPublishTrigger() };
+}
+
+/** 시크릿 등록 — 값은 스크립트 속성에만 저장하고, 응답에는 길이만 알린다(값 미반환).
+ *  로컬 setup_gas_secrets.py 가 automation/.env 를 읽어 1회 호출한다. */
+function instaPublisherSetSecretsForAgent_(token, payload) {
+  assertAdmin_(token);
+  payload = payload || {};
+  var props = PropertiesService.getScriptProperties();
+  var out = {};
+  ['IG_ACCESS_TOKEN', 'IG_USER_ID'].forEach(function (k) {
+    var v = String(payload[k] || '').trim();
+    if (!v) { out[k] = 'skipped'; return; }
+    props.setProperty(k, v);
+    out[k] = 'saved(' + v.length + ')';        // 값이 아니라 길이만
+  });
+  return { ok: true, saved: out };
+}

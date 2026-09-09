@@ -21,7 +21,9 @@ export const PRINT_ID_TIER = {
   premium_a3: 'fineart',
   premium_a3plus: 'fineart',
   photocard_single: 'photocard',
-  photocard_double: 'photocard'
+  photocard_double: 'photocard',
+  frame_a4: 'frame',
+  frame_a3: 'frame'
 };
 
 // 등급별 카피. paper=용지 캡션(드롭다운 아래 한 줄), texture=옵션 보조설명.
@@ -91,6 +93,21 @@ export const PRINT_TIERS = {
       ko: '매트한 파이버 질감, 오래 두고 보는 종이',
       en: 'Matte fibre surface, made for the wall',
       de: 'Matte Faserstruktur — für die Wand gemacht'
+    }
+  },
+  frame: {
+    // 액자는 용지 등급이 아니라 완성품 추가금이다. 비교 카드에 올리지 않고 캡션만 제공한다.
+    // 🔴 UWG: 브랜드·모델명(IKEA 등)을 쓰지 않는다 — 단종이 잦아 고지 내용과 실물이 어긋난다.
+    name: { ko: '액자', en: 'Frame', de: 'Rahmen' },
+    paper: {
+      ko: '무산성 마운트를 포함한 목재 프레임에 끼워 완성해 드립니다 · 픽업 수령만 가능',
+      en: 'Mounted in a wooden frame with an acid-free mount · pickup only',
+      de: 'Im Holzrahmen mit säurefreiem Passepartout montiert · nur Abholung'
+    },
+    texture: {
+      ko: '마운트 포함 · 픽업 수령',
+      en: 'Mount included · pickup only',
+      de: 'Inkl. Passepartout · nur Abholung'
     }
   },
   photocard: {

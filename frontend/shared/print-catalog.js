@@ -13,12 +13,15 @@ import { getPrintTier, getPrintTierName } from './print-tier-copy.js';
 export const PRINT_CATALOG = [
   { id: 'basic_10x15',     cm: '10 × 15 cm',    additional: 4,  name: { ko: '시그니처 10×15cm', en: 'Signature 10×15cm',      de: 'Signature-Abzug 10×15cm' } },
   { id: 'premium_10x15',   cm: '10 × 15 cm',    additional: 8,  name: { ko: '파인아트 10×15cm', en: 'Fine Art 10×15cm',        de: 'FineArt-Druck 10×15cm' } },
-  { id: 'photocard_single', cm: '8.6 × 5.4 cm', additional: 5,  name: { ko: '포토카드 (단면)',  en: 'Photocard (single-side)', de: 'Fotokarte (einseitig)' } },
-  { id: 'photocard_double', cm: '8.6 × 5.4 cm', additional: 8,  name: { ko: '포토카드 (양면)',  en: 'Photocard (double-side)', de: 'Fotokarte (beidseitig)' } },
+  { id: 'photocard_single', cm: '8.6 × 5.4 cm', additional: 6,  name: { ko: '포토카드 (단면)',  en: 'Photocard (single-side)', de: 'Fotokarte (einseitig)' } },
+  { id: 'photocard_double', cm: '8.6 × 5.4 cm', additional: 9,  name: { ko: '포토카드 (양면)',  en: 'Photocard (double-side)', de: 'Fotokarte (beidseitig)' } },
   { id: 'basic_a4',        cm: '21 × 29.7 cm',  additional: 15, name: { ko: '시그니처 A4',     en: 'Signature A4',            de: 'Signature-Abzug A4' } },
   { id: 'premium_a4',      cm: '21 × 29.7 cm',  additional: 20, name: { ko: '파인아트 A4',      en: 'Fine Art A4',             de: 'FineArt-Druck A4' } },
-  { id: 'premium_a3',      cm: '29.7 × 42 cm',  additional: 50, name: { ko: '파인아트 A3',      en: 'Fine Art A3',             de: 'FineArt-Druck A3' } },
-  { id: 'premium_a3plus',  cm: '32.9 × 48.3 cm', additional: 60, name: { ko: '파인아트 A3+',    en: 'Fine Art A3+',            de: 'FineArt-Druck A3+' } }
+  { id: 'premium_a3',      cm: '29.7 × 42 cm',  additional: 38, name: { ko: '파인아트 A3',      en: 'Fine Art A3',             de: 'FineArt-Druck A3' } },
+  { id: 'premium_a3plus',  cm: '32.9 × 48.3 cm', additional: 48, name: { ko: '파인아트 A3+',    en: 'Fine Art A3+',            de: 'FineArt-Druck A3+' } },
+  // 액자(추가금) — 인화 위에 얹는 완성품. cm 는 프레임 외곽 규격이다.
+  { id: 'frame_a4',        cm: '30 × 40 cm',    additional: 29, name: { ko: '액자 (A4 인화용)',  en: 'Frame (for A4 print)',    de: 'Rahmen (für A4-Druck)' } },
+  { id: 'frame_a3',        cm: '40 × 50 cm',    additional: 35, name: { ko: '액자 (A3 인화용)',  en: 'Frame (for A3 print)',    de: 'Rahmen (für A3-Druck)' } }
 ];
 
 // 카탈로그 항목의 현지화된 이름.

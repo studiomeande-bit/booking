@@ -813,7 +813,7 @@ const COPY = {
       { t: '취소 및 환불', p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
       { t: '저작권 및 이용권', p: '촬영물의 저작권 및 원저작권은 Studio mean에 있습니다.<br>고객은 전달받은 사진 또는 영상을 개인 보관, 가족 및 지인 공유, 개인 SNS 게시, 개인 인화 목적으로 사용할 수 있습니다.<br>상업적 사용, 재판매, 제3자 브랜드 또는 매체 제공, 대량 편집 및 2차 제작은 별도 서면 동의가 필요합니다.' },
       { t: '외부 공개 및 마케팅 사용', p: '본 표준 계약 동의에는 Studio mean이 식별 가능한 사진 또는 영상을 포트폴리오, SNS, 웹사이트, 광고 또는 홍보 자료로 사용하는 허락이 포함되지 않습니다.<br>외부 공개가 필요한 경우 별도 서면 동의를 받습니다.' },
-      { t: '개인정보 및 보관', p: '개인정보와 이미지 파일은 예약, 계약 이행, 커뮤니케이션, 청구, 납품, 보관 목적에 한해 처리됩니다.<br>전달 파일은 납품 후 3개월 동안 보관될 수 있으며 이후 삭제될 수 있습니다.' }
+      { t: '개인정보 및 보관', p: '개인정보와 이미지 파일은 예약, 계약 이행, 커뮤니케이션, 청구, 납품, 보관 목적에 한해 처리됩니다.<br>전달 파일은 납품 후 3개월 동안 보관될 수 있으며 이후 삭제될 수 있습니다.<br>보정 대상 사진 선택(셀렉)은 원본 전달일로부터 3개월 이내 접수 기준이며, 안내에도 불구하고 기한 내 접수되지 않으면 보관 파일은 삭제되고 보정 제공 의무는 종료됩니다.' }
     ],
     contractTermsSummary: '전체 계약 조건 보기',
     contractTermsSummaryHint: '필수 동의 전 필요한 경우 펼쳐서 확인해 주세요.',
@@ -1035,7 +1035,7 @@ const COPY = {
       { t: 'Cancellation and refund', p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
       { t: 'Copyright and usage rights', p: 'The copyright and related rights in the images remain with Studio mean.<br>The client receives a simple right of use for private archiving, sharing with family and friends, private social media use and private prints.<br>Commercial use, resale, provision to third-party brands or media, and extensive editing or derivative work require separate written consent.' },
       { t: 'Publication and marketing use', p: 'This standard contract consent does not include permission for Studio mean to use identifiable photos or videos for portfolio, social media, website, advertising or self-promotion.<br>If external publication is desired, separate written consent is obtained for it.' },
-      { t: 'Data protection and storage', p: 'Personal data and image files are processed only for booking, performance of the contract, communication, invoicing, delivery and storage.<br>Delivered files may be retained for 3 months after delivery and may be deleted thereafter.' }
+      { t: 'Data protection and storage', p: 'Personal data and image files are processed only for booking, performance of the contract, communication, invoicing, delivery and storage.<br>Delivered files may be retained for 3 months after delivery and may be deleted thereafter.<br>Photo selection for retouching must be submitted within 3 months of delivery of the originals; if no selection is received within this period despite reminders, stored files are deleted and the retouching obligation ends.' }
     ],
     contractTermsSummary: 'View all contract terms',
     contractTermsSummaryHint: 'Expand to read them before giving the required consent.',
@@ -1257,7 +1257,7 @@ const COPY = {
       { t: 'Stornierung und Erstattung', p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
       { t: 'Urheberrecht und Nutzungsrecht', p: 'Die Urheber- und Leistungsschutzrechte an den Aufnahmen verbleiben bei Studio mean.<br>Die Kundin bzw. der Kunde erhält ein einfaches Nutzungsrecht für private Archivierung, Weitergabe an Familie und Freunde, private Social-Media-Nutzung und private Prints.<br>Kommerzielle Nutzung, Weiterverkauf, Weitergabe an Marken oder Medien sowie umfangreiche Bearbeitung oder Weiterverarbeitung bedürfen einer gesonderten schriftlichen Zustimmung.' },
       { t: 'Veröffentlichung und Werbung', p: 'Diese Standard-Vertragszustimmung enthält keine Einwilligung, identifizierbare Fotos oder Videos für Portfolio, Social Media, Website, Werbung oder Eigenwerbung von Studio mean zu verwenden.<br>Falls eine externe Veröffentlichung gewünscht wird, wird dafür eine gesonderte schriftliche Einwilligung eingeholt.' },
-      { t: 'Datenschutz und Speicherung', p: 'Personenbezogene Daten und Bilddateien werden zur Buchung, Vertragsdurchführung, Kommunikation, Abrechnung, Lieferung und Speicherung verarbeitet.<br>Gelieferte Dateien können nach Lieferung 3 Monate gesichert und danach gelöscht werden.' }
+      { t: 'Datenschutz und Speicherung', p: 'Personenbezogene Daten und Bilddateien werden zur Buchung, Vertragsdurchführung, Kommunikation, Abrechnung, Lieferung und Speicherung verarbeitet.<br>Gelieferte Dateien können nach Lieferung 3 Monate gesichert und danach gelöscht werden.<br>Die Fotoauswahl für die Retusche ist innerhalb von 3 Monaten nach Lieferung der Originale einzureichen; geht trotz Erinnerungen keine Auswahl ein, werden gespeicherte Dateien gelöscht und die Retusche-Verpflichtung endet.' }
     ],
     contractTermsSummary: 'Alle Vertragsbedingungen anzeigen',
     contractTermsSummaryHint: 'Bei Bedarf vor der Pflichtzustimmung ausklappen.',
@@ -1715,6 +1715,13 @@ function wireEvents() {
     els.slotGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().slotGridEmpty)}</div>`;
     goToStep(3);
     await refreshQuote();
+    // 스텝2에서 인원·옵션을 바꿔 총소요가 달라졌으면 이전에 고른 시간은 무효 — 화면만 지워지고 상태가 남아 그대로 제출되던 문제
+    if (state.selectedSlot && state.slotPickedDuration !== getCalendarDuration()) {
+      state.selectedSlot = '';
+      state.selectedSlotMeta = null;
+      state.bookingRequestId = null;
+      updateSubmitState();
+    }
     els.calendarHint.textContent = `${getProductLabel(state.selectedProduct)} · ${getCopy().calendarLoadedHint}`;
     setBanner(getCopy().loadCalendar, 'loading');
     await loadCalendar();
@@ -1770,7 +1777,7 @@ function wireEvents() {
   els.profileAgeInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.studioFamilyInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
-  els.reshootingConsent?.addEventListener('change', refreshStepLocks);
+  els.reshootingConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
@@ -1803,6 +1810,12 @@ function wireEvents() {
     handleQuoteInputChange();
   });
   els.generalPeopleCustom?.addEventListener('input', handleQuoteInputChange);
+  els.generalPeopleCustom?.addEventListener('change', () => {
+    const v = parseInt(els.generalPeopleCustom.value, 10) || 0;
+    if (v > 0 && v <= 5) { els.generalPeople.value = String(v); els.generalPeopleCustom.classList.add('hidden-field'); }
+    else els.generalPeopleCustom.value = String(Math.max(6, Math.min(99, v || 6)));
+    handleQuoteInputChange();
+  });
   els.passAddonToggle?.addEventListener('change', () => {
     els.passAddonPeopleField?.classList.toggle('hidden-field', !els.passAddonToggle.checked);
     handleQuoteInputChange();
@@ -2063,13 +2076,13 @@ function getCopy() {
   return COPY[state.lang] || COPY.ko;
 }
 
+/* 상담 창구는 홈페이지 문의 폼으로 통합됐다 (2026-08-26) — 실제 문의가 전부 그쪽으로 들어왔고,
+   여기서만 도달되던 /consultation 은 유입이 사실상 없었다. 언어별 경로로 바로 보낸다.
+   (구 /consultation URL 도 netlify 에서 301 로 넘어가지만, 링크는 처음부터 새 주소를 가리킨다.) */
+const CONTACT_PATH_BY_LANG = { ko: '/ko/contact/', en: '/en/contact/', de: '/contact/' };
 function getConsultationUrl() {
-  const url = new URL('/consultation/', globalThis.location.origin);
-  url.searchParams.set('lang', state.lang);
-  if (state.selectedGroup) url.searchParams.set('from', state.selectedGroup);
-  if (state.eventCategory) url.searchParams.set('event', state.eventCategory);
-  if (state.selectedProduct?.id) url.searchParams.set('product', state.selectedProduct.id);
-  return `${url.pathname}${url.search}`;
+  const path = CONTACT_PATH_BY_LANG[state.lang] || CONTACT_PATH_BY_LANG.de;
+  return `https://studio-mean.com${path}`;
 }
 
 function syncConsultationLinks() {
@@ -2380,11 +2393,33 @@ function applyCopy() {
         ? 'Nachshooting-Einwilligung (Pflicht) — Wenn das Kind am Drehtag wegen Schüchternheit oder Verfassung nicht normal mitmachen kann, kann innerhalb von 4 Wochen ein Nachshooting für 30% des Ursprungspreises vereinbart werden.'
         : '재촬영 약관 동의 (필수) — 촬영 당일 아이의 낯가림이나 컨디션 난조로 정상 진행이 어려울 경우, 원 촬영 비용의 30%를 추가 지불하고 4주 이내 재촬영 일정을 잡을 수 있습니다.';
   }
+  // 굿샤인 입력 UI — EN/DE 고객에게 한국어 그대로 노출되던 부분(2026-08-31)
+  setText('gutscheinCopy', state.lang === 'en'
+    ? 'Have a Studio mean gift voucher? Enter the code and apply it.'
+    : state.lang === 'de'
+      ? 'Sie haben einen Studio mean Gutschein? Code eingeben und anwenden.'
+      : 'Studio mean 상품권(Gutschein)이 있다면 코드를 입력하고 적용해 주세요.');
+  setText('gutscheinApplyBtn', state.lang === 'en' ? 'Apply' : state.lang === 'de' ? 'Einlösen' : '적용');
+  const gIn = document.getElementById('gutscheinCodeInput');
+  if (gIn) gIn.placeholder = state.lang === 'ko' ? '예: SM-XXXXXX' : 'z.B. SM-XXXXXX';
   renderPeopleOptions();
   renderWeekdayHeader();
   renderReturnNotice();
   renderNoticePanel();
   renderPromoHighlightPanel();
+  // 이미 렌더된 달력·슬롯 배지가 이전 언어로 잔류하지 않게 캐시로 재렌더
+  try {
+    if (state.selectedProduct && els.calendarGrid && !els.calendarGrid.classList.contains('empty-state')) {
+      const dur = getCalendarDuration();
+      const monthKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${dur}`;
+      const monthData = state.calendarCache.get(monthKey);
+      if (monthData) renderCalendar(monthData);
+      if (state.selectedDate) {
+        const cs = getCachedSlots(`${state.selectedDate}_${state.selectedProduct.g}_${dur}`);
+        if (Array.isArray(cs)) renderSlots(cs);
+      }
+    }
+  } catch (e) {}
   syncConsentVisibility();
   syncSelectAllRequired();
   renderContractPriceSummary();
@@ -2852,14 +2887,19 @@ function renderContractPriceSummary() {
   const snapshot = getContractPriceSnapshot();
   const quoteLabel = getContractQuoteLabel();
   const value = (amount) => snapshot.quoteOnly ? quoteLabel : formatContractBruttoAmount(amount);
+  const L = state.lang === 'en'
+    ? { reg: 'Regular price', gut: 'Gift voucher', total: 'Total', dep: 'Deposit', bal: 'Balance' }
+    : state.lang === 'de'
+      ? { reg: 'Regulär', gut: 'Gutschein', total: 'Gesamtbetrag', dep: 'Anzahlung', bal: 'Restbetrag' }
+      : { reg: '정상가 / Regulär', gut: '상품권 / Gutschein', total: '총 비용 / Gesamtbetrag', dep: '계약금 / Anzahlung', bal: '잔금 / Restbetrag' };
   const rows = [];
   if (snapshot.gutschein) {
-    rows.push(['정상가 / Regulär', formatContractBruttoAmount(snapshot.gutschein.originalTotal)]);
-    rows.push([`상품권 / Gutschein (${snapshot.gutschein.code})`, `-${formatContractBruttoAmount(snapshot.gutschein.discountAmount)}`]);
+    rows.push([L.reg, formatContractBruttoAmount(snapshot.gutschein.originalTotal)]);
+    rows.push([`${L.gut} (${snapshot.gutschein.code})`, `-${formatContractBruttoAmount(snapshot.gutschein.discountAmount)}`]);
   }
-  rows.push(['총 비용 / Gesamtbetrag', value(snapshot.total)]);
-  rows.push(['계약금 / Anzahlung', value(snapshot.deposit)]);
-  rows.push(['잔금 / Restbetrag', value(snapshot.balance)]);
+  rows.push([L.total, value(snapshot.total)]);
+  rows.push([L.dep, value(snapshot.deposit)]);
+  rows.push([L.bal, value(snapshot.balance)]);
   box.innerHTML = rows.map(([label, amount]) => `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(amount)}</div>`).join('');
 }
 
@@ -2881,10 +2921,16 @@ function getContractSubmissionData(formData = new FormData(els.form)) {
   };
 }
 
+/* '필수 항목 전체 선택'은 그 순간 필수인 항목을 전부 커버해야 한다.
+   재촬영 동의(영아·키즈 필수, 스텝2 소속)가 빠져 있어서 — 고객이 스텝5에서 전체 선택을 누르고
+   제출하면 "재촬영 약관에 동의해 주세요"에 막히는데 그 체크박스는 세 단계 앞 화면 밖에 있었다
+   ("동의가 안 눌린다" 신고의 정체, 2026-08-31). 필수일 때만 함께 체크한다 —
+   필수가 아닌데 미리 켜 두면 약관을 보지 않은 동의가 된다. */
 function toggleAllRequired(event) {
   const checked = !!event?.target?.checked;
   if (els.form.elements.contractTermsConsent) els.form.elements.contractTermsConsent.checked = checked;
   if (els.form.elements.gdprConsent) els.form.elements.gdprConsent.checked = checked;
+  if (needsReshootingConsent() && els.reshootingConsent) els.reshootingConsent.checked = checked;
   syncSelectAllRequired();
 }
 
@@ -2893,7 +2939,8 @@ function syncSelectAllRequired() {
   if (!el) return;
   const contract = !!els.form.elements.contractTermsConsent?.checked;
   const gdpr = !!els.form.elements.gdprConsent?.checked;
-  el.checked = contract && gdpr;
+  const reshoot = !needsReshootingConsent() || !!els.reshootingConsent?.checked;
+  el.checked = contract && gdpr && reshoot;
 }
 
 function syncConsentVisibility() {
@@ -4269,7 +4316,13 @@ function renderPeopleOptions() {
       .map((count) => `<option value="${count}">${escapeHtml(getPeopleOptionLabel(count, product))}</option>`)
       .concat(`<option value="custom">${state.lang === 'en' ? '6+ people (enter manually)' : state.lang === 'de' ? 'Ab 6 Personen direkt eingeben' : '6명 이상 직접입력'}</option>`)
       .join('');
-    if (currentGeneralCount > 5) {
+    /* 고객이 직접입력 칸에 타이핑하는 도중에는 값·표시를 건드리지 않는다 —
+       매 키입력의 재렌더가 '1'을 치는 순간 6으로 되돌려 12명 입력이 불가능했다(2026-08-31 전수 리뷰).
+       클램프는 change(블러) 시점에만. */
+    if (document.activeElement === els.generalPeopleCustom) {
+      els.generalPeople.value = 'custom';
+      els.generalPeopleCustom.classList.remove('hidden-field');
+    } else if (currentGeneralCount > 5) {
       els.generalPeople.value = 'custom';
       if (els.generalPeopleCustom) {
         els.generalPeopleCustom.value = String(currentGeneralCount);
@@ -5189,7 +5242,7 @@ function listAvailableDatesForMonthData(data, year, month) {
   const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
   const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const result = [];
   for (let day = 1; day <= daysInMonth; day += 1) {
@@ -5249,11 +5302,11 @@ async function findEarliestAvailableSlot(product, duration) {
     const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
     for (const dateKey of candidateDates) {
       const slotKey = `${dateKey}_${product.g}_${duration}`;
-      let slots = state.slotCache.get(slotKey);
+      let slots = getCachedSlots(slotKey);
       if (!Array.isArray(slots)) {
         try {
           slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g });
-          state.slotCache.set(slotKey, slots);
+          setCachedSlots(slotKey, slots);
         } catch (error) {
           console.error(error);
           slots = [];
@@ -5277,10 +5330,25 @@ async function updateEarliestSlotBox() {
   const token = ++state.earliestSlotToken;
   state.earliestSlotInfo = { loading: true };
   renderEarliestSlotBox();
-  const nextInfo = await findEarliestAvailableSlot(state.selectedProduct, getCalendarDuration());
+  let nextInfo = null;
+  try { nextInfo = await findEarliestAvailableSlot(state.selectedProduct, getCalendarDuration()); }
+  catch (e) { console.error(e); nextInfo = null; } // 실패 시 '로딩 중'에 영영 머무르지 않는다
   if (token !== state.earliestSlotToken) return;
   state.earliestSlotInfo = nextInfo || null;
   renderEarliestSlotBox();
+}
+
+/* 기타 국가 입력칸을 여권 패널(스텝2) 안으로 옮긴다 — 원래 스텝4 폼 안에 있어
+   'OTHER 선택 → 스텝2에서 잠김 ↔ 입력칸은 스텝4' 상호 데드락으로 예약이 영구히 막혔다(2026-08-31).
+   input에 form="bookingForm"이 있어 폼 밖으로 나가도 FormData/elements에 그대로 잡힌다. */
+function placeOtherCountryField(group) {
+  if (!els.otherCountryField) return;
+  const passportHint = document.getElementById('passportHint');
+  if (group === 'pass' && passportHint) {
+    if (passportHint.nextElementSibling !== els.otherCountryField) passportHint.insertAdjacentElement('afterend', els.otherCountryField);
+  } else if (els.babyNameField && els.babyNameField.nextElementSibling !== els.otherCountryField) {
+    els.babyNameField.insertAdjacentElement('afterend', els.otherCountryField);
+  }
 }
 
 function syncConditionalFields() {
@@ -5292,7 +5360,11 @@ function syncConditionalFields() {
   syncPassportPersonCountries();
   els.addressField?.classList.toggle('hidden-field', needsBusinessInvoice);
   els.businessInvoiceFields?.classList.toggle('hidden-field', !needsBusinessInvoice);
-  els.otherCountryField.classList.toggle('hidden-field', !(group === 'pass' && state.selectedCountries.includes('OTHER')));
+  const showOtherCountry = group === 'pass' && state.selectedCountries.includes('OTHER');
+  els.otherCountryField.classList.toggle('hidden-field', !showOtherCountry);
+  // 숨길 때 값을 비운다 — OTHER 해제 후 잔존한 국가명이 장부·확인메일에 저장되던 문제(2026-08-31)
+  if (!showOtherCountry && els.form?.elements?.otherCountry?.value) els.form.elements.otherCountry.value = '';
+  placeOtherCountryField(group);
   els.locationField.classList.toggle('hidden-field', !(group === 'snap' || group === 'wed' || group === 'biz'));
   els.businessField.classList.toggle('hidden-field', group !== 'biz');
   els.surveyField.classList.toggle('hidden-field', !group || group === 'pass' || group === 'biz');
@@ -5440,7 +5512,21 @@ function renderPassportCountries() {
     });
   });
   els.passportCountries.querySelectorAll('[data-passport-config-custom]').forEach((input) => {
-    input.addEventListener('input', () => setPassportConfigPeople(Number(input.dataset.passportConfigCustom), Math.max(6, Number(input.value || 6))));
+    // 타이핑 중에는 재렌더 없이 상태·견적만 갱신 — 재렌더가 포커스를 죽여 6명 초과 입력이 불가능했다(2026-08-31)
+    input.addEventListener('input', () => {
+      const idx = Number(input.dataset.passportConfigCustom);
+      syncPassportConfigs();
+      if (!state.passportConfigs[idx]) return;
+      state.passportConfigs[idx].people = Math.max(1, parseInt(input.value, 10) || 6);
+      syncPassportPersonCountries();
+      handleQuoteInputChange().then(() => refreshStepLocks());
+    });
+    input.addEventListener('change', () => {
+      const idx = Number(input.dataset.passportConfigCustom);
+      const v = Math.max(6, Math.min(99, parseInt(input.value, 10) || 6));
+      input.value = String(v);
+      setPassportConfigPeople(idx, v);
+    });
   });
   els.passportCountries.querySelectorAll('[data-remove-config]').forEach((button) => {
     button.addEventListener('click', () => removePassportConfig(Number(button.dataset.removeConfig)));
@@ -5631,6 +5717,7 @@ function renderProductDetail() {
     ${detailIntro ? `<div class="detail-copy product-detail-intro">${escapeHtml(detailIntro)}</div>` : ''}
     ${getSnapRetouchScopeNote(state.selectedProduct) ? `<div class="detail-copy snap-scope-note">${escapeHtml(getSnapRetouchScopeNote(state.selectedProduct))}</div>` : ''}
     ${businessSummary}
+    ${getDolHintHtml(state.selectedProduct)}
     ${getPartnerHintHtml(state.selectedProduct)}
     ${compositionHtml}
     ${renderPrintInfoSection(state.selectedProduct)}
@@ -5780,15 +5867,28 @@ async function prefetchNextCalendarMonth() {
    서버 슬롯 계산이 느린 그룹(스튜디오 자동오픈 ~8초)에서 클릭 지연을 숨긴다. loadSlotsForDate 가
    캐시를 먼저 보므로, 프리페치된 날짜는 클릭 즉시 렌더된다. 이미 캐시/진행중이면 no-op(중복 방지).
    실패는 조용히 무시 — 실제 클릭 시 loadSlotsForDate 가 다시 시도한다. 렌더/토큰은 건드리지 않음. */
+const SLOT_CACHE_TTL_MS = 4 * 60 * 1000; // 세션 무기한 캐시가 오래 머문 고객에게 stale '가능' 슬롯을 보여주던 문제(2026-08-31 전수 리뷰)
+function getCachedSlots(slotKey) {
+  const hit = state.slotCache.get(slotKey);
+  if (!hit) return undefined;
+  if (Array.isArray(hit)) return hit; // 구형 엔트리 호환
+  if (Date.now() - (hit.savedAt || 0) > SLOT_CACHE_TTL_MS) { state.slotCache.delete(slotKey); return undefined; }
+  return hit.slots;
+}
+function setCachedSlots(slotKey, slots) {
+  state.slotCache.set(slotKey, { slots, savedAt: Date.now() });
+}
+
 function prefetchSlotsForDate(dateKey) {
   if (!state.selectedProduct || !dateKey) return null;
   const duration = getCalendarDuration();
   const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
-  if (state.slotCache.has(slotKey)) return Promise.resolve(state.slotCache.get(slotKey));
+  const cachedPrefetch = getCachedSlots(slotKey);
+  if (cachedPrefetch !== undefined) return Promise.resolve(cachedPrefetch);
   const existing = state.slotPrefetchInFlight.get(slotKey);
   if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
   const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g })
-    .then((slots) => { if (!state.slotCache.has(slotKey)) state.slotCache.set(slotKey, slots); return slots; })
+    .then((slots) => { setCachedSlots(slotKey, slots); return slots; })
     .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
   state.slotPrefetchInFlight.set(slotKey, promise);
   return promise;
@@ -5802,7 +5902,7 @@ async function loadSlotsForDate(dateKey) {
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
   els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
-  const cachedSlots = state.slotCache.get(slotKey);
+  const cachedSlots = getCachedSlots(slotKey);
   if (Array.isArray(cachedSlots)) {
     if (token !== state.slotRequestToken) return;
     els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: dateLabel });
@@ -5820,7 +5920,7 @@ async function loadSlotsForDate(dateKey) {
       slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
     }
     if (token !== state.slotRequestToken) return;
-    state.slotCache.set(slotKey, slots);
+    setCachedSlots(slotKey, slots);
   } catch (error) {
     if (token !== state.slotRequestToken) return;
     console.error(error);
@@ -5854,7 +5954,7 @@ function renderCalendar(data) {
   const unavail = new Set(unavailSource);
   const closed = new Set(closedSource);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const firstDay = new Date(state.calendarYear, state.calendarMonth, 1).getDay();
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   const cells = [];
@@ -5901,7 +6001,7 @@ function getNearestAvailableDate(data) {
   const unavail = new Set(Array.isArray(safeData.unavail) ? safeData.unavail : []);
   const closed = new Set(Array.isArray(safeData.closed) ? safeData.closed : []);
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const todayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date()); // 예약 기준 시간대 — 로컬 날짜로 재면 한국 방문자에게 베를린 당일이 잠긴다
   const daysInMonth = new Date(state.calendarYear, state.calendarMonth + 1, 0).getDate();
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = `${state.calendarYear}-${pad2(state.calendarMonth + 1)}-${pad2(day)}`;
@@ -5982,6 +6082,8 @@ function bindSlotButtons(entries) {
     button.addEventListener('click', () => {
       state.selectedSlot = button.dataset.time;
       state.selectedSlotMeta = entryMap.get(state.selectedSlot) || null;
+      state.slotPickedDuration = getCalendarDuration(); // 스텝2로 돌아가 소요시간이 바뀌면 이 슬롯은 무효
+      state.bookingRequestId = null; // 입력이 바뀌었으니 새 제출 시도로 취급
       els.slotGrid.querySelectorAll('.slot-btn[data-time]').forEach((item) => item.classList.toggle('selected', item.dataset.time === state.selectedSlot));
       els.slotHint.textContent = fillCopy(getCopy().slotLoadedForDate, { date: formatDateLabel(state.selectedDate) });
       updateSubmitState();
@@ -6252,7 +6354,8 @@ function scheduleContactLookup() {
 function getSelectedDuration() {
   const p = state.selectedProduct;
   if (!p) return 0;
-  return Number(p.totalDur || p.duration || p.dur || 0) || 0;
+  // 상품엔 totalDur/duration 필드가 없다(대기자 총소요가 항상 0으로 저장되던 원인) — 견적 총소요, 없으면 상품 d
+  return Number(state.quote?.totalDuration || 0) || Number(p.d || 0) || 0;
 }
 
 function renderReview() {
@@ -6301,7 +6404,7 @@ function renderReview() {
       getBabyTypeLabel(state.babyType) || (state.lang === 'en' ? 'Please choose 100 Days or 1st Birthday' : state.lang === 'de' ? 'Bitte 100 Tage oder 1. Geburtstag wählen' : '백일/돌 중 선택 필요')
     ]);
   }
-  const babyName = String(els.form.elements.babyName?.value || '').trim();
+  const babyName = needsBabyNameForBooking(state.selectedProduct) ? String(els.form.elements.babyName?.value || '').trim() : '';
   if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
     const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
@@ -6393,12 +6496,13 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !needsBabyNameForBooking(product) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const phoneDigitsOk = (String(formData.get('phone') || '').replace(/\D/g, '').length >= 6); // 숫자 없는 전화가 '+49'로 저장되던 문제
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
     || (businessInvoice.companyName
       && businessInvoice.companyAddress
       && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
-  els.submitBtn.disabled = !(name && phone && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
+  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -6440,8 +6544,12 @@ async function onSubmit(event) {
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const eventCategoryLabel = state.selectedProduct.g === 'biz' ? getSelectedEventCategoryLabel() : '';
   const businessDetailsText = state.selectedProduct.g === 'biz' ? String(els.businessInput?.value || '').trim() : '';
+  /* requestId는 같은 시도의 재제출(타임아웃 재클릭)에 재사용해야 서버 중복 가드가 작동한다 —
+     클릭마다 새로 만들면 가드가 영원히 안 걸려 이중 예약이 가능했다(2026-08-31 전수 리뷰).
+     입력이 바뀌면(슬롯 재선택 등) 새 시도로 보고 재발급한다. */
+  state.bookingRequestId = state.bookingRequestId || createRequestId('booking');
   const payload = {
-    requestId: createRequestId('booking'),
+    requestId: state.bookingRequestId,
     itemId: state.selectedProduct.id,
     date: state.selectedDate,
     time: state.selectedSlot,
@@ -6451,7 +6559,8 @@ async function onSubmit(event) {
     email: String(formData.get('email') || '').trim(),
     address: businessInvoice.needed ? businessInvoice.companyAddress : String(formData.get('address') || '').trim(),
     payerName: String(formData.get('payerName') || '').trim(),
-    babyName: String(formData.get('babyName') || '').trim(),
+    // 연령·분위기를 되돌린 뒤 잔존한 아기 이름이 성인 예약 메모에 실리지 않게 필수 조건으로 게이트
+    babyName: needsBabyNameForBooking(state.selectedProduct) ? String(formData.get('babyName') || '').trim() : '',
     profileAge: getProfileAgeValue(),
     studioFamilyMembers: getStudioFamilyValue(),
     memo: '',
@@ -6462,7 +6571,7 @@ async function onSubmit(event) {
       ? [...new Set(state.passportPersonCountries.flatMap((codes) => (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER')))]
       : [],
     passPersonCountries: state.selectedProduct.g === 'pass' ? state.passportPersonCountries.map((codes) => [...codes]) : [],
-    otherCountry: state.selectedProduct.g === 'pass' ? String(formData.get('otherCountry') || '').trim() : '',
+    otherCountry: state.selectedProduct.g === 'pass' && state.selectedCountries.includes('OTHER') ? String(formData.get('otherCountry') || '').trim() : '',
     surveyKeys: [...state.surveyKeys],
     eventCategory: state.selectedProduct.g === 'biz' ? state.eventCategory : '',
     businessDetails: state.selectedProduct.g === 'biz'
@@ -6579,10 +6688,23 @@ async function onSubmit(event) {
           : '재촬영 약관에 동의해 주세요.',
       'error'
     );
+    // 체크박스가 세 단계 앞(스텝2)에 있어 배너만으로는 못 찾는다 — 데려가서 보여준다
+    try {
+      const field = document.getElementById('reshootingField');
+      field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      field?.animate(
+        [{ boxShadow: '0 0 0 3px rgba(181,76,45,.55)' }, { boxShadow: '0 0 0 0 rgba(181,76,45,0)' }],
+        { duration: 1600, iterations: 2 }
+      );
+    } catch (e) {}
     return;
   }
   if (payload.babyName) {
     payload.memo = `[아기 이름: ${payload.babyName}] ${payload.memo}`.trim();
+  }
+  // 재촬영 동의는 클라이언트 게이트뿐이라 서버에 흔적이 없었다 — 분쟁 대비 메모에 굳힌다
+  if (needsReshootingConsent(state.selectedProduct) && els.reshootingConsent?.checked) {
+    payload.memo = `[재촬영약관동의] ${payload.memo}`.trim();
   }
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = getCopy().submitLoading;
@@ -6596,6 +6718,7 @@ async function onSubmit(event) {
     }
     renderSubmitResult(payload, result);
     setBanner(getCopy().submitDone, 'success');
+    state.bookingRequestId = null;
     els.form.reset();
     state.selectedSlot = '';
     state.selectedSlotMeta = null;
@@ -6605,7 +6728,17 @@ async function onSubmit(event) {
     updateSubmitState();
   } catch (error) {
     console.error(error);
-    setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+    if (/Duplicate submission/i.test(String(error?.message || ''))) {
+      // 직전 제출이 실제로는 접수됐는데 응답만 유실된 경우 — 오류가 아니라 안내로
+      setBanner(state.lang === 'en'
+        ? 'This request was already received — please check your email for the confirmation.'
+        : state.lang === 'de'
+          ? 'Diese Anfrage ist bereits eingegangen — bitte prüfen Sie Ihre E-Mail.'
+          : '이미 접수된 요청입니다 — 확인 메일함을 확인해 주세요. 메일이 없으면 잠시 후 다시 시도해 주세요.', 'success');
+      state.bookingRequestId = null;
+    } else {
+      setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+    }
   } finally {
     els.submitBtn.textContent = getCopy().submitLabel;
     updateSubmitState();
@@ -6678,6 +6811,75 @@ function resetBookingFlow() {
 }
 
 // 독일어 성공 가이드 — 그룹별 핵심 안내 (한/영 상세 가이드의 컴팩트 독일어판)
+/* 돌상·백일상 + 아기 한복 안내. ko/en/de 한 곳에서 만든다 — 예전엔 한국어만 상세하고
+   영어는 한 줄, 독일어는 아예 없었다(독일어 성공화면이 별도 함수라 이 블록이 안 붙었다).
+   무료 범위: 돌상은 프로필 프로페셔널(€130)부터, 스튜디오/스냅은 전 상품.
+   한복은 아기 촬영 전부 무료 대여지만 **스튜디오 내 착용만** — 외부 반출이 안 되므로
+   야외·홈 스냅은 고객이 직접 준비해야 한다. */
+function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
+  const g = String(product?.g || '');
+  if (!hasBabyBirthday || !(g === 'stud' || g === 'snap' || g === 'prof')) return '';
+  const dolFree = g !== 'prof' || product.id === 'pp';
+  const hanbokFree = g === 'stud' || g === 'prof';   // 스튜디오 촬영에서만 대여 가능
+  const L = lang === 'de' ? 'de' : lang === 'en' ? 'en' : 'ko';
+  const T = {
+    ko: {
+      title: dolFree ? '🎂 돌상/백일상 무료 셋팅 안내' : '🎂 돌상/백일상 셋팅 안내',
+      lead: (dolFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 프로페셔널 이상으로 예약해 주세요.') + ' 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.',
+      incT: '포함 항목',
+      inc: ['돌상 테이블 기본 구성 및 소품 연출', '배경과 톤에 맞춘 기본 배치']
+        .concat(hanbokFree ? ['<b>아기 한복 무료 대여</b> — 스튜디오 안에서 착용하며, 외부 반출은 어렵습니다'] : []),
+      brgT: '준비해 오시면 좋은 항목',
+      brg: (hanbokFree
+        ? ['의상 1~2벌, 신발, 머리띠/헤어 소품', '한복 안에 입을 <b>흰색 이너</b>']
+        : ['아기 한복 — 야외·홈 촬영은 대여가 어려워 직접 준비해 주세요', '의상 1~2벌, 신발, 머리띠/헤어 소품'])
+        .concat(['원하실 경우 떡, 케이크, 과일 같은 실제 음식', '돌잡이 소품이나 의미 있는 개인 소품']),
+      noteT: '사전 요청 및 유의사항',
+      note: ['원하시는 스타일이 있다면 참고 이미지 1~3장을 미리 보내주세요.', '특정 색감/테마가 있으면 예약 시 알려주시면 맞춰 준비합니다.', '특수 테마, 대형 장식, 풍선/꽃장식, 맞춤 제작 소품은 추가 비용이 발생할 수 있습니다.', '셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.']
+    },
+    en: {
+      title: dolFree ? '🎂 Dol / 100-Day Table — included' : '🎂 Dol / 100-Day Table Setup',
+      lead: (dolFree ? 'A dol / 100-day table setup is included at no extra cost.' : 'The free dol / 100-day table setup is included from <b>Profile Professional (€130)</b> upwards. It is not part of the package you selected — please book Professional or above if you would like it.') + ' The setup is styled for photography; catering or a full birthday banquet is not included.',
+      incT: 'Included',
+      inc: ['Table setup with basic props and styling', 'Arrangement matched to the backdrop and tone']
+        .concat(hanbokFree ? ['<b>Baby hanbok rental, free of charge</b> — worn at the studio; it cannot be taken off site'] : []),
+      brgT: 'Good to bring',
+      brg: (hanbokFree
+        ? ['1-2 outfits, shoes, headband or hair accessories', 'A <b>white inner layer</b> to wear under the hanbok']
+        : ['A baby hanbok — rentals cannot leave the studio, so please bring your own for outdoor and home sessions', '1-2 outfits, shoes, headband or hair accessories'])
+        .concat(['Real food such as rice cake, cake or fruit, if you would like it', 'Doljabi items or personal keepsakes']),
+      noteT: 'Requests and notes',
+      note: ['Send 1-3 reference images beforehand if you have a style in mind.', 'Tell us about a specific colour or theme when you book and we will prepare accordingly.', 'Special themes, large decorations, balloon or floral styling and custom-made props may cost extra.', 'Please arrive about 10 minutes early so we can finish the setup.']
+    },
+    de: {
+      title: dolFree ? '🎂 Dol- / 100-Tage-Tisch — inklusive' : '🎂 Dol- / 100-Tage-Tisch',
+      lead: (dolFree ? 'Die Dekoration für den Dol- bzw. 100-Tage-Tisch ist ohne Aufpreis enthalten.' : 'Der kostenlose Dol- / 100-Tage-Tisch ist ab <b>Profil Professional (€130)</b> enthalten. In Ihrem gewählten Paket ist er nicht dabei — bitte buchen Sie Professional oder höher, wenn Sie ihn möchten.') + ' Die Dekoration dient der Aufnahme; Catering oder ein vollständiges Festessen sind nicht enthalten.',
+      incT: 'Enthalten',
+      inc: ['Tischdekoration mit Grundausstattung und Requisiten', 'Abstimmung auf Hintergrund und Bildton']
+        .concat(hanbokFree ? ['<b>Kostenloser Hanbok-Verleih für das Kind</b> — Tragen im Studio; eine Mitnahme nach außen ist nicht möglich'] : []),
+      brgT: 'Bitte mitbringen',
+      brg: (hanbokFree
+        ? ['1-2 Outfits, Schuhe, Haarband oder Haarschmuck', 'Ein <b>weißes Innenteil</b> für unter den Hanbok']
+        : ['Einen Hanbok für das Kind — Leihstücke dürfen das Studio nicht verlassen, bringen Sie für Outdoor- und Home-Shootings bitte einen eigenen mit', '1-2 Outfits, Schuhe, Haarband oder Haarschmuck'])
+        .concat(['Auf Wunsch echte Speisen wie Reiskuchen, Kuchen oder Obst', 'Doljabi-Gegenstände oder persönliche Erinnerungsstücke']),
+      noteT: 'Wünsche und Hinweise',
+      note: ['Senden Sie uns vorab 1-3 Referenzbilder, wenn Sie eine bestimmte Vorstellung haben.', 'Nennen Sie uns bei der Buchung Ihre Wunschfarben oder Ihr Thema — wir bereiten es entsprechend vor.', 'Besondere Themen, große Dekorationen, Ballon- oder Blumenschmuck und Sonderanfertigungen können Mehrkosten verursachen.', 'Bitte kommen Sie rund 10 Minuten früher, damit wir den Aufbau fertigstellen können.']
+    }
+  }[L];
+  const ul = (items) => `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+  return `
+    <section class="result-guide-box">
+      <h4 class="result-guide-title">${T.title}</h4>
+      <div class="result-guide-body">
+        <p>${T.lead}</p>
+        <h5>${T.incT}</h5>${ul(T.inc)}
+        <h5>${T.brgT}</h5>${ul(T.brg)}
+        <h5>${T.noteT}</h5>${ul(T.note)}
+      </div>
+    </section>
+  `;
+}
+
 function buildGermanSuccessGuideHtml(product) {
   const g = String(product?.g || '');
   const bullets = [];
@@ -6718,6 +6920,14 @@ const PARTNER_CTA_COPY = {
   phone: { ko: '전화로 문의', en: 'Call', de: 'Anrufen' },
   web: { ko: '바로 상담하기', en: 'Get in touch', de: 'Kontakt aufnehmen' }
 };
+/* 아기 촬영에서만 붙는 한 줄. 무료 돌상·한복을 방금 안내해 놓고 바로 아래에 대여 업체를
+   보여주면, 무료로 받을 수 있는 걸 돈 주고 빌리는 고객이 생긴다. 무료 범위는 위 안내가
+   상품별로 이미 정확하므로 여기서 다시 쓰지 않고 그쪽을 가리킨다. */
+const PARTNER_BABY_NOTE = {
+  ko: '기본 돌상·백일상과 아기 한복은 위 안내대로 준비해 드립니다. 더 특별한 상차림이나 한복을 원하시는 분만 아래를 참고해 주세요.',
+  en: 'The basic table setup and baby hanbok are covered as described above. The partners below are only for those who would like something more elaborate.',
+  de: 'Die Grunddekoration und der Hanbok für das Kind sind wie oben beschrieben abgedeckt. Die folgenden Partner sind nur für alle gedacht, die sich etwas Aufwendigeres wünschen.'
+};
 const PARTNER_BLOCK_COPY = {
   title: { ko: '함께 준비하시면 좋은 곳', en: 'Recommended partners', de: 'Empfohlene Partner' },
   note: {
@@ -6755,6 +6965,19 @@ function getPartnersForSuccess(payload) {
 /* 상품 상세의 한 줄 안내 — "드레스·메이크업이 포함인가요?" 문의를 줄이는 목적.
    여기는 아직 **결정 단계**라 링크를 걸지 않는다(예약을 방해하지 않는다). 실제 소개는
    예약을 마친 뒤 성공 화면과 메일에서 한다. */
+/* 프로필 Basic/Business 상세의 한 줄 — 돌상/백일상 셋팅은 프로페셔널부터라는 것을 **고르는 단계**에서 알린다.
+   성공 화면·메일과 같은 규칙(사장님 확인 2026-09-05). 상품설정 시트 문구는 안 건드린다. */
+function getDolHintHtml(product) {
+  if (!product || String(product.g || '') !== 'prof' || product.id === 'pp') return '';
+  const copy = {
+    ko: '돌상/백일상 셋팅은 프로필 프로페셔널(€130)부터 무료로 제공됩니다. 이 상품에는 포함되지 않습니다.',
+    en: 'The dol / 100-day table is included free from Profile Professional (€130) and up. It is not included in this product.',
+    de: 'Der Dol-/100-Tage-Tisch ist ab Profil Professional (€130) kostenlos enthalten. In diesem Produkt ist er nicht enthalten.'
+  };
+  const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  return `<div class="detail-copy partner-hint">${escapeHtml(copy[lang])}</div>`;
+}
+
 function getPartnerHintHtml(product) {
   if (!product) return '';
   const g = String(product.g || '').toLowerCase();
@@ -6772,6 +6995,13 @@ function buildPartnerSectionHtml(payload) {
   const list = getPartnersForSuccess(payload);
   if (!list.length) return '';
   const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+  const p = state.selectedProduct;
+  const babyText = [p?.nameKo, p?.nameEn, p?.nameDe, p?.id].filter(Boolean).join(' ');
+  const isBabyCtx = !!(payload.surveyKeys?.includes('baby') || payload.babyType === 'baekil' || payload.babyType === 'dol'
+    || /돌\s*촬영|돌상|돌잔치|백일|1st\s*Birthday|1\.\s*Geburtstag|100.?day/i.test(babyText));
+  /* 무료 제공이 있는 스튜디오 계열에서만 붙인다 — 돌잔치 출장(biz)은 고객이 직접 준비한다. */
+  const babyNote = (isBabyCtx && ['stud', 'snap', 'prof'].includes(String(p?.g || '')))
+    ? `<p class="partner-note" style="margin:0 0 10px;">${escapeHtml(PARTNER_BABY_NOTE[lang])}</p>` : '';
   const rows = list.map((p) => {
     const desc = (lang === 'en' ? p.descEn : lang === 'de' ? p.descDe : p.descKo) || p.descKo || '';
     const meta = [p.langs ? (lang === 'ko' ? `상담 ${p.langs}` : p.langs) : '', p.area].filter(Boolean).join(' · ');
@@ -6795,6 +7025,7 @@ function buildPartnerSectionHtml(payload) {
     <section class="result-guide-box">
       <h4 class="result-guide-title">${PARTNER_BLOCK_COPY.title[lang]}</h4>
       <div class="result-guide-body">
+        ${babyNote}
         ${rows}
         <p class="partner-note">${PARTNER_BLOCK_COPY.note[lang]}</p>
       </div>
@@ -6817,7 +7048,10 @@ document.addEventListener('click', (event) => {
 });
 
 function getSuccessGuideHtml(payload) {
-  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct) + buildPartnerSectionHtml(payload);
+  const deBaby = payload.surveyKeys?.includes('baby') || payload.babyType === 'baekil' || payload.babyType === 'dol';
+  if (state.lang === 'de') return buildGermanSuccessGuideHtml(state.selectedProduct)
+    + buildDolTableGuideHtml(state.selectedProduct, 'de', deBaby)
+    + buildPartnerSectionHtml(payload);
   const product = state.selectedProduct;
   if (!product) return '';
   const isKo = state.lang === 'ko';
@@ -6975,40 +7209,8 @@ function getSuccessGuideHtml(payload) {
     `);
   }
 
-  // 무료 돌상은 프로필 프로페셔널(€130)부터 — 스튜디오/스냅은 전 상품 해당, 프로필은 pp만
-  const dolTableFree = product.g !== 'prof' || product.id === 'pp';
-  if (hasBabyBirthday && (product.g === 'stud' || product.g === 'snap' || product.g === 'prof')) {
-    sections.push(`
-      <section class="result-guide-box">
-        <h4 class="result-guide-title">${isKo ? (dolTableFree ? '🎂 돌상/백일상 무료 셋팅 안내' : '🎂 돌상/백일상 셋팅 안내') : 'Dol / 100-Day Table Setup'}</h4>
-        <div class="result-guide-body">
-          ${isKo ? `
-            <p>${dolTableFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 프로페셔널 이상으로 예약해 주세요.'} 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.</p>
-            <h5>포함 항목</h5>
-            <ul>
-              <li>돌상 테이블 기본 구성 및 소품 연출</li>
-              <li>배경과 톤에 맞춘 기본 배치</li>
-            </ul>
-            <h5>준비해 오시면 좋은 항목</h5>
-            <ul>
-              <li>아기 한복/의상, 신발, 머리띠/헤어 소품</li>
-              <li>원하실 경우 떡, 케이크, 과일 같은 실제 음식</li>
-              <li>돌잡이 소품이나 의미 있는 개인 소품</li>
-            </ul>
-            <h5>사전 요청 및 유의사항</h5>
-            <ul>
-              <li>원하시는 스타일이 있다면 참고 이미지 1~3장을 미리 보내주세요.</li>
-              <li>특정 색감/테마가 있으면 예약 시 알려주시면 맞춰 준비합니다.</li>
-              <li>특수 테마, 대형 장식, 풍선/꽃장식, 맞춤 제작 소품은 추가 비용이 발생할 수 있습니다.</li>
-              <li>셋팅을 위해 촬영 당일 10분 일찍 도착해 주시면 좋습니다.</li>
-            </ul>
-          ` : `
-            <p>${dolTableFree ? 'A simple dol / 100-day table setup is included for free.' : 'The free dol / 100-day table setup is included from <b>Profile Professional (€130)</b> and up — it is not part of your current package, so please book Professional or higher if you would like it.'} Please share reference images in advance if you have a specific theme in mind.</p>
-          `}
-        </div>
-      </section>
-    `);
-  }
+  const dolGuide = buildDolTableGuideHtml(product, isKo ? 'ko' : 'en', hasBabyBirthday);
+  if (dolGuide) sections.push(dolGuide);
 
   if (PRINT_INFO_GROUPS.has(product.g)) {
     sections.push(`

@@ -8,6 +8,12 @@
   SITE_MODE = "production"
 
 [[redirects]]
+  from = "/prep"
+  to = "/prep/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/promo"
   to = "/promo/index.html"
   status = 200
@@ -25,15 +31,55 @@
   status = 200
   force = true
 
+# 상담 설문 페이지는 홈페이지 문의 폼으로 통합됐다 (2026-08-26).
+# 실제 문의는 전부 studio-mean.com/contact 로 들어왔고, 이 URL 은 예약 페이지에서만 도달돼
+# 사실상 유입이 없었다. 상담이 필요한 유형(웨딩·기업·영상)은 /contact 에서 추가 문항이 펼쳐진다.
+# 옛 링크(메일·북마크)를 살리기 위해 301 로 넘긴다.
 [[redirects]]
   from = "/consultation"
+  to = "https://studio-mean.com/contact/"
+  status = 301
+  force = true
+
+# 와일드카드로 잡으면 이 페이지의 css/js(/consultation/consultation.min.*)까지 301 로 날아가
+# /consultation-legacy 가 스타일·스크립트 없는 껍데기로 뜬다(2026-08-26 확인). 문서 경로만 넘긴다.
+[[redirects]]
+  from = "/consultation/"
+  to = "https://studio-mean.com/contact/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/consultation/index.html"
+  to = "https://studio-mean.com/contact/"
+  status = 301
+  force = true
+
+# 슬래시 없이 두면 페이지의 상대경로 에셋이 루트(/consultation.min.css)로 풀려 404 난다.
+# 디렉터리 형태로 고정하고 하위 경로를 /consultation/ 로 넘겨 에셋까지 맞춘다.
+# 슬래시 유무는 Netlify 가 알아서 맞춘다. 여기에 정규화 301 을 따로 두면
+# 그 규칙이 /consultation-legacy/ 자신도 잡아 무한 리다이렉트가 된다(라이브에서 확인).
+[[redirects]]
+  from = "/consultation-legacy/"
   to = "/consultation/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/consultation-legacy/*"
+  to = "/consultation/:splat"
   status = 200
   force = true
 
 [[redirects]]
   from = "/status"
   to = "/status/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/dress"
+  to = "/dress/index.html"
   status = 200
   force = true
 
@@ -169,6 +215,18 @@
   for = "/consultation/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/dress/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+# 사진 캐시 — .jpg 는 전역 규칙이 없어 안 넣으면 28장이 매번 재요청된다
+[[headers]]
+  for = "/dress/photos/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
 
 [[headers]]
   for = "/*.png"

@@ -554,8 +554,10 @@ async function runScenarios(M, rec) {
 const STRUCTURAL = [
   ['slotAvailable_ 가 읽기실패 시 false (제출 최후 방어선)',
     /if\(CAL_READ_FAILED_\) return false;\n\s*return!checkConflict_\(dayEvents/],
+  // 메시지가 3개국어 객체(`throw new Error({ko:…,en:…,de:…}[_slotErrLang])`)로 바뀌었다 —
+  // 가드 존재와 한국어 문구는 그대로 못박고, i18n 래퍼만 통과시킨다
   ['processForm 이 읽기실패를 일시 오류로 구분 안내',
-    /if\(CAL_READ_FAILED_\) throw new Error\('예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
+    /if\(CAL_READ_FAILED_\) throw new Error\([\s\S]{0,40}?'예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
   ['getPublicSlots_ 읽기실패 시 빈 슬롯 + 캐시 미적재',
     /if\(CAL_READ_FAILED_\)\{\n(.*\n)*?\s*return \[\];\n\s*\}\n\s*const slotStrings/],
   ['getUnavailableDays 읽기실패 시 전일 마감 + 캐시 미적재',

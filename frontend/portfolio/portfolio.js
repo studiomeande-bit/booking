@@ -652,3 +652,32 @@ function resolveCategoryLabel(category, item = {}) {
 wireFilters();
 wireLightbox();
 loadPortfolio();
+primeBookingApi();
+
+/* 예약 페이지로 갈 낌새가 보이면 Apps Script 를 미리 깨운다.
+   실측(2026-08-27): booking API 는 콜드 34.6초 / 웜 6초다. 2MB 스크립트라 요청당 4초는 고정 비용이고,
+   콜드만은 미리 두드려 없앨 수 있다. 홈페이지에서 예약 링크에 손이 가는 순간 예열해 두면
+   실제로 도착했을 땐 이미 웜이다.
+
+   ⚠️ 페이지 로드마다 보내지 않는다 — Apps Script 는 동시 실행 한도가 있어(30) 구경만 하는 방문자까지
+   호출하면 진짜 예약자를 밀어낼 수 있다. '갈 것 같은 사람'에게만, 페이지당 한 번만 보낸다.
+   실패는 조용히 무시한다: 예열 때문에 링크 이동이 막히면 본말전도다. */
+function primeBookingApi() {
+  const links = document.querySelectorAll('a[href*="booking.studio-mean.com"]');
+  if (!links.length || typeof fetch !== 'function') return;
+  const API = 'https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
+  let sent = false;
+  const prime = () => {
+    if (sent) return;
+    sent = true;
+    try {
+      fetch(`${API}?api=warmup&_ts=${Date.now()}`, { mode: 'no-cors', cache: 'no-store', keepalive: true })
+        .catch(() => {});
+    } catch { /* ignore */ }
+  };
+  links.forEach((a) => {
+    a.addEventListener('mouseenter', prime, { once: true, passive: true });
+    a.addEventListener('touchstart', prime, { once: true, passive: true });
+    a.addEventListener('focus', prime, { once: true, passive: true });
+  });
+}

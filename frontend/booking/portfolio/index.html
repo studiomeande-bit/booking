@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>포트폴리오 협업 촬영 — Studio mean</title>
+  <meta name="description" content="Studio mean 포트폴리오 협업 촬영(TFP) 신청. 상호 무페이, 60분 촬영, 결과물은 양측 포트폴리오에 사용합니다." />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="./portfolio.min.css?v=8a963d62ed" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="https://studio-mean.com">Studio mean</a>
+    <div class="lang-switch" id="langSwitch" role="group" aria-label="Language">
+      <button type="button" data-lang="ko">한국어</button>
+      <button type="button" data-lang="en">EN</button>
+      <button type="button" data-lang="de">DE</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <p class="eyebrow" data-copy="eyebrow"></p>
+      <h1 data-copy="heroTitle"></h1>
+      <p class="hero-sub" data-copy="heroSub"></p>
+    </section>
+
+    <section class="card terms-card">
+      <h2 data-copy="termsTitle"></h2>
+      <ul class="terms" id="termsList"></ul>
+      <p class="note" data-copy="termsNote"></p>
+    </section>
+
+    <section class="card">
+      <h2 data-copy="whenTitle"></h2>
+      <p class="note" data-copy="whenNote"></p>
+
+      <div class="cal-head">
+        <button type="button" id="prevMonth" class="nav-btn" aria-label="prev">‹</button>
+        <span id="monthLabel" class="month-label"></span>
+        <button type="button" id="nextMonth" class="nav-btn" aria-label="next">›</button>
+      </div>
+      <div class="weekday-row" id="weekdayRow"></div>
+      <div class="cal-grid" id="calGrid" aria-live="polite"></div>
+      <p class="cal-status" id="calStatus"></p>
+
+      <div id="slotBox" class="slot-box hidden">
+        <h3 data-copy="slotTitle"></h3>
+        <div class="slot-grid" id="slotGrid"></div>
+        <p class="cal-status" id="slotStatus"></p>
+      </div>
+    </section>
+
+    <section class="card" id="formCard">
+      <h2 data-copy="formTitle"></h2>
+      <p class="picked" id="pickedLine"></p>
+
+      <form id="bookingForm" novalidate>
+        <label class="field">
+          <span data-copy="nameLabel"></span>
+          <input name="name" type="text" autocomplete="name" required />
+        </label>
+        <label class="field">
+          <span data-copy="emailLabel"></span>
+          <input name="email" type="email" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span data-copy="phoneLabel"></span>
+          <input name="phone" type="tel" autocomplete="tel" required />
+        </label>
+        <label class="field">
+          <span data-copy="linkLabel"></span>
+          <input name="link" type="text" placeholder="@instagram" />
+        </label>
+        <label class="field">
+          <span data-copy="memoLabel"></span>
+          <textarea name="memo" rows="3"></textarea>
+        </label>
+
+        <div class="consents">
+          <label class="check">
+            <input type="checkbox" name="usageConsent" required />
+            <span data-copy="usageConsent"></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="gdprConsent" required />
+            <span data-copy="gdprConsent"></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="aiConsent" />
+            <span data-copy="aiConsent"></span>
+          </label>
+        </div>
+
+        <p class="warn hidden" id="formWarn"></p>
+        <button type="submit" class="submit-btn" id="submitBtn" data-copy="submitLabel"></button>
+        <p class="note small" data-copy="submitNote"></p>
+      </form>
+    </section>
+
+    <section class="card success hidden" id="successCard">
+      <h2 data-copy="successTitle"></h2>
+      <p id="successBody"></p>
+      <p class="note" data-copy="successNote"></p>
+    </section>
+
+    <footer class="foot">
+      <p>Studio mean · Holzweg-Passage 3, 61440 Oberursel</p>
+      <p><a href="https://booking.studio-mean.com/impressum/">Impressum</a> · <a href="https://booking.studio-mean.com/datenschutz/">Datenschutz</a></p>
+    </footer>
+  </main>
+
+  <script type="module" src="./portfolio.min.js?v=88f2e4fd4a"></script>
+</body>
+</html>

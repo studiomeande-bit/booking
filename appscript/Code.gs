@@ -63,6 +63,21 @@ const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;
 const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const PRINT_COL=CONFIG.PRINT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const BOOKING_STATUS_POSTPONED = '촬영연기';
+
+/* ===== 계좌 정보 단일 출처 (2026-08-26) =====
+   이전엔 확정메일·캘린더 라벨·인보이스·견적서·계약서 2종에 계좌가 각각 하드코딩돼 있었고,
+   그 사이 **예약금 리마인더 한 곳만 계좌가 통째로 빠져** 있었다 — 고객이 입금할 방법 없이
+   3일 뒤 자동취소가 나갔다(김혜수 2026-08-16 → 08-19). 계좌가 바뀌면 이제 여기만 고치면 된다.
+   ⚠️ 은행 CSV 분류 로직(classifyBankCashMovement_ · upsertBankOutExpense_ · 월마감 체크 등)에도
+   'Deutsche Bank' 문자열이 있지만 그건 **거래내역을 매칭하는 값**이지 우리 계좌 표기가 아니다.
+   절대 여기로 묶지 말 것 — 바꾸면 은행 임포트가 조용히 깨진다. */
+const STUDIO_BANK = {
+  holder: 'Taewoong Min',
+  bank: 'Deutsche Bank',
+  iban: 'DE11 5007 0010 0659 1176 00',   // 고객 안내용(공백 구분)
+  ibanCompact: 'DE11500700100659117600', // 인보이스·견적서 등 서류용
+  bic: 'DEUTDEFFXXX'
+};
 const BOOKING_STATUS_CANCELLED = '취소됨';
 const BOOKING_REVENUE_STATUSES = ['확정됨','촬영완료','셀렉완료','작업완료'];
 const DEPOSIT_ONSITE_EXCEPTION_MARKER = '현장결제예외';
@@ -203,7 +218,7 @@ function vatExemptNoteText_(lang,docKind,country){
   };
   return map[String(lang||'de').slice(0,2)]||map.de;
 }
-const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시'];
+const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구매자명','구매자이메일','받는분명','메시지','발행금액(€)','발행일','유효기한','상태','구매자등록여부','사용여부','사용일시','사용금액(€)','연결예약행','적용전예약총액(€)','적용후총액(€)','최종잔금(€)','굿샤인적용방식','재고생성일','판매등록일','발행방식','QR값','PDF파일ID','PDF링크','메일제목','메일본문','메일발송일시','언어','결제수단','판매채널','세무분류','과세시점','세무메모','관리메모','발행시점세율','세무판단근거','실제사용상품ID','실제사용상품명','실제사용일시','hold토큰','hold시작일시','hold만료일시','hold드래프트ID','hold채널','hold해제일시','예약중차감금액(€)','최종사용확정일시','옵션키','인원','결제참조','정산행'];
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
 const GUTSCHEIN_HOLD_TTL_MIN=15;
@@ -917,6 +932,16 @@ function handlePublicApiRequest_(route,method,e){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/init');
       return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
     }
+    /* 웹앱 컨테이너 예열 — 응답 내용에 의미는 없고, 웹앱 경로를 실제로 한 번 통과시키는 것이 목적이다.
+       실측(2026-08-27): 콜드 34.6초 / 웜 6초. 아침 첫 고객이 34초를 기다리다 떠나는 걸 막는다.
+       내부 트리거와 홈페이지가 호출한다. 토큰이 필요 없다 — 하는 일이 없고 데이터를 내지 않는다. */
+    if(route==='warmup'){
+      const wT0=Date.now();
+      const primed=[];
+      try{ getInitDataCustomer(); primed.push('init'); }catch(err){ Logger.log('warmup init skipped: '+err.message); }
+      return jsonOk_({warm:true,primedMs:Date.now()-wT0,primed:primed,
+        at:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss')});
+    }
     if(route==='calendar-batch'){
       if(method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/calendar-batch');
       const p=(e&&e.parameter)||{};
@@ -1098,7 +1123,9 @@ function handlePublicApiRequest_(route,method,e){
       if(!gate.ok) return jsonError_(gate.code,gate.message);
       const sid=String(payload.sessionId||payload.id||'').trim();
       const res=route==='select-handover-done'
-        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false})
+        ? markSelectHandoverBySession_(sid,{method:payload.method,memo:payload.memo,
+            // 마감 억제 스위치는 core 가 판정한다 — 여기서 ===true 로 좁히면 별칭 finalize:false 가 유실된다
+            skipFinalize:payload.skipFinalize,finalize:payload.finalize,notify:payload.notify!==false})
         : undoSelectHandoverBySession_(sid);
       if(!res||!res.ok) return jsonError_('HANDOVER_FAILED',(res&&res.message)||'기록 실패');
       return jsonOk_(res);
@@ -1572,6 +1599,11 @@ function handlePublicApiRequest_(route,method,e){
           // 출장 km 기록부 (조회 전용) — 주차·이동 지출에서 왕복 km·공제액 산출
           return jsonOk_(buildTravelKmLogForAgent_(payload.startDate,payload.endDate));
         }
+        if(action==='travel-fee-quote'){
+          /* 출장비 존 판정 (조회 전용) — 주소/예약행 → 실측 편도km → 존 → 금액.
+             자동 과금 아님: 반영은 사장님이 booking-set-amount 등으로 수동 처리한다. */
+          return jsonOk_(buildTravelFeeQuoteForAgent_(payload||{}));
+        }
         if(action==='expense-list'){
           // 지출장부 조회 — rowIndex 포함(삭제·정정 대상 특정용)
           const eSh=ensureSheets_().expenseSheet;
@@ -1609,12 +1641,49 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='consult-appointment-cancel') return jsonOk_(cancelConsultationAppointmentAdmin(token,payload.rowIndex,payload));
         if(action==='consult-note') return jsonOk_(addConsultationMeetingNoteAdmin(token,payload.rowIndex,String(payload.note||''),String(payload.nextAction||'')));
         if(action==='portfolio-lead-list') return jsonOk_(listPortfolioLeadsAdmin(token,payload.limit||60));
+        /* 촬영 준비 설문 현황 — 다가오는 촬영 중 대상 상품의 작성/미작성. daysAhead 기본 21일 */
+        if(action==='prep-status'){
+          assertAdmin_(token);
+          return jsonOk_(listPrepSurveyStatusAdmin(token,payload.daysAhead||21));
+        }
+        /* 문의·상담 통합 목록 — 리드 시트 + 상담 시트를 한 목록으로. 기본은 미처리만,
+           includeClosed:true 로 전체. 오래 방치된 순으로 정렬돼 답장 누락을 바로 잡아낸다. */
+        if(action==='dashboard-token'){
+          assertAdmin_(token);
+          return jsonOk_({ok:true,token:getOrCreateDashboardToken_()});
+        }
+        if(action==='dashboard-token-rotate'){
+          // 토큰이 새면 이걸로 폐기·재발급. 기존 대시보드는 새 토큰을 다시 붙여넣어야 열린다.
+          assertAdmin_(token);
+          PropertiesService.getScriptProperties().deleteProperty(DASHBOARD_TOKEN_PROP);
+          return jsonOk_({ok:true,rotated:true,token:getOrCreateDashboardToken_()});
+        }
+        if(action==='booking-shoot-mark'){
+          // 촬영 시작/종료 기록. kind: start|end|clear
+          return jsonOk_(setBookingShootMarkAdmin(token,payload||{}));
+        }
+        if(action==='booking-delay-set'){
+          // 당일 지연 기록 — 예약일시·캘린더·고객 메일은 건드리지 않는다
+          return jsonOk_(setBookingDelayAdmin(token,payload||{}));
+        }
+        if(action==='today-board'){
+          assertAdmin_(token);
+          return jsonOk_(payload.fresh?buildTodayBoard_(payload.date):buildTodayBoardCached_(payload.date));
+        }
+        if(action==='day-close'){
+          assertAdmin_(token);
+          return jsonOk_(buildDayClose_(payload.date));
+        }
+        if(action==='inquiry-list'){
+          assertAdmin_(token);
+          return jsonOk_(buildUnifiedInquiries_({includeClosed:!!payload.includeClosed}));
+        }
         if(action==='portfolio-lead-update') return jsonOk_(updatePortfolioLeadStatusAdmin(token,payload.rowIndex,String(payload.status||''),String(payload.note||'')));
         /* ── Phase 3: Gutschein 도메인 (deleteGutscheinAdmin 은 의도적으로 미노출 — 취소로 충분) ── */
         if(action==='gutschein-get') return jsonOk_(getGutscheinAdmin(token,String(payload.code||'')));
         if(action==='gutschein-create') return jsonOk_(createGutscheinAdmin(token,payload.data||payload));
         if(action==='gutschein-update') return jsonOk_(updateGutscheinAdmin(token,String(payload.code||''),payload.data||payload));
-        if(action==='gutschein-cancel') return jsonOk_(cancelGutscheinAdmin(token,String(payload.code||''),String(payload.reason||'')));
+        if(action==='gutschein-cancel') return jsonOk_(cancelGutscheinAdmin(token,String(payload.code||''),String(payload.reason||''),payload.force===true||String(payload.force||'')==='true'));
         if(action==='gutschein-apply-preview'){
           // 적용 전 미리보기 — 차감액·적용후 총액·잔금을 시트 변경 없이 계산
           return jsonOk_(previewGutscheinApplyAdmin(token,payload.bookingRowIndex,String(payload.code||'')));
@@ -1636,6 +1705,40 @@ function handlePublicApiRequest_(route,method,e){
             String(payload.source||'sumup'),agentBoolFlag_(payload.includeMatched,false)));
         }
         if(action==='settlement-apply-match') return jsonOk_(applySettlementBookingMatchAdmin(token,payload));
+        if(action==='settlement-mark-bundle') return jsonOk_(markSettlementBundleAdmin(token,payload)); // ✏️ 거래 1건 → 예약행 N개 합산(팁 행 포함) 표시. 예약장부 불변 — 함수 주석 참조
+        if(action==='settlement-gutschein-match') return jsonOk_(applySettlementGutscheinMatchAdmin(token,payload));
+        if(action==='settlement-mark-nonbooking'){
+          /* ✏️ **예약이 아닌 입금**을 review 큐에서 내린다 — 굿샤인 판매대금처럼 예약장부에
+             대응 행이 없는 거래는 `settlement-apply-match` 로는 영영 처리할 수 없고,
+             금액이 우연히 맞는 예약에 승인해 버리면 **없는 매출이 생긴다**(실제 함정:
+             2026-08-13 €185 는 굿샤인 T9Z7-5RKQ-RMG6 판매인데 후보가 전부 예약이었다).
+             예약장부는 전혀 건드리지 않고 결제대조의 매칭 표시와 회계분류만 기록한다.
+             ⚠ 이 액션은 **회계 반영이 아니다** — 굿샤인 판매의 EÜR 계상 여부는 별도 과제. */
+          const rIdx=parseInt(payload.settlementRowIndex,10)||0;
+          if(rIdx<2) return jsonError_('BAD_REQUEST','settlementRowIndex 가 필요합니다.');
+          const category=String(payload.category||'').trim();
+          if(!category) return jsonError_('BAD_REQUEST','category 가 필요합니다(예: "굿샤인 판매", "이자", "환불 반제").');
+          const sh=ensureSheets_();
+          const ref=getSettlementTransactionByRow_(sh.settlementSheet,rIdx);
+          const tx=ref.tx;
+          const expectAmount=payload.expectAmount===undefined?null:Number(payload.expectAmount);
+          if(expectAmount!==null&&Math.abs(Number(tx.gross||0)-expectAmount)>0.011){
+            return jsonError_('AMOUNT_MISMATCH','행 '+rIdx+' 금액이 '+tx.gross+'€ 입니다(기대: '+expectAmount+'€).');
+          }
+          const note=String(payload.note||'').trim();
+          if(payload.dryRun===true||String(payload.confirm||'')!=='MARK'){
+            return jsonOk_({dryRun:true,settlementRowIndex:ref.rowIndex,date:String(tx.date||'').slice(0,10),
+              gross:Number(tx.gross||0),counterparty:String(tx.counterparty||''),category:category,
+              note:'표시하지 않았습니다. confirm:"MARK" 로 실행하세요. 예약장부는 건드리지 않습니다.'});
+          }
+          const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          updateSettlementMatchRow_(sh.settlementSheet,ref.rowIndex,{
+            status:'matched',target:'예약 아님 · '+category,rowIndex:'',accountingClass:category,
+            memo:['예약 아님',category,Number(tx.gross||0)+'€',note,'수동 확인 '+stamp].filter(Boolean).join(' · ')
+          });
+          return jsonOk_({ok:true,settlementRowIndex:ref.rowIndex,gross:Number(tx.gross||0),category:category,
+            note:'결제대조 표시만 바꿨습니다. 회계 반영은 별도입니다.'});
+        }
         if(action==='settlement-mark-split'){
           /* ✏️ 분할이체 정리 — 한 예약의 금액을 **여러 번에 나눠 보낸** 입금들을 묶어
              review 큐에서 내린다(황영목 잔금 298 = 288 + 10, 2026-04-02 실측).
@@ -1648,7 +1751,10 @@ function handlePublicApiRequest_(route,method,e){
              금액과 일치해야 한다. 안 맞으면 아무것도 하지 않는다. */
           const idxList=(Array.isArray(payload.settlementRowIndexes)?payload.settlementRowIndexes:[])
             .map(function(v){return parseInt(v,10);}).filter(function(v){return v>1;});
-          if(idxList.length<2) return jsonError_('BAD_REQUEST','settlementRowIndexes 에 2개 이상의 결제대조 행이 필요합니다(분할이체 전용).');
+          /* 1건도 허용한다: 이미 장부에 반영됐는데 매칭 플래그만 빈 건(예: Annielyn 행242 —
+             잔금결제금액 170 으로 반영 완료라 apply-match 의 후보 계산에서 빠진다)도
+             **같은 금액 검증**으로 안전하게 표시만 정리할 수 있다. 분할이체는 2건 이상. */
+          if(idxList.length<1) return jsonError_('BAD_REQUEST','settlementRowIndexes 에 결제대조 행이 최소 1개 필요합니다.');
           const bri=parseInt(payload.bookingRowIndex,10)||0;
           if(bri<2) return jsonError_('BAD_REQUEST','bookingRowIndex 가 필요합니다.');
           const kind=String(payload.kind||'balance').trim().toLowerCase();
@@ -1661,10 +1767,7 @@ function handlePublicApiRequest_(route,method,e){
           if(expectName&&expectName!==bookingName){
             return jsonError_('NAME_MISMATCH','행 '+bri+' 고객명이 "'+bookingName+'" 입니다(기대: "'+expectName+'").');
           }
-          /* 목표 금액 — 계약금·잔금 셀은 '298|DB|날짜' 복합 표기라 첫 세그먼트만 쓴다 */
-          const seg=function(col){return parseMoneyValue_(String(bRow[BOOKING_COL[col]]||'').split('|')[0]);};
-          const targetAmount=kind==='full'?parseMoneyValue_(bRow[BOOKING_COL['총결제액']])
-            :(kind==='deposit'?seg('계약금'):seg('잔금'));
+          const targetAmount=bookingKindAmount_(bRow,kind);
           if(!(targetAmount>0)) return jsonError_('BAD_REQUEST','예약행의 '+kind+' 금액을 읽지 못했습니다.');
           const txs=[];
           let sum=0;
@@ -1677,7 +1780,8 @@ function handlePublicApiRequest_(route,method,e){
               gross:g,counterparty:String(ref.tx.counterparty||''),source:String(ref.tx.source||'')});
           }
           sum=Math.round(sum*100)/100;
-          const label=kind==='balance'?'예약장부 잔금(분할)':(kind==='deposit'?'예약장부 계약금(분할)':'예약장부 전액(분할)');
+          const multi=idxList.length>1;
+          const label=(kind==='balance'?'예약장부 잔금':(kind==='deposit'?'예약장부 계약금':'예약장부 전액'))+(multi?'(분할)':'');
           if(Math.abs(sum-targetAmount)>0.011){
             return jsonError_('AMOUNT_MISMATCH','합계 '+sum+'€ 가 예약 '+kind+' 금액 '+targetAmount+'€ 와 다릅니다. 거래 선택을 확인해 주세요.');
           }
@@ -1691,7 +1795,7 @@ function handlePublicApiRequest_(route,method,e){
           txs.forEach(function(t,i){
             updateSettlementMatchRow_(sh.settlementSheet,t.rowIndex,{
               status:'matched',target:label,rowIndex:bri,accountingClass:accClass,
-              memo:['분할이체 '+(i+1)+'/'+txs.length,label,bookingName,
+              memo:[(multi?'분할이체 '+(i+1)+'/'+txs.length:'수동 대사'),label,bookingName,
                 t.gross+'€ (합계 '+sum+'€)','장부 반영 완료 — 수동 확인 '+stamp].join(' · ')
             });
           });
@@ -2155,16 +2259,26 @@ function handlePublicApiRequest_(route,method,e){
             note:'분류만 변경했습니다 — 금액·상품·일정은 그대로입니다. 슬롯 캐시 무효화됨.'});
         }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
+        if(action==='select-schedule-migrate') return jsonOk_(migrateSelectSchedules_(payload||{}));
+        if(action==='customer-list') return jsonOk_(buildCustomerDirectory_(payload.keyword||''));
+        if(action==='legacy-visit-import') return jsonOk_(importLegacyVisitsAdmin(token,payload||{}));
+        if(action==='tax-record-add') return jsonOk_(addTaxRecord_(payload||{}));
+        if(action==='tax-record-list') return jsonOk_(Object.assign(listTaxLedger_(),{recon:(function(){const r=buildTaxReconciliation_();return {unpaid:r.unpaid,unlinked:r.unlinked,privateLinked:r.privateLinked};})()}));
+        if(action==='booking-add-pass-country') return jsonOk_(addPassCountryForAgent_(token,payload||{}));
+        if(action==='products-list') return jsonOk_(listProductsForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // ✏️변경계: 추가일정(이동일·다일차) 등록/교체. 같은 날짜의 기존 이벤트는 흡수(중복 생성 없음). 고객 메일 미발송.
         if(action==='booking-set-extra-days') return jsonOk_(setBookingExtraDaysForAgent_(token,payload||{}));
         // 예약 라이프사이클 완결 (2026-08 Phase1) — 기존 어드민 함수 래핑. expectName 은 행 밀림 사고 방지용(선택).
         if(action==='booking-confirm-deposit'){
-          // ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 함수 내부에서 무조건 나간다(payload 억제 불가, 이미 입금완료면 스킵).
+          /* ⚠️외부발송: 미입금→입금 전환 시 입금확인 메일이 나간다. `notify:false` 로 억제 가능
+             (촬영 후 현장수령분 사후 기록 등). `payMethod` 로 실제 수단(현금·카드·계좌이체)을 남겨야
+             현금 수납이 현금장부에 잡힌다 — 생략하면 현장결제 건은 종전대로 현금장부 미포함. */
           const bdIdx=parseInt(payload.rowIndex,10);
           if(!bdIdx||bdIdx<2||bdIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
           assertBookingRowName_(bdIdx,payload.expectName);
-          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount,{paidDate:payload.paidDate}));
+          return jsonOk_(confirmBookingDepositAdmin(token,bdIdx,payload.amount,
+            {paidDate:payload.paidDate,payMethod:payload.payMethod,notify:payload.notify,skipMail:payload.skipMail}));
         }
         if(action==='booking-cancel'){
           // ⚠️외부발송: 취소 안내 메일 + 해당 날짜 대기자 알림 메일 자동. 캘린더 삭제·환불 이벤트 기록, issueInvoice 참이면 취소/환불 인보이스(연번 소모).
@@ -2279,6 +2393,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='triggers-install') return jsonOk_(installDailyTriggerAdmin(token));
         if(action==='insta-publisher-status') return jsonOk_(instaPublisherStatusForAgent_(token));
         if(action==='insta-publisher-install') return jsonOk_(instaPublisherInstallForAgent_(token));
+        if(action==='insta-publisher-dryrun') return jsonOk_(instaPublisherDryRunForAgent_(token));
         if(action==='insta-publisher-set-secrets') return jsonOk_(instaPublisherSetSecretsForAgent_(token,payload.data||payload||{}));
         return jsonError_('INVALID_ACTION','Unknown erp-agent action: '+action+' — 사용 가능한 액션 목록은 actions-list 액션으로 확인하세요');
       }finally{
@@ -2338,6 +2453,33 @@ function handlePublicApiRequest_(route,method,e){
       const payload=request.payload||{};
       assertPublicPortfolioLeadPayload_(payload,body);
       return jsonOk_(createPortfolioLead_(payload,e));
+    }
+    if(route==='today-board'){
+      // 오늘 촬영 보드 — 데스크탑 대시보드 전용. 전용 토큰으로만 열린다(어드민 로그인 불필요).
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET for /api/today-board');
+      const tbP=(e&&e.parameter)||{};
+      if(!isValidDashboardToken_(tbP.token)) return jsonError_('UNAUTHORIZED','Invalid dashboard token');
+      return jsonOk_(tbP.fresh?buildTodayBoard_(tbP.date):buildTodayBoardCached_(tbP.date));
+    }
+    if(route==='prep-get'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/prep-get');
+      const pg=(e&&e.parameter)||{};
+      const pgReq=getPublicPayloadFromRequest_(e);
+      const pgRef=String((pgReq.payload&&pgReq.payload.id)||pg.id||'').trim();
+      if(!pgRef) return jsonError_('INVALID_ARGUMENT','Missing id');
+      const pgRes=getPrepSurveyForCustomer_(pgRef);
+      if(!pgRes.ok) return jsonError_(pgRes.code||'NOT_FOUND',pgRes.message||'not found');
+      return jsonOk_(pgRes);
+    }
+    if(route==='prep-submit'){
+      if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use POST for /api/prep-submit');
+      const psReq=getPublicPayloadFromRequest_(e);
+      const psBody=psReq.body||{};
+      const psPayload=psReq.payload||{};
+      assertPublicRequestId_((psBody&&psBody.requestId)||psPayload.requestId);
+      const psRef=String(psPayload.id||((e&&e.parameter)||{}).id||'').trim();
+      if(!psRef) return jsonError_('INVALID_ARGUMENT','Missing id');
+      return jsonOk_(savePrepSurvey_(psRef,psPayload));
     }
     if(route==='consultation'){
       if(method!=='post'&&method!=='get') return jsonError_('METHOD_NOT_ALLOWED','Use GET or POST for /api/consultation');
@@ -2406,10 +2548,23 @@ function normalizeEmailAddress_(email){
   return value;
 }
 
+/* 이메일 셀 오염 가드 (2026-08-31) — 개행·부속 텍스트가 섞여 저장되면 고객 신원 키가 쪼개진다
+   (실측: 김지훈 3분신 — 이메일 셀에 '\n분류=여권사진…'). 첫 줄에서 이메일 패턴만 취한다. */
+function sanitizeEmailForLedger_(email){
+  const raw=String(email||'').trim();
+  if(!raw) return '';
+  const firstLine=raw.split(/[\r\n]/)[0].trim();
+  const m=firstLine.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+  return (m?m[0]:firstLine).slice(0,80);
+}
+
 function normalizePhoneForLedger_(phone, defaultCountryCode){
   let raw=String(phone||'').trim();
   if(!raw) return '';
   let value=raw.replace(/[^\d+]/g,'');
+  // 숫자가 사실상 없는 입력(문자만 등)에 국가코드를 붙이면 장부에 '+49' 단독으로 남아 연락 불가 + 고객 키 오염 —
+  // 원문을 그대로 보존해 사람이 알아보게 한다 (2026-08-31 전수 리뷰)
+  if(value.replace(/\D/g,'').length<6) return raw.slice(0,40);
   if(value.indexOf('00')===0) value='+'+value.slice(2);
   const country=String(defaultCountryCode||'+49').trim().replace(/[^\d+]/g,'')||'+49';
   if(value.charAt(0)!=='+'){
@@ -2682,7 +2837,10 @@ function assertPublicConsultationPayload_(payload,body){
   const email=String(payload&&payload.email||'').trim();
   const phone=String(payload&&payload.phone||'').trim();
   const consultationType=String((payload&&payload.consultationType)||(payload&&payload.type)||'').trim();
-  if(!name||!email||email.indexOf('@')<0||!phone||!consultationType) throw new Error('상담 필수 항목이 누락되었습니다.');
+  /* 전화는 필수에서 뺐다 (2026-08-26) — 홈페이지 문의 폼이 상담 라우트를 함께 쓰는데 그 폼은
+     전화가 선택 항목이다(김정음 웨딩 문의도 전화 미기재였다). 답장은 이메일로 충분하다.
+     상담 설문 페이지는 자체 프런트에서 여전히 전화를 요구한다. */
+  if(!name||!email||email.indexOf('@')<0||!consultationType) throw new Error('상담 필수 항목이 누락되었습니다.');
   if(!((payload&&payload.privacyConsent)||(payload&&payload.privacy_consent))) throw new Error('개인정보 동의가 필요합니다.');
 }
 
@@ -3233,23 +3391,23 @@ function ensureAutomationLogSheet_(ss){
    우리가 임의로 지어낸 홍보 문구가 아니라 업체 자신의 표현이라 사실관계가 틀릴 여지가 적다. */
 const PARTNER_SEED_ROWS=[
   ['gaontable','돌상·한복','가온테이블',
-   '독일·유럽 백일상, 돌상, 한복 대여.',
-   'Baekil and dol table settings and hanbok rental across Germany and Europe.',
-   'Baekil- und Dol-Tischdekoration sowie Hanbok-Verleih in Deutschland und Europa.',
+   '독일·유럽 백일상, 돌상, 한복 대여. 지역·행사 일자·아기 성별을 알려주시면 대여 가능한 상차림과 한복 사진을 보내드립니다.',
+   'Baekil and dol table settings and hanbok rental across Germany and Europe. Send your region, event date and the baby\u2019s gender to receive photos of the available settings and hanbok.',
+   'Baekil- und Dol-Tischdekoration sowie Hanbok-Verleih in Deutschland und Europa. Mit Region, Termin und Geschlecht des Kindes erhalten Sie Fotos der verfügbaren Tischdekorationen und Hanbok.',
    'KO','','https://open.kakao.com/o/s6crDMbi','https://www.instagram.com/gaontable.eu/',
    'baby','success,mail,dolmail,consult',1,'Y','인스타 프로필: 가온테이블 / 독일및유럽 백일상 돌상 한복대여'],
   ['laonblumen','플로리스트','라온 블루멘',
    'LAON Floral Design — 부케와 행사 꽃장식. 상담 후 진행됩니다.',
    'LAON Floral Design — bouquets and floral styling for celebrations, arranged after a consultation.',
    'LAON Floral Design — Brautsträuße und florale Dekoration für Feiern, nach Beratungstermin.',
-   'KO','Kronberg im Taunus','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
+   'KO','','https://wa.me/4917630152733','https://www.instagram.com/laonblumen/',
    'wed,baby,biz','success,mail,dolmail,consult',2,'Y','인스타 프로필: LAON Floral Design · 명함 "Jetzt einen Beratungstermin vereinbaren" · WhatsApp +49 176 30152733 (사장님 확인: 이 번호가 정본) · Werkstatt 13, 61476 Kronberg'],
   ['cozyjoo','메이크업·드레스','cozyjoo',
    'K-뷰티 메이크업 아티스트. 웨딩·촬영 메이크업과 드레스 대여.',
    'K-beauty makeup artist — bridal and shoot makeup, plus dress rental.',
    'K-Beauty-Make-up-Artistin — Braut- und Shooting-Make-up sowie Kleiderverleih.',
    'KO','','https://open.kakao.com/o/sLHQbH9g','https://www.instagram.com/cozyjoo.de/',
-   'wed,prof,stud,snap,baby','success,mail,consult',3,'Y','인스타 프로필: K-Beauty Makeup Artist | Bridal | Europe']
+   'wed,prof,stud,snap,baby','success,mail,dolmail,consult',3,'Y','인스타 프로필: K-Beauty Makeup Artist | Bridal | Europe']
 ];
 
 function ensurePartnerSheet_(ss){
@@ -3330,6 +3488,14 @@ const PARTNER_CTA_I18N_={
   web:{ko:'바로 상담하기','en':'Get in touch',de:'Kontakt aufnehmen'}
 };
 
+/* 아기 촬영에서만 붙는 한 줄 — 무료 돌상·한복을 안내해 놓고 바로 아래 대여 업체를 보여주면
+   무료로 받을 수 있는 걸 돈 주고 빌리는 고객이 생긴다. 무료 범위는 위 아기 촬영 안내가
+   이미 정확하므로 여기서 다시 쓰지 않고 그쪽을 가리킨다. */
+const PARTNER_BABY_NOTE_={
+  ko:'기본 돌상·백일상과 아기 한복은 위 안내대로 준비해 드립니다. 더 특별한 상차림이나 한복을 원하시는 분만 아래를 참고해 주세요.',
+  en:'The basic table setup and baby hanbok are covered as described above. The partners below are only for those who would like something more elaborate.',
+  de:'Die Grunddekoration und der Hanbok für das Kind sind wie oben beschrieben abgedeckt. Die folgenden Partner sind nur für alle gedacht, die sich etwas Aufwendigeres wünschen.'
+};
 const PARTNER_BLOCK_I18N_={
   title:{ko:'함께 준비하시면 좋은 곳',en:'Recommended partners',de:'Empfohlene Partner'},
   note:{ko:'Studio mean은 소개만 드리며 각 업체의 예약·결제에는 관여하지 않습니다.',
@@ -3399,8 +3565,14 @@ function buildPartnerMailBlockHtml_(ctx,lang,placement){
       +ctas
       +'</div>';
   }).join('');
+  /* 아기 맥락이면 무료 안내 한 줄을 업체 목록 앞에 둔다. 돌잔치 출장(biz)은 무료 제공이
+     없으므로 붙이지 않는다 — 없는 무료를 약속하면 현장에서 곤란해진다. */
+  const bc=ctx||{};
+  const babyNote=(bc.isBabyBirthday&&['stud','snap','prof'].indexOf(String(bc.itemGroup||'').trim().toLowerCase())>-1)
+    ? '<div style="color:#4b5563;font-size:12px;margin:0 0 10px;">'+escapeHtmlForEmail_(PARTNER_BABY_NOTE_[L])+'</div>' : '';
   return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;">'
     +'<div style="font-weight:800;color:#111827;margin:0 0 10px;">'+PARTNER_BLOCK_I18N_.title[L]+'</div>'
+    +babyNote
     +rows
     +'<div style="color:#94a3b8;font-size:11px;margin-top:6px;">'+PARTNER_BLOCK_I18N_.note[L]+'</div>'
     +'</div>';
@@ -3983,6 +4155,17 @@ function getOperationsChecklistAdmin(token, payload){
     };
   });
 
+  runCheck('flow-gaps','흐름 자가진단(확인메일·보정SLA)','select',function(){
+    const g=buildOpsFlowGaps_();
+    const n=g.receiptGaps.length+g.retouchOverdue.length;
+    return {
+      status:g.receiptGaps.length?'fail':(g.retouchOverdue.length?'warn':'ok'),
+      detail:n?('접수확인 미발송 의심 '+g.receiptGaps.length+'건 · 보정 21일 지연 '+g.retouchOverdue.length+'건')
+             :'셀렉 제출↔확인메일 대조 정상 · 보정 지연 없음',
+      extra:g
+    };
+  });
+
   runCheck('select','셀렉/보정 재수정','select',function(){
     const sh=ensureSelectSheet_(sheets.ss);
     const last=sh.getLastRow();
@@ -4130,9 +4313,9 @@ function _sendPortfolioLeadCustomerEmail_(lead){
     de:'[Studio mean] Ihre Anfrage ist angekommen'
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br><b>문의 종류</b>: ${escapeHtml_(lead.projectType)}<br><b>희망 일정</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br><b>Project</b>: ${escapeHtml_(lead.projectType)}<br><b>Preferred timing</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br><b>Projektart</b>: ${escapeHtml_(lead.projectType)}<br><b>Wunschtermin</b>: ${escapeHtml_(lead.preferredDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:lead.email,subject:subject[L],htmlBody:body[L]},{
@@ -4142,6 +4325,22 @@ function _sendPortfolioLeadCustomerEmail_(lead){
       ref:'portfolio-lead'
     });
   }catch(e){Logger.log('portfolio lead customer mail failed: '+e.message);}
+}
+
+/* 접수 메일에 **문의 원문을 그대로 다시 싣는다** (2026-08-26 사장님 지시: "메일 발송시 구체적 내용 같이 발송").
+   · 고객: 자기가 무엇을 보냈는지 메일로 남는다(폼은 제출하면 사라진다)
+   · 사장님: 메일 한 통만 보고 바로 판단·회신할 수 있다 — 표만 있고 본문이 빠지면 결국 시트를 열어야 했다
+   rows 는 [라벨, 값] 배열이며 값이 빈 항목은 알아서 빠진다. */
+function _inquiryEchoBlockHtml_(lang,rows,message){
+  const L=_leadLanguage_(lang);
+  const title={ko:'보내주신 내용',en:'What you sent us',de:'Ihre Angaben'}[L]||'보내주신 내용';
+  const tr=(rows||[]).filter(function(r){return r&&r[1]&&String(r[1]).trim()&&String(r[1]).trim()!=='-';}).map(function(r){
+    return '<tr><td style="padding:7px 12px;background:#f8fafc;font-weight:700;white-space:nowrap;">'+escapeHtml_(r[0])+'</td><td style="padding:7px 12px;">'+escapeHtml_(r[1])+'</td></tr>';
+  }).join('');
+  const msg=String(message||'').trim();
+  return '<div style="font-weight:700;margin:18px 0 6px;">'+title+'</div>'+
+    (tr?'<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:10px;">'+tr+'</table>':'')+
+    (msg?'<div style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">'+escapeHtml_(msg)+'</div>':'');
 }
 
 function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
@@ -4160,7 +4359,8 @@ function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
     '</div>'
   ].join('');
   try{
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[포트폴리오 문의] ${lead.projectType} — ${lead.name}`,htmlBody:html},{
+    // replyTo 가 없으면 사장님이 '답장'을 눌러도 고객에게 가지 않는다(구 PHP 폼엔 있던 기능) — 반드시 유지할 것
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:lead.email,subject:`[포트폴리오 문의] ${lead.projectType} — ${lead.name}${lead.preferredDate?' · '+lead.preferredDate:''}`,htmlBody:html},{
       type:'포트폴리오문의',
       customerName:lead.name,
       email:lead.email,
@@ -4222,6 +4422,1054 @@ function _mapLeadRow_(row,rowIndex){
     adminMemo:String(obj['관리메모']||'')
   };
 }
+
+/* ===== 문의·상담 통합 뷰 (2026-08-26 사장님 지시: "ERP에서 통합") =====
+   리드 시트(홈페이지 문의)와 상담 시트(상담 설문)는 **물리적으로 합치지 않는다.**
+   상담 시트에만 있는 설문JSON·회의록·상담캘린더·예약전환 파이프라인에 리드를 밀어 넣으면
+   행마다 빈 칸이 14개 생기고 consult-* 액션들의 전제가 흔들린다. 되돌리기도 어렵다.
+   그래서 **읽는 쪽에서 하나로 합친다** — 원장은 둘로 두되 사람이 보는 곳은 한 곳.
+   나중에 물리 통합으로 승급하고 싶으면 이 함수의 출력 형태를 그대로 쓰면 된다.
+
+   미처리 판정은 각 시트의 기존 정의를 그대로 따른다(동작 변경 최소화):
+     리드  = 신규·상담중            (listPortfolioLeadsAdmin 과 동일)
+     상담  = 신규·상담예정·상담중·견적준비 (브리핑 기존 정의와 동일) */
+const INQUIRY_OPEN_LEAD_=['신규','상담중'];
+const INQUIRY_OPEN_CONSULT_=['신규','상담예정','상담중','견적준비'];
+
+function _inquiryAgeDays_(value){
+  const parsed=parseDateSafe_(value);
+  const str=String(parsed&&parsed.str||'').slice(0,10);
+  if(!str) return null;
+  const then=new Date(str+'T00:00:00');
+  if(isNaN(then.getTime())) return null;
+  const today=new Date(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+'T00:00:00');
+  return Math.max(0,Math.round((today-then)/86400000));
+}
+
+/* 문의 ↔ 예약 자동 대조 (2026-08-26).
+   왕혜연 건에서 드러난 문제: 문의가 실제로 **예약으로 성사됐는데** 리드 상태를 아무도 안 바꿔서
+   브리핑에는 계속 "56일 방치"로 떴다. 진짜 방치와 구분이 안 되면 브리핑을 아무도 안 믿게 된다.
+   그 건의 실제 값 — 리드 `왕혜연 / wang0721@naver.com / +49 172 457 3970`,
+   예약 `Hyeyeon Wang / eunice0721@gmail.com / 491724573970`.
+   **이름도 이메일도 안 맞고 전화만 맞는다.** 그래서 전화·이메일을 주 키로 쓰고 이름은 안 쓴다
+   (이름 일치는 동명이인 오탐이 크고, 정작 이 사례를 못 잡는다). */
+function _inqDigits_(v){ return String(v==null?'':v).replace(/[^0-9]/g,''); }
+// 국가번호·선행 0 표기가 제각각이라 뒤 9자리로 비교한다 (0172…/+49172…/49172… 모두 같은 번호)
+function _inqPhoneKey_(v){
+  const d=_inqDigits_(v);
+  return d.length>=8 ? d.slice(-9) : '';
+}
+function _inqEmailKey_(v){
+  const e=String(v==null?'':v).trim().toLowerCase();
+  return e.indexOf('@')>0 ? e : '';
+}
+function findBookingMatchForInquiry_(inq,bookingRows){
+  const phoneKey=_inqPhoneKey_(inq&&inq.phone);
+  const emailKey=_inqEmailKey_(inq&&inq.email);
+  if(!phoneKey&&!emailKey) return null;
+  for(let i=0;i<bookingRows.length;i++){
+    const row=bookingRows[i];
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) continue;          // 취소건은 '성사'가 아니다
+    let via='';
+    if(emailKey&&_inqEmailKey_(row[BOOKING_COL['이메일']])===emailKey) via='email';
+    else if(phoneKey&&_inqPhoneKey_(row[BOOKING_COL['연락처']])===phoneKey) via='phone';
+    if(!via) continue;
+    return {
+      rowIndex:i+2, via:via,
+      name:String(row[BOOKING_COL['고객명']]||''),
+      dateTime:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,16),
+      status:status,
+      product:String(row[BOOKING_COL['상품']]||'')
+    };
+  }
+  return null;
+}
+
+// AdminV2 가 google.script.run 으로 부르는 진입점 (에이전트는 inquiry-list 액션을 쓴다)
+/* ===== 오늘 촬영 보드 (2026-08-26) =====
+   사장님이 촬영일에 상시 띄워 두는 데스크탑 대시보드용. 어드민을 열면 무겁고 로그인이 필요해
+   "상시"가 안 된다. 그래서 **오늘 하루치만** 내주는 가벼운 공개 라우트 + 전용 토큰.
+   재실 토큰(studio-presence)과 같은 패턴이지만 별도 토큰이라 유출 시 이것만 폐기하면 된다.
+   내주는 값은 촬영 당일 현장에서 실제로 필요한 것만: 시간·고객·상품·인원·장소·준비메모·현장 수납액. */
+const DASHBOARD_TOKEN_PROP='DASHBOARD_TOKEN';
+function getOrCreateDashboardToken_(){
+  const p=PropertiesService.getScriptProperties();
+  let token=String(p.getProperty(DASHBOARD_TOKEN_PROP)||'').trim();
+  if(!token){
+    token=Utilities.getUuid().replace(/-/g,'')+'_'+Date.now().toString(36);
+    p.setProperty(DASHBOARD_TOKEN_PROP,token);
+  }
+  return token;
+}
+function isValidDashboardToken_(token){
+  return String(token||'').trim()===getOrCreateDashboardToken_();
+}
+
+/* 요청사항 메모의 [키:값] 토큰을 현장에서 읽기 쉬운 줄로 바꾼다.
+   예: "[백일촬영] [배경1:white][배경2:grey] [가족구성:부모2+아이1]" → ['백일촬영','배경 white·grey','가족구성 부모2+아이1'] */
+function _dashboardPrepLines_(memo){
+  const raw=String(memo||'').trim();
+  if(!raw) return [];
+  const out=[];
+  const bg=[];
+  const tokens=raw.match(/\[[^\]]+\]/g)||[];
+  tokens.forEach(function(t){
+    const inner=t.slice(1,-1).trim();
+    const sep=inner.indexOf(':');
+    if(sep<0){ out.push(inner); return; }
+    const key=inner.slice(0,sep).trim(), val=inner.slice(sep+1).trim();
+    if(/^배경\d*$/.test(key)){ bg.push(val); return; }
+    out.push(key+' '+val);
+  });
+  if(bg.length) out.unshift('배경 '+bg.join('·'));
+  // 토큰 밖의 자유 서술(예: 아이 이름)도 남긴다
+  const freeText=raw.replace(/\[[^\]]+\]/g,' ').replace(/\s+/g,' ').trim();
+  if(freeText) out.push(freeText);
+  return out;
+}
+
+/* ===== 당일 운영 상태(지연) =====
+   고객이 늦게 오면 그날 남은 일정이 통째로 밀린다. 그런데 예약장부의 예약일시를 실제로 바꾸면
+   캘린더·확정메일·변경안내까지 딸려 나가서 "10분 늦었다"에 쓸 수 있는 도구가 아니다.
+   그래서 **예약일시는 손대지 않고** 당일 운영 메모로만 지연을 들고 있는다.
+   저장은 스크립트 속성 `dayops_YYYY-MM-DD` (JSON). 하루치가 수십 바이트라 부담이 없고,
+   쓸 때마다 오래된 날짜를 정리한다. 영구 기록이 필요한 일정 변경은 booking-reschedule 이 담당. */
+const DAY_OPS_PREFIX_='dayops_';
+const DAY_OPS_KEEP_DAYS_=14;
+/* 저장소를 스크립트 속성 → '당일운영' 시트로 옮겼다(2026-08-31). 이유: 오늘촬영 보드를
+   별도 경량 스크립트(board-api)로 분리했는데, 스크립트 속성은 프로젝트 간 공유가 안 돼
+   지연·시작 기록이 보드에서 사라진다. 시트는 양쪽 다 읽는다. 읽기는 레거시 속성 폴백 유지. */
+const DAY_OPS_SHEET_NAME_='당일운영';
+
+function _dayOpsKey_(dateStr){ return DAY_OPS_PREFIX_+String(dateStr||'').slice(0,10); }
+
+function _dayOpsSheet_(create){
+  const ss=ensureSheets_().ss;
+  let sh=ss.getSheetByName(DAY_OPS_SHEET_NAME_);
+  if(!sh&&create){
+    sh=ss.insertSheet(DAY_OPS_SHEET_NAME_);
+    sh.appendRow(['날짜','JSON']);
+    sh.setFrozenRows(1);
+    try{ sh.hideSheet(); }catch(e){}
+  }
+  return sh||null;
+}
+
+function readDayOps_(dateStr){
+  const d=String(dateStr||'').slice(0,10);
+  try{
+    const sh=_dayOpsSheet_(false);
+    if(sh&&sh.getLastRow()>1){
+      const rows=sh.getRange(2,1,sh.getLastRow()-1,2).getValues();
+      for(let i=rows.length-1;i>=0;i--){
+        if(String(rows[i][0]).slice(0,10)===d){
+          const o=JSON.parse(String(rows[i][1]||'{}'));
+          return (o&&typeof o==='object')?o:{};
+        }
+      }
+    }
+  }catch(e){}
+  // 레거시 폴백 — 이전 배포에서 속성에 남은 오늘치가 사라지면 안 된다
+  try{
+    const raw=PropertiesService.getScriptProperties().getProperty(_dayOpsKey_(d));
+    if(!raw) return {};
+    const o=JSON.parse(raw);
+    return (o&&typeof o==='object')?o:{};
+  }catch(e){ return {}; }
+}
+
+function writeDayOps_(dateStr,obj){
+  const d=String(dateStr||'').slice(0,10);
+  const json=JSON.stringify(obj||{});
+  try{
+    const sh=_dayOpsSheet_(true);
+    const last=sh.getLastRow();
+    let wrote=false;
+    if(last>1){
+      const dates=sh.getRange(2,1,last-1,1).getValues();
+      for(let i=dates.length-1;i>=0;i--){
+        if(String(dates[i][0]).slice(0,10)===d){
+          sh.getRange(i+2,2).setValue(json); wrote=true; break;
+        }
+      }
+      // 오래된 날짜 정리 — 하루 한 행이라 몇 줄 안 된다
+      const cutoff=Utilities.formatDate(
+        new Date(Date.now()-DAY_OPS_KEEP_DAYS_*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      for(let i=dates.length-1;i>=0;i--){
+        if(String(dates[i][0]).slice(0,10)<cutoff) sh.deleteRow(i+2);
+      }
+    }
+    if(!wrote) sh.appendRow([d,json]);
+    // 같은 날짜의 레거시 속성은 시트가 정본이 된 순간 지운다(폴백 오염 방지)
+    try{ PropertiesService.getScriptProperties().deleteProperty(_dayOpsKey_(d)); }catch(e){}
+  }catch(e){
+    // 시트 쓰기가 실패하면 종전 방식으로라도 남긴다 — 지연 기록을 잃는 것보다 낫다
+    try{ PropertiesService.getScriptProperties().setProperty(_dayOpsKey_(d),json); }catch(e2){}
+    Logger.log('dayops sheet write failed, prop fallback: '+e.message);
+  }
+}
+
+/* 지연 분 설정. minutes 는 절대값(누적이 아니다) — 0 이면 지연 해제.
+   arrived 는 실제 도착 시각(HH:MM, 선택) — 나중에 "왜 밀렸나"를 되짚을 때 쓴다. */
+/* 촬영 시작·종료 기록 (2026-08-26 사장님 요청: "촬영 시작 버튼을 누르면 현재시간·소요시간").
+   시작을 누르면 **지연이 자동 계산된다** — +5분 버튼을 여러 번 누르는 것보다 정확하다.
+   여기도 예약일시는 건드리지 않는다(당일 운영 메모). */
+/* ===== 촬영 운영 기록 (영구) =====
+   dayops(스크립트 속성)는 14일 뒤 지워진다. 그런데 촬영 시작/종료로 생기는 **실측 소요시간**은
+   쌓이면 상품별 소요시간을 실측으로 교정할 수 있는 자산이다 — 지금 예약 슬롯의
+   `여권 15분 / 스튜디오 Basic 30분` 이 추정인지 실측인지 알 수 없다. 슬롯이 정확해지면
+   겹침·지연이 구조적으로 줄어든다. **소급이 불가능해서** 기록만이라도 먼저 남긴다
+   (리포트는 나중에, 2026-08-27 기획 F항).
+   append-only 라 기존 흐름에 영향이 없고, 같은 예약이 여러 줄이면 마지막이 최신이다. */
+const SHOOT_LOG_SHEET_NAME='촬영운영기록';
+const SHOOT_LOG_HEADERS=['기록일시','촬영일','예약장부행','고객명','촬영종류','상품','인원',
+                         '예정시각','예정소요분','시작시각','종료시각','실제소요분','지연분','비고'];
+
+function ensureShootLogSheet_(ss){
+  let sh=ss.getSheetByName(SHOOT_LOG_SHEET_NAME);
+  if(!sh){
+    sh=ss.insertSheet(SHOOT_LOG_SHEET_NAME);
+    sh.appendRow(SHOOT_LOG_HEADERS);
+    sh.getRange(1,1,1,SHOOT_LOG_HEADERS.length).setFontWeight('bold').setBackground('#f8fafc');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function appendShootLog_(dateStr,rowIndex,ops,note){
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ensureShootLogSheet_(ss);
+    const bSh=getDbSheet();
+    const row=bSh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const sched=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(11,16);
+    const a=_hmToMin_(ops&&ops.started), b=_hmToMin_(ops&&ops.ended);
+    sh.appendRow(neutralizeRow_([
+      Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
+      dateStr, rowIndex,
+      String(row[BOOKING_COL['고객명']]||''),
+      String(row[BOOKING_COL['촬영종류']]||''),
+      String(row[BOOKING_COL['상품']]||''),
+      String(row[BOOKING_COL['인원']]||''),
+      sched,
+      getBookingDurationMinFromRow_(row,60),
+      String((ops&&ops.started)||''),
+      String((ops&&ops.ended)||''),
+      (a!=null&&b!=null&&b>=a)?(b-a):'',
+      (ops&&isFinite(ops.delay))?Number(ops.delay):0,
+      String(note||'')
+    ]));
+  }catch(e){ Logger.log('shoot log skipped: '+e.message); }
+}
+
+function setBookingShootMarkAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const kind=String(payload.kind||'start').trim();      // start | end | clear
+  const date=String(payload.date||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? payload.date : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const nowHm=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'HH:mm');
+  const at=String(payload.at||'').match(/^\d{2}:\d{2}$/)?payload.at:nowHm;
+
+  const ops=readDayOps_(date);
+  const cur=ops[String(rIdx)]||{delay:0,arrived:'',note:''};
+
+  if(kind==='clear'){
+    delete cur.started; delete cur.ended; cur.delay=0;
+    if(!cur.arrived&&!cur.note) delete ops[String(rIdx)]; else ops[String(rIdx)]=cur;
+  }else if(kind==='end'){
+    cur.ended=at;
+  }else{
+    cur.started=at;
+    delete cur.ended;
+    // 예정 시각과의 차이를 지연으로 자동 반영 (늦게 시작한 경우만)
+    try{
+      const sh=getDbSheet();
+      const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+      const sched=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(11,16);
+      const a=_hmToMin_(sched), b=_hmToMin_(at);
+      if(a!=null&&b!=null&&b>a) cur.delay=b-a;
+    }catch(e){ Logger.log('shoot-start delay auto skipped: '+e.message); }
+  }
+  if(kind!=='clear'){
+    cur.at=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+    ops[String(rIdx)]=cur;
+  }
+  writeDayOps_(date,ops);
+  invalidateTodayBoardCache_(date);
+  // 영구 기록 — 시작·종료만 남긴다(clear 는 기록할 게 없다)
+  if(kind==='start'||kind==='end') appendShootLog_(date,rIdx,cur,kind==='end'?'종료':'시작');
+  return {ok:true,date:date,rowIndex:rIdx,kind:kind,at:at,delay:cur.delay||0};
+}
+
+function setBookingDelayAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10);
+  if(!rIdx||rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const date=String(payload.date||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? payload.date : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  let minutes=parseInt(payload.minutes,10);
+  if(!isFinite(minutes)) minutes=0;
+  if(minutes<-240||minutes>480) throw new Error('지연 분이 범위를 벗어났습니다(-240~480).');
+  const ops=readDayOps_(date);
+  if(minutes===0&&!payload.arrived&&!payload.note){
+    delete ops[String(rIdx)];
+  }else{
+    ops[String(rIdx)]={
+      delay:minutes,
+      arrived:String(payload.arrived||'').slice(0,5),
+      note:String(payload.note||'').slice(0,120),
+      at:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
+    };
+  }
+  writeDayOps_(date,ops);
+  invalidateTodayBoardCache_(date);
+  return {ok:true,date:date,rowIndex:rIdx,minutes:minutes};
+}
+
+// "HH:MM" → 분. 못 읽으면 null
+function _hmToMin_(hm){
+  const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  return parseInt(m[1],10)*60+parseInt(m[2],10);
+}
+function _minToHm_(v){
+  if(v==null) return '';
+  const x=((v%1440)+1440)%1440;
+  return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0');
+}
+
+/* 15초 캐시. 사장님이 화면을 켜 두면 1분마다 갱신 + 앞뒤 날짜 프리페치가 돌아서
+   같은 날을 반복해 읽는다. 쓰기(지연·시작·잔금) 직후엔 무효화해 즉시 반영된다. */
+const TODAY_BOARD_CACHE_SEC_=15;
+function _todayBoardCacheKey_(d){ return 'todayboard_'+String(d||'').slice(0,10); }
+function invalidateTodayBoardCache_(d){
+  try{ CacheService.getScriptCache().remove(_todayBoardCacheKey_(d)); }catch(e){}
+}
+function buildTodayBoardCached_(dateStr){
+  const today=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const cache=CacheService.getScriptCache();
+  const key=_todayBoardCacheKey_(today);
+  try{
+    const hit=cache.get(key);
+    if(hit){ const o=JSON.parse(hit); o._cached=true; return o; }
+  }catch(e){}
+  const out=buildTodayBoard_(today);
+  try{ cache.put(key,JSON.stringify(out),TODAY_BOARD_CACHE_SEC_); }catch(e){}
+  return out;
+}
+
+/* 촬영 준비 설문 요약·레퍼런스 — 예약장부행으로 찾는다.
+   설문은 `/prep` 에서 받아 `촬영준비설문` 시트에 쌓이는데, **분위기·레퍼런스는 촬영 직전에
+   가장 필요한 정보**인데도 보드가 못 보여주고 있었다(2026-08-27 기획 A안 B항). */
+function readPrepByBookingRow_(rowIndexes){
+  const want={};
+  (rowIndexes||[]).forEach(function(r){ want[String(r)]=null; });
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(PREP_SHEET_NAME);
+    if(!sh||sh.getLastRow()<2) return want;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,PREP_HEADERS.length).getValues();
+    // 같은 예약에 여러 번 제출될 수 있어 마지막 것이 이긴다
+    rows.forEach(function(r){
+      const key=String(parseInt(r[PREP_COL['예약장부행']],10)||0);
+      if(!(key in want)) return;
+      want[key]={
+        submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+        updatedAt:String(parseDateSafe_(r[PREP_COL['수정일시']]).str||'').slice(0,16),
+        summary:String(r[PREP_COL['요약']]||'').trim(),
+        refLinks:String(r[PREP_COL['참고링크']]||'')
+          .split(/[\s,]+/).map(function(x){return x.trim();})
+          .filter(function(x){return /^https?:\/\//i.test(x);}).slice(0,8)
+      };
+    });
+  }catch(e){ Logger.log('prep lookup skipped: '+e.message); }
+  return want;
+}
+
+/* 그날의 픽업(수령) 예정 — 스튜디오에 **사람이 있어야 하는 일정**인데 보드에 없었다.
+   촬영 사이에 픽업이 끼면 미리 알아야 한다. 셀렉 시트의 픽업일시를 그날짜로 걸러 온다. */
+function readPickupsForDate_(dateStr){
+  const out=[];
+  try{
+    const ss=ensureSheets_().ss;
+    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+    if(!sh||sh.getLastRow()<2) return out;
+    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    rows.forEach(function(r,i){
+      const at=String(parseDateSafe_(r[SELECT_COL['픽업일시']]).str||'');
+      if(at.slice(0,10)!==dateStr) return;
+      const doneAt=String(parseDateSafe_(r[SELECT_COL['수령완료일시']]).str||'').slice(0,16);
+      out.push({
+        selectRowIndex:i+2,
+        bookingRowIndex:parseInt(r[SELECT_COL['예약장부행']],10)||0,
+        sessionId:String(r[SELECT_COL['세션ID']]||''),   // 앱에서 수령완료(select-handover-done) 처리용
+        time:at.slice(11,16),
+        name:String(r[SELECT_COL['고객명']]||''),
+        product:String(r[SELECT_COL['상품']]||''),
+        method:String(r[SELECT_COL['수령방식']]||''),
+        status:String(r[SELECT_COL['상태']]||''),
+        doneAt:doneAt,
+        done:!!doneAt
+      });
+    });
+    out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+  }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
+  return out;
+}
+
+/* ===== 과거방문 (pre-ERP 백필, 2026-08-31) =====
+   장부는 2026-01-02부터지만 실제 운영은 2025-10부터다(애플 '사진촬영 일정' 캘린더 실측 116건).
+   재방문 횟수(3회차 혜택)가 이 공백을 못 보면 단골이 신규로 계산된다.
+   ⚠️ 캘린더 기록엔 연락처가 없어 **이름 정규화 매칭**만 가능 — 동명이인 오합산 위험은
+   수용한다(혜택 판정용이지 돈 계산이 아니다). 시트가 정본, 수정은 시트에서 직접. */
+const LEGACY_VISIT_SHEET_NAME_='과거방문';
+const LEGACY_VISIT_HEADERS_=['방문일','고객명','상품메모','출처'];
+function ensureLegacyVisitSheet_(ss){
+  let sh=ss.getSheetByName(LEGACY_VISIT_SHEET_NAME_);
+  if(!sh){
+    sh=ss.insertSheet(LEGACY_VISIT_SHEET_NAME_);
+    sh.appendRow(LEGACY_VISIT_HEADERS_);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function readLegacyVisitsByName_(){
+  const out={};
+  try{
+    const sh=ensureSheets_().ss.getSheetByName(LEGACY_VISIT_SHEET_NAME_);
+    if(!sh||sh.getLastRow()<2) return out;
+    sh.getRange(2,1,sh.getLastRow()-1,LEGACY_VISIT_HEADERS_.length).getValues().forEach(function(r){
+      const key=normalizeReturnName_(r[1]);
+      const date=String(parseDateSafe_(r[0]).str||'').slice(0,10);
+      if(!key||!date) return;
+      (out[key]||(out[key]=[])).push({date:date,product:String(r[2]||'').trim()});
+    });
+  }catch(e){ Logger.log('legacy visits read skipped: '+e.message); }
+  return out;
+}
+function importLegacyVisitsAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rows=Array.isArray(payload.rows)?payload.rows:[];
+  const dryRun=payload.dryRun!==false&&String(payload.dryRun||'')!=='false';
+  const sh=ensureLegacyVisitSheet_(ensureSheets_().ss);
+  const existing=new Set();
+  if(sh.getLastRow()>1){
+    sh.getRange(2,1,sh.getLastRow()-1,2).getValues().forEach(function(r){
+      existing.add(String(parseDateSafe_(r[0]).str||'').slice(0,10)+'|'+normalizeReturnName_(r[1]));
+    });
+  }
+  const toAdd=[];
+  rows.forEach(function(r){
+    const date=String(r.date||'').slice(0,10);
+    const name=String(r.name||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!name) return;
+    const key=date+'|'+normalizeReturnName_(name);
+    if(existing.has(key)) return;
+    existing.add(key);
+    toAdd.push([date,name,String(r.product||'').trim().slice(0,80),String(r.source||'apple-cal').slice(0,30)]);
+  });
+  if(!dryRun&&toAdd.length){
+    sh.getRange(sh.getLastRow()+1,1,toAdd.length,LEGACY_VISIT_HEADERS_.length).setValues(toAdd);
+  }
+  return {ok:true,dryRun:dryRun,received:rows.length,added:toAdd.length,skippedDup:rows.length-toAdd.length};
+}
+
+/* ===== 고객 디렉터리 (2026-08-29) =====
+   예약장부를 사람 단위로 접는다. 별도 시트를 만들지 않는다 — 장부가 이미 진실원장이고,
+   사본 시트는 하루 만에 어긋난다. 신원 키는 문의 매칭과 동일: 전화 뒤 9자리 → 이메일 → 이름.
+   (이름만 일치는 동명이인 오탐이 커서 마지막 수단으로만.) */
+function _customerKeyForRow_(row){
+  const p=_inqPhoneKey_(row[BOOKING_COL['연락처']]);
+  if(p) return 'p:'+p;
+  const e=_inqEmailKey_(row[BOOKING_COL['이메일']]);
+  if(e) return 'e:'+e;
+  const n=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+  return n?('n:'+n):'';
+}
+
+function buildCustomerDirectory_(keyword){
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+  const map={};
+  rows.forEach(function(row,idx){
+    if(!String(row[BOOKING_COL['고객명']]||'').trim()) return;
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;   // 취소는 방문이 아니다
+    const key=_customerKeyForRow_(row);
+    if(!key) return;
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    const entry=map[key]||(map[key]={key:key,name:'',phone:'',email:'',visits:0,firstVisit:'',lastVisit:'',
+      totalSpend:0,history:[]});
+    entry.visits++;
+    entry.totalSpend=roundCurrency_(entry.totalSpend+parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+    if(!entry.firstVisit||dt<entry.firstVisit) entry.firstVisit=dt;
+    if(dt>entry.lastVisit){
+      entry.lastVisit=dt;
+      /* 표시 이름·연락처는 가장 최근 예약 기준 — 개명·번호 변경을 따라간다 */
+      entry.name=String(row[BOOKING_COL['고객명']]||'').trim();
+      entry.phone=String(row[BOOKING_COL['연락처']]||'').trim();
+      entry.email=String(row[BOOKING_COL['이메일']]||'').trim();
+    }
+    entry.history.push({date:dt,product:String(row[BOOKING_COL['상품']]||'').trim(),
+      group:String(row[BOOKING_COL['촬영종류']]||'').trim(),status:status,rowIndex:idx+2});
+  });
+  /* 과거방문(pre-ERP) 병합 — 이름 정규화 매칭. 장부 고객과 이름이 같으면 그 고객의 방문으로 합산,
+     없으면 이름 키 단독 고객으로 남긴다(연락처가 없어 그 이상은 불가). */
+  try{
+    const legacy=readLegacyVisitsByName_();
+    const byName={};
+    Object.keys(map).forEach(function(k){ const nm=normalizeReturnName_(map[k].name); if(nm&&!byName[nm]) byName[nm]=map[k]; });
+    Object.keys(legacy).forEach(function(nm){
+      const entry=byName[nm]||map['n:'+nm]||(map['n:'+nm]={key:'n:'+nm,name:legacy[nm][0]&&legacy[nm].length?nm:nm,phone:'',email:'',visits:0,firstVisit:'',lastVisit:'',totalSpend:0,history:[]});
+      legacy[nm].forEach(function(v){
+        entry.visits++;
+        if(!entry.firstVisit||v.date<entry.firstVisit) entry.firstVisit=v.date;
+        if(v.date>entry.lastVisit&&!entry.name) entry.lastVisit=v.date;
+        entry.history.push({date:v.date,product:v.product||'(과거방문)',group:'',status:'과거방문',rowIndex:0});
+      });
+      if(!entry.name) entry.name=nm;
+    });
+  }catch(e){ Logger.log('directory legacy merge skipped: '+e.message); }
+  let list=Object.keys(map).map(function(k){
+    const e=map[k];
+    e.history.sort(function(a,b){return b.date<a.date?-1:1;});
+    e.history=e.history.slice(0,12);
+    return e;
+  });
+  const kw=String(keyword||'').trim().toLowerCase();
+  if(kw){
+    const kwPhone=_inqDigits_(kw);
+    list=list.filter(function(e){
+      return e.name.toLowerCase().indexOf(kw)>-1
+        || (kwPhone&&_inqDigits_(e.phone).indexOf(kwPhone)>-1)
+        || e.email.toLowerCase().indexOf(kw)>-1;
+    });
+  }
+  list.sort(function(a,b){return b.lastVisit<a.lastVisit?-1:1;});
+  return {ok:true,total:list.length,customers:list.slice(0,300)};
+}
+
+function listCustomerDirectoryAdmin(token,keyword){
+  assertAdmin_(token);
+  return buildCustomerDirectory_(keyword);
+}
+
+function listTravelLogAdmin(token,startDate,endDate){
+  assertAdmin_(token);
+  return buildTravelKmLogForAgent_(startDate,endDate);
+}
+
+function buildTodayBoard_(dateStr){
+  const _t0=Date.now(); const _t={};
+  const tz=CONFIG.TIMEZONE;
+  const now=new Date();
+  const today=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const sh=getDbSheet();               _t.getDbSheet=Date.now()-_t0;
+  const last=sh.getLastRow();          _t.getLastRow=Date.now()-_t0;
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+  _t.readRows=Date.now()-_t0; _t.rowCount=rows.length;
+  const dayOps=readDayOps_(today);     _t.dayOps=Date.now()-_t0;
+  /* 방문 이력 인덱스 — 오늘 카드마다 "첫 방문인지, 몇 번째인지, 전엔 뭘 찍었는지"를 붙인다.
+     같은 rows 배열을 한 번 더 접을 뿐이라 비용은 무시할 수준(수백 행). */
+  const custHist={};
+  rows.forEach(function(row,idx){
+    if(isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))) return;
+    const key=_customerKeyForRow_(row);
+    if(!key) return;
+    (custHist[key]||(custHist[key]=[])).push({
+      date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      rowIndex:idx+2});
+  });
+  // 과거방문(pre-ERP 백필) — 이름 매칭으로 오늘 고객의 재방문 횟수에 합산 (3회차 혜택 판정)
+  const legacyByName=readLegacyVisitsByName_();
+  /* 이름 합집합 인덱스 — 같은 고객이 예약마다 다른 전화/이메일을 써서 신원이 쪼개진 경우
+     (실측: 김지훈 3분신) 혜택 판정이 어긋난다. 키 기반과 이름 기반을 rowIndex로 합쳐 센다. */
+  const custHistByName={};
+  rows.forEach(function(row,idx){
+    if(isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))) return;
+    const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+    if(!nm) return;
+    (custHistByName[nm]||(custHistByName[nm]=[])).push({
+      date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      rowIndex:idx+2});
+  });
+  _t.custIndex=Date.now()-_t0;
+  const shoots=[];
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'');
+    if(dt.slice(0,10)!==today) return;
+    const hhmm=dt.slice(11,16);
+    const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+    const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+    const unpaid=/미결제|offen|unpaid/i.test(payMethod);
+    shoots.push({
+      rowIndex:idx+2,
+      time:hhmm||'--:--',
+      timeUnset:(!hhmm||hhmm==='00:00'),
+      durationMin:getBookingDurationMinFromRow_(row,60),
+      name:String(row[BOOKING_COL['고객명']]||''),
+      phone:String(row[BOOKING_COL['연락처']]||''),
+      product:String(row[BOOKING_COL['상품']]||''),
+      itemGroup:String(row[BOOKING_COL['촬영종류']]||''),
+      people:String(row[BOOKING_COL['인원']]||''),
+      location:parseBookingLocationFromRow_(row)||'',
+      status:status,
+      total:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']])),
+      deposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+      depositPaid:depositPaid,
+      balance:balance,
+      payMethod:payMethod,
+      /* 현장 수령액 = 잔금 + (계약금 미입금이면 계약금). 김혜수 사례(2026-08-29):
+         [계약금예외]로 계약금 50 미입금·잔금 260 → 현장 수령은 310 인데 260 만 표시됐다.
+         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다. */
+      dueOnSite:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+      prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
+      /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
+      visitCount:(function(){
+        const key=_customerKeyForRow_(row);
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; let n=0;
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; n++;
+        });
+        n+=(legacyByName[nm]||[]).filter(function(v){return v.date<today;}).length;
+        return n;
+      })(),
+      prevShoots:(function(){
+        const key=_customerKeyForRow_(row);
+        const nm=normalizeReturnName_(row[BOOKING_COL['고객명']]);
+        const seenRows={}; const merged=[];
+        ((key&&custHist[key])||[]).concat(custHistByName[nm]||[]).forEach(function(h){
+          if(h.date>=today||seenRows[h.rowIndex]) return;
+          seenRows[h.rowIndex]=true; merged.push(h);
+        });
+        (legacyByName[nm]||[]).forEach(function(v){ if(v.date<today) merged.push(v); });
+        return merged
+          .sort(function(a,b){return b.date<a.date?-1:1;})
+          .slice(0,3)
+          .map(function(h){return h.date.slice(2,7).replace('-','.')+' '+(h.product||'');});
+      })(),
+      // 당일 운영: 지연 분·실제 도착. 예약일시는 그대로 두고 표시만 밀린다
+      delayMin:(function(){ const o=dayOps[String(idx+2)]; return o&&isFinite(o.delay)?Number(o.delay):0; })(),
+      arrivedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.arrived?String(o.arrived):''; })(),
+      delayNote:(function(){ const o=dayOps[String(idx+2)]; return o&&o.note?String(o.note):''; })(),
+      startedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.started?String(o.started):''; })(),
+      endedAt:(function(){ const o=dayOps[String(idx+2)]; return o&&o.ended?String(o.ended):''; })(),
+      /* 이름을 누르면 뜨는 상세 보기용 (2026-08-26 사장님 요청).
+         현장에서 확인하는 값이라 원문 메모까지 그대로 넘긴다 — 파싱된 칩만으론 놓치는 게 생긴다. */
+      detail:{
+        dateTime:dt,
+        email:String(row[BOOKING_COL['이메일']]||''),
+        bookingType:BOOKING_COL['예약유형']!=null?String(row[BOOKING_COL['예약유형']]||''):'',
+        depositMethod:BOOKING_COL['계약금수단']!=null?String(row[BOOKING_COL['계약금수단']]||''):'',
+        depositPaidAt:BOOKING_COL['계약금입금일']!=null?String(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||'').slice(0,10):'',
+        balancePaid:BOOKING_COL['잔금결제여부']!=null?String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y':false,
+        memoRaw:String(row[BOOKING_COL['요청사항']]||''),
+        /* 예약 세부내역(추가항목)은 요청사항 원문과 내용이 겹쳐 중복이라 빼기로 했다(2026-08-27 사장님 지적).
+           응답에서 가장 큰 덩어리이기도 해서 전송량도 함께 줄었다. 다시 필요하면 이 줄만 되살리면 된다. */
+        confirmedAt:BOOKING_COL['확정일시']!=null?String(parseDateSafe_(row[BOOKING_COL['확정일시']]).str||'').slice(0,16):'',
+        marketing:BOOKING_COL['마케팅동의']!=null?String(row[BOOKING_COL['마케팅동의']]||''):'',
+        isReturn:BOOKING_COL['재방문']!=null?String(row[BOOKING_COL['재방문']]||'').trim()==='재방문':false
+      }
+    });
+  });
+  _t.scanRows=Date.now()-_t0;
+
+  // 준비 설문 — 촬영 직전에 필요한 분위기·레퍼런스
+  try{
+    const prepMap=readPrepByBookingRow_(shoots.map(function(s){return s.rowIndex;}));
+    shoots.forEach(function(s){ s.prepSurvey=prepMap[String(s.rowIndex)]||null; });
+  }catch(e){ Logger.log('prep attach skipped: '+e.message); }
+  _t.prep=Date.now()-_t0;
+
+  shoots.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
+
+  /* 지연을 반영한 '실제 시각'과 다음 촬영까지의 여유를 계산한다.
+     여유가 음수면 겹친다 — 고객이 늦게 왔을 때 가장 먼저 알아야 하는 값이다. */
+  shoots.forEach(function(s){
+    const base=_hmToMin_(s.time);
+    s.effStartMin=(base==null)?null:base+(s.delayMin||0);
+    s.effTime=(s.effStartMin==null)?s.time:_minToHm_(s.effStartMin);
+    s.effEndMin=(s.effStartMin==null)?null:s.effStartMin+(s.durationMin||60);
+    s.effEndTime=(s.effEndMin==null)?'':_minToHm_(s.effEndMin);
+    // 실제로 걸린 시간 — 시작·종료가 다 찍혔을 때만
+    const a=_hmToMin_(s.startedAt), b=_hmToMin_(s.endedAt);
+    s.actualMin=(a!=null&&b!=null&&b>=a)?(b-a):null;
+  });
+  for(let i=0;i<shoots.length;i++){
+    const cur=shoots[i];
+    let nxt=null;
+    for(let j=i+1;j<shoots.length;j++){
+      if(shoots[j].effStartMin!=null){ nxt=shoots[j]; break; }
+    }
+    // 키를 아예 빼면 안 된다 — 클라이언트(Swift)는 키 하나가 없어도 디코딩이 통째로 실패한다
+    if(cur.effEndMin==null||!nxt){ cur.gapToNextMin=null; cur.overlapsNext=false; cur.nextName=''; continue; }
+    cur.gapToNextMin=nxt.effStartMin-cur.effEndMin;
+    cur.overlapsNext=cur.gapToNextMin<0;
+    cur.nextName=nxt.name;
+  }
+
+  // 지금 시각 기준 다음 촬영
+  const nowHm=Utilities.formatDate(now,tz,'HH:mm');
+  let next=null;
+  for(let i=0;i<shoots.length;i++){
+    if(shoots[i].timeUnset) continue;
+    // 지연이 반영된 실제 시각으로 판단한다 — 밀린 촬영을 '지났다'고 세면 안 된다
+    if((shoots[i].effTime||shoots[i].time)>=nowHm){ next=shoots[i]; break; }
+  }
+  const warnings=[];
+  shoots.forEach(function(s){
+    if(s.timeUnset) warnings.push(`${s.name}님 촬영 시간이 미정입니다`);
+    if(!s.depositPaid&&s.deposit>0) warnings.push(`${s.name}님 계약금 ${formatEuroAmount_(s.deposit)}€ 미입금`);
+    if(s.delayMin>0) warnings.push(`${s.name}님 ${s.delayMin}분 지연 — 실제 ${s.effTime} 시작`);
+    if(s.overlapsNext) warnings.push(`${s.name}님 촬영이 다음(${s.nextName}님)과 ${Math.abs(s.gapToNextMin)}분 겹칩니다`);
+  });
+  try{
+    const pk=readPickupsForDate_(today).filter(function(p){return !p.done;});
+    if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
+  }catch(e){}
+  return {
+    ok:true,
+    date:today,
+    weekday:['일','월','화','수','목','금','토'][new Date(today+'T12:00:00').getDay()],
+    serverTime:Utilities.formatDate(now,tz,'yyyy-MM-dd HH:mm:ss'),
+    count:shoots.length,
+    dueTotal:shoots.reduce(function(a,s){return a+(s.dueOnSite!=null?s.dueOnSite:(s.balance||0));},0),
+    next:next?{time:next.effTime||next.time,scheduled:next.time,name:next.name,
+               product:next.product,delayMin:next.delayMin||0}:null,
+    delayedCount:shoots.filter(function(s){return (s.delayMin||0)!==0;}).length,
+    overlapCount:shoots.filter(function(s){return !!s.overlapsNext;}).length,
+    shoots:shoots,
+    pickups:(function(){ try{ return readPickupsForDate_(today); }catch(e){ return []; } })(),
+    warnings:warnings,
+    _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
+  };
+}
+
+/* ── 하루 마감 대조 ────────────────────────────────────────────────
+   "오늘 받을 돈"과 "실제로 들어온 돈"을 맞춰본다. 세 층으로 나눠 본다:
+
+     ① 받을 예정 — 오늘 촬영 중 잔금이 남은 건
+     ② 장부 기록 — 오늘 수납 처리한 것(예약 계약금·잔금, 인화/보정 추가금)
+     ③ 실제 거래 — 결제대조 시트의 오늘 입금(SumUp·은행) + 현금장부 오늘 입금
+
+   **결제수단별로 대조해야 의미가 있다.** 장부 총액과 거래 총액을 그냥 빼면
+   현금 수납만큼 항상 벌어진다(현금은 SumUp·은행에 안 나온다). 그래서
+   카드↔SumUp / 계좌↔은행 / 현금↔현금장부 로 갈라 놓는다.
+
+   조회 전용이다 — 아무것도 쓰지 않는다. */
+function _dayCloseBucket_(payMethod){
+  const pm=String(payMethod||'').trim();
+  if(isCashPayMethod_(pm)) return 'cash';
+  if(/카드|card|sumup|ec[- ]?karte|kredit/i.test(pm)) return 'card';
+  if(/이체|überweisung|ueberweisung|transfer|bank|paypal/i.test(pm)) return 'bank';
+  return 'other';
+}
+
+function buildDayClose_(dateStr){
+  const _t0=Date.now();
+  const tz=CONFIG.TIMEZONE;
+  const day=String(dateStr||'').match(/^\d{4}-\d{2}-\d{2}$/)
+    ? dateStr : Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
+  const sheets=ensureSheets_();
+
+  const sh=sheets.bookingSheet;
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+
+  const expected=[];   // ① 오늘 받을 예정
+  const ledger=[];     // ② 오늘 수납 기록
+  rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
+    const name=String(row[BOOKING_COL['고객명']]||'');
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    const cancelled=isBookingCancelledStatus_(status);
+    const dt=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'');
+    const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+    const balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+
+    // ① 오늘 촬영 · 잔금 남음 · 아직 수납 안 됨
+    if(!cancelled && dt.slice(0,10)===day){
+      const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+      if(balance>0.005 && !balancePaid){
+        expected.push({rowIndex:rowIndex,name:name,time:dt.slice(11,16),
+                       product:String(row[BOOKING_COL['상품']]||''),
+                       amount:balance,payMethod:payMethod,
+                       bucket:_dayCloseBucket_(payMethod)});
+      }
+    }
+
+    // ② 오늘 계약금 입금 처리
+    if(String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y'){
+      const dd=String(parseDateSafe_(row[BOOKING_COL['계약금입금일']]).str||'').slice(0,10);
+      if(dd===day){
+        const paid=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금입금금액']]))
+                 || roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+        const dm=String(row[BOOKING_COL['계약금수단']]||'').trim()||payMethod;
+        if(paid>0.005) ledger.push({kind:'계약금',rowIndex:rowIndex,name:name,
+          amount:paid,payMethod:dm,bucket:_dayCloseBucket_(dm),
+          shootDate:dt.slice(0,10),cancelled:cancelled});
+      }
+    }
+    // ② 오늘 잔금 수납 처리
+    if(balancePaid){
+      const bd=String(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||'').slice(0,10);
+      if(bd===day){
+        const paid=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]))
+                 || roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+        if(paid>0.005) ledger.push({kind:'잔금',rowIndex:rowIndex,name:name,
+          amount:paid,payMethod:payMethod,bucket:_dayCloseBucket_(payMethod),
+          shootDate:dt.slice(0,10),cancelled:cancelled});
+      }
+    }
+  });
+
+  // ② 인화·보정 추가금 — 실제 수납일은 메모의 [수납] 스탬프가 정본(주문일과 다를 수 있다)
+  try{
+    const pRows=sheets.printSheet.getDataRange().getValues();
+    const pMap=getPrintSheetColMap_(sheets.printSheet);
+    for(let r=1;r<pRows.length;r++){
+      const n=normalizePrintRow_(pRows[r],r+1,pMap);
+      if(/취소|환불|cancel/i.test(String(n.status||''))) continue;
+      if(isPrintRowUnpaid_(n)) continue;
+      const amount=roundCurrency_(parseMoneyValue_(n.total));
+      if(amount<=0.005) continue;
+      const paidDate=printRowPaidDate_(n.memo)
+        ||(parseDateSafe_(n.salesDate||n.dateStr).str||'').slice(0,10);
+      if(paidDate!==day) continue;
+      ledger.push({kind:'추가금',rowIndex:r+1,name:String(n.name||''),
+        amount:amount,payMethod:String(n.payMethod||''),
+        bucket:_dayCloseBucket_(n.payMethod),shootDate:'',cancelled:false});
+    }
+  }catch(e){Logger.log('day-close: print skipped '+e.message);}
+
+  // ③ 결제대조 — 오늘 들어온 입금. SumUp 정산 입금(카드 대금이 은행으로 넘어온 것)은
+  //    같은 돈이 두 번 세어지므로 뺀다.
+  const txs=[];
+  try{
+    getSettlementTransactions_(day,day,sheets.settlementSheet).forEach(function(tx){
+      if(Number(tx.gross||0)<=0.005) return;
+      if(String(tx.matchStatus||'')==='sumup_payout') return;
+      if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) return;
+      txs.push({rowIndex:tx.rowIndex,source:tx.source,
+        bucket:tx.source==='sumup'?'card':'bank',
+        time:String(tx.importedAt||'').slice(11,16),
+        counterparty:tx.counterparty||tx.description||'',
+        gross:roundCurrency_(tx.gross),net:roundCurrency_(tx.net),
+        matchStatus:tx.matchStatus||'',matchTarget:tx.matchTarget||'',
+        matchRow:String(tx.matchRow||'').trim(),
+        linked:!!String(tx.matchRow||'').trim()});
+    });
+  }catch(e){Logger.log('day-close: settlement skipped '+e.message);}
+
+  // ③ 현금장부 수기 입금
+  try{
+    const cSh=sheets.cashSheet;
+    const cLast=cSh.getLastRow();
+    if(cLast>1){
+      const cRows=cSh.getRange(2,1,cLast-1,CASH_HEADERS.length).getValues();
+      cRows.forEach(function(row,idx){
+        if(String(row[CASH_COL['구분']]||'').trim()!=='입금') return;
+        if(/취소/.test(String(row[CASH_COL['상태']]||''))) return;
+        const d=String(parseDateSafe_(row[CASH_COL['일자']]).str||'').slice(0,10);
+        if(d!==day) return;
+        const amt=roundCurrency_(parseMoneyValue_(row[CASH_COL['입금']]));
+        if(amt<=0.005) return;
+        txs.push({rowIndex:idx+2,source:'cash',bucket:'cash',time:'',
+          counterparty:String(row[CASH_COL['상대방']]||row[CASH_COL['내용']]||''),
+          gross:amt,net:amt,matchStatus:'',matchTarget:'',matchRow:'',linked:true});
+      });
+    }
+  }catch(e){Logger.log('day-close: cash skipped '+e.message);}
+
+  const sum=function(arr,f){return roundCurrency_(arr.reduce(function(a,x){return a+(f?f(x):0);},0));};
+  const byBucket=function(arr,b,f){return sum(arr.filter(function(x){return x.bucket===b;}),f);};
+  const amt=function(x){return x.amount||0;};
+  const gross=function(x){return x.gross||0;};
+
+  /* 은행 CSV 는 사장님이 주기적으로 넣는다. 마지막 거래일보다 뒤의 날짜를 대조하면
+     '계좌이체 €550 이 없다'는 거짓 경고가 난다 — 실제로는 아직 안 가져온 것뿐이다. */
+  let bankThrough='';
+  try{
+    getSettlementTransactions_('','',sheets.settlementSheet).forEach(function(tx){
+      if(tx.source==='deutschebank' && tx.date>bankThrough) bankThrough=tx.date;
+    });
+  }catch(e){}
+  const bankStale=!!bankThrough && day>bankThrough;
+
+  /* 결제수단별 대조.
+     ⚠ 현금은 **짝이 없다.** 현금장부(getCashLedgerAdmin)는 예약·인화 시트에서 현금 건을
+     자동으로 끌어다 쓰고, 시트에 직접 적는 건 수기 항목뿐이다. 그래서 "현금 수납이
+     현금장부에 없다"는 비교는 구조상 항상 어긋난다 — 대조하지 않고 금액만 보여준다.
+     현금의 유일한 진짜 대조는 서랍 실물이다. */
+  const BUCKETS=[
+    {key:'card',label:'카드',pair:'SumUp',pairable:true},
+    {key:'bank',label:'계좌이체',pair:'은행 입금',pairable:true},
+    {key:'cash',label:'현금',pair:'서랍 실물',pairable:false},
+    {key:'other',label:'기타',pair:'—',pairable:false}
+  ];
+  const compare=BUCKETS.map(function(b){
+    const l=byBucket(ledger,b.key,amt);
+    const t=byBucket(txs,b.key,gross);
+    const stale=(b.key==='bank')&&bankStale;
+    return {bucket:b.key,label:b.label,pair:b.pair,
+            pairable:b.pairable&&!stale,stale:stale,
+            ledger:l,actual:t,diff:roundCurrency_(l-t)};
+  }).filter(function(c){return c.ledger>0.005||c.actual>0.005;});
+
+  const ledgerTotal=sum(ledger,amt);
+  const actualTotal=sum(txs,gross);
+  const expectedTotal=sum(expected,amt);
+
+  const warnings=[];
+  compare.forEach(function(c){
+    if(c.bucket==='other'&&c.ledger>0.005){
+      warnings.push(`결제수단 미지정 수납 ${formatEuroAmount_(c.ledger)}€ — 수단을 지정해 주세요`);
+      return;
+    }
+    if(c.stale){
+      warnings.push(`은행 CSV 가 ${bankThrough} 까지만 들어와 있어 계좌이체 ${formatEuroAmount_(c.ledger)}€ 는 아직 대조할 수 없습니다`);
+      return;
+    }
+    if(!c.pairable||Math.abs(c.diff)<=0.005) return;
+    warnings.push(c.diff>0
+      ? `${c.label} ${formatEuroAmount_(c.diff)}€ 가 ${c.pair}에 없습니다`
+      : `${c.pair}에 장부보다 ${formatEuroAmount_(-c.diff)}€ 많습니다 — 미기록 수납일 수 있습니다`);
+  });
+  const unlinked=txs.filter(function(t){return t.source!=='cash'&&!t.linked;});
+  if(unlinked.length) warnings.push(`장부에 연결 안 된 거래 ${unlinked.length}건 (${formatEuroAmount_(sum(unlinked,gross))}€)`);
+  if(expectedTotal>0.005) warnings.push(`아직 안 받은 잔금 ${expected.length}건 ${formatEuroAmount_(expectedTotal)}€`);
+
+  return {
+    ok:true,date:day,
+    serverTime:Utilities.formatDate(new Date(),tz,'yyyy-MM-dd HH:mm:ss'),
+    expectedTotal:expectedTotal,ledgerTotal:ledgerTotal,actualTotal:actualTotal,
+    diff:roundCurrency_(ledgerTotal-actualTotal),
+    balanced:compare.every(function(c){return !c.pairable||Math.abs(c.diff)<=0.005;}),
+    bankThrough:bankThrough,bankStale:bankStale,
+    expected:expected,ledger:ledger,transactions:txs,compare:compare,
+    unlinkedCount:unlinked.length,warnings:warnings,
+    _ms:Date.now()-_t0
+  };
+}
+
+function listUnifiedInquiriesAdmin(token,includeClosed){
+  assertAdmin_(token);
+  return buildUnifiedInquiries_({includeClosed:!!includeClosed});
+}
+
+function buildUnifiedInquiries_(opts){
+  const o=opts||{};
+  const includeClosed=!!o.includeClosed;
+  const items=[];
+  const sheets=ensureSheets_();
+
+  // ① 홈페이지 문의 리드
+  try{
+    const lSh=sheets.leadSheet;
+    const lLast=lSh.getLastRow();
+    if(lLast>1){
+      const rows=lSh.getRange(2,1,lLast-1,LEAD_HEADERS.length).getValues();
+      rows.forEach(function(row,idx){
+        const status=String(row[LEAD_COL['상태']]||'신규').trim();
+        const open=INQUIRY_OPEN_LEAD_.indexOf(status)>-1;
+        if(!open&&!includeClosed) return;
+        const at=row[LEAD_COL['접수일시']];
+        items.push({
+          kind:'lead', kindLabel:'홈페이지 문의',
+          rowIndex:idx+2, id:'',
+          submittedAt:String(parseDateSafe_(at).str||'').slice(0,16),
+          ageDays:_inquiryAgeDays_(at),
+          status:status, open:open,
+          name:String(row[LEAD_COL['이름']]||''), company:'',
+          type:String(row[LEAD_COL['문의종류']]||''),
+          email:String(row[LEAD_COL['이메일']]||''), phone:String(row[LEAD_COL['전화']]||''),
+          shootDate:String(row[LEAD_COL['희망일정']]||''), location:String(row[LEAD_COL['장소']]||''),
+          summary:String(row[LEAD_COL['메시지']]||'').replace(/\s+/g,' ').slice(0,160),
+          memo:String(row[LEAD_COL['관리메모']]||''),
+          action:'portfolio-lead-update'
+        });
+      });
+    }
+  }catch(e){Logger.log('unified inquiries: lead skipped '+e.message);}
+
+  // ② 상담 설문
+  try{
+    const cSh=sheets.consultationSheet;
+    const cLast=cSh.getLastRow();
+    if(cLast>1){
+      const rows=cSh.getRange(2,1,cLast-1,CONSULTATION_HEADERS.length).getValues();
+      rows.forEach(function(row,idx){
+        const status=String(row[CONSULTATION_COL['상태']]||'신규').trim();
+        const open=INQUIRY_OPEN_CONSULT_.indexOf(status)>-1;
+        if(!open&&!includeClosed) return;
+        const at=row[CONSULTATION_COL['접수일시']];
+        items.push({
+          kind:'consult', kindLabel:'상담 설문',
+          rowIndex:idx+2, id:String(row[CONSULTATION_COL['상담ID']]||''),
+          submittedAt:String(parseDateSafe_(at).str||'').slice(0,16),
+          ageDays:_inquiryAgeDays_(at),
+          status:status, open:open,
+          name:String(row[CONSULTATION_COL['고객명']]||''),
+          company:String(row[CONSULTATION_COL['회사명']]||''),
+          type:String(row[CONSULTATION_COL['상담유형']]||''),
+          email:String(row[CONSULTATION_COL['이메일']]||''), phone:String(row[CONSULTATION_COL['연락처']]||''),
+          shootDate:String(parseDateSafe_(row[CONSULTATION_COL['촬영예정일']]).str||'').slice(0,10),
+          location:String(row[CONSULTATION_COL['촬영장소']]||''),
+          summary:String(row[CONSULTATION_COL['요약']]||'').replace(/\s+/g,' ').slice(0,160),
+          memo:String(row[CONSULTATION_COL['관리메모']]||''),
+          action:'consult-update'
+        });
+      });
+    }
+  }catch(e){Logger.log('unified inquiries: consult skipped '+e.message);}
+
+  /* 예약 대조 — 이미 성사된 문의를 '방치'로 세지 않기 위해. 예약장부는 한 번만 읽는다. */
+  try{
+    const bSh=getDbSheet();
+    const bLast=bSh.getLastRow();
+    const bookingRows=bLast>1?bSh.getRange(2,1,bLast-1,CONFIG.BOOKING_HEADERS.length).getValues():[];
+    items.forEach(function(inq){
+      inq.booking=findBookingMatchForInquiry_(inq,bookingRows);
+      // 예약이 잡혔는데 리드/상담 상태가 아직 미처리면 정리 대상으로 표시한다
+      inq.needsConvertFix=!!(inq.booking&&inq.open&&inq.status!=='예약전환');
+    });
+  }catch(e){Logger.log('unified inquiries: booking match skipped '+e.message);}
+
+  // 오래 방치된 것부터 — 브리핑에서 위로 올라와야 할 순서
+  items.sort(function(a,b){
+    const av=a.ageDays==null?-1:a.ageDays, bv=b.ageDays==null?-1:b.ageDays;
+    if(av!==bv) return bv-av;
+    return String(b.submittedAt).localeCompare(String(a.submittedAt));
+  });
+  const open=items.filter(function(i){return i.open;});
+  return {
+    ok:true,
+    items:items,
+    open:open.length,
+    stale:open.filter(function(i){return i.ageDays!=null&&i.ageDays>=INQUIRY_STALE_DAYS_&&!i.booking;}).length,
+    convertFix:open.filter(function(i){return i.needsConvertFix;}).length,
+    byKind:{lead:items.filter(function(i){return i.kind==='lead';}).length,
+            consult:items.filter(function(i){return i.kind==='consult';}).length}
+  };
+}
+// 이 일수를 넘게 답이 없으면 브리핑에서 붉게 강조한다(이홍규 38일·왕혜연 56일 방치 사고 기준)
+const INQUIRY_STALE_DAYS_=3;
 
 function listPortfolioLeadsAdmin(token, limit){
   assertAdmin_(token);
@@ -4451,8 +5699,8 @@ function _sendConsultationAppointmentUpdateEmail_(c,appt,mode){
       ? `Hello ${escapeHtml_(c.name)},<br><br>The following consultation appointment has been cancelled.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><br>If you would like to arrange a new time, simply reply to this email.<br><br>${_getSignatureHtml()}`
       : `Hello ${escapeHtml_(c.name)},<br><br>Your consultation appointment has been scheduled as follows.<br><br><b>Appointment</b>: ${escapeHtml_(when||'-')}<br><b>Method</b>: ${escapeHtml_(method||'-')}<br><b>Location/link</b>: ${escapeHtml_(location||'-')}<br><br>If anything needs to be changed, simply reply to this email.<br><br>${_getSignatureHtml()}`,
     de:isCancel
-      ? `Guten Tag, ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren mochten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
-      : `Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geandert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      ? `Guten Tag, ${escapeHtml_(c.name)},<br><br>Der folgende Beratungstermin wurde abgesagt.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><br>Wenn Sie einen neuen Termin vereinbaren möchten, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
+      : `Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungstermin wurde wie folgt eingetragen.<br><br><b>Termin</b>: ${escapeHtml_(when||'-')}<br><b>Art der Beratung</b>: ${escapeHtml_(method||'-')}<br><b>Ort/Link</b>: ${escapeHtml_(location||'-')}<br><br>Falls der Termin geändert werden soll, antworten Sie gern direkt auf diese E-Mail.<br><br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:email,subject:subject[L],htmlBody:body[L]},{
@@ -4475,9 +5723,9 @@ function _sendConsultationCustomerEmail_(c){
     de:`[Studio mean] Beratungsformular erhalten — ${c.name}`
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 보통 1-2 영업일 안에 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>상담 희망</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>촬영 예정</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    en:`Hello ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule — usually within 1-2 business days.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Preferred meeting</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Planned shoot</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`,
-    de:`Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns in der Regel innerhalb von 1-2 Werktagen mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}<br><b>Wunschtermin Beratung</b>: ${escapeHtml_(c.preferredSchedule||'-')}<br><b>Geplantes Shooting</b>: ${escapeHtml_(c.shootDate||'-')}<br><br>${_getSignatureHtml()}`
+    ko:`안녕하세요, ${escapeHtml_(c.name)}님.<br><br>상담 설문이 정상 접수되었습니다.${c.appointmentAt?' 선택해 주신 상담 일정도 함께 예약되었습니다.':' 보내주신 내용을 확인한 뒤 보통 1-2 영업일 안에 일정과 견적 또는 다음 상담 단계를 안내드리겠습니다.'}<br><br><b>상담 유형</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('ko',[['상담 희망',c.preferredSchedule],['촬영 예정',c.shootDate],['촬영 장소',c.location],['회사/단체',c.company],['연락처',c.phone]],c.message)}<br>${_getSignatureHtml()}`,
+    en:`Hello ${escapeHtml_(c.name)},<br><br>Your consultation form has been received.${c.appointmentAt?' Your selected consultation appointment has also been booked.':' We will review your details and follow up with the next step, quote, or meeting schedule — usually within 1-2 business days.'}<br><br><b>Consultation</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('en',[['Preferred meeting',c.preferredSchedule],['Planned shoot',c.shootDate],['Location',c.location],['Company',c.company],['Phone',c.phone]],c.message)}<br>${_getSignatureHtml()}`,
+    de:`Guten Tag, ${escapeHtml_(c.name)},<br><br>Ihr Beratungsformular ist angekommen.${c.appointmentAt?' Der ausgewählte Beratungstermin wurde ebenfalls reserviert.':' Wir prüfen die Angaben und melden uns in der Regel innerhalb von 1-2 Werktagen mit dem nächsten Schritt, Angebot oder Termin zurück.'}<br><br><b>Beratung</b>: ${escapeHtml_(c.typeLabel||c.consultationType)}${appointmentLine}${_inquiryEchoBlockHtml_('de',[['Wunschtermin Beratung',c.preferredSchedule],['Geplantes Shooting',c.shootDate],['Ort',c.location],['Firma',c.company],['Telefon',c.phone]],c.message)}<br>${_getSignatureHtml()}`
   };
   try{
     sendTrackedEmail_({to:c.email,subject:subject[L],htmlBody:body[L]},{
@@ -4505,10 +5753,12 @@ function _sendConsultationAdminEmail_(c,rowIndex){
     </table>
     <div style="font-weight:700;margin-bottom:6px;">설문 요약</div>
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">${surveyHtml||'-'}</div>
+    ${c.message?`<div style="font-weight:700;margin:16px 0 6px;">고객이 직접 쓴 내용</div><div style="white-space:pre-wrap;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;">${escapeHtml_(c.message)}</div>`:''}
     <p style="font-size:12px;color:#64748b;">상담장부 행 ${rowIndex}</p>
   </div>`;
   try{
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[상담] ${c.typeLabel||c.consultationType} — ${c.name}`,htmlBody:html},{
+    // replyTo — 사장님이 알림 메일에서 바로 '답장'으로 고객에게 회신할 수 있게 한다
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:c.email,subject:`[상담] ${c.typeLabel||c.consultationType} — ${c.name}${c.shootDate?' · '+c.shootDate:''}`,htmlBody:html},{
       type:'상담',
       customerName:c.name,
       email:c.email,
@@ -4518,26 +5768,46 @@ function _sendConsultationAdminEmail_(c,rowIndex){
 }
 
 // 에이전트 리드 적재 — 인스타 댓글/DM 등 외부 리드를 리드 시트에 기록 (comment_guard 연동, ref로 중복 방지)
+/* 외부 리드 적재. 원래는 인스타 댓글용이라 이름·메시지만 받았는데, 메일함에 묻힌 문의를
+   장부로 되살릴 때(2026-08-26 복구 작업) **연락처와 원래 접수일이 없으면 쓸모가 없다** —
+   사장님이 답장하려면 이메일이 필요하고, 브리핑이 '며칠 방치'를 세려면 원래 날짜가 필요하다.
+   그래서 email/phone/preferredDate/location/submittedAt 을 받고, `upsert:true` 면 같은 ref 행을
+   덮어쓴다. 덮어쓸 때 **상태·관리메모·최근관리일시는 보존**한다(사장님이 손댄 값을 지우지 않는다). */
 function addLeadForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
   const sh=ensureLeadSheet_(ensureSheets_().ss);
   const ref=String(payload.ref||'').slice(0,160);           // permalink 등 고유키
+  let targetRow=0, existing=null;
   if(ref){
     const vals=sh.getDataRange().getValues();
     for(let i=1;i<vals.length;i++){
-      if(String(vals[i][LEAD_COL['관리메모']]||'').indexOf(ref)>-1) return {ok:true,skipped:'duplicate',ref:ref};
+      if(String(vals[i][LEAD_COL['관리메모']]||'').indexOf(ref)>-1){ targetRow=i+1; existing=vals[i]; break; }
     }
+    if(targetRow&&!payload.upsert) return {ok:true,skipped:'duplicate',ref:ref,rowIndex:targetRow};
   }
+  const stamp=String(payload.submittedAt||'').trim()
+    || Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const row=new Array(LEAD_HEADERS.length).fill('');
-  row[LEAD_COL['접수일시']]=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
-  row[LEAD_COL['상태']]='신규';
+  row[LEAD_COL['접수일시']]=stamp;
+  row[LEAD_COL['상태']]=existing?String(existing[LEAD_COL['상태']]||'신규'):'신규';   // 사장님이 바꾼 상태 보존
   row[LEAD_COL['이름']]=String(payload.name||'').slice(0,80);
+  row[LEAD_COL['이메일']]=String(payload.email||'').slice(0,120);
+  // 예약 장부와 동일한 정규화 — 이걸 안 하면 시트가 '01724573970' 을 숫자로 읽어 **앞자리 0이 날아간다**
+  row[LEAD_COL['전화']]=neutralizeFormula_(normalizePhoneForLedger_(payload.phone,payload.phoneCountry||'+49')).slice(0,40);
   row[LEAD_COL['언어']]=String(payload.lang||'').slice(0,5);
   row[LEAD_COL['문의종류']]=String(payload.inquiryType||'인스타 문의').slice(0,40);
+  row[LEAD_COL['희망일정']]=String(payload.preferredDate||'').slice(0,60);
+  row[LEAD_COL['장소']]=String(payload.location||'').slice(0,80);
   row[LEAD_COL['메시지']]=String(payload.message||'').slice(0,500);
   row[LEAD_COL['출처']]=String(payload.source||'instagram-comment').slice(0,60);
-  row[LEAD_COL['관리메모']]=ref?('ref:'+ref):'';
+  row[LEAD_COL['관리메모']]=existing?String(existing[LEAD_COL['관리메모']]||'')
+                                   :(ref?('ref:'+ref):'');
+  if(existing&&LEAD_COL['최근관리일시']!=null) row[LEAD_COL['최근관리일시']]=existing[LEAD_COL['최근관리일시']]||'';
+  if(targetRow){
+    sh.getRange(targetRow,1,1,LEAD_HEADERS.length).setValues([neutralizeRow_(row)]);
+    return {ok:true,updated:true,rowIndex:targetRow,ref:ref};
+  }
   sh.appendRow(neutralizeRow_(row));
   return {ok:true,added:true,rowIndex:sh.getLastRow(),ref:ref};
 }
@@ -4929,6 +6199,11 @@ function ensureGutscheinSheet_(ss){
   } else {
     const lastCol=sh.getLastColumn();
     if(lastCol<GUTSCHEIN_HEADERS.length){
+      /* ① 그리드를 먼저 넓힌다. 안 넓히면 아래 setValues 가 throw 하고, 이 함수는
+         getGutscheinSheet_ 의 유일한 관문이라 굿샤인 발행·조회·적용이 한꺼번에 죽는다
+         (ensureBookingSheet_ 가 같은 이유로 이미 이렇게 한다). */
+      const need=GUTSCHEIN_HEADERS.length-sh.getMaxColumns();
+      if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
       sh.getRange(1,lastCol+1,1,GUTSCHEIN_HEADERS.length-lastCol).setValues([GUTSCHEIN_HEADERS.slice(lastCol)]);
     }
   }
@@ -5172,6 +6447,10 @@ function getOrCreateStudioPresenceToken_(){
 function isValidStudioPresenceToken_(token){
   return String(token||'').trim()===getOrCreateStudioPresenceToken_();
 }
+
+/* 예열은 **라이브 배포**를 데워야 의미가 있다. ScriptApp.getService().getUrl() 은 실행 맥락에 따라
+   HEAD 배포를 가리킬 수 있어 엉뚱한 컨테이너를 데울 수 있다 — 그래서 여기서는 상수를 쓴다. */
+const GAS_LIVE_EXEC_URL_='https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
 
 function getScriptExecUrl_(){
   const url=String(ScriptApp.getService().getUrl()||'').trim();
@@ -5736,6 +7015,120 @@ function syncTravelLedgerFromBookings_(options){
 function syncTravelLedgerFromBookingsAdmin(token){
   assertAdmin_(token);
   return syncTravelLedgerFromBookings_({maxRows:1000});
+}
+
+/* ══ 출장비 존 판정 (2026-08-26) ═══════════════════════════════════════════════
+   왜: 존 표가 docs/travel-fee-policy.md 문서에만 있어 문의에 답할 때마다 사람이 찾아봐야 했다.
+       2026-08-26 하이델베르크 프리웨딩 문의에 €30(존2)으로 답했는데 정책은 €70(존3) — €40 손실.
+   범위: **조회 전용**. 예약 폼 자동 과금은 하지 않는다(2026-07-16 '수동 반영' 결정 유지).
+   금액의 단일 출처는 아래 상수다 — docs/travel-fee-policy.md 는 근거·배경 문서이고,
+   값을 바꿀 때는 두 곳을 같이 고친다. 거리는 getTravelDistanceForLocation_
+   (구글맵 실측 주행거리 + 24h 스크립트 캐시) 를 그대로 재사용한다.
+   경계 ±10km 와 뭉뚱그린 주소는 단정하지 않는다 — 틀린 금액보다 '모름'이 낫다(€40 손실의 교훈). */
+const TRAVEL_FEE_ZONES_=[
+  {zone:1,fromKm:0,   toKm:30,       fee:0,    label:'존1 ~30km 무료'},
+  {zone:2,fromKm:30,  toKm:60,       fee:30,   label:'존2 30–60km €30'},
+  {zone:3,fromKm:60,  toKm:100,      fee:70,   label:'존3 60–100km €70'},
+  {zone:4,fromKm:100, toKm:Infinity, fee:null, label:'존4 100km 초과 — 상담 견적'}
+];
+const TRAVEL_FEE_BORDERLINE_KM_=10;
+/* 주소가 특정되지 않은 표현. Maps 는 이런 문자열에도 아무 좌표나 물어다 주므로 그대로 믿으면 안 된다.
+   이때는 TRAVEL_KM_TABLE_(정책 문서의 도시별 거리표)를 폴백으로 쓰고 confidence 를 낮춘다. */
+const TRAVEL_LOCATION_VAGUE_RE_=/협의|미정|추후|결정|상의|논의|시내|근교|일대|주변|근처|또는|혹은|중\s*택|택\s*\d|미팅|정하|등[\s)\]]*$|tbd|to\s*be\s*(?:decided|confirmed)/i;
+
+function travelFeeZoneForKm_(oneWayKm){
+  const km=Number(oneWayKm);
+  if(!isFinite(km)||km<0) return null;
+  for(let i=0;i<TRAVEL_FEE_ZONES_.length;i++) if(km<=TRAVEL_FEE_ZONES_[i].toKm) return TRAVEL_FEE_ZONES_[i];
+  return TRAVEL_FEE_ZONES_[TRAVEL_FEE_ZONES_.length-1];
+}
+
+/* 존 경계 ±10km 는 단정하지 않는다 — 하이델베르크(≈100km)가 정확히 이 케이스다. */
+function travelFeeBorderlineNote_(oneWayKm){
+  const km=Number(oneWayKm);
+  for(let i=0;i<TRAVEL_FEE_ZONES_.length-1;i++){
+    if(Math.abs(km-TRAVEL_FEE_ZONES_[i].toKm)<=TRAVEL_FEE_BORDERLINE_KM_){
+      return '존'+TRAVEL_FEE_ZONES_[i].zone+'/존'+TRAVEL_FEE_ZONES_[i+1].zone+' 경계 — 실제 주소로 확인 필요';
+    }
+  }
+  return '';
+}
+
+/* travel-fee-quote — payload {"location":"Heidelberg"} 또는 {"bookingRowIndex":123}. 아무것도 쓰지 않는다. */
+function buildTravelFeeQuoteForAgent_(payload){
+  const p=payload||{};
+  const rowIndex=parseInt(p.bookingRowIndex,10)||0;
+  let location=String(p.location||'').trim();
+  let booking=null;
+  if(!location&&rowIndex){
+    const sh=getDbSheet();
+    if(rowIndex<2||rowIndex>sh.getLastRow()) return {ok:false,error:'NOT_FOUND',message:'예약 행 '+rowIndex+' 가 없습니다.'};
+    const row=sh.getRange(rowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    booking={rowIndex:rowIndex,name:String(row[BOOKING_COL['고객명']]||'').trim(),
+      dateTime:parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,16),
+      product:String(row[BOOKING_COL['상품']]||'').trim(),
+      itemGroup:String(row[BOOKING_COL['촬영종류']]||'').trim(),
+      total:parseMoneyValue_(row[BOOKING_COL['총결제액']])||0};
+    location=parseBookingLocationFromRow_(row);
+  }
+  const out={ok:true,location:location,booking:booking,basis:'B2C',currency:'EUR',
+    oneWayKm:null,roundTripKm:null,oneWayMin:null,
+    zone:null,zoneLabel:'',fee:null,borderline:false,confidence:'none',note:'',
+    source:'',status:'',calculatedAt:'',mapUrl:location?buildTravelMapUrl_(location):'',
+    policy:'docs/travel-fee-policy.md (2026-07-16 확정) · 자동 과금 없음 — 반영은 수동'};
+  if(!location){
+    out.status='장소없음';
+    out.note='촬영장소가 비어 있습니다 — 주소를 확인한 뒤 다시 조회하세요. 금액은 추정하지 않습니다.';
+    return out;
+  }
+  const vague=TRAVEL_LOCATION_VAGUE_RE_.test(location);
+  const cityHit=travelKmLookup_(location);
+  const dist=getTravelDistanceForLocation_(location);
+  out.status=dist.status||'';
+  out.mapUrl=dist.mapUrl||out.mapUrl;
+  /* 캐시 적중이면 **최초 계산 시각**이 그대로 실려 온다(getTravelDistanceForLocation_ 는 캐시된
+     calculatedAt 을 보존한다) — 같은 주소를 다시 물었을 때 이 값이 안 바뀌면 Maps 재호출이 없었다는 뜻.
+     거리가 언제 잰 값인지도 같이 알려준다(24h TTL). */
+  out.calculatedAt=String(dist.calculatedAt||'');
+  if(dist.status==='스튜디오'){
+    out.oneWayKm=0;out.roundTripKm=0;out.oneWayMin=0;
+    out.zone=1;out.zoneLabel=TRAVEL_FEE_ZONES_[0].label;out.fee=0;
+    out.confidence='high';out.source='studio';out.note='스튜디오 촬영 — 출장비 없음';
+    return out;
+  }
+  if(dist.status!=='계산완료'){
+    /* 계산 실패에 금액을 얹지 않는다. 도시표 값은 '참고'로만 붙이고 fee 는 null 로 둔다 —
+       €40 손실은 확신 없는 금액을 말해서 났다. */
+    out.note='거리 계산 실패로 존을 판정하지 않았습니다 ('+String(dist.status||'원인미상')+').'
+      +(cityHit?' 참고: 도시표상 '+cityHit.city+' 편도 '+cityHit.km+'km — 실제 주소로 재확인하세요.':'')
+      +' 금액은 추정하지 않습니다.';
+    return out;
+  }
+  let km=Number(dist.oneWayKm);
+  const notes=[];
+  if(vague){
+    out.confidence='low';
+    if(cityHit){
+      km=cityHit.km;out.source='city-table';
+      notes.push('주소가 특정되지 않았습니다 — 도시표('+cityHit.city+' 편도 '+cityHit.km+'km)로 판정했습니다'
+        +'(구글맵 실측은 '+dist.oneWayKm+'km). 정확한 주소로 재확인하세요.');
+    }else{
+      out.source='maps';
+      notes.push('주소가 특정되지 않았습니다 — 구글맵 결과를 그대로 쓴 값이라 신뢰도가 낮습니다. 정확한 주소로 재확인하세요.');
+    }
+  }else{
+    out.confidence='high';out.source='maps';
+  }
+  out.oneWayKm=roundCurrency_(km);
+  out.roundTripKm=roundCurrency_(km*2);
+  out.oneWayMin=dist.oneWayMin!=null?dist.oneWayMin:null;
+  const z=travelFeeZoneForKm_(km);
+  out.zone=z.zone;out.zoneLabel=z.label;out.fee=z.fee;
+  if(z.fee===null) notes.unshift('상담 견적 (B2B 단가표 준용)');
+  const edge=travelFeeBorderlineNote_(km);
+  if(edge){out.borderline=true;notes.unshift(edge);}
+  out.note=notes.join(' · ');
+  return out;
 }
 
 function buildCalendarDescriptionFromBookingRow_(row){
@@ -9756,9 +11149,9 @@ const PARKING_2='https://maps.app.goo.gl/AW4qzE7b9RmnnzZJ8';
 const PARKING_3='https://maps.app.goo.gl/S7zA3hEstWqhGhkUA';
 
 const EMAIL_I18N={
-  ko:{greeting:n=>`안녕하세요, <b>${n}</b>님.`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: Taewoong Min<br>은행: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청이 접수되었습니다`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
-  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Same-day reshoot discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Same-day reshoot discount applied automatically!'},
-  de:{greeting:n=>`Guten Tag, <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: Taewoong Min<br>Bank: Deutsche Bank<br>IBAN: <b>DE11 5007 0010 0659 1176 00</b><br>BIC: <b>DEUTDEFFXXX</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
+  ko:{greeting:n=>`안녕하세요, <b>${n}</b>님.`,pending_intro:'예약 신청이 접수되었습니다. 일정 확인 후 최종 확정 메일을 보내드리겠습니다.',confirmed_intro:'신청하신 일정이 <b style="color:#10b981;">최종 확정</b>되었습니다. 🎉',cancelled_intro:'신청하신 예약이 <b style="color:#ef4444;">취소</b>되었습니다.',receipt_title:'[신청 내역]',lbl_product:'■ 상품:',lbl_datetime:'■ 일시:',lbl_total:'■ 총 금액:',lbl_deposit:'■ 계약금:',deposit_note:'(예약 확정 후 계좌 정보 안내)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 계약금 계좌 안내</b><br>예금주: '+STUDIO_BANK.holder+'<br>은행: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>송금 사유: 예약자명 + 촬영일<br><br><b style=\"color:#b45309;\">※ 예약 확정 후 10일 이내에 계약금 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 예약 취소 및 환불 규정</b><br>• 촬영 30일 이전 취소: 계약금 100% 환불<br>• 촬영 30~8일 전 취소: 계약금 50% 환불<br>• 촬영 7~2일 전 취소: 계약금 25% 환불<br>• 촬영 전일 또는 당일 취소: 환불 불가</div>',lbl_balance:'■ 현장 결제 잔금:',lbl_disc_product:'■ 상품 할인:',lbl_disc_return:'■ 재촬영 할인:',return_auto:'(자동 적용됨)',lbl_disc_event:'■ 이벤트 할인:',payment_title:'💳 결제 안내',payment_body:'현장에서 <b>현금 또는 카드</b>로 결제 가능합니다.',invoice_note:'세금계산서(Invoice)가 필요하신 경우, 방문 전 미리 말씀해 주세요.',cancelled_contact:'문의사항은 언제든 연락 주세요.',pending_subject:(n,p)=>`[Studio mean] 예약 신청이 접수되었습니다`,confirmed_subject:(n,p,d)=>`[Studio mean] 촬영 예약이 최종 확정되었습니다! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] 예약이 취소되었습니다`,return_badge:'⭐ 재촬영 할인이 자동 적용되었습니다!'},
+  en:{greeting:n=>`Hello <b>${n}</b>,`,pending_intro:'Your booking request has been received. We will send a confirmation email once we have checked the schedule.',confirmed_intro:'Your booking has been <b style="color:#10b981;">confirmed</b>! 🎉',cancelled_intro:'Your booking has been <b style="color:#ef4444;">cancelled</b>.',receipt_title:'[Booking Details]',lbl_product:'■ Session:',lbl_datetime:'■ Date/Time:',lbl_total:'■ Total:',lbl_deposit:'■ Deposit:',deposit_note:'(Bank details after confirmation)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Deposit Bank Details</b><br>Account holder: '+STUDIO_BANK.holder+'<br>Bank: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>Reference: Your name + shoot date<br><br><b style=\"color:#b45309;\">※ If the deposit is not confirmed within 10 days after the booking is confirmed, the booking may be cancelled automatically.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Cancellation & Refund Policy</b><br>• More than 30 days before the shoot: 100% deposit refund<br>• 30 to 8 days before the shoot: 50% deposit refund<br>• 7 to 2 days before the shoot: 25% deposit refund<br>• The day before or the same day: no refund</div>',lbl_balance:'■ Balance on site:',lbl_disc_product:'■ Package discount:',lbl_disc_return:'■ Same-day reshoot discount:',return_auto:'(automatically applied)',lbl_disc_event:'■ Event discount:',payment_title:'💳 Payment',payment_body:'Payment by <b>cash or card</b> on site.',invoice_note:'If you need an invoice, please let us know before your visit.',cancelled_contact:'Please feel free to contact us if you have any questions.',pending_subject:(n,p)=>`[Studio mean] Booking Request Received`,confirmed_subject:(n,p,d)=>`[Studio mean] Your Booking is Confirmed! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Booking Cancelled`,return_badge:'⭐ Same-day reshoot discount applied automatically!'},
+  de:{greeting:n=>`Guten Tag, <b>${n}</b>,`,pending_intro:'Ihre Buchungsanfrage ist eingegangen. Wir senden Ihnen eine Bestätigungs-E-Mail nach der Terminprüfung.',confirmed_intro:'Ihr Termin wurde <b style="color:#10b981;">definitiv bestätigt</b>! 🎉',cancelled_intro:'Ihre Buchung wurde <b style="color:#ef4444;">storniert</b>.',receipt_title:'[Buchungsdetails]',lbl_product:'■ Paket:',lbl_datetime:'■ Termin:',lbl_total:'■ Gesamtbetrag:',lbl_deposit:'■ Anzahlung:',deposit_note:'(Kontodaten nach Bestätigung)',confirmed_deposit_note:'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;"><b style="color:#1d4ed8;">💳 Anzahlungskonto</b><br>Kontoinhaber: '+STUDIO_BANK.holder+'<br>Bank: '+STUDIO_BANK.bank+'<br>IBAN: <b>'+STUDIO_BANK.iban+'</b><br>BIC: <b>'+STUDIO_BANK.bic+'</b><br>Verwendungszweck: Name + Aufnahmedatum<br><br><b style=\"color:#b45309;\">※ Wenn die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingeht, kann die Buchung automatisch storniert werden.</b></div>',refund_policy:'<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:12px 0;font-size:12px;color:#7a6000;line-height:1.7;"><b>📋 Stornierung & Rückerstattung</b><br>• Mehr als 30 Tage vor dem Shooting: 100% Rückerstattung der Anzahlung<br>• 30 bis 8 Tage vor dem Shooting: 50% Rückerstattung der Anzahlung<br>• 7 bis 2 Tage vor dem Shooting: 25% Rückerstattung der Anzahlung<br>• Am Vortag oder am selben Tag: keine Rückerstattung</div>',lbl_balance:'■ Restzahlung vor Ort:',lbl_disc_product:'■ Paketrabatt:',lbl_disc_return:'■ Rabatt für erneute Aufnahme:',return_auto:'(automatisch angewendet)',lbl_disc_event:'■ Aktionsrabatt:',payment_title:'💳 Zahlung',payment_body:'Zahlung vor Ort per <b>Karte oder Bargeld</b> möglich.',invoice_note:'Wenn Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',cancelled_contact:'Bitte kontaktieren Sie uns, wenn Sie Fragen haben.',pending_subject:(n,p)=>`[Studio mean] Buchungsanfrage erhalten`,confirmed_subject:(n,p,d)=>`[Studio mean] Ihre Buchung ist bestätigt! 🎉`,cancelled_subject:(n,p)=>`[Studio mean] Buchung storniert`,return_badge:'⭐ Rabatt für erneute Aufnahme wurde automatisch angewendet!'}
 };
 
 function _isExternalBookingItemGroup_(itemGroup){
@@ -9904,9 +11297,9 @@ function _getGuideHtml(itemGroup,lang,surveyKeys,quote){
       ? `<b>👶 영유아 여권 / 비자사진 촬영 조건 안내</b><br>• 아기를 눕힌 상태에서 밝은 단색 배경으로 촬영합니다.<br>• 얼굴은 정면으로, 눈은 떠 있어야 하며 손이나 그림자가 얼굴을 가리면 안 됩니다.<br>• 보호자 손, 옷, 그림자가 사진에 보이면 안 되며 흰색 의상은 피해주세요.<br>• 안경, 모자, 머리띠는 착용할 수 없습니다.<br>• 영유아는 성인보다 규정이 일부 완화 적용되며 한국 여권과 독일 비자에 함께 사용할 수 있도록 촬영합니다.`
       : `<b>📸 [예약 안내] 한국 여권 & 독일 비자(E-passbild) 촬영</b><br>고객님, 예약을 환영합니다! 😊 독일의 까다로운 디지털 생체인식(E-passbild) 규정과 한국 여권 규정에 맞춰 안전하게 촬영해 드립니다.<br><br><b>⚠️ [필독] 눈썹 노출 및 반려 주의</b><br>• 눈썹 전체 노출이 중요합니다. 앞머리가 눈썹을 조금이라도 가리면 인식 오류로 반려될 확률이 매우 높습니다.<br>• 귀 노출은 필수는 아니지만 얼굴 윤곽 확인을 위해 가급적 권장드립니다.<br><br><b>📋 촬영 전 체크리스트</b><br>• 흰색 상의나 연한 파스텔톤은 피하고, 진한 색 상의를 추천드립니다.<br>• 안경은 렌즈 반사와 테 간섭 때문에 벗고 촬영하는 것을 권장합니다. 렌즈는 투명 렌즈만 가능합니다.<br>• 입을 다문 무표정으로 촬영하며, 유분기나 글리터는 매트하게 정리해 주세요.<br><br><b>✅ 유효기간 및 규격</b><br>• 촬영일로부터 6개월 사용 가능합니다.<br>• 사진 규격은 35mm × 45mm, 얼굴 크기는 32~36mm 기준입니다.`;
   }
-  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• 한복 시: 흰색 이너 필수<br>• ⭐ 돌상/백일상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
-  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• Hanbok: white inner required<br>• ⭐ Free dol / 100-day table (Profile Professional €130 & up)`:'';
-  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• Hanbok: weißes Innenteil erforderlich<br>• ⭐ Kostenloser Dol-/100-Tage-Tisch (ab Profil Professional €130)`:'';
+  const bKo=isBaby?`<br><br><b>👶 아기 촬영 안내</b><br>• 의상 1~2벌, 기저귀·물티슈·간식·장난감 준비<br>• ⭐ 아기 한복 무료 대여 (스튜디오 촬영 한정 · 외부 반출 불가) — 안에 입을 흰색 이너만 준비해 주세요<br>• ⭐ 돌상/백일상 무료 셋팅 (프로필 프로페셔널 €130 이상)`:'';
+  const bEn=isBaby?`<br><br><b>👶 Baby Shoot</b><br>• 1-2 outfits, diapers, snacks, toy<br>• ⭐ Free baby hanbok rental (studio sessions only, cannot leave the studio) — just bring a white inner layer<br>• ⭐ Free dol / 100-day table (Profile Professional €130 & up)`:'';
+  const bDe=isBaby?`<br><br><b>👶 Baby-Shooting</b><br>• 1-2 Outfits, Windeln, Snacks, Spielzeug<br>• ⭐ Kostenloser Hanbok-Verleih fürs Kind (nur im Studio, keine Mitnahme) — bitte nur ein weißes Innenteil mitbringen<br>• ⭐ Kostenloser Dol-/100-Tage-Tisch (ab Profil Professional €130)`:'';
   if(itemGroup==='prof'){
     if(L==='en')return`<b>📸 Profile Shoot Guide</b><br>1) Share purpose (LinkedIn/CV/SNS) and mood. Send 1-3 reference images.<br>2) Solid colour tops (white/navy/black/beige). No large logos. Bring 1-2 options.<br>3) Arrive 5-10 min early.${bEn}`;
     if(L==='de')return`<b>📸 Profil-Shooting Hinweise</b><br>1) Zweck (LinkedIn/Lebenslauf/SNS) und Stimmung mitteilen. 1-3 Referenzbilder senden.<br>2) Einfarbige Oberteile. Keine großen Logos. 1-2 Optionen mitbringen.<br>3) 5-10 Minuten früher ankommen.${bDe}`;
@@ -10180,6 +11573,7 @@ function processForm(data){
   try{
     if(!data.name||!data.phone||!data.email) throw new Error('필수 정보 누락');
     data.phone=normalizePhoneForLedger_(data.phone,data.phoneCountry||data.countryCode||'+49');
+    data.email=sanitizeEmailForLedger_(data.email);
     data.email=normalizeEmailAddress_(data.email);
     data.address=normalizeAddressText_(data.address);
     data.businessInvoiceEmail=normalizeEmailAddress_(data.businessInvoiceEmail);
@@ -10221,8 +11615,17 @@ function processForm(data){
     const endTime=new Date(startTime.getTime()+quote.totalDuration*60000);
     if(!slotAvailable_(data.date,data.time,quote.totalDuration,quote.itemGroup,bookingLocation)){
       // 캘린더 읽기 실패로 막힌 것이면 '마감'이 아니라 일시 오류다 — 고객이 재시도하도록 구분해서 알린다
-      if(CAL_READ_FAILED_) throw new Error('예약 시스템이 일정을 일시적으로 확인할 수 없습니다. 1분 후 다시 시도해 주세요.');
-      throw new Error('예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.');
+      const _slotErrLang=(data&&(data.lang==='en'||data.lang==='de'))?data.lang:'ko';
+      if(CAL_READ_FAILED_) throw new Error({
+        ko:'예약 시스템이 일정을 일시적으로 확인할 수 없습니다. 1분 후 다시 시도해 주세요.',
+        en:'We could not verify the calendar just now. Please try again in a minute.',
+        de:'Der Kalender konnte gerade nicht geprüft werden. Bitte versuchen Sie es in einer Minute erneut.'
+      }[_slotErrLang]);
+      throw new Error({
+        ko:'예약이 마감된 시간입니다. 다른 시간을 선택해 주세요.',
+        en:'This time slot has just been taken. Please choose another time.',
+        de:'Dieser Termin ist leider soeben vergeben worden. Bitte wählen Sie eine andere Uhrzeit.'
+      }[_slotErrLang]);
     }
     // skipCache=true — 제출 시점의 확정모드·추천상태는 캐시가 아니라 실시간 캘린더로 판정한다
     const publicSlotEntries = getPublicSlots_(data.date, quote.totalDuration, quote.itemGroup, true);
@@ -10642,10 +12045,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'현장에서 현금 또는 카드로 결제 가능합니다.',
       depositTitle:'계약금 입금 안내',
       depositDue:'예약 확정 후 10일 이내 입금을 부탁드립니다.',
-      bank:'은행: Deutsche Bank',
-      account:'예금주: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'은행: '+STUDIO_BANK.bank,
+      account:'예금주: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'송금 사유: 예약자명 + 촬영일',
       invoice:'인보이스가 필요하시면 방문 전 미리 알려 주세요.',
       maps:'오시는 길',
@@ -10670,10 +12073,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'Payment by cash or card is possible on site.',
       depositTitle:'Deposit bank details',
       depositDue:'Please transfer the deposit within 10 days after confirmation.',
-      bank:'Bank: Deutsche Bank',
-      account:'Account holder: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'Bank: '+STUDIO_BANK.bank,
+      account:'Account holder: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'Reference: Your name + shoot date',
       invoice:'If you need an invoice, please let us know before your visit.',
       maps:'Directions',
@@ -10698,10 +12101,10 @@ function getConfirmCalendarLabels_(lang){
       paymentBody:'Zahlung vor Ort per Karte oder Bargeld möglich.',
       depositTitle:'Kontodaten für die Anzahlung',
       depositDue:'Bitte überweisen Sie die Anzahlung innerhalb von 10 Tagen nach Bestätigung.',
-      bank:'Bank: Deutsche Bank',
-      account:'Kontoinhaber: Taewoong Min',
-      iban:'IBAN: DE11 5007 0010 0659 1176 00',
-      bic:'BIC: DEUTDEFFXXX',
+      bank:'Bank: '+STUDIO_BANK.bank,
+      account:'Kontoinhaber: '+STUDIO_BANK.holder,
+      iban:'IBAN: '+STUDIO_BANK.iban,
+      bic:'BIC: '+STUDIO_BANK.bic,
       reference:'Verwendungszweck: Name + Aufnahmedatum',
       invoice:'Falls Sie eine Rechnung benötigen, teilen Sie uns dies bitte vor Ihrem Besuch mit.',
       maps:'Wegbeschreibung',
@@ -10982,13 +12385,54 @@ function getBookingConsentNoticeHtml_(lang,details){
   return `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#7c2d12;"><b>${copy.title}</b><br>${copy.body}</div>`;
 }
 
+/* 확정 시점의 이전 방문 수 — 장부(이메일→이름) + 과거방문(이름). 취소 제외.
+   전화가 이 함수까지 안 내려와 이메일·이름 매칭만 쓴다(혜택 판정용 근사치). */
+function countPriorVisitsForIdentity_(name,email){
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  if(last<2) return 0;
+  const rows=sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const emailKey=_inqEmailKey_(email);
+  const nameKey=normalizeReturnName_(name);
+  let n=0;
+  rows.forEach(function(r){
+    if(isBookingCancelledStatus_(String(r[BOOKING_COL['상태']]||''))) return;
+    const d=String(parseDateSafe_(r[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    if(!d||d>=today) return;
+    const em=_inqEmailKey_(r[BOOKING_COL['이메일']]);
+    if((emailKey&&em===emailKey)||(nameKey&&normalizeReturnName_(r[BOOKING_COL['고객명']])===nameKey)) n++;
+  });
+  try{
+    const legacy=readLegacyVisitsByName_()[nameKey]||[];
+    n+=legacy.filter(function(v){return v.date<today;}).length;
+  }catch(e){}
+  return n;
+}
+
 function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,passCountries,surveyKeys,depositAmount,balanceAmount,eventId,details){
   if(!email||email.includes('수기등록')) return;
   const T=EMAIL_I18N[lang||'ko']||EMAIL_I18N.ko;
   const {obj:dt}=parseDateSafe_(timeRaw);
   const formattedTime=Utilities.formatDate(dt,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const allCountries=(passCountries||[]).join(', ');
-  const guide=_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup})
+  /* 3회차 이상 재방문 혜택 안내 (2026-08-31 승인) — 과거방문(pre-ERP) 포함 이름·이메일로 셈.
+     톤은 조용하게: 판촉이 아니라 알아봄. */
+  let benefitHtml='';
+  try{
+    if(itemGroup!=='biz'&&itemGroup!=='마이리얼트립'){
+      const prior=countPriorVisitsForIdentity_(name,email);
+      if(prior>=2){
+        const bT={
+          ko:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">벌써 <b>${prior+1}번째</b> 걸음이시네요. 감사의 뜻으로 촬영 당일 <b>시그니처 인화 한 장</b>을 준비해 드립니다.<br>스튜디오·프로필·가족 촬영을 계획하실 땐 <b>€20</b>을 저희가 보탭니다 — 예약 메모에 '재방문'이라고 한 줄만 남겨 주세요.</div>`,
+          en:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">This is already your <b>${prior+1}th</b> visit with us. As a small thank-you, a <b>signature print</b> will be ready for you on the day.<br>Planning a studio, profile or family session? We will add <b>€20</b> — just mention 'returning' in your booking note.</div>`,
+          de:`<div style="background:#f7f2ea;border:1px solid #e3d7c4;border-radius:10px;padding:14px 16px;margin:14px 0;font-size:13px;line-height:1.8;">Dies ist bereits Ihr <b>${prior+1}. Besuch</b> bei uns. Als kleines Dankeschön liegt am Aufnahmetag ein <b>Signature-Abzug</b> für Sie bereit.<br>Bei einem Studio-, Profil- oder Familienshooting legen wir <b>20 €</b> dazu — vermerken Sie einfach 'Wiederkehr' bei der Buchung.</div>`};
+        benefitHtml=bT[lang||'ko']||bT.ko;
+      }
+    }
+  }catch(e){ Logger.log('benefit block skipped: '+e.message); }
+  const guide=benefitHtml+prepSurveyMailBlockHtml_(itemGroup,lang||'ko',eventId)
+    +_getGuideHtml(itemGroup,lang||'ko',surveyKeys||[],{itemGroup})
     +buildPartnerMailBlockHtml_(partnerContextFrom_(itemGroup,[prodLocal,details&&details.extraItem].filter(Boolean).join(' '),surveyKeys||[],(details&&details.babyType)||''),lang||'ko','mail');
   const dep=roundCurrency_(toNumberOrZero_(depositAmount));
   const bal=roundCurrency_(toNumberOrZero_(balanceAmount));
@@ -11107,12 +12551,41 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
 }
 
 /* ====== 액션 링크 ====== */
+/* 고객 셀프서비스 액션(일정변경·취소)은 예약을 직접 바꾸지 않는다 — 스튜디오에 "신청" 메일만 보내고
+   실제 반영은 사장님이 어드민에서 한다. 그런데 TTL 이 메일 발송시각 기준 14일이라, 두 달 뒤 촬영을
+   한 달 전에 확정한 고객은 정작 변경이 필요한 시점에 링크가 죽어 있었다
+   (2026-08-25 노유경 신고: 7/27 확정메일 → 링크 8/10 만료 → 8/25 클릭). 서명이 유효하면 만료돼도
+   통과시키고, 실제 차단은 아래 예약 상태 화이트리스트가 맡는다. */
+const CUSTOMER_SELF_SERVICE_ACTIONS_={customer_reschedule:1,customer_cancel:1};
+const BOOKING_RESCHEDULE_OK_STATUSES_=['대기중','확정됨','변경대기','촬영연기'];
+const BOOKING_CANCEL_REQUEST_OK_STATUSES_=['대기중','확정됨','변경대기'];
+/* 링크가 안 열릴 때 고객이 다음에 뭘 해야 하는지 알려준다. 언어를 모르는 지점이라 3개국어 병기. */
+function actionLinkErrorPage_(kind){
+  const title=kind==='expired'
+    ? {ko:'링크가 만료되었습니다',en:'This link has expired',de:'Dieser Link ist abgelaufen'}
+    : {ko:'링크를 열 수 없습니다',en:'This link cannot be opened',de:'Dieser Link kann nicht geöffnet werden'};
+  const body={
+    ko:'예약 확인 메일의 <b>🔎 내 예약 확인·관리</b> 버튼을 눌러 주세요. 그래도 열리지 않으면 아래 주소로 회신해 주시면 새 링크를 보내드립니다.',
+    en:'Please use the <b>🔎 View / manage my booking</b> button in your confirmation email. If it still does not open, reply to the address below and we will send you a new link.',
+    de:'Bitte nutzen Sie die Schaltfläche <b>🔎 Meine Buchung ansehen</b> in Ihrer Bestätigungs-E-Mail. Falls sie sich nicht öffnet, antworten Sie an die untenstehende Adresse — wir senden Ihnen einen neuen Link.'
+  };
+  const block=function(lang){return `<div style="margin:0 0 18px;"><div style="font-size:15px;font-weight:700;color:#2D2A26;margin-bottom:4px;">${title[lang]}</div><div style="font-size:13px;color:#475569;line-height:1.6;">${body[lang]}</div></div>`;};
+  return HtmlService.createHtmlOutput(
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;max-width:520px;margin:0 auto;padding:48px 22px;">`+
+    `<div style="border:1px solid #e2e8f0;border-radius:14px;padding:26px 24px;background:#fff;">`+
+    block('ko')+block('en')+block('de')+
+    `<div style="border-top:1px solid #e2e8f0;padding-top:14px;font-size:13px;">`+
+    `<a href="mailto:${CONFIG.ADMIN_EMAIL}" style="color:#2D2A26;font-weight:700;text-decoration:none;">${CONFIG.ADMIN_EMAIL}</a>`+
+    `<span style="color:#94a3b8;"> · Studio mean</span></div></div></div>`
+  );
+}
 function handleActionRoute_(p){
   try{
-    if(!p.action||!p.eventId||!p.exp||!p.sig) return HtmlService.createHtmlOutput('<h2>❌ 잘못된 링크입니다.</h2>');
-    if(Number(p.exp)<Math.floor(Date.now()/1000)) return HtmlService.createHtmlOutput('<h2>⏰ 만료된 링크입니다.</h2>');
+    if(!p.action||!p.eventId||!p.exp||!p.sig) return actionLinkErrorPage_('invalid');
     const rawId=decodeURIComponent(p.eventId);
-    if(signAction_(p.action,rawId,Number(p.exp))!==p.sig) return HtmlService.createHtmlOutput('<h2>❌ 유효하지 않은 서명입니다.</h2>');
+    // 서명을 먼저 본다 — 위조 링크에 "만료됐다"고 알려줄 이유가 없다
+    if(signAction_(p.action,rawId,Number(p.exp))!==p.sig) return actionLinkErrorPage_('invalid');
+    if(Number(p.exp)<Math.floor(Date.now()/1000)&&!CUSTOMER_SELF_SERVICE_ACTIONS_[p.action]) return actionLinkErrorPage_('expired');
     if(p.action==='confirm') return confirmBooking(rawId);
     if(p.action==='cancel') return cancelBooking(rawId);
     if(p.action==='customer_cancel') return customerCancelRequest_(rawId);
@@ -11139,7 +12612,24 @@ function bookingRowActionTokenFromSeed_(seed){
   const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET')||'studio-mean-action';
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(seed,secret)).replace(/=+$/g,'').slice(0,18);
 }
+/* ⚠️ 시드에는 **바뀌지 않는 신원 필드만** 넣는다.
+   구 산식(V1)은 상품·총결제액까지 시드에 넣었는데, 둘 다 ERP 가 일상적으로 바꾸는 값이다
+   (booking-change-product, booking-set-amount, gutschein-apply …). 상품을 한 번 바꾸면
+   이미 발송된 고객 포털 링크가 전부 즉시 무효가 됐다
+   (2026-08-25 노유경: 확정메일 Premium/360€ → 현재 Plus/300€ → 메일 속 ref 영구 사망).
+   동의시각(타임스탬프)이 엔트로피를 담당하고, 나머지 3개는 행이 밀렸을 때 남의 예약으로
+   해석되지 않게 하는 신원 확인용이다. 구 산식들은 조회 시 폴백으로 계속 받아준다. */
 function bookingRowActionToken_(row){
+  const seed=[
+    bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['이메일']]).toLowerCase(),
+    bookingRowActionSeedPart_(row[BOOKING_COL['동의시각']])
+  ].join('|');
+  return bookingRowActionTokenFromSeed_(seed);
+}
+// 구 산식 V1 — 상품·총결제액 포함. 그 값들이 아직 안 바뀐 행의 옛 링크는 이걸로 살린다.
+function bookingRowActionTokenV1_(row){
   const seed=[
     bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
     bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
@@ -11165,6 +12655,12 @@ function bookingRowActionTokenLegacy_(row){
 function createBookingRowActionRef_(rowIndex,row){
   return `row:${rowIndex}:${bookingRowActionToken_(row)}`;
 }
+// 현행 + 구 산식 전부와 대조 — 이미 고객 메일함에 있는 옛 링크를 최대한 살린다
+function bookingRowActionTokenMatches_(row,token){
+  return bookingRowActionToken_(row)===token
+      || bookingRowActionTokenV1_(row)===token
+      || bookingRowActionTokenLegacy_(row)===token;
+}
 function findBookingRowByActionRef_(ref){
   const safeRef=String(ref||'').trim();
   const sh=getDbSheet(),data=sh.getDataRange().getValues();
@@ -11174,10 +12670,10 @@ function findBookingRowByActionRef_(ref){
     const token=rowRef[2];
     if(rowIndex>=2&&rowIndex<=data.length){
       const row=data[rowIndex-1];
-      if(bookingRowActionToken_(row)===token||bookingRowActionTokenLegacy_(row)===token) return{sheet:sh,rowIndex,row,data};
+      if(bookingRowActionTokenMatches_(row,token)) return{sheet:sh,rowIndex,row,data};
     }
     for(let i=1;i<data.length;i++){
-      if(bookingRowActionToken_(data[i])===token||bookingRowActionTokenLegacy_(data[i])===token) return{sheet:sh,rowIndex:i+1,row:data[i],data};
+      if(bookingRowActionTokenMatches_(data[i],token)) return{sheet:sh,rowIndex:i+1,row:data[i],data};
     }
     return null;
   }
@@ -11623,6 +13119,8 @@ function customerCancelRequest_(eventId){
     if(idx===-1) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>❌ 예약 정보를 찾을 수 없습니다.</h2></div>');
     const row=data[idx+1];
     if(isBookingCancelledStatus_(row[1])) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>ℹ️ 이미 취소된 예약입니다.</h2></div>');
+    // 만료 시각 대신 상태가 링크 수명을 정한다 — 이미 촬영이 끝난 예약엔 취소 신청을 받지 않는다
+    if(BOOKING_CANCEL_REQUEST_OK_STATUSES_.indexOf(String(row[1]||'').trim())<0) return actionLinkErrorPage_('invalid');
     const name=String(row[2]||'');
     const email=String(row[4]||'');
     const lang=String(row[5]||'ko');
@@ -11677,6 +13175,8 @@ function customerRescheduleForm_(eventId){
     const row=found.row;
     const status=String(row[BOOKING_COL['상태']]||'').trim();
     if(isBookingCancelledStatus_(status)) return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2>ℹ️ 취소된 예약은 이 링크로 일정 변경을 신청할 수 없습니다.</h2></div>');
+    // 만료 시각 대신 상태가 링크 수명을 정한다 — 촬영이 끝난 뒤엔 변경 신청을 받지 않는다
+    if(BOOKING_RESCHEDULE_OK_STATUSES_.indexOf(status)<0) return actionLinkErrorPage_('invalid');
     const lang=String(row[5]||'ko');
     const name=String(row[2]||'');
     const product=String(row[7]||'');
@@ -11890,6 +13390,16 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
   const preferredDate=requestInfo.preferredDate||'-';
   const note=requestInfo.note&&requestInfo.note!=='-'?requestInfo.note:'';
   const extraMemo=memo?String(memo).trim():'';
+  /* 일정과 상품·금액이 같은 저장에서 바뀌면 변경 안내 메일은 억제된다(중복 방지) →
+     이 메일이 유일한 통지가 되므로 현재 금액을 반드시 함께 싣는다 (2026-08-25). */
+  const totalAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const balanceAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+  const amountLines={
+    ko:`<br>💶 총 금액: <b>${formatEuroAmount_(totalAmt)}€</b> · 당일 잔금: <b>${formatEuroAmount_(balanceAmt)}€</b>`,
+    en:`<br>💶 Total: <b>${formatEuroAmount_(totalAmt)}€</b> · balance due on the day: <b>${formatEuroAmount_(balanceAmt)}€</b>`,
+    de:`<br>💶 Gesamt: <b>${formatEuroAmount_(totalAmt)}€</b> · Restbetrag am Tag: <b>${formatEuroAmount_(balanceAmt)}€</b>`
+  };
+  const amountLine=amountLines[lang]||amountLines.de;   // 본문 폴백(bodies.de)과 언어를 맞춘다
   if(decision==='approved'){
     const subjects={
       ko:`[Studio mean] ${name}님, 일정 변경 요청이 확인되었습니다`,
@@ -11897,11 +13407,11 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
       de:`[Studio mean] ${name}, Ihre Terminänderung wurde bestätigt`
     };
     const bodies={
-      ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
-      de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
+      ko:`안녕하세요, ${name}님!<br><br>요청해 주신 일정 변경이 확인되었습니다.<br><br>📅 기존 일정: <b>${originalDate||'-'}</b><br>🗓 요청 일정: <b>${preferredDate}</b><br>✅ 확정 일정: <b>${confirmedDateDisplay}</b><br>🛍 상품: ${product}${amountLine}${note?'<br>📝 요청 사유: '+note:''}${extraMemo?'<br><br>메모: '+extraMemo:''}<br><br>문의: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      en:`Hello ${name},<br><br>Your reschedule request has been approved.<br><br>📅 Original booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>✅ Confirmed date & time: <b>${confirmedDateDisplay}</b><br>🛍 Service: ${product}${amountLine}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Contact: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`,
+      de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung wurde bestätigt.<br><br>📅 Bisheriger Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>✅ Bestätigter Termin: <b>${confirmedDateDisplay}</b><br>🛍 Leistung: ${product}${amountLine}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Kontakt: studio.mean.de@gmail.com<br><br><b>Studio mean</b>`
     };
-    sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+    sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.ko,htmlBody:bodies[lang]||bodies.ko});
     return;
   }
   const subjects={
@@ -11914,7 +13424,7 @@ function sendRescheduleDecisionEmail_(row,requestInfo,decision,confirmedDateDisp
     en:`Hello ${name},<br><br>Unfortunately we could not approve your reschedule request this time.<br><br>📅 Current booking: <b>${originalDate||'-'}</b><br>🗓 Requested date: <b>${preferredDate}</b><br>🛍 Service: ${product}${note?'<br>📝 Request note: '+note:''}${extraMemo?'<br><br>Note: '+extraMemo:''}<br><br>Your booking will remain on the current schedule. If you would like to discuss other options, please reply to this email or contact studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`,
     de:`Guten Tag, ${name},<br><br>Ihre Anfrage zur Terminänderung konnte diesmal leider nicht bestätigt werden.<br><br>📅 Aktueller Termin: <b>${originalDate||'-'}</b><br>🗓 Gewünschter Termin: <b>${preferredDate}</b><br>🛍 Leistung: ${product}${note?'<br>📝 Hinweis zur Anfrage: '+note:''}${extraMemo?'<br><br>Hinweis: '+extraMemo:''}<br><br>Ihre Buchung bleibt beim aktuellen Termin. Wenn Sie andere Optionen besprechen möchten, antworten Sie bitte auf diese E-Mail oder schreiben Sie an studio.mean.de@gmail.com.<br><br><b>Studio mean</b>`
   };
-  sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.de,htmlBody:bodies[lang]||bodies.de});
+  sendTrackedEmail_({to:email,subject:subjects[lang]||subjects.ko,htmlBody:bodies[lang]||bodies.ko});
 }
 
 function rescheduleBookingAdmin(token,bookingRowIndex,newDateTimeStr,memo,allowConflict){
@@ -13190,6 +14700,127 @@ function setBookingTimeForAgent_(token,payload){
 
 // 예약 총결제액 정정 (매출 소급 정정·예외 대응). 회계장부는 매출 gross를 '총결제액'에서 읽으므로
 // 이 값만 맞추면 net/MwSt는 자동 파생된다(별도 저장 안 함). 취소/환불건 차단, 감사메모 1줄 기록.
+/* ===== 여권 현장 국가 추가 =====
+   손님이 와서 "한국 것도 같이 뽑아 주세요" 하는 경우가 잦다. 그 자리에서 국가를 더하고
+   금액을 맞추는 한 번의 동작으로 끝내기 위한 액션(오늘 촬영 보드에서 호출).
+
+   가격 근거는 calculateQuote_ 의 여권 계산과 같다 — **사람 단위**로 1인 €30 + (그 사람의 국가수-1)×€5.
+   그래서 "2명:독일" 그룹에 한국을 더하면 두 사람 모두 국가가 늘어 +€10 이다.
+
+   국가는 옵션 열이 아니라 요청사항의 `[국가별 신청] 1명:독일` 토큰에 들어 있다(예약 프런트가 그렇게 쓴다).
+   토큰을 갱신하고, 무슨 일이 있었는지 감사 한 줄을 남긴다. 고객 메일은 나가지 않는다 — 손님이 앞에 있다. */
+const PASS_EXTRA_COUNTRY_FEE_=5;
+const PASS_COUNTRY_LABELS_={KR:'한국',DE:'독일',JP:'일본',CN:'중국',US:'미국',OTHER:'기타'};
+
+function _passCountryLabel_(v){
+  const s=String(v||'').trim();
+  if(!s) return '';
+  return PASS_COUNTRY_LABELS_[s.toUpperCase()]||s;   // 코드(KR)든 한글(한국)이든 받는다
+}
+
+function _parsePassCountryMemo_(memo){
+  const m=String(memo||'').match(/\[국가별 신청\][^\n]*/);
+  if(!m) return {found:false,groups:[],raw:''};
+  const body=m[0].replace(/^\[국가별 신청\]\s*/,'');
+  const groups=body.split(',').map(function(seg){
+    const g=String(seg||'').trim().match(/^(\d+)\s*명\s*:\s*(.+)$/);
+    if(!g) return null;
+    return {people:Math.max(1,parseInt(g[1],10)||1),
+            countries:g[2].split('+').map(function(x){return x.trim();}).filter(Boolean)};
+  }).filter(Boolean);
+  return {found:true,groups:groups,raw:m[0]};
+}
+
+function _formatPassCountryMemo_(groups){
+  const rows=groups.filter(function(g){return g.countries.length;})
+    .map(function(g){return g.people+'명:'+g.countries.join('+');}).join(', ');
+  return rows?('[국가별 신청] '+rows):'';
+}
+
+function addPassCountryForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName && String(row[BOOKING_COL['고객명']]||'').trim()!==expectName){
+    throw new Error('행 고객명 불일치: 행='+row[BOOKING_COL['고객명']]+' / 기대='+expectName);
+  }
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약은 수정할 수 없습니다.');
+  if(String(row[BOOKING_COL['촬영종류']]||'').trim()!=='pass'){
+    throw new Error('여권/비자 예약에서만 국가를 추가할 수 있습니다 (현재: '+row[BOOKING_COL['촬영종류']]+').');
+  }
+
+  const rawCountries=Array.isArray(payload.countries)?payload.countries
+    :String(payload.countries||'').split(/[,+|]/);
+  const wanted=rawCountries.map(_passCountryLabel_).filter(Boolean);
+  const note=String(payload.memo||'').trim().slice(0,200);
+  if(!wanted.length && !note) throw new Error('추가할 국가(countries) 또는 메모(memo)가 필요합니다.');
+
+  const fee=(payload.unitPrice!=null&&isFinite(Number(payload.unitPrice)))
+    ? roundCurrency_(Number(payload.unitPrice)) : PASS_EXTRA_COUNTRY_FEE_;
+  const bookingPeople=Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1);
+
+  let memo=String(row[BOOKING_COL['요청사항']]||'');
+  const parsed=_parsePassCountryMemo_(memo);
+  const added=[];
+  let groupPeople=bookingPeople;
+
+  if(wanted.length){
+    const groups=parsed.groups.slice();
+    /* people 을 지정하면 그 그룹, 아니면 첫 그룹. 그룹이 없으면 예약 인원 전체를 한 그룹으로 본다.
+       새 사람을 만들지는 않는다 — 그건 인원 추가(€30)라 다른 작업이고, 조용히 섞이면 안 된다. */
+    const want=parseInt(payload.people,10)||0;
+    let target=want?groups.filter(function(g){return g.people===want;})[0]:null;
+    if(!target) target=groups[0];
+    if(!target){ target={people:bookingPeople,countries:[]}; groups.push(target); }
+    groupPeople=target.people;
+    wanted.forEach(function(c){ if(target.countries.indexOf(c)===-1){ target.countries.push(c); added.push(c); } });
+    const token2=_formatPassCountryMemo_(groups);
+    if(token2) memo=parsed.found?memo.replace(parsed.raw,token2):[token2,memo].filter(Boolean).join('\n');
+  }
+
+  const delta=roundCurrency_(fee*added.length*groupPeople);
+  const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const newTotal=roundCurrency_(prevTotal+delta);
+  const depositAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+  /* 잔금 셀의 '35|CARD|날짜' 꼬리는 보존한다 — 지우면 언제 무엇으로 받았는지가 사라진다 */
+  const prevBalanceRaw=String(row[BOOKING_COL['잔금']]||'');
+  const balanceTail=prevBalanceRaw.indexOf('|')>-1?prevBalanceRaw.slice(prevBalanceRaw.indexOf('|')):'';
+  const prevBalance=roundCurrency_(parseMoneyValue_(prevBalanceRaw.split('|')[0]));
+  const newBalance=roundCurrency_(Math.max(0,newTotal-depositAmt));
+
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'MM-dd HH:mm');
+  const auditBits=[];
+  if(added.length) auditBits.push('국가 +'+added.join('+')+(groupPeople>1?(' ('+groupPeople+'명)'):''));
+  if(delta>0) auditBits.push('+'+formatEuroAmount_(delta)+'€ → 총 '+formatEuroAmount_(newTotal)+'€');
+  if(note) auditBits.push(note);
+  /* 아무것도 안 바뀌었으면(이미 있는 국가를 또 누른 경우) 줄을 남기지 않는다 —
+     빈 '[현장추가 …]' 가 쌓이면 메모가 읽을 수 없게 된다. */
+  const changed=auditBits.length>0;
+  if(changed) memo=[memo.trim(),'[현장추가 '+stamp+'] '+auditBits.join(' · ')].filter(Boolean).join('\n');
+
+  if(changed) sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memo);
+  if(delta>0){
+    sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
+    if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
+    sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(balanceTail?(newBalance+balanceTail):newBalance);
+    if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+  }
+  try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
+
+  return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
+    changed:changed,
+    addedCountries:added,skipped:wanted.filter(function(c){return added.indexOf(c)===-1;}),
+    groupPeople:groupPeople,unitPrice:fee,delta:delta,
+    prevTotal:prevTotal,total:newTotal,prevBalance:prevBalance,balance:newBalance,
+    countryLine:_formatPassCountryMemo_(_parsePassCountryMemo_(memo).groups)};
+}
+
 function setBookingAmountForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -13270,6 +14901,33 @@ function assertBookingRowName_(rIdx,expectName){
   if(nm!==en) throw new Error('행 고객명 불일치: 행='+nm+' / 기대='+en);
 }
 
+/* 라이브 상품 카탈로그 — 앱의 상품 변경 드롭다운용.
+   ⚠️ 정본은 '상품설정' 시트다. Code.gs 안의 상품 배열은 라이브에 반영되지 않는 씨앗값이라
+   클라이언트가 상품을 하드코딩하면 시트에서 가격을 고쳐도 앱만 옛 값을 쓰게 된다.
+   가격(p)은 **1인 기준 참고가**다 — 실제 금액은 인원·날짜(주말할증)·옵션에 따라 달라지므로
+   반드시 booking-change-product 의 dryRun 으로 확정 금액을 받아야 한다. */
+function listProductsForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const includeAll=payload.includeAll===true;
+  const items=getCachedProducts_().filter(function(it){
+    if(!includeAll && !isPublicBookingProduct_(it)) return false;   // 마이리얼트립 등 제외
+    return true;
+  }).map(function(it){
+    return {id:it.id,group:it.g,type:it.t,name:String(it.nameKo||''),
+            price:Number(it.p||0),durationMin:Number(it.d||0),prepMin:Number(it.prep||0),
+            // 총액 0(상담견적/커스텀)은 booking-change-product 가 거부한다 — 앱에서 미리 비활성화
+            changeable:Number(it.p||0)>0 && it.t!=='custom'};
+  });
+  const groups=[];
+  items.forEach(function(it){ if(groups.indexOf(it.group)===-1) groups.push(it.group); });
+  return {ok:true,count:items.length,groups:groups,items:items,
+          // 옵션은 calculateQuote_ 에 하드코딩돼 있다(시트 아님) — 값이 바뀌면 여기도 같이 고칠 것
+          options:[{key:'dog',label:'반려동물',price:15},
+                   {key:'bg',label:'배경 추가',price:20},
+                   {key:'outfit',label:'의상 추가',price:20}]};
+}
+
 function changeBookingProductForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -13310,6 +14968,23 @@ function changeBookingProductForAgent_(token,payload){
   const newDeposit=roundCurrency_(quote.depositAmount);
   const newBalance=roundCurrency_(quote.balanceAmount);
 
+  /* 미리보기 — 아무것도 쓰지 않고 변경 전/후만 돌려준다.
+     현장 앱에서 "€170 → €220, 잔금 €120 → €170" 을 먼저 보여주고 확인받기 위한 것.
+     금액은 반드시 여기서 받아야 한다(인원·주말할증·옵션이 다 반영된 값). */
+  if(payload.dryRun===true){
+    return {ok:true,dryRun:true,rowIndex:rIdx,
+      name:String(row[BOOKING_COL['고객명']]||''),
+      previousProduct:prevProduct,previousTotal:prevTotal,
+      previousDeposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+      previousBalance:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']])),
+      previousPeople:parseInt(row[BOOKING_COL['인원']],10)||1,
+      product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
+      people:quote.people,total:newTotal,deposit:newDeposit,balance:newBalance,
+      durationMin:quote.totalDuration,passAddon:passAddon,
+      depositPaid:String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y',
+      balancePaid:String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'};
+  }
+
   // 예약행 갱신 (촬영종류/상품/인원/옵션/총결제액/계약금/잔금 + 브루토 미러)
   sh.getRange(rIdx,BOOKING_COL['촬영종류']+1).setValue(quote.itemGroup);
   sh.getRange(rIdx,BOOKING_COL['상품']+1).setValue(newProduct);
@@ -13335,19 +15010,24 @@ function changeBookingProductForAgent_(token,payload){
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memoParts.filter(Boolean).join('\n'));
 
   // 캘린더 이벤트가 있으면 제목/시간(소요시간) 동기화 — 없으면 skip. 기존 sync 엔진 재사용(무발송).
+  const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   try{
-    const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
     if(String(rowAfter[BOOKING_COL['캘린더ID']]||'').trim()){
       ensureBookingCalendarEventForRow_(sh,rIdx,rowAfter);
     }
   }catch(e){Logger.log('changeBookingProductForAgent_ calendar sync skipped: '+e.message);}
   bumpCalCacheVer_();
+  // 상품 교체는 고객이 보는 상품·금액을 바꾼다 → 변경 안내 메일 (notify:false 로 억제 가능)
+  const changeMail=(payload.notify===false)
+    ? {sent:false,reason:'SUPPRESSED'}
+    : sendBookingChangeNoticeEmail_(row,rowAfter,rIdx);
 
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
     product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
     previousProduct:prevProduct,previousTotal:prevTotal,
     total:newTotal,deposit:newDeposit,balance:newBalance,
-    durationMin:quote.totalDuration,passAddon:passAddon,mailSent:false,auditLine:auditLine};
+    durationMin:quote.totalDuration,passAddon:passAddon,
+    mailSent:!!changeMail.sent,changeMail:changeMail,auditLine:auditLine};
 }
 
 /* 추가일정(이동일·다일차 촬영) 등록 — 이미 만들어진 예약에 부수 일정을 붙인다.
@@ -14198,31 +15878,88 @@ function searchBookingsForAgent_(token,query){
    여러 건 삭제 시 호출자는 행번호 큰 것부터 지우며 삭제 1건마다 이 함수를 불러야 한다.
    정확히 삭제행을 가리키던 참조는 보정 불가 — 호출자가 먼저 정리하거나 감수한다. */
 function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
+  /* 예약행을 하나 지우면 아래 행들이 한 칸씩 올라온다 — 다른 시트에 저장된 '예약행 번호'가 전부 어긋난다.
+     보정하지 않으면 인보이스·계약서·굿샤인·견적이 **다른 고객을 가리키게 된다.** 빈 링크보다 나쁘다.
+
+     규칙 두 가지:
+       ① 삭제행보다 **큰** 참조 → -1 (행이 올라간 만큼)
+       ② 삭제행을 **정확히** 가리키던 참조 → **비운다**
+     ②를 안 하면 그 참조는 삭제행 자리로 올라온 '다음 고객'을 가리킨다.
+
+     회계·법적 기록(인보이스·계약서·견적)은 **행을 지우지 않는다** — 링크만 끊는다.
+     예외는 촬영 준비 설문뿐: 답변은 예약 없이는 의미가 없고, 같은 행번호를 물려받은 다음 고객이
+     남의 답변을 보게 되므로 행째로 지운다.
+
+     2026-08-27: 원래 4곳(select·prep·travel·결제연결행)만 보정하고 있었다. 굿샤인으로 결제된 예약을
+     지웠더니 굿샤인이 삭제된 행번호를 그대로 든 채 고아가 되는 걸 실제로 확인 → 전 참조로 확대. */
   const rIdx=deletedRowIndex;
   const sh=sheets.bookingSheet;
-  const fixed={select:0,travel:0,paymentLinks:0};
+  const ss=sheets.ss;
+  const fixed={select:0,travel:0,paymentLinks:0,prep:0,
+    gutschein:0,invoice:0,quote:0,contract:0,consultation:0,marketing:0,shootLog:0,messageLog:0,thread:0};
+
+  /* 한 열의 예약행 참조를 보정한다. 반환값은 (이동 + 끊음) 합계. */
   const fixColumn=function(sheet,colIdx){
+    if(!sheet||colIdx==null) return 0;
     const last=sheet.getLastRow();
-    if(last<2||colIdx==null) return 0;
+    if(last<2) return 0;
     const rng=sheet.getRange(2,colIdx+1,last-1,1);
     const vals=rng.getValues();
     let n=0;
     for(let i=0;i<vals.length;i++){
-      const v=parseInt(vals[i][0],10);
-      if(isFinite(v)&&v>rIdx){vals[i][0]=v-1;n++;}
+      const raw=vals[i][0];
+      if(raw===''||raw===null||raw===undefined) continue;
+      const v=parseInt(raw,10);
+      if(!isFinite(v)) continue;
+      if(v>rIdx){ vals[i][0]=v-1; n++; }
+      else if(v===rIdx){ vals[i][0]=''; n++; }   // 끊는다 — 다음 고객을 가리키게 두지 않는다
     }
     if(n) rng.setValues(vals);
     return n;
   };
+
+  /* 시트 하나가 없거나 헤더가 달라도 나머지 보정이 멈추면 안 된다 — 개별 try 로 감싼다. */
+  const safeFix=function(key,label,getSheet,colIdx){
+    try{
+      const sheet=getSheet();
+      fixed[key]=fixColumn(sheet,colIdx);
+    }catch(e){ Logger.log('row-delete '+label+' fix fail: '+e.message); }
+  };
+
+  safeFix('select','select',function(){return ensureSelectSheet_(ss);},SELECT_COL['예약장부행']);
+  safeFix('travel','travel',function(){return ss.getSheetByName('출장장부');},TRAVEL_COL['예약장부행']);
+  safeFix('gutschein','gutschein',function(){return ensureGutscheinSheet_(ss);},GUTSCHEIN_COL['연결예약행']);
+  safeFix('invoice','invoice',function(){return ensureInvoiceSheet_(ss);},INVOICE_COL['예약행번호']);
+  safeFix('quote','quote',function(){return ensureQuoteSheet_(ss);},QUOTE_COL['연결예약행']);
+  safeFix('contract','contract',function(){return getContractSheet_();},CONTRACT_COL['연결예약행']);
+  safeFix('consultation','consultation',function(){return ensureConsultationSheet_(ss);},CONSULTATION_COL['연결예약행']);
+  safeFix('marketing','marketing',function(){return ensureMarketingScheduleSheet_(ss);},MARKETING_SCHEDULE_COL['예약장부행']);
+  safeFix('shootLog','shootLog',function(){return ensureShootLogSheet_(ss);},SHOOT_LOG_HEADERS.indexOf('예약장부행'));
+  safeFix('messageLog','messageLog',function(){return ensureMessageLogSheet_(ss);},MESSAGE_LOG_COL['예약행']);
+  safeFix('thread','thread',function(){return ensureThreadSheet_(ss);},THREAD_COL['예약행']);
+
+  /* 촬영 준비 설문 — 삭제된 행의 답변은 지우고 뒤 행 참조는 한 칸 당긴다.
+     이걸 안 하면 다음 예약이 같은 행번호를 받았을 때 **남의 설문 답변을 물려받는다**. */
   try{
-    const selSh=ensureSelectSheet_(sheets.ss);
-    if(selSh) fixed.select=fixColumn(selSh,SELECT_COL['예약장부행']);
-  }catch(e){Logger.log('row-delete select fix fail: '+e.message);}
-  try{
-    const tSh=sheets.ss.getSheetByName('출장장부');
-    if(tSh) fixed.travel=fixColumn(tSh,TRAVEL_COL['예약장부행']);
-  }catch(e){Logger.log('row-delete travel fix fail: '+e.message);}
-  // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정
+    const pSh=ensurePrepSheet_(ss);
+    const pLast=pSh?pSh.getLastRow():0;
+    if(pSh&&pLast>1){
+      const rng=pSh.getRange(2,PREP_COL['예약장부행']+1,pLast-1,1);
+      const vals=rng.getValues();
+      const toDelete=[];
+      let n=0;
+      for(let i=0;i<vals.length;i++){
+        const v=parseInt(vals[i][0],10);
+        if(v===rIdx){ toDelete.push(i+2); continue; }
+        if(isFinite(v)&&v>rIdx){ vals[i][0]=v-1; n++; }
+      }
+      if(n) rng.setValues(vals);
+      toDelete.sort(function(a,b){return b-a;}).forEach(function(rn){pSh.deleteRow(rn);});
+      fixed.prep=n+toDelete.length;
+    }
+  }catch(e){Logger.log('row-delete prep fix fail: '+e.message);}
+
+  // 결제연결행: "12,15" 같은 목록 문자열 — 숫자 토큰만 보정(삭제행 토큰은 제거)
   try{
     const last=sh.getLastRow();
     if(last>1&&BOOKING_COL['결제연결행']!=null){
@@ -14232,10 +15969,14 @@ function repairRefsAfterBookingRowDelete_(sheets,deletedRowIndex){
       for(let i=0;i<vals.length;i++){
         const raw=String(vals[i][0]||'').trim();
         if(!raw) continue;
-        const out=raw.split(/([,\s]+)/).map(function(tok){
-          const v=parseInt(tok,10);
-          return (/^\d+$/.test(tok.trim())&&isFinite(v)&&v>rIdx)?String(v-1):tok;
-        }).join('');
+        const out=raw.split(',').map(function(tok){
+          const t=tok.trim();
+          if(!/^\d+$/.test(t)) return tok;
+          const v=parseInt(t,10);
+          if(v>rIdx) return String(v-1);
+          if(v===rIdx) return '';          // 끊는다
+          return tok;
+        }).filter(function(t){return String(t).trim()!=='';}).join(',');
         if(out!==raw){vals[i][0]=out;n++;}
       }
       if(n) rng.setValues(vals);
@@ -14310,7 +16051,29 @@ function getBookingForAgent_(token,rowIndex){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다.');
   const row=sh.getRange(rIdx,1,1,sh.getLastColumn()).getValues()[0];
   if(!row||(!row[BOOKING_COL['예약일시']]&&!row[BOOKING_COL['고객명']])) throw new Error('빈 예약 행입니다.');
-  return {ok:true,booking:_bookingRowToAgentObject_(row,rIdx)};
+  const booking=_bookingRowToAgentObject_(row,rIdx);
+  /* 촬영 준비 설문 답변을 함께 실어 준다 — 캘린더 요약만으로는 자유입력 전문이 안 보인다.
+     설문이 없거나 대상 상품이 아니면 조용히 생략(기존 응답 형태를 깨지 않는다). */
+  try{
+    if(isPrepTargetGroup_(row[BOOKING_COL['촬영종류']])){
+      const pSh=ensurePrepSheet_(sh.getParent());
+      const pRow=_findPrepRow_(pSh,rIdx);
+      if(pRow){
+        const r=pSh.getRange(pRow,1,1,PREP_HEADERS.length).getValues()[0];
+        if(String(r[PREP_COL['고객명']]||'').trim()===String(row[BOOKING_COL['고객명']]||'').trim()){
+          let ans=null; try{ ans=JSON.parse(String(r[PREP_COL['답변JSON']]||'{}')); }catch(e){}
+          booking.prepSurvey={
+            submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+            updatedAt:String(parseDateSafe_(r[PREP_COL['수정일시']]).str||'').slice(0,16),
+            summary:String(r[PREP_COL['요약']]||''),
+            links:String(r[PREP_COL['참고링크']]||'').split('\n').filter(Boolean),
+            free:(ans&&ans.free)||{}
+          };
+        }
+      }
+    }
+  }catch(e){Logger.log('booking-get prep attach skipped row '+rIdx+': '+e.message);}
+  return {ok:true,booking:booking};
 }
 
 // 에이전트용 상태 변경 — 취소/환불 계열은 별도 플로우(메일·환불)가 있어 여기서 차단
@@ -14579,6 +16342,74 @@ function _scanLocationBlockerConflicts_(rows,now){
   return {count:items.length,items:items,stale:horizon>FFM_BLOCKER_COVERED_UNTIL_,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
 }
 
+/* 출장비 누락 경고 (2026-08-26) — 받아야 할 출장비가 안 붙은 미래 예약을 브리핑에 띄운다.
+   **경고만 한다.** 금액은 사장님이 booking-set-amount 등으로 수동 반영한다(2026-07-16 결정 유지).
+
+   오탐이 하나라도 있으면 그날로 무시당하는 섹션이므로, 확실한 것만 남기고 전부 침묵한다:
+   - 거리: 출장장부의 '계산완료' 행만 쓴다 → 브리핑에서 Maps 를 한 번도 부르지 않는다(쿼터 0).
+           장부에 없거나 계산 실패면 그냥 넘어간다.
+   - 주소: 뭉뚱그려진 표현이면 건너뛴다(TRAVEL_LOCATION_VAGUE_RE_).
+   - 존:   하단 경계 +10km 안쪽은 건너뛴다 — 존1(무료)일 수도 있는 건을 부르지 않기 위해서다.
+           상단 경계는 그대로 경고한다(더 비싼 존일 수는 있어도 이 금액 이하는 아니다).
+   - 금액: 상품 정가(+토요일 할증) '이하'일 때만. 옵션·추가인원이 붙어 총액이 올라간 건은
+           반영됐는지 알 수 없으므로 침묵한다(놓치는 쪽으로 틀린다).
+   - 제외: 굿샤인(할인으로 총액이 내려감) · 마이리얼트립(계약 상품, 프랑크푸르트 고정) ·
+           정가 0 인 상담견적 상품 · 이미 '출장비' 표기가 있는 건. */
+const TRAVEL_FEE_MENTION_RE_=/출장비|출장\s*요금|anfahrt|fahrtkost|travel\s*fee/i;
+
+function _scanTravelFeeGaps_(rows,now){
+  const today=Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const ledger={};
+  let ledgerRows=0;
+  const sheets=ensureSheets_();
+  const tSh=sheets.travelSheet||ensureTravelSheet_(sheets.ss);
+  const tLast=tSh.getLastRow();
+  if(tLast>1){
+    tSh.getRange(2,1,tLast-1,TRAVEL_HEADERS.length).getValues().forEach(function(r){
+      ledgerRows++;
+      if(String(r[TRAVEL_COL['거리계산상태']]||'').trim()!=='계산완료') return;
+      const km=Number(r[TRAVEL_COL['편도거리(km)']]||0);
+      if(!(km>0)) return;
+      ledger[String(r[TRAVEL_COL['예약장부행']]||'').trim()]=
+        {oneWayKm:km,location:String(r[TRAVEL_COL['촬영장소']]||'').trim()};
+    });
+  }
+  const products=getCachedProducts_();
+  const items=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const st=String(row[BOOKING_COL['상태']]||'').trim();
+    if(st!=='확정됨'&&st!=='대기중') continue;
+    const d10=parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10);
+    if(!d10||d10<today) continue;                                   // 미래 예약만
+    if(String(row[BOOKING_COL['촬영종류']]||'').trim()==='마이리얼트립') continue;
+    if(String(row[BOOKING_COL['굿샤인코드']]||'').trim()) continue;
+    if(!isTravelBookingTypeRow_(row)) continue;
+    const led=ledger[String(i+1)];
+    if(!led||!led.location) continue;
+    if(TRAVEL_LOCATION_VAGUE_RE_.test(led.location)) continue;
+    const z=travelFeeZoneForKm_(led.oneWayKm);
+    if(!z||z.zone<2) continue;
+    if(led.oneWayKm<=z.fromKm+TRAVEL_FEE_BORDERLINE_KM_) continue;  // 존 하단 경계 — 아래 존일 수 있다
+    const hay=[row[BOOKING_COL['상품']],row[BOOKING_COL['옵션']],row[BOOKING_COL['추가항목']],
+      row[BOOKING_COL['요청사항']],row[BOOKING_COL['결제메모']]]
+      .map(function(v){return String(v||'');}).join(' ');
+    if(TRAVEL_FEE_MENTION_RE_.test(hay)) continue;                  // 이미 반영 표기가 있다
+    const productName=String(row[BOOKING_COL['상품']]||'').trim();
+    const prod=products.find(function(x){return x.nameKo===productName;});
+    if(!prod||!(Number(prod.p)>0)) continue;                        // 상담견적·커스텀 상품 — 정가 없음
+    const listPrice=Number(prod.p)+getWeekendSurcharge_(prod,d10);
+    const total=parseMoneyValue_(row[BOOKING_COL['총결제액']])||0;
+    if(!(total>0)) continue;                                        // 금액 미입력 — 판정 불가
+    if(total>listPrice+0.01) continue;                              // 뭔가 더 붙어 있다 — 침묵
+    items.push({rowIndex:i+1,date:d10,name:String(row[BOOKING_COL['고객명']]||''),
+      product:productName,location:led.location,oneWayKm:Math.round(led.oneWayKm*10)/10,
+      zone:z.zone,fee:z.fee,total:total,listPrice:listPrice,status:st});
+  }
+  items.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  return {count:items.length,items:items,ledgerRows:ledgerRows};
+}
+
 function _buildDailyBriefingData_(){
   const tz=CONFIG.TIMEZONE;
   const now=new Date();
@@ -14715,7 +16546,8 @@ function _buildDailyBriefingData_(){
             name:String(sRows[i][SELECT_COL['고객명']]||'').trim()||'(이름없음)',
             shootDate:(parseDateSafe_(sRows[i][SELECT_COL['촬영일']]).str||'').slice(0,10),
             submittedAt:(parseDateSafe_(sRows[i][SELECT_COL['제출일시']]).str||'').slice(0,10),
-            count:cnt
+            count:cnt,
+            sessionId:String(sRows[i][SELECT_COL['세션ID']]||'').trim()
           });
         }
       }
@@ -14855,6 +16687,23 @@ function _buildDailyBriefingData_(){
     const up=listUnpaidSelectExtras_({limit:6,sinceDays:60});
     extrasUnpaid.count=up.count; extrasUnpaid.total=up.total; extrasUnpaid.items=up.items;
     extrasUnpaid.olderCount=up.olderCount; extrasUnpaid.olderTotal=up.olderTotal;
+    /* 출력 대기와 교차 — 추가금은 **출력 후 수령 시 지불**이 정상 운영이다(2026-08-24 확정).
+       그러므로 이건 '미납 경고'가 아니라 **수령 때 얼마를 받아야 하는지 알려주는 리마인더**다.
+       금액을 모른 채 인화물만 건네면 그대로 못 받는다 — 그걸 막는 게 목적.
+       세션ID 로 붙인다(이름 매칭은 동명이인에 취약). */
+    const unpaidBySession={},unpaidByName={};
+    (up.items||[]).forEach(function(it){
+      const sid=String(it.sessionId||'').trim();
+      if(sid) unpaidBySession[sid]=(unpaidBySession[sid]||0)+Number(it.amount||0);
+      const nm=String(it.name||'').trim();
+      if(nm) unpaidByName[nm]=(unpaidByName[nm]||0)+Number(it.amount||0);
+    });
+    printPending.items.forEach(function(p){
+      const amt=unpaidBySession[String(p.sessionId||'')]||unpaidByName[String(p.name||'')]||0;
+      if(amt>0) p.unpaidExtra=roundCurrency_(amt);
+    });
+    printPending.unpaidCount=printPending.items.filter(function(p){return p.unpaidExtra>0;}).length;
+    printPending.unpaidTotal=roundCurrency_(printPending.items.reduce(function(sum,p){return sum+(Number(p.unpaidExtra)||0);},0));
   }catch(e){Logger.log('briefing extrasUnpaid fail: '+e.message);_briefFail_(sectionFailures,'추가금 미수',e);}
   /* 카드·은행 대사 검토 — 최근 14일 창의 review 만. 대사 신뢰 회복(@696~@701) 후 여기 뜨는 건
      = 진짜 액션(워크인 매출 미기록, 미귀속 입금)이다. 과거 달의 역사적 review 는 월마감 트랙에서
@@ -14885,7 +16734,18 @@ function _buildDailyBriefingData_(){
     let lastDate='';
     bankTxs.forEach(function(t){const d=String(t.date||'').slice(0,10);if(d>lastDate)lastDate=d;});
     const days=lastDate?Math.floor((new Date(today+'T00:00:00')-new Date(lastDate+'T00:00:00'))/86400000):null;
-    if(!lastDate||days>=21) bankGap={lastDate:lastDate,days:days,count:bankTxs.length};
+    /* 은행 CSV 는 **매달 마감 때 한 번** 받아온다(2026-08-24 사장님 확정 운영).
+       그래서 "며칠째 공백"으로 재면 월 주기상 정상인 기간에도 매달 2주씩 거짓 경고가 뜬다
+       (임계 21일 기준: 마감 직후 0일 → 다음 마감 전 최대 35일). 경보 피로로 진짜 사고를 놓친다.
+       판정을 **월 단위**로 바꾼다: 지난달 거래가 하나라도 있으면 정상. 없으면 이번 달이
+       유예일(10일)을 넘겼을 때만 경고한다 — 그 시점이면 지난달 마감분이 들어와 있어야 한다. */
+    const BANK_GRACE_DAY=10;
+    const nowD=new Date(today+'T00:00:00');
+    const prevMonth=new Date(nowD.getFullYear(),nowD.getMonth()-1,1);
+    const prevKey=Utilities.formatDate(prevMonth,CONFIG.TIMEZONE,'yyyy-MM');
+    const hasPrevMonth=bankTxs.some(function(t){return String(t.date||'').slice(0,7)===prevKey;});
+    const overdue=!hasPrevMonth&&nowD.getDate()>=BANK_GRACE_DAY;
+    if(!lastDate||overdue) bankGap={lastDate:lastDate,days:days,count:bankTxs.length,missingMonth:hasPrevMonth?'':prevKey};
   }catch(e){Logger.log('briefing bankGap fail: '+e.message);_briefFail_(sectionFailures,'은행 데이터',e);}
   /* 아마존 전자 인보이스 미도착 감시 (2026-08-10) — ZUGFeRD 메일 수신을 켰지만(8/8) VAT 검증이
      조용히 멈춰 있으면 인보이스가 영영 안 오고, D8 은 매일 '성공·0건'만 남긴다(그래서 아무도 모른다 —
@@ -14937,7 +16797,61 @@ function _buildDailyBriefingData_(){
   let locationBlockers={count:0,items:[],stale:false,coveredUntil:FFM_BLOCKER_COVERED_UNTIL_};
   try{ locationBlockers=_scanLocationBlockerConflicts_(rows,now); }
   catch(e){Logger.log('briefing locationBlockers fail: '+e.message);_briefFail_(sectionFailures,'로케이션 블로커',e);}
-  return {ok:true,date:today,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,sectionFailures:sectionFailures};
+  /* 출장비 누락 — 존2 이상인데 상품 정가만 받은 미래 예약 (rows 재사용, Maps 호출 없음) */
+  let travelFeeGaps={count:0,items:[],ledgerRows:0};
+  try{ travelFeeGaps=_scanTravelFeeGaps_(rows,now); }
+  catch(e){Logger.log('briefing travelFeeGaps fail: '+e.message);_briefFail_(sectionFailures,'출장비 누락',e);}
+  // 문의·상담 통합 — 리드가 브리핑에 아예 안 잡히던 구멍을 막는다(이홍규 38일 방치 사고)
+  /* 촬영 준비 설문 미작성 — 설문을 만들어 놓고 안 채워진 걸 아무도 안 알려주면 같은 구멍이 생긴다.
+     과도한 재촉은 안 한다: **D-7 이내**만 본다(그 전엔 아직 시간이 있다). */
+  /* 셀렉 마감 경고 — 마감 7일 전부터, 경과 건은 계속. **연락처를 함께 싣는다**:
+     이메일 무응답이 문제의 본질이므로 다음 수단은 전화·카카오다(사장님 지시 2026-08-28).
+     이메일이 무효(수기등록)라 리마인드가 아예 못 나간 건도 여기서만 보인다. */
+  let selectDeadline={count:0,items:[]};
+  try{
+    const _sdSh=ensureSelectSheet_(sh.getParent());   // 이 스코프엔 ss 가 없다 — sh=getDbSheet() 뿐
+    const _sdRows=_sdSh.getDataRange().getValues().slice(1);
+    const _sdToday=today;
+    const _sdItems=[];
+    _sdRows.forEach(function(r){
+      if(String(r[SELECT_COL['상태']]||'')!=='대기중') return;
+      if(String(r[SELECT_COL['제출일시']]||'').trim()) return;
+      /* 좀비 가드 — 연결 예약이 종결이면 경고 대상 아님(리마인드 루프와 같은 판정) */
+      const _bIdx=parseInt(r[SELECT_COL['예약장부행']],10)||0;
+      if(_bIdx>=2&&_bIdx-1<rows.length){
+        const _bst=String(rows[_bIdx-1][BOOKING_COL['상태']]||'').trim();
+        if(_bst==='작업완료'||_bst==='취소됨'||_bst==='자동취소') return;
+      }
+      const dl=String(parseDateSafe_(r[SELECT_COL['셀렉마감일']]).str||'').slice(0,10);
+      if(!dl) return;
+      const days=Math.round((new Date(dl+'T12:00:00')-new Date(_sdToday+'T12:00:00'))/86400000);
+      if(days>7) return;
+      const email=String(r[SELECT_COL['이메일']]||'');
+      _sdItems.push({name:String(r[SELECT_COL['고객명']]||''),
+        phone:String(r[SELECT_COL['연락처']]||''),
+        deadline:dl,daysLeft:days,
+        stage:parseInt(r[SELECT_COL['최종알림단계']])||0,
+        noEmail:!(email.indexOf('@')>-1&&email.indexOf('수기등록')<0)});
+    });
+    _sdItems.sort(function(a,b){return a.daysLeft-b.daysLeft;});
+    selectDeadline={count:_sdItems.length,items:_sdItems.slice(0,8)};
+  }catch(e){ Logger.log('briefing selectDeadline skipped: '+e.message); _briefFail_(sectionFailures,'셀렉마감',e); }
+
+  let prepPending={count:0,items:[]};
+  try{
+    const ps=buildPrepSurveyStatus_(7);
+    const pend=(ps.items||[]).filter(function(i){return !i.submitted;});
+    prepPending={count:pend.length,items:pend.slice(0,6)};
+  }catch(e){ Logger.log('briefing prep skipped: '+e.message); _briefFail_(sectionFailures,'준비설문',e); }
+
+  let inquiries={open:0,stale:0,items:[]};
+  try{ inquiries=buildUnifiedInquiries_({}); }
+  catch(e){ Logger.log('briefing inquiries skipped: '+e.message); _briefFail_(sectionFailures,'문의·상담',e); }
+
+  let flowGaps={receiptGaps:[],retouchOverdue:[]};
+  try{ flowGaps=buildOpsFlowGaps_(); }
+  catch(e){ Logger.log('briefing flowGaps skipped: '+e.message); _briefFail_(sectionFailures,'흐름진단',e); }
+  return {ok:true,date:today,flowGaps:flowGaps,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -14991,6 +16905,21 @@ function buildDailyBriefingEmailHtml_(b){
       +`그 이후 촬영은 <b>충돌 없음이 아니라 확인 안 됨</b>입니다. visitfrankfurt.travel 대형행사 목록에서 새 연도 일정을 받아 `
       +`<code>FFM_BLOCKERS_</code> 를 갱신해 주세요.`));
   }
+  /* 출장비 누락 — 자동으로 금액을 바꾸지 않는다. 반영은 booking-set-amount 로 수동. */
+  if(b.travelFeeGaps&&b.travelFeeGaps.count>0){
+    b.travelFeeGaps.items.forEach(function(t){
+      const feeText=t.fee==null?'상담 견적 대상인데 반영 흔적 없음':`출장비 ${money(t.fee)} 미반영으로 보임`;
+      actions.push(line(`🚗 <b>${esc(t.name)}</b>님 (${esc(t.date.slice(5).replace('-','/'))}, ${esc(String(t.location).slice(0,40))}) — `
+        +`<b style="color:#b45309;">존${t.zone} ${feeText}</b> (편도 ${t.oneWayKm}km)`
+        +`<br>&nbsp;&nbsp;${esc(t.product)} · 총액 ${money(t.total)} = 정가 ${money(t.listPrice)}`
+        +`${t.status==='대기중'?' '+badge('대기중','#fef3c7','#92400e'):''}`
+        +` — 맞으면 <code>booking-set-amount</code> 로 반영 (행 ${t.rowIndex})`));
+    });
+  }
+  if(b.travelFeeGaps&&b.travelFeeGaps.ledgerRows===0){
+    actions.push(line(`🚗 <b style="color:#b91c1c;">출장장부가 비어 있어 출장비 점검을 못 했습니다</b> — `
+      +`<code>T1 출장장부 동기화</code> 결과를 확인해 주세요.`));
+  }
   b.depositWaiting.forEach(function(d){
     // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)가 사장님 확인 없이 실행되므로, 남은 일수를 앞에 세운다
     const urgent=d.daysToAutoCancel!=null&&d.daysToAutoCancel<=3;
@@ -15003,7 +16932,7 @@ function buildDailyBriefingEmailHtml_(b){
   b.quotes.holdDueToday.forEach(function(q){actions.push(line(`⏸ 보류 견적 재확인 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (${money(q.total)})${q.tentativeStart?' · 📅 가예약 '+esc(q.tentativeStart):''}`));});
   b.quotes.expiringSoon.forEach(function(q){actions.push(line(`⏳ 견적 유효기한 임박 — <b>${esc(q.number)}</b> ${esc(q.customer||'')} (~${esc(q.validUntil)})`));});
   if(b.bankGap){
-    actions.push(line(`🏦 <b style="color:#b91c1c;">은행 거래가 ${b.bankGap.lastDate?`${b.bankGap.days}일째 없습니다`:'최근 4개월간 없습니다'}</b>`
+    actions.push(line(`🏦 <b style="color:#b91c1c;">${b.bankGap.missingMonth?`${esc(b.bankGap.missingMonth)} 은행 거래가 아직 없습니다`:(b.bankGap.lastDate?`은행 거래가 ${b.bankGap.days}일째 없습니다`:'최근 4개월간 은행 거래가 없습니다')}</b>`
       +`${b.bankGap.lastDate?` (마지막 ${esc(b.bankGap.lastDate)})`:''} — Deutsche Bank CSV를 가져와 주세요. `
       +`<b>지출·매입세액이 빠진 채로 마감하면 세금을 과납합니다.</b>`));
   }
@@ -15023,9 +16952,13 @@ function buildDailyBriefingEmailHtml_(b){
   }
   if(b.select.revisionRequested>0) actions.push(line(`✏️ 재수정 요청 <b>${b.select.revisionRequested}건</b> 대기 중`));
   if(b.printPending&&b.printPending.count>0){
-    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b> — 인화앱에서 세션 불러와 자동출력`));
+    actions.push(line(`🖨 인화 출력 대기 <b>${b.printPending.count}건</b>${b.printPending.unpaidCount?` <span style="color:#b45309;">(수령 시 받을 금액 ${b.printPending.unpaidTotal}€ · ${b.printPending.unpaidCount}건)</span>`:''}`));
     (b.printPending.items||[]).forEach(function(p){
-      actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`));
+      /* 추가금은 **출력 후 수령 시 지불**이 정상 운영(2026-08-24 확정)이라 경고가 아니라
+         "얼마 받을지" 리마인더다. 붉은색(사고)이 아니라 주황(안내)으로 둔다 —
+         정상 흐름을 매일 붉게 띄우면 진짜 경고가 묻힌다. */
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(p.name)}</b>님 · ${esc(p.shootDate)} 촬영 · ${p.count}장${p.submittedAt?' · 셀렉제출 '+esc(p.submittedAt):''}`
+        +`${p.unpaidExtra?` <b style="color:#b45309;">· 수령 시 ${p.unpaidExtra}€ 수납</b>`:''}`));
     });
     if(b.printPending.count>(b.printPending.items||[]).length) actions.push(line(`&nbsp;&nbsp;· 외 ${b.printPending.count-(b.printPending.items||[]).length}건`));
   }
@@ -15040,6 +16973,18 @@ function buildDailyBriefingEmailHtml_(b){
     });
     actions.push(line(`&nbsp;&nbsp;· <a href="${SELECT_HANDOVER_PAGE_BASE}" style="color:#2563eb;">수령 확인 페이지 열기</a>`
       +`${b.handoverPending.count>(b.handoverPending.items||[]).length?(' · 외 '+(b.handoverPending.count-(b.handoverPending.items||[]).length)+'건'):''}`));
+  }
+  if(b.flowGaps&&b.flowGaps.receiptGaps&&b.flowGaps.receiptGaps.length){
+    actions.push(line(`🚨 <b style="color:#b91c1c;">셀렉 접수확인 메일 미발송 의심 ${b.flowGaps.receiptGaps.length}건</b> — 고객이 제출했는데 확인 메일 발송 기록이 없습니다`));
+    b.flowGaps.receiptGaps.forEach(function(g){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(g.name)}</b>님 · 제출 ${esc(String(g.submittedAt).slice(5))} (셀렉행 ${g.rowIndex})`));
+    });
+  }
+  if(b.flowGaps&&b.flowGaps.retouchOverdue&&b.flowGaps.retouchOverdue.length){
+    actions.push(line(`⏰ 보정 지연 <b>${b.flowGaps.retouchOverdue.length}건</b> — 제출 후 21일 경과(고객 안내 "2~3주" 초과), 아직 작업대기`));
+    b.flowGaps.retouchOverdue.forEach(function(g){
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(g.name)}</b>님 · 제출 ${esc(String(g.submittedAt).slice(5))} — <b style="color:#b91c1c;">${g.days}일째</b>`));
+    });
   }
   if(b.selectNotSent&&b.selectNotSent.count>0){
     actions.push(line(`📷 셀렉 미발송 <b>${b.selectNotSent.count}건</b> — 촬영이 끝났는데 셀렉 링크가 안 나갔습니다`));
@@ -15082,11 +17027,49 @@ function buildDailyBriefingEmailHtml_(b){
     }
   }
   if(b.evidenceInboxCount>0) actions.push(line(`📥 회계 인박스 미처리 증빙 <b>${b.evidenceInboxCount}건</b> — Claude에게 "영수증 정리해줘"`));
-  if(b.consultations&&b.consultations.open>0){
-    actions.push(line(`💼 미처리 상담 <b>${b.consultations.open}건</b> — Claude에게 "상담 견적 초안 만들어줘"`));
-    (b.consultations.items||[]).forEach(function(c){
-      actions.push(line(`&nbsp;&nbsp;· ${esc(c.status)} — <b>${esc(c.company||c.name)}</b> (${esc(c.type)}) ${esc(String(c.submittedAt).slice(5,16))}`));
+  /* 문의·상담 통합 — 홈페이지 문의(리드)가 브리핑에 아예 안 잡혀 38일·56일씩 방치된 사고에서 출발.
+     오래 묵은 순으로 세우고, 3일 넘게 답이 없는 건은 붉게 세운다. */
+  if(b.selectDeadline&&b.selectDeadline.count>0){
+    actions.push(line(`⏰ 셀렉 마감 임박·경과 <b>${b.selectDeadline.count}건</b> — 메일 무응답이면 전화·카카오로`));
+    (b.selectDeadline.items||[]).forEach(function(sd){
+      const overdue=sd.daysLeft<0;
+      const when=overdue?`마감 <b style="color:#dc2626;">${-sd.daysLeft}일 경과</b>`:(sd.daysLeft===0?'<b style="color:#dc2626;">오늘 마감</b>':`D-${sd.daysLeft}`);
+      actions.push(line(`&nbsp;&nbsp;· ${esc(sd.name)}님 · ${when} (~${esc(sd.deadline)}) · 📞 <a href="tel:${esc(String(sd.phone||'').replace(/[^+\d]/g,''))}" style="color:#0066cc;text-decoration:none;">${esc(sd.phone||'연락처 없음')}</a>${sd.noEmail?' · <b style="color:#dc2626;">이메일 무효 — 메일 못 감</b>':''}${sd.stage>=2?' · 최종통지 발송됨':''}`));
     });
+  }
+  if(b.prepPending&&b.prepPending.count>0){
+    actions.push(line(`📝 촬영 준비 설문 미작성 <b>${b.prepPending.count}건</b> (D-7 이내)`));
+    (b.prepPending.items||[]).forEach(function(pp){
+      const urgent=pp.daysToShoot<=2;
+      actions.push(line(`&nbsp;&nbsp;· <b>${esc(pp.name)}</b>님 · ${esc(String(pp.dateTime).slice(5,16))} ${esc(pp.product)} — `
+        +`<b style="color:${urgent?'#b91c1c':'#64748b'};">D-${pp.daysToShoot}</b>`));
+    });
+  }
+  if(b.inquiries&&b.inquiries.open>0){
+    const inq=b.inquiries;
+    const staleText=inq.stale>0?` — <b style="color:#b91c1c;">${inq.stale}건은 ${INQUIRY_STALE_DAYS_}일 넘게 답장이 없습니다</b>`:'';
+    const fixText=inq.convertFix>0?` · <b style="color:#b45309;">${inq.convertFix}건은 이미 예약이 잡혀 있어 상태 정리만 필요합니다</b>`:'';
+    actions.push(line(`📨 미처리 문의·상담 <b>${inq.open}건</b>${staleText}${fixText}`));
+    (inq.items||[]).filter(function(i){return i.open;}).slice(0,8).forEach(function(i){
+      const age=i.ageDays==null?'':(i.ageDays===0?'오늘':`${i.ageDays}일째`);
+      // 예약이 이미 잡힌 건은 '방치'가 아니다 — 붉게 세우지 않고 정리 안내만 붙인다
+      const aged=!i.booking&&i.ageDays!=null&&i.ageDays>=INQUIRY_STALE_DAYS_;
+      const who=esc(i.company||i.name||'-');
+      const contact=esc(i.email||i.phone||'');
+      const matched=i.booking
+        ? `<br>&nbsp;&nbsp;&nbsp;&nbsp;<b style="color:#047857;">✅ 예약 있음</b> — 행 ${i.booking.rowIndex} `
+          +`${esc(i.booking.name)} · ${esc(i.booking.dateTime)} · ${esc(i.booking.status)} `
+          +`<span style="color:#94a3b8;">(${i.booking.via==='email'?'이메일':'전화'} 일치)</span>`
+          +`${i.needsConvertFix?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#b45309;">→ 문의 상태를 <b>예약전환</b>으로 정리해 주세요</span>`:''}`
+        : '';
+      actions.push(line(`&nbsp;&nbsp;· ${esc(i.kindLabel)} · ${esc(i.status)} — <b>${who}</b>`
+        +`${i.type?` (${esc(i.type)})`:''}`
+        +`${age?` <b style="color:${aged?'#b91c1c':'#64748b'};">${esc(age)}</b>`:''}`
+        +`${contact?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#64748b;">${contact}</span>`:''}`
+        +matched
+        +`${i.summary?`<br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#94a3b8;">${esc(i.summary.slice(0,90))}</span>`:''}`));
+    });
+    if(inq.open>8) actions.push(line(`&nbsp;&nbsp;외 ${inq.open-8}건 — Claude에게 "문의 목록 보여줘"`));
   }
   parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
   // 3) 미수 잔금
@@ -15151,7 +17134,55 @@ function briefingActionCount_(b){
     +((b.calendarAudit&&b.calendarAudit.problemCount)||0)
     +((b.locationBlockers&&b.locationBlockers.count)||0)
     +((b.locationBlockers&&b.locationBlockers.stale)?1:0)
+    +((b.travelFeeGaps&&b.travelFeeGaps.count)||0)
+    +((b.travelFeeGaps&&b.travelFeeGaps.ledgerRows===0)?1:0)
     +((b.sectionFailures&&b.sectionFailures.length)||0);
+}
+
+/* ===== 운영 흐름 자가진단 (2026-08-31) =====
+   셀렉 접수확인 메일이 3주간 조용히 죽어 있던 사고에서 출발 — 코드가 "보냈다고 믿는" 것과
+   "실제 발송 로그"를 대조한다. 개별 메일 함수를 고칠 때마다 여기가 안전망이 된다.
+   ① receiptGaps: 최근 7일 셀렉 제출 건 중, 메일로그에 접수/수정 확인 '성공' 기록이 없는 것
+   ② retouchOverdue: 작업대기 상태로 제출 21일 경과 (고객 약속 "보정 2~3주" 초과) */
+function buildOpsFlowGaps_(){
+  const out={receiptGaps:[],retouchOverdue:[]};
+  const tz=CONFIG.TIMEZONE, now=new Date();
+  const today=Utilities.formatDate(now,tz,'yyyy-MM-dd');
+  const d7=Utilities.formatDate(new Date(now.getTime()-7*86400000),tz,'yyyy-MM-dd');
+  const d21=Utilities.formatDate(new Date(now.getTime()-21*86400000),tz,'yyyy-MM-dd');
+  const sheets=ensureSheets_();
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const rows=selSh.getLastRow()>1?selSh.getDataRange().getValues().slice(1):[];
+  const logSh=sheets.messageLogSheet;
+  const lLast=logSh.getLastRow();
+  const lN=Math.min(900,Math.max(0,lLast-1));
+  const logs=lN?logSh.getRange(lLast-lN+1,1,lN,MESSAGE_LOG_HEADERS.length).getValues():[];
+  const okMail=logs.filter(function(r){return String(r[MESSAGE_LOG_COL['상태']]||'')==='성공';});
+  rows.forEach(function(r,i){
+    const name=String(r[SELECT_COL['고객명']]||'').trim();
+    const email=String(r[SELECT_COL['이메일']]||'').trim();
+    const status=String(r[SELECT_COL['상태']]||'').trim();
+    const sub=String(parseDateSafe_(r[SELECT_COL['제출일시']]).str||'');
+    if(!sub) return;
+    // ① 접수확인 대조 — 이메일이 있는 고객만(무이메일·수기는 안 가는 게 정상)
+    if(sub.slice(0,10)>=d7 && email.indexOf('@')>0 && email.indexOf('수기')<0){
+      const hasReceipt=okMail.some(function(m){
+        const t=String(m[MESSAGE_LOG_COL['제목']]||'');
+        return (t.indexOf('셀렉 접수 완료')>-1||t.indexOf('셀렉 수정 접수')>-1
+                ||t.indexOf('Selection Received')>-1||t.indexOf('Selection Updated')>-1
+                ||t.indexOf('Fotoauswahl erhalten')>-1||t.indexOf('Fotoauswahl aktualisiert')>-1)
+          && name && t.indexOf(name)>-1
+          && String(m[MESSAGE_LOG_COL['일시']]||'')>=sub.slice(0,16);
+      });
+      if(!hasReceipt) out.receiptGaps.push({rowIndex:i+2,name:name,submittedAt:sub.slice(0,16)});
+    }
+    // ② 보정 SLA — 작업대기인데 제출 21일 경과
+    if(status==='작업대기' && sub.slice(0,10)<=d21){
+      out.retouchOverdue.push({rowIndex:i+2,name:name,submittedAt:sub.slice(0,10),
+        days:Math.abs(daysBetweenDates_(today,sub.slice(0,10)))});
+    }
+  });
+  return out;
 }
 
 function sendDailyBriefingEmail_(){
@@ -15255,7 +17286,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
   const balanceText=balance>0?formatEuroAmount_(balance)+'€':'';
   const paidAtText=String(paidAt||'').trim();
   const subject={
-    ko:`[Studio mean] 예약금 입금 확인 안내 — ${name}님`,
+    ko:`[Studio mean] 계약금 입금 확인 안내 — ${name}님`,
     en:`[Studio mean] Deposit received — ${name}`,
     de:`[Studio mean] Anzahlung erhalten — ${name}`
   };
@@ -15263,7 +17294,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
     ko:[
       ['상품',product],
       ['촬영일시',shootAt],
-      ['확인된 예약금',paidText],
+      ['확인된 계약금',paidText],
       ['확인일',paidAtText],
       balanceText?['잔금',balanceText]:null
     ],
@@ -15278,7 +17309,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
       ['Paket',product],
       ['Termin',shootAt],
       ['Erhaltene Anzahlung',paidText],
-      ['Bestaetigt am',paidAtText],
+      ['Bestätigt am',paidAtText],
       balanceText?['Restbetrag',balanceText]:null
     ]
   };
@@ -15286,7 +17317,7 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
     return `<tr><td style="padding:8px 12px;background:#f8fafc;font-weight:700;width:140px;border-bottom:1px solid #e2e8f0;font-size:12px;">${escapeHtml_(pair[0])}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;">${escapeHtml_(pair[1])}</td></tr>`;
   }).join('');
   const intro={
-    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p><p>보내주신 예약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
+    ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p><p>보내주신 계약금 입금이 확인되었습니다. 예약 일정은 정상적으로 유지됩니다.</p>`,
     en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p><p>We have received your deposit. Your booking remains confirmed.</p>`,
     de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p><p>Ihre Anzahlung ist eingegangen. Ihre Buchung bleibt bestätigt.</p>`
   };
@@ -15321,6 +17352,8 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
 // 잔금 결제 확인 — 결제일 자유 지정 (촬영 당일 포함 과거/미래 모두 허용)
 function confirmBookingBalanceAdmin(token,rIdx,payload){
   assertAdmin_(token);
+  // 오늘 보드가 즉시 반영되도록 (캐시 15초를 기다리지 않게)
+  try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
   payload=payload||{};
   const sh=getDbSheet();
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
@@ -15344,6 +17377,20 @@ function confirmBookingBalanceAdmin(token,rIdx,payload){
   return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod};
 }
 
+/* 현장수령 계약금은 '현금이냐 카드냐'가 장부를 가른다 — 계약금수단 열의 문자열이 곧 분류 기준이고
+   (isCashPayMethod_ → 현금장부, _dayCloseBucket_ → 일마감 버킷), 그동안 입금확인 시 '현장결제' 한
+   덩어리로 굳어져 **현금 수납이 현금장부에 영영 안 잡혔다**(2026-08-29 김혜수 €50, 실물 금고 불일치).
+   isCashPayMethod_ 정규식에 '현장결제'를 더하는 건 오답이다 — 카드 현장결제까지 현금으로 새서
+   현금장부 과대 + SumUp 이중계상이 된다. 수단 자체를 기록하는 것만이 정답. */
+function normalizeDepositPayMethod_(value){
+  const raw=String(value||'').trim();
+  if(!raw) return '';
+  if(/현금|cash|bar/i.test(raw)) return '현금';
+  if(/카드|card|sumup|karte|kredit/i.test(raw)) return '카드';
+  if(/계좌|이체|überweisung|ueberweisung|transfer|bank|iban/i.test(raw)) return '계좌이체';
+  throw new Error('payMethod 는 현금·카드·계좌이체 중 하나여야 합니다: '+raw);
+}
+
 function confirmBookingDepositAdmin(token,rIdx,amount,options){
   assertAdmin_(token);
   const opts=options||{};
@@ -15355,6 +17402,8 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
   const alreadyPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
   const paidAmount=parseMoneyValue_(amount)||deposit;
   const currentDepositMethod=String(row[BOOKING_COL['계약금수단']]||'').trim();
+  const isOnsiteException=currentDepositMethod===DEPOSIT_ONSITE_EXCEPTION_MARKER;
+  const payMethod=normalizeDepositPayMethod_(opts.payMethod);
   const now=new Date();
   /* 입금일은 **실제 입금일**을 쓸 수 있어야 한다 — 은행 CSV 를 나중에 대조하면 확인 시점과
      실제 입금일이 며칠 어긋나고, 분기 귀속이 흔들린다(2026-08-06 실측: 7/28·7/30 입금을
@@ -15371,8 +17420,14 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
   if(BOOKING_COL['계약금']!=null && /입금전/.test(String(row[BOOKING_COL['계약금']]||''))){
     sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(paidAmount);
   }
-  if(BOOKING_COL['계약금수단']!=null && currentDepositMethod===DEPOSIT_ONSITE_EXCEPTION_MARKER){
-    sh.getRange(rIdx,BOOKING_COL['계약금수단']+1).setValue('현장결제');
+  /* 계약금수단에 **실제 수단**을 굳힌다. 현장결제 건은 '현장결제(현금)'처럼 현장 수령 사실도 함께
+     보존한다 — 괄호 안 수단만으로 현금장부/카드 버킷이 정확히 갈린다. payMethod 미지정이면 종전과
+     동일하게 '현장결제'(현금장부 미포함) — 하위호환. */
+  const savedDepositMethod=isOnsiteException
+    ? (payMethod?'현장결제('+payMethod+')':'현장결제')
+    : payMethod;
+  if(BOOKING_COL['계약금수단']!=null && savedDepositMethod){
+    sh.getRange(rIdx,BOOKING_COL['계약금수단']+1).setValue(savedDepositMethod);
   }
   if(BOOKING_COL['입금경고일시']!=null) sh.getRange(rIdx,BOOKING_COL['입금경고일시']+1).setValue('');
   if(BOOKING_COL['Lexware결제상태']!=null){
@@ -15383,10 +17438,16 @@ function confirmBookingDepositAdmin(token,rIdx,amount,options){
     sh.getRange(rIdx,BOOKING_COL['Lexware동기화일시']+1).setValue(Utilities.formatDate(now,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
   }
   const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  /* 촬영이 끝난 뒤 현장수령분을 장부에만 사후 기록하는 경우가 있다 — 그때 '예약금 입금 확인' 안내가
+     한밤중에 고객에게 나가면 안 된다. 사전 입금 확인(기본값)은 종전대로 발송. */
+  const suppressMail=opts.notify===false||opts.notify==='false'||agentBoolFlag_(opts.skipMail);
   const mailResult=alreadyPaid
     ? {requested:false,sent:false,skippedReason:'ALREADY_CONFIRMED'}
-    : sendDepositConfirmationEmail_(rIdx,rowAfter,paidAmount,paidAt);
-  return{ok:true,paidAmount:paidAmount,paidAt:paidAt,mailResult:mailResult};
+    : suppressMail
+      ? {requested:false,sent:false,skippedReason:'SUPPRESSED_BY_CALLER'}
+      : sendDepositConfirmationEmail_(rIdx,rowAfter,paidAmount,paidAt);
+  return{ok:true,paidAmount:paidAmount,paidAt:paidAt,
+    depositMethod:savedDepositMethod||currentDepositMethod,mailResult:mailResult};
 }
 
 function markBookingDepositOnsiteExceptionAdmin(token,rIdx,note){
@@ -15558,10 +17619,10 @@ function cleanStaleBookingDepositMemo_(memo, options){
   options=options||{};
   let cleaned=raw;
   if(options.cleanAutoCancel){
-    cleaned=cleaned.replace(/\s*\[자동취소\]\s*예약\s*(?:확정\s*후|일로부터)?\s*10일\s*내\s*예약금\s*미확인\s*/g,' ');
+    cleaned=cleaned.replace(/\s*\[자동취소\]\s*예약\s*(?:확정\s*후|일로부터)?\s*10일\s*내\s*(?:계약금|예약금)\s*미확인\s*/g,' ');
   }
   if(options.cleanWarning){
-    cleaned=cleaned.replace(/\s*\[입금경고\]\s*예약\s*(?:확정\s*후|일로부터)?\s*(?:5|7)일\s*내\s*예약금\s*미확인\s*/g,' ');
+    cleaned=cleaned.replace(/\s*\[입금경고\]\s*예약\s*(?:확정\s*후|일로부터)?\s*(?:5|7)일\s*내\s*(?:계약금|예약금)\s*미확인\s*/g,' ');
   }
   if(options.cleanPaidConfirm){
     cleaned=cleaned.replace(/\s*(?:계약금|예약금)\s*입금\s*확인됨\s*/g,' ');
@@ -15622,6 +17683,109 @@ function restoreAutoCancelledBookingAdmin(token,rIdx,note){
 function bulkConfirmAllPendingDepositsAdmin(token){
   assertAdmin_(token);
   return bulkConfirmAllPendingDeposits_();
+}
+
+/* ====== 예약 변경 안내 메일 ======
+   2026-08-25 사장님 지시: "일정 변경이든 상품 변경이든 안내가 메일로 나가게 해줘."
+   그전까지 상품·금액을 바꿔도 고객에겐 아무 통지가 없었다 — 노유경 건에서 메일은 Premium/360€,
+   장부는 Plus/300€ 라 고객이 60€ 차이를 모른 채 촬영일을 맞을 뻔했다.
+   **diff 기반**이라 실제로 바뀐 항목만 이전→이후로 보여주고, 바뀐 게 없으면 아예 보내지 않는다
+   (메모·연락처 정정 같은 내부 수정은 조용히 지나간다).
+   일시 변경은 rescheduleBookingAdmin 의 기존 안내 메일이 맡으므로, 그 경로에선 `__silent` 로
+   억제해 **한 번의 저장에 메일 한 통**만 나가게 한다. */
+const BOOKING_CHANGE_NOTICE_FIELDS_=[
+  {key:'date',    label:{ko:'촬영 일시',en:'Date & time',de:'Termin'}},
+  {key:'product', label:{ko:'상품',en:'Service',de:'Leistung'}},
+  {key:'people',  label:{ko:'인원',en:'Guests',de:'Personen'},suffix:{ko:'명',en:'',de:''}},
+  {key:'location',label:{ko:'촬영 장소',en:'Location',de:'Ort'}},
+  {key:'total',   label:{ko:'총 금액',en:'Total',de:'Gesamt'},money:true},
+  {key:'deposit', label:{ko:'계약금',en:'Deposit',de:'Anzahlung'},money:true},
+  {key:'balance', label:{ko:'잔금',en:'Balance',de:'Restbetrag'},money:true}
+];
+function bookingChangeNoticeSnapshot_(row){
+  return {
+    date:String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,16),
+    product:String(row[BOOKING_COL['상품']]||'').trim(),
+    people:String(row[BOOKING_COL['인원']]||'').trim(),
+    location:String(parseBookingLocationFromRow_(row)||'').trim(),
+    total:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']])),
+    deposit:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])),
+    balance:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]))
+  };
+}
+function buildBookingChangeDiff_(rowBefore,rowAfter){
+  const a=bookingChangeNoticeSnapshot_(rowBefore),b=bookingChangeNoticeSnapshot_(rowAfter);
+  return BOOKING_CHANGE_NOTICE_FIELDS_.filter(function(f){
+    return f.money
+      ? Math.abs(Number(a[f.key]||0)-Number(b[f.key]||0))>=0.005   // 반올림 노이즈로 메일 나가지 않게
+      : String(a[f.key]||'')!==String(b[f.key]||'');
+  }).map(function(f){return {f:f,from:a[f.key],to:b[f.key]};});
+}
+function sendBookingChangeNoticeEmail_(rowBefore,rowAfter,rowIndex){
+  try{
+    const email=String(rowAfter[BOOKING_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')===-1||email.indexOf('수기등록')>-1) return{sent:false,reason:'NO_EMAIL'};
+    if(isBookingCancelledStatus_(rowAfter[BOOKING_COL['상태']])) return{sent:false,reason:'CANCELLED'}; // 취소 안내가 따로 나간다
+    const diff=buildBookingChangeDiff_(rowBefore,rowAfter);
+    if(!diff.length) return{sent:false,reason:'NO_CHANGE'};
+    const lang=String(rowAfter[BOOKING_COL['언어']]||'ko').toLowerCase().trim();
+    const L=(lang==='en'||lang==='de')?lang:'ko';
+    const name=String(rowAfter[BOOKING_COL['고객명']]||'');
+    const fmt=function(d,side){
+      const v=d[side];
+      if(d.f.money) return formatEuroAmount_(Number(v||0))+'€';
+      const s=String(v||'').trim();
+      if(!s) return '-';
+      return escapeHtml_(s)+((d.f.suffix&&d.f.suffix[L])||'');
+    };
+    const subject={
+      ko:`[Studio mean] ${name}님, 예약 내용이 변경되었습니다`,
+      en:`[Studio mean] ${name}, your booking has been updated`,
+      de:`[Studio mean] ${name}, Ihre Buchung wurde geändert`
+    }[L];
+    const hello={ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님.`,en:`Hello <b>${escapeHtml_(name)}</b>,`,de:`Guten Tag, <b>${escapeHtml_(name)}</b>,`}[L];
+    const intro={
+      ko:'예약 내용이 아래와 같이 변경되었습니다. 확인해 주시고, 다른 점이 있으면 알려 주세요.',
+      en:'Your booking has been updated as follows. Please review it and let us know if anything looks wrong.',
+      de:'Ihre Buchung wurde wie folgt geändert. Bitte prüfen Sie die Angaben und melden Sie sich, falls etwas nicht stimmt.'
+    }[L];
+    const head={ko:['항목','변경 전','변경 후'],en:['Item','Before','After'],de:['Position','Vorher','Nachher']}[L];
+    const th='padding:8px 12px;background:#f8fafc;font-weight:700;font-size:12px;color:#475569;text-align:left;border-bottom:1px solid #e2e8f0;';
+    const td='padding:9px 12px;font-size:13px;border-bottom:1px solid #f1f5f9;';
+    const rows=diff.map(function(d){
+      return `<tr><td style="${td}font-weight:700;color:#334155;">${d.f.label[L]}</td>`+
+             `<td style="${td}color:#94a3b8;text-decoration:line-through;">${fmt(d,'from')}</td>`+
+             `<td style="${td}color:#1d4ed8;font-weight:700;">${fmt(d,'to')}</td></tr>`;
+    }).join('');
+    const balDiff=diff.filter(function(d){return d.f.key==='balance';})[0];
+    const balNote=balDiff?{
+      ko:`촬영 당일 결제하실 잔금은 <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b> 입니다.`,
+      en:`The balance due on the shoot day is <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b>.`,
+      de:`Der am Shooting-Tag fällige Restbetrag beträgt <b>${formatEuroAmount_(Number(balDiff.to||0))}€</b>.`
+    }[L]:'';
+    let portalBtn='';
+    try{
+      const ref=createBookingRowActionRef_(rowIndex,rowAfter);
+      const url=('https://booking.studio-mean.com/status/?ref='+encodeURIComponent(ref)).replace(/&/g,'&amp;');
+      const btn={ko:'🔎 내 예약 확인·관리',en:'🔎 View / manage my booking',de:'🔎 Meine Buchung ansehen'}[L];
+      portalBtn=`<p style="margin:20px 0;"><a href="${url}" style="display:inline-block;padding:11px 22px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">${btn}</a></p>`;
+    }catch(e){Logger.log('change notice portal link 실패: '+e.message);}
+    sendTrackedEmail_({
+      to:email,
+      subject:subject,
+      htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;max-width:600px;color:#1e293b;line-height:1.65;">`+
+        `<p>${hello}</p><p>${intro}</p>`+
+        `<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:16px 0;">`+
+        `<tr><th style="${th}">${head[0]}</th><th style="${th}">${head[1]}</th><th style="${th}">${head[2]}</th></tr>`+
+        rows+`</table>`+
+        (balNote?`<p style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;font-size:13px;color:#166534;">${balNote}</p>`:'')+
+        portalBtn+_getSignatureHtml()+`</div>`
+    },{type:'예약변경안내',customerName:name,email:email,bookingRowIndex:rowIndex});
+    return{sent:true,fields:diff.map(function(d){return d.f.key;})};
+  }catch(err){
+    Logger.log('sendBookingChangeNoticeEmail_ 실패 row '+rowIndex+': '+err.message);
+    return{sent:false,reason:'ERROR: '+err.message};   // 메일 실패가 저장을 되돌리면 안 된다
+  }
 }
 
 function updateBookingAdmin(token,rIdx,d){
@@ -15764,7 +17928,9 @@ function updateBookingAdmin(token,rIdx,d){
   try{
     ensureBookingCalendarEventForRow_(sh,rIdx,newRow);
   }catch(e){Logger.log('updateBookingAdmin calendar sync failed row '+rIdx+': '+e.message);}
-  return{ok:true};
+  // 고객이 보는 값이 바뀌었으면 변경 안내 메일. __silent 는 일정변경 메일이 뒤따르는 경우(중복 방지)
+  const changeMail=d.__silent?{sent:false,reason:'SILENT'}:sendBookingChangeNoticeEmail_(rowBefore,newRow,rIdx);
+  return{ok:true,changeMail:changeMail};
 }
 
 // 에이전트 전용 예약 필드 수정 — updateBookingAdmin 을 재사용하되, '부분 업데이트 필드 소실'을 막는다.
@@ -15778,7 +17944,9 @@ function updateBookingAdmin(token,rIdx,d){
 //     계약금11·잔금12·결제수단13·요청사항15·계약금수단17·추가항목18·잔금입금일20 (updateBookingAdmin 의 w() 열과 동일)
 //   · 상태/금액/결제수단 변경은 전용 액션(booking-update-status, booking-set-amount, booking-refund 등)을 쓰도록
 //     이 경로에서는 화이트리스트 밖 키를 거부한다.
-//   · 고객 메일은 발송하지 않는다(updateBookingAdmin 자체가 메일 미발송). location/date/time 변경 시 구글 캘린더는
+//   · 2026-08-25부터 **고객이 보는 값(일시·상품·인원·장소·금액)이 실제로 바뀌면 변경 안내 메일이 나간다**
+//     (사장님 지시). 이름·연락처·메모만 고친 경우엔 diff 가 비어 아무것도 안 나간다. 조용히 고쳐야 하면
+//     `notify:false`. location/date/time 변경 시 구글 캘린더는
 //     기존 이벤트에 sync 되고, 캘린더가 없던 활성 예약이면 1건 생성된다(어드민 저장과 동일 동작).
 function updateBookingFieldsForAgent_(token,rIdx,data){
   assertAdmin_(token);
@@ -15788,7 +17956,7 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','notify'];
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   // '무조건 덮어쓰기' 칸은 현재 값으로 시드(미지정 시 소실 방지). 화이트리스트 필드는 있으면 얹는다.
@@ -15803,7 +17971,8 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
     depPayMethod:row[17],                                // 계약금수단 (유지)
     balanceDate:row[20],                                 // 잔금입금일 (유지)
     memo:(d.memo!==undefined?d.memo:row[15]),            // 요청사항
-    extraItem:row[18]                                    // 추가항목 (updateBookingAdmin 이 세부내역 블록 재구성)
+    extraItem:row[18],                                   // 추가항목 (updateBookingAdmin 이 세부내역 블록 재구성)
+    __silent:(d.notify===false)                          // 기본은 변경 안내 메일 발송(diff 있을 때만)
   };
   // 조건부 칸: 에이전트가 준 경우에만 포함(안 주면 updateBookingAdmin 이 해당 칸을 건드리지 않음)
   if(d.location!==undefined) merged.location=d.location;
@@ -15929,8 +18098,8 @@ function sendPostponedRescheduleLinkAdmin(token,bookingRowIndex,memo){
   };
   sendTrackedEmail_({
     to:email,
-    subject:subjects[lang]||subjects.de,
-    htmlBody:bodies[lang]||bodies.de
+    subject:subjects[lang]||subjects.ko,
+    htmlBody:bodies[lang]||bodies.ko
   },{type:'재예약링크',customerName:name,email,ref:rowRef,meta:{bookingRowIndex}});
   const sentAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
@@ -16204,6 +18373,9 @@ function buildAccountingLedger_(startDate, endDate, forceRefresh, sheetsOpt) {
         const recognition=_normalizeGutscheinTaxRecognition_(gRow[GUTSCHEIN_COL['과세시점']],taxType);
         let gDate='',gGross=0,gLabel='';
         if(recognition==='issue'){
+          /* 잔액 이월행은 새 매출이 아니다 — 상위 코드가 발행 시점에 전액 과세됐다.
+             이 가드가 없으면 부분 사용 한 번에 잔액만큼 매출이 부풀려진다. */
+          if(String(gRow[GUTSCHEIN_COL['발행방식']]||'').trim()==='residual') return;
           const sold=String(gRow[GUTSCHEIN_COL['구매자등록여부']]||'').trim()==='Y'||String(gRow[GUTSCHEIN_COL['판매등록일']]||'').trim();
           if(!sold) return;
           gDate=(parseDateSafe_(gRow[GUTSCHEIN_COL['판매등록일']]||gRow[GUTSCHEIN_COL['발행일']]).str||'').slice(0,10);
@@ -17350,14 +19522,22 @@ function importPaymentCsvAdmin(token, payload){
       errors.push({row:idx+2,message:String(e&&e.message||e)});
     }
   });
-  let created=0, updated=0, matched=0, review=0, feeExpensesCreated=0, feeExpensesUpdated=0;
+  let created=0, updated=0, matched=0, review=0, feeExpensesCreated=0, feeExpensesUpdated=0, feeExpensesSkipped=0;
   let bankExpenseResult={created:0,updated:0,skipped:0,excluded:0,review:0,confirmed:0,totalGross:0};
-  const feeExpenseMap=(source==='sumup' && createFeeExpenses)
-    ? getSumupFeeExpenseMap_(sheets.expenseSheet)
-    : null;
+  const feeExpenseMap=!createFeeExpenses ? null
+    : (source==='sumup' ? getSumupFeeExpenseMap_(sheets.expenseSheet) : getBankFeeExpenseMap_(sheets.expenseSheet));
+  const prevByRow={};
+  existingSettlements.forEach(function(t){ prevByRow[t.rowIndex]=t; });
   transactions.forEach(function(tx){
-    const rowValues=buildSettlementSheetRow_(tx,importedAt);
     const found=findSettlementRow_(existingIndex,tx);
+    /* 사람이 확정한 대조 표시(예약 아님·분할·수동 대사·굿샤인)는 재임포트가 지우지 않는다 — 같은 기간 CSV 를
+       다시 넣는 일은 흔하고(6/1~8/31 파일로 6·7월 재임포트), 자동 판정은 어차피 아래 재매칭이 다시 정한다. */
+    const prev=found.rowIndex ? prevByRow[found.rowIndex] : null;
+    if(prev && isManualSettlementMark_(prev)){
+      tx.matchStatus=prev.matchStatus; tx.matchTarget=prev.matchTarget; tx.matchRow=prev.matchRow;
+      tx.accountingClass=prev.accountingClass||tx.accountingClass; tx.memo=prev.memo;
+    }
+    const rowValues=buildSettlementSheetRow_(tx,importedAt);
     if(found.rowIndex){
       sh.getRange(found.rowIndex,1,1,rowValues.length).setValues([rowValues]);
       registerSettlementRow_(existingIndex,tx,found.refKey,found.rowIndex);
@@ -17370,10 +19550,13 @@ function importPaymentCsvAdmin(token, payload){
     }
     if(tx.matchStatus==='matched'||tx.matchStatus==='sumup_payout'||tx.matchStatus==='expense_matched') matched++;
     else review++;
-    if(source==='sumup' && createFeeExpenses && Number(tx.fee||0)>0){
-      const feeResult=upsertSumupFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap);
+    if(createFeeExpenses && Number(tx.fee||0)>0){
+      const feeResult=source==='sumup'
+        ? upsertSumupFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap)
+        : upsertBankFeeExpense_(tx,sheets.expenseSheet,feeExpenseMap);
       if(feeResult.created) feeExpensesCreated++;
       if(feeResult.updated) feeExpensesUpdated++;
+      if(feeResult.skipped) feeExpensesSkipped++;
     }
   });
   if(createBankExpenses){
@@ -17401,6 +19584,7 @@ function importPaymentCsvAdmin(token, payload){
     rematchedRows:periodRefresh.updated,
     feeExpensesCreated,
     feeExpensesUpdated,
+    feeExpensesSkipped,
     bankExpensesCreated:bankExpenseResult.created,
     bankExpensesUpdated:bankExpenseResult.updated,
     bankExpensesSkipped:bankExpenseResult.skipped,
@@ -17492,7 +19676,7 @@ function applySumupBookingMatchesAdmin(token,startDate,endDate){
   const sumupPaymentResult={matched:0,updated:0,skipped:0,totalGross:0};
   let scanned=0, matched=0, review=0, changed=0;
   txs.forEach(function(tx){
-    if(tx.source!=='sumup' || Number(tx.gross||0)<=0) return;
+    if(tx.source!=='sumup' || Number(tx.gross||0)<=0 || isManualSettlementMark_(tx)) return;
     scanned++;
     const rowOffset=tx.rowIndex-2;
     if(rowOffset<0 || rowOffset>=rows.length) return;
@@ -17543,6 +19727,17 @@ function applySumupBookingMatchesAdmin(token,startDate,endDate){
   };
 }
 
+/* 사람이 확정한 대조 표시 — 자동 재매칭(settlement-refresh · sumup-sync 의 기간 재매칭 · CSV 재임포트 · SumUp 일괄
+   적용)이 덮어쓰면 안 된다. 표시 액션이 남기는 흔적으로 식별한다: mark-nonbooking('예약 아님 · …'),
+   gutschein-match('굿샤인 판매'), mark-split/apply-match/force('수동 확인'·'수동 대사'·'수동매칭'·'수동확정').
+   실사고 2026-09-01: 정산행 384 '예약 아님' 표시가 sumup-sync(lookback 3일)의 기간 재매칭에 review 로 되돌아갔다 —
+   같은 날 표시한 SumUp 정산입금 3건(08-05·17·24)은 창 밖이라 살아남았을 뿐이다. 자동 메모엔 '수동'이 없다. */
+function isManualSettlementMark_(tx){
+  const target=String(tx&&tx.matchTarget||'').trim();
+  if(target.indexOf('예약 아님 ·')===0 || target==='굿샤인 판매') return true;
+  return /수동/.test(String(tx&&tx.memo||''));
+}
+
 function refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting){
   sheets=sheets||ensureSheets_();
   const sh=sheets.settlementSheet;
@@ -17552,13 +19747,15 @@ function refreshSettlementMatchesForPeriod_(sheets,startDate,endDate,accounting)
   const entries=(accounting&&accounting.entries)||[];
   const rows=sh.getRange(2,1,sh.getLastRow()-1,SETTLEMENT_HEADERS.length).getValues();
   const txs=getSettlementTransactions_(startDate,endDate,sh);
+  // 사람이 확정한 표시는 재배정 대상에서 뺀다(요약·검토목록엔 그대로 포함)
+  const autoTxs=txs.filter(function(tx){return !isManualSettlementMark_(tx);});
   let updated=0;
   const baseOpts={bookingSheet:sheets.bookingSheet,applyBankDeposits:false,applySumupPayments:false};
   /* 장부 건 1개 : 거래 1개. 1차로 각 거래의 최선 후보를 뽑고, **점수 높은 순으로** 선점시킨다.
      선점당한 거래는 남은 후보로 다시 찾는다 — 날짜가 딱 맞는 쪽이 이기고, 애매한 쪽이 review 로
      남는 게 옳다(먼저 온 순서로 주면 하루 어긋난 거래가 정답 자리를 뺏는다). */
   const claimed={};
-  const prelim=txs.map(function(tx){
+  const prelim=autoTxs.map(function(tx){
     return {tx:tx, match:matchSettlementTransaction_(tx,entries,txs,baseOpts)};
   }).sort(function(a,b){
     return (Number(b.match&&b.match.score||0))-(Number(a.match&&a.match.score||0));
@@ -17723,6 +19920,24 @@ function analyzeSettlementReviewReason_(tx,bookingSheetOpt,options){
       ? opts.candidates
       : getSettlementBookingCandidatesForTx_(t,bookingSheetOpt,{includeNear:true,limit:6});
     const exact=candidates.filter(function(c){return Number(c.amountDelta||0)<=0.05;});
+    /* 합산결제(거래 1건 = 예약행 N개, 팁 포함)는 단건 후보로는 영영 amount_delta 다 —
+       정확일치 후보가 없을 때만 같은 날·같은 고객명 조합을 찾는다(예약시트 1회 추가 읽기). */
+    if(!exact.length){
+      const bundles=findSettlementBundleCandidates_(t,bookingSheetOpt);
+      if(bundles.length){
+        const b=bundles[0];
+        const bundleReason=createSettlementReviewReason_(
+          'bundle_candidate',
+          '합산결제 후보',
+          `${b.name}님 예약행 ${b.parts.length}개의 금액 합계가 이 거래와 일치합니다 — ${b.label}.`,
+          'settlement-mark-bundle 로 묶어 매칭하세요(dryRun 먼저). 예약장부는 읽기만 하며, 이미 반영된 행이면 표시만 정리됩니다.',
+          'warn',
+          candidates
+        );
+        bundleReason.bundleCandidates=bundles;
+        return bundleReason;
+      }
+    }
     const top=candidates[0]||null;
     const topExact=top && Number(top.amountDelta||0)<=0.05;
     const topCloseDate=top && (Number(top.referenceDayGap||9999)<=10 || Number(top.dayGap||9999)<=1 || Number(top.timeGapMin||999999)<=360);
@@ -17833,7 +20048,8 @@ function getSettlementReviewItems_(transactions,bookingSheetOpt){
         reasonDetail:reason.reasonDetail,
         actionHint:reason.actionHint,
         severity:reason.severity,
-        candidatePreview:reason.candidatePreview
+        candidatePreview:reason.candidatePreview,
+        bundleCandidates:reason.bundleCandidates||[]
       };
     });
 }
@@ -17861,6 +20077,117 @@ function sampleAccountingCloseRows_(rows,limit){
       rowIndex:row.rowIndex||''
     };
   });
+}
+
+/* ===== 세금대장 (2026-08-29) =====
+   설계 원칙: **돈은 지출장부 한 곳에만 있다.** 은행 동기화가 Finanzamt 출금을 이미
+   '세금/공과금' 경비로 기장하므로(Q1 879,34 · Q2 586,60 실확인), 세금대장은 금액을 다시 계상하지
+   않는다 — 세목·귀속기간·신고↔납부 대사와 EÜR 구분(가드)만 담는 메타 계층이다.
+   이렇게 하면 이중계상이 구조적으로 불가능하다.
+
+   EÜR구분이 핵심 가드다:
+   - 공제   : USt 납부(UStVA·연간)와 그 부대비용 — EÜR Betriebsausgabe. 지출장부 행과 연결.
+   - 사적   : **ESt·SolZ 선납/정산 — 경비가 아니다(사적 인출).** 은행 동기화가 Finanzamt 출금을
+              무조건 경비로 잡으므로, 사적 행이 지출장부에 연결돼 있으면 월마감이 blocker 로 세운다.
+              (2024 정정으로 ESt +480~600 고지가 예정돼 있어 곧 실제로 온다.)
+   - 비공제 : Gewerbesteuer 등 — 사업세지만 EÜR 공제 불가. */
+const TAX_LEDGER_SHEET='세금대장';
+const TAX_LEDGER_HEADERS=['세목','귀속기간','신고일','신고액(€)','납부기한','납부일','납부액(€)','EÜR구분','지출행','참조','메모','등록일시'];
+const TAX_COL=TAX_LEDGER_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
+const TAX_KINDS_=['UStVA','USt연간','ESt선납','ESt정산','SolZ','GewSt','부대비용(USt)','기타'];
+const TAX_EUER_={'UStVA':'공제','USt연간':'공제','부대비용(USt)':'공제','ESt선납':'사적','ESt정산':'사적','SolZ':'사적','GewSt':'비공제','기타':'공제'};
+
+function ensureTaxLedgerSheet_(ss){
+  let sh=ss.getSheetByName(TAX_LEDGER_SHEET);
+  if(!sh){
+    sh=ss.insertSheet(TAX_LEDGER_SHEET);
+    sh.appendRow(TAX_LEDGER_HEADERS);
+    sh.getRange(1,1,1,TAX_LEDGER_HEADERS.length).setFontWeight('bold').setBackground('#fef3c7');
+    sh.setFrozenRows(1);
+  } else if(sh.getLastColumn()<TAX_LEDGER_HEADERS.length){
+    sh.getRange(1,sh.getLastColumn()+1,1,TAX_LEDGER_HEADERS.length-sh.getLastColumn())
+      .setValues([TAX_LEDGER_HEADERS.slice(sh.getLastColumn())]);
+  }
+  return sh;
+}
+
+function _taxRowToObject_(row,rowIndex){
+  return {rowIndex:rowIndex,kind:String(row[TAX_COL['세목']]||'').trim(),
+    period:String(row[TAX_COL['귀속기간']]||'').trim(),
+    filedAt:String(parseDateSafe_(row[TAX_COL['신고일']]).str||'').slice(0,10),
+    filedAmount:roundCurrency_(parseMoneyValue_(row[TAX_COL['신고액(€)']])),
+    dueDate:String(parseDateSafe_(row[TAX_COL['납부기한']]).str||'').slice(0,10),
+    paidAt:String(parseDateSafe_(row[TAX_COL['납부일']]).str||'').slice(0,10),
+    paidAmount:roundCurrency_(parseMoneyValue_(row[TAX_COL['납부액(€)']])),
+    euer:String(row[TAX_COL['EÜR구분']]||'').trim(),
+    expenseRow:parseInt(row[TAX_COL['지출행']],10)||0,
+    ref:String(row[TAX_COL['참조']]||'').trim(),
+    memo:String(row[TAX_COL['메모']]||'').trim()};
+}
+
+function listTaxLedger_(){
+  const sh=ensureTaxLedgerSheet_(ensureSheets_().ss);
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,TAX_LEDGER_HEADERS.length).getValues():[];
+  const items=rows.map(function(r,i){return _taxRowToObject_(r,i+2);})
+    .filter(function(t){return t.kind;});
+  items.sort(function(a,b){return (b.paidAt||b.filedAt||'')<(a.paidAt||a.filedAt||'')?-1:1;});
+  return {ok:true,count:items.length,items:items};
+}
+
+function addTaxRecord_(payload){
+  payload=payload||{};
+  const kind=String(payload.kind||'').trim();
+  if(TAX_KINDS_.indexOf(kind)===-1) throw new Error('세목은 다음 중 하나여야 합니다: '+TAX_KINDS_.join(', '));
+  const period=String(payload.period||'').trim();
+  if(!period) throw new Error('귀속기간(period)이 필요합니다. 예: 2026-Q3, 2025');
+  const euer=String(payload.euer||TAX_EUER_[kind]||'공제').trim();
+  if(['공제','사적','비공제'].indexOf(euer)===-1) throw new Error("EÜR구분은 공제/사적/비공제 중 하나입니다.");
+  const sh=ensureTaxLedgerSheet_(ensureSheets_().ss);
+  /* 같은 세목+귀속기간은 한 행 — 신고 따로, 납부 따로 들어와도 합쳐진다(멱등) */
+  const last=sh.getLastRow();
+  const rows=last>1?sh.getRange(2,1,last-1,TAX_LEDGER_HEADERS.length).getValues():[];
+  let rIdx=-1;
+  rows.forEach(function(r,i){
+    if(String(r[TAX_COL['세목']]||'').trim()===kind&&String(r[TAX_COL['귀속기간']]||'').trim()===period) rIdx=i+2;
+  });
+  const nowTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+  const setCell=function(h,v){ if(v!==undefined&&v!==null&&v!=='') sh.getRange(rIdx,TAX_COL[h]+1).setValue(v); };
+  if(rIdx===-1){
+    const row=new Array(TAX_LEDGER_HEADERS.length).fill('');
+    row[TAX_COL['세목']]=kind; row[TAX_COL['귀속기간']]=period; row[TAX_COL['EÜR구분']]=euer;
+    row[TAX_COL['등록일시']]=nowTs;
+    sh.appendRow(row);
+    rIdx=sh.getLastRow();
+  }
+  setCell('신고일',String(payload.filedAt||'').slice(0,10));
+  if(payload.filedAmount!=null&&payload.filedAmount!=='') setCell('신고액(€)',roundCurrency_(Number(payload.filedAmount)));
+  setCell('납부기한',String(payload.dueDate||'').slice(0,10));
+  setCell('납부일',String(payload.paidAt||'').slice(0,10));
+  if(payload.paidAmount!=null&&payload.paidAmount!=='') setCell('납부액(€)',roundCurrency_(Number(payload.paidAmount)));
+  setCell('EÜR구분',euer);
+  if(payload.expenseRow) setCell('지출행',parseInt(payload.expenseRow,10)||'');
+  setCell('참조',String(payload.ref||''));
+  setCell('메모',String(payload.memo||''));
+  return Object.assign({ok:true},_taxRowToObject_(sh.getRange(rIdx,1,1,TAX_LEDGER_HEADERS.length).getValues()[0],rIdx));
+}
+
+function listTaxLedgerAdmin(token){ assertAdmin_(token); return listTaxLedger_(); }
+
+/* 세금 대사 — 월마감·어드민이 같이 쓴다.
+   ① 신고했고 기한이 지났는데 납부 기록이 없다 → 미납 경고
+   ② 공제 구분인데 지출행 연결이 없다 → 은행 CSV 미임포트/기장 누락 (USt2025 228,76이 지금 이 상태)
+   ③ **사적(ESt 등)인데 지출행이 연결돼 있다 → EÜR 오염** — 가장 위험한 상태 */
+function buildTaxReconciliation_(){
+  const t=listTaxLedger_();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const unpaid=[],unlinked=[],privateLinked=[];
+  (t.items||[]).forEach(function(x){
+    if(x.filedAmount>0.005&&!x.paidAt&&x.dueDate&&x.dueDate<today) unpaid.push(x);
+    if(x.euer==='공제'&&x.paidAmount>0.005&&!x.expenseRow) unlinked.push(x);
+    if(x.euer==='사적'&&x.expenseRow) privateLinked.push(x);
+  });
+  return {items:t.items,unpaid:unpaid,unlinked:unlinked,privateLinked:privateLinked};
 }
 
 function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
@@ -17906,6 +20233,28 @@ function getAccountingMonthCloseChecklistAdmin(token,startDate,endDate){
       sample:sampleAccountingCloseRows_(rows,3)
     });
   }
+  try{
+    const taxRecon=buildTaxReconciliation_();
+    addCheck('tax_private_in_expense','세금 EÜR 오염 (사적 세금이 경비로)',
+      taxRecon.privateLinked.length?'fail':'ok',taxRecon.privateLinked.length,
+      taxRecon.privateLinked.reduce(function(a,x){return a+x.paidAmount;},0),
+      taxRecon.privateLinked.length
+        ? 'ESt 등 사적 세금이 지출장부에 연결돼 있습니다: '+taxRecon.privateLinked.map(function(x){return x.kind+' '+x.period;}).join(', ')+' — 해당 지출행을 삭제하거나 연결을 끊어야 EÜR이 맞습니다.'
+        : '사적 세금이 경비로 계상된 건이 없습니다.','accounting',{},'세금대장');
+    addCheck('tax_unpaid','세금 미납 (기한 경과)',
+      taxRecon.unpaid.length?'fail':'ok',taxRecon.unpaid.length,
+      taxRecon.unpaid.reduce(function(a,x){return a+x.filedAmount;},0),
+      taxRecon.unpaid.length
+        ? taxRecon.unpaid.map(function(x){return x.kind+' '+x.period+' €'+x.filedAmount+' (기한 '+x.dueDate+')';}).join(' · ')
+        : '기한 경과 미납 세금이 없습니다.','accounting',{},'세금대장');
+    addCheck('tax_expense_link','세금 납부 ↔ 지출장부 연결',
+      taxRecon.unlinked.length?'warn':'ok',taxRecon.unlinked.length,
+      taxRecon.unlinked.reduce(function(a,x){return a+x.paidAmount;},0),
+      taxRecon.unlinked.length
+        ? '납부됐지만 지출장부에 아직 없는 세금: '+taxRecon.unlinked.map(function(x){return x.kind+' '+x.period+' €'+x.paidAmount;}).join(' · ')+' — 대개 은행 CSV 미임포트입니다.'
+        : '공제 대상 납부가 모두 지출장부와 연결돼 있습니다.','accounting',{},'세금대장');
+  }catch(e){ addCheck('tax_recon','세금 대사','warn',0,0,'세금대장 대사 실패: '+e.message,'accounting',{},''); }
+
   addCheck(
     'settlement_import',
     '결제 CSV 가져오기',
@@ -18415,6 +20764,78 @@ function getSettlementBookingCandidatesForTx_(tx,bookingSheet,options){
   return [];
 }
 
+/* ===== 결제대조 ↔ 굿샤인 판매 연결 =====
+   왜 있나: 2026-08-13 SumUp €185(TAAA4RS7U33)은 굿샤인 T9Z7-5RKQ-RMG6(왕예원) **판매대금**인데
+   매칭보드가 예약 후보 8건을 전부 1순위로 올렸다. 굿샤인 시트와 결제대조 시트 사이에 연결이
+   없어서(연결 컬럼 자체가 없었다) 후보를 예약에서만 찾았기 때문이다.
+   이제 예약 후보를 만들기 **전에** 굿샤인을 먼저 본다. */
+function _readGutscheinSaleRows_(gutscheinSheetOpt){
+  try{
+    const sh=gutscheinSheetOpt||getGutscheinSheet_();
+    if(sh.getLastRow()<2) return [];
+    return sh.getDataRange().getValues().slice(1).map(function(row,i){return {row:row,rowIndex:i+2};});
+  }catch(e){ Logger.log('굿샤인 시트 읽기 실패(매칭보드): '+e.message); return []; }
+}
+
+function getSettlementGutscheinCandidatesForTx_(tx,gutscheinRows){
+  if(!tx || Number(tx.gross||0)<=0) return [];
+  if(tx.source!=='sumup' && tx.source!=='deutschebank') return [];
+  // SumUp 정산 입금(묶음 payout)은 개별 판매가 아니다 — 개별 굿샤인에 붙이면 안 된다
+  if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) return [];
+  const rows=gutscheinRows||[];
+  if(!rows.length) return [];
+  const wantBucket=tx.source==='sumup' ? 'card' : 'bank';
+  const txDate=String(tx.date||'').slice(0,10);
+  const gross=roundCurrency_(Number(tx.gross||0));
+  const txRef=String(tx.paymentRef||'').trim().toUpperCase();
+  const out=[];
+  rows.forEach(function(entry){
+    const row=entry.row;
+    const status=String(row[GUTSCHEIN_COL['상태']]||'').trim();
+    // 재고(미판매)는 돈이 들어온 적이 없고, 취소는 대조 대상이 아니다
+    if(status===GUTSCHEIN_STATUS.STOCK||status===GUTSCHEIN_STATUS.CANCELLED) return;
+    // 잔액 이월행도 입금이 없다 — 상위 코드 판매대금이 이미 매칭됐다
+    if(String(row[GUTSCHEIN_COL['발행방식']]||'').trim()==='residual') return;
+    if(String(row[GUTSCHEIN_COL['정산행']]||'').trim()) return; // 이미 연결됨
+    const amount=roundCurrency_(parseMoneyValue_(row[GUTSCHEIN_COL['발행금액(€)']]));
+    const ref=String(row[GUTSCHEIN_COL['결제참조']]||'').trim().toUpperCase();
+    const soldAt=(parseDateSafe_(row[GUTSCHEIN_COL['판매등록일']]||row[GUTSCHEIN_COL['발행일']]).str||'').slice(0,10);
+    const exactRef=!!(txRef&&ref&&txRef===ref);
+    let dayGap=0;
+    if(!exactRef){
+      if(Math.abs(amount-gross)>0.005) return;                       // 발행금액 == tx.gross
+      if(!soldAt||!txDate) return;
+      dayGap=daysBetweenDates_(soldAt,txDate);
+      if(Math.abs(dayGap)>3) return;                                 // 판매등록일 ±3일
+      const pm=String(row[GUTSCHEIN_COL['결제수단']]||'').trim();
+      // 수단이 적혀 있을 때만 계열을 따진다 — 비어 있는 옛 행을 배제하면 오히려 못 찾는다
+      if(pm && _dayCloseBucket_(pm)!==wantBucket) return;
+    }else if(soldAt&&txDate){
+      dayGap=daysBetweenDates_(soldAt,txDate);
+    }
+    out.push({
+      kind:'gutschein',
+      kindLabel:'굿샤인 판매',
+      rowIndex:entry.rowIndex,
+      code:extractGutscheinCode_(row[GUTSCHEIN_COL['코드']]),
+      purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
+      productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
+      amount:amount,
+      txAmount:gross,
+      amountDelta:roundCurrency_(gross-amount),
+      soldAt:soldAt,
+      dayGap:dayGap,
+      payMethod:String(row[GUTSCHEIN_COL['결제수단']]||'').trim(),
+      status:status,
+      exactRef:exactRef,
+      // 결제참조 정확일치가 최우선, 그다음 날짜 근접
+      score:(exactRef?1000:500)-Math.abs(dayGap)*10
+    });
+  });
+  out.sort(function(a,b){return b.score-a.score;});
+  return out;
+}
+
 function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
   const opts=options||{};
   const candidates=getSettlementBookingCandidatesForTx_(tx,bookingSheet,opts);
@@ -18424,6 +20845,20 @@ function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
   const reviewReason=String(tx.matchStatus||'')==='matched'
     ? null
     : analyzeSettlementReviewReason_(tx,bookingSheet,{candidates:reasonCandidates,includeNear:true,limit:Number(opts.limit||6)||6});
+  const gutscheinCandidates=getSettlementGutscheinCandidatesForTx_(tx,
+    opts.gutscheinRows!=null?opts.gutscheinRows:_readGutscheinSaleRows_());
+  /* 굿샤인 후보가 잡히면 예약 후보는 **강등**한다 — 숨기지는 않는다.
+     굿샤인 쪽이 오탐일 수 있어서(같은 금액의 진짜 예약 입금) 사장님이 여전히 예약을 고를 수 있어야 한다. */
+  const demote=gutscheinCandidates.length>0;
+  const shownCandidates=demote
+    ? candidates.map(function(c){
+        return Object.assign({},c,{demoted:true,score:Math.max(0,Number(c.score||0)-100)});
+      })
+    : candidates;
+  const warning=demote
+    ? '이 입금은 굿샤인 판매대금일 수 있습니다 ('+gutscheinCandidates.map(function(g){return g.code;}).join(', ')
+      +'). 예약 후보는 참고용으로 강등했습니다 — 예약으로 매칭하려면 confirm 이 필요합니다.'
+    : '';
   return {
     rowIndex:tx.rowIndex,
     hash:tx.hash,
@@ -18444,7 +20879,10 @@ function buildSettlementMatchBoardItem_(tx,bookingSheet,options){
     accountingClass:tx.accountingClass,
     memo:tx.memo,
     reviewReason:reviewReason,
-    candidates:candidates
+    bundleCandidates:(reviewReason&&reviewReason.bundleCandidates)||[],
+    warning:warning,
+    gutscheinCandidates:gutscheinCandidates,
+    candidates:shownCandidates
   };
 }
 
@@ -18459,22 +20897,28 @@ function getSettlementMatchBoardAdmin(token,startDate,endDate,source,includeMatc
       if(includeMatched) return true;
       if(String(tx.matchStatus||'')==='matched' && String(tx.matchRow||'').trim()) return false;
       if(String(tx.matchStatus||'')==='sumup_payout') return false;
+      if(isManualSettlementMark_(tx)) return false;   // '예약 아님' 등 사람이 해소한 건은 미결이 아니다
       return true;
     })
     .sort(function(a,b){
       if(a.date===b.date) return Math.abs(Number(b.gross||0))-Math.abs(Number(a.gross||0));
       return a.date>b.date?-1:1;
     });
+  // 굿샤인 시트는 한 번만 읽어 전 거래에 재사용한다 — 건당 재읽기면 시트 read 가 80번이다
+  const gutscheinRows=_readGutscheinSaleRows_();
   const items=txs.slice(0,80).map(function(tx){
-    return buildSettlementMatchBoardItem_(tx,sheets.bookingSheet,{includeNear:true,limit:8});
+    return buildSettlementMatchBoardItem_(tx,sheets.bookingSheet,{includeNear:true,limit:8,gutscheinRows:gutscheinRows});
   });
   const candidateCount=items.reduce(function(sum,item){return sum+(item.candidates||[]).length;},0);
+  const gutscheinFlagged=items.filter(function(item){return (item.gutscheinCandidates||[]).length>0;});
   return {
     ok:true,
     source:src||'all',
     includeMatched:!!includeMatched,
     count:items.length,
     candidateCount:candidateCount,
+    gutscheinFlaggedCount:gutscheinFlagged.length,
+    warnings:gutscheinFlagged.map(function(item){return {rowIndex:item.rowIndex,date:item.date,gross:item.gross,warning:item.warning};}),
     items:items,
     summary:summarizeSettlementImport_(getSettlementTransactions_(startDate,endDate,sheets.settlementSheet),'all')
   };
@@ -18519,6 +20963,38 @@ function applySettlementBookingMatchAdmin(token,payload){
   if(Number(tx.gross||0)<=0) throw new Error('입금 거래만 예약장부에 연결할 수 있습니다.');
   if(tx.source!=='sumup' && tx.source!=='deutschebank') throw new Error('지원하지 않는 거래 소스입니다.');
   if(tx.source==='deutschebank' && isLikelySumupBankIn_(tx)) throw new Error('SumUp 정산 입금은 개별 예약에 직접 연결하지 않습니다.');
+  /* 굿샤인 판매대금을 예약 입금으로 잘못 매칭하는 사고 차단 (08-13 €185 사례).
+     막되 못 뚫게 하지는 않는다 — 같은 금액의 진짜 예약 입금일 수도 있어서 confirm 으로 넘긴다. */
+  const gutscheinHits=getSettlementGutscheinCandidatesForTx_(tx,_readGutscheinSaleRows_());
+  const confirmed=payload.confirm===true||String(payload.confirm||'')==='true';
+  if(gutscheinHits.length && !confirmed){
+    throw new Error('이 입금은 굿샤인 판매대금으로 보입니다 ('
+      +gutscheinHits.map(function(g){return g.code+' '+g.amount+'€';}).join(', ')
+      +'). 굿샤인이 맞으면 settlement-gutschein-match 로 연결하세요. 그래도 예약으로 매칭하려면 confirm:true 를 함께 보내주세요.');
+  }
+  /* force 재바인딩 (2026-08-29) — 자동매칭이 같은 금액(여권 35 ×4)을 순번 무시하고 엉뚱한 예약에
+     붙인 실사고: 노유경 카드 35가 Sol Jung 행에, 최예준 돈이 **전날 이미 결제 완료된** 임채원 행에
+     이중으로 붙었다. 분할결제(220+35=잔금 255)도 단건 금액 검증으로는 통과 불가.
+     → force:true + reason 필수. 금액 검증을 건너뛰고 지정 행에 직접 바인딩하되, 입금확인 반영은
+     하지 않는다(예약행 결제 기록은 별도 확정 절차가 정본) — 정산행 메모에 사유가 남는다. */
+  const forceBind=(payload.force===true||String(payload.force||'')==='true');
+  if(forceBind){
+    const fReason=String(payload.reason||'').trim();
+    if(!fReason) throw new Error('force 매칭에는 reason(사유)이 필요합니다.');
+    const fRow=parseInt(payload.bookingRowIndex,10)||0;
+    if(fRow<2) throw new Error('bookingRowIndex가 필요합니다.');
+    const bRow=sheets.bookingSheet.getRange(fRow,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const bName=String(bRow[BOOKING_COL['고객명']]||'').trim();
+    if(!bName) throw new Error('예약행 '+fRow+' 에 고객명이 없습니다.');
+    updateSettlementMatchRow_(sheets.settlementSheet,ref.rowIndex,{
+      status:'matched',
+      target:'예약/매출',
+      rowIndex:fRow,
+      accountingClass:classifyBookingAccounting_(String(bRow[BOOKING_COL['촬영종류']]||''),String(bRow[BOOKING_COL['상품']]||'')),
+      memo:['수동확정(force)',bName,Number(tx.gross||0)+'€',fReason].filter(Boolean).join(' · ')
+    });
+    return {ok:true,forced:true,settlementRowIndex:ref.rowIndex,bookingRowIndex:fRow,name:bName,gross:tx.gross};
+  }
   const candidate=findManualSettlementCandidate_(tx,sheets.bookingSheet,payload.bookingRowIndex,payload.kind);
   if(!candidate) throw new Error('선택한 예약이 이 결제금액과 맞지 않습니다. 금액이 다른 경우 예약 장부 금액을 먼저 확인해 주세요.');
   const importedAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
@@ -18556,6 +21032,203 @@ function applySettlementBookingMatchAdmin(token,payload){
     summary:summarizeSettlementImport_(txs,'all'),
     reviewItems:getSettlementReviewItems_(txs)
   };
+}
+
+/* 예약행에서 kind(balance/deposit/full)의 대상 금액 — 계약금·잔금 셀은 '298|DB|날짜' 복합 표기라 첫 세그먼트만 쓴다.
+   mark-split · mark-bundle · 합산 후보 탐색이 전부 이 하나를 쓴다(셋이 다른 값을 읽으면 후보는 되는데 실행은 거부되는 어긋남이 생긴다). */
+function bookingKindAmount_(bRow,kind){
+  const seg=function(col){return parseMoneyValue_(String(bRow[BOOKING_COL[col]]||'').split('|')[0]);};
+  const k=String(kind||'balance');
+  if(k==='full') return parseMoneyValue_(bRow[BOOKING_COL['총결제액']]);
+  return k==='deposit'?seg('계약금'):seg('잔금');
+}
+
+function settlementBundleLabel_(parts){
+  return '예약장부 합산('+parts.map(function(p){return p.bookingRowIndex+' '+p.kindLabel+' '+p.amount;}).join(' + ')+')';
+}
+
+/* 합산결제 후보 — 같은 날·같은 고객명 예약행들의 (계약금|잔금|전액) 조합 합계가 거래 gross 와 일치하면 제안한다.
+   왜 있나: 최새진 2026-07-11 카드 €230 = row203 잔금 210 + row212 Trinkgeld 20. 단건 후보는 210(차이 20)이
+   최선이라 영영 amount_delta 였다. 팁 행은 총액≤100 이라 계약금이 없어 '전액'으로 자연히 들어온다.
+   '같은 날' = 예약일시 또는 계약금/잔금 입금일이 거래일과 같은 행. 한 행은 옵션 하나만(또는 제외) 고르는
+   완전탐색 — 그룹당 6행 상한(4^6). 결과는 행 수 적은 조합부터 최대 3개. */
+function findSettlementBundleCandidates_(tx,bookingSheetOpt){
+  const gross=roundCurrency_(Number(tx&&tx.gross||0));
+  const txDate=String(tx&&tx.date||'').slice(0,10);
+  if(gross<=0||!txDate) return [];
+  let sh=bookingSheetOpt||null;
+  if(!sh){ try{ sh=ensureSheets_().bookingSheet; }catch(e){ return []; } }
+  if(!sh||sh.getLastRow()<2) return [];
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const groups={};
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(isBookingCancelledStatus_(status)) return;
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    if(!name) return;
+    const total=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+    if(total<=0) return;
+    const dateOf=function(v){return (parseDateSafe_(v).str||'').slice(0,10);};
+    const bookingDate=dateOf(row[BOOKING_COL['예약일시']]);
+    if(bookingDate!==txDate&&dateOf(row[BOOKING_COL['잔금입금일']])!==txDate&&dateOf(row[BOOKING_COL['계약금입금일']])!==txDate) return;
+    const deposit=roundCurrency_(getEffectiveBookingDeposit_(row));
+    const balance=roundCurrency_(bookingKindAmount_(row,'balance')||Math.max(0,total-deposit));
+    const paidDeposit=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
+    const paidBalance=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+    const opts=(deposit>0
+      ? [{kind:'deposit',amount:deposit,alreadyPaid:paidDeposit},{kind:'balance',amount:balance,alreadyPaid:paidBalance},{kind:'full',amount:total,alreadyPaid:paidBalance}]
+      : [{kind:'full',amount:total,alreadyPaid:paidBalance}]).filter(function(o){return o.amount>0;});
+    const key=normalizeAccountingName_(name);
+    (groups[key]=groups[key]||[]).push({
+      base:{bookingRowIndex:idx+2,name:name,product:String(row[BOOKING_COL['상품']]||'').trim(),
+        group:String(row[BOOKING_COL['촬영종류']]||'').trim(),bookingDate:bookingDate,status:status},
+      opts:opts
+    });
+  });
+  const found=[];
+  Object.keys(groups).forEach(function(key){
+    const g=groups[key].slice(0,6);
+    if(g.length<2) return;
+    const walk=function(i,picked,sum){
+      if(i===g.length){
+        if(picked.length>=2&&Math.abs(roundCurrency_(sum)-gross)<=0.011) found.push(picked.slice());
+        return;
+      }
+      walk(i+1,picked,sum);                       // 이 행은 제외
+      g[i].opts.forEach(function(o){
+        picked.push(Object.assign({},g[i].base,{kind:o.kind,kindLabel:settlementCandidateKindLabel_(o.kind),amount:o.amount,alreadyPaid:o.alreadyPaid}));
+        walk(i+1,picked,sum+o.amount);
+        picked.pop();
+      });
+    };
+    walk(0,[],0);
+  });
+  found.sort(function(a,b){return a.length-b.length;});
+  return found.slice(0,3).map(function(parts){
+    return {
+      kind:'bundle',
+      kindLabel:'합산결제',
+      name:parts[0].name,
+      sum:gross,
+      parts:parts,
+      label:settlementBundleLabel_(parts),
+      // 그대로 settlement-mark-bundle 에 넣으면 실행된다(dryRun 은 confirm 을 빼면 된다)
+      payload:{settlementRowIndex:tx.rowIndex,parts:parts.map(function(p){return {bookingRowIndex:p.bookingRowIndex,kind:p.kind};}),expectName:parts[0].name,confirm:'MATCH'}
+    };
+  });
+}
+
+/* ✏️ 합산결제 정리 `settlement-mark-bundle` (2026-09-03) — 거래 **1건**이 예약장부 **여러 행**의 금액을
+   한 번에 담은 경우(최새진 2026-07-11 카드 €230 = row203 잔금 210 + row212 Trinkgeld 20).
+   apply-match 는 1:1 정확일치, mark-split 은 정산행 N개→예약 1건(정반대 방향)이라 둘 다 못 잡고,
+   mark-nonbooking 은 회계분류가 틀어진다 → 팁을 카드로 함께 받은 건은 영영 review 로 남는다. 그 구멍을 메운다.
+   **예약장부는 읽기만 한다**(mark-split 과 같은 원칙 — 이미 카드·작업완료로 반영된 행을 또 반영하면 이중계상).
+   안전장치: ① parts 대상 금액 합계 == 거래 gross(±0.01) ② parts 고객명 전부 동일(+expectName, 팁 행도 같은 이름)
+   ③ 같은 예약행 중복 지목 금지. confirm:'MATCH' 없으면 dryRun. 정산행에는 대표 행(첫 part)을 매칭행으로,
+   매칭대상에 전체 조합을 적는다. 회계분류는 대표 행 기준 예약매출. */
+function markSettlementBundleAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.settlementRowIndex,10)||0;
+  if(rIdx<2) throw new Error('settlementRowIndex 가 필요합니다.');
+  const parts=Array.isArray(payload.parts)?payload.parts:[];
+  if(parts.length<2) throw new Error('parts 에 예약행이 최소 2개 필요합니다(1건이면 settlement-mark-split).');
+  const sh=ensureSheets_();
+  const ref=getSettlementTransactionByRow_(sh.settlementSheet,rIdx);
+  const tx=ref.tx;
+  const gross=roundCurrency_(Number(tx.gross||0));
+  if(gross<=0) throw new Error('행 '+rIdx+' 은 입금 거래가 아닙니다(총액 '+gross+').');
+  const seen={};
+  const resolved=parts.map(function(p){
+    const bri=parseInt(p&&p.bookingRowIndex,10)||0;
+    if(bri<2) throw new Error('parts[].bookingRowIndex 가 필요합니다.');
+    if(seen[bri]) throw new Error('예약행 '+bri+' 이 parts 에 두 번 있습니다.');
+    seen[bri]=true;
+    const kind=String(p.kind||'balance').trim().toLowerCase();
+    if(['balance','deposit','full'].indexOf(kind)===-1) throw new Error('kind 는 balance / deposit / full 중 하나여야 합니다(행 '+bri+').');
+    const bRow=sh.bookingSheet.getRange(bri,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const name=String(bRow[BOOKING_COL['고객명']]||'').trim();
+    if(!name) throw new Error('예약 행 '+bri+' 을 찾지 못했습니다.');
+    const amount=roundCurrency_(bookingKindAmount_(bRow,kind));
+    if(!(amount>0)) throw new Error('예약행 '+bri+' 의 '+kind+' 금액을 읽지 못했습니다.');
+    return {bookingRowIndex:bri,name:name,kind:kind,kindLabel:settlementCandidateKindLabel_(kind),amount:amount,
+      product:String(bRow[BOOKING_COL['상품']]||'').trim(),group:String(bRow[BOOKING_COL['촬영종류']]||'').trim(),
+      status:String(bRow[BOOKING_COL['상태']]||'').trim()};
+  });
+  const headName=resolved[0].name;
+  const sameName=function(a,b){return normalizeAccountingName_(a)===normalizeAccountingName_(b);};
+  if(resolved.some(function(p){return !sameName(p.name,headName);})){
+    throw new Error('NAME_MISMATCH: parts 고객명이 서로 다릅니다 — '+resolved.map(function(p){return '행'+p.bookingRowIndex+' '+p.name;}).join(' / ')+'. 팁 행도 같은 고객명이어야 합니다.');
+  }
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName&&!sameName(expectName,headName)) throw new Error('NAME_MISMATCH: 예약 고객명이 "'+headName+'" 입니다(기대: "'+expectName+'").');
+  const sum=roundCurrency_(resolved.reduce(function(s,p){return s+p.amount;},0));
+  const label=settlementBundleLabel_(resolved);
+  if(Math.abs(sum-gross)>0.011) throw new Error('AMOUNT_MISMATCH: parts 합계 '+sum+'€ 가 거래 총액 '+gross+'€ 와 다릅니다 — '+label);
+  const out={settlementRowIndex:ref.rowIndex,date:String(tx.date||'').slice(0,10),gross:gross,name:headName,sum:sum,parts:resolved,target:label};
+  if(payload.dryRun===true||String(payload.confirm||'')!=='MATCH'){
+    return Object.assign({dryRun:true},out,{note:'표시하지 않았습니다. confirm:"MATCH" 로 실행하세요. 예약장부는 건드리지 않습니다.'});
+  }
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  updateSettlementMatchRow_(sh.settlementSheet,ref.rowIndex,{
+    status:'matched',target:label,rowIndex:resolved[0].bookingRowIndex,
+    accountingClass:classifyBookingAccounting_(resolved[0].group,resolved[0].product),
+    memo:['합산결제 '+resolved.length+'행',headName,
+      resolved.map(function(p){return '행'+p.bookingRowIndex+' '+p.kindLabel+' '+p.amount+'€';}).join(' + ')+' = '+gross+'€',
+      '장부 반영 완료 — 수동 확인 '+stamp].join(' · ')
+  });
+  return Object.assign({ok:true},out,{note:'결제대조 매칭 표시만 바꿨습니다. 예약장부는 그대로입니다.'});
+}
+
+/* 결제대조 거래 ↔ 굿샤인 판매 확정. 양쪽을 **함께** 채운다 —
+   한쪽만 채우면 다음 매칭보드에서 같은 거래가 또 후보로 올라온다.
+   ‼️ 회계분류는 '굿샤인 매출' 이다. '비매출입금' 이 아니다 — 우리 굿샤인은 SPV 라
+   판매가 곧 과세매출이고, 장부(buildAccountingLedger_)도 발행 시점에 같은 분류로 잡는다.
+   net/USt 19% 분해는 장부 쪽에서 한다(여기는 분류만 심는다). */
+function applySettlementGutscheinMatchAdmin(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sheets=ensureSheets_();
+  const ref=getSettlementTransactionByRow_(sheets.settlementSheet,payload.settlementRowIndex||payload.rowIndex);
+  const tx=ref.tx;
+  if(Number(tx.gross||0)<=0) throw new Error('입금 거래만 굿샤인 판매에 연결할 수 있습니다.');
+  const code=extractGutscheinCode_(payload.code||'');
+  if(!code) throw new Error('굿샤인 코드를 입력해 주세요.');
+  const gutscheinSheet=getGutscheinSheet_();
+  const found=_findGutscheinRow_(gutscheinSheet,code);
+  if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다: '+code);
+  const g=gutscheinRowToObject_(found.row,found.rowIndex);
+  const confirmed=payload.confirm===true||String(payload.confirm||'')==='true';
+  const already=String(found.row[GUTSCHEIN_COL['정산행']]||'').trim();
+  if(already && Number(already)!==Number(ref.rowIndex)){
+    throw new Error('이 굿샤인은 이미 결제대조 행 '+already+' 에 연결되어 있습니다.');
+  }
+  const gross=roundCurrency_(Number(tx.gross||0));
+  const amountDelta=roundCurrency_(gross-Number(g.amount||0));
+  if(Math.abs(amountDelta)>0.005 && !confirmed){
+    throw new Error('금액이 다릅니다 (거래 '+gross+'€ / 굿샤인 발행 '+g.amount+'€). 그래도 연결하려면 confirm:true 를 보내주세요.');
+  }
+  if(payload.dryRun===true){
+    return {dryRun:true,settlementRowIndex:ref.rowIndex,gutscheinRowIndex:found.rowIndex,code:g.code,
+      amount:g.amount,gross:gross,amountDelta:amountDelta,
+      note:'연결하지 않았습니다. dryRun 없이 다시 실행하세요.'};
+  }
+  gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['정산행']+1).setValue(ref.rowIndex);
+  // 거래의 결제참조를 굿샤인에 심어 둔다 — 다음부터는 금액·날짜 휴리스틱 없이 정확일치로 잡힌다
+  if(!String(found.row[GUTSCHEIN_COL['결제참조']]||'').trim() && String(tx.paymentRef||'').trim()){
+    gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['결제참조']+1).setValue(String(tx.paymentRef||'').trim());
+  }
+  updateSettlementMatchRow_(sheets.settlementSheet,ref.rowIndex,{
+    status:'matched',
+    target:'굿샤인 판매',
+    rowIndex:found.rowIndex,
+    accountingClass:'굿샤인 매출',
+    memo:['굿샤인 판매대금',g.code,g.purchaserName||'',gross+'€',
+      Math.abs(amountDelta)>0.005?('금액차 '+amountDelta+'€ 확인승인'):''].filter(Boolean).join(' · ')
+  });
+  return {ok:true,settlementRowIndex:ref.rowIndex,gutscheinRowIndex:found.rowIndex,
+    code:g.code,amount:g.amount,gross:gross,amountDelta:amountDelta,
+    accountingClass:'굿샤인 매출'};
 }
 
 function normalizePaymentImportSource_(source){
@@ -18785,14 +21458,29 @@ function normalizeDeutscheBankCsvRow_(row,filename){
   const counterparty=String(pickCsvValue_(row,['Auftraggeber/Empfänger','Auftraggeber Empfaenger','Auftraggeber/Begünstigter','Auftraggeber Beguenstigter','Beguenstigter/Zahlungspflichtiger','Begünstigter/Zahlungspflichtiger','Name','Counterparty','Zahlungspflichtiger','Empfaenger','Empfänger','Beguenstigter','Begünstigter'])||'').trim();
   const purpose=String(pickCsvValue_(row,['Verwendungszweck','Purpose','Beschreibung','Description','Buchungstext','Text','Vorgang/Verwendungszweck'])||'').trim();
   const ref=String(pickCsvValue_(row,['Kundenreferenz','Mandatsreferenz','End-to-End-Referenz','Referenz','Reference','IBAN'])||'').trim();
+  /* 해외송금 착금(Auslandsüberweisung, AUSL.ZAHL.) — 은행이 수수료를 **원천 차감**해 Betrag 에는 착금액만 온다.
+     Verwendungszweck 의 `AMT+EUR<송금액> FEE+EUR<수수료>` 를 읽어 gross=송금액 / fee=수수료 / net=착금액 으로
+     나눈다(SumUp 행과 같은 구조). 매출·매칭은 송금액(gross) 기준, 수수료는 별도 비용(upsertBankFeeExpense_).
+     실사례 2026-08-31 휘슬러 코리아: AMT+EUR300,00 FEE+EUR5,50 → 착금 294,50 — 종전엔 294,50 이 gross 로 들어가
+     예약 계약금 300 과 영영 매칭이 안 됐다(정산행 384). 송금액−수수료≠착금액이면 파싱 오류로 보고 손대지 않는다.
+     국외 B2B 송금(휘슬러 잔금·호민상사·SkyinQ)마다 반복되는 패턴. */
+  let gross=amount, fee=0;
+  if(amount>0){
+    const amt=purpose.match(/AMT\+EUR([\d.,]+)/i);
+    const fe=purpose.match(/FEE\+EUR([\d.,]+)/i);
+    if(amt&&fe){
+      const a=parseLocaleMoney_(amt[1]), f=parseLocaleMoney_(fe[1]);
+      if(a>0 && f>0 && Math.abs((a-f)-amount)<=0.011){ gross=a; fee=f; }
+    }
+  }
   return {
     date,
     payoutDate:valueDate,
     type:amount>=0?'은행입금':'은행출금',
     counterparty,
     description:purpose||filename,
-    gross:amount,
-    fee:0,
+    gross:gross,
+    fee:fee,
     net:amount,
     currency:String(pickCsvValue_(row,['Waehrung','Währung','Currency'])||'EUR').trim()||'EUR',
     paymentRef:ref,
@@ -18819,11 +21507,21 @@ function settlementDescriptionForKey_(desc){
   return (/\.csv$/i.test(d) || /^kontoumsaetze/i.test(d) || /^kontoums(ä|ae)tze/i.test(d)) ? '' : d;
 }
 
+/* 신원 금액 — SumUp 은 gross(수수료는 payout 후 채워지는 사후값이라 제외). 은행 행은 **착금액(Betrag)** = gross−fee:
+   해외송금은 수수료가 원천 차감돼 gross(송금액)는 파싱 결과일 뿐이고, 은행이 기록한 불변값은 착금액이다.
+   gross 를 그대로 쓰면 AUSL 수수료 파싱 전후로 해시가 달라져 재임포트가 같은 거래를 새 행으로 만든다
+   (정산행 384: 294,50 으로 저장 → 파싱 후 300/5,50 도 같은 행으로 찾혀야 한다). 수수료 0 인 은행 행은 종전과 동일. */
+function settlementIdentityAmount_(source,tx){
+  const gross=Number(tx&&tx.gross||0);
+  if(String(source||'')!=='deutschebank') return gross;
+  return Math.round((gross-(Number(tx&&tx.fee||0)||0))*100)/100;
+}
+
 function settlementIdentityKey_(source,tx){
   return [
     String(source||''),
     String(tx&&tx.date||''),
-    Number(tx&&tx.gross||0).toFixed(2),
+    settlementIdentityAmount_(source,tx).toFixed(2),
     String(tx&&tx.paymentRef||''),
     String(tx&&tx.bankRef||''),
     String(tx&&tx.counterparty||''),
@@ -18873,6 +21571,7 @@ function getSettlementIndex_(sh){
     const idKey=settlementIdentityKey_(source,{
       date:parseDateSafe_(row[SETTLEMENT_COL['거래일']]).str.slice(0,10),
       gross:parseMoneyValue_(row[SETTLEMENT_COL['총액(Brutto)']]),
+      fee:parseMoneyValue_(row[SETTLEMENT_COL['수수료']]),
       paymentRef:row[SETTLEMENT_COL['결제참조']],
       bankRef:row[SETTLEMENT_COL['은행참조']],
       counterparty:row[SETTLEMENT_COL['상대방']],
@@ -18997,6 +21696,7 @@ function dedupeSettlementRowsAdmin(token,opts){
       const tx={
         date:k.date,
         gross:k.gross,
+        fee:Math.round((Number(row[SETTLEMENT_COL['수수료']])||0)*100)/100,   // 은행 착금액 신원(settlementIdentityAmount_)
         paymentRef:String(row[SETTLEMENT_COL['결제참조']]||''),
         bankRef:String(row[SETTLEMENT_COL['은행참조']]||''),
         counterparty:String(row[SETTLEMENT_COL['상대방']]||''),
@@ -19313,8 +22013,15 @@ function scoreBookingPaymentDateProximity_(tx,row,kind,bookingDateTime){
     if(shootGap===0) score+=22;
     else if(shootGap<=1) score+=18;
     else if(shootGap<=3) score+=10;
-    if(timeGapMin<=180) score+=14;
-    else if(timeGapMin<=360) score+=8;
+    /* 같은 날 같은 금액이 여러 건일 때(여권 €35 ×4, 2026-08-29 실측) 시간 근접이
+       순위를 갈라야 한다. 종전 ≤180분 한 버킷(+14)은 그날 후보 전원에게 같은 점수를 줘서
+       이름 노이즈가 순서를 정했다 — 노유경 결제가 Sol Jung 행에 붙은 원인.
+       단 간격을 6점 이상으로 벌려 ambiguous(±5) 판정도 함께 풀리게 한다.
+       ponytail: 절대값 근접만 본다(결제가 촬영 전인지 후인지는 안 따짐) — 오판이 또 나오면 방향 가중 추가 */
+    if(timeGapMin<=45) score+=22;
+    else if(timeGapMin<=120) score+=16;
+    else if(timeGapMin<=240) score+=10;
+    else if(timeGapMin<=420) score+=5;
   }
   return {score:score,referenceDate:refDate,dayGap:shootGap,referenceDayGap:refGap,timeGapMin:minutesBetweenDateTimes_(tx&&tx.dateTime,bookingDateTime)};
 }
@@ -19481,6 +22188,10 @@ function matchSumupBookingPayment_(tx,options){
   /* 예약 1건의 같은 결제 자리는 거래 1건만 채운다 — 같은 날 같은 금액 카드결제 2건이 한 예약의
      잔금을 동시에 물던 사고(2026-03 실측 4쌍). 선점된 예약이면 이 거래는 review 로 남긴다. */
   if(opts.claimedEntries && opts.claimedEntries['booking|'+String(candidate.rowIndex||'')]) return null;
+  /* 이미 결제 완료된 자리인데 기록된 결제일이 이 거래일과 다르면, 이 거래는 그 결제가 아니다.
+     2026-08-29 실측: 전날 결제 완료된 임채원 행이 최예준 €35 거래를 '이미 반영됨'으로 삼켰다.
+     같은 날짜의 이미결제(당일 수기 입금확인 뒤 SumUp 동기화)는 종전대로 붙는다. */
+  if(candidate.alreadyPaid && Number(candidate.referenceDayGap||0)>0) return null;
   const exactAmount=Number(candidate.amountDelta||0)<=0.05;
   const cardLike=/카드|sumup|card|karte/i.test(String(candidate.payMethod||''));
   const closePaymentDate=(Number(candidate.referenceDayGap||9999)<=10) ||
@@ -19749,8 +22460,71 @@ function upsertSumupFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
   return {created:true,updated:false};
 }
 
+/* ── 은행 송금수수료(원천차감) 자동기장 — SumUp 수수료(upsertSumupFeeExpense_)와 같은 경로 ──
+   ID 는 정산행 해시(은행 행은 착금액 기준이라 재임포트에도 불변). vendor Deutsche Bank · 분류 은행수수료 ·
+   VAT 없음(§4 Nr.8 UStG, net=gross). **같은 날짜·같은 금액의 Deutsche Bank 수기 기장이 이미 있으면 만들지 않는다**
+   — 2026-08-31 €5,50 은 손으로 먼저 넣었다(지출행 208). 수기 행은 손대지 않는다(ID 도 안 심는다). */
+function bankFeeExpenseId_(tx){ return 'bank_fee:'+String(tx&&tx.hash||''); }
+
+function getBankFeeExpenseMap_(expenseSheet){
+  const sh=expenseSheet || ensureSheets_().expenseSheet;
+  const out={byId:{},byDateAmount:{}};
+  if(sh.getLastRow()<2) return out;
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,CONFIG.EXPENSE_HEADERS.length).getValues();
+  rows.forEach(function(row,idx){
+    const rowIndex=idx+2;
+    const id=String(row[12]||'').trim();
+    if(id.indexOf('bank_fee:')===0 && !out.byId[id]) out.byId[id]=rowIndex;
+    if(!/deutsche\s*bank/i.test(String(row[1]||''))) return;
+    const key=parseDateSafe_(row[0]).str.slice(0,10)+'|'+(Math.round(parseMoneyValue_(row[4])*100)/100).toFixed(2);
+    if(!out.byDateAmount[key]) out.byDateAmount[key]=rowIndex;
+  });
+  return out;
+}
+
+function upsertBankFeeExpense_(tx,expenseSheetOpt,feeMapOpt){
+  const sh=expenseSheetOpt || ensureSheets_().expenseSheet;
+  const fee=Math.round((Number(tx.fee)||0)*100)/100;
+  if(fee<=0) return {created:false,updated:false,skipped:false};
+  const map=feeMapOpt || getBankFeeExpenseMap_(sh);
+  const feeId=bankFeeExpenseId_(tx);
+  const dateKey=String(tx.date||'').slice(0,10)+'|'+fee.toFixed(2);
+  const existingRow=Number(map.byId[feeId]||0);
+  if(!existingRow && map.byDateAmount[dateKey]){
+    return {created:false,updated:false,skipped:true,rowIndex:map.byDateAmount[dateKey]};
+  }
+  const gross=Math.round((Number(tx.gross)||0)*100)/100;
+  const values=[
+    tx.date,
+    'Deutsche Bank',
+    '은행수수료',
+    'Überweisungsgebühr(원천차감) · '+String(tx.counterparty||'').slice(0,80)+' · 송금액 '+gross+'€',
+    fee,
+    fee,
+    0,
+    'Deutsche Bank 차감',
+    '자동반영 · 송금수수료 원천차감(착금 '+(Math.round((gross-fee)*100)/100)+'€) · '+(tx.filename||''),
+    '',
+    '확정',
+    '은행수수료',
+    feeId,
+    '미전송',
+    ''
+  ];
+  if(existingRow){
+    // 자동 행 갱신은 금액·설명 열만 — 증빙링크·상태 같은 사람이 채운 열은 보존한다
+    sh.getRange(existingRow,1,1,7).setValues([values.slice(0,7)]);
+    return {created:false,updated:true,rowIndex:existingRow};
+  }
+  sh.appendRow(values);
+  const rowIndex=sh.getLastRow();
+  map.byId[feeId]=rowIndex;
+  map.byDateAmount[dateKey]=rowIndex;
+  return {created:true,updated:false,rowIndex:rowIndex};
+}
+
 function isLocalGeneratedExpenseId_(value){
-  return /^(sumup_fee|bank_out):/.test(String(value||'').trim());
+  return /^(sumup_fee|bank_fee|bank_out):/.test(String(value||'').trim());
 }
 
 function getExpenseImportIdMap_(expenseSheet,prefix){
@@ -19923,6 +22697,241 @@ function summarizeSettlementImport_(transactions,source){
 }
 
 /* ====== 사진 셀렉 시스템 ====== */
+/* ===== 촬영 준비 설문 (2026-08-26) =====
+   그동안 확정메일이 "레퍼런스 1~3장 보내주세요"라고 **부탁만** 했다 — 회수율이 낮고, 오더라도
+   카톡·메일·DM 에 흩어져 촬영 당일 다시 물어야 했다. 구조화된 한 페이지로 받아 캘린더 설명에
+   자동으로 실어 촬영 당일 폰에서 바로 보이게 한다.
+   토큰은 예약행 ref(createBookingRowActionRef_)를 그대로 쓴다 — @830 에서 상품·금액 변경에도
+   안 깨지도록 고쳐 뒀으므로 설문 링크가 중간에 죽지 않는다.
+   문항 정의는 **프런트에만** 둔다. 프런트가 id·라벨·요약문을 함께 보내고 서버는 저장만 한다
+   (문항이 서버에도 있으면 3개국어 문구가 두 곳에서 갈라진다). */
+const PREP_SHEET_NAME='촬영준비설문';
+const PREP_HEADERS=['예약장부행','제출일시','수정일시','언어','촬영종류','상품','고객명','촬영일시','답변JSON','요약','참고링크'];
+const PREP_COL=PREP_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
+// 설문 대상 — 여권은 규격 촬영이고 기업은 상담 파이프라인이 따로 있어 제외
+const PREP_TARGET_GROUPS_=['prof','stud','wed','snap'];
+
+function listPrepSurveyStatusAdmin(token,daysAhead){
+  assertAdmin_(token);
+  return buildPrepSurveyStatus_(daysAhead);
+}
+
+/* 본체 — 토큰 검사 없음. 브리핑은 트리거로 도는 서버측 코드라 어드민 토큰이 없다. */
+function buildPrepSurveyStatus_(daysAhead){
+  const days=Math.max(1,Math.min(parseInt(daysAhead,10)||21,120));
+  const sh=getDbSheet();
+  const last=sh.getLastRow();
+  if(last<2) return {ok:true,items:[],pending:0};
+  const rows=sh.getRange(2,1,last-1,CONFIG.BOOKING_HEADERS.length).getValues();
+  const prepSh=ensurePrepSheet_(sh.getParent());
+  const prepLast=prepSh.getLastRow();
+  const done={};
+  if(prepLast>1){
+    prepSh.getRange(2,1,prepLast-1,PREP_HEADERS.length).getValues().forEach(function(r){
+      done[parseInt(r[PREP_COL['예약장부행']],10)]={
+        submittedAt:String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16),
+        summary:String(r[PREP_COL['요약']]||'')
+      };
+    });
+  }
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const limit=Utilities.formatDate(new Date(Date.now()+days*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const items=[];
+  rows.forEach(function(row,idx){
+    const status=String(row[BOOKING_COL['상태']]||'').trim();
+    if(['대기중','확정됨','변경대기'].indexOf(status)<0) return;
+    const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(!isPrepTargetGroup_(itemGroup)) return;
+    const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+    const day=dStr.slice(0,10);
+    if(!day||day<today||day>limit) return;
+    const rowIndex=idx+2;
+    const hit=done[rowIndex]||null;
+    items.push({
+      rowIndex:rowIndex, name:String(row[BOOKING_COL['고객명']]||''),
+      dateTime:dStr.slice(0,16), itemGroup:itemGroup,
+      product:String(row[BOOKING_COL['상품']]||''),
+      daysToShoot:Math.round((new Date(day+'T00:00:00')-new Date(today+'T00:00:00'))/86400000),
+      submitted:!!hit, submittedAt:hit?hit.submittedAt:'', summary:hit?hit.summary:'',
+      url:buildPrepSurveyUrl_(rowIndex,row)
+    });
+  });
+  items.sort(function(a,b){return String(a.dateTime).localeCompare(String(b.dateTime));});
+  return {ok:true,items:items,pending:items.filter(function(i){return !i.submitted;}).length};
+}
+
+function ensurePrepSheet_(ss){
+  let sh=ss.getSheetByName(PREP_SHEET_NAME);
+  if(!sh){
+    sh=ss.insertSheet(PREP_SHEET_NAME);
+    sh.appendRow(PREP_HEADERS);
+    sh.getRange(1,1,1,PREP_HEADERS.length).setFontWeight('bold').setBackground('#f8fafc');
+  }
+  return sh;
+}
+
+/* 확정메일에 들어갈 준비설문 버튼. 대상 상품이 아니거나 캘린더 이벤트가 없으면 조용히 빈 문자열 —
+   기존 메일 흐름을 깨지 않는다. */
+function buildPrepSurveyUrlByEventId_(eventId){
+  if(!eventId) return '';
+  try{
+    const sh=getDbSheet(),data=sh.getDataRange().getValues();
+    const idx=data.slice(1).findIndex(function(r){return String(r[BOOKING_COL['캘린더ID']]||'').trim()===String(eventId).trim();});
+    if(idx===-1) return '';
+    return buildPrepSurveyUrl_(idx+2,data[idx+1]);
+  }catch(e){ Logger.log('prep url by eventId 실패: '+e.message); return ''; }
+}
+
+function prepSurveyMailBlockHtml_(itemGroup,lang,eventId){
+  if(!isPrepTargetGroup_(itemGroup)) return '';
+  const url=buildPrepSurveyUrlByEventId_(eventId);
+  if(!url) return '';
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const t={
+    ko:{title:'촬영 준비 설문',
+        body:'원하시는 분위기와 배경, 꼭 담고 싶은 장면을 미리 알려주시면 촬영이 한결 수월합니다. 선택만 하시면 되고 5분이면 끝납니다 — 참고 이미지 링크도 여기에 함께 남기실 수 있습니다.',
+        btn:'📝 촬영 준비 설문 작성하기'},
+    en:{title:'Shoot preparation form',
+        body:'Telling us the mood, background and moments you want in advance makes the session go much smoother. It is mostly tapping — about five minutes, and you can add reference links there too.',
+        btn:'📝 Open the preparation form'},
+    de:{title:'Vorbereitungsformular',
+        body:'Wenn Sie uns Stimmung, Hintergrund und gewünschte Momente vorab mitteilen, läuft das Shooting deutlich entspannter. Meist nur Antippen — etwa fünf Minuten, Referenzlinks können Sie dort ebenfalls angeben.',
+        btn:'📝 Formular öffnen'}
+  }[L];
+  const safeUrl=url.replace(/&/g,'&amp;');
+  return '<div style="background:#faf7f1;border:1px solid #e6ddcf;border-radius:12px;padding:16px 18px;margin:14px 0;">'
+    +'<div style="font-weight:700;color:#201c1f;margin-bottom:6px;">'+t.title+'</div>'
+    +'<div style="font-size:13px;color:#6d5a49;line-height:1.7;">'+t.body+'</div>'
+    +'<div style="margin-top:14px;"><a href="'+safeUrl+'" style="display:inline-block;padding:12px 22px;background:#201c1f;color:#faf7f1;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;">'+t.btn+'</a></div>'
+    +'</div>';
+}
+
+function isPrepTargetGroup_(itemGroup){
+  return PREP_TARGET_GROUPS_.indexOf(String(itemGroup||'').trim())>-1;
+}
+
+function buildPrepSurveyUrl_(rowIndex,row){
+  return 'https://booking.studio-mean.com/prep/?id='+encodeURIComponent(createBookingRowActionRef_(rowIndex,row));
+}
+
+function _findPrepRow_(sh,bookingRowIndex){
+  const last=sh.getLastRow();
+  if(last<2) return 0;
+  const col=sh.getRange(2,PREP_COL['예약장부행']+1,last-1,1).getValues();
+  for(let i=0;i<col.length;i++){ if(parseInt(col[i][0],10)===bookingRowIndex) return i+2; }
+  return 0;
+}
+
+// 고객용 조회 — 예약 맥락 + 기존 답변. 취소된 예약은 열지 않는다.
+function getPrepSurveyForCustomer_(ref){
+  const found=findBookingRowByActionRef_(ref);
+  if(!found) return {ok:false,code:'NOT_FOUND',message:'예약을 찾을 수 없거나 링크가 유효하지 않습니다.'};
+  const row=found.row;
+  const status=String(row[BOOKING_COL['상태']]||'').trim();
+  if(isBookingCancelledStatus_(status)) return {ok:false,code:'CANCELLED',message:'취소된 예약입니다.'};
+  const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+  const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+  const sh=ensurePrepSheet_(found.sheet.getParent());
+  const prepRow=_findPrepRow_(sh,found.rowIndex);
+  let answers=null,submittedAt='';
+  if(prepRow){
+    const r=sh.getRange(prepRow,1,1,PREP_HEADERS.length).getValues()[0];
+    /* 행번호는 예약 삭제로 재사용될 수 있다 — 고객명이 다르면 남의 답변이므로 안 보여준다
+       (참조 보정이 정리하지만, 정리 전 잔재까지 막는 마지막 가드). */
+    const sameCustomer=String(r[PREP_COL['고객명']]||'').trim()===String(row[BOOKING_COL['고객명']]||'').trim();
+    if(sameCustomer){
+      submittedAt=String(parseDateSafe_(r[PREP_COL['제출일시']]).str||'').slice(0,16);
+      try{ answers=JSON.parse(String(r[PREP_COL['답변JSON']]||'{}')); }catch(e){ answers=null; }
+    }
+  }
+  const products=getCachedProducts_();
+  const product=products.find(function(p){return p.nameKo===row[BOOKING_COL['상품']];});
+  const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase().trim();
+  return {
+    ok:true,
+    lang:lang,
+    name:String(row[BOOKING_COL['고객명']]||''),
+    itemGroup:itemGroup,
+    supported:isPrepTargetGroup_(itemGroup),
+    product:product?(lang==='en'?product.nameEn:(lang==='de'?product.nameDe:product.nameKo)):String(row[BOOKING_COL['상품']]||''),
+    date:dStr.slice(0,10), time:dStr.slice(11,16),
+    people:String(row[BOOKING_COL['인원']]||''),
+    location:parseBookingLocationFromRow_(row)||'',
+    memo:String(row[BOOKING_COL['요청사항']]||''),
+    /* 문항 노출 조건에 쓴다 — 아이 호칭은 촬영 대상이 영유아·키즈일 때만, 반려동물 문항은
+       예약에서 dog 옵션(+€15)을 고른 경우에만 띄운다. 상품군만으로는 키즈 프로필을 못 가린다. */
+    ageGroup:String(parseBookingAgeGroupFromRow_(row)||'').trim(),
+    optionKeys:parseBookingOptionKeysFromRow_(row)||[],
+    answers:answers, submittedAt:submittedAt,
+    studioAddress:STUDIO_ADDRESS, adminEmail:CONFIG.ADMIN_EMAIL
+  };
+}
+
+/* 제출 — 같은 예약행이면 덮어쓴다(촬영 전까지 몇 번이든 고칠 수 있어야 한다).
+   요약문은 프런트가 만든 것을 그대로 저장하고 캘린더 설명에도 같은 문장을 싣는다. */
+function savePrepSurvey_(ref,payload){
+  const found=findBookingRowByActionRef_(ref);
+  if(!found) throw new Error('예약을 찾을 수 없거나 링크가 유효하지 않습니다.');
+  const row=found.row;
+  if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약입니다.');
+  const p=payload||{};
+  const answers=p.answers&&typeof p.answers==='object'?p.answers:{};
+  const summary=String(p.summary||'').slice(0,900);
+  const links=(Array.isArray(p.links)?p.links:[]).map(function(u){return String(u||'').trim();})
+    .filter(function(u){return /^https?:\/\//i.test(u);}).slice(0,3);
+  const ss=found.sheet.getParent();
+  const sh=ensurePrepSheet_(ss);
+  const now=_nowStamp_();
+  const prepRow=_findPrepRow_(sh,found.rowIndex);
+  const {str:dStr}=parseDateSafe_(row[BOOKING_COL['예약일시']]);
+  const values=new Array(PREP_HEADERS.length).fill('');
+  values[PREP_COL['예약장부행']]=found.rowIndex;
+  values[PREP_COL['제출일시']]=prepRow?sh.getRange(prepRow,PREP_COL['제출일시']+1).getValue()||now:now;
+  values[PREP_COL['수정일시']]=now;
+  values[PREP_COL['언어']]=String(p.lang||row[BOOKING_COL['언어']]||'ko');
+  values[PREP_COL['촬영종류']]=String(row[BOOKING_COL['촬영종류']]||'');
+  values[PREP_COL['상품']]=String(row[BOOKING_COL['상품']]||'');
+  values[PREP_COL['고객명']]=String(row[BOOKING_COL['고객명']]||'');
+  values[PREP_COL['촬영일시']]=dStr.slice(0,16);
+  values[PREP_COL['답변JSON']]=JSON.stringify(answers).slice(0,45000);
+  values[PREP_COL['요약']]=summary;
+  values[PREP_COL['참고링크']]=links.join('\n');
+  if(prepRow) sh.getRange(prepRow,1,1,PREP_HEADERS.length).setValues([neutralizeRow_(values)]);
+  else sh.appendRow(neutralizeRow_(values));
+
+  // 캘린더 설명에 요약을 실어 촬영 당일 폰에서 바로 보이게 한다
+  try{ appendPrepSummaryToCalendar_(row,summary,links); }
+  catch(e){ Logger.log('prep calendar append failed row '+found.rowIndex+': '+e.message); }
+  return {ok:true,rowIndex:found.rowIndex,saved:true};
+}
+
+/* 캘린더 설명의 [준비설문] 블록만 교체한다 — 사장님이 손으로 쓴 다른 메모를 지우면 안 된다. */
+const PREP_CAL_MARK_='[준비설문]';
+function appendPrepSummaryToCalendar_(row,summary,links){
+  const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
+  if(!eventId||!summary) return;
+  // ⚠️ CONFIG.CALENDAR_ID 는 없는 키다 — 상수명은 MAIN_CALENDAR_ID (오타로 조용히 실패했던 자리)
+  const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  if(!cal) return;
+  // 외부 동기화 이벤트는 getEventById 로 안 잡힌다 — 날짜 경유 되찾기까지 쓰는 공용 헬퍼 사용
+  const dayStr=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+  const ev=getCalendarEventByIdOnDate_(cal,eventId,dayStr);
+  if(!ev) return;
+  const block=PREP_CAL_MARK_+' '+summary+((links&&links.length)?('\n[참고링크] '+links.join(' ')):'');
+  const desc=String(ev.getDescription()||'');
+  const idx=desc.indexOf(PREP_CAL_MARK_);
+  let next;
+  if(idx>-1){
+    // 기존 블록의 끝 = 다음 빈 줄 또는 문서 끝
+    const rest=desc.slice(idx);
+    const end=rest.indexOf('\n\n');
+    next=desc.slice(0,idx)+block+(end>-1?rest.slice(end):'');
+  } else {
+    next=desc?(desc.replace(/\s+$/,'')+'\n\n'+block):block;
+  }
+  ev.setDescription(next);
+}
+
 const SELECT_SHEET_NAME='사진셀렉';
 const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
@@ -20458,18 +23467,34 @@ function normalizeSelectBaseRetouchCount_(value,fallback){
   return isNaN(fb)||fb<0 ? 0 : fb;
 }
 
+/* 셀렉 마감 체계 (2026-08-28 법 검토 반영, docs/select-deadline-legal.md 요지):
+   - 마감 = 발송일 + 3개월. 약관 '전달 파일은 납품 후 3개월 보관 후 삭제' 와 일치시킨다.
+     (구: +1개월 — 약관보다 짧아 근거가 없었다)
+   - 리마인드1 = +2주(부드러운 재안내), 리마인드2 = +6주(**최종 통지** — 마감일·보관본 삭제·
+     보정 제공 의무 종료를 명시. § 642/643 BGB 협력의무 구조).
+   - 3차 슬롯은 비운다 — 무응답 3통째부터는 메일이 아니라 **다른 채널**(전화·카카오)이 답이고,
+     그건 아침 브리핑의 셀렉 마감 경고(연락처 포함)가 맡는다. */
 function _selectSchedule_(baseDate){
   const d=new Date(baseDate);
   const deadline=new Date(d);
-  deadline.setMonth(deadline.getMonth()+1);
+  deadline.setMonth(deadline.getMonth()+3);
+  const reminder1=new Date(d.getTime()+14*86400000);
   const reminder2=new Date(d.getTime()+42*86400000);
-  const reminder3=new Date(d.getTime()+56*86400000);
   return {
     deadline: Utilities.formatDate(deadline,CONFIG.TIMEZONE,'yyyy-MM-dd'),
-    reminder1: Utilities.formatDate(deadline,CONFIG.TIMEZONE,'yyyy-MM-dd'),
+    reminder1: Utilities.formatDate(reminder1,CONFIG.TIMEZONE,'yyyy-MM-dd'),
     reminder2: Utilities.formatDate(reminder2,CONFIG.TIMEZONE,'yyyy-MM-dd'),
-    reminder3: Utilities.formatDate(reminder3,CONFIG.TIMEZONE,'yyyy-MM-dd')
+    reminder3: ''
   };
+}
+
+// 'yyyy-MM-dd' → 언어별 표기 (ko 2026년 11월 28일 / de 28.11.2026 / en 그대로)
+function _selectDateLabel_(iso,lang){
+  const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return String(iso||'');
+  if(lang==='de') return m[3]+'.'+m[2]+'.'+m[1];
+  if(lang==='en') return m[1]+'-'+m[2]+'-'+m[3];
+  return Number(m[1])+'년 '+Number(m[2])+'월 '+Number(m[3])+'일';
 }
 
 // 웨딩급(암트/돌잔치/프리웨딩) 셀렉 세션의 추가 보정 단가 기본값은 €20, 그 외 €10 (biz-event-product-redesign.md §5-4)
@@ -20686,11 +23711,23 @@ function findDriveFoldersForCustomerDate_(customerName,dateStr){
       try{var it=DriveApp.getFoldersByName(name);while(it.hasNext())addFolder(it.next(),100,'exact');}catch(e){}
     });
 
-    // 못 찾으면 내 드라이브 전체를 순회해 날짜 prefix로 필터
+    /* 못 찾으면 이름 검색 쿼리로 좁혀서 본다.
+       구현 이력: 원래 DriveApp.getFolders() 로 **내 드라이브 전체를 순회**했다 — 실측 14~25초였고
+       폴더가 늘수록 계속 느려지는 구조(2026-08-29 여권 전달 에러의 절반이 이 지연이었다).
+       searchFolders('title contains ...') 는 서버 인덱스를 타므로 수백 배 좁게 돈다. */
     if(results.length===0){
-      var all=DriveApp.getFolders();
-      while(all.hasNext()){
-        var f=all.next();
+      var pool=[];
+      var poolSeen=new Set();
+      var pushPool=function(it){ while(it.hasNext()&&pool.length<200){ var pf=it.next(); if(!poolSeen.has(pf.getId())){ poolSeen.add(pf.getId()); pool.push(pf); } } };
+      dateTokens.forEach(function(token){
+        if(!token) return;
+        try{ pushPool(DriveApp.searchFolders("title contains '"+String(token).replace(/'/g,"\\'")+"'")); }catch(e){}
+      });
+      if(customer){
+        try{ pushPool(DriveApp.searchFolders("title contains '"+customer.replace(/'/g,"\\'")+"'")); }catch(e){}
+      }
+      for(var pi=0;pi<pool.length;pi++){
+        var f=pool[pi];
         var n=f.getName();
         var norm=normalizeDriveFolderSearchText_(n);
         var datePrefix=dateTokens.some(function(token){
@@ -20698,9 +23735,11 @@ function findDriveFoldersForCustomerDate_(customerName,dateStr){
         });
         var dateHit=dateTokens.some(function(token){return token&&(n.indexOf(token)>=0||norm.indexOf(normalizeDriveFolderSearchText_(token))>=0);});
         var customerHit=customerNorm&&norm.indexOf(customerNorm)>=0;
+        /* ⚠️ 고객명이 안 맞는 폴더는 후보로 내지 않는다 — 같은 날짜라는 이유만으로
+           **다른 고객의 폴더**가 후보에 올라 잘못 전달될 뻔했다(2026-08-29 최예준 건에
+           Sol Jung 폴더가 후보로 뜸). 날짜만 맞는 건 단서가 아니라 함정이다. */
         if(datePrefix&&customerHit) addFolder(f,90,'date_customer');
         else if(dateHit&&customerHit) addFolder(f,80,'date_customer_contains');
-        else if(datePrefix) addFolder(f,55,'date_prefix');
         else if(customerHit) addFolder(f,40,'customer');
       }
     }
@@ -21105,7 +24144,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const bonusCount=normalizeSelectMarketingBonusCount_(marketingBonusCount,data.itemGroup,data.product,data.payMethod);
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
-  const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — Dear ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
+  const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
   if(data.isReshoot){subj.ko='[재촬영본 추가] '+subj.ko;subj.en='[Re-shoot added] '+subj.en;subj.de='[Neue Aufnahmen] '+subj.de;}
   else if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
   // 재촬영 안내가 일반 재발송 문구보다 우선 — "빠른 제출" 대신 "재촬영본이 합쳐졌으니 함께 골라주세요"
@@ -21120,10 +24159,17 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir Retusche und Druck einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
   })[L]:'';
   const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Hello <b>${data.name}</b>,`,de:`Guten Tag, <b>${data.name}</b>,`};
+  /* 기한 고지 — 최종 통지에서 '약관에 따라' 라고 말하려면 첫 메일부터 기한이 보였어야 한다 */
+  const _dlIso=_selectSchedule_(new Date()).deadline;
+  const _dlNote={
+    ko:`<br><span style="color:#64748b;font-size:13px;">셀렉은 <b>${_selectDateLabel_(_dlIso,'ko')}</b>까지 접수 부탁드립니다. 기한이 지나면 약관에 따라 보관 파일이 삭제될 수 있습니다.</span>`,
+    en:`<br><span style="color:#64748b;font-size:13px;">Please submit your selection by <b>${_selectDateLabel_(_dlIso,'en')}</b>. After this date, stored files may be deleted as per our terms.</span>`,
+    de:`<br><span style="color:#64748b;font-size:13px;">Bitte reichen Sie Ihre Auswahl bis zum <b>${_selectDateLabel_(_dlIso,'de')}</b> ein. Danach können gespeicherte Dateien gemäß den Bedingungen gelöscht werden.</span>`
+  };
   const intro={
-    ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.`,
-    en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.`,
-    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.`
+    ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.${_dlNote.ko}`,
+    en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.${_dlNote.en}`,
+    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.${_dlNote.de}`
   };
   const steps={
     ko:['📂 촬영 사진 확인 (드라이브 링크)',`✅ 마케팅 동의 여부 선택${bonusCount>0?` (동의 시 보너스 ${bonusCount}장 추가)`:''}`,'🖼 보정 받을 사진 번호 입력','📮 기본 제공 출력 사이즈 확인 및 필요한 추가 인화 입력','📤 최종 제출'],
@@ -21160,7 +24206,7 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     ${resendNotice}
     <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:20px;">${intro[L]}</p>
     <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:20px;">
-      <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">${L==='ko'?'진행 순서':L==='en'?'How it works':'So gehts'}</div>
+      <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">${L==='ko'?'진행 순서':L==='en'?'How it works':'So geht’s'}</div>
       ${stepsHtml}
     </div>
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:20px;font-size:13px;color:#15803d;">
@@ -21422,17 +24468,52 @@ function computeSelectVolumeDiscount_(kind,count,amount){
   };
 }
 
-// 추가 보정(유료) 수 계산 - 프론트 getRetouchExtraCount()와 일치
-// - isBonus=true (마케팅 보너스) 는 항상 무료, 카운트 제외
-// - 갤러리 별점 선택과 직접 추가 모두 기본 포함 장수를 초과하면 유료로 카운트
-function computeSelectExtraRetouch_(photos,baseCount){
-  var nonBonusIndex=0,paid=0;
+/* 추가 보정(유료) 수 계산 — 서버가 청구 정본.
+ * 종전엔 isBonus=true 를 **무조건** 무료로 뺐다 — 동의 검증도 상한도 없어서, 클라이언트가
+ * isBonus 만 붙여 보내면 장수 제한 없이 전부 무료가 됐다(2026-08-25 감사에서 발견).
+ * 인화 크레딧 쪽(computeSelectDecoupledPrints_)은 이미 동의 재검증 + 마케팅보너스수 캡을
+ * 걸어두고 정작 보정 쪽만 뚫려 있었다. 같은 정책으로 맞춘다:
+ *  - isService(서비스컷): 어드민이 준 서비스컷수까지만 무료
+ *  - isBonus(마케팅 보너스): **동의했을 때만**, 마케팅보너스수까지만 무료
+ *  - 캡을 넘긴 플래그 사진은 일반 사진으로 취급(기본 포함분 소진 후 유료) */
+function computeSelectExtraRetouch_(photos,baseCount,caps){
+  var c=caps||{};
+  var serviceRemaining=Math.max(0,parseInt(c.serviceCap,10)||0);
+  var bonusRemaining=c.marketingAgreed?Math.max(0,parseInt(c.bonusCap,10)||0):0;
+  /* 규칙 (2026-08-25 강예슬 신고로 확정):
+     ① 빈 보너스/서비스 행(num·note 모두 공백)은 슬롯을 소비하지 않는다 — 자리만 잡은 placeholder.
+     ② **남는 보너스는 일반 선택 초과분을 자동 흡수한다.** 고객이 보너스 칸을 따로 채우지 않아도
+        기본 N + 보너스 M = N+M 장까지 무료여야 한다. 종전엔 보너스 칸이 비어 있으면 16번째
+        갤러리 선택에 +10€ 가 붙었다(#16 유료 · #17~ 보너스 빈칸 — 고객 입장에선 모순).
+     ③ 서비스컷 잔여는 흡수하지 않는다 — 어드민이 특정 사진에 주는 성격이라 자동 전용이 어색하다. */
+  var paidCandidates=0;
   (photos||[]).forEach(function(p){
-    if(p&&p.isBonus) return;
-    nonBonusIndex+=1;
-    if(nonBonusIndex>baseCount) paid+=1;
+    if(!p) return;
+    var hasContent=String(p.num||'').trim()!==''||String(p.note||'').trim()!=='';
+    if(p.isService){
+      if(!hasContent) return;
+      if(serviceRemaining>0){serviceRemaining-=1;return;}
+    }else if(p.isBonus){
+      if(!hasContent) return;
+      if(bonusRemaining>0){bonusRemaining-=1;return;}
+    }
+    paidCandidates+=1;
   });
-  return paid;
+  var freeLimit=baseCount+bonusRemaining;
+  return Math.max(0,paidCandidates-freeLimit);
+}
+
+/** 제출·수정 공용 — 보정 무료 슬롯 캡. 동의는 제출값 우선(시트는 아직 갱신 전일 수 있다),
+ *  둘 다 없으면 미동의로 본다(priceSelectPrints_ 의 agreedMarketing 판정과 동일 규칙). */
+function buildSelectRetouchCaps_(sub,row){
+  var agreed=/^y/i.test(String((sub&&sub.marketing)||'').trim())
+    || (!(sub&&sub.marketing) && /^y/i.test(String((row&&row[SELECT_COL['마케팅동의']])||'').trim()));
+  return{
+    marketingAgreed:agreed,
+    bonusCap:normalizeSelectMarketingBonusCount_(
+      row&&row[SELECT_COL['마케팅보너스수']],row&&row[SELECT_COL['촬영종류']],row&&row[SELECT_COL['상품']]),
+    serviceCap:Math.max(0,parseInt(row&&row[SELECT_COL['서비스컷수']],10)||0)
+  };
 }
 function computeSelectPrintUpgrade_(photos,row){
   const itemGroup=row&&row[SELECT_COL['촬영종류']];
@@ -22287,19 +25368,58 @@ function setSelectPickupTimeAdmin(token,payload){
          rescheduled:!!done.prevPickupAt,mailSent:mailSent};
 }
 
+/* 이 세션에서 **수령 시 받아야 할 추가금**. 추가 주문(보정·인화)은 출력 후 수령 때 받는 것이
+   정상 운영이므로(2026-08-24 확정), 고객이 얼마를 준비해야 하는지 미리 알려야 한다.
+   안 알리면 빈손으로 와서 그대로 미수가 된다 — 실제로 2~3주 미수 3건(112€)이 있었다. */
+function getUnpaidExtraForSession_(sessionId){
+  const sid=String(sessionId||'').trim();
+  if(!sid) return 0;
+  try{
+    const sh=ensureSheets_().printSheet;
+    const colMap=getPrintSheetColMap_(sh);
+    const rows=sh.getDataRange().getValues();
+    let sum=0;
+    for(let r=1;r<rows.length;r++){
+      const n=normalizePrintRow_(rows[r],r+1,colMap);
+      const amt=Number(n.total)||0;
+      if(amt<=0) continue;
+      if(/취소|환불|cancel/i.test(String(n.status||''))) continue;
+      if(!isPrintRowUnpaid_(n)) continue;
+      if(selectPrintMemoTag_(n.memo)!==sid) continue;
+      sum+=amt;
+    }
+    return roundCurrency_(sum);
+  }catch(e){Logger.log('getUnpaidExtraForSession_ 실패: '+e.message);return 0;}
+}
+
+/** 수령 시 수납 안내 한 줄(3개국어). 받을 금액이 없으면 빈 문자열. */
+function buildPickupPayableLine_(amount,lang){
+  const amt=roundCurrency_(Number(amount)||0);
+  if(!(amt>0)) return '';
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const money=formatEuroDe_(amt);
+  const t={
+    ko:`<br><br>💳 추가 주문분 <b>${money}</b>은 <b>수령하실 때</b> 결제해 주시면 됩니다 (카드·현금 모두 가능합니다).`,
+    en:`<br><br>💳 The additional order of <b>${money}</b> can be settled <b>when you pick up</b> (card or cash).`,
+    de:`<br><br>💳 Die Zusatzbestellung über <b>${money}</b> begleichen Sie bitte <b>bei der Abholung</b> (Karte oder bar).`
+  };
+  return t[L];
+}
+
 // 픽업 예약/변경 확인 메일 — 일시·주소·변경 안내
 function _sendSelectPickupConfirmEmail_(email,name,lang,date,time,sessionId,isReschedule){
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const payable=buildPickupPayableLine_(getUnpaidExtraForSession_(sessionId),L);
   const subj={
     ko:`[Studio mean] ✅ 픽업 예약 ${isReschedule?'변경 ':''}확인 — ${date} ${time}`,
     en:`[Studio mean] ✅ Pickup ${isReschedule?'rescheduled':'confirmed'} — ${date} ${time}`,
     de:`[Studio mean] ✅ Abholung ${isReschedule?'geändert':'bestätigt'} — ${date} ${time}`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>픽업 예약이 ${isReschedule?'변경':'확정'}되었습니다. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>예약 시간에 방문해 주시면 인화물을 전달해 드립니다.<br>일정 변경이 필요하시면 <a href="${pickupUrl}" style="color:#2563eb;">이 링크</a>에서 다시 선택하시면 됩니다.`,
-    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your pickup appointment has been ${isReschedule?'rescheduled':'confirmed'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Please visit us at the scheduled time to collect your prints.<br>Need to change it? Simply pick a new slot <a href="${pickupUrl}" style="color:#2563eb;">here</a>.`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihr Abholtermin wurde ${isReschedule?'geändert':'bestätigt'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Bitte besuchen Sie uns zum vereinbarten Termin, um Ihre Abzüge abzuholen.<br>Terminänderung? Wählen Sie <a href="${pickupUrl}" style="color:#2563eb;">hier</a> einfach einen neuen Slot.`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님!<br><br>픽업 예약이 ${isReschedule?'변경':'확정'}되었습니다. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>예약 시간에 방문해 주시면 인화물을 전달해 드립니다.<br>일정 변경이 필요하시면 <a href="${pickupUrl}" style="color:#2563eb;">이 링크</a>에서 다시 선택하시면 됩니다.${payable}`,
+    en:`Hello <b>${escapeHtml_(name)}</b>,<br><br>Your pickup appointment has been ${isReschedule?'rescheduled':'confirmed'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Please visit us at the scheduled time to collect your prints.<br>Need to change it? Simply pick a new slot <a href="${pickupUrl}" style="color:#2563eb;">here</a>.${payable}`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>,<br><br>Ihr Abholtermin wurde ${isReschedule?'geändert':'bestätigt'}. 🎉<br><br>📅 <b>${date} ${time}</b><br>📍 Studio mean · ${STUDIO_ADDRESS}<br><br>Bitte besuchen Sie uns zum vereinbarten Termin, um Ihre Abzüge abzuholen.<br>Terminänderung? Wählen Sie <a href="${pickupUrl}" style="color:#2563eb;">hier</a> einfach einen neuen Slot.${payable}`
   };
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
     <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:24px 25px;text-align:center;">
@@ -22324,15 +25444,16 @@ function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
   const lang=String(row[SELECT_COL['언어']]||'ko');
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const pickupUrl=SELECT_PICKUP_PAGE_BASE+'?id='+encodeURIComponent(sessionId);
+  const payable=buildPickupPayableLine_(getUnpaidExtraForSession_(sessionId),L);
   const subj={
     ko:`[Studio mean] 🖼 인화 완료 — 픽업 시간을 예약해 주세요, ${name}님`,
     en:`[Studio mean] 🖼 Your prints are ready — book your pickup time`,
     de:`[Studio mean] 🖼 Ihre Abzüge sind fertig — Abholtermin buchen`
   };
   const body={
-    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i>`,
-    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i>`,
-    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i>`
+    ko:`안녕하세요, <b>${escapeHtml_(name)}</b>님! 😊<br><br>주문하신 사진 인화가 완료되었습니다. 🎉<br>아래 버튼에서 편하신 픽업 시간을 예약해 주세요.<br><br><i>영업시간: 화–금 09:30–13:00, 15:30–18:00 · 토 09:00–16:00 (일·월/공휴일 휴무)</i>${payable}`,
+    en:`Hello <b>${escapeHtml_(name)}</b>, 😊<br><br>Your photo prints are ready! 🎉<br>Please use the button below to book a pickup time that suits you.<br><br><i>Hours: Tue–Fri 09:30–13:00 & 15:30–18:00 · Sat 09:00–16:00 (closed Sun/Mon/holidays)</i>${payable}`,
+    de:`Guten Tag, <b>${escapeHtml_(name)}</b>, 😊<br><br>Ihre Fotoabzüge sind fertig! 🎉<br>Bitte buchen Sie über den folgenden Button einen passenden Abholtermin.<br><br><i>Öffnungszeiten: Di–Fr 09:30–13:00 & 15:30–18:00 · Sa 09:00–16:00 (So/Mo/Feiertage geschlossen)</i>${payable}`
   };
   const btn={ko:'📅 픽업 시간 예약하기',en:'📅 Book Pickup Time',de:'📅 Abholtermin buchen'};
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
@@ -22558,12 +25679,18 @@ function markSelectHandoverCore_(selSh,row,rowNum,sessionId,info){
      어드민 셀렉 탭의 진행 버튼 체인이 출력→우편발송→최종작업완료 뿐이라 픽업 건은 마감 경로가 없었다.
      진입점(어드민/휴대폰/에이전트)이 아니라 **method 로 판정**한다: 진입점별로 켜면 실제 기록의 대부분인
      휴대폰 페이지가 빠지고, 프론트가 finalize 를 보내게 하면 캐시 갱신 전 구버전 화면으로 기록된 건이
-     alreadyDone 조기 반환 때문에 영영 마감되지 않는다. skipFinalize 로만 끌 수 있다. */
+     alreadyDone 조기 반환 때문에 영영 마감되지 않는다. skipFinalize:true / finalize:false 로만 끌 수 있다. */
   /* ⚠ 인화가 안 끝난 건은 마감하지 않는다. 휴대폰 수령 큐는 fresh(아직 인화 전)까지 포함해 보여주고
      그 카드의 주 버튼도 똑같은 '✅ 수령 완료'라, 오터치 한 번이면 보정도 안 끝난 건이 마감될 수 있다.
      인화하지 않은 인화물을 건넬 수는 없으므로 출력완료일시를 마감의 전제로 둔다(수령 기록 자체는 남는다). */
   const printedAt=SELECT_COL['출력완료일시']!=null?String(row[SELECT_COL['출력완료일시']]||'').trim():'';
-  const finalize=HANDOVER_FINALIZE_METHODS_.indexOf(method)>=0 && info.skipFinalize!==true && !!printedAt;
+  /* 마감 억제 스위치 — skipFinalize:true 와 그 별칭 finalize:false 를 둘 다 받는다. 미지정이면 현행(마감) 유지:
+     어드민 버튼도 휴대폰 수령 페이지도 둘 다 안 보내므로 기존 동작은 그대로다.
+     문자열 'false'/'0' 까지 받는 이유 — 되돌리기 어려운 마감을 막는 킬스위치가 오타 한 번에 **조용히 무시**되면
+     안 된다. 실제로 finalize:false 를 보냈는데 예약행까지 작업완료로 넘어간 사고가 있었다(2026-08-25). */
+  const noFinalize=agentBoolFlag_(info.skipFinalize)
+    ||(info.finalize!=null&&info.finalize!==''&&!agentBoolFlag_(info.finalize));
+  const finalize=HANDOVER_FINALIZE_METHODS_.indexOf(method)>=0 && !noFinalize && !!printedAt;
   // finalize 가 이기게 둔다 — 둘 다 쓰면 같은 셀에 두 번 쓰게 되고 두 번째가 낡은 st 로 판단한다
   if(!finalize&&method==='우편발송'&&!isSelectFinalLockedStatus_(st)&&st!=='우편발송'){
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('우편발송');
@@ -22930,7 +26057,8 @@ function markSelectHandoverAdmin(token,payload){
   if(!sid) throw new Error('셀렉 세션을 찾을 수 없습니다.');
   const res=markSelectHandoverBySession_(sid,{
     method:payload.method,memo:payload.memo,
-    skipFinalize:payload.skipFinalize===true,notify:payload.notify!==false
+    // 마감 억제 스위치는 core 가 판정한다 — 여기서 ===true 로 좁히면 별칭 finalize:false 가 유실된다
+    skipFinalize:payload.skipFinalize,finalize:payload.finalize,notify:payload.notify!==false
   });
   if(!res||!res.ok) throw new Error((res&&res.message)||'수령 기록 실패');
   return res;
@@ -23505,7 +26633,7 @@ function submitPhotoSelection(sessionId,sub){
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount,buildSelectRetouchCaps_(sub,row));
     const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
@@ -23618,7 +26746,7 @@ function submitPhotoSelection(sessionId,sub){
     bumpCalCacheVer_();
     _sendSelectSubmitAlert(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});
     if(!sub.suppressCustomerEmail){
-      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);}
+      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)});}catch(e){Logger.log('고객 영수증 메일 오류:'+e.message);try{logMessage_({channel:'select',direction:'outbound',type:'receipt',to:String(row[3]||''),subject:'셀렉 접수확인 메일 실패 — '+row[2],status:'실패',meta:{error:String(e.message||e)}});}catch(_){}}
     }
     return{
       ok:true,
@@ -23708,12 +26836,19 @@ function _sendSelectSubmitAlert(row,photos,prints,extraRetouch,extraRetouchAmt,e
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉] ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html});
 }
 
-function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery,photocard,printUpgradeItems){
+/* ⚠️ 2026-08-31 수리: 본문이 volumeDiscount 를 쓰는데 시그니처에 인자가 없어 ReferenceError 로
+   **매 제출마다 조용히 죽던 메일**(볼륨 할인 도입 2026-08-09 이후 고객 접수확인 미발송 —
+   호출부 try/catch 가 삼켰다). isUpdate=true 면 '수정 접수' 문구로 나간다(종전엔 수정 시 무통지). */
+function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,marketing,delivery,photocard,printUpgradeItems,volumeDiscount,isUpdate){
   const email=String(row[3]||'');if(!email||!email.includes('@'))return;
   const lang=String(row[10]||'ko');
-  const subj={ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
+  const subj=isUpdate
+    ? {ko:`[Studio mean] ✏️ 사진 셀렉 수정 접수 — ${row[2]}님`,en:`[Studio mean] ✏️ Photo Selection Updated — ${row[2]}`,de:`[Studio mean] ✏️ Fotoauswahl aktualisiert — ${row[2]}`}
+    : {ko:`[Studio mean] 📷 사진 셀렉 접수 완료 — ${row[2]}님`,en:`[Studio mean] 📷 Photo Selection Received — ${row[2]}`,de:`[Studio mean] 📷 Fotoauswahl erhalten — ${row[2]}`};
   const greet={ko:`안녕하세요, <b>${row[2]}</b>님.`,en:`Hello <b>${row[2]}</b>,`,de:`Guten Tag, <b>${row[2]}</b>,`};
-  const intro={ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl wurde eingegangen. Bitte überprüfen Sie die Details unten.'};
+  const intro=isUpdate
+    ? {ko:'수정하신 사진 셀렉 내용이 접수되었습니다. 아래 내용이 최종 기준입니다.',en:'Your updated photo selection has been received. The details below are now final.',de:'Ihre aktualisierte Fotoauswahl ist eingegangen. Die folgenden Angaben sind nun maßgeblich.'}
+    : {ko:'사진 셀렉 내용이 정상적으로 접수되었습니다. 아래 내용을 확인해 주세요.',en:'Your photo selection has been received. Please review the details below.',de:'Ihre Fotoauswahl ist eingegangen. Bitte überprüfen Sie die Details unten.'};
   const photoListHtml=`<ul style="margin:6px 0 0;padding-left:18px;">${photos.map(buildSelectPhotoLineHtml_).join('')}</ul>`;
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
   const printListHtml=printChargeItems.length?`<ul style="margin:6px 0 0;padding-left:18px;">${printChargeItems.map(formatSelectPrintItemHtml_).join('')}</ul>`:'';
@@ -23722,9 +26857,52 @@ function _sendCustomerSelectReceipt(row,photos,prints,extraRetouch,extraRetouchA
     : '';
   const photocardListHtml=photocard?buildSelectPhotocardHtml_(photocard):'';
   const deliveryLine=getSelectDeliveryCustomerLine_(delivery,lang);
-  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${photos.length}장</b>${extraRetouch>0?` (+${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}건 (${extraPrintsAmt}€)<br>`:''}${(volumeDiscount&&volumeDiscount.total>0)?`• <b style="color:#0e7a4f;">${lang==='ko'?'볼륨 할인':lang==='de'?'Mengenrabatt':'Volume discount'}: -${volumeDiscount.total}€</b>${volumeDiscount.retouch&&volumeDiscount.retouch.discount>0?` · ${lang==='ko'?'보정':'Retouch'} -${volumeDiscount.retouch.percent}%`:''}${volumeDiscount.print&&volumeDiscount.print.discount>0?` · ${lang==='ko'?'인화':lang==='de'?'Druck':'Prints'} -${volumeDiscount.print.percent}%`:''}<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b>`:''}</div>`;
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
+  const cntLabel=(n)=>lang==='ko'?`${n}장`:String(n);
+  const summaryHtml=`<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:14px 0;font-size:13px;line-height:2.0;"><b>${lang==='ko'?'접수 내역':lang==='en'?'Summary':'Zusammenfassung'}</b><br>• ${lang==='ko'?'보정 선택':lang==='en'?'Photos selected':'Ausgewählt'}: <b>${cntLabel(photos.length)}</b>${extraRetouch>0?` (+${cntLabel(extraRetouch)} × ${row[9]}€ = ${extraRetouchAmt}€)`:''}<br>${photocardLine}${printChargeItems.length?`• ${lang==='ko'?'출력물':lang==='en'?'Extra print items':'Zusätzliche Drucke'}: ${printChargeItems.length}${lang==='ko'?'건':''} (${extraPrintsAmt}€)<br>`:''}${(volumeDiscount&&volumeDiscount.total>0)?`• <b style="color:#0e7a4f;">${lang==='ko'?'볼륨 할인':lang==='de'?'Mengenrabatt':'Volume discount'}: -${volumeDiscount.total}€</b>${volumeDiscount.retouch&&volumeDiscount.retouch.discount>0?` · ${lang==='ko'?'보정':'Retouch'} -${volumeDiscount.retouch.percent}%`:''}${volumeDiscount.print&&volumeDiscount.print.discount>0?` · ${lang==='ko'?'인화':lang==='de'?'Druck':'Prints'} -${volumeDiscount.print.percent}%`:''}<br>`:''}${deliveryLine}• ${lang==='ko'?'마케팅 동의':lang==='en'?'Marketing':'Marketing'}: ${marketing==='Y'?'✅':'❌'}<br>${totalExtra>0?`• <b style="color:#ef4444;">${lang==='ko'?'총 추가금액':lang==='en'?'Total extra':'Gesamtaufpreis'}: ${totalExtra}€</b><br><span style="color:#64748b;">${lang==='ko'?'추가 금액은 사진 수령 시 결제해 주시면 됩니다 (현금·카드).':lang==='en'?'The extra amount is payable when you receive your photos (cash or card).':'Der Aufpreis wird bei der Abholung Ihrer Fotos fällig (bar oder Karte).'}</span>`:''}</div>`;
+  const footer={
+    ko:'보정 완료까지 약 2~3주 소요됩니다. 문의: studio.mean.de@gmail.com',
+    en:'Retouching takes about 2–3 weeks. Questions: studio.mean.de@gmail.com',
+    de:'Die Bearbeitung dauert ca. 2–3 Wochen. Fragen: studio.mean.de@gmail.com'
+  };
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}<br><br><p style="font-size:12px;color:#94a3b8;">${footer[lang]||footer.ko}</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
   sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
+}
+
+/* 기존 '대기중' 세션의 마감·알림일을 새 체계(+2주/+6주/3개월)로 재산정하는 1회성 마이그레이션.
+   - 이미 지난 리마인드1 날짜는 비운다(뒤늦은 '2주 리마인드' 방지 — 다음 대상은 바로 최종통지).
+   - 마감이 너무 임박/경과면 오늘+21일로 민다: 최종 통지에는 합리적 유예가 있어야 한다(§ 643 BGB 취지).
+   - 최종통지(2차)를 이미 받은 건은 날짜를 건드리지 않는다 — 이미 고지한 마감을 소급 변경하지 않는다. */
+function migrateSelectSchedules_(payload){
+  const dryRun=!(payload.dryRun===false||String(payload.dryRun||'')==='false');
+  const selSh=ensureSelectSheet_(ensureSheets_().ss);
+  const rows=selSh.getDataRange().getValues().slice(1);
+  const tz=CONFIG.TIMEZONE;
+  const today=new Date();
+  const todayStr=Utilities.formatDate(today,tz,'yyyy-MM-dd');
+  const minDeadline=Utilities.formatDate(new Date(today.getTime()+21*86400000),tz,'yyyy-MM-dd');
+  const out=[];
+  rows.forEach(function(r,i){
+    if(String(r[SELECT_COL['상태']]||'')!=='대기중') return;
+    if(String(r[SELECT_COL['제출일시']]||'').trim()) return;
+    const stage=parseInt(r[SELECT_COL['최종알림단계']])||0;
+    if(stage>=2) return;   // 이미 최종통지 나감 — 고지된 마감 유지
+    const created=parseDateSafe_(r[SELECT_COL['생성일시']]).obj;
+    if(!created||isNaN(created.getTime())) return;
+    const sched=_selectSchedule_(created);
+    const newDeadline=sched.deadline<minDeadline?minDeadline:sched.deadline;
+    const r1=(sched.reminder1<=todayStr||stage>=1)?'':sched.reminder1;
+    const r2=sched.reminder2<todayStr?todayStr:sched.reminder2;
+    out.push({row:i+2,name:String(r[SELECT_COL['고객명']]||''),stage:stage,
+      oldDeadline:String(parseDateSafe_(r[SELECT_COL['셀렉마감일']]).str||'').slice(0,10),
+      newDeadline:newDeadline,reminder1:r1||'(생략)',reminder2:r2});
+    if(!dryRun){
+      selSh.getRange(i+2,SELECT_COL['셀렉마감일']+1).setValue(newDeadline);
+      selSh.getRange(i+2,SELECT_COL['1차알림일']+1).setValue(r1);
+      selSh.getRange(i+2,SELECT_COL['2차알림일']+1).setValue(r2);
+      selSh.getRange(i+2,SELECT_COL['3차알림일']+1).setValue('');
+    }
+  });
+  return {ok:true,dryRun:dryRun,count:out.length,items:out};
 }
 
 function _sendSelectReminderEmail_(row, stage){
@@ -23736,24 +26914,42 @@ function _sendSelectReminderEmail_(row, stage){
   const selectUrl=buildSelectSessionUrl_(sessionId,row[SELECT_COL['페이지버전']]);
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
   const deadline=String(row[SELECT_COL['셀렉마감일']]||'');
-  const stageText={ko:`${stage}차`,en:`Reminder ${stage}`,de:`Erinnerung ${stage}`};
+  /* 2차부터는 최종 통지다 — 마감일·보관본 삭제·보정 의무 종료를 명시해야 § 643 BGB 식으로
+     의무 종료가 깨끗해진다(2026-08-28 법 검토). 문구를 빼면 고객이 소멸시효 3년 안에
+     "돈 낸 보정 어디 갔냐"고 올 여지가 남는다. */
+  const isFinal=stage>=2;
+  const dl=_selectDateLabel_(deadline,lang);
   const subj={
-    ko:`[Studio mean] 사진 셀렉 리마인드 (${stage}차) — ${name}님`,
-    en:`[Studio mean] Photo selection reminder (${stage}) — ${name}`,
-    de:`[Studio mean] Erinnerung zur Fotoauswahl (${stage}) — ${name}`
+    ko:isFinal?`[Studio mean] 사진 셀렉 최종 안내 — ${name}님 (마감 ${dl})`
+              :`[Studio mean] 사진 셀렉 리마인드 — ${name}님`,
+    en:isFinal?`[Studio mean] Final notice: photo selection — ${name} (deadline ${dl})`
+              :`[Studio mean] Photo selection reminder — ${name}`,
+    de:isFinal?`[Studio mean] Letzte Erinnerung: Fotoauswahl — ${name} (Frist ${dl})`
+              :`[Studio mean] Erinnerung zur Fotoauswahl — ${name}`
+  };
+  const stageText={
+    ko:isFinal?'최종 안내':'리마인드',
+    en:isFinal?'Final notice':'Reminder',
+    de:isFinal?'Letzte Erinnerung':'Erinnerung'
   };
   const intro={
-    ko:`안녕하세요, <b>${name}</b>님.<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다. ${deadline?`마감일은 <b>${deadline}</b>입니다.`:''}`,
-    en:`Hello <b>${name}</b>,<br><br>Your photo selection is still pending. ${deadline?`The current deadline is <b>${deadline}</b>.`:''}`,
-    de:`Guten Tag, <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen. ${deadline?`Die aktuelle Frist ist <b>${deadline}</b>.`:''}`
+    ko:isFinal
+      ?`안녕하세요, <b>${name}</b>님.<br><br>사진 셀렉이 아직 접수되지 않아 마지막으로 안내드립니다.<br><b>${dl}</b>까지 셀렉이 접수되지 않으면, 예약 시 동의하신 약관에 따라 <b>보관 중인 파일은 삭제되며 보정 제공 의무도 함께 종료</b>됩니다.<br>이미 전달드린 원본 파일은 계속 사용하실 수 있습니다.<br><br>사정이 있어 시간이 더 필요하시면 이 메일로 편하게 회신해 주세요 — 기한을 조정해 드리겠습니다.`
+      :`안녕하세요, <b>${name}</b>님.<br><br>아직 사진 셀렉이 제출되지 않아 안내드립니다.${deadline?` 셀렉 마감일은 <b>${dl}</b>입니다.`:''}`,
+    en:isFinal
+      ?`Hello <b>${name}</b>,<br><br>This is our final notice regarding your photo selection.<br>If we do not receive your selection by <b>${dl}</b>, the stored files will be deleted and our retouching obligation will end, as set out in the terms you agreed to at booking.<br>The original files already delivered to you remain yours to keep.<br><br>If you need more time, simply reply to this email — we are happy to extend the deadline.`
+      :`Hello <b>${name}</b>,<br><br>Your photo selection is still pending.${deadline?` The selection deadline is <b>${dl}</b>.`:''}`,
+    de:isFinal
+      ?`Guten Tag, <b>${name}</b>,<br><br>dies ist unsere letzte Erinnerung zu Ihrer Fotoauswahl.<br>Geht Ihre Auswahl nicht bis zum <b>${dl}</b> ein, werden die gespeicherten Dateien gemäß den bei der Buchung akzeptierten Bedingungen gelöscht und unsere Retusche-Verpflichtung endet.<br>Die bereits übermittelten Originaldateien bleiben selbstverständlich bei Ihnen.<br><br>Falls Sie mehr Zeit benötigen, antworten Sie einfach auf diese E-Mail — wir verlängern die Frist gern.`
+      :`Guten Tag, <b>${name}</b>,<br><br>Ihre Fotoauswahl ist noch offen.${deadline?` Die Auswahlfrist ist der <b>${dl}</b>.`:''}`
   };
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
   <div style="background:#2D2A26;padding:20px 24px;color:#fff;font-weight:700;">📷 Studio mean · ${stageText[lang]||stageText.ko}</div>
   <div style="padding:24px;font-size:14px;line-height:1.8;color:#334155;">
     ${intro[lang]||intro.ko}
     <div style="margin:18px 0;display:flex;flex-direction:column;gap:10px;">
-      ${driveLink?`<a href="${driveLink}" style="display:block;text-align:center;background:#f1f5f9;color:#1e293b;padding:12px 18px;text-decoration:none;border-radius:8px;border:1px solid #e2e8f0;">촬영 사진 보기</a>`:''}
-      <a href="${selectUrl}" style="display:block;text-align:center;background:#2D2A26;color:#fff;padding:14px 18px;text-decoration:none;border-radius:8px;font-weight:700;">사진 셀렉 제출하기</a>
+      ${driveLink?`<a href="${driveLink}" style="display:block;text-align:center;background:#f1f5f9;color:#1e293b;padding:12px 18px;text-decoration:none;border-radius:8px;border:1px solid #e2e8f0;">${lang==='en'?'View your photos':lang==='de'?'Fotos ansehen':'촬영 사진 보기'}</a>`:''}
+      <a href="${selectUrl}" style="display:block;text-align:center;background:#2D2A26;color:#fff;padding:14px 18px;text-decoration:none;border-radius:8px;font-weight:700;">${lang==='en'?'Submit your selection':lang==='de'?'Auswahl abschicken':'사진 셀렉 제출하기'}</a>
     </div>
     <div style="font-size:12px;color:#64748b;">문의: ${CONFIG.ADMIN_EMAIL}</div>
   </div></div>`;
@@ -23777,7 +26973,7 @@ function updatePhotoSelection(sessionId,sub){
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
     const retouchPrice=parseInt(row[SELECT_COL['리터칭단가']])||10;
-    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount);
+    const extraRetouch=computeSelectExtraRetouch_(photos,baseCount,buildSelectRetouchCaps_(sub,row));
     const extraRetouchAmtRaw=extraRetouch*retouchPrice;
     const priced=priceSelectPrints_(sub,row,decoupled);
     const prints=priced.prints;
@@ -23836,6 +27032,11 @@ function updatePhotoSelection(sessionId,sub){
     const printChargeItems=displayPrints||[];
     const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',`${photos.length}장 (추가 ${extraRetouch}장 × ${row[9]}€ = ${extraRetouchAmt}€)`)}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${photos.map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6]));}).join('')}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
     sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정] ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html});
+    /* 수정 제출에도 고객 확인 메일 — 종전엔 관리자만 알고 고객은 무통지였다(2026-08-31).
+       금액이 바뀌는 행동이라 최종 기준이 어느 쪽인지 고객에게도 남아야 한다. */
+    if(!sub.suppressCustomerEmail){
+      try{_sendCustomerSelectReceipt(row,photos,displayPrints,extraRetouch,extraRetouchAmt,extraPrintsAmt,totalExtra,selectMarketing,delivery,photocard,[],{retouch:retouchVd,print:printVd,total:roundCurrency_(retouchVd.discount+printVd.discount)},true);}catch(e){Logger.log('셀렉 수정 고객 메일 오류:'+e.message);try{logMessage_({channel:'select',direction:'outbound',type:'receipt',to:String(row[3]||''),subject:'셀렉 수정확인 메일 실패 — '+row[2],status:'실패',meta:{error:String(e.message||e)}});}catch(_){}}
+    }
     return{
       ok:true,
       totalExtra,
@@ -24842,9 +28043,19 @@ function autoSelectDailyCheck(){
   }catch(e){Logger.log('autoSelectDailyCheck 촬영완료전환 오류:'+e.message);}
 
   // 1. 발송 후 단계별 리마인드
+  /* 좀비 가드(2026-08-28 김연선·김혜연 사례) — 같은 예약에 완료된 셀렉 행이 따로 있는데
+     '대기중' 중복 행이 남아 있으면, 작업이 끝난 고객에게 "셀렉이 안 됐다"는 메일이 나간다.
+     셀렉 행만 보지 말고 **연결 예약의 상태**를 함께 본다: 작업완료·취소면 리마인드 대상이 아니다. */
+  const _bkStatusAll=bookSh.getRange(2,BOOKING_COL['상태']+1,Math.max(1,bookSh.getLastRow()-1),1).getValues();
+  const _bkTerminal=function(bIdx){
+    if(!bIdx||bIdx<2||bIdx-2>=_bkStatusAll.length) return false;
+    const st=String(_bkStatusAll[bIdx-2][0]||'').trim();
+    return st==='작업완료'||st==='취소됨'||st==='자동취소';
+  };
   selRows.forEach((r,i)=>{
     const status=String(r[SELECT_COL['상태']]||'');
     if(status!=='대기중') return;
+    if(_bkTerminal(parseInt(r[SELECT_COL['예약장부행']],10)||0)) return;
     try{
       const stage=parseInt(r[SELECT_COL['최종알림단계']])||0;
       const reminderTargets=[
@@ -27171,7 +30382,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;width:1
     Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland<br><br>
     Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>
     Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941<br>
-    Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX
+    ${STUDIO_BANK.bank}<br>IBAN: ${STUDIO_BANK.ibanCompact}<br>BIC: ${STUDIO_BANK.bic}
   </div>
 </div>
 <div class="inv-meta">
@@ -27191,7 +30402,7 @@ ${isRefund&&refund>0?`<tr><td>${items.length+1}</td><td>${t.ref}</td><td class="
 </div>
 ${vatExempt?`<div class="vat-note-exempt">${escapeHtml_(vatExemptNoteText_(L,'invoice',inv.vatExemptCountry))}</div>`:''}
 ${(inv.showMemo===true&&inv.memo)?`<div class="memo-block"><div class="memo-title">${t.notes}</div><div>${escapeHtml_(inv.memo)}</div></div>`:''}
-<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX</div></div></div>
+<div class="footer"><div class="footer-sep">${t.invLabel} : ${escapeHtml_(inv.number||'')}</div><div class="footer-grid"><div>Taewoong Min<br>Holzwegpassage 3<br>61440 Oberursel(Taunus)<br>Deutschland</div><div>Tel : +49 176 6093 9400<br>Email : studio.mean.de@gmail.com<br>Steuernummer : 003 846 66574<br>USt-IdNr: DE440009941</div><div>${STUDIO_BANK.bank}<br>IBAN: ${STUDIO_BANK.ibanCompact}<br>BIC: ${STUDIO_BANK.bic}</div></div></div>
 </div></body></html>`;
 }
 
@@ -27233,18 +30444,21 @@ function sendInvoiceEmailInternal_(inv, subject, body, mailLang){
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const rowIndex=idx+2;
   const currentRow=rows[idx+1]||[];
-  const effectiveLang='de';
+  /* 메일 문구는 mailLang(미지정 시 de)으로, 어드민이 넘긴 subject/body 는 그대로 존중한다 —
+     종전엔 'de' 하드코딩 + 인자 무시로 ko/en 문구가 도달 불가였다(2026-08-31 전수 점검 개선 2).
+     PDF 는 세무문서(Rechnung) 일관성을 위해 계속 de 로 생성한다. */
+  const effectiveLang=['ko','en','de'].indexOf(String(mailLang||'').trim())>-1?String(mailLang).trim():'de';
   const invoiceForOutput=Object.assign({}, inv, {
     name:normalizeInvoiceCustomerName_(inv.name||''),
     total:getInvoiceGrossTotalForOutput_(inv),
     lang:effectiveLang
   });
   const defaults=buildInvoiceEmailDefaults_(invoiceForOutput, effectiveLang);
-  const finalSubject=String(defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
-  const finalBody=String(defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const finalSubject=String(subject||defaults.subject||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
+  const finalBody=String(body||defaults.body||'').replace(/\{\{invoiceNumber\}\}/g,inv.number||'').trim();
   let pdf;
   try{
-    pdf=createInvoicePdf_(invoiceForOutput, effectiveLang);
+    pdf=createInvoicePdf_(invoiceForOutput, 'de');
   }catch(pdfErr){
     throw new Error('PDF 생성 오류: '+String(pdfErr&&pdfErr.message||pdfErr));
   }
@@ -28536,6 +31750,30 @@ function warmupCacheTrigger(){
       getCachedMonthEvents_(d.getFullYear(),d.getMonth(),true);
     }catch(e){ Logger.log('warmup events '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message); }
   }
+  _pingWebAppWarmup_();
+}
+
+/* 캐시 워밍만으로는 /exec 첫 호출의 34초가 안 잡힌다 — **트리거는 웹앱과 다른 컨테이너에서 돌기 때문**이다.
+   그래서 라이브 배포 URL 자체를 두드려 웹앱 경로를 통과시킨다.
+
+   빈도: 이 트리거는 5분마다 돌지만 핑은 **10분에 한 번**만 보낸다(하루 약 84회).
+   UrlFetchApp 이 응답을 기다리는 ~5초가 전부 트리거 실행시간으로 잡히는데, 소비자 계정 한도가
+   하루 90분이고 SumUp 동기화(15분)·모닝리포트 등이 이미 쓰고 있어 여유를 남긴다.
+   야간(22~08시)은 건너뛴다 — 그 시간대 첫 방문은 어차피 드물고, 한도를 거기 쓸 이유가 없다.
+
+   ⚠️ 구글이 인스턴스를 얼마나 오래 살려 두는지는 공개돼 있지 않다. 10분 간격이 항상 콜드를 막는다는
+   보장은 없다 — 효과는 실제 응답시간으로 확인해야 한다. */
+function _pingWebAppWarmup_(){
+  try{
+    const now=new Date();
+    const h=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'H'));
+    const m=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'m'));
+    if(h<8||h>=22) return;
+    if(m%10>=5) return;
+    const url=GAS_LIVE_EXEC_URL_+'?api=warmup&_ts='+Date.now();
+    const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,followRedirects:true});
+    Logger.log('warmup ping '+res.getResponseCode());
+  }catch(e){ Logger.log('warmup ping skipped: '+e.message); }
 }
 
 function setupWarmupTrigger(){
@@ -28638,6 +31876,29 @@ function flagAndCancelOverdueDepositBookings_(){
   });
 }
 
+/* 계약금 계좌 블록. 2026-08-26 점검에서 **예약금 리마인더 메일에 계좌번호가 없던 것**을 발견해 신설.
+   한국어본은 "아래 계좌로 입금을 부탁드립니다" 라고 해놓고 정작 IBAN 대신 스튜디오 이메일 주소를
+   보여줬고, 영어·독일어본엔 계좌 정보가 아예 없었다 — 고객이 입금할 방법이 없는 채로 3일 뒤
+   자동취소가 나갔다(김혜수 2026-08-16 리마인더 → 08-19 자동취소).
+   ⚠️ 같은 계좌 정보가 EMAIL_TEXT 의 confirmed_deposit_note 와 getConfirmCalendarLabels_ 에도 있다.
+   계좌가 바뀌면 **세 곳을 함께** 고쳐야 한다. */
+function _depositBankBlockHtml_(lang){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const t={
+    ko:{title:'💳 계약금 입금 계좌',holder:'예금주',bank:'은행',ref:'송금 사유',refVal:'예약자명 + 촬영일'},
+    en:{title:'💳 Deposit bank details',holder:'Account holder',bank:'Bank',ref:'Reference',refVal:'Your name + shoot date'},
+    de:{title:'💳 Anzahlungskonto',holder:'Kontoinhaber',bank:'Bank',ref:'Verwendungszweck',refVal:'Name + Aufnahmedatum'}
+  }[L];
+  return '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;">'
+    +'<b style="color:#1d4ed8;">'+t.title+'</b><br>'
+    +t.holder+': '+STUDIO_BANK.holder+'<br>'
+    +t.bank+': '+STUDIO_BANK.bank+'<br>'
+    +'IBAN: <b>'+STUDIO_BANK.iban+'</b><br>'
+    +'BIC: <b>'+STUDIO_BANK.bic+'</b><br>'
+    +t.ref+': '+t.refVal
+    +'</div>';
+}
+
 function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(!email || email.indexOf('@')<0 || email.indexOf('수기')>=0) return;
@@ -28649,21 +31910,22 @@ function sendDepositReminderEmail_(bookingRowIndex, row, deposit, ageDays){
   const depositStr=(Math.round(deposit*100)/100).toFixed(2);
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const subj={
-    ko:`[Studio mean] 예약금 입금 리마인더 — ${name}님`,
+    ko:`[Studio mean] 계약금 입금 리마인더 — ${name}님`,
     en:`[Studio mean] Deposit payment reminder — ${name}`,
     de:`[Studio mean] Erinnerung Anzahlung — ${name}`
   };
   const body={
     ko:`<p>안녕하세요, <b>${escapeHtml_(name)}</b>님.</p>
-<p>현재 예약건의 <b>예약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
+<p>현재 예약건의 <b>계약금이 아직 입금되지 않아</b> 리마인더를 드립니다.</p>
 <ul>
   <li>📷 상품: ${escapeHtml_(product)}</li>
   <li>📅 촬영일시: ${escapeHtml_(shootAt)}</li>
   <li>💶 예약금: <b>€${depositStr}</b></li>
   <li>⏳ 예약 확정 후 <b>${ageDays}일</b> 경과 — ${remainingDays}일 이내 미입금 시 <b>자동 취소</b>됩니다.</li>
 </ul>
-<p>아래 계좌로 예약금 입금을 부탁드립니다:<br><b>Studio mean</b> · <i>studio.mean.de@gmail.com</i></p>
-<p>이미 입금하신 경우 이 메일은 무시해 주세요.</p>
+<p>아래 계좌로 예약금 입금을 부탁드립니다.</p>
+${_depositBankBlockHtml_('ko')}
+<p>이미 입금하셨거나 현장 결제로 협의하신 경우에는 이 메일을 무시하셔도 됩니다.</p>
 ${_getSignatureHtml()}`,
     en:`<p>Hello <b>${escapeHtml_(name)}</b>,</p>
 <p>This is a reminder that your <b>deposit has not yet been received</b>.</p>
@@ -28673,7 +31935,9 @@ ${_getSignatureHtml()}`,
   <li>💶 Deposit: <b>€${depositStr}</b></li>
   <li>⏳ <b>${ageDays} days</b> since confirmation — the booking will be auto-cancelled if unpaid within ${remainingDays} more day(s).</li>
 </ul>
-<p>Please complete the deposit payment. If already sent, kindly ignore this message.</p>
+<p>Please transfer the deposit to the account below.</p>
+${_depositBankBlockHtml_('en')}
+<p>If you have already paid, or agreed to pay on site, kindly ignore this message.</p>
 ${_getSignatureHtml()}`,
     de:`<p>Guten Tag, <b>${escapeHtml_(name)}</b>,</p>
 <p>dies ist eine Erinnerung, dass Ihre <b>Anzahlung noch nicht eingegangen</b> ist.</p>
@@ -28683,7 +31947,9 @@ ${_getSignatureHtml()}`,
   <li>💶 Anzahlung: <b>€${depositStr}</b></li>
   <li>⏳ <b>${ageDays} Tage</b> seit Bestätigung — Bei Nichtzahlung innerhalb weiterer ${remainingDays} Tage erfolgt automatische Stornierung.</li>
 </ul>
-<p>Bitte überweisen Sie die Anzahlung. Falls bereits erfolgt, ignorieren Sie diese Nachricht.</p>
+<p>Bitte überweisen Sie die Anzahlung auf das folgende Konto.</p>
+${_depositBankBlockHtml_('de')}
+<p>Falls die Zahlung bereits erfolgt ist oder Zahlung vor Ort vereinbart wurde, ignorieren Sie diese Nachricht bitte.</p>
 ${_getSignatureHtml()}`
   };
   try{sendTrackedEmail_({to:email,subject:subj[L],htmlBody:body[L]});}
@@ -28696,7 +31962,7 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['상태']+1).setValue('취소됨');
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['자동취소일시']+1).setValue(nowStr);
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
-  const cancelMemo='[자동취소] 예약 확정 후 10일 내 예약금 미확인';
+  const cancelMemo='[자동취소] 예약 확정 후 10일 내 계약금 미확인';
   bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?(prevMemo+' '+cancelMemo):cancelMemo);
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
   if(eventId&&deleteBookingCalendarEventById_(eventId)){ // 실패 시 ID 보존 → 정합 점검이 재시도
@@ -28709,13 +31975,26 @@ function autoCancelBookingForMissingDeposit_(bookingRowIndex, row){
   const email=String(row[BOOKING_COL['이메일']]||'').trim();
   if(email && email.includes('@') && !email.includes('수기')){
     try{
-      sendTrackedEmail_({
-        to:email,
-        subject:'[Studio mean] 예약이 자동 취소되었습니다',
-        htmlBody:`안녕하세요 ${escapeHtml_(String(row[BOOKING_COL['고객명']]||''))}님,<br><br>예약 확정 후 10일 이내 예약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`
-      });
+      // 유일하게 한국어 단일이던 고객 메일 — en/de 고객이 취소를 못 알아듣는 문제(2026-08-31 전수 점검)
+      const acLang=String(row[BOOKING_COL['언어']]||'ko').trim()||'ko';
+      const acName=escapeHtml_(String(row[BOOKING_COL['고객명']]||''));
+      const acSubj={ko:'[Studio mean] 예약이 자동 취소되었습니다',
+        en:'[Studio mean] Your booking has been cancelled automatically',
+        de:'[Studio mean] Ihre Buchung wurde automatisch storniert'};
+      const acBody={
+        ko:`안녕하세요 ${acName}님,<br><br>예약 확정 후 10일 이내 계약금 입금이 확인되지 않아 예약이 자동 취소되었습니다.<br>다시 예약을 원하시면 새 예약으로 접수해 주세요.<br><br>${_getSignatureHtml()}`,
+        en:`Hello ${acName},<br><br>We did not receive your deposit within 10 days of confirmation, so your booking has been cancelled automatically.<br>If you would still like a session, please make a new booking — we would be happy to see you.<br><br>${_getSignatureHtml()}`,
+        de:`Guten Tag ${acName},<br><br>da die Anzahlung nicht innerhalb von 10 Tagen nach der Bestätigung eingegangen ist, wurde Ihre Buchung automatisch storniert.<br>Wenn Sie weiterhin einen Termin wünschen, buchen Sie gern neu — wir freuen uns auf Sie.<br><br>${_getSignatureHtml()}`};
+      sendTrackedEmail_({to:email,subject:acSubj[acLang]||acSubj.ko,htmlBody:acBody[acLang]||acBody.ko});
     }catch(e){Logger.log('autoCancelBookingForMissingDeposit_ mail: '+e.message);}
   }
+  /* 슬롯이 실제로 풀리는 취소인데 대기자 알림만 빠져 있던 경로(전수 점검 개선 7) —
+     수동 취소 2경로와 동일하게 같은 날짜·상품군 대기자에게 알린다. */
+  try{
+    const acDate=String(parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    const acGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(acDate) notifyWaitlistForDate_(acDate,acGroup);
+  }catch(e){Logger.log('autoCancel waitlist notify: '+e.message);}
 }
 
 function debugListAutoCancelledBookings_(){ // 🔒 _접미사: 익명 google.script.run 노출 차단
@@ -28821,7 +32100,7 @@ function sendBookingReminders_(){
       en:{subject:`[Studio mean] A reminder for tomorrow's session — ${name}`,body:`Hello ${name},<br><br>This is a friendly reminder that your session at Studio mean is scheduled for tomorrow.<br><br>📅 <b>Date & Time</b> ${dateStr}<br>🛍 <b>Service</b> ${product}<br><br>${directionHtml}${arrivalLine.en}<br><br>If anything changes or you have a question before tomorrow, simply reply to this email or contact us at ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.en}<br><br>${_getSignatureHtml()}`},
       de:{subject:`[Studio mean] Erinnerung an Ihren Termin morgen — ${name}`,body:`Guten Tag, ${name},<br><br>wir möchten Sie freundlich an Ihren morgigen Fototermin bei Studio mean erinnern.<br><br>📅 <b>Datum & Uhrzeit</b> ${dateStr}<br>🛍 <b>Leistung</b> ${product}<br><br>${directionHtml}${arrivalLine.de}<br><br>Falls sich kurzfristig etwas ändert oder Sie noch eine Frage haben, antworten Sie gern direkt auf diese E-Mail oder erreichen uns unter ${CONFIG.ADMIN_EMAIL}.<br><br>${closingLine.de}<br><br>${_getSignatureHtml()}`}
     };
-    const msg=T[lang]||T.de;
+    const msg=T[lang]||T.ko;
     try{
       sendTrackedEmail_({to:email,subject:msg.subject,htmlBody:msg.body});
       props.setProperty(remKey,Utilities.formatDate(new Date(),tz,'yyyy-MM-dd'));
@@ -29592,7 +32871,7 @@ function buildQuoteHtml_(q){
   const customerEmail=q.email?`<div>E-Mail: ${escapeHtml_(q.email)}</div>`:'';
   const customerAddr=q.billingAddress||q.customerAddress?`<div style="white-space:pre-line;">${escapeHtml_(q.billingAddress||q.customerAddress)}</div>`:'';
   const vatLine=(opt.showVatId&&q.vatId)?`<div>USt-IdNr: ${escapeHtml_(q.vatId)}</div>`:'';
-  const bankHtml='Deutsche Bank<br>IBAN: DE11500700100659117600<br>BIC: DEUTDEFFXXX';
+  const bankHtml=STUDIO_BANK.bank+'<br>IBAN: '+STUDIO_BANK.ibanCompact+'<br>BIC: '+STUDIO_BANK.bic;
   const showDiscountRow=opt.showDiscount&&totals.discount>0;
   const showDepositRow=opt.showDeposit&&Number(q.depositAmount)>0;
   const logoHtml=getInvoiceLogoHtml_();
@@ -30043,6 +33322,20 @@ function buildDataQualityAuditForAgent_(){
     // '수기등록'은 접두 매칭: '수기등록(메일없음)' 같은 변형이 5건 실측(2026-08-17)
     if(email&&!/^수기등록/.test(email)&&email!=='-'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       add('예약장부',rowIndex,name,'이메일 형식 오류',email);
+    /* 전화 위생 (2026-08-31 신원 쪼개짐 사태의 근본 신호) — 깨진 번호('+49' 단독·'170' 등,
+       숫자 6자리 미만)와 보이지 않는 유니코드 방향문자(고도영 케이스)는 고객 신원 키를 쪼갠다.
+       '-'는 이메일과 같은 "없음" 관행이라 제외. */
+    const phoneRaw=String(r[BOOKING_COL['연락처']]||'').trim();
+    /* 초기 수기·마이그레이션 행(1~4월, 50건+)이 이미 깨진 채(원본 소실) 존재 — 상시 경보는 피로만 남긴다.
+       방문 집계는 이름 합산(@903)으로 무해화됐으므로, 입구 가드(@901) 이후 '새로' 생기는 것만 잡는다.
+       마이리얼트립은 플랫폼 중개라 전화가 원래 없다('+82' 플레이스홀더 관행) — 제외. */
+    const isMrtRow=String(r[BOOKING_COL['촬영종류']]||'').indexOf('마이리얼트립')>-1||/마이리얼트립/.test(String(r[BOOKING_COL['상품']]||''));
+    if(phoneRaw&&phoneRaw!=='-'&&!isMrtRow&&d.str&&d.str.slice(0,10)>='2026-05-01'){
+      if(phoneRaw.replace(/\D/g,'').length<6)
+        add('예약장부',rowIndex,name,'전화번호 불완전(신원 쪼개짐 위험)',phoneRaw);
+      else if(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/.test(phoneRaw))
+        add('예약장부',rowIndex,name,'전화에 보이지 않는 문자',phoneRaw);
+    }
     const total=parseMoneyValue_(r[BOOKING_COL['총결제액']]);
     // 계약금 셀은 '50|DB|2026-03-06' 복합 표기가 있다 — 금액은 첫 세그먼트만 (김지훈 행18·신비아 행98 오탐)
     /* 계약금·잔금 **양쪽 모두** '170|DB|2026-01-24' 복합 표기가 있다. 계약금만 분리하고
@@ -30350,24 +33643,28 @@ function buildWeeklyKpi_(endDateStr){
    판정 못 한 건은 버리지 않고 unmatched 로 돌려준다 — 조용히 빠지면
    공제를 놓치고도 모른다. */
 const TRAVEL_KM_RATE_=0.30;                 // EStG 킬로미터당 공제액 (자가용)
+/* 한글 표기도 같이 잡는다 — 이 표는 주차 영수증(독일어)뿐 아니라 travel-fee-quote 의
+   **모호한 주소 폴백**으로도 쓰인다. 예약 메모의 촬영장소는 대개 한글이라('프랑크푸르트 시내'),
+   라틴 표기만 두면 정작 폴백이 필요한 순간에 한 건도 안 걸린다(2026-08-26 확인).
+   위에서부터 첫 매칭이 이긴다 — 공항·메세를 프랑크푸르트보다 앞에 둔 이유. */
 const TRAVEL_KM_TABLE_=[
-  {re:/bad\s*homburg|kur-?\s*und\s*kongress/i, city:'바트홈부르크', km:8},
-  {re:/steinbach/i,                            city:'슈타인바흐',   km:6},
-  {re:/kronberg|k[öo]nigstein|oberursel/i,      city:'크론베르크·쾨니히슈타인', km:7},
-  {re:/flughafen|fraport|airport/i,             city:'프랑크푸르트 공항', km:25},
-  {re:/messe/i,                                 city:'프랑크푸르트 메세',  km:20},
-  {re:/frankfurt/i,                             city:'프랑크푸르트',      km:17},
-  {re:/hanau/i,       city:'하나우',        km:40},
-  {re:/wiesbaden/i,   city:'비스바덴',      km:46},
-  {re:/darmstadt/i,   city:'다름슈타트',    km:45},
-  {re:/gie[sß]en/i,   city:'기센',          km:45},
-  {re:/mainz/i,       city:'마인츠',        km:50},
-  {re:/aschaffenburg/i, city:'아샤펜부르크', km:75},
-  {re:/marburg/i,     city:'마르부르크',    km:80},
-  {re:/heidelberg/i,  city:'하이델베르크',  km:100},
-  {re:/fulda/i,       city:'풀다',          km:105},
-  {re:/koblenz/i,     city:'코블렌츠',      km:125},
-  {re:/k[öo]ln|cologne/i, city:'쾰른',      km:170},
+  {re:/bad\s*homburg|kur-?\s*und\s*kongress|바트\s*홈부르크/i, city:'바트홈부르크', km:8},
+  {re:/steinbach|슈타인바흐/i,                  city:'슈타인바흐',   km:6},
+  {re:/kronberg|k[öo]nigstein|oberursel|크론베르크|쾨니히슈타인|오버우어젤/i, city:'크론베르크·쾨니히슈타인', km:7},
+  {re:/flughafen|fraport|airport|공항/i,        city:'프랑크푸르트 공항', km:25},
+  {re:/messe|메세/i,                            city:'프랑크푸르트 메세',  km:20},
+  {re:/frankfurt|프랑크푸르트/i,                city:'프랑크푸르트',      km:17},
+  {re:/hanau|하나우/i,       city:'하나우',        km:40},
+  {re:/wiesbaden|비스바덴/i, city:'비스바덴',      km:46},
+  {re:/darmstadt|다름슈타트/i, city:'다름슈타트',  km:45},
+  {re:/gie[sß]en|기센/i,     city:'기센',          km:45},
+  {re:/mainz|마인츠/i,       city:'마인츠',        km:50},
+  {re:/aschaffenburg|아샤펜부르크/i, city:'아샤펜부르크', km:75},
+  {re:/marburg|마르부르크/i, city:'마르부르크',    km:80},
+  {re:/heidelberg|하이델베르크/i, city:'하이델베르크', km:100},
+  {re:/fulda|풀다/i,         city:'풀다',          km:105},
+  {re:/koblenz|코블렌츠/i,   city:'코블렌츠',      km:125},
+  {re:/k[öo]ln|cologne|쾰른/i, city:'쾰른',        km:170},
 ];
 /* 이동을 증명하는 지출만 집는다. 주유(tank/Shell 등)는 목적지를 알 수 없어 제외 —
    2025 원장도 주차 영수증만 근거로 삼았다. */
@@ -31153,24 +34450,34 @@ function generateGutscheinCode_(){
   return code;
 }
 
+/* ===== SPV(Einzweck-Gutschein) 단일 체제 — 2026-08-27 확정 =====
+   § 3 Abs. 14 UStG 의 SPV 요건은 '공급 장소'와 '세액'이 발행 시점에 둘 다 확정될 것이다.
+   굿샤인 약관(§ 3 Abs. 13 Nr. 2 UStG — "Bedingungen für die Nutzung" 도 굿샤인의 일부)으로
+   ① Studio mean 의 사진 촬영 서비스 ② 독일 내 제공 ③ 개인 고객 전용(사업자 사업목적 사용 불가)
+   을 못 박아 장소·세율(19%)을 확정시킨다. ③ 이 § 3a Abs. 2 UStG(사업자 수령인 → 수령지 과세)로
+   공급지가 국외로 새는 구멍을 막는 핵심 조건이다.
+
+   운영 근거: Studio mean 은 § 20 Istversteuerung(입금기준) + EÜR(§ 11 EStG 현금기준)이라
+   소득세·부가세가 모두 현금 기준이다. SPV 는 과세시점(발행)이 입금시점과 일치해 한 해에 끝나지만,
+   MPV 는 같은 돈을 EÜR(입금연도)과 부가세(상환연도) 두 해로 쪼개 선수금 관리를 강요한다.
+   또 오분류 위험이 비대칭이다 — SPV 로 보고 MPV 였으면 조기납부(무해), MPV 로 보고 SPV 였으면
+   과소신고(§ 233a AO 이자). 그래서 SPV 로 통일한다. 상세 = docs/gutschein-tax-memo.md */
 function _guessGutscheinTaxType_(voucherType){
-  return voucherType==='product' ? 'SPV' : 'MPV';
+  return 'SPV';
 }
 
 function _guessGutscheinTaxRecognition_(taxType){
-  return taxType==='SPV' ? 'issue' : 'redeem';
+  return 'issue';   /* SPV 단일 체제: 과세는 항상 발행(판매) 시점 */
 }
 
+/* SPV 단일 체제의 마지막 관문 — 시트에 'MPV'/'TBD' 가 저장돼 있거나 페이로드로 들어와도 SPV 로 되돌린다.
+   구 데이터·수기 입력·에이전트 호출이 MPV 로 새는 경로를 여기서 전부 막는다. */
 function _normalizeGutscheinTaxType_(taxType, voucherType){
-  const raw=String(taxType||'').trim().toUpperCase();
-  if(raw==='SPV'||raw==='MPV'||raw==='TBD') return raw;
-  return _guessGutscheinTaxType_(voucherType);
+  return 'SPV';
 }
 
 function _normalizeGutscheinTaxRecognition_(recognition, taxType){
-  const raw=String(recognition||'').trim().toLowerCase();
-  if(raw==='issue'||raw==='redeem'||raw==='review') return raw;
-  return _guessGutscheinTaxRecognition_(taxType);
+  return 'issue';
 }
 
 function _normalizeGutscheinTaxRate_(rate){
@@ -31182,19 +34489,19 @@ function _normalizeGutscheinTaxRate_(rate){
 function _buildGutscheinTaxDecisionNote_(voucherType,taxType,taxRecognition,taxRate){
   const typeLabel=taxType==='SPV'?'Einzweck-Gutschein':(taxType==='MPV'?'Mehrzweck-Gutschein':'TBD');
   const timingLabel=taxRecognition==='issue'?'Ausgabe':(taxRecognition==='redeem'?'Einloesung':'manuelle Pruefung');
-  if(voucherType==='product'){
-    return `Systemvorschlag: produktgebundener ${typeLabel}; Studio mean als Leistungserbringer, Deutschland, MwSt. ${taxRate}%, Besteuerung bei ${timingLabel}.`;
-  }
-  return `Systemvorschlag: flexibler Wertgutschein als ${typeLabel}; Besteuerung bei ${timingLabel}, MwSt.-Satz bei Ausgabe dokumentiert: ${taxRate}%.`;
+  const kind=voucherType==='product'?'produktgebundener Gutschein':'Wertgutschein';
+  return `${kind} als ${typeLabel} (§ 3 Abs. 14 UStG). Ort: Studio mean, Deutschland. Steuersatz: ${taxRate}%. `
+    +`Besteuerung bei ${timingLabel}. Nutzungsbedingungen begrenzen die Einloesung auf Fotografie-Leistungen `
+    +`von Studio mean in Deutschland und auf private Nutzung — dadurch stehen Ort und Steuer bei Ausgabe fest.`;
 }
 
 function _guessGutscheinTaxMeta_(voucherType){
   const taxType=_guessGutscheinTaxType_(voucherType);
   const taxRecognition=_guessGutscheinTaxRecognition_(taxType);
   const taxRateAtIssue=19;
-  const taxMemo=taxType==='SPV'
-    ? 'Automatisch als SPV geführt: Die Umsatzsteuer entsteht bei Ausgabe des produktgebundenen Gutscheins.'
-    : 'Automatisch als MPV geführt: Die Umsatzsteuer entsteht erst bei Einlösung des Wertgutscheins.';
+  const taxMemo='Einzweck-Gutschein (§ 3 Abs. 14 UStG): Die Umsatzsteuer entsteht bei Ausgabe. '
+    +'Ort und Steuersatz stehen durch die Nutzungsbedingungen fest — Fotografie-Leistungen von Studio mean, '
+    +'erbracht in Deutschland, ausschliesslich fuer private Nutzung, 19% MwSt.';
   const taxDecisionNote=_buildGutscheinTaxDecisionNote_(voucherType,taxType,taxRecognition,taxRateAtIssue);
   return {taxType,taxRecognition,taxMemo,taxRateAtIssue,taxDecisionNote};
 }
@@ -31202,9 +34509,12 @@ function _guessGutscheinTaxMeta_(voucherType){
 function _buildDefaultGutscheinValidUntil_(issueDate){
   const parsed=parseDateSafe_(issueDate||new Date()).obj;
   const base=parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
-  const d=new Date(base.getTime());
-  d.setMonth(d.getMonth()+CONFIG.GUTSCHEIN_VALID_MONTHS);
-  return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd');
+  /* §§ 195, 199 Abs. 1 BGB — 소멸시효 3년은 '청구권이 생긴 해의 말'부터 기산된다.
+     발행일+36개월로 자르면 법정 시효보다 짧아지고(2026-08-13 발행 → 08-13 만료 vs 법정 12-31),
+     법정보다 짧은 기한은 § 307 Abs.1 S.1 BGB 로 무효 → 결국 법정기간이 적용된다.
+     짧게 적어 놓고 무효가 되느니 처음부터 법정기간(발행연도+3년의 12/31)에 맞춘다. */
+  const years=Math.round(CONFIG.GUTSCHEIN_VALID_MONTHS/12)||3;
+  return (Number(Utilities.formatDate(base,CONFIG.TIMEZONE,'yyyy'))+years)+'-12-31';
 }
 
 function normalizeGutscheinDateCell_(value){
@@ -31233,6 +34543,10 @@ function gutscheinRowToObject_(row,rowIndex){
     voucherType:normalizeGutscheinType_(row[GUTSCHEIN_COL['타입']]),
     productId:String(row[GUTSCHEIN_COL['상품ID']]||'').trim(),
     productSnapshot:String(row[GUTSCHEIN_COL['상품명스냅샷']]||'').trim(),
+    optionKeys:_parseGutscheinOptionKeys_(row[GUTSCHEIN_COL['옵션키']]),
+    paymentRef:String(row[GUTSCHEIN_COL['결제참조']]||'').trim(),
+    settlementRow:String(row[GUTSCHEIN_COL['정산행']]||'').trim(),
+    people:Math.max(1,parseInt(row[GUTSCHEIN_COL['인원']],10)||1),
     purchaserName:String(row[GUTSCHEIN_COL['구매자명']]||'').trim(),
     purchaserEmail:String(row[GUTSCHEIN_COL['구매자이메일']]||'').trim(),
     recipientName:String(row[GUTSCHEIN_COL['받는분명']]||'').trim(),
@@ -31354,24 +34668,57 @@ function getPublicGutscheinTicket_(code){
   return buildPublicGutscheinTicketPayload_(g);
 }
 
-function _getGutscheinProductMeta_(productId){
+function _getGutscheinProductMeta_(productId, people, optionKeys){
   const pid=String(productId||'').trim();
-  if(!pid) return {id:'',name:'',price:0};
+  const ppl=Math.max(1,parseInt(people,10)||1);
+  const keys=(optionKeys||[]).filter(Boolean);
+  const empty={id:'',name:'',price:0,people:ppl,optionKeys:keys,composition:''};
+  if(!pid) return empty;
   const products=getCachedProducts_();
   const found=products.find(function(p){return String(p.id||'').trim()===pid;});
-  if(!found) return {id:pid,name:'',price:0};
+  if(!found) return Object.assign({},empty,{id:pid});
+  let price=Math.round((Number(found.p||0)||0)*100)/100;
+  /* 가격은 예약 견적 엔진을 그대로 재사용한다 — 인원 추가(+30/인)·옵션(반려동물 15·배경 20·의상 20)
+     규칙이 한 군데(calculateQuote_)에만 있어야 상품가가 바뀌어도 굿샤인이 따라간다.
+     ⚠️ date 를 넘기지 않는다: 주말할증·이벤트할인·시니어·얼리버드는 촬영일에 의존하는데
+     굿샤인은 발행 시점에 액면가가 확정돼야 한다(SPV = 발행 시 과세). 기본가만 쓴다. */
+  try{
+    const q=calculateQuote_({itemId:pid,people:ppl,optionKeys:keys});
+    if(q&&isFinite(Number(q.totalPrice))&&Number(q.totalPrice)>0) price=roundCurrency_(Number(q.totalPrice));
+  }catch(e){ Logger.log('굿샤인 상품가 계산 실패 ('+pid+'): '+e.message); }
   return {
     id:String(found.id||'').trim(),
     name:String(found.nameDe||found.nameEn||found.nameKo||'').trim(),
-    price:Math.round((Number(found.p||0)||0)*100)/100
+    price:price,
+    people:ppl,
+    optionKeys:keys,
+    composition:_gutscheinCompositionDe_(ppl,keys)
   };
+}
+
+/* 굿샤인 액면 구성 표기(독일어) — PDF·메일이 같은 문자열을 쓴다.
+   "3 Personen · mit Haustier" 처럼 상품명 아래 한 줄로 붙는다. */
+function _gutscheinCompositionDe_(people,optionKeys){
+  const parts=[];
+  const ppl=Math.max(1,parseInt(people,10)||1);
+  if(ppl>1) parts.push(ppl+' Personen');
+  const map={dog:'mit Haustier',bg:'zusätzlicher Hintergrund',outfit:'extra Outfit'};
+  (optionKeys||[]).forEach(function(k){ if(map[k]) parts.push(map[k]); });
+  return parts.join(' · ');
+}
+
+function _parseGutscheinOptionKeys_(v){
+  if(Array.isArray(v)) return v.map(function(x){return String(x||'').trim();}).filter(Boolean);
+  return String(v||'').split(/[|,]/).map(function(x){return x.trim();}).filter(Boolean);
 }
 
 function _buildGutscheinPayloadFromRequest_(payload, existing){
   payload=payload||{};
   const base=existing||{};
   const voucherType=normalizeGutscheinType_(payload.voucherType!=null?payload.voucherType:base.voucherType);
-  const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId);
+  const vPeople=Math.max(1,parseInt(payload.people!=null?payload.people:base.people,10)||1);
+  const vOptionKeys=_parseGutscheinOptionKeys_(payload.optionKeys!=null?payload.optionKeys:base.optionKeys);
+  const productMeta=_getGutscheinProductMeta_(payload.productId!=null?payload.productId:base.productId,vPeople,vOptionKeys);
   const taxMeta=_guessGutscheinTaxMeta_(voucherType);
   const amountRaw=voucherType==='product'
     ? productMeta.price
@@ -31389,6 +34736,9 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
   const paymentMethod=String(payload.paymentMethod!=null?payload.paymentMethod:base.paymentMethod||'').trim();
   const saleChannel=String(payload.saleChannel!=null?payload.saleChannel:base.saleChannel||'').trim();
   const adminMemo=String(payload.adminMemo!=null?payload.adminMemo:base.adminMemo||'').trim();
+  /* 판매대금 트랜잭션 ID(SumUp TAAA… / 은행 참조). 매칭보드가 이 값으로 굿샤인 판매를
+     예약 입금과 구별한다 — 없으면 금액·날짜 휴리스틱으로 떨어진다. */
+  const paymentRef=String(payload.paymentRef!=null?payload.paymentRef:base.paymentRef||'').trim();
   const buyerRegistered=(purchaserName||purchaserEmail)?'Y':'N';
   const desiredStatus=String(payload.status!=null?payload.status:'').trim();
   const status=desiredStatus
@@ -31404,6 +34754,10 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
     voucherType,
     productId:voucherType==='product' ? productMeta.id : '',
     productSnapshot,
+    /* 인원·옵션은 상품권에서만 의미가 있다 — 금액권은 액면 그대로라 구성이 없다 */
+    people:voucherType==='product' ? productMeta.people : 1,
+    optionKeys:voucherType==='product' ? productMeta.optionKeys : [],
+    composition:voucherType==='product' ? productMeta.composition : '',
     amount,
     issueMode,
     issuedAt,
@@ -31415,6 +34769,7 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
     lang,
     paymentMethod,
     saleChannel,
+    paymentRef,
     adminMemo,
     buyerRegistered,
     status,
@@ -31429,7 +34784,8 @@ function _buildGutscheinPayloadFromRequest_(payload, existing){
 function buildGutscheinEmailDefaults_(g){
   const code=g.code||'{{code}}';
   const valueLabel=g.voucherType==='product'
-    ? (g.productSnapshot||'Studio mean Gutschein')
+    ? [(g.productSnapshot||'Studio mean Gutschein'),
+       (g.composition||_gutscheinCompositionDe_(g.people,g.optionKeys)||'')].filter(Boolean).join(' · ')
     : `€${Number(g.amount||0).toFixed(2)}`;
   const customerName=String(g.purchaserName||g.recipientName||'').trim();
   const ticketUrl=buildGutscheinTicketUrl_(code);
@@ -31499,6 +34855,10 @@ function _getGutscheinLogoDataUri_(){
 function buildGutscheinHtml_(g){
   const isProduct=g.voucherType==='product';
   const amountLabel=isProduct ? String(g.productSnapshot||'Studio mean Gutschein') : `€${Number(g.amount||0).toFixed(0)}`;
+  /* 상품권만 구성(인원·옵션)을 표기한다. 금액권은 액면이 곧 내용이라 붙일 게 없다.
+     금액은 상품권에 찍지 않는다 — 선물이기도 하고, 액수를 찍으면 '크레딧'으로 읽혀
+     부분사용·잔액 논쟁을 부른다(상품권을 고른 이유가 그걸 없애는 것). */
+  const compositionLabel=isProduct ? String(g.composition||_gutscheinCompositionDe_(g.people,g.optionKeys)||'') : '';
   const taxType=_normalizeGutscheinTaxType_(g.taxType,g.voucherType);
   const taxRate=_normalizeGutscheinTaxRate_(g.taxRateAtIssue);
   const taxNotice=taxType==='SPV'
@@ -31510,7 +34870,7 @@ function buildGutscheinHtml_(g){
   const qrDataUri=_fetchQrDataUri_(ticketUrl,220);
   const logoDataUri=_getGutscheinLogoDataUri_();
   const t={
-    valid:'Verfallsdatum',
+    valid:'Gültig bis',
     title:'Geschenk\ngutschein',
     forLabel:'Für :',
     imprint:'Studio_mean',
@@ -31518,7 +34878,11 @@ function buildGutscheinHtml_(g){
     footerLine2:'Tel : +49 176 6093 9400'
   };
   const recipientText=String(g.recipientName||'').trim() || ' ';
-  const validLabel=escapeHtml_(String(g.validUntil||'').replace(/-/g,'/'));
+  /* 독일 문서 표기: 31.12.2029 (yyyy/mm/dd 는 독일 고객에게 낯설고 월·일이 헷갈린다) */
+  const validLabel=escapeHtml_((function(){
+    const m=String(g.validUntil||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : String(g.validUntil||'');
+  })());
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${escapeHtml_(g.code||'Gutschein')}</title>
 <style>
@@ -31533,20 +34897,21 @@ function buildGutscheinHtml_(g){
 html,body{margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
 @page{size:105mm 148mm;margin:0}
 body{width:105mm;margin:0 auto;background:#fff}
-.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 7mm;background:#fff;page-break-after:always;overflow:hidden}
+.page{position:relative;width:105mm;height:148mm;padding:7mm 7mm 10.5mm;background:#fff;page-break-after:always;overflow:hidden}
 .page:last-child{page-break-after:auto}
 .layout{height:100%;display:grid}
 .front .layout{grid-template-rows:auto 1fr auto;gap:3.2mm}
 .back .layout{grid-template-rows:auto 1fr;gap:4mm}
 .meta-row{display:flex;justify-content:space-between;align-items:flex-start;font-size:6.2pt;line-height:1.2;color:var(--muted);letter-spacing:.05em}
-.polaroid{width:100%;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;gap:3mm}
-.film-window{width:100%;min-height:68mm;background:var(--panel);border:1px solid var(--panel-line);display:flex;align-items:center;justify-content:center}
+.polaroid{width:100%;height:100%;min-height:0;border:1px solid rgba(45,36,29,.18);background:#fff;padding:3mm 3mm 4mm;display:grid;grid-template-rows:1fr auto;gap:3mm}
+.film-window{width:100%;height:100%;min-height:0;background:var(--panel);border:1px solid var(--panel-line);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .film-window img{width:42%;height:auto;opacity:.16}
 .polaroid-caption{display:grid;grid-template-columns:1fr 24mm;align-items:end;gap:3mm}
 .caption-copy{display:grid;gap:1.4mm}
 .script-title{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:18.5pt;line-height:.98;letter-spacing:-.03em;color:var(--ink);white-space:pre-line;max-width:100%}
 .voucher-note{font-size:6.4pt;line-height:1.22;color:var(--muted);text-align:left}
-.voucher-note .value{display:block;font-size:${isProduct?'10.5pt':'17.5pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:.5mm}
+.voucher-note .value{display:block;font-size:${isProduct?(String(amountLabel).length>18?'9pt':'10.5pt'):'17.5pt'};font-weight:700;line-height:1.05;color:var(--ink);margin-bottom:.5mm}
+.voucher-note .composition{display:block;font-size:6.9pt;font-weight:500;line-height:1.2;color:var(--ink);margin:-.2mm 0 .7mm}
 .front-qr{display:grid;justify-items:center}
 .front-qr .qr-box{width:24mm;height:24mm;background:#fff;display:flex;align-items:center;justify-content:center;padding:1.4mm;border:1px solid rgba(45,36,29,.18)}
 .front-qr .qr-box img{width:100%;height:100%;object-fit:contain;display:block}
@@ -31555,7 +34920,7 @@ body{width:105mm;margin:0 auto;background:#fff}
 .notes li{margin:.2mm 0}
 .logo-footer{text-align:center}
 .brand-logo{width:34mm;height:auto;display:block;margin:0 auto}
-.footer-line{margin-top:.8mm;font-size:6.2pt;line-height:1.14;color:var(--ink)}
+.footer-line{margin-top:1.4mm;font-size:6.2pt;line-height:1.14;color:var(--ink)}
 .field-row{display:flex;align-items:flex-end;gap:3mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:16pt;line-height:1;color:var(--ink)}
 .field-line{flex:1;min-width:0;border-bottom:1.1px solid var(--line);padding:0 0 .7mm 0;font-size:12.5pt;line-height:1.15;font-family:Arial,Helvetica,sans-serif;color:var(--ink);min-height:5.5mm}
 .note-card{position:relative;width:100%;height:100%;border:1px solid rgba(45,36,29,.16);background:#fff;padding:3.5mm 3.5mm 15mm;display:grid;grid-template-rows:1fr auto;gap:4mm}
@@ -31576,6 +34941,7 @@ body{width:105mm;margin:0 auto;background:#fff}
           <div class="script-title">${t.title}</div>
           <div class="voucher-note">
             <span class="value">${escapeHtml_(amountLabel)}</span>
+            ${compositionLabel?`<span class="composition">${escapeHtml_(compositionLabel)}</span>`:''}
             ${escapeHtml_(isProduct ? 'Produktgutschein' : 'Wertgutschein')}
           </div>
         </div>
@@ -31586,9 +34952,9 @@ body{width:105mm;margin:0 auto;background:#fff}
     </div>
     <div class="front-footer">
       <ul class="notes">
-        <li>${escapeHtml_('Gültig für Studio_mean Fotografie Dienstleistungen.')}</li>
-        <li>${escapeHtml_('3 Jahre gültig, nur nach Terminvereinbarung einlösbar.')}</li>
-        <li>${escapeHtml_('Nicht mit anderen Aktionen kombinierbar, keine Barauszahlung.')}</li>
+        <li>${escapeHtml_('Gültig für Fotografie-Leistungen von Studio mean, erbracht in Deutschland.')}</li>
+        <li>${escapeHtml_('Nur für private Nutzung, nicht für unternehmerische Zwecke.')}</li>
+        <li>${escapeHtml_('Einlösung nur nach Terminvereinbarung. Keine Barauszahlung, nicht mit anderen Aktionen kombinierbar.')}</li>
         ${isProduct?'':`<li>${escapeHtml_('Restguthaben wird bei Teileinlösung als neuer Gutscheincode übertragen.')}</li>`}
         <li>${escapeHtml_(taxNotice)}</li>
       </ul>
@@ -31701,50 +35067,43 @@ function createGutscheinAdmin(token, payload){
     const nowTs=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
     const stockCreatedAt=data.issueMode==='재고인쇄' ? nowTs : '';
     const saleRegisteredAt=data.buyerRegistered==='Y' ? nowTs : '';
-    gutscheinSheet.appendRow([
-      code,
-      data.voucherType,
-      data.productId,
-      data.productSnapshot,
-      data.purchaserName,
-      data.purchaserEmail,
-      data.recipientName,
-      data.message,
-      data.amount,
-      data.issuedAt,
-      data.validUntil,
-      data.status,
-      data.buyerRegistered,
-      'N',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      stockCreatedAt,
-      saleRegisteredAt,
-      data.issueMode,
-      qrValue,
-      '',
-      '',
-      defaults.subject,
-      defaults.body,
-      '',
-      data.lang,
-      data.paymentMethod,
-      data.saleChannel,
-      data.taxType,
-      data.taxRecognition,
-      data.taxMemo,
-      data.adminMemo,
-      data.taxRateAtIssue,
-      data.taxDecisionNote,
-      '',
-      '',
-      ''
-    ]);
+    /* 열 이름으로 기록한다 — 위치 기반 배열이었을 때는 GUTSCHEIN_HEADERS 에 열을 하나만 더해도
+       조용히 어긋났다(hold 필드가 뒤에 있어 배열이 헤더보다 짧았다). 인덱스 트랩 제거. */
+    const newRow=new Array(GUTSCHEIN_HEADERS.length).fill('');
+    const put=function(h,v){ if(GUTSCHEIN_COL[h]!=null) newRow[GUTSCHEIN_COL[h]]=v; };
+    put('코드',code);
+    put('타입',data.voucherType);
+    put('상품ID',data.productId);
+    put('상품명스냅샷',data.productSnapshot);
+    put('옵션키',(data.optionKeys||[]).join('|'));
+    put('인원',data.people||1);
+    put('구매자명',data.purchaserName);
+    put('구매자이메일',data.purchaserEmail);
+    put('받는분명',data.recipientName);
+    put('메시지',data.message);
+    put('발행금액(€)',data.amount);
+    put('발행일',data.issuedAt);
+    put('유효기한',data.validUntil);
+    put('상태',data.status);
+    put('구매자등록여부',data.buyerRegistered);
+    put('사용여부','N');
+    put('재고생성일',stockCreatedAt);
+    put('판매등록일',saleRegisteredAt);
+    put('발행방식',data.issueMode);
+    put('QR값',qrValue);
+    put('메일제목',defaults.subject);
+    put('메일본문',defaults.body);
+    put('언어',data.lang);
+    put('결제수단',data.paymentMethod);
+    put('판매채널',data.saleChannel);
+    put('결제참조',data.paymentRef);
+    put('세무분류',data.taxType);
+    put('과세시점',data.taxRecognition);
+    put('세무메모',data.taxMemo);
+    put('관리메모',data.adminMemo);
+    put('발행시점세율',data.taxRateAtIssue);
+    put('세무판단근거',data.taxDecisionNote);
+    gutscheinSheet.appendRow(newRow);
     const rowIndex=gutscheinSheet.getLastRow();
     const gutschein=Object.assign({},data,{code,qrValue,rowIndex,mailSubject:defaults.subject,mailBody:defaults.body,status:data.status,buyerRegistered:data.buyerRegistered});
     const pdf=_persistGutscheinPdfToRow_(gutscheinSheet,rowIndex,gutschein);
@@ -31775,6 +35134,8 @@ function updateGutscheinAdmin(token, code, payload){
   set('타입',data.voucherType);
   set('상품ID',data.productId);
   set('상품명스냅샷',data.productSnapshot);
+  set('옵션키',(data.optionKeys||[]).join('|'));
+  set('인원',data.people||1);
   set('구매자명',data.purchaserName);
   set('구매자이메일',data.purchaserEmail);
   set('받는분명',data.recipientName);
@@ -31804,7 +35165,7 @@ function updateGutscheinAdmin(token, code, payload){
   return {ok:true,code:existing.code};
 }
 
-function cancelGutscheinAdmin(token, code, reason){
+function cancelGutscheinAdmin(token, code, reason, force){
   assertAdmin_(token);
   const targetCode=extractGutscheinCode_(code);
   if(!targetCode) throw new Error('굿샤인 코드를 확인해 주세요.');
@@ -31813,17 +35174,28 @@ function cancelGutscheinAdmin(token, code, reason){
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const existing=gutscheinRowToObject_(found.row,found.rowIndex);
   if(existing.used || existing.status===GUTSCHEIN_STATUS.USED || existing.linkedBookingRow){
-    throw new Error('이미 사용된 굿샤인은 취소할 수 없습니다.');
+    /* 정상 경로는 `booking-refund` + `method:'gutschein'`(바우처 복원)이다 — 예약을 되돌리며 함께 푼다.
+       다만 연결 예약행이 **이미 삭제된** 뒤에는 그 경로를 쓸 수 없고, 지금까지 잘못 기록된 상환을
+       되돌릴 방법이 전혀 없었다(SPV 체제에선 그 행이 장부에 매출로 남는다).
+       그래서 force 를 좁게 연다: 사유 필수 + 관리메모에 흔적을 남긴다. 예약이 살아 있다면 force 대신
+       바우처 복원을 써야 한다 — 그래야 예약 금액도 같이 맞는다. */
+    if(!force){
+      throw new Error('이미 사용된 굿샤인은 취소할 수 없습니다. '
+        +'연결 예약이 살아 있으면 booking-refund(method:"gutschein")로 바우처를 복원하세요. '
+        +'예약이 이미 삭제돼 복원할 수 없는 경우에만 {"force":true,"reason":"..."} 로 강제 취소합니다.');
+    }
+    if(!String(reason||'').trim()) throw new Error('force 취소에는 reason(사유)이 반드시 필요합니다.');
   }
   if(existing.status===GUTSCHEIN_STATUS.CANCELLED){
     return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,alreadyCancelled:true};
   }
   const cancelledAt=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
   const note=String(reason||'').trim();
-  const adminMemoParts=[String(existing.adminMemo||'').trim(),`[${cancelledAt}] Gutschein 취소${note?` · ${note}`:''}`].filter(Boolean);
+  const forced=!!force&&(existing.used||existing.status===GUTSCHEIN_STATUS.USED||existing.linkedBookingRow);
+  const adminMemoParts=[String(existing.adminMemo||'').trim(),`[${cancelledAt}] Gutschein 취소${forced?'(강제·사용완료 상태에서)':''}${note?` · ${note}`:''}`].filter(Boolean);
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['상태']+1).setValue(GUTSCHEIN_STATUS.CANCELLED);
   gutscheinSheet.getRange(found.rowIndex,GUTSCHEIN_COL['관리메모']+1).setValue(adminMemoParts.join('\n'));
-  return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt};
+  return {ok:true,code:existing.code,status:GUTSCHEIN_STATUS.CANCELLED,cancelledAt,forced:forced};
 }
 
 function deleteGutscheinAdmin(token, code){
@@ -31975,6 +35347,34 @@ function _bookingMatchesGutschein_(row, g){
   return bookingProductName && bookingProductName===String(g.productSnapshot||'').trim();
 }
 
+/* 굿샤인 B2B 차단 — 약관의 '개인 전용(사업자 사업목적 불가)' 을 코드로 강제한다.
+   우리 굿샤인은 SPV(Einzweck, §3 Abs.14 UStG)라 **발행 시점에 전액 과세**한다. 그 전제는
+   공급지가 독일로 확정돼 있다는 것인데, 수령자가 사업자면 §3a Abs.2 로 공급지가 사업자
+   소재지로 넘어가 **그 건의 SPV 근거가 사후에 무너진다.** 약관에만 적어 두고 코드가 안 막으면
+   실효성이 없다(실제 국외 B2B 매출이 있는 스튜디오다). 그래서 여기서 막는다.
+
+   판정은 두 종류다:
+   - 확정 신호(사업자송장필요·사업자명·USt-IdNr·§3a 면세 발행) — 사업자임이 데이터로 확정된 건.
+   - 촬영종류 'biz' — 기업·행사 그룹.
+   ⚠️ 'wed' 는 일부러 뺐다. 개인 웨딩이 정상적으로 들어가는 그룹이고 우리 계약 체계도
+   B2C Fotografenvertrag 로 다룬다 — 막으면 선물용 굿샤인을 통째로 죽인다.
+   반대로 개인 웨딩이 접수 경로 탓에 'biz' 로 잘못 들어가는 사고가 있다(행228·236 사례).
+   그런 건은 booking-set-itemgroup 으로 촬영종류를 먼저 바로잡고 적용하면 통과한다. */
+function _detectBookingBusinessSignal_(row){
+  const val=function(h){ return BOOKING_COL[h]!=null ? String(row[BOOKING_COL[h]]||'').trim() : ''; };
+  if(val('사업자송장필요').toUpperCase()==='Y') return '사업자 송장(Rechnung) 발행이 요청된 예약입니다';
+  if(val('사업자명')) return '사업자명이 등록되어 있습니다 ('+val('사업자명')+')';
+  if(val('사업자VAT번호')) return 'USt-IdNr 가 등록되어 있습니다';
+  if(BOOKING_COL['부가세모드']!=null && isVatExempt_(row[BOOKING_COL['부가세모드']])) return '§3a Abs.2 면세(netto)로 발행되는 예약입니다';
+  if(val('촬영종류')==='biz') return '기업·행사(biz) 예약입니다';
+  return '';
+}
+
+function _assertGutscheinAllowedForBooking_(row){
+  const reason=_detectBookingBusinessSignal_(row);
+  if(reason) throw new Error('굿샤인은 개인 고객 전용입니다(약관 기준). 사업자 예약에는 사용할 수 없습니다. — '+reason);
+}
+
 function previewGutscheinApplyAdmin(token, bookingRowIndex, rawCode){
   assertAdmin_(token);
   return _previewGutscheinApplyCore_(bookingRowIndex, rawCode);
@@ -31989,6 +35389,7 @@ function _previewGutscheinApplyCore_(bookingRowIndex, rawCode){
   if(!bookingRow||!bookingRow[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다.');
   if(isBookingCancelledStatus_(bookingRow[BOOKING_COL['상태']])) throw new Error('취소된 예약에는 적용할 수 없습니다.');
   if(String(bookingRow[BOOKING_COL['굿샤인코드']]||'').trim()) throw new Error('이미 다른 굿샤인이 적용된 예약입니다.');
+  _assertGutscheinAllowedForBooking_(bookingRow); // preview 에서 먼저 막는다 — apply 에서만 막으면 고객이 마지막에 튕긴다
   const found=_findGutscheinRow_(gutscheinSheet,code);
   if(found.rowIndex===-1) throw new Error('굿샤인을 찾을 수 없습니다.');
   const g=gutscheinRowToObject_(found.row,found.rowIndex);
@@ -32097,7 +35498,10 @@ function _applyGutscheinToBookingCore_(bookingRowIndex, rawCode, method){
     let residual=null;
     const appliedTaxType=_normalizeGutscheinTaxType_(g.taxType,g.voucherType);
     const residualAmount=Math.max(0,roundCurrency_((Number(g.amount)||0)-preview.calculations.discountAmount));
-    if(appliedTaxType==='MPV'&&residualAmount>=0.01){
+    /* SPV 체제에서도 잔액은 반드시 이월한다 — 부분 사용 후 잔액을 소멸시키는 약관은 § 307 BGB
+       무효 소지가 크다. 이중과세는 이월행을 장부에서 제외하는 방식으로 막는다(발행방식='residual').
+       상위 코드가 발행 시점에 이미 전액 과세됐기 때문이다. */
+    if(residualAmount>=0.01){
       try{
         residual=_issueResidualGutschein_(gutscheinSheet,g,residualAmount,bookingRowIndex,appliedAt);
         const memoAfter=String(bookingSheet.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).getValue()||'');
@@ -32142,10 +35546,11 @@ function _issueResidualGutschein_(gutscheinSheet,parent,amount,bookingRowIndex,a
   set('언어',parent.lang||'de');
   set('결제수단',parent.paymentMethod||'');
   set('판매채널','잔액이월');
-  set('세무분류','MPV');
-  set('과세시점','redeem');
+  set('세무분류','SPV');
+  set('과세시점','issue');
   set('발행시점세율',19);
-  set('세무판단근거',`상위 ${parent.code} 부분사용 잔액 이월 (MPV·사용 시점 과세, 판매대금은 상위 코드에 귀속)`);
+  set('세무판단근거',`상위 ${parent.code} 부분사용 잔액 이월. 판매대금은 상위 코드 발행 시점에 이미 전액 과세됐으므로 `
+    +`이 행은 회계장부에서 제외된다(발행방식=residual) — 이중과세 방지.`);
   set('관리메모',`상위 굿샤인 ${parent.code} · 예약행 ${bookingRowIndex} 부분사용 잔액`);
   gutscheinSheet.appendRow(row);
   return {code:code,amount:amount,rowIndex:gutscheinSheet.getLastRow()};
@@ -32344,6 +35749,14 @@ function sendPassportPhotosAdmin(token, rowIndex, payload){
     const folderResult=resolvePassportDeliveryFolder_(payload,name,dateStr);
     if(!folderResult.ok)return folderResult;
     const driveUrl=String(folderResult.url||'').trim();
+    /* dryRun — 앱(오늘 촬영 보드)에서 원탭으로 부르는 ⚠️외부발송이라, 무엇이 누구에게 갈지
+       먼저 보여주고 확인받는다. 발송·권한부여·메모 기록을 전부 건너뛴다(2026-08-27). */
+    if(payload.dryRun===true){
+      return{ok:true,dryRun:true,name:name,email:email,lang:lang,product:product,
+             date:dateStr,driveUrl:driveUrl,
+             folderName:String(folderResult.name||''),
+             fileCount:Number((folderResult.permissionStats||{}).files||0)};
+    }
     const permissionStats=folderResult.permissionStats||{folders:0,files:0,errors:[]};
     const permissionSummary=`폴더 ${permissionStats.folders||0}개${permissionStats.files?`, 파일 ${permissionStats.files}개`:''}`;
     const safeName=escapeHtml_(name);
@@ -32361,24 +35774,35 @@ function sendPassportPhotosAdmin(token, rowIndex, payload){
       en:'※ Validity: 6 months from shoot date (German authorities)',
       de:'※ Gültigkeit: 6 Monate ab Aufnahmedatum (deutsche Behörden)'
     };
+    /* 여권은 리뷰 요청을 전달 메일에 싣는다(사진 받는 순간이 가장 자연스럽다 — 2026-08-31 사장님).
+       아래에서 촬영후감사메일발송일시를 스탬프해 별도 감사메일(1~14일 후)이 중복으로 안 나간다. */
+    const reviewUrl=_getReviewLinks_().google;
+    const reviewBlock={
+      ko:`<p style="margin:16px 0;">사진이 마음에 드셨다면, 구글 리뷰 한 줄이 저희에게 큰 힘이 됩니다.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">구글 리뷰 남기기</a></p>`,
+      en:`<p style="margin:16px 0;">If you are happy with your photos, a short Google review would mean a lot to us.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">Leave a Google review</a></p>`,
+      de:`<p style="margin:16px 0;">Wenn Ihnen die Fotos gefallen, freuen wir uns sehr über eine kurze Google-Bewertung.<br><a href="${reviewUrl}" target="_blank" style="display:inline-block;margin-top:8px;padding:10px 18px;background:#2D2A26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;">Google-Bewertung schreiben</a></p>`
+    };
     const body={
       ko:`<p>안녕하세요, <b>${safeName}</b>님.<br>촬영해 드린 여권사진을 전달드립니다.</p>
 <p>📁 <b>사진 폴더:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 상품: ${safeProduct}<br>📅 촬영일: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.ko}</p>
+${reviewBlock.ko}
 <p>이용해 주셔서 감사합니다.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
       en:`<p>Hello <b>${safeName}</b>,<br>please find your passport photos below.</p>
 <p>📁 <b>Photo folder:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Product: ${safeProduct}<br>📅 Shoot date: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.en}</p>
+${reviewBlock.en}
 <p>Thank you.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`,
       de:`<p>Guten Tag, <b>${safeName}</b>,<br>hier sind Ihre Passfotos.</p>
 <p>📁 <b>Fotoordner:</b> <a href="${safeDriveUrl}" target="_blank">${safeDriveUrl}</a></p>
 <p>📷 Produkt: ${safeProduct}<br>📅 Aufnahmedatum: ${safeDate}</p>
 ${safeNote?`<p>📝 ${safeNote}</p>`:''}
 <p style="color:#b45309;font-weight:600;">${validityNote.de}</p>
+${reviewBlock.de}
 <p>Vielen Dank.<br><br><b>Studio mean</b><br>studio.mean.de@gmail.com</p>`
     };
     const L=(lang==='en'||lang==='de')?lang:'ko';
@@ -32389,6 +35813,14 @@ ${safeNote?`<p>📝 ${safeNote}</p>`:''}
     const existing=String(row[memoCol]||'');
     const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${folderResult.name?' · '+folderResult.name:''} · 링크 편집 권한 적용 (${permissionSummary})${note?' ('+note+')':''}`;
     sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
+    /* 리뷰 요청이 이 메일에 실렸으므로 별도 감사메일(1~14일 후 자동)이 또 나가면 이중 요청이 된다 —
+       감사메일 타임스탬프를 여기서 스탬프해 그 잡이 자연 스킵되게 한다(2026-08-31). */
+    try{
+      const thanksCol=BOOKING_COL['촬영후감사메일발송일시'];
+      if(thanksCol!=null&&!String(row[thanksCol]||'').trim()){
+        sh.getRange(rowIndex,thanksCol+1).setValue(stamp+' (여권 전달메일에 리뷰 포함)');
+      }
+    }catch(e){}
     const sheets=ensureSheets_();
     const selSh=ensureSelectSheet_(sheets.ss);
     const selRows=selSh.getDataRange().getValues();
@@ -33198,7 +36630,7 @@ ${vatRow}
 <tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
 ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry)):T.bank}</p>
+<p class="bank">${STUDIO_BANK.bank} · IBAN: ${STUDIO_BANK.iban} · BIC: ${STUDIO_BANK.bic}<br>${vatExempt?escapeHtml_(vatExemptNoteText_(L,'contract',exemptCountry)):T.bank}</p>
 <h2>${T.a5t}</h2><p>${T.a5}</p>
 <h2>${T.a6t}</h2><p>${T.a6}</p>
 <h2>${T.a7t}</h2><p>${T.a7(escapeHtml_(String(c.usageScope||'').trim()||T.usageDefault),escapeHtml_(String(c.retention||'').trim()||T.retentionDefault))}</p>
@@ -33348,7 +36780,7 @@ function buildDrehvertragBodyHtml_(c){
 <tr><td class="k"><b>${T.payLabels.total}</b></td><td><b>${money(c.total)}</b></td></tr>
 ${c.deposit>0?`<tr><td class="k">${T.payLabels.deposit}</td><td>${money(c.deposit)}</td></tr><tr><td class="k">${T.payLabels.balance}</td><td>${money(c.balance)}</td></tr>`:''}</table>
 <p>${escapeHtml_(payTerms)}</p>
-<p class="bank">Deutsche Bank · IBAN: DE11 5007 0010 0659 1176 00 · BIC: DEUTDEFFXXX<br>${T.bank}</p>
+<p class="bank">${STUDIO_BANK.bank} · IBAN: ${STUDIO_BANK.iban} · BIC: ${STUDIO_BANK.bic}<br>${T.bank}</p>
 <h2>${T.a5t}</h2><p>${T.a5}</p>
 <h2>${T.a6t}</h2><p>${T.a6}</p>
 <h2>${T.a7t}</h2><p>${art7}</p>

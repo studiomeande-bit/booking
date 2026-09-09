@@ -613,3 +613,19 @@ body {
     padding: 20px 16px 18px;
   }
 }
+
+/* ===== 스튜디오 전용 패널 — 키 저장 기기에서만 JS 가 연다 ===== */
+.studio-panel{border:1.5px dashed rgba(45,36,29,.35);}
+.studio-tag{font-size:11px;font-weight:600;color:#b54c2d;border:1px solid #e7c9bd;border-radius:999px;padding:1px 8px;margin-left:8px;vertical-align:2px;}
+.studio-row{display:flex;gap:8px;margin:10px 0;}
+.studio-input{flex:1;font:inherit;font-size:14px;padding:10px 12px;border:1px solid #d9cfc0;border-radius:10px;background:#fff;min-width:0;}
+.studio-btn{font:inherit;font-size:13px;font-weight:600;padding:10px 16px;border-radius:10px;border:1px solid #2D2A26;background:#fff;color:#2D2A26;cursor:pointer;white-space:nowrap;}
+.studio-btn-primary{background:#2D2A26;color:#fff;width:100%;margin-top:8px;}
+.studio-results{display:flex;flex-direction:column;gap:8px;margin:8px 0;}
+.studio-result{font:inherit;text-align:left;padding:10px 12px;border:1px solid #e6ddcf;border-radius:10px;background:#fff;cursor:pointer;font-size:13px;line-height:1.5;}
+.studio-result:hover{border-color:#b54c2d;}
+.studio-result span{color:#6d5a49;font-size:12px;}
+.studio-preview{border-top:1px solid #eee3d5;margin-top:10px;padding-top:10px;}
+.studio-msg{font-size:12.5px;color:#6d5a49;min-height:1em;margin:8px 0 0;}
+.studio-msg.is-error{color:#b91c1c;}
+.studio-clear{font:inherit;font-size:11px;color:#94a3b8;background:none;border:none;cursor:pointer;padding:6px 0 0;text-decoration:underline;}
