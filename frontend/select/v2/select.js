@@ -174,6 +174,7 @@ function computePrintAnnotations() {
     serviceDiscount: 0, serviceCreditUnits: 0, bonusDiscount: 0, bonusCreditUnits: 0
   }));
   let chargedUnits = 0;
+  let volumeBase = 0;   // 볼륨 할인이 걸리는 금액(액자 제외)
   // 서비스/보너스 크레딧은 서버와 같은 순서(행→장, 서비스 먼저)로 적용해야 결과가 일치한다.
   units.forEach((u) => {
     const r = rows[u.rowIndex];
@@ -203,7 +204,8 @@ function computePrintAnnotations() {
         bonusCreditsRemaining -= 1;
       }
     }
-    if (unitCharge > 0) chargedUnits += 1;   // 볼륨 할인 기준 장수 — 최종적으로 돈이 붙는 장만 (서버와 동일)
+    // 볼륨 할인 기준 장수 — 최종적으로 돈이 붙는 장만. 액자는 인화가 아니라 제외(서버와 동일).
+    if (unitCharge > 0 && !printCreditExempt(r.typeId)) { chargedUnits += 1; volumeBase += unitCharge; }
     a.amount += unitCharge;
   });
 
@@ -218,6 +220,7 @@ function computePrintAnnotations() {
     };
   });
   result.chargedUnits = chargedUnits;   // 배열에 부착 — 호출부가 볼륨 할인 계산에 쓴다
+  result.volumeBase = volumeBase;       // 액자를 뺀 할인 대상 금액 (서버 _volPrintBase 와 같은 규칙)
   return result;
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
@@ -1506,7 +1509,10 @@ function calcRetouchDiscount() {
 function calcPrintDiscount(annotations = computePrintAnnotations()) {
   const raw = annotations.reduce((sum, ann) => sum + ann.amount, 0);
   const units = Number(annotations.chargedUnits) || 0;
-  return { units, raw, vd: computeVolumeDiscount('print', units, raw) };
+  /* 할인은 액자를 뺀 금액에만 건다(서버 _volPrintBase). raw 는 총액 표시용이라 액자를 포함한 채 둔다 —
+     할인액만 base 로 계산하고 총액에서 빼면 결과가 서버와 일치한다. */
+  const base = Number(annotations.volumeBase) || 0;
+  return { units, raw, vd: computeVolumeDiscount('print', units, base) };
 }
 
 function calcTotal() {

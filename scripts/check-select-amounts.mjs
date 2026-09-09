@@ -64,6 +64,7 @@ const SERVER_MODULE = [
   extractFn(gs, 'mergeSelectPrintItems_'),
   /* 서비스컷·보너스 번호 빌더 — 하네스가 직접 배열을 만들면 실제 호출부(priceSelectPrints_)의
      규칙(보너스에서 isService 를 뺀다)을 재현하지 못해 없는 불일치가 생긴다. 원본을 그대로 쓴다. */
+  extractFn(gs, 'selectOrderHasFrame_'),
   extractFn(gs, 'selectPrintCreditExempt_'),
   extractFn(gs, 'buildSelectServiceCutNums_'),
   extractFn(gs, 'buildSelectMarketingBonusNums_'),
@@ -81,6 +82,12 @@ const SERVER_MODULE = [
 }`,
   /* 실제 제출 경로(priceSelectPrints_ Code.gs:25217~)와 같은 순서로 호출한다 —
      photos[] 하나에서 serviceNums·bonusNums 를 원본 빌더로 뽑고, 미동의면 보너스를 비운다. */
+  /* 볼륨 할인 — submitPhotoSelection 이 computeSelectDecoupledPrints_ **뒤에** 거는 단계라
+     이 하네스가 원래 덮지 않던 구멍이었다. 액자를 할인 대상에서 빼는 수정이 여기 없이 통과했다(2026-09-09). */
+  extractConst(gs, 'const SELECT_VOLUME_TIER_DEFAULTS_=', '};'),
+  extractFn(gs, 'getSelectVolumeTiers_'),
+  extractFn(gs, 'computeSelectVolumeDiscount_'),
+  `function getSettingsMap_(){return {};}`,
   `export function run(fx){
   const row=[fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
   const retouchSet={};
@@ -88,7 +95,14 @@ const SERVER_MODULE = [
   const photos=fx.photos||[];
   const serviceNums=buildSelectServiceCutNums_(photos);
   const bonusNums=fx.marketing==='Y'?buildSelectMarketingBonusNums_(photos):[];
-  return computeSelectDecoupledPrints_(fx.prints,row,retouchSet,serviceNums,bonusNums);
+  const pc=computeSelectDecoupledPrints_(fx.prints,row,retouchSet,serviceNums,bonusNums);
+  // submitPhotoSelection(Code.gs:27383~) 과 같은 순서·같은 필터로 볼륨 할인을 건다.
+  const volItems=(pc.items||[]).filter(function(p){return !selectOrderHasFrame_([p]);});
+  const units=volItems.reduce(function(s,p){return s+((Number(p.price)||0)>0?Math.max(1,parseInt(p.qty,10)||1):0);},0);
+  const base=volItems.reduce(function(s,p){return s+(Number(p.price)||0)*Math.max(1,parseInt(p.qty,10)||1);},0);
+  const vd=computeSelectVolumeDiscount_('print',units,roundCurrency_(base));
+  return Object.assign({},pc,{volUnits:units,volDiscount:vd.discount,volPercent:vd.percent,
+    netAmount:roundCurrency_(Number(pc.amount||0)-Number(vd.discount||0))});
 }`
 ].join('\n\n');
 
@@ -104,6 +118,10 @@ const CLIENT_MODULE = [
   extractFn(v2, 'isRetouchedPhotoNum'),
   extractFn(v2, 'getServiceCutCount'),
   extractFn(v2, 'printCreditExempt'),
+  extractConst(v2, 'const VOLUME_TIER_DEFAULTS = {', '};'),
+  extractFn(v2, 'getVolumeTiers'),
+  extractFn(v2, 'computeVolumeDiscount'),
+  extractFn(v2, 'calcPrintDiscount'),
   extractFn(v2, 'getMarketingBonusCount'),
   extractFn(v2, 'getQuotaCreditValue'),
   extractFn(v2, 'computePrintAnnotations'),
@@ -125,7 +143,10 @@ const CLIENT_MODULE = [
     prints:fx.prints
   };
   const ann=computePrintAnnotations();
-  return {amount:ann.reduce(function(s,a){return s+a.amount;},0),ann:ann};
+  const pd=calcPrintDiscount(ann);
+  const amount=ann.reduce(function(s,a){return s+a.amount;},0);
+  return {amount:amount,ann:ann,volUnits:pd.units,volDiscount:pd.vd.discount,volPercent:pd.vd.percent,
+    netAmount:Math.round((amount-pd.vd.discount)*100)/100};
 }`
 ].join('\n\n');
 
@@ -220,6 +241,15 @@ REGRESSIONS.push(
     prints: [{ photoNum: 'A1', printId: 'frame_a3', qty: 1 }, { photoNum: 'A1', printId: 'basic_10x15', qty: 1 }] }
 );
 
+/* 볼륨 할인 회귀 — pb 쿼터=basic_10x15×1. 파인아트A4 보정본 15 × 12장 중 한 장이 쿼터 크레딧 3 을 받아 12,
+   나머지 11장 15 = 177. 액자 35 는 할인 대상 밖 → 총 212, 할인 12장 10% × 177 = 17,70, net 194,30.
+   (액자가 할인에 끼면 13장·base 212 → -21,20 → net 190,80 이 된다 — 이 두 값이 갈리는지 보는 케이스다) */
+REGRESSIONS.push({
+  name: '액자는 볼륨 할인 대상이 아니다', productKey: 'pb', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
+  expectTotal: 212, expectNet: 194.3, expectVolUnits: 12,
+  prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 12 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
+});
+
 const RANDOM_N = 4000;
 /* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
    (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */
@@ -251,6 +281,16 @@ for (const fx of fixtures) {
   /* ⓪ 기대 총액이 명시된 케이스는 값 자체가 맞는지 본다 — 서버와 화면이 똑같이 틀릴 수도 있다. */
   if (fx.expectTotal !== undefined && r2(s.amount) !== r2(fx.expectTotal)) {
     fails.push({ fx, msg: `기대 총액 불일치 — 서버 €${r2(s.amount)} ≠ 기대 €${r2(fx.expectTotal)}` });
+    continue;
+  }
+  if (fx.expectNet !== undefined && (r2(s.netAmount) !== r2(fx.expectNet) || (fx.expectVolUnits !== undefined && s.volUnits !== fx.expectVolUnits))) {
+    fails.push({ fx, msg: `기대 할인후 금액 불일치 — 서버 ${s.volUnits}장/net €${r2(s.netAmount)} ≠ 기대 ${fx.expectVolUnits}장/net €${r2(fx.expectNet)}` });
+    continue;
+  }
+  /* ①-b 볼륨 할인 후 금액 — 고객이 실제로 내는 값. 할인 전 총액만 맞고 할인이 갈리면
+        "화면 €90인데 청구 €95" 가 그대로 나간다(액자가 할인 대상에 끼어 있던 게 이 경로였다). */
+  if (r2(s.netAmount) !== r2(c.netAmount) || s.volUnits !== c.volUnits || r2(s.volDiscount) !== r2(c.volDiscount)) {
+    fails.push({ fx, msg: `볼륨 할인 불일치 — 서버 ${s.volUnits}장/-€${r2(s.volDiscount)}/net €${r2(s.netAmount)} ≠ 화면 ${c.volUnits}장/-€${r2(c.volDiscount)}/net €${r2(c.netAmount)}` });
     continue;
   }
   // ① 총액

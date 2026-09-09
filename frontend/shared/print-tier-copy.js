@@ -10,6 +10,9 @@
 //          ④ OBA 스펙 단정("형광증백제를 쓰지 않아") — 데이터시트 문구 없이는 입증책임
 //          ⑤ "모든 패키지 포함" — op/oprm 은 포함 인화가 없다(포함 여부는 쿼터 UI가 말한다)
 //          ⑥ Archivpapier / archival stock / Feinstpapier / by eye / von Hand
+//          ⑦ 보존·수명 암시 일체 ('보존을 염두에' / 'with longevity in mind' / 'mit Blick auf Haltbarkeit')
+//             — 우리는 **염료(dye) 잉크**이고 시그니처는 RC 용지다. 안료+코튼 랩과 같은 주장을 할 수 없다.
+//             2026-09-09 에 실제로 이 문구가 3개국어로 라이브에 나가 있었다(§5 오인유발 소지).
 //
 // ⚠ id → tier 는 명시 매핑이다. 'basic_'/'premium_' 접두어로 판정하지 말 것 — 리네이밍 후 깨진다.
 
@@ -98,11 +101,12 @@ export const PRINT_TIERS = {
   frame: {
     // 액자는 용지 등급이 아니라 완성품 추가금이다. 비교 카드에 올리지 않고 캡션만 제공한다.
     // 🔴 UWG: 브랜드·모델명(IKEA 등)을 쓰지 않는다 — 단종이 잦아 고지 내용과 실물이 어긋난다.
+    //    '무산성(acid-free/säurefrei)' 도 쓰지 않는다 — 데이터시트로 입증되기 전엔 ⑥·⑦ 과 같은 부류다.
     name: { ko: '액자', en: 'Frame', de: 'Rahmen' },
     paper: {
-      ko: '무산성 마운트를 포함한 목재 프레임에 끼워 완성해 드립니다 · 픽업 수령만 가능',
-      en: 'Mounted in a wooden frame with an acid-free mount · pickup only',
-      de: 'Im Holzrahmen mit säurefreiem Passepartout montiert · nur Abholung'
+      ko: '마운트를 포함한 목재 프레임에 끼워 조립해 드립니다 · 픽업 수령만 가능',
+      en: 'Assembled in a wooden frame with a mount · pickup only',
+      de: 'Im Holzrahmen mit Passepartout montiert · nur Abholung'
     },
     texture: {
       ko: '마운트 포함 · 픽업 수령',
@@ -142,7 +146,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: '종이',
-        body: '시그니처는 프로 사진용 세미글로스 인화지(10×15와 A4 모두 같은 용지), 파인아트는 매트 파이버 계열 파인아트지를 씁니다. 두 등급 모두 보존을 염두에 두고 고른 종이입니다.'
+        body: '시그니처는 프로 사진용 세미글로스 인화지(10×15와 A4 모두 같은 용지), 파인아트는 매트 파이버 계열 파인아트지를 씁니다. 두 등급은 질감과 발색이 달라, 쓰실 자리에 맞춰 고르시면 됩니다.'
       },
       {
         head: '한 장씩 확인하고 보냅니다',
@@ -163,7 +167,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: 'The paper',
-        body: 'Signature uses professional semi-gloss photo paper — the same paper in both 10×15 and A4. Fine Art uses a matte fibre art paper. Both grades were chosen with longevity in mind.'
+        body: 'Signature uses professional semi-gloss photo paper — the same paper in both 10×15 and A4. Fine Art uses a matte fibre art paper. The two differ in surface and colour, so choose by where the print will live.'
       },
       {
         head: 'Checked by hand, one print at a time',
@@ -184,7 +188,7 @@ export const PRINT_METHOD_POINTS = {
       },
       {
         head: 'Das Papier',
-        body: 'Signature drucken wir auf professionellem Semigloss-Fotopapier — dasselbe Papier in 10×15 und A4. FineArt drucken wir auf mattem FineArt-Papier. Beide Qualitäten haben wir mit Blick auf Haltbarkeit ausgewählt.'
+        body: 'Signature drucken wir auf professionellem Semigloss-Fotopapier — dasselbe Papier in 10×15 und A4. FineArt drucken wir auf mattem FineArt-Papier. Die beiden unterscheiden sich in Oberfläche und Farbwirkung — wählen Sie danach, wo das Bild hängen soll.'
       },
       {
         head: 'Jedes Bild geht durch unsere Hände',
