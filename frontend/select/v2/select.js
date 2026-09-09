@@ -32,12 +32,12 @@ const PRINT_OPTIONS = [
   { id: PRINT_NONE_ID, label: '출력 없음', retouched: 0, additional: 0 },
   { id: 'basic_10x15', label: '시그니처 10×15cm', retouched: 3, additional: 4 },
   { id: 'premium_10x15', label: '파인아트 10×15cm', retouched: 6, additional: 8 },
-  { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 5 },
-  { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 8, additional: 8 },
+  { id: 'photocard_single', label: '포토카드 프린트 (단면)', retouched: 5, additional: 6 },
+  { id: 'photocard_double', label: '포토카드 프린트 (양면)', retouched: 7, additional: 9 },
   { id: 'basic_a4', label: '시그니처 A4', retouched: 10, additional: 15 },
   { id: 'premium_a4', label: '파인아트 A4', retouched: 15, additional: 20 },
-  { id: 'premium_a3', label: '파인아트 A3', retouched: 35, additional: 50 },
-  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 45, additional: 60 }
+  { id: 'premium_a3', label: '파인아트 A3', retouched: 32, additional: 38 },
+  { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 }
 ];
 
 // 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
