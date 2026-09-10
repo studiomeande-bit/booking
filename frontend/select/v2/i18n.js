@@ -108,6 +108,10 @@ export const COPY = {
     addPhotoBtn: '＋ 사진 항목 직접 추가',
     addPhotoBtnNote: '(기본 장수 초과 시 유료)',
     navBackGallery: '← 갤러리로',
+    // 출력 재주문 세션 전용 — 보정 단계가 없어 갤러리에서 바로 출력 선택으로 넘어간다.
+    reprintStep1Next: '출력 선택으로 →',
+    reprintIntro: '이전 촬영본에서 인화만 추가로 주문하시는 페이지입니다. 보정은 이미 완료된 상태라 다시 고르지 않으셔도 됩니다.',
+    reprintPickupOnly: '재주문은 스튜디오 픽업으로만 수령하실 수 있습니다. 인화가 완료되면 안내 메일을 보내드립니다.',
     step2Next: '출력 선택으로 →',
 
     /* ---- step 3 ---- */
@@ -505,6 +509,9 @@ export const COPY = {
     addPhotoBtn: '＋ Add a photo manually',
     addPhotoBtnNote: '(charged beyond the included number)',
     navBackGallery: '← Back to gallery',
+    reprintStep1Next: 'Choose prints →',
+    reprintIntro: 'Order additional prints from your previous session. Retouching is already done — nothing to choose again.',
+    reprintPickupOnly: 'Reorders are collected at the studio. We will email you once the prints are ready.',
     step2Next: 'Continue to prints →',
 
     s3Title: 'Print selection',
@@ -898,6 +905,9 @@ export const COPY = {
     addPhotoBtn: '＋ Bild manuell hinzufügen',
     addPhotoBtnNote: '(über die enthaltene Anzahl hinaus kostenpflichtig)',
     navBackGallery: '← Zurück zur Galerie',
+    reprintStep1Next: 'Zu den Abzügen →',
+    reprintIntro: 'Hier bestellen Sie weitere Abzüge aus Ihrem früheren Shooting. Die Retusche ist bereits erledigt — Sie müssen nichts erneut auswählen.',
+    reprintPickupOnly: 'Nachbestellungen werden im Studio abgeholt. Wir melden uns per E-Mail, sobald die Abzüge fertig sind.',
     step2Next: 'Weiter zu den Abzügen →',
 
     s3Title: 'Abzüge auswählen',

@@ -241,6 +241,16 @@ function getPrintQuotaSummary() {
 }
 
 const TOTAL_STEPS = 5; // 0:welcome 1:gallery 2:retouch 3:print 4:review
+
+/* ===== 출력 재주문 모드 =====
+ * 촬영이 끝난 고객이 나중에 인화만 더 주문하는 세션이다. 보정이 없고 포함 쿼터도 0 이다.
+ * 판별은 세션의 itemGroup 이 'reprint' 인지로 한다 — 서버는 이미 이 값을 payload 에 실어 보내고
+ * (Code.gs:24792), getSelectProductKey_ 가 이 그룹을 매칭하지 못해 쿼터가 자동으로 0 이 된다.
+ * 쿼터 0 을 스위치로 쓰면 안 된다 — 쿼터 없는 정상 상품(op 등)이 이미 존재한다.
+ * v1 은 픽업 전용이다(사장님 확정 2026-09-10). 우편 실비 청구는 A3 우편 요금 실측 후. */
+function isReprintSession() {
+  return String(state.session?.itemGroup || '').trim().toLowerCase() === 'reprint';
+}
 const GALLERY_INITIAL_RENDER = 36;
 const GALLERY_RENDER_INCREMENT = 60;
 const GALLERY_BATCH_SIZE = 300;
@@ -720,6 +730,7 @@ function hideLoading() {
 
 function hydrateSession(session) {
   state.session = session;
+  applyReprintUi();   // 보정 단계가 없는 세션이면 화면 구조부터 바꾼다(문구·점·버튼)
   /* The customer booked in some language; open the page in it. An explicit
      ?lang= or a stored manual choice takes precedence. */
   if (!state.langChosen) {
@@ -972,6 +983,9 @@ function hasRequestedDeliveryOutput() {
 }
 
 function requiresDeliverySelection() {
+  /* 재주문 v1 은 픽업 전용이다 — 수령방식을 묻지 않는다(사장님 확정 2026-09-10).
+     우편을 열려면 배송비 실비 청구가 먼저 필요하고, A3 우편 요금이 아직 미실측이다. */
+  if (isReprintSession()) return false;
   return sessionHasIncludedDeliveryOutput() || hasRequestedDeliveryOutput();
 }
 
@@ -3447,6 +3461,7 @@ function countUnusedServiceSlots() {
 }
 
 function validateStep2() {
+  if (isReprintSession()) return true;   // 재주문은 보정 자체가 없다
   if (countCompleteRetouchRows() < 1) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
   const invalid = findIncompleteRetouchIndex();
   if (invalid >= 0) {
@@ -3580,8 +3595,30 @@ function showBlockedModal(problems) {
   globalThis.setTimeout(() => { try { wrap.querySelector('[data-blocked-go]').focus(); } catch (_) {} }, 60);
 }
 
+/* 재주문이면 보정 단계의 흔적을 화면에서 지운다. goStep 이 2번을 건너뛰어도
+   점과 버튼 라벨이 '보정'을 가리키고 있으면 고객은 뭔가 빠뜨렸다고 읽는다. */
+function applyReprintUi() {
+  if (!isReprintSession()) return;
+  document.body.classList.add('is-reprint');
+  const c = copy();
+  els.stepDots[2]?.classList.add('hidden');
+  document.getElementById('reprintIntroBox')?.classList.remove('hidden');
+  document.getElementById('reprintPickupBox')?.classList.remove('hidden');
+  // 보정 단계 안내(진행 순서 2번)와 수령방식 선택 안내는 재주문에 해당하지 않는다.
+  document.querySelector('[data-i18n-html="process2Html"]')?.classList.add('hidden');
+  document.querySelector('[data-i18n-html="process4Html"]')?.classList.add('hidden');
+  const next1 = document.getElementById('step1NextBtn');
+  if (next1) next1.textContent = c.reprintStep1Next || c.step3Next;
+  document.querySelectorAll('[data-go="2"]').forEach((btn) => {
+    btn.dataset.go = '1';
+    btn.textContent = c.navBackGallery || btn.textContent;
+  });
+}
+
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
+  // 재주문에는 보정 단계가 없다 — 어느 방향으로 들어와도 2번을 건너뛴다.
+  if (step === 2 && isReprintSession()) return goStep(state.step > 2 ? 1 : 3);
   if (step === 2 && !validateStep1()) { showBlockedModal(collectStepProblems(1)); return; }
   if (step === 3 && !validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
   if (step === 4 && !validateStep3()) { showBlockedModal(collectStepProblems(3)); return; }
@@ -3604,6 +3641,13 @@ function goStep(step) {
 }
 
 function canSubmit() {
+  if (isReprintSession()) {
+    /* 재주문: 보정·포토카드 조건은 없고 **인화 한 줄 이상**이 조건이다.
+       (촬영 고객은 보정만 받고 출력 없이 끝낼 수 있지만, 재주문은 출력이 주문 자체다) */
+    if (!state.prints.length) return false;
+    if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+    return true;   // v1 은 픽업 전용 — 수령방식 입력 자체가 없다
+  }
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
   if (countCompleteRetouchRows() < 1) return false;
   if (findIncompleteRetouchIndex() >= 0) return false;
