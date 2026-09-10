@@ -25184,9 +25184,12 @@ function mergeSelectPrintItems_(items){
   (items||[]).forEach(function(it){
     const finish=(String(it.finish||'')==='border')?'border':'full';
     // 가장자리 마감(full/border)이 다르면 별도 항목으로 유지 (병합 시 소실 방지).
-    const key=[String(it.photoNum||'-'),String(it.printId||''),Number(it.price)||0,it.included?'1':'0',it.isRetouched?'r':'e',finish].join('|');
+    /* 견적형 요청 문구(note)도 키에 넣는다 — 값을 안 실으면 병합이 **버리고**(2026-09-10 실측),
+       키에 안 넣으면 요청이 서로 다른 두 줄이 한 줄로 뭉쳐 한쪽 요청이 사라진다. */
+    const note=String(it.note||'').trim();
+    const key=[String(it.photoNum||'-'),String(it.printId||''),Number(it.price)||0,it.included?'1':'0',it.isRetouched?'r':'e',finish,note].join('|');
     if(!map[key]){
-      map[key]={photoNum:String(it.photoNum||'-'),printId:String(it.printId||''),label:it.label,qty:0,price:Number(it.price)||0,isRetouched:!!it.isRetouched,included:!!it.included,source:it.source,finish:finish};
+      map[key]={photoNum:String(it.photoNum||'-'),printId:String(it.printId||''),label:it.label,qty:0,price:Number(it.price)||0,isRetouched:!!it.isRetouched,included:!!it.included,source:it.source,finish:finish,note:note};
       if(it.includedPhotocard) map[key].includedPhotocard=true;
       if(it.photocard) map[key].photocard=it.photocard;
       order.push(key);
