@@ -3086,9 +3086,14 @@ function renderPrints() {
   els.printList.innerHTML = banner + state.prints.map((print, index) => {
     const ann = annotations[index];
     const option = ann.option;
-    const priceRight = ann.amount === 0
-      ? `<strong class="free">${escapeHtml(ann.serviceDiscount > 0 ? c.printFreeService : c.printFree)}</strong>`
-      : `<strong class="paid">€${ann.amount}</strong>`;
+    /* 견적형은 €0 이지만 **무료가 아니다** — 아직 값이 정해지지 않은 것이다.
+       '무료'로 찍으면 고객이 대형 액자를 공짜로 이해한다(2026-09-10 라이브 실측에서 그렇게 나왔다). */
+    const isQuote = isQuotePrintId(print.printId);
+    const priceRight = isQuote
+      ? `<strong class="quote">${escapeHtml(c.printQuotePending)}</strong>`
+      : ann.amount === 0
+        ? `<strong class="free">${escapeHtml(ann.serviceDiscount > 0 ? c.printFreeService : c.printFree)}</strong>`
+        : `<strong class="paid">€${ann.amount}</strong>`;
     const tierBadge = ann.isRetouched
       ? `<span class="included-print-badge">${escapeHtml(c.printBadgeRetouched)}</span>`
       : `<span class="manual-badge">${escapeHtml(c.printBadgeOriginal)}</span>`;
@@ -3097,13 +3102,15 @@ function renderPrints() {
       : '';
     /* 쿼터 차액이 섞인 행은 '추가 N × €단가'가 성립하지 않는다(장마다 상쇄액이 다를 수 있다).
        그럴 땐 장수와 실제 합계만 말한다. */
-    const breakdown = (ann.quotaDiffQty > 0
+    const breakdown = (isQuote
+      ? `<div class="review-note">${escapeHtml(c.printQuoteNote)}</div>`
+      : ann.quotaDiffQty > 0
       ? `<div class="review-note">${escapeHtml(c.printQuotaDiffLine(ann.includedQty, ann.quotaDiffQty, Math.max(0, ann.chargedQty - ann.quotaDiffQty), ann.amount))}</div>`
       : ann.includedQty > 0 && ann.chargedQty > 0
         ? `<div class="review-note">${escapeHtml(c.printIncludedPlusExtra(ann.includedQty, ann.chargedQty, ann.unit))}</div>`
         : ann.includedQty > 0
           ? `<div class="review-note">${escapeHtml(c.printIncludedFree)}</div>`
-          : `<div class="review-note">${escapeHtml(c.printExtraLine(ann.qty, ann.unit))}</div>`) + serviceLine;
+          : `<div class="review-note">${escapeHtml(c.printExtraLine(ann.qty, ann.unit))}</div>`) + (isQuote ? '' : serviceLine);
     return `
       <div class="entry-card">
         <div class="entry-head">

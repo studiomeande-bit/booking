@@ -236,6 +236,8 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+strong.quote{ color: var(--sm-warn); font-weight: 700; }
+
 /* 견적형(대형) 행의 희망 사이즈 자유입력 — 값이 비면 제출이 막히므로 눈에 띄게 둔다. */
 .quote-field{ margin-top: 10px; }
 .quote-field label{ display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
