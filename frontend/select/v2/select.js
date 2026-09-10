@@ -1437,7 +1437,11 @@ function syncDeliveryUi() {
   if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
   if (els.submitHint) {
     const c = copy();
-    els.submitHint.textContent = deliveryRequired ? c.submitHintDelivery : c.submitHintNoDelivery;
+    /* 재주문은 requiresDeliverySelection()=false 라 '출력물 수령이 없는 상품입니다' 가 뜬다 —
+       출력이 주문의 전부인 흐름에서 정반대로 읽힌다(실측 2026-09-10). */
+    els.submitHint.textContent = isReprintSession()
+      ? (c.reprintPickupOnly || c.submitHintNoDelivery)
+      : (deliveryRequired ? c.submitHintDelivery : c.submitHintNoDelivery);
   }
 }
 
@@ -3606,6 +3610,9 @@ function applyReprintUi() {
   els.stepDots[2]?.classList.add('hidden');
   document.getElementById('reprintIntroBox')?.classList.remove('hidden');
   document.getElementById('reprintPickupBox')?.classList.remove('hidden');
+  // 최종 확인에서 재주문과 무관한 블록을 지운다 — '선택된 보정 사진이 없습니다' 는 오해를 부른다.
+  document.getElementById('reviewRetouchBlock')?.classList.add('hidden');
+  document.getElementById('reviewMarketingBlock')?.classList.add('hidden');
   // 보정 단계 안내(진행 순서 2번)와 수령방식 선택 안내는 재주문에 해당하지 않는다.
   document.querySelector('[data-i18n-html="process2Html"]')?.classList.add('hidden');
   document.querySelector('[data-i18n-html="process4Html"]')?.classList.add('hidden');
