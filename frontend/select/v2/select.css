@@ -236,6 +236,14 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+/* 볼륨 할인 안내 — 담는 중에 계속 보인다(할인을 알아야 더 담는다). */
+.volume-note{
+  margin-bottom: var(--space-2); padding: 10px 12px; border-radius: 10px;
+  background: var(--sm-surface-warm); font-size: 12.5px; line-height: 1.7; color: var(--sm-text-soft);
+}
+.volume-note .vd-on{ color: var(--sm-ok); font-weight: 600; }
+.volume-note .vd-next{ color: var(--sm-accent); }
+
 /* 규격·잘림 안내 — 기본은 접어 두고, 필요한 사람만 편다(주문 흐름을 막지 않는다). */
 .crop-note{ margin-bottom: var(--space-2); }
 .crop-note > summary{

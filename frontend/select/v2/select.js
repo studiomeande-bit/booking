@@ -376,6 +376,7 @@ const els = {
   deliveryMailCard: document.getElementById('deliveryMailCard'),
   framePickupOnlyNote: document.getElementById('framePickupOnlyNote'),
   cropNoteBody: document.getElementById('cropNoteBody'),
+  printVolumeNote: document.getElementById('printVolumeNote'),
   pickupScheduler: document.getElementById('pickupScheduler'),
   pickupDeferredNote: document.getElementById('pickupDeferredNote'),
   pickupExistingLine: document.getElementById('pickupExistingLine'),
@@ -3029,8 +3030,30 @@ function renderPrintQuotaBanner() {
   return `<div class="included-print-callout"><strong>${escapeHtml(c.quotaTitle)}</strong><span>${escapeHtml(c.quotaCopy)}</span><span>${getPrintMicrocopy('quotaUpgradeNote', state.lang)}</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
+/* 인화 볼륨 할인 안내 — 종전엔 **고객에게 한 번도 보이지 않았다**(2026-09-10 발견).
+   할인 구간을 모르면 더 담을 이유가 생기지 않아 할인이 제 일을 못 한다.
+   구간은 세션 페이로드(volumeTiers)가 정본이라 설정 시트를 고치면 문구도 같이 따라온다. */
+function renderPrintVolumeNote() {
+  const box = els.printVolumeNote;
+  if (!box) return;
+  const tiers = getVolumeTiers('print');
+  if (!tiers.length) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  const c = copy();
+  const pd = calcPrintDiscount();
+  const parts = [`<b>${escapeHtml(c.vdTiersLabel)}</b> ${escapeHtml(tiers.map((t) => c.vdTierItem(t.count, t.percent)).join(' · '))}`];
+  if (pd.vd.percent > 0) {
+    parts.push(`<span class="vd-on">${escapeHtml(c.vdNowApplied(pd.units, pd.vd.percent, money2(pd.vd.discount)))}</span>`);
+  }
+  if (pd.vd.remainToNext > 0 && pd.vd.nextPercent > 0 && pd.units > 0) {
+    parts.push(`<span class="vd-next">${escapeHtml(c.vdRemain(pd.vd.remainToNext, pd.vd.nextPercent))}</span>`);
+  }
+  box.innerHTML = parts.join('<br>');
+  box.classList.remove('hidden');
+}
+
 function renderPrints() {
   const c = copy();
+  renderPrintVolumeNote();
   const banner = renderPrintQuotaBanner();
   if (!state.prints.length) {
     els.printList.innerHTML = `${banner}<div class="empty-state">${escapeHtml(copy().printEmpty)}</div>`;

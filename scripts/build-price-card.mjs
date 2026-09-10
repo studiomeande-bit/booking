@@ -165,7 +165,7 @@ const html = `<!DOCTYPE html>
     width:210mm; min-height:297mm; margin:0 auto; padding:15mm 20mm 11mm;
     background:var(--ivory); display:flex; flex-direction:column;
   }
-  header{ text-align:center; margin-bottom:7mm; }
+  header{ text-align:center; margin-bottom:6mm; }
   .logo{
     font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:600;
     font-size:26pt; letter-spacing:.01em; margin:0;
@@ -173,7 +173,7 @@ const html = `<!DOCTYPE html>
   .tag{ margin:2mm 0 0; font-size:7.5pt; letter-spacing:.32em; text-transform:uppercase; color:var(--taupe); }
   h1{
     font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:19pt;
-    margin:6mm 0 1mm; letter-spacing:.02em;
+    margin:5mm 0 1mm; letter-spacing:.02em;
   }
   h1 .de{ font-size:11pt; color:var(--taupe); font-style:italic; margin-left:3mm; }
   .rule{ height:1px; background:var(--ink); opacity:.22; margin:0 0 4.5mm; }
@@ -187,7 +187,7 @@ const html = `<!DOCTYPE html>
   thead th .de{ display:block; font-size:6.8pt; letter-spacing:.04em; opacity:.75; font-weight:300; }
   tbody tr.grp-start td{ border-top:1px solid rgba(32,28,31,.12); }
   tbody tr:first-child td{ border-top:none; }
-  td{ padding:2.1mm 0; vertical-align:middle; }
+  td{ padding:1.7mm 0; vertical-align:middle; }
   td.grp{
     width:26%; font-size:10.5pt; font-weight:400; padding-right:4mm; vertical-align:top; padding-top:3.4mm;
   }
@@ -201,6 +201,14 @@ const html = `<!DOCTYPE html>
   }
   td.p.muted{ color:var(--taupe); font-weight:300; }
   td.p.add{ color:var(--ink); }
+
+  .vol-band{
+    display:flex; align-items:baseline; gap:5mm; margin-top:4mm;
+    padding:2.4mm 4mm; background:var(--sand); border-radius:2mm;
+  }
+  .vol-k{ font-size:8.4pt; letter-spacing:.04em; }
+  .vol-k .de{ color:var(--taupe); font-size:7pt; font-style:italic; }
+  .vol-v{ margin-left:auto; font-size:10pt; letter-spacing:.02em; font-variant-numeric:tabular-nums; }
 
   h2.sub{
     font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:13pt;
@@ -216,10 +224,10 @@ const html = `<!DOCTYPE html>
   .crop-text p{ margin:0; }
   .crop-text p.de{ color:var(--taupe); font-size:7pt; margin-top:1.2mm; }
 
-  .notes{ margin-top:auto; padding-top:5mm; }
+  .notes{ margin-top:auto; padding-top:4mm; }
   .note{
     display:flex; gap:4mm; align-items:baseline; padding:2.2mm 0;
-    border-top:1px solid rgba(32,28,31,.10); font-size:8.2pt; line-height:1.55;
+    border-top:1px solid rgba(32,28,31,.10); font-size:8pt; line-height:1.5;
   }
   .note:first-child{ border-top:none; }
   .note .k{ flex:0 0 30mm; color:var(--taupe); font-size:7.6pt; letter-spacing:.05em; }
@@ -266,6 +274,11 @@ ${ROWS.map(tableRows).join('\n')}
     </tbody>
   </table>
 
+${discountLine ? `  <div class="vol-band">
+    <span class="vol-k">여러 장 주문 할인 <span class="de">Mengenrabatt</span></span>
+    <span class="vol-v">${discountLine}</span>
+  </div>` : ''}
+
   <div class="notes">
     <div class="note">
       <span class="k">보정본 · 원본</span>
@@ -273,9 +286,9 @@ ${ROWS.map(tableRows).join('\n')}
         <span class="de">Bereits retuschierte Bilder zum Preis „retuschiert“, unbearbeitete Aufnahmen zum Preis „unbearbeitet“.</span></span>
     </div>${discountLine ? `
     <div class="note">
-      <span class="k">여러 장 주문</span>
-      <span class="v">유료 인화 ${discountLine}
-        <span class="de">Mengenrabatt auf kostenpflichtige Drucke: ${discountLineDe}</span></span>
+      <span class="k">할인 적용 대상</span>
+      <span class="v">유료 인화 장수 기준입니다. 포함 인화·무료 컷과 액자는 장수에 넣지 않습니다.
+        <span class="de">${discountLineDe} — gilt für kostenpflichtige Drucke; enthaltene Abzüge und Rahmen zählen nicht mit.</span></span>
     </div>` : ''}
     <div class="note">
       <span class="k">용지</span>
