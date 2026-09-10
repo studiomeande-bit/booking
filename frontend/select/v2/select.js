@@ -91,6 +91,8 @@ function printNumKey(num) {
 }
 // 출력 대상 사진이 보정 리스트에도 있으면 보정본 단가(retouched), 없으면 추가 인화가(additional).
 function isRetouchedPhotoNum(num) {
+  // 재주문은 이미 완성된 보정본을 다시 뽑는 것 — 전부 보정본가다(서버 _isReprintRow_ 와 동일 규칙).
+  if (isReprintSession()) return true;
   const key = printNumKey(num);
   if (!key) return false;
   return state.photos.some((p) => printNumKey(p.num) === key);

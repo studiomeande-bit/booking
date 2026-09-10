@@ -89,7 +89,7 @@ const SERVER_MODULE = [
   extractFn(gs, 'computeSelectVolumeDiscount_'),
   `function getSettingsMap_(){return {};}`,
   `export function run(fx){
-  const row=[fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
+  const row=[fx.itemGroup||fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
   const retouchSet={};
   (fx.retouchNums||[]).forEach(function(n){retouchSet[selectPhotoNumKey_(n)]=true;});
   const photos=fx.photos||[];
@@ -117,6 +117,7 @@ const CLIENT_MODULE = [
   extractFn(v2, 'printNumKey'),
   extractFn(v2, 'isRetouchedPhotoNum'),
   extractFn(v2, 'getServiceCutCount'),
+  extractFn(v2, 'isReprintSession'),
   extractFn(v2, 'printCreditExempt'),
   extractConst(v2, 'const VOLUME_TIER_DEFAULTS = {', '};'),
   extractFn(v2, 'getVolumeTiers'),
@@ -137,7 +138,7 @@ const CLIENT_MODULE = [
   state={
     lang:'ko',
     marketing:fx.marketing,
-    session:{productKey:fx.productKey,serviceCutCount:fx.serviceCutCount,marketingBonusCount:fx.marketingBonusCount},
+    session:{productKey:fx.productKey,itemGroup:fx.itemGroup||'',serviceCutCount:fx.serviceCutCount,marketingBonusCount:fx.marketingBonusCount},
     // 보정 리스트: 보정 대상 번호(서비스컷도 보정 리스트에 들어간다)
     photos:fx.photos||[],
     prints:fx.prints
@@ -248,6 +249,15 @@ REGRESSIONS.push({
   name: '액자는 볼륨 할인 대상이 아니다', productKey: 'pb', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
   expectTotal: 212, expectNet: 194.3, expectVolUnits: 12,
   prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 12 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
+});
+
+/* 재주문(reprint) 회귀 — 보정 리스트가 비어 있어도 **보정본가**여야 한다.
+   원본가로 새면 파인아트 A4 가 15 대신 20 이 되어 장당 €5 과다청구다.
+   itemGroup 'reprint' 는 쿼터표에 없으므로 포함 쿼터도 0 이다. */
+REGRESSIONS.push({
+  name: '재주문은 보정 리스트가 비어도 보정본가', productKey: 'reprint', itemGroup: 'reprint',
+  retouchNums: [], serviceCutCount: 0, serviceNums: [], expectTotal: 30, expectVolUnits: 2, expectNet: 30,
+  prints: [{ photoNum: 'B1', printId: 'premium_a4', qty: 2 }]
 });
 
 const RANDOM_N = 4000;
