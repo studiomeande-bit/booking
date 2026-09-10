@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>인화 가격표 — Studio mean</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Noto+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* CI v1 §4 인쇄 기본 팔레트 */
+  :root{
+    --ink:#201C1F; --ivory:#F8F3EB; --taupe:#6D5A49; --sand:#EDE3D6; --copper:#C58D66;
+  }
+  /* A4 정확히 한 장. 넘치면 인쇄 시 2페이지가 되어 카운터에 둘 수 없다 —
+     SKU 를 늘리면 실제 렌더 높이를 다시 재고 여백을 조일 것(2026-09-10: 317mm 였다). */
+  @page{ size:A4; margin:0; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#e9e4dc; }
+  body{
+    font-family:'Noto Sans KR','Avenir Next',system-ui,sans-serif; font-weight:300;
+    color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  .sheet{
+    width:210mm; min-height:297mm; margin:0 auto; padding:15mm 20mm 11mm;
+    background:var(--ivory); display:flex; flex-direction:column;
+  }
+  header{ text-align:center; margin-bottom:7mm; }
+  .logo{
+    font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:600;
+    font-size:26pt; letter-spacing:.01em; margin:0;
+  }
+  .tag{ margin:2mm 0 0; font-size:7.5pt; letter-spacing:.32em; text-transform:uppercase; color:var(--taupe); }
+  h1{
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:19pt;
+    margin:6mm 0 1mm; letter-spacing:.02em;
+  }
+  h1 .de{ font-size:11pt; color:var(--taupe); font-style:italic; margin-left:3mm; }
+  .rule{ height:1px; background:var(--ink); opacity:.22; margin:0 0 4.5mm; }
+
+  table{ width:100%; border-collapse:collapse; }
+  thead th{
+    font-size:8pt; font-weight:500; letter-spacing:.06em; color:var(--taupe);
+    padding:0 0 2.5mm; text-align:right; border-bottom:1px solid rgba(32,28,31,.22);
+  }
+  thead th.l{ text-align:left; }
+  thead th .de{ display:block; font-size:6.8pt; letter-spacing:.04em; opacity:.75; font-weight:300; }
+  tbody tr.grp-start td{ border-top:1px solid rgba(32,28,31,.12); }
+  tbody tr:first-child td{ border-top:none; }
+  td{ padding:2.1mm 0; vertical-align:middle; }
+  td.grp{
+    width:26%; font-size:10.5pt; font-weight:400; padding-right:4mm; vertical-align:top; padding-top:3.4mm;
+  }
+  td.grp .grp-ko{ display:block; }
+  td.grp .grp-de{ display:block; font-size:7.4pt; color:var(--taupe); letter-spacing:.04em; margin-top:.6mm; }
+  td.sz{ width:32%; font-size:9.5pt; }
+  td.sz .sz-de{ display:block; font-size:7.2pt; color:var(--taupe); margin-top:.4mm; }
+  td.p{
+    width:21%; text-align:right; font-size:11pt; font-weight:400;
+    font-variant-numeric:tabular-nums; letter-spacing:.01em;
+  }
+  td.p.muted{ color:var(--taupe); font-weight:300; }
+  td.p.add{ color:var(--ink); }
+
+  .notes{ margin-top:auto; padding-top:6mm; }
+  .note{
+    display:flex; gap:4mm; align-items:baseline; padding:2.2mm 0;
+    border-top:1px solid rgba(32,28,31,.10); font-size:8.2pt; line-height:1.55;
+  }
+  .note:first-child{ border-top:none; }
+  .note .k{ flex:0 0 30mm; color:var(--taupe); font-size:7.6pt; letter-spacing:.05em; }
+  .note .v .de{ display:block; color:var(--taupe); font-size:7.4pt; margin-top:.6mm; }
+  footer{
+    margin-top:5mm; padding-top:2.5mm; border-top:1px solid rgba(32,28,31,.16);
+    display:flex; justify-content:space-between; font-size:7pt; color:var(--taupe); letter-spacing:.04em;
+  }
+  @media print{ html,body{ background:var(--ivory); } .sheet{ margin:0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <p class="logo">Studio mean</p>
+    <p class="tag">make meaningful moment</p>
+  </header>
+
+  <h1>인화 가격<span class="de">Druckpreise</span></h1>
+  <div class="rule"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="l" colspan="2">종류 · 규격<span class="de">Papier &amp; Format</span></th>
+        <th>보정본<span class="de">retuschiert</span></th>
+        <th>원본<span class="de">unbearbeitet</span></th>
+      </tr>
+    </thead>
+    <tbody>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">시그니처</span><span class="grp-de">Signature</span></td><td class="sz"><span class="sz-ko">10 × 15 cm</span></td><td class="p">€3</td><td class="p muted">€4</td></tr>
+<tr><td class="sz"><span class="sz-ko">A4</span></td><td class="p">€10</td><td class="p muted">€15</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="4"><span class="grp-ko">파인아트</span><span class="grp-de">FineArt</span></td><td class="sz"><span class="sz-ko">10 × 15 cm</span></td><td class="p">€6</td><td class="p muted">€8</td></tr>
+<tr><td class="sz"><span class="sz-ko">A4</span></td><td class="p">€15</td><td class="p muted">€20</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3</span></td><td class="p">€32</td><td class="p muted">€38</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3+</span></td><td class="p">€41</td><td class="p muted">€48</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">포토카드</span><span class="grp-de">Fotokarte</span></td><td class="sz"><span class="sz-ko">단면</span><span class="sz-de">einseitig</span></td><td class="p">€5</td><td class="p muted">€6</td></tr>
+<tr><td class="sz"><span class="sz-ko">양면</span><span class="sz-de">beidseitig</span></td><td class="p">€7</td><td class="p muted">€9</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">액자</span><span class="grp-de">Rahmen</span></td><td class="sz"><span class="sz-ko">A4 인화용</span><span class="sz-de">für A4-Druck</span></td><td class="p add" colspan="2">+ €29</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3 인화용</span><span class="sz-de">für A3-Druck</span></td><td class="p add" colspan="2">+ €35</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <div class="note">
+      <span class="k">보정본 · 원본</span>
+      <span class="v">보정을 마친 사진은 보정본 가격으로, 보정하지 않은 촬영 원본은 원본 가격으로 인화합니다.
+        <span class="de">Bereits retuschierte Bilder zum Preis „retuschiert“, unbearbeitete Aufnahmen zum Preis „unbearbeitet“.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">여러 장 주문</span>
+      <span class="v">유료 인화 10장 −10% · 20장 −15% · 30장 −20%
+        <span class="de">Mengenrabatt auf kostenpflichtige Drucke: ab 10 Stk. −10% · ab 20 Stk. −15% · ab 30 Stk. −20%</span></span>
+    </div>
+    <div class="note">
+      <span class="k">용지</span>
+      <span class="v">시그니처는 반광 프로 사진용지, 파인아트는 매트 파이버 파인아트지입니다.
+        <span class="de">Signature: Semigloss-Fotopapier. FineArt: mattes FineArt-Papier.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">액자</span>
+      <span class="v">마운트를 포함한 목재 프레임에 끼워 조립해 드립니다. 액자는 스튜디오 픽업만 가능합니다.
+        <span class="de">Montage im Holzrahmen mit Passepartout. Rahmen nur zur Abholung.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">수령</span>
+      <span class="v">촬영 고객은 우편 발송비를 따로 받지 않습니다. 인화만 주문하시는 경우 스튜디오 픽업으로 안내드립니다.
+        <span class="de">Für Shooting-Kunden ist der Versand inklusive. Reine Druckbestellungen holen Sie im Studio ab.</span></span>
+    </div>
+  </div>
+
+  <footer>
+    <span>모든 가격은 부가세 포함 · Alle Preise inkl. MwSt.</span>
+    <span>2026-09-10</span>
+  </footer>
+</div>
+</body>
+</html>
