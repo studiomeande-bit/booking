@@ -37,6 +37,10 @@ if (!headersLine) throw new Error('BOOKING_HEADERS 를 찾지 못했습니다.')
 const flagDecl = "var CAL_READ_FAILED_=false;";
 if (!gs.includes(flagDecl)) throw new Error('CAL_READ_FAILED_ 선언을 찾지 못했습니다.');
 
+// 이동일 안내문은 buildExtraDayEventFields_ 가 쓰는 상수 — 원본 줄을 그대로 떼어내 문구 드리프트도 함께 잡는다
+const travelNoteLine = gs.split('\n').find((l) => l.startsWith("const EXTRA_DAY_TRAVEL_NOTE_="));
+if (!travelNoteLine) throw new Error('EXTRA_DAY_TRAVEL_NOTE_ 선언을 찾지 못했습니다.');
+
 const MODULE = [
   `const CONFIG={TIMEZONE:'Europe/Berlin',MAIN_CALENDAR_ID:'main-cal',${headersLine.trim().replace(/,$/, '')}};`,
   `const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((a,h,i)=>{a[h]=i;return a;},{});`,
@@ -111,6 +115,11 @@ const MODULE = [
      if(__APPLE_FAIL__){ ICLOUD_DETAIL_READ_FAILED_=true; return []; }
      return __APPLE__;
    }`,
+  travelNoteLine,
+  extractFn(gs, 'normalizeExtraDayKind_'),
+  extractFn(gs, 'buildExtraDayEventFields_'),
+  extractFn(gs, 'getCalendarEventByIdOnDate_'),
+  extractFn(gs, 'deleteExtraDayEventById_'),
   extractFn(gs, 'parseBookingExtraDays_'),
   extractFn(gs, 'cleanupBookingExtraDayEvents_'),
   extractFn(gs, 'auditBookingCalendarConsistency_'),
@@ -486,7 +495,7 @@ async function runScenarios(M, rec) {
     M.setSheet(sh7);
     rep = M.auditBookingCalendarConsistency_();
     rec('다일정: 증발 복구 healed', rep.healedCount, 1);
-    rec('다일정: 복구 이벤트 생성', cal2.events.some(e => String(e.t || '').indexOf('추가일정 복구') >= 0), true);
+    rec('다일정: 복구 이벤트 생성(일차 제목)', cal2.events.some(e => /\(\d+\/\d+일차\)$/.test(String(e.t || ''))), true);
     const savedJson = JSON.parse(String(sh7.rows[1][COL['추가일정JSON']] || '[]'));
     rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
   }
@@ -545,8 +554,10 @@ async function runScenarios(M, rec) {
 const STRUCTURAL = [
   ['slotAvailable_ 가 읽기실패 시 false (제출 최후 방어선)',
     /if\(CAL_READ_FAILED_\) return false;\n\s*return!checkConflict_\(dayEvents/],
+  // 메시지가 3개국어 객체(`throw new Error({ko:…,en:…,de:…}[_slotErrLang])`)로 바뀌었다 —
+  // 가드 존재와 한국어 문구는 그대로 못박고, i18n 래퍼만 통과시킨다
   ['processForm 이 읽기실패를 일시 오류로 구분 안내',
-    /if\(CAL_READ_FAILED_\) throw new Error\('예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
+    /if\(CAL_READ_FAILED_\) throw new Error\([\s\S]{0,40}?'예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
   ['getPublicSlots_ 읽기실패 시 빈 슬롯 + 캐시 미적재',
     /if\(CAL_READ_FAILED_\)\{\n(.*\n)*?\s*return \[\];\n\s*\}\n\s*const slotStrings/],
   ['getUnavailableDays 읽기실패 시 전일 마감 + 캐시 미적재',
