@@ -173,7 +173,7 @@ const html = `<!DOCTYPE html>
     width:210mm; min-height:297mm; margin:0 auto; padding:12mm 18mm 9mm;
     background:var(--ivory); display:flex; flex-direction:column;
   }
-  header{ text-align:center; margin-bottom:4.5mm; }
+  header{ text-align:center; margin-bottom:3.5mm; }
   .logo{
     font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:600;
     font-size:23pt; letter-spacing:.01em; margin:0;
@@ -195,7 +195,7 @@ const html = `<!DOCTYPE html>
   thead th .de{ display:block; font-size:6.8pt; letter-spacing:.04em; opacity:.75; font-weight:300; }
   tbody tr.grp-start td{ border-top:1px solid rgba(32,28,31,.12); }
   tbody tr:first-child td{ border-top:none; }
-  td{ padding:1.35mm 0; vertical-align:middle; }
+  td{ padding:1.15mm 0; vertical-align:middle; }
   td.grp{
     width:26%; font-size:10.5pt; font-weight:400; padding-right:4mm; vertical-align:top; padding-top:3.4mm;
   }
@@ -236,8 +236,8 @@ const html = `<!DOCTYPE html>
 
   .notes{ margin-top:auto; padding-top:3mm; }
   .note{
-    display:flex; gap:4mm; align-items:baseline; padding:1.7mm 0;
-    border-top:1px solid rgba(32,28,31,.10); font-size:7.7pt; line-height:1.45;
+    display:flex; gap:4mm; align-items:baseline; padding:1.45mm 0;
+    border-top:1px solid rgba(32,28,31,.10); font-size:7.5pt; line-height:1.4;
   }
   .note:first-child{ border-top:none; }
   .note .k{ flex:0 0 30mm; color:var(--taupe); font-size:7.6pt; letter-spacing:.05em; }
@@ -307,8 +307,8 @@ ${discountLine ? `  <div class="vol-band">
     </div>${NO_FRAMES ? '' : `
     <div class="note">
       <span class="k">액자</span>
-      <span class="v">마운트를 포함한 목재 프레임에 끼워 조립해 드립니다. 액자는 스튜디오 픽업만 가능합니다.
-        <span class="de">Montage im Holzrahmen mit Passepartout. Rahmen nur zur Abholung.</span></span>
+      <span class="v">마운트를 포함한 목재 프레임에 끼워 조립해 드립니다.
+        <span class="de">Montage im Holzrahmen mit Passepartout.</span></span>
     </div>`}
     <div class="note">
       <span class="k">규격과 잘림</span>
@@ -323,7 +323,9 @@ ${discountLine ? `  <div class="vol-band">
     <div class="note">
       <span class="k">수령</span>
       <span class="v">촬영 고객은 우편 발송비를 따로 받지 않습니다. 인화만 주문하시는 경우 스튜디오 픽업으로 안내드립니다.
-        <span class="de">Für Shooting-Kunden ist der Versand inklusive. Reine Druckbestellungen holen Sie im Studio ab.</span></span>
+        <b>A3+ · 액자 · 대형은 스튜디오 픽업만 가능합니다</b> — 액자·대형은 유리 파손 위험이 있고, A3+ 는 우편 규격을 넘깁니다.
+        <span class="de">Für Shooting-Kunden ist der Versand inklusive. Reine Druckbestellungen holen Sie im Studio ab.
+        <b>A3+, gerahmte und großformatige Bilder nur zur Abholung</b> — Bruchgefahr bzw. Überschreitung des Flachversandmaßes.</span></span>
     </div>
   </div>
 

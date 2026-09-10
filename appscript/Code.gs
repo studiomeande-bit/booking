@@ -25914,6 +25914,28 @@ function selectMailLatinProblem_(mailName,mailAddress){
 function isReprintSelectRow_(row){
   return String((row&&row[SELECT_COL['촬영종류']])||'').trim().toLowerCase()==='reprint';
 }
+/* 우편으로 보내지 않는 SKU — **픽업 전용**이다(사장님 확정 2026-09-10).
+   · 액자(frame_)·대형(wallart_) : 유리가 들어가 파손 클레임이 실재한다
+   · 파인아트 A3+ (329×483) : Brief 규격(최대 353mm)을 넘겨 평면 발송이 안 되고,
+     소포로 보내면 모서리 눌림이 그대로 클레임이 된다.
+   ⚠ 이 목록을 볼륨 할인 제외(selectOrderHasFrame_)와 **같은 함수로 쓰면 안 된다** —
+   A3+ 는 정상 인화라 할인 대상이 맞다. 목적이 다르므로 판정도 분리한다. */
+const SELECT_PICKUP_ONLY_RE_=/^(frame_|wallart_|premium_a3plus$)/;
+function selectOrderHasPickupOnly_(items){
+  return (items||[]).some(function(p){
+    const id=String((p&&(p.printId||p.printType||p.id))||'').replace(/_(r|e)$/,'').trim();
+    return SELECT_PICKUP_ONLY_RE_.test(id);
+  });
+}
+function selectPickupOnlyLabels_(items){
+  const seen={};
+  (items||[]).forEach(function(p){
+    const id=String((p&&(p.printId||p.printType||p.id))||'').replace(/_(r|e)$/,'').trim();
+    if(SELECT_PICKUP_ONLY_RE_.test(id)) seen[String((getPrintInfo_(id)||{}).summaryLabel||id)]=true;
+  });
+  return Object.keys(seen);
+}
+
 function selectOrderHasFrame_(items){
   return (items||[]).some(function(p){
     const id=String((p&&(p.printId||p.printType||p.id))||'').replace(/_(r|e)$/,'').trim();
@@ -25934,8 +25956,12 @@ function validateSelectDelivery_(sub,existingPickupEventId,row,prints,photocard,
   /* 액자는 유리가 들어가 우편 발송을 하지 않는다(사장님 확정 2026-09-09).
      화면에서도 우편을 잠그지만(select.js orderHasFrame), 구 번들·직접 호출로 들어올 수 있어 여기서 막는다.
      작업지시(prints)와 업그레이드 항목 양쪽을 본다 — 액자가 어느 쪽에 담겨도 같은 결론이다. */
-  if(method==='mail'&&selectOrderHasFrame_([].concat(prints||[],printUpgradeItems||[]))){
-    throw new Error('액자가 포함된 주문은 스튜디오 픽업만 가능합니다. 수령 방식을 픽업으로 선택해 주세요.');
+  if(method==='mail'){
+    const po=[].concat(prints||[],printUpgradeItems||[]);
+    if(selectOrderHasPickupOnly_(po)){
+      const which=selectPickupOnlyLabels_(po).join(' · ');
+      throw new Error((which?which+' 는 ':'')+'스튜디오 픽업만 가능합니다. 수령 방식을 픽업으로 선택해 주세요.');
+    }
   }
   if(method==='pickup'){
     const pickupDate=String(sub.pickupDate||'').trim();

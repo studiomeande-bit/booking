@@ -284,6 +284,17 @@ REGRESSIONS.push({
   prints: [{ photoNum: 'A1', printId: 'wallart_custom', qty: 1 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
 });
 
+/* A3+ 는 **픽업 전용이지만 볼륨 할인은 받는다** (2026-09-10).
+   픽업 전용 목록(SELECT_PICKUP_ONLY_RE_)과 할인 제외 목록(selectOrderHasFrame_)을 하나로 합치면
+   A3+ 가 조용히 할인에서 빠진다 — 총액만 보면 눈치채기 어렵다. 그래서 값으로 고정한다.
+   pb 쿼터=basic_10x15×1. 파인아트A3+ 보정본 41 × 6장 중 한 장이 쿼터 크레딧 3 → 38,
+   나머지 5장 41 = 205 → 총 243. 6장이면 5:10 구간이라 −10% = 24,30 → net 218,70. */
+REGRESSIONS.push({
+  name: 'A3+ 는 픽업 전용이어도 볼륨 할인을 받는다', productKey: 'pb', retouchNums: ['A1'],
+  serviceCutCount: 0, serviceNums: [], expectTotal: 243, expectVolUnits: 6, expectNet: 218.7,
+  prints: [{ photoNum: 'A1', printId: 'premium_a3plus', qty: 6 }]
+});
+
 const RANDOM_N = 4000;
 /* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
    (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */

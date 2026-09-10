@@ -1413,20 +1413,34 @@ function setDeliveryMethod(value) {
   updateReview();
 }
 
-/* 액자는 유리가 들어가 우편 발송을 하지 않는다(사장님 확정 2026-09-09). 주문에 액자가 하나라도
-   있으면 우편 수령을 잠그고 픽업으로 고정한다. ⚠ 서버 submitPhotoSelection 에도 같은 가드가 있다 —
-   화면만 막으면 구 번들·직접 호출로 우편 주문이 들어온다. */
-function orderHasFrame() {
-  return (state.prints || []).some((p) => /^frame_/.test(normalizePrintTypeId(p && p.printId)));
+/* 우편으로 보내지 않는 SKU — 액자·대형(유리 파손) + 파인아트 A3+(329×483, Brief 최대 353mm 초과).
+   하나라도 담기면 우편 수령을 잠그고 픽업으로 고정한다(사장님 확정 2026-09-10).
+   ⚠ 서버 validateSelectDelivery_ 에도 같은 목록이 있다 — 화면만 막으면 구 번들로 우편 주문이 들어온다.
+   ⚠ 볼륨 할인 제외(printCreditExempt)와 **다른 목록**이다. A3+ 는 정상 인화라 할인은 받는다. */
+const PICKUP_ONLY_RE = /^(frame_|wallart_|premium_a3plus$)/;
+function orderHasPickupOnly() {
+  return (state.prints || []).some((p) => PICKUP_ONLY_RE.test(normalizePrintTypeId(p && p.printId)));
+}
+function pickupOnlyLabels() {
+  const seen = new Set();
+  (state.prints || []).forEach((p) => {
+    const id = normalizePrintTypeId(p && p.printId);
+    if (PICKUP_ONLY_RE.test(id)) seen.add(getPrintOption(id).label);
+  });
+  return [...seen];
 }
 
 function syncDeliveryUi() {
   const deliveryRequired = requiresDeliverySelection();
   if (!deliveryRequired) state.deliveryMethod = '';
-  const pickupOnly = deliveryRequired && orderHasFrame();
+  const pickupOnly = deliveryRequired && orderHasPickupOnly();
   if (pickupOnly) state.deliveryMethod = 'pickup';
   const method = deliveryRequired ? state.deliveryMethod : '';
-  els.framePickupOnlyNote?.classList.toggle('hidden', !pickupOnly);
+  if (els.framePickupOnlyNote) {
+    els.framePickupOnlyNote.classList.toggle('hidden', !pickupOnly);
+    // 무엇 때문에 잠겼는지 말한다 — 이유 없이 우편이 막히면 고장으로 읽힌다.
+    if (pickupOnly) els.framePickupOnlyNote.textContent = copy().pickupOnlyNote(pickupOnlyLabels().join(' · '));
+  }
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
     input.disabled = !deliveryRequired || (pickupOnly && input.value !== 'pickup');
     input.checked = input.value === method;
