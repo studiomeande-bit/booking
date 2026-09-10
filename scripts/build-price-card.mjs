@@ -52,6 +52,38 @@ for (const m of cat.matchAll(/id:\s*'([a-z0-9_]+)',\s*cm:\s*'([^']*)'/g)) cm[m[1
 
 const eur = (n) => `€${Number(n) % 1 === 0 ? n : n.toFixed(2)}`;
 
+/* ── 잘림·마감 문구는 **원문 그대로** 가져온다 ──────────────────────────────
+   print-tier-copy.js 헤더가 "UWG 법률 검수를 통과한 원문, 임의로 다듬지 말 것" 이라고 못박고 있다.
+   카드에 맞게 줄이지 않는다 — 대신 원문의 <br> 를 경계로 두 덩어리(무엇이 잘리나 / 우리가 뭘 하나)로
+   나눠 각각 통째로 싣는다. 자르는 게 아니라 나누는 것이다. */
+const tier = read('frontend/shared/print-tier-copy.js');
+function cropCopy(lang) {
+  const block = new RegExp(`${lang}:\\s*\\{\\s*title:[\\s\\S]*?points:\\s*\\[([\\s\\S]*?)\\]\\s*\\}`).exec(tier);
+  if (!block) return null;
+  for (const m of block[1].matchAll(/head:\s*'([^']*)',\s*body:\s*'((?:[^'\\]|\\.)*)'/g)) {
+    if (/잘리|crop|Zuschnitt/.test(m[1])) {
+      const [what, ours] = m[2].split('<br>');
+      return { head: m[1], what: (what || '').trim(), ours: (ours || '').trim() };
+    }
+  }
+  return null;
+}
+const CROP = { ko: cropCopy('ko'), de: cropCopy('de') };
+if (!CROP.ko || !CROP.de) {
+  console.error('❌ print-tier-copy.js 에서 잘림 안내 원문을 찾지 못했습니다 — 구조가 바뀌었을 수 있습니다.');
+  process.exit(1);
+}
+
+/* 마감(꽉 채움 / 흰 테두리) 문구도 셀렉 i18n 원문에서 가져온다. */
+const i18n = read('frontend/select/v2/i18n.js');
+const pick = (key) => [...i18n.matchAll(new RegExp(`${key}:\\s*'((?:[^'\\\\]|\\\\.)*)'`, 'g'))].map((m) => m[1]);
+const FIN = {};
+for (const k of ['finishFull', 'finishBorder', 'finishHelpFull', 'finishHelpBorder']) {
+  const v = pick(k);            // 파일 순서가 ko, en, de 다
+  if (v.length < 3) { console.error(`❌ i18n 에서 ${k} 3개국어를 찾지 못했습니다.`); process.exit(1); }
+  FIN[k] = { ko: v[0], de: v[2] };
+}
+
 /* ── 표 구성 ─────────────────────────────────────────────────────────────── */
 const ROWS = [
   { group: { ko: '시그니처', de: 'Signature' }, ids: ['basic_10x15', 'basic_a4'] },
@@ -170,7 +202,21 @@ const html = `<!DOCTYPE html>
   td.p.muted{ color:var(--taupe); font-weight:300; }
   td.p.add{ color:var(--ink); }
 
-  .notes{ margin-top:auto; padding-top:6mm; }
+  h2.sub{
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:13pt;
+    margin:7mm 0 1mm; letter-spacing:.02em;
+  }
+  h2.sub .de{ font-size:8.5pt; color:var(--taupe); font-style:italic; margin-left:2.5mm; }
+  .crop{
+    display:flex; gap:6mm; align-items:center;
+    border-top:1px solid rgba(32,28,31,.22); padding-top:3.5mm;
+  }
+  .crop .fig{ flex:0 0 78mm; height:19mm; }
+  .crop-text{ font-size:7.8pt; line-height:1.55; }
+  .crop-text p{ margin:0; }
+  .crop-text p.de{ color:var(--taupe); font-size:7pt; margin-top:1.2mm; }
+
+  .notes{ margin-top:auto; padding-top:5mm; }
   .note{
     display:flex; gap:4mm; align-items:baseline; padding:2.2mm 0;
     border-top:1px solid rgba(32,28,31,.10); font-size:8.2pt; line-height:1.55;
@@ -182,7 +228,19 @@ const html = `<!DOCTYPE html>
     margin-top:5mm; padding-top:2.5mm; border-top:1px solid rgba(32,28,31,.16);
     display:flex; justify-content:space-between; font-size:7pt; color:var(--taupe); letter-spacing:.04em;
   }
-  @media print{ html,body{ background:var(--ivory); } .sheet{ margin:0; } }
+  .sheet.back{ margin-top:8mm; }
+  .sheet.back h1{ margin-top:0; }
+  .lead{ font-size:9pt; line-height:1.7; margin:0; }
+  .lead.de{ color:var(--taupe); font-size:8pt; margin-top:2mm; }
+  .fig{ width:100%; height:auto; margin:8mm 0 2mm; }
+  .back-notes{ margin-top:auto; }
+
+  @media print{
+    html,body{ background:var(--ivory); }
+    .sheet{ margin:0; }
+    /* 양면 인쇄 — 앞면 가격, 뒷면 규격·잘림. */
+    .sheet.back{ margin-top:0; page-break-before:always; break-before:page; }
+  }
 </style>
 </head>
 <body>
@@ -230,6 +288,11 @@ ${ROWS.map(tableRows).join('\n')}
         <span class="de">Montage im Holzrahmen mit Passepartout. Rahmen nur zur Abholung.</span></span>
     </div>`}
     <div class="note">
+      <span class="k">규격과 잘림</span>
+      <span class="v">규격에 따라 사진 가장자리가 조금 잘립니다. 자세한 내용은 <b>뒷면</b>을 봐 주세요.
+        <span class="de">Je nach Format wird der Rand etwas beschnitten — Details auf der <b>Rückseite</b>.</span></span>
+    </div>
+    <div class="note">
       <span class="k">수령</span>
       <span class="v">촬영 고객은 우편 발송비를 따로 받지 않습니다. 인화만 주문하시는 경우 스튜디오 픽업으로 안내드립니다.
         <span class="de">Für Shooting-Kunden ist der Versand inklusive. Reine Druckbestellungen holen Sie im Studio ab.</span></span>
@@ -238,6 +301,79 @@ ${ROWS.map(tableRows).join('\n')}
 
   <footer>
     <span>모든 가격은 부가세 포함 · Alle Preise inkl. MwSt.</span>
+    <span>뒷면 · 규격과 잘림 안내 / Rückseite: Format &amp; Beschnitt</span>
+  </footer>
+</div>
+
+<div class="sheet back">
+  <h1>규격과 잘림<span class="de">Format &amp; Beschnitt</span></h1>
+  <div class="rule"></div>
+
+  <p class="lead">${CROP.ko.what}</p>
+  <p class="lead de">${CROP.de.what}</p>
+
+  <svg class="fig" viewBox="0 0 340 132" role="img" aria-label="규격별 잘림 비교">
+    <g transform="translate(4,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1.1" opacity=".5"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">그대로</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">unverändert</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">10 × 15</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">3:2 · 카메라 원본</text>
+    </g>
+    <g transform="translate(110,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1" opacity=".26"/>
+      <rect x="0" y="0" width="62" height="5.6" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="87.4" width="62" height="5.6" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="5.6" width="62" height="81.8" fill="none" stroke="#201C1F" stroke-width="1.1"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">약 6%</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">ca. 6 %</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">A4 · A3</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">긴 변이 잘립니다</text>
+    </g>
+    <g transform="translate(216,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1" opacity=".26"/>
+      <rect x="0" y="0" width="62" height="2" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="91" width="62" height="2" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="2" width="62" height="89" fill="none" stroke="#201C1F" stroke-width="1.1"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">약 2%</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">ca. 2 %</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">A3+</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">잘림이 가장 적습니다</text>
+    </g>
+    <g transform="translate(292,40)">
+      <rect x="0" y="0" width="9" height="5" fill="#C58D66" opacity=".5"/>
+      <text x="13" y="4.6" font-size="6.8" fill="#6D5A49">잘리는 부분</text>
+      <text x="13" y="13" font-size="6.2" fill="#6D5A49">Beschnitt</text>
+      <text x="0" y="26" font-size="6.2" fill="#6D5A49">세로 사진 기준</text>
+      <text x="0" y="34" font-size="6.2" fill="#6D5A49">Hochformat</text>
+    </g>
+  </svg>
+
+  <div class="notes back-notes">
+    <div class="note">
+      <span class="k">${CROP.ko.head}</span>
+      <span class="v">${CROP.ko.ours}
+        <span class="de">${CROP.de.ours}</span></span>
+    </div>
+    <div class="note">
+      <span class="k">${FIN.finishFull.ko}</span>
+      <span class="v">${FIN.finishHelpFull.ko}
+        <span class="de">${FIN.finishFull.de} — ${FIN.finishHelpFull.de}</span></span>
+    </div>
+    <div class="note">
+      <span class="k">${FIN.finishBorder.ko}</span>
+      <span class="v">${FIN.finishHelpBorder.ko}
+        <span class="de">${FIN.finishBorder.de} — ${FIN.finishHelpBorder.de}</span></span>
+    </div>
+    <div class="note">
+      <span class="k">휴대폰 사진</span>
+      <span class="v">비율이 달라 조금 더 잘릴 수 있습니다. 원하시는 크롭이 있으면 말씀해 주세요.
+        <span class="de">Handyfotos haben ein anderes Seitenverhältnis — hier wird etwas mehr beschnitten. Sagen Sie uns gern, welchen Ausschnitt Sie möchten.</span></span>
+    </div>
+  </div>
+
+  <footer>
+    <span>Studio mean</span>
     <span>${new Date().toISOString().slice(0, 10)}</span>
   </footer>
 </div>

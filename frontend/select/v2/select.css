@@ -236,6 +236,17 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+/* 규격·잘림 안내 — 기본은 접어 두고, 필요한 사람만 편다(주문 흐름을 막지 않는다). */
+.crop-note{ margin-bottom: var(--space-2); }
+.crop-note > summary{
+  cursor: pointer; font-size: 13px; font-weight: 600; list-style: none;
+  color: var(--sm-text-soft); padding: 2px 0;
+}
+.crop-note > summary::-webkit-details-marker{ display: none; }
+.crop-note > summary::before{ content: '▸ '; color: var(--sm-accent); }
+.crop-note[open] > summary::before{ content: '▾ '; }
+.crop-note .guide-copy{ margin-top: 8px; }
+
 /* 액자가 담기면 우편 수령 카드를 잠근다 — 라디오는 JS 가 disabled 로 막고, 여기선 그게 보이게만 한다. */
 .radio-card.is-disabled {
   opacity: .45;

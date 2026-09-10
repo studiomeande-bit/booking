@@ -11,14 +11,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=ea6dcb2a72" as="style">
+  <link rel="preload" href="./select.min.css?v=76c4f34fc3" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=ea6dcb2a72">
+  <link rel="stylesheet" href="./select.min.css?v=76c4f34fc3">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -252,6 +252,12 @@
           <h2 data-i18n="s3Title">출력 선택</h2>
           <p><span data-i18n-html="s3CopyHtml">출력할 사진을 선택하세요. <b>보정과 다른 사진</b>도 출력할 수 있습니다. 상품에 <b>기본 제공 출력물</b>이 있으면 그 수량까지는 무료이고, 넘는 만큼만 요금이 붙습니다. 사진 번호를 입력하면 아래에 썸네일이 표시됩니다.</span> <span id="printStepTierNote"></span></p>
         </div>
+        <!-- 규격·잘림 안내: 예약 페이지에만 있고 정작 인화를 주문하는 여기엔 없었다(2026-09-10).
+             문구는 print-tier-copy.js 의 UWG 검수본을 그대로 쓴다 — 여기서 새로 쓰지 않는다. -->
+        <details id="cropNoteBox" class="detail-box crop-note">
+          <summary data-i18n="cropNoteTitle">규격에 따라 사진 가장자리가 조금 잘립니다</summary>
+          <div id="cropNoteBody" class="guide-copy"></div>
+        </details>
         <div id="printPriceGuide" class="price-guide"></div>
         <div id="printList" class="list-wrap"></div>
         <button id="addPrintBtn" type="button" class="ghost-btn" data-i18n="addPrintBtn">＋ 출력할 사진 추가</button>
@@ -467,6 +473,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=a5928f5f01"></script>
+  <script src="./select.min.js?v=bb81226237"></script>
 </body>
 </html>

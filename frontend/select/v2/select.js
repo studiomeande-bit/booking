@@ -18,6 +18,7 @@ import {
   productHasIncludedPrints
 } from '../../shared/product-delivery.js';
 import {
+  PRINT_METHOD_POINTS,
   getPrintMicrocopy,
   getPrintTier,
   getPrintTierCopy,
@@ -374,6 +375,7 @@ const els = {
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
   framePickupOnlyNote: document.getElementById('framePickupOnlyNote'),
+  cropNoteBody: document.getElementById('cropNoteBody'),
   pickupScheduler: document.getElementById('pickupScheduler'),
   pickupDeferredNote: document.getElementById('pickupDeferredNote'),
   pickupExistingLine: document.getElementById('pickupExistingLine'),
@@ -3626,6 +3628,16 @@ function applyReprintUi() {
   });
 }
 
+/* 규격·잘림 안내 — print-tier-copy.js 의 PRINT_METHOD_POINTS 원문을 그대로 쓴다.
+   🔴 그 파일 헤더가 "UWG 법률 검수를 통과한 원문, 임의로 다듬지 말 것" 이라 여기서 새로 쓰지 않는다.
+   예약 페이지에는 있었는데 정작 인화를 주문하는 이 화면엔 없었다(2026-09-10). */
+function renderCropNote() {
+  if (!els.cropNoteBody) return;
+  const pts = (PRINT_METHOD_POINTS[state.lang] || PRINT_METHOD_POINTS.ko || {}).points || [];
+  const crop = pts.find((p) => /잘리|crop|Zuschnitt/.test(String(p && p.head)));
+  els.cropNoteBody.innerHTML = crop ? crop.body : '';
+}
+
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
   // 재주문에는 보정 단계가 없다 — 어느 방향으로 들어와도 2번을 건너뛴다.
@@ -3645,6 +3657,7 @@ function goStep(step) {
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
   if (step === 3) {
+    renderCropNote();
     seedIncludedPrints();          // 포함 인화를 주문 행으로 미리 채운다(보정 리스트 확정 후라야 번호 배정 가능)
     renderPrints();                // 보정 리스트 기준 포함 쿼터/단가 최신화
     updateSubmitState();           // 채워진 행이 제출 가드/배송 필요 여부에 즉시 반영되게
