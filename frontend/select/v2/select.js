@@ -1497,7 +1497,7 @@ function isPhotoPaid(photo, photoIndex) {
  * 페이로드가 없으면(구 세션·프리뷰) 서버 기본값과 동일한 아래 상수를 쓴다. */
 const VOLUME_TIER_DEFAULTS = {
   retouch: [{ count: 5, percent: 10 }, { count: 10, percent: 15 }, { count: 20, percent: 20 }],
-  print: [{ count: 10, percent: 10 }, { count: 20, percent: 15 }, { count: 30, percent: 20 }]
+  print: [{ count: 5, percent: 10 }, { count: 10, percent: 15 }, { count: 20, percent: 20 }]
 };
 function getVolumeTiers(kind) {
   const fromSession = state.session?.volumeTiers?.[kind];

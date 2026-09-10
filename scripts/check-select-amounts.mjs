@@ -243,11 +243,12 @@ REGRESSIONS.push(
 );
 
 /* 볼륨 할인 회귀 — pb 쿼터=basic_10x15×1. 파인아트A4 보정본 15 × 12장 중 한 장이 쿼터 크레딧 3 을 받아 12,
-   나머지 11장 15 = 177. 액자 35 는 할인 대상 밖 → 총 212, 할인 12장 10% × 177 = 17,70, net 194,30.
-   (액자가 할인에 끼면 13장·base 212 → -21,20 → net 190,80 이 된다 — 이 두 값이 갈리는지 보는 케이스다) */
+   나머지 11장 15 = 177. 액자 35 는 할인 대상 밖 → 총 212, 할인 12장 **15%**(구간 10:15) × 177 = 26,55, net 185,45.
+   (액자가 할인에 끼면 13장·base 212 → -31,80 → net 180,20 이 된다 — 이 두 값이 갈리는지 보는 케이스다)
+   ⚠ 기대치가 구간표에 묶여 있다. 구간을 바꾸면 여기도 같이 고쳐야 한다(2026-09-10 인화 구간 10→5 로 하향). */
 REGRESSIONS.push({
   name: '액자는 볼륨 할인 대상이 아니다', productKey: 'pb', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
-  expectTotal: 212, expectNet: 194.3, expectVolUnits: 12,
+  expectTotal: 212, expectNet: 185.45, expectVolUnits: 12,
   prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 12 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
 });
 
@@ -258,6 +259,18 @@ REGRESSIONS.push({
   name: '재주문은 보정 리스트가 비어도 보정본가', productKey: 'reprint', itemGroup: 'reprint',
   retouchNums: [], serviceCutCount: 0, serviceNums: [], expectTotal: 30, expectVolUnits: 2, expectNet: 30,
   prints: [{ photoNum: 'B1', printId: 'premium_a4', qty: 2 }]
+});
+
+/* 쿼터 업그레이드(차액) 장도 볼륨 할인 '장수' 에 들어간다는 규칙을 고정한다(사장님 확인 2026-09-10).
+   sb 쿼터 = basic_a4×1 + basic_10x15×2. 파인아트A4 보정본 15 × 5장:
+     1장은 basic_a4 크레딧 10 → 5 · 2장은 basic_10x15 크레딧 3 → 12 씩 · 나머지 2장은 정가 15
+     = 5+12+12+15+15 = 59, 유료 장수 5(전부 price>0 이라 차액장도 센다).
+   기준을 'price>0' 이 아니라 '정확일치 무료가 아닌 장' 같은 걸로 바꾸면 여기서 깨진다. */
+REGRESSIONS.push({
+  name: '쿼터 업그레이드 차액장도 볼륨 장수에 든다', productKey: 'sb', retouchNums: ['A1'],
+  // 구간 하향(5:10) 이후 이 주문이 실제로 할인을 받는다 — 59 × 10% = 5,90 → net 53,10.
+  serviceCutCount: 0, serviceNums: [], expectTotal: 59, expectVolUnits: 5, expectNet: 53.1,
+  prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 5 }]
 });
 
 const RANDOM_N = 4000;

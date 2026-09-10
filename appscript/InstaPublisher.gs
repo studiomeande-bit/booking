@@ -139,6 +139,13 @@ function publishDueInstaCarousels() {
         sh.getRange(i + 1, INSTA_REVIEW_COL['승인일시'] + 1)
           .setValue(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm') + ' ' + out.url);
         Logger.log('게시 완료 [' + key + '] ' + out.url);
+        // 같은 소재를 Threads 에도 (미설정이면 조용히 건너뜀, 실패해도 인스타는 유지)
+        var th = threadsMirror_(slides, caption);
+        if (th && th.url) {
+          sh.getRange(i + 1, INSTA_REVIEW_COL['승인일시'] + 1)
+            .setValue(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm')
+                      + ' ' + out.url + ' | Threads ' + th.url);
+        }
         igNotifyPublished_(key, String(row[INSTA_REVIEW_COL['이름']] || ''), out.url);
       } catch (e) {
         Logger.log('게시 실패 [' + key + ']: ' + e.message);
@@ -220,4 +227,34 @@ function instaPublisherSetSecretsForAgent_(token, payload) {
     out[k] = 'saved(' + v.length + ')';        // 값이 아니라 길이만
   });
   return { ok: true, saved: out };
+}
+
+/** 진단 — 게시기가 시트에서 무엇을 보고 있는지 그대로 돌려준다(게시하지 않음).
+ *  예정분이 안 나갈 때 원인(상태·예정ISO 파싱·슬라이드URL)을 바로 짚기 위한 것. */
+function instaPublisherDryRunForAgent_(token) {
+  assertAdmin_(token);
+  var sh = ensureInstaReviewSheet_(ensureSheets_().ss);
+  var vals = sh.getDataRange().getValues();
+  var now = new Date();
+  var out = [];
+  for (var i = 1; i < vals.length; i++) {
+    var row = vals[i];
+    var key = String(row[INSTA_REVIEW_COL['큐키']] || '');
+    if (!key) continue;
+    var schedRaw = INSTA_REVIEW_COL['예정ISO'] != null
+      ? String(row[INSTA_REVIEW_COL['예정ISO']] || '').trim() : '(컬럼없음)';
+    var sched = new Date(schedRaw);
+    var slides = String(row[INSTA_REVIEW_COL['슬라이드URL']] || '')
+      .split(',').map(function (s) { return s.trim(); }).filter(String);
+    out.push({
+      key: key,
+      status: String(row[INSTA_REVIEW_COL['상태']] || ''),
+      type: String(row[INSTA_REVIEW_COL['유형']] || ''),
+      schedRaw: schedRaw,
+      schedParsed: isNaN(sched.getTime()) ? 'PARSE_FAIL' : sched.toISOString(),
+      due: !isNaN(sched.getTime()) && sched <= now,
+      slideCount: slides.length
+    });
+  }
+  return { ok: true, now: now.toISOString(), rows: out };
 }

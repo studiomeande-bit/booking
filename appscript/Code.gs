@@ -2149,6 +2149,7 @@ function handlePublicApiRequest_(route,method,e){
           {sessionId:payload.sessionId,selectRowIndex:payload.selectRowIndex,bookingRowIndex:payload.bookingRowIndex},
           payload.delivery||{method:payload.method,mailName:payload.mailName,mailAddress:payload.mailAddress}));
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
+        if(action==='select-reprint-create') return jsonOk_(createSelectReprintSession(token,payload||{}));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='select-handover-pending') return jsonOk_(listSelectHandoverPendingForAgent_(token,payload));
         if(action==='select-handover-done') return jsonOk_(markSelectHandoverAdmin(token,payload));
@@ -13228,7 +13229,7 @@ function _threadMessagesForBooking_(threadSheet,bookingRowIndex){
       sheetRow:i+2,
       at:r[THREAD_COL['일시']] instanceof Date
         ? Utilities.formatDate(r[THREAD_COL['일시']],CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
-        : String(r[THREAD_COL['일시']]||'').slice(0,16),
+        : parseDateSafe_(r[THREAD_COL['일시']]).str.slice(0,16),
       direction:String(r[THREAD_COL['방향']]||''),
       author:String(r[THREAD_COL['작성자']]||''),
       message:String(r[THREAD_COL['메시지']]||''),
@@ -13299,7 +13300,7 @@ function listBookingThreadsAdmin(token){
     if(!bri) return;
     const at=r[THREAD_COL['일시']] instanceof Date
       ? Utilities.formatDate(r[THREAD_COL['일시']],CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm')
-      : String(r[THREAD_COL['일시']]||'').slice(0,16);
+      : parseDateSafe_(r[THREAD_COL['일시']]).str.slice(0,16);
     if(!byBooking[bri]) byBooking[bri]={bookingRowIndex:bri,count:0,unreadCount:0,lastAt:'',lastDirection:'',lastMessage:''};
     const t=byBooking[bri];
     t.count++;
@@ -13835,7 +13836,7 @@ function approveRetouch_(sessionId,p){
     if(idx===-1)return HtmlService.createHtmlOutput('<h2>❌ 세션을 찾을 수 없습니다.</h2>');
     const row=rows[idx+1];const rowLang=String(row[SELECT_COL['언어']]||'ko');
     // 이미 승인된 세션이면 재처리하지 않음 (중복 클릭 시 어드민 메일 중복 방지)
-    const alreadyApproved=String(row[SELECT_COL['상태']]||'')==='보정본확인완료';
+    const alreadyApproved=isSelectApprovedStatus_(row[SELECT_COL['상태']]);
     if(!alreadyApproved){
       const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
       selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
@@ -24609,6 +24610,103 @@ function createSelectSession(token,data){
   finally{try{lock.releaseLock();}catch(e){}}
 }
 
+/* ── 출력 재주문 세션 만들기 ─────────────────────────────────────────────────
+   촬영이 끝난 고객이 인화만 더 주문하는 경로(2026-09-10 출하).
+
+   왜 select-create 를 그냥 쓰지 않는가 — 두 가지가 실제로 위험하다:
+   ① createSelectSession 은 bookingRowIndex 를 받으면 **기존 세션을 그대로 반환**한다
+      (getLatestSelectRowForBooking_). 재주문에 그걸 넘기면 원래 셀렉 링크가 나가 버린다.
+      안 넘기면 예약과의 연결이 끊긴다. 어느 쪽도 답이 아니다.
+   ② driveFolderId 를 손으로 쳐야 한다 — 오타 한 번이면 **다른 고객의 갤러리**가 열린다.
+   → 원본 세션(예약행/셀렉행/세션ID 아무거나)에서 고객정보와 드라이브 링크를 그대로 물려받는다.
+
+   itemGroup='reprint' 가 표식이다. 이 그룹은 getSelectProductKey_ 가 매칭하지 못해
+   포함 쿼터가 자동 0 이 되고, 화면 isReprintSession() 과 서버 isReprintSelectRow_ 가 같이 읽는다. */
+function createSelectReprintSession(token,data){
+  data=data||{};
+  try{ assertAdmin_(token); }catch(err){ return{ok:false,message:err.message}; }
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(10000)) return{ok:false,message:'처리 중입니다. 잠시 후 다시 시도해 주세요.'};
+  try{
+    const selSh=ensureSelectSheet_(ensureSheets_().ss);
+    const rows=selSh.getDataRange().getValues();
+    const bookingRowIndex=String(data.bookingRowIndex||'').trim();
+    const selectRowIndex=parseInt(data.selectRowIndex,10)||0;
+    const sessionId=String(data.sessionId||'').trim();
+
+    /* 원본 찾기 — 셀렉행 > 세션ID > 예약행 순. 예약행은 가장 최근 세션을 쓴다.
+       재주문 세션(itemGroup=reprint)은 원본 후보에서 뺀다 — 재주문의 재주문을 만들면
+       고객정보가 복사의 복사가 되어 원본 추적이 끊긴다. */
+    let src=null,srcRowNum=0;
+    for(let i=rows.length-1;i>=1;i--){
+      const r=rows[i];
+      if(isReprintSelectRow_(r)) continue;
+      const hit=selectRowIndex? (i+1)===selectRowIndex
+        : sessionId? String(r[SELECT_COL['세션ID']]||'').trim()===sessionId
+        : bookingRowIndex? String(r[SELECT_COL['예약장부행']]||'').trim()===bookingRowIndex
+        : false;
+      if(hit){ src=r; srcRowNum=i+1; break; }
+    }
+    if(!src) return{ok:false,code:'SOURCE_NOT_FOUND',message:'원본 셀렉 세션을 찾지 못했습니다. 예약장부행·셀렉행·세션ID 중 하나를 정확히 넘겨 주세요.'};
+
+    const driveLink=String(src[SELECT_COL['드라이브링크']]||'').trim();
+    if(!driveLink) return{ok:false,code:'NO_DRIVE_FOLDER',message:'원본 세션에 드라이브 링크가 없습니다. 사진 폴더를 먼저 연결해 주세요.'};
+    const email=String(src[SELECT_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')<0) return{ok:false,code:'NO_EMAIL',message:'원본 세션에 고객 이메일이 없습니다.'};
+
+    const name=String(src[SELECT_COL['고객명']]||'').trim();
+    const lang=String(src[SELECT_COL['언어']]||'ko');
+    const built=_makeSelectRow_({
+      name:name,
+      email:email,
+      phone:String(src[SELECT_COL['연락처']]||''),
+      date:parseDateSafe_(src[SELECT_COL['촬영일']]).str.slice(0,10),
+      itemGroup:'reprint',
+      product:'출력 재주문',
+      baseRetouchCount:0,        // 보정 없음 — 완성본을 다시 뽑는다
+      marketingBonusCount:0,     // 보너스 보정도 없음
+      serviceCutCount:0,
+      lang:lang,
+      driveLink:driveLink,
+      // 원본 예약과의 연결은 유지한다(회계·고객 이력 추적). 중복 판정은 위에서 안 거치므로 안전하다.
+      bookingRowIndex:String(src[SELECT_COL['예약장부행']]||'')
+    });
+    selSh.appendRow(built.row);
+    const url=buildSelectSessionUrl_(built.sessionId,'v2');
+    const sent=(data.sendEmail===false)?false:_sendSelectReprintEmail_({name:name,email:email,lang:lang},url,driveLink);
+    return{ok:true,sessionId:built.sessionId,selectUrl:url,emailSent:sent,
+      source:{selectRowIndex:srcRowNum,name:name,driveLink:driveLink}};
+  }catch(err){ return{ok:false,message:err.message}; }
+  finally{ try{lock.releaseLock();}catch(e){} }
+}
+
+/* 재주문 안내 메일. 일반 셀렉 메일(_sendSelectLinkEmail)은 "보정 받으실 사진 N장을 골라주세요"
+   라고 말하는데, 재주문에는 보정이 없어 그대로 쓰면 고객이 없는 단계를 찾게 된다. */
+function _sendSelectReprintEmail_(c,selectUrl,driveLink){
+  const lang=(c&&c.lang)||'ko';
+  const subj={
+    ko:`[Studio mean] 🖨 인화 추가 주문 — ${c.name}님`,
+    en:`[Studio mean] 🖨 Order more prints — ${c.name}`,
+    de:`[Studio mean] 🖨 Weitere Abzüge bestellen — ${c.name}`
+  };
+  const greet={ko:`안녕하세요, <b>${c.name}</b>님.`,en:`Hello <b>${c.name}</b>,`,de:`Guten Tag, <b>${c.name}</b>,`};
+  const body={
+    ko:'이전 촬영본에서 인화를 추가로 주문하실 수 있는 링크입니다. <b>보정은 이미 완료</b>되어 있어 다시 고르지 않으셔도 됩니다. 원하시는 사진과 규격만 고르시면 됩니다.',
+    en:'Here is your link to order additional prints from your previous session. <b>Retouching is already done</b> — just pick the photos and formats you want.',
+    de:'Hier ist Ihr Link, um weitere Abzüge aus Ihrem früheren Shooting zu bestellen. <b>Die Retusche ist bereits erledigt</b> — wählen Sie einfach Fotos und Formate aus.'
+  };
+  const pickup={
+    ko:'인화가 완료되면 안내 메일을 보내드리며, <b>스튜디오에서 수령</b>하시면 됩니다.',
+    en:'We will email you when the prints are ready — <b>collect them at the studio</b>.',
+    de:'Wir melden uns per E-Mail, sobald die Abzüge fertig sind — <b>Abholung im Studio</b>.'
+  };
+  const btn={ko:'인화 주문하기',en:'Order prints',de:'Abzüge bestellen'};
+  const foot={ko:'문의: studio.mean.de@gmail.com',en:'Questions: studio.mean.de@gmail.com',de:'Fragen: studio.mean.de@gmail.com'};
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">🖨 Studio mean</h2></div><div style="padding:24px 25px;">${greet[lang]||greet.ko}<br><br>${body[lang]||body.ko}<br><br>${pickup[lang]||pickup.ko}<div style="text-align:center;margin:24px 0;"><a href="${selectUrl}" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;padding:13px 28px;border-radius:999px;font-size:15px;font-weight:600;">${btn[lang]||btn.ko}</a></div><p style="font-size:12px;color:#94a3b8;">${foot[lang]||foot.ko}</p></div></div>`;
+  try{ sendTrackedEmail_({to:c.email,subject:subj[lang]||subj.ko,htmlBody:html}); return true; }
+  catch(e){ Logger.log('재주문 메일 실패: '+e.message); return false; }
+}
+
 function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,marketingBonusCount){
   const lang=data.lang||'ko';
   const L=lang;
@@ -24697,6 +24795,16 @@ function _sendSelectLinkEmail(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   sendTrackedEmail_({to:data.email,subject:subj[L],htmlBody:html});
 }
 
+/* 이미 보정본 승인을 거친 상태인가 — 승인 이후 단계를 **전부** 포함한다.
+   상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료.
+   종전엔 승인 가드가 '보정본확인완료' 하나만 봐서, 인화가 끝나 상태가 앞으로 간 뒤
+   고객이 승인 링크를 다시 누르면 ① 어드민에 "인화 작업을 진행해 주세요" 메일이 재발송되고
+   ② 상태가 '보정본확인완료' 로 **되감겼다**(2026-09-10 현주현: 9/6 승인·9/7 인화완료·9/10 재발송).
+   승인은 되돌릴 수 없는 단방향 사건이므로 이후 단계는 모두 '이미 승인' 으로 본다. */
+function isSelectApprovedStatus_(status){
+  const s=String(status||'').trim();
+  return ['보정본확인완료','출력','우편발송','최종작업완료','작업완료'].indexOf(s)>-1;
+}
 function isSelectFinalLockedStatus_(status){
   const s=String(status||'').trim();
   return ['최종작업완료','작업완료'].indexOf(s)>-1;
@@ -24788,7 +24896,7 @@ function getSelectSession(sessionId){
     const base={
       name:row[SELECT_COL['고객명']],
       email:row[SELECT_COL['이메일']],
-      date:String(row[SELECT_COL['촬영일']]||'').slice(0,10),
+      date:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
       itemGroup:row[SELECT_COL['촬영종류']],
       product:row[SELECT_COL['상품']],
       productDescription:productDescription,
@@ -24915,7 +25023,10 @@ function enrichSelectPhoto_(photo){
  *   select_volume_discount_retouch  기본 5:10,10:15,20:20  (유료 추가 보정 장수 기준)
  *   select_volume_discount_print    기본 10:10,20:15,30:20 (유료 인화 장수 기준 — 무료 포함분 제외)
  * 서버가 청구 정본이고 클라이언트는 표시 미러. 세션 페이로드에 tiers 를 실어 프런트와 어긋나지 않게 한다. */
-const SELECT_VOLUME_TIER_DEFAULTS_={retouch:'5:10,10:15,20:20',print:'10:10,20:15,30:20'};
+/* 보정과 인화의 사다리를 같게 둔다(사장님 결정 2026-09-10). 종전엔 보정만 5장부터고
+   인화는 10장부터였는데, 실제 주문 최대가 8장이라 인화 할인은 **한 번도 발동한 적이 없었다**.
+   구간이 같으면 카운터 안내도 한 문장이면 된다. 설정 시트가 이 값을 덮어쓸 수 있다. */
+const SELECT_VOLUME_TIER_DEFAULTS_={retouch:'5:10,10:15,20:20',print:'5:10,10:15,20:20'};
 
 function getSelectVolumeTiers_(kind){
   const key='select_volume_discount_'+String(kind||'');
@@ -27840,17 +27951,17 @@ function getPhotoSelectionsAdmin(token){
     let photoCount=0;try{photoCount=(JSON.parse(r[SELECT_COL['선택사진']]||'[]')||[]).length;}catch(e){}
     const revisionHistory=parseRevisionHistory_(r[SELECT_COL['재수정요청이력JSON']]);
     return{
-      rowIdx:i+2,sessionId:r[SELECT_COL['세션ID']],sentAt:String(r[SELECT_COL['생성일시']]||'').slice(0,16),
-      name:r[SELECT_COL['고객명']],email:r[SELECT_COL['이메일']],date:String(r[SELECT_COL['촬영일']]||'').slice(0,10),
+      rowIdx:i+2,sessionId:r[SELECT_COL['세션ID']],sentAt:parseDateSafe_(r[SELECT_COL['생성일시']]).str.slice(0,16),
+      name:r[SELECT_COL['고객명']],email:r[SELECT_COL['이메일']],date:parseDateSafe_(r[SELECT_COL['촬영일']]).str.slice(0,10),
       itemGroup:r[SELECT_COL['촬영종류']],product:r[SELECT_COL['상품']],baseCount:r[SELECT_COL['기본보정수']],lang:r[SELECT_COL['언어']],
       marketingBonusCount:normalizeSelectMarketingBonusCount_(r[SELECT_COL['마케팅보너스수']],r[SELECT_COL['촬영종류']],r[SELECT_COL['상품']]),
-      driveLink:r[SELECT_COL['드라이브링크']],submittedAt:String(r[SELECT_COL['제출일시']]||'').slice(0,16),photoCount,
+      driveLink:r[SELECT_COL['드라이브링크']],submittedAt:parseDateSafe_(r[SELECT_COL['제출일시']]).str.slice(0,16),photoCount,
       extraRetouch:r[SELECT_COL['추가보정수']]||0,extraRetouchAmt:r[SELECT_COL['추가보정금액']]||0,extraPrintsAmt:r[SELECT_COL['추가인화금액']]||0,
       photocardData:String(r[SELECT_COL['포토카드선택']]||''),
       marketing:r[SELECT_COL['마케팅동의']]||'',totalExtra:r[SELECT_COL['총추가금액']]||0,status:r[SELECT_COL['상태']]||'대기중',
-      resendCount:parseInt(r[SELECT_COL['재발송횟수']])||0,resendAt:String(r[SELECT_COL['재발송일시']]||'').slice(0,16),
+      resendCount:parseInt(r[SELECT_COL['재발송횟수']])||0,resendAt:parseDateSafe_(r[SELECT_COL['재발송일시']]).str.slice(0,16),
       adminAlert:String(r[SELECT_COL['어드민알림']]||''),
-      retouchSentAt:String(r[SELECT_COL['보정본발송일시']]||'').slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
+      retouchSentAt:parseDateSafe_(r[SELECT_COL['보정본발송일시']]).str.slice(0,16),deadline:String(r[SELECT_COL['셀렉마감일']]||''),
       reminderStage:parseInt(r[SELECT_COL['최종알림단계']])||0,revisionCount:parseInt(r[SELECT_COL['재수정요청횟수']])||0,
       revisionNote:String(r[SELECT_COL['재수정요청메모']]||''),
       revisionHistory:revisionHistory,
@@ -34968,7 +35079,7 @@ function _quoteHoldDailyCheck_(){
     }else if(st===QUOTE_STATUS.SENT){                        // D6 확장: 발송 후 무응답(냉각) 세그먼트
       const sentMs=Date.parse(String(row[QUOTE_COL['메일발송일시']]||'').replace(' ','T'));
       const sentDays=isFinite(sentMs)?Math.floor((nowMs-sentMs)/86400000):-1;
-      const validUntil=String(row[QUOTE_COL['유효기한']]||'').slice(0,10);
+      const validUntil=parseDateSafe_(row[QUOTE_COL['유효기한']]).str.slice(0,10);
       if(sentDays>=7&&(!validUntil||validUntil>=today)) cooling.push({q:q,sentDays:sentDays,validUntil:validUntil});
     }
   });
@@ -35151,7 +35262,7 @@ function _expireStaleQuotes_(){
   let expired=0;
   rows.slice(1).forEach(function(row,idx){
     const status=String(row[QUOTE_COL['상태']]||'');
-    const validUntil=String(row[QUOTE_COL['유효기한']]||'').slice(0,10);
+    const validUntil=parseDateSafe_(row[QUOTE_COL['유효기한']]).str.slice(0,10);
     if((status===QUOTE_STATUS.SENT||status===QUOTE_STATUS.DRAFT)&&validUntil&&validUntil<today){
       const q=quoteRowToObject_(row,idx+2);
       _clearQuoteTentativeHold_(quoteSheet,idx+2,q);

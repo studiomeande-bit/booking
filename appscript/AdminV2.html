@@ -458,6 +458,19 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   .booking-flow-track{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
 @media(max-width:768px){
+  /* 폰에서는 표가 min-width:1100px 라 대부분이 화면 밖이었다(2026-09-09 사장님 신고).
+     가로 스크롤은 유지하되 폭을 줄이고, 세로 높이 제한을 풀어 한 화면에 더 보이게 한다. */
+  table{min-width:820px;font-size:12px;}
+  .table-wrap{max-height:none;-webkit-overflow-scrolling:touch;}
+  .select-stage-head{min-width:0;flex-wrap:wrap;}
+  .monthly-bars{min-width:520px;}
+  /* 폰: 메뉴 19개가 한 줄 가로 스크롤이라 3개만 보였다(2026-09-09 사장님 신고 "상단 메뉴가 안 보임").
+     줄바꿈으로 전부 보이게 하고, 세로를 많이 먹으므로 sticky 를 풀어 스크롤하면 올라가게 한다. */
+  .side-nav{position:static;top:auto;flex-wrap:wrap;overflow:visible;height:auto;gap:4px;padding:8px 10px;}
+  .nav-group{flex-wrap:wrap;gap:4px;}
+  .nav-group+.nav-group{border-left:none;margin-left:0;padding-left:0;border-top:1px dashed var(--line);margin-top:6px;padding-top:6px;width:100%;}
+  .nav-item{display:inline-block;width:auto;padding:7px 11px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:#fff;}
+  .nav-item.active{border-color:var(--brand);}
   .top-bar{padding:0 12px;height:52px;}
   .logo{font-size:15px;}
   .logo:before{font-size:16px;}
@@ -526,6 +539,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   input,select,textarea{font-size:16px;}
 }
 @media(max-width:480px){
+  table{min-width:700px;}
+  .side-nav{top:48px;}
   .top-bar{height:48px;padding:0 10px;}
   .logo{font-size:14px;letter-spacing:0;}
   .logo:before{font-size:15px;}
@@ -585,6 +600,8 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div class="nav-group-label">운영</div>
       <button type="button" class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">대시보드</button>
       <button type="button" class="nav-item" data-tab="booking" onclick="switchTab('booking')">예약 장부</button>
+      <button type="button" class="nav-item" data-tab="customers" onclick="switchTab('customers')">👥 고객</button>
+      <button type="button" class="nav-item" data-tab="travel" onclick="switchTab('travel')">🚗 출장</button>
       <button type="button" class="nav-item" data-tab="select" onclick="switchTab('select');loadSelectHistory()">사진셀렉</button>
       <button type="button" class="nav-item" data-tab="print" onclick="switchTab('print')">추가 인화</button>
       <button type="button" class="nav-item" data-tab="manual" onclick="switchTab('manual')">수기 등록</button>
@@ -824,6 +841,56 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     </div>
   </div>
 
+  <div class="content" id="tab_customers">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">고객</div>
+          <div class="card-sub">예약장부를 사람 단위로 접은 화면입니다. 별도 저장 없이 장부에서 즉석 집계합니다 (전화 뒤 9자리·이메일 기준).</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadCustomerDirectory()">새로고침</button>
+      </div>
+      <div class="filter-bar">
+        <input type="text" id="custSearchInput" placeholder="이름·전화·이메일 검색..." oninput="renderCustomerDirectory()">
+        <select id="custVisitFilter" onchange="renderCustomerDirectory()" style="width:auto;">
+          <option value="">전체</option>
+          <option value="repeat">재방문 (2회 이상)</option>
+          <option value="first">1회 방문</option>
+        </select>
+        <span id="custSummary" style="font-size:12px;color:#64748b;"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>고객</th><th>연락처</th><th>이메일</th><th style="text-align:center;">방문</th><th>첫 방문</th><th>최근 방문</th><th style="text-align:right;">누적 결제</th><th>촬영 이력</th></tr></thead>
+          <tbody id="custTableBody"><tr><td colspan="8" style="color:#94a3b8;">고객 탭을 열면 불러옵니다.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="content" id="tab_travel">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">출장기록부 (Fahrtenbuch)</div>
+          <div class="card-sub">1차 출장장부(예약별 실측 왕복거리) + 2차 주차 영수증 보충. 스튜디오(오버우어젤) 기준 왕복 · €0,30/km — 연말 EÜR 차량 공제 근거.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="travelFrom" style="width:auto;">
+          <input type="date" id="travelTo" style="width:auto;">
+          <button class="btn btn-outline btn-sm" onclick="loadTravelLog()">조회</button>
+        </div>
+      </div>
+      <div id="travelSummary" style="margin:0 0 10px;padding:10px 14px;border-radius:8px;background:#f8fafc;font-size:13px;color:#334155;display:none;"></div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>날짜</th><th>출처</th><th>행선지</th><th style="text-align:right;">왕복 km</th><th style="text-align:right;">공제 €</th><th>비고</th></tr></thead>
+          <tbody id="travelTableBody"><tr><td colspan="6" style="color:#94a3b8;">출장 탭을 열면 올해 기록을 불러옵니다.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div class="content" id="tab_leads">
     <div class="card">
       <div class="card-head">
@@ -990,6 +1057,22 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
   </div>
 
 <div class="content" id="tab_accounting">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">세금대장 (Steuerzahlungen)</div>
+          <div class="card-sub">세목·귀속기간별 신고↔납부 대사. 금액은 지출장부가 정본이고 여기는 메타·가드입니다. ESt는 경비가 아니라 사적 인출 — 오염 시 월마감이 막습니다.</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadTaxLedgerPanel()">새로고침</button>
+      </div>
+      <div id="taxReconBanner" style="display:none;margin:0 0 10px;padding:9px 12px;border-radius:8px;font-size:13px;"></div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>세목</th><th>귀속</th><th>신고일</th><th style="text-align:right;">신고액</th><th>납부일</th><th style="text-align:right;">납부액</th><th>EÜR</th><th>지출행</th><th>참조·메모</th></tr></thead>
+          <tbody id="taxLedgerBody"><tr><td colspan="9" style="color:#94a3b8;">회계 탭을 열면 불러옵니다.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">독일 세무신고용 회계 장부 (Buchhaltung)</div>
       <div class="accounting-toolbar">
@@ -3399,14 +3482,16 @@ let editCurrentBooking=null;
 let editPricingDirty=false;
 
 const PRINT_PRICES={
-  'photocard_single':{label:'포토카드 프린트 (단면)',price:5,priceRetouched:5},
-  'photocard_double':{label:'포토카드 프린트 (양면)',price:8,priceRetouched:8},
+  'photocard_single':{label:'포토카드 프린트 (단면)',price:6,priceRetouched:5},
+  'photocard_double':{label:'포토카드 프린트 (양면)',price:9,priceRetouched:7},
   'basic_10x15':{label:'시그니처 10×15cm',price:4,priceRetouched:3},
   'premium_10x15':{label:'파인아트 10×15cm',price:8,priceRetouched:6},
   'basic_a4':{label:'시그니처 A4',price:15,priceRetouched:10},
   'premium_a4':{label:'파인아트 A4',price:20,priceRetouched:15},
-  'premium_a3':{label:'파인아트 A3',price:50,priceRetouched:35},
-  'premium_a3plus':{label:'파인아트 A3+',price:60,priceRetouched:45}
+  'premium_a3':{label:'파인아트 A3',price:38,priceRetouched:32},
+  'premium_a3plus':{label:'파인아트 A3+',price:48,priceRetouched:41},
+  'frame_a4':{label:'액자 (A4 인화용 · 마운트 포함)',price:29,priceRetouched:29},
+  'frame_a3':{label:'액자 (A3 인화용 · 마운트 포함)',price:35,priceRetouched:35}
 };
 const G_LABELS={pass:'여권',prof:'프로필',stud:'스튜디오',snap:'야외/홈스냅',wed:'프리웨딩',biz:'행사/이벤트',portfolio:'포트폴리오촬영',마이리얼트립:'마이리얼트립',기타:'기타'};
 const G_COLORS={pass:'wev-pass',prof:'wev-prof',stud:'wev-stud',snap:'wev-snap',wed:'wev-wed',biz:'wev-biz',마이리얼트립:'wev-mrt'};
@@ -5363,6 +5448,129 @@ function leadStatusBadge(status){
   const c=colors[s]||colors['신규'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;background:${c[0]};color:${c[1]};font-size:11px;font-weight:800;">${escapeAdminHtml(s)}</span>`;
 }
+
+var custDirList=[];
+function loadTravelLog(){
+  const body=document.getElementById('travelTableBody');
+  const yearStart=new Date().getFullYear()+'-01-01';
+  const from=(document.getElementById('travelFrom')||{}).value||yearStart;
+  const to=(document.getElementById('travelTo')||{}).value||'';
+  if(body) body.innerHTML='<tr><td colspan="6" style="color:#94a3b8;">출장 기록을 집계하는 중입니다…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.ok){showToast('출장기록을 불러오지 못했습니다.','err');return;}
+      const items=(res.entries||[]).slice().sort(function(a,b){return String(b.date||'')<String(a.date||'')?-1:1;});
+      const sum=res.summary||{};
+      const box=document.getElementById('travelSummary');
+      if(box){
+        box.style.display='block';
+        box.innerHTML='출장 <b>'+(sum.trips||0)+'회</b> · 왕복 <b>'+(Number(sum.totalRoundTripKm||0)).toFixed(1)+' km</b>'
+          +' · 공제 <b>€'+(Number(sum.deduction||0)).toFixed(2)+'</b>'
+          +' <span style="color:#94a3b8;">(예약 '+(sum.fromBookings||0)+' · 주차보충 '+(sum.fromParking||0)+')</span>'
+          +(sum.unmatchedCount?'<span style="color:#b45309;"> · 미매칭 '+sum.unmatchedCount+'건</span>':'');
+      }
+      if(!items.length){body.innerHTML='<tr><td colspan="6" style="color:#94a3b8;">해당 기간 출장 기록이 없습니다.</td></tr>';return;}
+      body.innerHTML=items.map(function(t){
+        const src=t.source==='booking'
+          ? '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:11px;">예약</span>'
+          : '<span style="background:#f1f5f9;color:#475569;border-radius:999px;padding:1px 8px;font-size:11px;">주차</span>';
+        const extra=t.source==='booking'?(t.description||''):[t.vendor,t.description].filter(Boolean).join(' · ');
+        return '<tr>'
+          +'<td style="white-space:nowrap;">'+escapeHtmlA(t.date||'')+'</td>'
+          +'<td>'+src+'</td>'
+          +'<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escapeHtmlA(t.city||'')+'">'+escapeHtmlA(t.city||'—')+'</td>'
+          +'<td style="text-align:right;">'+Number(t.roundTripKm||0).toFixed(1)+'</td>'
+          +'<td style="text-align:right;">'+Number(t.deduction||0).toFixed(2)+'</td>'
+          +'<td style="font-size:12px;color:#64748b;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtmlA(String(extra).slice(0,60))+'</td>'
+          +'</tr>';
+      }).join('');
+    })
+    .withFailureHandler(function(e){handleApiError(e);if(body)body.innerHTML='<tr><td colspan="6" style="color:#b91c1c;">불러오기 실패</td></tr>';})
+    .listTravelLogAdmin(adminToken,from,to);
+}
+
+function loadTaxLedgerPanel(){
+  const body=document.getElementById('taxLedgerBody');
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.ok){if(body)body.innerHTML='<tr><td colspan="9" style="color:#b91c1c;">불러오기 실패</td></tr>';return;}
+      const items=res.items||[];
+      if(!items.length){body.innerHTML='<tr><td colspan="9" style="color:#94a3b8;">기록이 없습니다. (에이전트 tax-record-add 또는 Claude 에게 요청)</td></tr>';return;}
+      body.innerHTML=items.map(function(t){
+        const euerColor=t.euer==='사적'?'#b91c1c':(t.euer==='비공제'?'#b45309':'#166534');
+        return `<tr>
+          <td><b>${escapeHtmlA(t.kind)}</b></td><td>${escapeHtmlA(t.period)}</td>
+          <td>${escapeHtmlA(t.filedAt||'—')}</td><td style="text-align:right;">${t.filedAmount?('€'+Number(t.filedAmount).toFixed(2)):'—'}</td>
+          <td>${escapeHtmlA(t.paidAt||'—')}</td><td style="text-align:right;">${t.paidAmount?('€'+Number(t.paidAmount).toFixed(2)):'—'}</td>
+          <td><span style="color:${euerColor};font-weight:600;">${escapeHtmlA(t.euer)}</span></td>
+          <td>${t.expenseRow?('행 '+t.expenseRow):'<span style="color:#b45309;">미연결</span>'}</td>
+          <td style="font-size:12px;color:#64748b;max-width:220px;">${escapeHtmlA([t.ref,t.memo].filter(Boolean).join(' · ').slice(0,80))}</td>
+        </tr>`;
+      }).join('');
+      const banner=document.getElementById('taxReconBanner');
+      const warn=items.filter(function(t){return t.euer==='공제'&&t.paidAmount>0&&!t.expenseRow;});
+      if(banner){
+        if(warn.length){
+          banner.style.display='block';banner.style.background='#fef3c7';banner.style.color='#92400e';
+          banner.textContent='⚠️ 납부됐지만 지출장부와 미연결: '+warn.map(function(t){return t.kind+' '+t.period+' €'+t.paidAmount;}).join(' · ')+' — 은행 CSV 임포트 후 지출행을 연결하세요.';
+        } else { banner.style.display='none'; }
+      }
+    })
+    .withFailureHandler(function(e){handleApiError(e);})
+    .listTaxLedgerAdmin(adminToken);
+}
+function loadCustomerDirectory(){
+  const body=document.getElementById('custTableBody');
+  if(body) body.innerHTML='<tr><td colspan="8" style="color:#94a3b8;">고객을 집계하는 중입니다…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.ok){showToast('고객 목록을 불러오지 못했습니다.','err');return;}
+      custDirList=res.customers||[];
+      renderCustomerDirectory();
+    })
+    .withFailureHandler(function(e){handleApiError(e);if(body)body.innerHTML='<tr><td colspan="8" style="color:#b91c1c;">불러오기 실패</td></tr>';})
+    .listCustomerDirectoryAdmin(adminToken,'');
+}
+function renderCustomerDirectory(){
+  const body=document.getElementById('custTableBody');
+  if(!body) return;
+  const q=String((document.getElementById('custSearchInput')||{}).value||'').trim().toLowerCase();
+  const vf=String((document.getElementById('custVisitFilter')||{}).value||'');
+  const qd=q.replace(/[^0-9]/g,'');
+  let list=custDirList.filter(function(c){
+    if(vf==='repeat'&&c.visits<2) return false;
+    if(vf==='first'&&c.visits!==1) return false;
+    if(!q) return true;
+    return String(c.name||'').toLowerCase().indexOf(q)>-1
+      || (qd&&String(c.phone||'').replace(/[^0-9]/g,'').indexOf(qd)>-1)
+      || String(c.email||'').toLowerCase().indexOf(q)>-1;
+  });
+  const sum=document.getElementById('custSummary');
+  if(sum){
+    const repeat=custDirList.filter(function(c){return c.visits>=2;}).length;
+    sum.textContent=`전체 ${custDirList.length}명 · 재방문 ${repeat}명 · 표시 ${list.length}명`;
+  }
+  if(!list.length){body.innerHTML='<tr><td colspan="8" style="color:#94a3b8;">조건에 맞는 고객이 없습니다.</td></tr>';return;}
+  body.innerHTML=list.map(function(c){
+    const hist=(c.history||[]).slice(0,4).map(function(h){
+      return `<span style="white-space:nowrap;">${escapeHtmlA(h.date.slice(2,7))} ${escapeHtmlA(String(h.product||'').slice(0,16))}</span>`;
+    }).join(' · ')+((c.history||[]).length>4?` 외 ${(c.history||[]).length-4}건`:'');
+    const badge=c.visits>=2
+      ? `<span style="background:#b54c2d;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;">${c.visits}회</span>`
+      : `<span style="background:#eef2f7;color:#334155;border-radius:999px;padding:1px 8px;font-size:11px;">1회</span>`;
+    return `<tr>
+      <td><b>${escapeHtmlA(c.name)}</b></td>
+      <td>${escapeHtmlA(c.phone||'—')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlA(c.email||'—')}</td>
+      <td style="text-align:center;">${badge}</td>
+      <td>${escapeHtmlA(c.firstVisit||'—')}</td>
+      <td>${escapeHtmlA(c.lastVisit||'—')}</td>
+      <td style="text-align:right;">€${Number(c.totalSpend||0).toFixed(0)}</td>
+      <td style="font-size:12px;color:#475569;">${hist}</td>
+    </tr>`;
+  }).join('');
+}
+function escapeHtmlA(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function loadPortfolioLeads(silent){
   const body=document.getElementById('leadTableBody');
@@ -9440,7 +9648,7 @@ function openPrintEdit(rIdx) {
   
   const ps = document.getElementById('pe_payMethod');
   if(!Array.from(ps.options).some(opt => opt.value === o.payMethod)) ps.add(new Option(o.payMethod, o.payMethod));
-  ps.value = o.payMethod || '미결제';
+  ps.value = o.payMethod || '';   // 빈칸은 미수가 아니다 — '미결제' 로 기본 선택하면 저장 시 기수납 행이 미수로 뒤집힌다(2026-09-05)
   
   const st = document.getElementById('pe_status');
   if(!Array.from(st.options).some(opt => opt.value === (o.status||'완료'))) st.add(new Option(o.status||'완료', o.status||'완료'));
@@ -11352,9 +11560,11 @@ function switchTab(id){
   document.getElementById('tab_'+id).classList.add('active');
   if(id==='dashboard'){loadStudioPresencePanel();loadOperationsChecklist();loadOperationsLog();}
   if(id==='leads') loadPortfolioLeads();
+  if(id==='customers') loadCustomerDirectory();
+  if(id==='travel') loadTravelLog();
   if(id==='consultation') loadConsultations();
   if(id==='print') loadPrintHistory();
-  if(id==='accounting') loadAccountingData();
+  if(id==='accounting'){loadAccountingData();loadTaxLedgerPanel();}
   if(id==='cash') loadCashLedger();
   if(id==='marketing') loadMarketingSchedule();
   if(id==='gutschein') loadGutscheinList();
@@ -12257,7 +12467,9 @@ const INVOICE_PRINT_LABELS={
   basic_a4:{ko:'시그니처 A4',en:'Signature A4',de:'Signature-Abzug A4'},
   premium_a4:{ko:'파인아트 A4',en:'Fine Art A4',de:'FineArt-Druck A4'},
   premium_a3:{ko:'파인아트 A3',en:'Fine Art A3',de:'FineArt-Druck A3'},
-  premium_a3plus:{ko:'파인아트 A3+',en:'Fine Art A3+',de:'FineArt-Druck A3+'}
+  premium_a3plus:{ko:'파인아트 A3+',en:'Fine Art A3+',de:'FineArt-Druck A3+'},
+  frame_a4:{ko:'액자 (A4 인화용 · 마운트 포함)',en:'Frame (for A4 print, mount included)',de:'Rahmen (für A4-Druck, inkl. Passepartout)'},
+  frame_a3:{ko:'액자 (A3 인화용 · 마운트 포함)',en:'Frame (for A3 print, mount included)',de:'Rahmen (für A3-Druck, inkl. Passepartout)'}
 };
 const INVOICE_PRINT_SUFFIXES={
   retouched:{ko:'보정본포함',en:'retouched file included',de:'inkl. Retusche'},
