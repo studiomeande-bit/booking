@@ -26,7 +26,8 @@ export const PRINT_ID_TIER = {
   photocard_single: 'photocard',
   photocard_double: 'photocard',
   frame_a4: 'frame',
-  frame_a3: 'frame'
+  frame_a3: 'frame',
+  wallart_custom: 'wallart'
 };
 
 // 등급별 카피. paper=용지 캡션(드롭다운 아래 한 줄), texture=옵션 보조설명.
@@ -96,6 +97,22 @@ export const PRINT_TIERS = {
       ko: '매트한 파이버 질감, 오래 두고 보는 종이',
       en: 'Matte fibre surface, made for the wall',
       de: 'Matte Faserstruktur — für die Wand gemacht'
+    }
+  },
+  wallart: {
+    /* 대형·특별 규격 — 견적형이라 값이 화면에 없다. 등급 비교 카드에도 올리지 않는다.
+       🔴 UWG: 납기·외주 사실을 숨기지 않는다. 우리가 직접 출력하지 않는다는 걸 먼저 말한다.
+          업체명은 쓰지 않는다(Phase 1 에서 바뀔 수 있다). 보존·내구성 주장 금지(⑥·⑦). */
+    name: { ko: '대형·특별 규격', en: 'Large format', de: 'Großformat' },
+    paper: {
+      ko: '액자까지 끼워 완성된 상태로 나갑니다 · 파인아트 전문 랩에 맡겨 제작하며 10~14일 걸립니다',
+      en: 'Delivered framed and ready to hang · produced by a fine-art lab, 10–14 days',
+      de: 'Fertig gerahmt geliefert · Herstellung durch ein FineArt-Labor, 10–14 Tage'
+    },
+    texture: {
+      ko: '견적 후 확정 · 10~14일',
+      en: 'Quoted individually · 10–14 days',
+      de: 'Individuelles Angebot · 10–14 Tage'
     }
   },
   frame: {

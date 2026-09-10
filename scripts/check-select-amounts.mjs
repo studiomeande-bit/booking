@@ -164,7 +164,7 @@ try {
 }
 
 /* ── 시나리오 ──────────────────────────────────────────────────────────── */
-const SKUS = ['basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'frame_a4', 'frame_a3', 'print_none'];
+const SKUS = ['wallart_custom', 'basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'frame_a4', 'frame_a3', 'print_none'];
 const PRODUCTS = ['pb', 'pp', 'sb', 'sp', 'sprm', 'ob', 'op', 'wp', 'amtp'];
 
 // 재현 가능한 의사난수(LCG) — 실패 케이스를 그대로 다시 돌릴 수 있어야 한다.
@@ -273,6 +273,17 @@ REGRESSIONS.push({
   prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 5 }]
 });
 
+/* 견적형(wallart_custom)·액자는 **포함 쿼터 배정 자체에 들어가면 안 된다** (Phase 0, 2026-09-10).
+   ⚠ 금액으로는 구별되지 않는다 — 쿼터 2-pass 가 단가 내림차순이라 0원 항목은 늘 마지막이고,
+   슬롯을 먹어도 총액은 그대로다. 실제 피해는 **분류**다: matched 가 되면 그 줄이
+   'included_print'(무료·기본 제공)로 작업지시서와 화면에 찍힌다 — 견적 대기 항목이 무료로 보인다.
+   그래서 아래 expectNoIncluded 로 '포함 목록에 들어오지 않는다' 를 직접 본다. */
+REGRESSIONS.push({
+  name: '견적형은 포함 쿼터 배정에 끼지 않는다', productKey: 'sprm', retouchNums: ['A1'],
+  serviceCutCount: 0, serviceNums: [], expectNoIncluded: /^(wallart_|frame_)/,
+  prints: [{ photoNum: 'A1', printId: 'wallart_custom', qty: 1 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
+});
+
 const RANDOM_N = 4000;
 /* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
    (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */
@@ -300,6 +311,22 @@ for (const fx of fixtures) {
   let c;
   try { s = runServer(fx); } catch (e) { fails.push({ fx, msg: `서버 실행 오류: ${e.message}` }); continue; }
   try { c = runClient(fx); } catch (e) { fails.push({ fx, msg: `클라이언트 실행 오류: ${e.message}` }); continue; }
+
+  /* ⓪-a 견적형·액자는 '포함(무료)' 목록에 절대 들어오지 않는다 — 모든 픽스처에 거는 불변식.
+        금액이 아니라 분류를 보는 유일한 검사다(금액으론 구별이 안 된다). */
+  {
+    const leaked = (s.includedItems || [])
+      .map((it) => String(it.printId || '').replace(/_(r|e)$/, ''))
+      .filter((id) => /^(wallart_|frame_)/.test(id));
+    if (leaked.length) {
+      fails.push({ fx, msg: `쿼터 밖 SKU 가 '포함(무료)' 으로 분류됨 — ${[...new Set(leaked)].join(', ')}` });
+      continue;
+    }
+  }
+  if (fx.expectNoIncluded && (s.includedItems || []).some((it) => fx.expectNoIncluded.test(String(it.printId || '')))) {
+    fails.push({ fx, msg: `기대 위반 — ${fx.expectNoIncluded} 가 포함 목록에 있다` });
+    continue;
+  }
 
   /* ⓪ 기대 총액이 명시된 케이스는 값 자체가 맞는지 본다 — 서버와 화면이 똑같이 틀릴 수도 있다. */
   if (fx.expectTotal !== undefined && r2(s.amount) !== r2(fx.expectTotal)) {

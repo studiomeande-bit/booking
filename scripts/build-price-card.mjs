@@ -91,18 +91,23 @@ const ROWS = [
   { group: { ko: '포토카드', de: 'Fotokarte' }, ids: ['photocard_single', 'photocard_double'] },
 ];
 if (!NO_FRAMES) ROWS.push({ group: { ko: '액자', de: 'Rahmen' }, ids: ['frame_a4', 'frame_a3'], frame: true });
+/* 대형은 견적형이라 값이 없다. 그래도 카드에 올린다 — 카운터에서 "더 큰 것도 되나요" 를
+   받았을 때 가리킬 줄이 없으면 상품이 없는 것과 같다. 금액 칸에는 '견적' 을 쓴다. */
+ROWS.push({ group: { ko: '대형', de: 'Großformat' }, ids: ['wallart_custom'], quote: true });
 
 const SIZE_KO = {
   basic_10x15: '10 × 15 cm', basic_a4: 'A4',
   premium_10x15: '10 × 15 cm', premium_a4: 'A4', premium_a3: 'A3', premium_a3plus: 'A3+',
   photocard_single: '단면', photocard_double: '양면',
   frame_a4: 'A4 인화용', frame_a3: 'A3 인화용',
+  wallart_custom: '60×80 등 · 액자 포함',
 };
 const SIZE_DE = {
   basic_10x15: '10 × 15 cm', basic_a4: 'A4',
   premium_10x15: '10 × 15 cm', premium_a4: 'A4', premium_a3: 'A3', premium_a3plus: 'A3+',
   photocard_single: 'einseitig', photocard_double: 'beidseitig',
   frame_a4: 'für A4-Druck', frame_a3: 'für A3-Druck',
+  wallart_custom: 'z. B. 60×80, gerahmt',
 };
 
 const missing = ROWS.flatMap((r) => r.ids).filter((id) => !prices[id]);
@@ -124,9 +129,11 @@ function tableRows(row) {
         ? `<span class="sz-ko">${SIZE_KO[id]}</span>`
         : `<span class="sz-ko">${SIZE_KO[id]}</span><span class="sz-de">${SIZE_DE[id]}</span>`;
       // 액자는 인화에 얹는 추가금이라 보정본/원본 구분이 없다 — 한 칸으로 합친다.
-      const cells = row.frame
-        ? `<td class="p add" colspan="2">+ ${eur(p.price)}</td>`
-        : `<td class="p">${eur(p.retouched)}</td><td class="p muted">${eur(p.price)}</td>`;
+      const cells = row.quote
+        ? `<td class="p quote" colspan="2">견적 <span class="de">Angebot</span></td>`
+        : row.frame
+          ? `<td class="p add" colspan="2">+ ${eur(p.price)}</td>`
+          : `<td class="p">${eur(p.retouched)}</td><td class="p muted">${eur(p.price)}</td>`;
       return `<tr${first ? ' class="grp-start"' : ''}>${groupCell}<td class="sz">${size}</td>${cells}</tr>`;
     })
     .join('\n');
@@ -153,6 +160,7 @@ const html = `<!DOCTYPE html>
     --ink:#201C1F; --ivory:#F8F3EB; --taupe:#6D5A49; --sand:#EDE3D6; --copper:#C58D66;
   }
   /* A4 정확히 한 장. 넘치면 인쇄 시 2페이지가 되어 카운터에 둘 수 없다 —
+     2026-09-10 대형(견적) 행 추가로 332mm 가 되어 다시 조였다. SKU 를 또 늘리면 별도 카드로 뺄 것 —
      SKU 를 늘리면 실제 렌더 높이를 다시 재고 여백을 조일 것(2026-09-10: 317mm 였다). */
   @page{ size:A4; margin:0; }
   *{ box-sizing:border-box; }
@@ -162,18 +170,18 @@ const html = `<!DOCTYPE html>
     color:var(--ink); -webkit-font-smoothing:antialiased;
   }
   .sheet{
-    width:210mm; min-height:297mm; margin:0 auto; padding:15mm 20mm 11mm;
+    width:210mm; min-height:297mm; margin:0 auto; padding:12mm 18mm 9mm;
     background:var(--ivory); display:flex; flex-direction:column;
   }
-  header{ text-align:center; margin-bottom:6mm; }
+  header{ text-align:center; margin-bottom:4.5mm; }
   .logo{
     font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:600;
-    font-size:26pt; letter-spacing:.01em; margin:0;
+    font-size:23pt; letter-spacing:.01em; margin:0;
   }
   .tag{ margin:2mm 0 0; font-size:7.5pt; letter-spacing:.32em; text-transform:uppercase; color:var(--taupe); }
   h1{
     font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:19pt;
-    margin:5mm 0 1mm; letter-spacing:.02em;
+    margin:4mm 0 1mm; letter-spacing:.02em;
   }
   h1 .de{ font-size:11pt; color:var(--taupe); font-style:italic; margin-left:3mm; }
   .rule{ height:1px; background:var(--ink); opacity:.22; margin:0 0 4.5mm; }
@@ -187,7 +195,7 @@ const html = `<!DOCTYPE html>
   thead th .de{ display:block; font-size:6.8pt; letter-spacing:.04em; opacity:.75; font-weight:300; }
   tbody tr.grp-start td{ border-top:1px solid rgba(32,28,31,.12); }
   tbody tr:first-child td{ border-top:none; }
-  td{ padding:1.7mm 0; vertical-align:middle; }
+  td{ padding:1.35mm 0; vertical-align:middle; }
   td.grp{
     width:26%; font-size:10.5pt; font-weight:400; padding-right:4mm; vertical-align:top; padding-top:3.4mm;
   }
@@ -201,10 +209,12 @@ const html = `<!DOCTYPE html>
   }
   td.p.muted{ color:var(--taupe); font-weight:300; }
   td.p.add{ color:var(--ink); }
+  td.p.quote{ color:var(--taupe); font-size:9.5pt; }
+  td.p.quote .de{ font-size:7pt; font-style:italic; }
 
   .vol-band{
-    display:flex; align-items:baseline; gap:5mm; margin-top:4mm;
-    padding:2.4mm 4mm; background:var(--sand); border-radius:2mm;
+    display:flex; align-items:baseline; gap:5mm; margin-top:3mm;
+    padding:2mm 3.5mm; background:var(--sand); border-radius:2mm;
   }
   .vol-k{ font-size:8.4pt; letter-spacing:.04em; }
   .vol-k .de{ color:var(--taupe); font-size:7pt; font-style:italic; }
@@ -224,16 +234,16 @@ const html = `<!DOCTYPE html>
   .crop-text p{ margin:0; }
   .crop-text p.de{ color:var(--taupe); font-size:7pt; margin-top:1.2mm; }
 
-  .notes{ margin-top:auto; padding-top:4mm; }
+  .notes{ margin-top:auto; padding-top:3mm; }
   .note{
-    display:flex; gap:4mm; align-items:baseline; padding:2.2mm 0;
-    border-top:1px solid rgba(32,28,31,.10); font-size:8pt; line-height:1.5;
+    display:flex; gap:4mm; align-items:baseline; padding:1.7mm 0;
+    border-top:1px solid rgba(32,28,31,.10); font-size:7.7pt; line-height:1.45;
   }
   .note:first-child{ border-top:none; }
   .note .k{ flex:0 0 30mm; color:var(--taupe); font-size:7.6pt; letter-spacing:.05em; }
   .note .v .de{ display:block; color:var(--taupe); font-size:7.4pt; margin-top:.6mm; }
   footer{
-    margin-top:5mm; padding-top:2.5mm; border-top:1px solid rgba(32,28,31,.16);
+    margin-top:3.5mm; padding-top:2mm; border-top:1px solid rgba(32,28,31,.16);
     display:flex; justify-content:space-between; font-size:7pt; color:var(--taupe); letter-spacing:.04em;
   }
   .sheet.back{ margin-top:8mm; }
@@ -304,6 +314,11 @@ ${discountLine ? `  <div class="vol-band">
       <span class="k">규격과 잘림</span>
       <span class="v">규격에 따라 사진 가장자리가 조금 잘립니다. 자세한 내용은 <b>뒷면</b>을 봐 주세요.
         <span class="de">Je nach Format wird der Rand etwas beschnitten — Details auf der <b>Rückseite</b>.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">대형</span>
+      <span class="v">액자까지 끼워 완성된 상태로 나갑니다. 파인아트 전문 랩에 맡겨 제작하며 <b>10~14일</b> 걸립니다. 규격에 따라 값이 달라 견적으로 안내드립니다.
+        <span class="de">Fertig gerahmt geliefert · Herstellung durch ein FineArt-Labor, 10–14 Tage. Preis nach Format — individuelles Angebot.</span></span>
     </div>
     <div class="note">
       <span class="k">수령</span>

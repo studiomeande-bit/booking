@@ -41,7 +41,9 @@ const PRINT_OPTIONS = [
   { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 },
   // 액자는 인화가 아니라 추가금 — 쿼터·크레딧 밖이고 원본/보정본 단가가 같다(서버 PRINT_LABELS 와 동일).
   { id: 'frame_a4', label: '액자 (A4 인화용 · 마운트 포함)', retouched: 29, additional: 29 },
-  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 }
+  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 },
+  // 대형은 견적형 — 금액 0 으로 요청만 받는다(희망 사이즈는 아래 자유입력으로 세션 메모에 남는다).
+  { id: 'wallart_custom', label: '대형·특별 규격 (견적)', retouched: 0, additional: 0 }
 ];
 
 // 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
@@ -51,8 +53,13 @@ const PRINT_TIER_SAMPLE_ID = { signature: 'basic_10x15', fineart: 'premium_10x15
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
 /* 서비스컷·보너스 크레딧(€3)에서 제외할 SKU — 액자는 인화가 아니라 완성품 추가금이다.
    ⚠ 서버 Code.gs selectPrintCreditExempt_ 와 규칙이 일치해야 한다(다르면 화면가≠청구가). */
+/* 견적형(대형·특별 규격) — 금액이 아직 없고 희망 사이즈를 자유입력으로 받는다. */
+function isQuotePrintId(printId) {
+  return /^wallart_/.test(String(normalizePrintTypeId(printId) || ''));
+}
+
 function printCreditExempt(printId) {
-  return /^frame_/.test(String(printId || ''));
+  return /^frame_|^wallart_/.test(String(printId || ''));
 }
 
 const PRINT_SIZE_MM_V2 = {
@@ -148,7 +155,7 @@ function computePrintAnnotations() {
     if (r.typeId === PRINT_NONE_ID) return;
     // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
-    const skipQuota = /^photocard_|^frame_/.test(r.typeId);
+    const skipQuota = /^photocard_|^frame_|^wallart_/.test(r.typeId);   // 견적형도 쿼터 밖(서버와 동일)
     for (let k = 0; k < r.qty; k += 1) {
       units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false, skipQuota });
     }
@@ -2705,7 +2712,23 @@ function thumbHtmlForNum(num) {
 }
 
 // 가장자리 마감(풀프레임/테두리) 토글 + 용지 비율 프리뷰. 인화앱 주문모드가 이 값대로 자동 셋팅한다.
+/* 견적형 행 — 가장자리 마감 대신 '희망 사이즈·액자 여부' 자유입력을 띄운다.
+   이 값이 랩 견적을 받을 때 쓰는 유일한 정보라, 비어 있으면 제출을 막는다(canSubmit). */
+function printQuoteNoteHtml(index, print) {
+  const c = copy();
+  const v = String(print.note || '');
+  return `
+    <div class="field-full quote-field">
+      <label for="quoteNote${index}">${escapeHtml(c.quoteNoteLabel)}</label>
+      <textarea id="quoteNote${index}" data-quote-note="${index}" rows="2"
+        placeholder="${escapeHtml(c.quoteNotePlaceholder)}">${escapeHtml(v)}</textarea>
+      <div class="finish-help">${escapeHtml(c.quoteNoteHelp)}</div>
+    </div>`;
+}
+
 function printFinishHtml(index, print) {
+  // 견적형은 규격이 정해지지 않아 마감 선택이 의미가 없다 — 대신 희망 사이즈를 받는다.
+  if (isQuotePrintId(print.printId)) return printQuoteNoteHtml(index, print);
   /* 액자 행은 가장자리 마감을 고르지 않는다 — 마운트가 인화 가장자리를 덮는 물건이라
      full/border 선택이 결과에 아무 영향이 없다. 선택지를 주면 고객이 오해한다. */
   if (/^frame_/.test(normalizePrintTypeId(print.printId))) return '';
@@ -3188,6 +3211,12 @@ function renderPrints() {
       updateReview();
     });
   });
+  els.printList.querySelectorAll('[data-quote-note]').forEach((ta) => {
+    ta.addEventListener('input', () => {
+      state.prints[Number(ta.dataset.quoteNote)].note = ta.value;
+      updateSubmitState();   // 비어 있으면 제출 가드가 잡는다 — 다시 그리지 않아 커서가 유지된다
+    });
+  });
   els.printList.querySelectorAll('[data-zoom-entry]').forEach((btn) => {
     btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLightboxByKey(btn.dataset.zoomEntry); });
   });
@@ -3511,6 +3540,9 @@ const MAIL_LATIN_RE = /^[\x20-\x7E\r\n\u00A0-\u024F€]*$/;
 function validateStep3() {
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
+  // 견적형은 희망 사이즈가 없으면 랩에 견적을 물어볼 수 없다 — 빈 채로 접수하면 되물어야 한다.
+  const noQuote = state.prints.findIndex((p) => isQuotePrintId(p.printId) && !String(p.note || '').trim());
+  if (noQuote >= 0) { setBanner(copy().errQuoteNote(noQuote + 1), 'error'); return false; }
   return true;
 }
 
@@ -3702,6 +3734,7 @@ function canSubmit() {
   if (findIncompleteRetouchIndex() >= 0) return false;
   if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+  if (state.prints.some((p) => isQuotePrintId(p.printId) && !String(p.note || '').trim())) return false;
   if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) return false;
   if (state.deliveryMethod === 'mail') {
@@ -3879,7 +3912,9 @@ async function onSubmit() {
           isRetouched: ann.isRetouched,
           label: ann.option.label,
           price: ann.unit,
-          finish: print.finish === 'border' ? 'border' : 'full'
+          finish: print.finish === 'border' ? 'border' : 'full',
+          // 견적형 희망 사이즈·액자 여부. 서버가 인화주문 항목 문자열과 관리자 알림에 싣는다.
+          note: isQuotePrintId(print.printId) ? String(print.note || '').trim().slice(0, 300) : ''
         };
       }),
       ...(() => {

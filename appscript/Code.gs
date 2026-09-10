@@ -53,7 +53,11 @@ const CONFIG = {
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
   BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
-  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
+  /* ⚠ 새 열은 **맨 뒤**에만 붙인다. 중간 삽입 금지 — 레거시 판정이 colMap['매출날짜']===1 로
+     헤더 위치를 보고, 읽기는 헤더 이름 기반 colMap 이라 뒤에 붙는 건 안전하다.
+     뒤 6개는 대형 외주(월아트) 추적용 — Phase 2 make-vs-buy 리포트의 원천 데이터다(2026-09-10). */
+  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜',
+                  '외주업체','랩매입_총액','랩매입_인화분','규격_cm','액자포함','발주일','입고일'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   // '스케쥴/스케줄' 두 표기 모두 — 이름 정확일치로 매칭하므로 한 글자 다르면 개인 일정이 슬롯을 못 막는다
@@ -2150,6 +2154,7 @@ function handlePublicApiRequest_(route,method,e){
           payload.delivery||{method:payload.method,mailName:payload.mailName,mailAddress:payload.mailAddress}));
         if(action==='select-link-resend') return jsonOk_(resendSelectLinkAdmin(token,payload.bookingRowIndex||payload.rowIndex));
         if(action==='select-reprint-create') return jsonOk_(createSelectReprintSession(token,payload||{}));
+        if(action==='print-external-receive') return jsonOk_(recordExternalPrintReceipt_(token,payload||{}));
         if(action==='select-delete') return jsonOk_(deleteSelectSessionByRowAdmin(token,payload.selectRowIndex,payload.expectBookingRowIndex));
         if(action==='select-handover-pending') return jsonOk_(listSelectHandoverPendingForAgent_(token,payload));
         if(action==='select-handover-done') return jsonOk_(markSelectHandoverAdmin(token,payload));
@@ -6601,6 +6606,19 @@ function getProductIdsToSync_(){
 function ensurePrintSheet_(ss) {
   let sh=ss.getSheetByName(CONFIG.PRINT_SHEET);
   if (!sh){sh=ss.insertSheet(CONFIG.PRINT_SHEET);sh.appendRow(CONFIG.PRINT_HEADERS);sh.getRange(1,1,1,CONFIG.PRINT_HEADERS.length).setFontWeight('bold').setBackground('#fef3c7');sh.setFrozenRows(1);}
+  else {
+    /* 기존 시트 마이그레이션 — 종전엔 없었다. 헤더 상수만 늘리면 시트에는 열이 안 생기고,
+       buildPrintSheetRow_ 가 colMap 에 없는 키를 조용히 버려 새 필드가 영영 안 써진다.
+       ensureInvoiceSheet_ 와 같은 패턴: 그리드 폭 먼저 확보 후 헤더 append. */
+    const lastCol=sh.getLastColumn();
+    if(lastCol<CONFIG.PRINT_HEADERS.length){
+      const need=CONFIG.PRINT_HEADERS.length-sh.getMaxColumns();
+      if(need>0) sh.insertColumnsAfter(sh.getMaxColumns(),need);
+      sh.getRange(1,lastCol+1,1,CONFIG.PRINT_HEADERS.length-lastCol)
+        .setValues([CONFIG.PRINT_HEADERS.slice(lastCol)])
+        .setFontWeight('bold').setBackground('#fef3c7');
+    }
+  }
   return sh;
 }
 function ensureInvoiceSheet_(ss) {
@@ -24987,7 +25005,13 @@ const PRINT_LABELS={
      따라서 ① 포함 쿼터를 소진하지도 상쇄받지도 않고 ② 서비스컷·보너스 크레딧도 받지 않는다.
      원본/보정본 구분이 없으므로 두 단가가 같다. 액자는 픽업 전용(유리 파손) — 사장님 확정. */
   'frame_a4':{label:'액자 (A4 인화용 · 마운트 포함)',summaryLabel:'액자 A4',price:29,retouchedPrice:29},
-  'frame_a3':{label:'액자 (A3 인화용 · 마운트 포함)',summaryLabel:'액자 A3',price:35,retouchedPrice:35}
+  'frame_a3':{label:'액자 (A3 인화용 · 마운트 포함)',summaryLabel:'액자 A3',price:35,retouchedPrice:35},
+  /* 대형·특별 규격 — **견적형**이다(Phase 0, 2026-09-10). 금액 0 으로 두고 요청만 접수한다.
+     외주 랩에 견적을 받아 회신한 뒤 booking-set-amount 계열로 수기 청구하는 흐름이라,
+     여기 0 은 "무료"가 아니라 "아직 값이 정해지지 않았다"는 뜻이다.
+     ⚠ 0 원이라 쿼터·크레딧·볼륨할인이 전부 자동으로 비켜간다(price>0 조건) — 의도된 동작이다.
+     인화앱 로컬 출력 대상도 아니다(external) — 접두어 wallart_ 로 눈으로도 구분된다. */
+  'wallart_custom':{label:'대형·특별 규격 (견적)',summaryLabel:'대형(견적)',price:0,retouchedPrice:0}
 };
 /* 포함 쿼터 1장이 상쇄해 주는 금액. 비교 맥락을 맞춰야 하므로, 그 행이 보정본이면 쿼터 SKU 의
    보정본가를, 추가 인화면 추가 인화가를 크레딧으로 쓴다.
@@ -25207,7 +25231,7 @@ function buildSelectMarketingBonusNums_(photos){
    액자는 인화가 아니라 완성품 추가금이라 '무료 인화 1장' 크레딧이 붙으면 안 된다.
    ⚠ 클라이언트 select/v2/select.js 의 같은 이름 함수와 규칙이 일치해야 한다. */
 function selectPrintCreditExempt_(printId){
-  return /^frame_/.test(String(printId||''));
+  return /^frame_|^wallart_/.test(String(printId||''));
 }
 // 서비스 컷·마케팅 보너스: 채워진 슬롯 번호 1개당 시그니처 10×15 인화 크레딧(€3). 큰 사이즈는 차액만.
 function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums,bonusNums){
@@ -25236,6 +25260,7 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums,bonusNu
     const printId=String((p&&p.printId)||'print_none').replace(/_(r|e)$/,'').trim()||'print_none';
     if(printId==='print_none') return;
     const photoNum=String((p&&p.photoNum)||'-');
+    const note=String((p&&p.note)||'').trim().slice(0,300);   // 견적형 희망 사이즈 — 길이 제한
     const qty=Math.max(1,parseInt(p&&p.qty,10)||1);
     // 포함 포토카드 폴백은 무료 작업 항목으로 통과 (쿼터/과금 미적용, label 보존)
     if(p&&(p.includedPhotocard||printId==='included_photocard')){
@@ -25259,9 +25284,12 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums,bonusNu
     // 장 단위로 펼쳐 두고, 쿼터 배정은 아래에서 전역 2-pass 로 처리한다(순서 의존 제거).
     // 포토카드는 사장님 확정(2026-07-26)으로 **포함 쿼터 대상 밖** — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // (상품에 기본 포함된 '포함 포토카드'는 위에서 included_photocard 로 이미 무료 처리된 별개 개념)
-    const skipQuota=/^photocard_|^frame_/.test(printId);
+    /* wallart_(견적형)도 쿼터 밖이다. 단가가 0 이라 그냥 두면 2-pass 정렬에서 맨 뒤로 가
+       남은 포함 인화 슬롯을 **공짜로 삼키고** '무료(기본 제공)' 표시까지 받는다(2026-09-10 확인). */
+    const skipQuota=/^photocard_|^frame_|^wallart_/.test(printId);
     for(let k=0;k<qty;k+=1){
-      units.push({photoNum:photoNum,printId:printId,label:label,unit:unit,isRet:isRet,finish:finish,credit:0,matched:false,skipQuota:skipQuota});
+      // note = 견적형(wallart_)의 희망 사이즈·액자 여부 자유입력. 다른 SKU 에서는 비어 있다.
+      units.push({photoNum:photoNum,printId:printId,label:label,unit:unit,isRet:isRet,finish:finish,note:note,credit:0,matched:false,skipQuota:skipQuota});
     }
   });
 
@@ -25300,7 +25328,7 @@ function computeSelectDecoupledPrints_(prints,row,retouchSet,serviceNums,bonusNu
         chargeable.push({photoNum:u.photoNum,printId:u.printId,label:u.label+' (포함 차액)',qty:1,price:charge,isRetouched:u.isRet,source:'quota_upgrade',quotaCredit:u.credit,finish:u.finish});
       }
     }else{
-      chargeable.push({photoNum:u.photoNum,printId:u.printId,label:u.label,qty:1,price:u.unit,isRetouched:u.isRet,source:u.isRet?'retouch_print':'extra_print',finish:u.finish});
+      chargeable.push({photoNum:u.photoNum,printId:u.printId,label:u.label,qty:1,price:u.unit,isRetouched:u.isRet,source:u.isRet?'retouch_print':'extra_print',finish:u.finish,note:u.note||''});
     }
   });
   // 서비스 컷 크레딧: 서비스 슬롯 번호마다 인화 1장에 €3(시그니처 10×15) 차감 (10×15 무료, 큰 사이즈 차액). 총 상한 = 서비스컷수.
@@ -25389,8 +25417,14 @@ function formatSelectPrintItemHtml_(p){
   const qty=Number(p&&p.qty||1)||1;
   const amount=Number(p&&p.price||0)*qty;
   const tier=p&&p.isRetouched?'보정본':'원본';
-  const priceText=(p&&(p.included||amount===0))?'무료(기본 제공)':`${amount}€`;
-  return `<li>${String((p&&p.photoNum)||'-')}번 — ${String((p&&p.label)||'')} ×${qty} · ${tier} (${priceText})</li>`;
+  const id=String((p&&p.printId)||'').replace(/_(r|e)$/,'');
+  /* 견적형은 0원이지만 '무료(기본 제공)'가 아니다 — 아직 값이 정해지지 않은 것이다.
+     그대로 두면 작업지시서에서 무료 항목으로 읽혀 견적 회신을 빠뜨린다. */
+  const isQuote=/^wallart_/.test(id);
+  const priceText=isQuote?'견적 대기':((p&&(p.included||amount===0))?'무료(기본 제공)':`${amount}€`);
+  const note=String((p&&p.note)||'').trim();
+  const noteHtml=note?`<br><span style="color:#92400e;font-size:12px;">요청: ${escapeHtml_(note)}</span>`:'';
+  return `<li>${String((p&&p.photoNum)||'-')}번 — ${String((p&&p.label)||'')} ×${qty} · ${tier} (${priceText})${noteHtml}</li>`;
 }
 // 스냅 계열(야외/홈스냅·마이리얼트립)은 간단 보정만 기본 포함 — 범위밖 키워드 요청은 관리자 알림에 플래그
 function isSelectRetouchScopeLimitedGroup_(itemGroup){
@@ -25515,7 +25549,13 @@ function findSelectPrintOrderRow_(sh,sessionId){
 function syncSelectPrintOrder_(sh,sessionId,row,prints,extraRetouch,retouchPrice,totalExtra,now,printUpgradeItems){
   const rowIdx=findSelectPrintOrderRow_(sh,sessionId);
   const colMap=getPrintSheetColMap_(sh);
-  if(totalExtra<=0){
+  /* 견적형(대형)은 금액이 0 이지만 **주문은 존재한다** — 랩 견적을 받아 회신해야 할 건이다.
+     금액만 보고 건너뛰면 요청이 어디에도 안 남아 견적 회신 자체를 빠뜨린다(2026-09-10).
+     그래서 '기록할 항목이 있는가' 로 판정한다. 금액은 견적 합의 후 수기로 채운다. */
+  const hasQuoteItem=[].concat(printUpgradeItems||[],prints||[]).some(function(p){
+    return /^wallart_/.test(String((p&&p.printId)||'').replace(/_(r|e)$/,''));
+  });
+  if(totalExtra<=0&&!hasQuoteItem){
     if(rowIdx>1){
       /* ⚠ 이미 받은 돈이 적힌 행은 지우지 않는다. 고객이 결제 후 셀렉을 다시 열어 추가분을 빼면
          totalExtra 가 0이 되는데, 예전엔 그대로 행을 삭제해 **수납 기록·매출·부가세가 통째로
@@ -25535,7 +25575,13 @@ function syncSelectPrintOrder_(sh,sessionId,row,prints,extraRetouch,retouchPrice
     return;
   }
   const chargeablePrints=(printUpgradeItems||[]).concat(prints||[]);
-  const printItems=chargeablePrints.map(p=>`${p.photoNum}번 ${p.label}×${p.qty||1}(${p.price}€)`).join(', ');
+  /* 견적형은 금액이 아직 없다 — 대신 고객이 적어 준 희망 사이즈를 항목 문자열에 붙인다.
+     이게 랩 견적을 받을 때 쓰는 정보이자 Phase 2 추적 데이터의 출발점이다. */
+  const printItems=chargeablePrints.map(function(p){
+    const base=`${p.photoNum}번 ${p.label}×${p.qty||1}(${p.price}€)`;
+    const note=String((p&&p.note)||'').trim();
+    return note?`${base} — 요청: ${note}`:base;
+  }).join(', ');
   const retouchItems=extraRetouch>0?`추가보정×${extraRetouch}(${retouchPrice}€)`:'';
   const totalQty=chargeablePrints.reduce((s,p)=>s+(Number(p.qty)||1),0)+extraRetouch;
   /* 재동기화는 행 전체를 덮어쓴다. 예전엔 결제수단/상태/메모/매출날짜까지 무조건 초기값으로
@@ -26139,9 +26185,73 @@ function _sendSelectPickupConfirmEmail_(email,name,lang,date,time,sessionId,isRe
 }
 
 // 인화 완료 → 픽업 예약 안내 메일 (1회, 픽업안내메일발송일시로 멱등). markSelectPrintDone_에서 호출.
+/* 이 세션에 **아직 입고되지 않은 외주(대형) 항목**이 있는가.
+   대형은 랩이 만들어 보내 준다 — 주문 → 랩 발주 → 입고 → 검수 → 픽업 이라 단계가 하나 더 있다.
+   로컬 인화만 끝난 시점에 '인화 완료' 메일을 보내면, 발주도 안 한 물건을 찾으러 오게 만든다.
+   판정: 셀렉의 추가인화 JSON 에 wallart_ 가 있는데 인화주문 행의 '입고일' 이 비어 있으면 대기.
+   ('입고일' 은 2026-09-10 에 추가한 추적 컬럼이다 — 없으면 마이그레이션 전이므로 보류하지 않는다) */
+function selectHasPendingExternal_(row,sessionId){
+  try{
+    const raw=String(row[SELECT_COL['추가인화']]||'[]');
+    if(!/wallart_/.test(raw)) return false;
+    const sheets=ensureSheets_();
+    const sh=sheets.printSheet;
+    if(!sh) return false;
+    const colMap=getPrintSheetColMap_(sh);
+    if(colMap['입고일']===undefined) return false;      // 컬럼 없음 = 옛 시트. 막지 않는다.
+    const rowIdx=findSelectPrintOrderRow_(sh,sessionId);
+    if(!(rowIdx>1)) return true;                        // 외주 항목은 있는데 주문행이 없다 = 아직 처리 전
+    const arrived=String(sh.getRange(rowIdx,colMap['입고일']+1).getValue()||'').trim();
+    return !arrived;
+  }catch(e){ Logger.log('external pending check fail: '+e.message); return false; }
+}
+
+/* 외주(대형) 입고·검수 기록 — Phase 0. 추적 컬럼을 채우고, 보류돼 있던 고객 완료 안내를 발송한다.
+   이 액션이 없으면 '입고일' 을 손으로 적어도 메일을 다시 쏠 경로가 없다(안내는 markSelectPrintDone_
+   안에서만 시도된다). 발주 시점엔 orderedAt 만 넣고 호출하면 메일은 나가지 않는다. */
+function recordExternalPrintReceipt_(token,payload){
+  payload=payload||{};
+  try{ assertAdmin_(token); }catch(err){ return{ok:false,message:err.message}; }
+  const sid=String(payload.sessionId||'').trim();
+  if(!sid) return{ok:false,message:'세션ID가 필요합니다.'};
+  const sheets=ensureSheets_();
+  const sh=sheets.printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  const rowIdx=findSelectPrintOrderRow_(sh,sid);
+  if(!(rowIdx>1)) return{ok:false,code:'ORDER_NOT_FOUND',message:'해당 세션의 인화주문 행을 찾지 못했습니다.'};
+
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const set=function(header,value){
+    if(colMap[header]===undefined||value===undefined||value===null||String(value)==='') return;
+    sh.getRange(rowIdx,colMap[header]+1).setValue(value);
+  };
+  set('외주업체',payload.vendor);
+  set('랩매입_총액',payload.labTotal);
+  set('랩매입_인화분',payload.labPrintOnly);
+  set('규격_cm',payload.sizeCm);
+  set('액자포함',payload.framed);
+  set('발주일',payload.orderedAt);
+  // 입고일은 명시적으로 넘겼을 때만 쓴다 — 발주 기록에 오늘 날짜가 자동으로 박히면 안 된다.
+  const arrivedAt=payload.receivedAt===true?today:String(payload.receivedAt||'').trim();
+  if(arrivedAt) set('입고일',arrivedAt);
+
+  let inviteSent=false;
+  if(arrivedAt){
+    try{
+      const selSh=ensureSelectSheet_(sheets.ss);
+      const rows=selSh.getDataRange().getValues();
+      const i=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
+      if(i>-1) inviteSent=maybeSendSelectPickupInvite_(selSh,rows[i+1],i+2,sid);
+    }catch(e){ Logger.log('external receipt invite fail: '+e.message); }
+  }
+  return{ok:true,printRowIndex:rowIdx,receivedAt:arrivedAt||'',inviteSent:inviteSent,
+    note:arrivedAt?(inviteSent?'입고 기록 + 고객 픽업 안내 발송':'입고 기록(안내는 조건 미충족으로 미발송)'):'발주 정보만 기록(입고 전)'};
+}
+
 function maybeSendSelectPickupInvite_(selSh,row,rowNum,sessionId){
   if(String(row[SELECT_COL['수령방식']]||'').trim()!=='pickup') return false;
   if(SELECT_COL['출력완료일시']==null||!String(row[SELECT_COL['출력완료일시']]||'').trim()) return false; // 인화 완료 전엔 안내 없음
+  if(selectHasPendingExternal_(row,sessionId)) return false;   // 외주 입고 전 — 완료 안내를 보내지 않는다
   if(String(row[SELECT_COL['픽업일시']]||'').trim()) return false;            // 이미 예약됨(구흐름 포함)
   if(SELECT_COL['픽업안내메일발송일시']==null) return false;
   if(String(row[SELECT_COL['픽업안내메일발송일시']]||'').trim()) return false; // 이미 안내함(재출력 멱등)
@@ -27340,7 +27450,11 @@ function markSelectPrintDone_(sessionId,info){
     if(SELECT_COL['출력완료일시']!=null) rows[idx+1][SELECT_COL['출력완료일시']]=now; // 인메모리 행도 갱신(인바이트의 출력완료 게이트 통과)
     inviteSent=maybeSendSelectPickupInvite_(selSh,rows[idx+1],rowNum,sid);
   }catch(e){ Logger.log('pickup invite fail: '+e.message); }
-  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent,reopened:reopened};
+  // 안내가 보류된 이유를 앱에 돌려준다 — 조용히 안 나가면 "메일이 왜 안 갔지" 로 되돌아온다.
+  const externalPending=selectHasPendingExternal_(rows[idx+1],sid);
+  return{ok:true,doneAt:now,count:count,reprint:!!prev,prevDoneAt:prev,inviteSent:inviteSent,reopened:reopened,
+    externalPending:externalPending,
+    note:externalPending?'외주(대형) 입고 전이라 고객 완료 안내는 보류했습니다. 인화주문 시트의 입고일을 채우면 발송됩니다.':''};
 }
 
 /* 별점(찜) 저장 — 셀렉 페이지가 별점 변경 후 디바운스 호출. 값 검증을 서버가 다시 한다:
@@ -30962,7 +31076,8 @@ function getInvoicePrintLabelCatalog_(){
     premium_a3:{ko:'파인아트 A3',en:'Fine Art A3',de:'FineArt-Druck A3'},
     premium_a3plus:{ko:'파인아트 A3+',en:'Fine Art A3+',de:'FineArt-Druck A3+'},
     frame_a4:{ko:'액자 (A4 인화용 · 마운트 포함)',en:'Frame (for A4 print, mount included)',de:'Rahmen (für A4-Druck, inkl. Passepartout)'},
-    frame_a3:{ko:'액자 (A3 인화용 · 마운트 포함)',en:'Frame (for A3 print, mount included)',de:'Rahmen (für A3-Druck, inkl. Passepartout)'}
+    frame_a3:{ko:'액자 (A3 인화용 · 마운트 포함)',en:'Frame (for A3 print, mount included)',de:'Rahmen (für A3-Druck, inkl. Passepartout)'},
+    wallart_custom:{ko:'대형·특별 규격 (견적)',en:'Large format · custom size (quote)',de:'Großformat · Sondermaß (Angebot)'}
   };
 }
 

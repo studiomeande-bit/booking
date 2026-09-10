@@ -1,8 +1,11 @@
 // 인화 사이즈·추가 단가 카탈로그 — 예약(booking) 안내용 단일 소스.
 // cm 표기는 여기에만 있다(예약 때 고객에게 사이즈를 cm로 미리 안내하기 위함).
 //
-// ⚠ 가격(additional)은 주문 계산의 실제 출처인 select/select.js 와 select/v2/select.js 의
-//    PRINT_OPTIONS[].additional 와 반드시 동일해야 한다. 값 변경 시 세 곳을 함께 수정할 것.
+// ⚠ 가격(additional)은 주문 계산의 실제 출처인 select/v2/select.js 의 PRINT_OPTIONS[].additional 와
+//    반드시 동일해야 한다. **정의처는 6곳**이고 scripts/check-print-prices.mjs 가 전수 대조한다
+//    (Code.gs PRINT_LABELS · AdminV2 PRINT_PRICES · select v2 PRINT_OPTIONS · 이 파일 ·
+//     인보이스 라벨 서버↔어드민 쌍 · print-tier-copy PRINT_ID_TIER). 배포 전 반드시 실행할 것.
+//    external:true = 외주 발주 항목. 인화앱 로컬 출력 큐에서 제외된다(2026-09-10 월아트 Phase 0).
 //    (셀렉 PRINT_OPTIONS 를 이 모듈로 통합하는 리팩터는 후속 과제 — 지금은 셀렉 주문 흐름을 건드리지 않음)
 //
 // 포토카드 실측: 지갑 카드(ID-1) 크기 = 8.6 × 5.4 cm (사장님 확인, 2026-07-26).
@@ -21,7 +24,9 @@ export const PRINT_CATALOG = [
   { id: 'premium_a3plus',  cm: '32.9 × 48.3 cm', additional: 48, name: { ko: '파인아트 A3+',    en: 'Fine Art A3+',            de: 'FineArt-Druck A3+' } },
   // 액자(추가금) — 인화 위에 얹는 완성품. cm 는 프레임 외곽 규격이다.
   { id: 'frame_a4',        cm: '30 × 40 cm',    additional: 29, name: { ko: '액자 (A4 인화용)',  en: 'Frame (for A4 print)',    de: 'Rahmen (für A4-Druck)' } },
-  { id: 'frame_a3',        cm: '40 × 50 cm',    additional: 35, name: { ko: '액자 (A3 인화용)',  en: 'Frame (for A3 print)',    de: 'Rahmen (für A3-Druck)' } }
+  { id: 'frame_a3',        cm: '40 × 50 cm',    additional: 35, name: { ko: '액자 (A3 인화용)',  en: 'Frame (for A3 print)',    de: 'Rahmen (für A3-Druck)' } },
+  // 대형·특별 규격(견적형). cm 는 고정 규격이 없어 '상담' 으로 둔다 — 업체 카탈로그가 규격을 정한다.
+  { id: 'wallart_custom',  cm: '상담 후 확정',    additional: 0,  external: true, name: { ko: '대형·특별 규격 (견적)', en: 'Large format (quote)', de: 'Großformat (Angebot)' } }
 ];
 
 // 카탈로그 항목의 현지화된 이름.

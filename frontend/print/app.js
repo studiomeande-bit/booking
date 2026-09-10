@@ -500,6 +500,9 @@ function normPrintId(v){v=String(v||'').trim();if(PRINT_SIZE_MM[v])return v;cons
      **인화 한 장이 경고 없이 큐에서 사라진다**. 한글은 \b 가 안 먹어 뒤에 한글이 안 오는지로 본다. */
   if((/^frame_|(^|\s)액자(?![가-힣])|(^|\s)(rahmen|frame)\b/.test(low))&&!/파인아트|시그니처|fine\s*art|signature/.test(low))
     return /a3/.test(low)?'frame_a3':'frame_a4';
+  /* 대형·특별 규격(견적형)은 **외주**다 — ET-18100 로컬 출력 대상이 아니다.
+     그냥 두면 아래 a3/a4 판정에 걸려 A3+ 프린터로 60×80 을 뽑으려 든다. */
+  if(/^wallart_|대형|특별\s*규격|견적|großformat|grossformat|large\s*format/.test(low)) return 'wallart_custom';
   if(/a3\s*\+|a3plus/.test(low))return 'premium_a3plus'; if(/a3/.test(low))return 'premium_a3';
   if(/a4/.test(low))return /prem|프리미엄/.test(low)?'premium_a4':'basic_a4';
   if(/photocard|포토카드/.test(low))return /double|양면/.test(low)?'photocard_double':'photocard_single';
@@ -520,12 +523,24 @@ function matchRec(photoNum){const k=normNum(photoNum),t=numTail(photoNum);
    붙여넣기(parseOrder)와 ERP 세션(fetchErpSession) 두 경로가 모두 여기로 모이므로 큐에서 한 번만 뺀다.
    조립 지시는 어드민/인화주문 시트에 그대로 남는다. */
 function isFrameId(id){return /^frame_/.test(String(id||''));}
-function orderQueue(){const k=Object.keys(PRINT_SIZE_MM);return state.order.lines.filter(l=>!isFrameId(l.printId)).sort((a,b)=>k.indexOf(a.printId)-k.indexOf(b.printId));}
+/* 외주 발주 항목 — 랩이 인쇄·액자까지 하므로 로컬 출력 큐에 넣지 않는다.
+   상태도 한 단계 더 있다: 주문 → 랩 발주 → 입고 → 검수 → 픽업/배송. */
+function isExternalId(id){return /^wallart_/.test(String(id||''));}
+function isOffQueueId(id){return isFrameId(id)||isExternalId(id);}
+function orderQueue(){const k=Object.keys(PRINT_SIZE_MM);return state.order.lines.filter(l=>!isOffQueueId(l.printId)).sort((a,b)=>k.indexOf(a.printId)-k.indexOf(b.printId));}
 function orderStats(){const q=orderQueue();let matched=0,sheets=0;q.forEach(l=>{if(matchRec(l.photoNum))matched++;sheets+=l.qty;});
   // 몇 건이 큐에서 빠졌는지 UI에 그대로 보여준다 — 조용히 사라지면 "액자 주문이 왜 없지"가 된다.
   const frameLines=state.order.lines.filter(l=>isFrameId(l.printId));
   const frames=frameLines.reduce((n,l)=>n+(l.qty||1),0);
-  return{total:q.length,matched,sheets,frames,frameNums:frameLines.map(l=>l.photoNum).filter(Boolean)};}
+  const extLines=state.order.lines.filter(l=>isExternalId(l.printId));
+  const externals=extLines.reduce((n,l)=>n+(l.qty||1),0);
+  /* 외주는 **원본 파일**을 랩에 보내야 한다. 셀렉 썸네일은 최대 w1800 이라 60×80 에 못 쓴다.
+     그래서 로컬 폴더에서 원본이 매칭됐는지를 따로 세어, 안 된 건 발주 불가로 표시한다. */
+  const extMissing=extLines.filter(l=>!matchRec(l.photoNum));
+  return{total:q.length,matched,sheets,frames,frameNums:frameLines.map(l=>l.photoNum).filter(Boolean),
+    externals,externalNums:extLines.map(l=>l.photoNum).filter(Boolean),
+    extMissingNums:extMissing.map(l=>l.photoNum).filter(Boolean),
+    extMatched:extLines.filter(l=>matchRec(l.photoNum)).map(l=>({num:l.photoNum,file:(matchRec(l.photoNum)||{}).name||''}))};}
 function setOrderIdx(i){const q=orderQueue();state.order.idx=Math.max(0,Math.min(i,q.length-1));render();fit();}
 function syncPaperUI(){const ps=$("#paper");if(ps)ps.value=state.paper;const cwr=$("#customWrap");if(cwr)cwr.style.display=PAPERS[state.paper]==="custom"?'block':'none';
   if($("#cw"))$("#cw").value=state.cw; if($("#ch"))$("#ch").value=state.ch;
@@ -609,6 +624,11 @@ function renderOrderPanel(){
     <div class="row"><button class="btn sm" id="ord_refolder" style="flex:1.2">↺ 지난 폴더</button><button class="btn sm" id="ord_folder">폴더 선택</button><button class="btn sm" id="ord_pick">파일</button></div>
     <div class="hint" style="padding:4px 0 0">${state.library.length}장 로드됨 · 파일명↔사진번호 자동 매칭 · 「지난 폴더」는 클릭 1번</div>
     ${st.frames?`<div class="hint" style="padding:6px 0 0"><b>🖼 액자 ${st.frames}건은 인화 큐에서 제외</b>${st.frameNums.length?` — 사진 <b>${st.frameNums.join(', ')}</b>`:''} · 조립 항목이라 출력물이 없습니다 (어드민·인화주문 시트 참고)</div>`:''}
+    ${st.externals?`<div class="hint" style="padding:6px 0 0;color:#92400e"><b>📦 외주 발주 ${st.externals}건</b> — 인화 큐에서 제외됩니다. 대형은 랩에 발주하고, <b>원본 파일</b>을 보내야 합니다.
+      ${st.extMissingNums.length
+        ? `<br><b style="color:#b3261e">⛔ 발주 불가 — 사진 ${st.extMissingNums.join(', ')} 의 원본을 못 찾았습니다.</b> 아래 ②에서 <b>보정본 폴더</b>를 불러오세요. 셀렉 썸네일(최대 w1800)로는 60×80 을 뽑을 수 없습니다.`
+        : `<br>✅ 원본 확인됨 — ${st.extMatched.map(x=>`${x.num}: <code>${(x.file||'').replace(/</g,'&lt;')}</code>`).join(' · ')}<br>이 파일을 랩에 업로드한 뒤, 입고되면 <code>print-external-receive</code> 로 기록하세요.`}
+    </div>`:''}
     ${q.length?`<label class="f" style="margin-top:11px">③ 인화 큐 — 클릭해 이동</label>
     <div class="oqlist">${rows}</div>
     <div class="ostep"><button class="btn sm" id="ord_prev">◀</button><span class="olvl">${state.order.idx+1} / ${q.length}</span><button class="btn sm" id="ord_next">▶</button></div>

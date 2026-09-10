@@ -236,6 +236,15 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+/* 견적형(대형) 행의 희망 사이즈 자유입력 — 값이 비면 제출이 막히므로 눈에 띄게 둔다. */
+.quote-field{ margin-top: 10px; }
+.quote-field label{ display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.quote-field textarea{
+  width: 100%; border: 1px solid var(--sm-line-warm); border-radius: 10px; padding: 10px 12px;
+  font-size: 15px; font-family: inherit; color: var(--sm-text); background: var(--sm-surface);
+}
+.quote-field textarea:focus{ outline: 2px solid var(--sm-accent); outline-offset: -1px; }
+
 /* 볼륨 할인 안내 — 담는 중에 계속 보인다(할인을 알아야 더 담는다). */
 .volume-note{
   margin-bottom: var(--space-2); padding: 10px 12px; border-radius: 10px;
