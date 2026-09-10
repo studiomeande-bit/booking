@@ -25936,10 +25936,16 @@ function selectPickupOnlyLabels_(items){
   return Object.keys(seen);
 }
 
+/* 쿼터·크레딧·볼륨 할인에서 빼는 SKU — **인화가 아닌 것**들이다.
+   · 액자(frame_)  : 인화에 얹는 완성품 추가금
+   · 대형(wallart_): 견적형. 지금은 0원이라 price>0 조건에 자동으로 걸리지만, 견적 합의 후
+     금액을 채우는 순간 **인화 볼륨 할인을 받아 버린다** — 개별 견적한 값에 장수 할인은 맞지 않다.
+   ⚠ 픽업 전용 목록(SELECT_PICKUP_ONLY_RE_)과 다르다. 저건 배송 가능 여부고 이건 과금 성격이다.
+   A3+ 는 정상 인화라 여기 들어오면 안 된다(할인 대상). */
 function selectOrderHasFrame_(items){
   return (items||[]).some(function(p){
     const id=String((p&&(p.printId||p.printType||p.id))||'').replace(/_(r|e)$/,'').trim();
-    return /^frame_/.test(id);
+    return /^(frame_|wallart_)/.test(id);
   });
 }
 function validateSelectDelivery_(sub,existingPickupEventId,row,prints,photocard,printUpgradeItems){
