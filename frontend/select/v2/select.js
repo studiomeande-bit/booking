@@ -3607,8 +3607,10 @@ function applyReprintUi() {
   // 보정 단계 안내(진행 순서 2번)와 수령방식 선택 안내는 재주문에 해당하지 않는다.
   document.querySelector('[data-i18n-html="process2Html"]')?.classList.add('hidden');
   document.querySelector('[data-i18n-html="process4Html"]')?.classList.add('hidden');
+  /* ⚠ step1NextBtn 도 data-go="2" 다(앞으로 가는 버튼). 아래 뒤로가기 루프보다 **먼저**
+     처리하고 루프에서 제외해야 한다 — 안 그러면 '← 갤러리로' 로 덮인다(실측 2026-09-10). */
   const next1 = document.getElementById('step1NextBtn');
-  if (next1) next1.textContent = c.reprintStep1Next || c.step3Next;
+  if (next1) { next1.dataset.go = '3'; next1.textContent = c.reprintStep1Next || c.step3Next; }
   document.querySelectorAll('[data-go="2"]').forEach((btn) => {
     btn.dataset.go = '1';
     btn.textContent = c.navBackGallery || btn.textContent;
@@ -3627,8 +3629,10 @@ function goStep(step) {
   els.progressRow.classList.remove('hidden');
   els.stepPanels.forEach((panel) => panel.classList.toggle('active', Number(panel.dataset.step) === step));
   els.stepPanels.forEach((panel) => panel.classList.remove('hidden'));
+  const reprint = isReprintSession();
   els.stepDots.forEach((dot, index) => {
-    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
+    // className 을 통째로 다시 쓰므로 재주문의 보정 점 숨김을 여기서 다시 붙여야 한다.
+    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}${reprint && index === 2 ? ' hidden' : ''}`;
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
   if (step === 3) {
