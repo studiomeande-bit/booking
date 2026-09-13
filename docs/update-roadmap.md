@@ -20,6 +20,8 @@ Updated: 2026-09-13 Europe/Berlin
 
 ## Next
 
+0. **KOTRA STMIN-260017 (€450, 9/10) 주차비** — 주차 영수증 금액 확인 후 ① 별도 소액 인보이스(견적 조건과 일치) 또는 ② 260017 `status:발행취소` + 합산 재발행. 그 뒤 `invoice-send` (sy.hyun@kotra.or.kr). 사장님 지시 2026-09-13 "내일".
+
 6. ~~Gutschein V2 customer redemption design~~ → 전항목 배포 완료 (2026-07-14, Done Recently 참조). 실전 코드 적용 1회 확인만 남음
 
 7. ~~Calendar performance follow-up~~ → **트랙 종료 (2026-07-31)**
@@ -99,6 +101,12 @@ selectStatus '대상아님'(허브 배지·'셀렉 링크 발송' 할 일 소멸
 행 282, 9/19 11:00 여권 2인). 시험 발송에서 잡은 것 2건: 고객명 '소정집사님'+'님' 중복 → '소정 집사' 로, 요청사항의 내부 메모
 (`[충돌확인필요]`·플레이스홀더 설명)가 고객 메일 세부내역에 그대로 실림 → 발송 전 메모를 고객용 문장으로 정리. **수기 예약의
 요청사항은 고객이 본다** — 내부 메모는 넣지 말 것.
+
+**⑥ 인보이스 2장 발행(@952 · 날짜순 A안).** `STMIN-260016` 나용민/성원경 여권 ×2 €60(발행일 9/9, 행 274 연결, Kleinbetragsrechnung — 수취인
+Wonkyoung Sung; Lilagalerie) → PDF 텍스트 검수 후 galerielila@gmail.com 발송. `STMIN-260017` KOTRA 수출상담회 €450(발행일 9/10, 행 252) —
+**발송 보류**: 사장님이 주차 영수증 첨부를 원함(견적 조건 "Parkgebühren gesondert gegen Beleg"), 9/10 주차 지출 미기록. 내일 결정:
+별도 주차비 인보이스 vs 260017 발행취소 후 합산 재발행. 부수 수리: `invoice-update` 가 촬영일시(dateStr)를 못 고쳤고 'YYYY-MM-DD' 는
+UTC 자정으로 읽혀 PDF Leistungsdatum 에 "02:00" 이 붙었다 → dateStr 지원 추가, `'YYYY-MM-DD 00:00'` 으로 넘겨야 시각이 안 찍힌다.
 
 **① 고객 안내문에 여러 장 주문 할인 추가.** `2026년 가격표/추가보정-인화안내/price-ko·de.html` 인화 표 아래 `.volume` 블록
 (5장 −10% · 10장 −15% · 20장 −20%, 유료 보정·유료 인화 각각·포함분과 액자 제외). 숫자는 `build-retouch-card.mjs` 가
