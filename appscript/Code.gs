@@ -32216,6 +32216,9 @@ function updateInvoiceAdmin(token, payload){
     '연락처': String(payload.customerPhone!=null ? payload.customerPhone : current.phone).trim(),
     '고객주소': String(payload.customerAddress!=null ? payload.customerAddress : current.customerAddress).trim(),
     '메모': String(payload.memo!=null ? payload.memo : current.memo).trim(),
+    /* 촬영일시(Leistungsdatum) 정정 — 'YYYY-MM-DD' 만 넘기면 parseDateSafe_ 가 UTC 자정으로 읽어 PDF 에 '02:00' 이 붙는다
+       (STMIN-260016, 2026-09-13). 시각 없이 찍히게 하려면 'YYYY-MM-DD 00:00' 으로 넘길 것. 미지정 시 기존 값 유지. */
+    '촬영일시': payload.dateStr!=null ? normalizeInvoiceDateTimeText_(payload.dateStr) : current.dateStr,
     '사업자송장필요': businessInvoiceNeeded?'Y':'',
     '사업자명': String(payload.businessCompanyName!=null ? payload.businessCompanyName : current.businessCompanyName).trim(),
     '사업자VAT번호': String(payload.businessVatId!=null ? payload.businessVatId : current.businessVatId).trim(),
