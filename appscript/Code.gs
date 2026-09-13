@@ -1003,14 +1003,38 @@ function handlePublicApiRequest_(route,method,e){
       const body=request.body;
       const payload=request.payload;
       const custLang=String((payload&&payload.lang)||'ko');
+      const reqId=String((body&&body.requestId)||(payload&&payload.requestId)||'').trim();
+      /* 실패로 끝나는 모든 길은 이 함수를 지난다. assertPublicRequestId_ 가 requestId 키를 **처리 전에**
+         태우기 때문에, 되돌려 주지 않으면 "잠시 후 다시 시도" 안내를 받은 고객의 재제출이 'Duplicate submission'
+         으로 막히고 화면엔 초록색 "이미 접수된 요청입니다" 가 뜬다 — 예약은 없다(2026-09-13 고객 신고로 확인).
+         프런트는 타임아웃 재시도 때문에 같은 requestId 를 일부러 유지한다(2026-08-31). 그 설계는 옳다 —
+         잘못은 실패한 시도의 키가 살아남는 것이었다. 실패는 메시지로그에도 남긴다(그동안 성공만 기록돼
+         고객이 무엇에 걸렸는지 아무 데도 없었다). */
+      const fail=function(code,msg){
+        releasePublicRequestId_(reqId);
+        // status 는 '거절' — '실패' 는 어드민 상태칩·운영 체크리스트가 "메일·자동화 실패" 로 세는 값이라 섞으면 안 된다(리뷰 적발 2026-09-13).
+        // 허니팟 스팸은 기록하지 않는다(로그 오염). 그 외 거절은 전부 남긴다 — 고객이 무엇에 걸렸는지 처음으로 보인다.
+        if(!/Spam submission/.test(String(msg||''))) logMessage_({channel:'booking-page',direction:'inbound',type:'예약접수',status:'거절',
+          subject:`예약 실패: ${String((payload&&payload.name)||'')} — ${String((payload&&payload.itemId)||'')} (${String((payload&&payload.date)||'')} ${String((payload&&payload.time)||'')})`,
+          customerName:String((payload&&payload.name)||''),email:String((payload&&payload.email)||''),
+          error:String(msg||''),meta:{code:code,itemId:String((payload&&payload.itemId)||''),lang:custLang,requestId:reqId}});
+        return jsonError_(code,localizePublicBookingError_(msg,custLang));
+      };
       try{
         assertPublicBookingPayload_(payload,body);
       }catch(assertErr){
-        return jsonError_('INVALID_ARGUMENT',localizePublicBookingError_(assertErr.message,custLang));
+        // 진짜 중복(같은 requestId 재도착)은 키를 살려 둔다 — 원 요청이 처리 중이거나 이미 끝났다.
+        if(/Duplicate submission/.test(String(assertErr&&assertErr.message||''))) return jsonError_('INVALID_ARGUMENT',localizePublicBookingError_(assertErr.message,custLang));
+        return fail('INVALID_ARGUMENT',assertErr.message);
       }
-      if(!isPublicBookingProduct_(getProductById_(payload.itemId))) return jsonError_('INVALID_ARGUMENT',localizePublicBookingError_('예약페이지에서 선택할 수 없는 상품입니다.',custLang));
-      const result=processForm(payload);
-      if(!result||!result.ok) return jsonError_('BOOKING_FAILED',localizePublicBookingError_((result&&result.message)||'Booking failed',custLang));
+      let requestedItem=null;
+      try{ requestedItem=getProductById_(payload.itemId); }
+      catch(itemErr){ return fail('INVALID_ARGUMENT',itemErr&&itemErr.message?itemErr.message:'유효하지 않은 상품입니다.'); }
+      if(!isPublicBookingProduct_(requestedItem)) return fail('INVALID_ARGUMENT','예약페이지에서 선택할 수 없는 상품입니다.');
+      let result=null;
+      try{ result=processForm(payload); }
+      catch(procErr){ return fail('BOOKING_FAILED',procErr&&procErr.message?procErr.message:String(procErr)); }
+      if(!result||!result.ok) return fail('BOOKING_FAILED',(result&&result.message)||'Booking failed');
       return jsonOk_(result);
     }
     if(route==='booking-status'){
@@ -2881,6 +2905,13 @@ function assertPublicRequestId_(requestId){
   const key='public_req_'+id;
   if(cache.get(key)) throw new Error('Duplicate submission');
   cache.put(key,'1',PUBLIC_API_CONFIG.REQUEST_ID_TTL_SEC);
+}
+
+/* 실패한 제출의 requestId 를 되돌려 준다 — 같은 입력으로 다시 보내는 길을 연다. 성공한 제출은 절대 부르지 않는다. */
+function releasePublicRequestId_(requestId){
+  const id=String(requestId||'').trim();
+  if(!id) return;
+  try{ CacheService.getScriptCache().remove('public_req_'+id); }catch(e){ Logger.log('releasePublicRequestId_ skipped: '+e.message); }
 }
 
 function assertPublicOrigin_(e){
@@ -7476,7 +7507,9 @@ function getBookingProductForRow_(row){
   const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
   const productName=String(row[BOOKING_COL['상품']]||'').trim();
   if(!itemGroup||!productName) return null;
-  return getCachedProducts_().find(function(p){
+  // 상품설정 시트 밖의 코드 상품(프로모·TFP)도 찾는다 — getProductById_ 와 같은 탐색 범위.
+  // 빠뜨리면 그 예약의 캘린더 소요시간이 이전 상품 길이로 남는다(리뷰 적발 2026-09-13: 여권→TFP 전환 시 75분이 아닌 여권 길이).
+  return getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(function(p){
     return String(p.g||'').trim()===itemGroup && [p.nameKo,p.nameEn,p.nameDe,p.id].some(function(name){
       return String(name||'').trim()===productName;
     });
@@ -15436,7 +15469,9 @@ function changeBookingProductForAgent_(token,payload){
     itemId:itemId, people:peopleForQuote, date:dateStr, optionKeys:optionKeys,
     passAddon:passAddon, passAddonPeople:passAddonPeople
   });
-  if(quote.isQuoteOnly||!(quote.totalPrice>0)){
+  // 포트폴리오 협업(TFP)은 정당한 €0 상품이다 — 견적형 가드에서 예외(2026-09-13 배지현 전환). 총액·계약금·잔금이 0 으로 내려간다.
+  const isTfpTarget=quote.itemGroup==='tfp';
+  if(!isTfpTarget&&(quote.isQuoteOnly||!(quote.totalPrice>0))){
     throw new Error('상담견적/커스텀(총액 0) 상품은 이 액션으로 바꿀 수 없습니다. 금액은 booking-set-amount 로 정정하세요.');
   }
   const prevProduct=String(row[BOOKING_COL['상품']]||'').trim();
@@ -16154,12 +16189,13 @@ function getDashboardData_(){
     const rescheduleReq=String(row[24]||'').trim();
     const selectInfo=selectStatusMap[String(r+1)]||null;
     const isPassport=isPassportBookingItem_(row[6],row[7]);
-    const selectStatus=getDashboardSelectStatus_(selectInfo,isPassport);
+    const bookingType=inferBookingClientTypeFromRow_(row);
+    // B2B(기업)이고 셀렉 세션이 없으면 '대상아님' — 허브 배지·'셀렉 링크 발송' 할 일(isAdminSelectSendNeeded)이 이걸 본다(2026-09-13)
+    const selectStatus=(!selectInfo&&bookingType==='기업')?'대상아님':getDashboardSelectStatus_(selectInfo,isPassport);
     const productMeta=findBookingProductMeta_(productsForDashboard,g,row[7]);
     const optionKeys=parseBookingOptionKeysFromRow_(row);
     const ageGroup=parseBookingAgeGroupFromRow_(row);
     const babyType=parseBookingBabyTypeFromRow_(row);
-    const bookingType=inferBookingClientTypeFromRow_(row);
     customers.push({
       rowIndex:r+1,dateStr:dStr,dateObj:dObj.getTime(),month:m,status,name:row[2],phone:row[3],email:row[4],lang:row[5],
       itemGroup:g,product:row[7],itemId:productMeta?String(productMeta.id||''):'',optionStr:row[8],optionKeys:optionKeys,ageGroup:ageGroup,babyType:babyType,babyTypeLabel:getBookingBabyTypeLabel_(babyType),people:row[9],price,deposit:depositRaw,depositRaw,depositCell:String(row[BOOKING_COL['계약금']]||''),depositDue:effectiveDeposit,depositRequired:effectiveDeposit>0?'Y':'N',balance:balanceRaw,
@@ -17058,6 +17094,7 @@ function _buildDailyBriefingData_(){
       if(String(brow[BOOKING_COL['상태']]||'').trim()!=='촬영완료') continue;
       if(sentBri.has(String(r+1))) continue;
       if(isPassportBookingItem_(brow[BOOKING_COL['촬영종류']],brow[BOOKING_COL['상품']])) continue;
+      if(isSelectExcludedBookingRow_(brow)) continue;   // B2B(기업) 는 셀렉관리 밖(2026-09-13)
       const sd=parseDateSafe_(brow[BOOKING_COL['예약일시']]).str.slice(0,10);
       if(!sd) continue;
       const days=Math.floor((now.getTime()-new Date(sd+'T00:00:00').getTime())/86400000);
@@ -24549,6 +24586,17 @@ function createSelectSession(token,data){
   let sizeNotice='';
   try{
     assertAdmin_(token);
+    // B2B 거부는 폴더 공유·락보다 앞이어야 한다 — 거부되는 발송이 폴더를 링크 공개로 만들어 두면 안 된다.
+    // 기준은 예약유형(기업)이지 촬영종류가 아니다. 기존 세션이 있으면(재연결·재발송 경로) 막지 않는다.
+    const b2bRow=parseInt(data.bookingRowIndex||data.rowIndex,10)||0;
+    let corporate=false, hasSession=false;
+    if(b2bRow>=2){
+      try{ corporate=isSelectExcludedBookingRow_(getDbSheet().getRange(b2bRow,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0]); }catch(e){}
+      if(corporate){ try{ const ex=getLatestSelectRowForBooking_(ensureSelectSheet_(ensureSheets_().ss),String(b2bRow)); hasSession=!!(ex&&String(ex.row[SELECT_COL['세션ID']]||'').trim()); }catch(e){} }
+    }else{
+      corporate=inferBookingClientTypeFromData_(data)==='기업';
+    }
+    if(corporate&&!hasSession) return{ok:false,code:'B2B_EXCLUDED',message:'B2B(기업) 예약은 셀렉관리 대상이 아닙니다 — 셀렉 링크를 만들지 않습니다(2026-09-13 결정). 개인 고객이면 예약유형을 확인해 주세요.'};
     const explicitRef=String(data.driveFolderId||data.driveLink||data.driveFolderUrl||data.driveFolderLink||'').trim();
     if(explicitRef&&data.allowOversizedFolder!==true){
       const sizeCheck=checkSelectDeliveryFolderSize_(explicitRef);
@@ -28230,6 +28278,7 @@ function getSelectDashboard(token){
 
       const bri=String(r+2);
       const sel=selByBooking[bri]||null;
+      if(!sel&&isSelectExcludedBookingRow_(row)) return;   // B2B 는 셀렉관리 밖(2026-09-13) — 기존 세션이 있으면 계속 보인다
       const isPassport=isPassportBookingItem_(row[6],row[7]);
       const payMethod=String(row[BOOKING_COL['결제수단']]||'');
       if(sel&&!String(sel.marketingBonusRaw||'').trim()){
@@ -28631,6 +28680,11 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
     const sheets=ensureSheets_();
     const bookSh=getDbSheet();
     const bookRow=bookSh.getRange(bookingRowIndex,1,1,20).getValues()[0];
+    // B2B(기업) 는 셀렉관리 밖(2026-09-13) — 예약유형 열은 20열 밖이라 전체 행으로 판정한다. 기존 세션이 있으면 재발송은 허용.
+    if(isSelectExcludedBookingRow_(bookSh.getRange(bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0])){
+      const exSel=getLatestSelectRowForBooking_(ensureSelectSheet_(sheets.ss),String(bookingRowIndex));
+      if(!(exSel&&String(exSel.row[SELECT_COL['세션ID']]||'').trim())) return{ok:false,code:'B2B_EXCLUDED',message:'B2B(기업) 예약은 셀렉관리 대상이 아닙니다 — 셀렉 링크를 만들지 않습니다(2026-09-13 결정).'};
+    }
     const data={
       rowIndex:bookingRowIndex,
       name:String(bookRow[2]||''),
@@ -29107,6 +29161,16 @@ function autoSelectDailyCheck(){
      여기 있던 별도 메일은 **구조적으로 죽어 있었다**: 바로 위 0단계가 '확정됨 + 지난 촬영일'을
      '촬영완료'로 먼저 바꾸므로, 판정 조건이던 (상태==='확정됨' && 촬영 후 7일)이 성립할 수 없었다.
      브리핑에서는 '촬영완료 + 셀렉 행 없음 + 7일 경과'로 판정한다. */
+}
+
+/* B2B(기업 고객) 예약은 셀렉관리에서 다루지 않는다 — 2026-09-13 사장님 결정. 납품은 인보이스·드라이브 전달로 끝난다.
+   ⚠ 'B2B' 는 촬영종류 'biz' 가 아니다 — 그 그룹엔 암트 결혼식·돌잔치·가족파티 같은 **개인** 행사가 들어 있고,
+   셀렉 파이프라인이 그 상품들을 명시적으로 지원한다(amtp 인화 쿼터, 추가보정 €20). 기준은 코드베이스의
+   B2B 정의 하나다: 예약유형 '기업'(명시값) 또는 사업자송장·법인 신호(isCorporateBookingRow_).
+   이미 셀렉 세션이 있는 기업 예약은 계속 보인다 — 진행 중인 세션을 조작할 길을 막지 않는다(호출처가 !sel 을 함께 본다).
+   셀렉 탭(getSelectDashboard)·예약 리스트 selectStatus·브리핑 '셀렉 미발송'·셀렉 링크 생성/재발송이 전부 이걸 본다. */
+function isSelectExcludedBookingRow_(row){
+  return isCorporateBookingRow_(row);
 }
 
 function isPassportBookingItem_(itemGroup,product){

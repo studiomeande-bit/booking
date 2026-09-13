@@ -44,17 +44,26 @@ export async function postPayload(route, data = {}, extraParams = {}) {
       signal: controller ? controller.signal : undefined
     });
   } catch (error) {
+    /* code 는 호출자가 "이 제출이 서버에 닿았을 수 있는가" 를 판단하는 근거다.
+       TIMEOUT·NETWORK = 닿았을 수 있음(requestId 유지, 재시도는 서버 중복가드가 거른다)
+       SERVER = 서버가 명시적으로 거절(성립 안 함 → 다음 시도는 새 requestId). */
     if (error?.name === 'AbortError') {
-      throw new Error('서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.');
+      throw tagged('서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.', 'TIMEOUT');
     }
     if (error?.message === 'Failed to fetch') {
-      throw new Error('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.');
+      throw tagged('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.', 'NETWORK');
     }
     throw error;
   } finally {
     if (timer) clearTimeout(timer);
   }
   return parseJsonResponse(response);
+}
+
+function tagged(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
 }
 
 export async function parseJsonResponse(response) {
@@ -67,10 +76,14 @@ export async function parseJsonResponse(response) {
        원문 HTML 을 그대로 보여 주면 고객은 무슨 일인지 알 수 없다 — 사람이 읽을 문장으로 바꾼다. */
     const status = response?.status || 0;
     if (status === 400 || status === 413 || status === 414) {
-      throw new Error('입력 내용이 너무 길어 전송하지 못했습니다. 요청사항을 조금 줄여 다시 시도해 주세요.');
+      throw tagged('입력 내용이 너무 길어 전송하지 못했습니다. 요청사항을 조금 줄여 다시 시도해 주세요.', 'GATEWAY');
     }
-    throw new Error('서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    throw tagged('서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'GATEWAY');
   }
-  if (!payload.ok) throw new Error(payload.error?.message || 'API request failed');
+  if (!payload.ok) {
+    const err = tagged(payload.error?.message || 'API request failed', 'SERVER');
+    err.apiCode = payload.error?.code || '';
+    throw err;
+  }
   return payload.data;
 }

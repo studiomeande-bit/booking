@@ -16,6 +16,7 @@
  *
  * 권위:
  *   인화 단가   → appscript/Code.gs  PRINT_LABELS      (check-print-prices.mjs 가 6곳 대조)
+ *   여러 장 할인 → appscript/Code.gs  SELECT_VOLUME_TIER_DEFAULTS_.print (price-card 와 같은 정규식)
  *   추가보정 단가 → appscript/Code.gs  getDefaultSelectRetouchPrice_
  *                  (wed / 암트·돌잔치·가족파티·웨딩 계열 → 20, 그 외 → 10)
  *                  ⚠ 세션별로 '리터칭단가' 컬럼이 덮어쓸 수 있다 — 안내문엔 **기본값**임을 명시할 것.
@@ -54,6 +55,17 @@ const RETOUCH_HIGH = Math.max(...retouchVals);   // wed·암트·돌잔치 계�
 const RETOUCH_LOW = Math.min(...retouchVals);    // 프로필·스튜디오·야외/홈스냅
 if (!(RETOUCH_LOW > 0 && RETOUCH_HIGH > 0)) { console.error('❌ 추가보정 단가를 읽지 못했습니다.'); process.exit(1); }
 
+/* 여러 장 할인 구간 — price-card 와 같은 정규식으로 읽는다(설정 시트가 덮어쓸 수 있으므로 '기본값'이다). */
+const tierRaw = (gs.match(/const SELECT_VOLUME_TIER_DEFAULTS_=\{[^}]*print:'([^']*)'/) || [])[1] || '';
+const tiers = tierRaw.split(',').map((t) => t.split(':').map(Number)).filter(([c, p]) => c > 0 && p > 0);
+if (!tiers.length) { console.error('❌ SELECT_VOLUME_TIER_DEFAULTS_ 를 읽지 못했습니다.'); process.exit(1); }
+const tierLine = {
+  ko: tiers.map(([c, p]) => `${c}장 −${p}%`).join(' · '),
+  de: tiers.map(([c, p]) => `ab ${c} Stk. −${p} %`).join(' · '),
+};
+/* <div class="volume"> … <div class="tiers">여기</div> — 문서에 이 블록이 없으면 실패다(조용히 건너뛰지 않는다). */
+const VOL_RE = /(<div class="volume">[\s\S]*?<div class="tiers">)([^<]*)(<\/div>)/;
+
 /* ── 행 라벨 → SKU. 라벨은 각 문서의 실제 표기 그대로다. ──────────────── */
 const ROW_SKU = {
   ko: {
@@ -75,7 +87,7 @@ const fmt = { ko: (n) => `€${n}`, de: (n) => `${n} €` };
 const ROW_RE = /(<tr><td>)([^<]+)(<\/td><td class="cm">)([^<]*)(<\/td>\s*<td class="n p">)([^<]*)(<\/td><td class="n p sub">)([^<]*)(<\/td><\/tr>)/g;
 /* 추가보정 밴드는 <div class="v">€10<small>/ 장</small></div> 형태다 —
    금액 뒤에 <small> 이 붙어 있어 </div> 까지 잡으면 매칭이 0 이 된다(2026-09-10). 첫 '<' 앞까지만 본다. */
-const BAND_RE = /(<div class="v">)([^<]*)/g;
+const BAND_RE = /(<div class="v">)([^<]*)(?=<small>)/g;   // <small>/ 장</small> 이 붙는 밴드 셀만 — 다른 "v" 셀은 건드리지 않는다
 
 let problems = 0;
 let changed = 0;
@@ -116,6 +128,17 @@ for (const lang of ['ko', 'de']) {
   if (bandIdx !== 2) {
     console.error(`❌ [${lang}] 추가보정 단가 밴드가 2개가 아닙니다(${bandIdx}개) — 구조가 바뀌었습니다.`);
     problems += 1;
+  }
+
+  // 여러 장 할인 구간
+  if (!VOL_RE.test(out)) {
+    console.error(`❌ [${lang}] 여러 장 할인 블록(<div class="volume">)이 없습니다.`);
+    problems += 1;
+  } else {
+    out = out.replace(VOL_RE, (full, a, val, z) => {
+      if (val.trim() !== tierLine[lang]) diffs.push(`여러 장 할인 ${val.trim()} → ${tierLine[lang]}`);
+      return a + tierLine[lang] + z;
+    });
   }
 
   const missing = Object.values(ROW_SKU[lang]).filter((s) => !seen.has(s));

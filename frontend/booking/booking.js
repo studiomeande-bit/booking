@@ -6737,6 +6737,11 @@ async function onSubmit(event) {
           : '이미 접수된 요청입니다 — 확인 메일함을 확인해 주세요. 메일이 없으면 잠시 후 다시 시도해 주세요.', 'success');
       state.bookingRequestId = null;
     } else {
+      /* 서버가 명시적으로 거절한 제출(마감된 시간·동시 처리 중·검증 실패)은 성립하지 않았다.
+         같은 requestId 를 들고 다시 보내면 서버 중복가드에 걸려 "이미 접수됨" 이 떴다 — 예약은 없는데(2026-09-13).
+         서버도 실패 시 키를 되돌려 주지만, 여기서도 새 시도로 취급해 두 겹으로 막는다.
+         TIMEOUT·NETWORK 는 서버에 닿았을 수 있으니 requestId 를 유지한다(중복 예약 방지가 우선). */
+      if (error?.code === 'SERVER') state.bookingRequestId = null;
       setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
     }
   } finally {

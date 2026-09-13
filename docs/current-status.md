@@ -1,6 +1,6 @@
 # Current Status
 
-Updated: 2026-09-02 Europe/Berlin (@908 기준). **변경 이력은 여기 아님** — 최신 사실은 `docs/update-roadmap.md`의 "Done Recently" + `git log`가 정본. 이 파일은 구조 지도만 유지한다.
+Updated: 2026-09-13 Europe/Berlin (@950 기준). **변경 이력은 여기 아님** — 최신 사실은 `docs/update-roadmap.md`의 "Done Recently" + `git log`가 정본. 이 파일은 구조 지도만 유지한다.
 
 ## Resume Order
 
