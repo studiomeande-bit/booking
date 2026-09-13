@@ -2064,7 +2064,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='booking-refund-quote') return jsonOk_(getCancellationRefundQuoteAdmin(token,payload.rowIndex));
         if(action==='booking-refund-void') return jsonOk_(voidBookingRefundAdmin(token,payload.rowIndex,payload));
         if(action==='booking-confirm-balance') return jsonOk_(confirmBookingBalanceForAgent_(token,payload));
-        if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex));
+        if(action==='booking-confirm-mail') return jsonOk_(confirmBookingAndSendEmailAdmin(token,payload.rowIndex,{hidePrice:payload.hidePrice===true}));
         if(action==='booking-add-calendar'){
           // 메일 없이 구글 캘린더 이벤트만 부착/동기화. ensureBookingCalendarEventForRow_ 는 중복 방지:
           // 기존 캘린더ID가 있으면 sync, 없을 때만 생성. (취소 등 비활성 상태면 '' 반환·이벤트 삭제)
@@ -11923,11 +11923,13 @@ function buildBookingDetailsRows_(data,quote,opts){
   _addBookingDetailRow_(rows,L.baby,babyParts);
   _addBookingDetailRow_(rows,L.business,businessParts);
   _addBookingDetailRow_(rows,L.request,opts.memo||data.memo||data.passportMemo||'');
-  _addBookingDetailRow_(rows,L.discount,discountParts);
-  _addBookingDetailRow_(rows,L.price,total!==undefined&&total!==''?(quote.isQuoteOnly?'상담 후 견적':formatEuroAmount_(total)+'€'):'');
-  _addBookingDetailRow_(rows,L.deposit,deposit!==undefined&&deposit!==''?formatEuroAmount_(deposit)+'€':'');
-  _addBookingDetailRow_(rows,L.balance,balance!==undefined&&balance!==''?formatEuroAmount_(balance)+'€':'');
-  _addBookingDetailRow_(rows,L.payment,opts.paymentMethod||data.payMethod||'');
+  if(!opts.hideMoney){   // hideMoney: 금액 없는 확정 메일(_sendConfirmEmail hidePrice)
+    _addBookingDetailRow_(rows,L.discount,discountParts);
+    _addBookingDetailRow_(rows,L.price,total!==undefined&&total!==''?(quote.isQuoteOnly?'상담 후 견적':formatEuroAmount_(total)+'€'):'');
+    _addBookingDetailRow_(rows,L.deposit,deposit!==undefined&&deposit!==''?formatEuroAmount_(deposit)+'€':'');
+    _addBookingDetailRow_(rows,L.balance,balance!==undefined&&balance!==''?formatEuroAmount_(balance)+'€':'');
+    _addBookingDetailRow_(rows,L.payment,opts.paymentMethod||data.payMethod||'');
+  }
   _addBookingDetailRow_(rows,L.address,data.address);
   _addBookingDetailRow_(rows,L.payer,data.payerName);
   _addBookingDetailRow_(rows,L.invoice,invoiceParts);
@@ -12637,12 +12639,14 @@ function buildConfirmCalendarMemo_(info){
     labels.product+': '+(info.product||''),
   ];
   if(info.people) lines.push(labels.people+': '+info.people);
-  lines.push(labels.total+': '+info.totalText);
-  lines.push(labels.deposit+': '+info.depositText);
-  lines.push(labels.balance+': '+info.balanceText);
-  lines.push('');
-  lines.push(labels.paymentTitle);
-  lines.push(labels.paymentBody);
+  if(!info.hidePrice){   // 금액 없는 확정 메일이면 .ics 에도 금액·결제 줄을 싣지 않는다
+    lines.push(labels.total+': '+info.totalText);
+    lines.push(labels.deposit+': '+info.depositText);
+    lines.push(labels.balance+': '+info.balanceText);
+    lines.push('');
+    lines.push(labels.paymentTitle);
+    lines.push(labels.paymentBody);
+  }
   if(info.depositAmount>0){
     lines.push('');
     lines.push(labels.depositTitle);
@@ -12827,9 +12831,12 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const bal=roundCurrency_(toNumberOrZero_(balanceAmount));
   const totalPrice=roundCurrency_(toNumberOrZero_(price));
   const isQuoteOnly=itemGroup==='biz'&&totalPrice<=0;
-  const depositBox=dep>0?(T.confirmed_deposit_note||''):'';
-  const refundBox=(dep>0&&itemGroup!=='biz')?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'';
   const detail=details||{};
+  /* hidePrice — 금액을 전혀 싣지 않는 확정 메일(2026-09-13 사장님 요청: 지인·교회 예약 등 가격을 보이고 싶지 않은 건).
+     가격 블록·세부내역의 금액 줄·결제 안내·.ics 의 금액 줄을 전부 뺀다. 시트·장부는 그대로다(메일 표시만). */
+  const hidePrice=!!detail.hidePrice;
+  const depositBox=(dep>0&&!hidePrice)?(T.confirmed_deposit_note||''):'';
+  const refundBox=(dep>0&&itemGroup!=='biz'&&!hidePrice)?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'';
   const isExternalBooking=_isExternalBookingItemGroup_(itemGroup);
   const calendarInfo=resolveConfirmCalendarTimeInfo_(timeRaw,itemGroup,prodLocal,eventId,detail);
   const customerCalendarInfo=calendarInfo?getCustomerVisibleCalendarInfo_(calendarInfo,itemGroup,prodLocal,detail):null;
@@ -12843,16 +12850,21 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
     email,
     product:prodLocal,
     people:detail.people||'',
-    totalText:formatConfirmCalendarAmountText_(price,totalPrice,isQuoteOnly?calendarLabels.quoteTbd:''),
-    depositText:dep>0?formatEuroAmount_(dep)+'€':calendarLabels.noDeposit,
-    balanceText:isQuoteOnly?calendarLabels.quoteTbd:formatConfirmCalendarAmountText_(balanceAmount,bal,''),
-    depositAmount:dep,
+    totalText:hidePrice?'':formatConfirmCalendarAmountText_(price,totalPrice,isQuoteOnly?calendarLabels.quoteTbd:''),
+    depositText:hidePrice?'':(dep>0?formatEuroAmount_(dep)+'€':calendarLabels.noDeposit),
+    balanceText:hidePrice?'':(isQuoteOnly?calendarLabels.quoteTbd:formatConfirmCalendarAmountText_(balanceAmount,bal,'')),
+    depositAmount:hidePrice?0:dep,
+    hidePrice:hidePrice,
     memo:detail.memo||'',
     extraItem:detail.extraItem||'',
     eventId,
     external:isExternalMeeting
   })):null;
-  const calendarNotice=calendarAttachment?({
+  const calendarNotice=(calendarAttachment&&hidePrice)?({
+    ko:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">캘린더 파일(.ics)을 첨부했습니다. 휴대폰 또는 캘린더 앱에 추가해 두시면 일정과 장소를 함께 확인하실 수 있습니다.</div>',
+    en:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">A calendar file (.ics) is attached. Add it to your phone or calendar app to keep the date and location with your booking.</div>',
+    de:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">Eine Kalenderdatei (.ics) ist angehängt. Wenn Sie sie in Ihre Kalender-App übernehmen, finden Sie dort Termin und Ort.</div>'
+  }[lang||'ko']||''):calendarAttachment?({
     ko:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">캘린더 파일(.ics)을 첨부했습니다. 휴대폰 또는 캘린더 앱에 추가하시면 일정 메모에서 장소, 총금액, 계약금, 잔금과 결제 안내를 함께 확인하실 수 있습니다.</div>',
     en:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">A calendar file (.ics) is attached. Add it to your phone or calendar app to keep the location, total, deposit, balance, and payment notes with your booking.</div>',
     de:'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13px;line-height:1.7;color:#334155;">Eine Kalenderdatei (.ics) ist angehängt. Wenn Sie sie in Ihre Kalender-App übernehmen, finden Sie dort Ort, Gesamtbetrag, Anzahlung, Restzahlung und Zahlungshinweise.</div>'
@@ -12861,7 +12873,7 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const detailLocation=meetingLocation||(isExternalMeeting?'':STUDIO_ADDRESS);
   // 본문 상단에 결제 안내(T.payment_*)가 이미 있으므로 오시는길 블록의 결제 문구는 제외 (중복 방지)
   const directionHtml=_getDirectionHtml(lang||'ko',{location:meetingLocation,itemGroup:itemGroup,external:isExternalMeeting,includePayment:false});
-  const priceHtml=isQuoteOnly
+  const priceHtml=hidePrice?'':isQuoteOnly
     ? (lang==='en'
         ? '■ Pricing: A detailed quote will be sent after reviewing your request.'
         : lang==='de'
@@ -12911,7 +12923,8 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
     depositAmount:dep,
     balanceAmount:bal,
     paymentMethod:detail.payMethod||'',
-    hideDuration:true
+    hideDuration:true,
+    hideMoney:hidePrice
   });
   // 고객 취소요청 링크
   let cancelSection='';
@@ -12928,7 +12941,8 @@ function _sendConfirmEmail(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
       cancelSection=`<br><hr style="margin:20px 0;border:none;border-top:1px solid #e2e8f0;"><p style="font-size:12px;color:#94a3b8;">${infoText[lang||'ko']}</p><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">${portalBtn}<a href="${rescheduleUrl}" style="display:inline-block;padding:10px 20px;background:#eff6ff;color:#2563eb;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📅 ${rescheduleLabel[lang]||rescheduleLabel.de}</a><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#f1f5f9;color:#475569;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">📩 ${cancelLabel[lang]||cancelLabel.de}</a></div>`;
     }catch(e){Logger.log('cancelSection 오류:'+e.message);}
   }
-  const body=`${T.greeting(name)}<br><br>${T.confirmed_intro}<br><br>${T.lbl_product} ${prodLocal}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} <b>${formattedTime}</b><br>${priceHtml}${bookingDetailsHtml}${calendarNotice}${consentNotice}<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}<br><br><hr><br>${guide}<br><br><hr><br>${directionHtml}${cancelSection}${_getSignatureHtml()}`;
+  const paymentHtml=hidePrice?'':`<br><br><b>${T.payment_title}</b><br>${T.payment_body}<br>${T.invoice_note}${refundBox}`;
+  const body=`${T.greeting(name)}<br><br>${T.confirmed_intro}<br><br>${T.lbl_product} ${prodLocal}${allCountries?' ('+allCountries+')':''}<br>${T.lbl_datetime} <b>${formattedTime}</b><br>${priceHtml}${bookingDetailsHtml}${calendarNotice}${consentNotice}${paymentHtml}<br><br><hr><br>${guide}<br><br><hr><br>${directionHtml}${cancelSection}${_getSignatureHtml()}`;
   try{
     const mailOptions={to:email,subject:T.confirmed_subject(name,prodLocal,formattedTime),htmlBody:body};
     if(calendarAttachment) mailOptions.attachments=[calendarAttachment];
@@ -17728,7 +17742,8 @@ function sendDailyBriefingEmail_(){
   return {sent:true,todayCount,actionCount,unpaid:b.unpaidBalances.length};
 }
 
-function confirmBookingAndSendEmailAdmin(token,bookingRowIndex){
+function confirmBookingAndSendEmailAdmin(token,bookingRowIndex,opts){
+  opts=opts||{};
   assertAdmin_(token);
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(10000)) throw new Error('다른 예약 확정/메일 발송이 처리 중입니다. 잠시 후 다시 시도해 주세요.');
@@ -17767,6 +17782,7 @@ function confirmBookingAndSendEmailAdmin(token,bookingRowIndex){
     const balAmt=parseMoneyValue_(row[BOOKING_COL['잔금']]);
     const cell=function(name){return BOOKING_COL[name]!=null?String(row[BOOKING_COL[name]]||'').trim():'';};
     _sendConfirmEmail(cell('고객명'),email,lang,itemGroup,prodLocal,row[BOOKING_COL['총결제액']],row[BOOKING_COL['예약일시']],passCountries,String(row[BOOKING_COL['분위기']]||'').split(','),depAmt,balAmt,eventId,{
+      hidePrice:opts.hidePrice===true,   // 에이전트 booking-confirm-mail {hidePrice:true} — 금액 없는 확정 메일
       rowIndex:rIdx,
       phone:cell('연락처'),
       people:cell('인원'),
