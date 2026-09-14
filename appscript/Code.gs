@@ -2080,6 +2080,7 @@ function handlePublicApiRequest_(route,method,e){
         // 사진 셀렉 / 보정
         if(action==='select-search') return jsonOk_(searchSelectSessionsForAgent_(token,payload.query||{}));
         if(action==='select-folder-audit') return jsonOk_(auditSelectDeliveryFoldersForAgent_(token,payload||{}));
+        if(action==='drive-link-editor-downgrade') return jsonOk_(downgradeDriveLinkEditorsForAgent_(token,payload||{}));   // 🔒 링크 편집자→뷰어 일괄 하향(기본 조회만)
         if(action==='select-set-zip-folder') return jsonOk_(setSelectZipFolderAdmin(token,payload.bookingRowIndex||payload.rowIndex,payload));
         if(action==='raw-select-pending') return jsonOk_(listRecentRawSelectSessionsForAgent_(token,payload||{}));
         if(action==='customer-print-orders') return jsonOk_(listCustomerPrintOrdersForAgent_(token,payload||{}));
@@ -15339,7 +15340,7 @@ function applyLoyaltyCreditForAgent_(token,payload){
    되쓰면 뒤에 붙은 '[금액정정 …] 사유: [3회차혜택]' 같은 줄이 조용히 사라지고 멱등 가드가 열린다(검증 지적
    2026-09-05). 알려진 감사 접두어로 시작하는 줄이 새 메모에 없으면 끝에 다시 붙인다. */
 function preserveAuditMemoLines_(prevMemo,newMemo){
-  const re=/^\[(금액정정|현장추가|추가금정정|촬영종류정정|제휴사할인|재촬영할인|재방문할인|자동취소|재촬영|추가촬영|상품변경|정정)/;
+  const re=/^\[(금액정정|현장추가|추가금정정|촬영종류정정|제휴사할인|재촬영할인|재방문할인|자동취소|재촬영|추가촬영|상품변경|인보이스연결|정정)/;
   const next=String(newMemo||'');
   const missing=String(prevMemo||'').split('\n').map(function(l){return l.trim();})
     .filter(function(l){return re.test(l)&&next.indexOf(l)<0;});
@@ -16618,6 +16619,16 @@ function getBookingForAgent_(token,rowIndex){
       }
     }
   }catch(e){Logger.log('booking-get prep attach skipped row '+rIdx+': '+e.message);}
+  // 연결 인보이스 — 예약행번호 열 기준 전부(발행취소 포함, status 로 구분)
+  try{
+    const invRows=ensureSheets_().invoiceSheet.getDataRange().getValues();
+    booking.invoices=[];
+    for(let i=1;i<invRows.length;i++){
+      if((parseInt(invRows[i][INVOICE_COL['예약행번호']],10)||0)!==rIdx) continue;
+      const inv=invoiceRowToObject_(invRows[i],i+1);
+      booking.invoices.push({number:inv.number,type:inv.type,status:inv.status,total:inv.total,issuedAt:inv.issuedAt,mailSentAt:inv.mailSentAt});
+    }
+  }catch(e){Logger.log('booking-get invoice attach skipped row '+rIdx+': '+e.message);}
   return {ok:true,booking:booking};
 }
 
@@ -24299,9 +24310,12 @@ function searchDriveFoldersAdmin(token,customerName,dateStr){
   return findDriveFoldersForCustomerDate_(customerName,dateStr);
 }
 
-function applyDriveEditorSharing_(fileOrFolder,stats,isFolder){
+/* 링크 공유는 '보기' 전용 (2026-09-14) — 최초 커밋부터 EDIT 였고 근거 문서가 없었다. 고객이 링크를 여기저기
+   전달하는데 편집자면 받은 누구나 원본을 지우거나 덮어쓸 수 있다. 폴더에 쓰는 건 스크립트(소유자)뿐이라 편집 권한 불필요.
+   dryRun 이면 개수만 센다 — 여권/최종납품 미리보기가 확인 전에 링크를 여는 일이 없게. */
+function applyDriveViewerSharing_(fileOrFolder,stats,isFolder,dryRun){
   try{
-    fileOrFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.EDIT);
+    if(!dryRun)fileOrFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
     if(isFolder)stats.folders++;
     else stats.files++;
   }catch(e){
@@ -24309,12 +24323,13 @@ function applyDriveEditorSharing_(fileOrFolder,stats,isFolder){
   }
 }
 
-function ensureDriveFolderEditorLink_(folderRef,options){
+function ensureDriveFolderViewerLink_(folderRef,options){
   const folderId=_extractDriveFolderId_(folderRef);
   if(!folderId)return{ok:false,code:'INVALID_DRIVE_FOLDER',message:'Drive 폴더 ID를 확인하지 못했습니다.'};
   const opts=options||{};
   const recursive=!!opts.recursive;
   const includeFiles=!!opts.includeFiles;
+  const dryRun=!!opts.dryRun;
   const maxItems=Math.max(1,parseInt(opts.maxItems,10)||300);
   const maxDepth=Math.max(0,parseInt(opts.maxDepth,10)||2);
   try{
@@ -24325,11 +24340,11 @@ function ensureDriveFolderEditorLink_(folderRef,options){
       const current=queue.shift();
       const currentFolder=current.folder;
       const depth=current.depth||0;
-      applyDriveEditorSharing_(currentFolder,stats,true);
+      applyDriveViewerSharing_(currentFolder,stats,true,dryRun);
       if(includeFiles){
         const files=currentFolder.getFiles();
         while(files.hasNext()&&(stats.folders+stats.files)<maxItems){
-          applyDriveEditorSharing_(files.next(),stats,false);
+          applyDriveViewerSharing_(files.next(),stats,false,dryRun);
         }
       }
       if(!recursive||depth>=maxDepth||(stats.folders+stats.files)>=maxItems)continue;
@@ -24338,17 +24353,111 @@ function ensureDriveFolderEditorLink_(folderRef,options){
         queue.push({folder:folders.next(),depth:depth+1});
       }
     }
-    return{ok:true,id:folder.getId(),name:folder.getName(),url:folder.getUrl(),permission:'editor',permissionStats:stats};
+    return{ok:true,id:folder.getId(),name:folder.getName(),url:folder.getUrl(),permission:'viewer',permissionStats:stats};
   }catch(e){
     return{ok:false,code:'DRIVE_SHARING_FAILED',message:'Drive 폴더 권한 변경에 실패했습니다: '+e.message};
   }
 }
 
+/* 🔒 링크 편집자 → 뷰어 일괄 하향 (2026-09-14, 일회성 정리용)
+   납품 폴더 링크 공유가 최초 커밋부터 ANYONE_WITH_LINK+EDIT 였다(근거 문서 없음) — 고객이 전달한 링크를 받은
+   누구나 원본을 지우거나 덮어쓸 수 있었다. 신규 발송은 VIEW 로 바꿨고, 이미 나간 것은 이 액션으로 낮춘다.
+   조회(기본): 링크 편집자 공유 '폴더' + 구글 문서류만 훑어 최상위 단위로 묶는다. 사진 파일까지 훑으면 링크공유 파일이
+     수만 장이라 6분을 넘긴다(첫 시도 타임아웃). 코드가 파일에 편집자를 건 곳은 전부 편집자 폴더 안이라 폴더로 충분.
+     ponytail: 폴더 밖에 손으로 편집자 공유한 사진·PDF 는 목록에 안 뜬다 — 필요하면 Drive 검색으로 따로 본다.
+   실행: apply:true + rootIds:[…](사장님이 목록에서 승인한 id). 루트마다 위에서 아래로 폴더→하위 전부를 훑어
+     anyone+writer 만 reader 로 바꾼다. 시간예산을 넘기면 remainingRootIds 를 그대로 다시 넣어 이어간다(멱등). */
+function downgradeDriveLinkEditorsForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const started=Date.now();
+  const FOLDER='application/vnd.google-apps.folder';
+  const auth={Authorization:'Bearer '+ScriptApp.getOAuthToken()};
+  const listAll=function(q){
+    const out=[];
+    let pageToken='';
+    do{
+      const res=UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files?pageSize=1000&q='+encodeURIComponent(q)
+        +'&fields='+encodeURIComponent('nextPageToken,files(id,name,mimeType,parents,createdTime,webViewLink,permissions(id,type,role))')
+        +(pageToken?'&pageToken='+encodeURIComponent(pageToken):''),{headers:auth,muteHttpExceptions:true});
+      if(res.getResponseCode()!==200) throw new Error('Drive 목록 실패: '+res.getContentText().slice(0,300));
+      const body=JSON.parse(res.getContentText());
+      Array.prototype.push.apply(out,body.files||[]);
+      pageToken=body.nextPageToken||'';
+    }while(pageToken);
+    return out;
+  };
+  const linkWriter=function(f){return (f.permissions||[]).filter(function(p){return p.type==='anyone'&&p.role==='writer';})[0]||null;};
+
+  if(payload.apply!==true){
+    const shared="'me' in owners and trashed = false and (visibility = 'anyoneWithLink' or visibility = 'anyoneCanFind')";
+    const items={};
+    listAll(shared+" and mimeType = '"+FOLDER+"'")
+      .concat(listAll(shared+" and mimeType != '"+FOLDER+"' and mimeType contains 'application/vnd.google-apps.'"))
+      .forEach(function(f){if(linkWriter(f))items[f.id]=f;});
+    const rootOf=function(id){let cur=items[id],guard=0;while(guard++<20){const p=(cur.parents||[])[0];if(!p||!items[p])return cur.id;cur=items[p];}return cur.id;};
+    const groups={};
+    Object.keys(items).forEach(function(id){
+      const r=rootOf(id),it=items[r];
+      const g=groups[r]||(groups[r]={id:r,name:it.name,type:it.mimeType===FOLDER?'folder':it.mimeType.replace('application/vnd.google-apps.',''),
+        createdTime:it.createdTime||'',url:it.webViewLink||'',subFolders:0});
+      if(id!==r)g.subFolders++;
+    });
+    const list=Object.keys(groups).map(function(k){return groups[k];})
+      .sort(function(a,b){return String(b.createdTime).localeCompare(String(a.createdTime));});
+    return{ok:true,dryRun:true,roots:list.length,list:list,ms:Date.now()-started,
+      note:list.length?'변경하지 않았습니다. 목록 확인 후 apply:true + rootIds:[…] 로 실행하세요.':'링크 편집자 공유 폴더가 남아 있지 않습니다.'};
+  }
+
+  const rootIds=(payload.rootIds||[]).map(String).filter(Boolean);
+  if(!rootIds.length) return{ok:false,code:'NO_TARGET',message:'rootIds 가 필요합니다(조회 결과 list[].id 중 승인된 것).'};
+  const patchReader=function(files){   // files: [{id,permId}] — 25개씩 병렬
+    const errs=[];
+    for(let i=0;i<files.length;i+=25){
+      const chunk=files.slice(i,i+25);
+      const rs=UrlFetchApp.fetchAll(chunk.map(function(f){return{
+        url:'https://www.googleapis.com/drive/v3/files/'+f.id+'/permissions/'+encodeURIComponent(f.permId),
+        method:'patch',contentType:'application/json',payload:JSON.stringify({role:'reader'}),headers:auth,muteHttpExceptions:true};}));
+      rs.forEach(function(r,k){if(r.getResponseCode()!==200)errs.push({id:chunk[k].id,code:r.getResponseCode(),message:r.getContentText().slice(0,160)});});
+    }
+    return errs;
+  };
+  const done=[],errors=[];
+  let changed=0,timedOut=false;
+  for(let i=0;i<rootIds.length&&!timedOut;i++){
+    const rootId=rootIds[i];
+    try{
+      const rootRes=UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(rootId)+'?fields='+encodeURIComponent('id,name,mimeType,permissions(id,type,role)'),{headers:auth,muteHttpExceptions:true});
+      if(rootRes.getResponseCode()!==200){errors.push({id:rootId,code:rootRes.getResponseCode(),message:rootRes.getContentText().slice(0,160)});done.push(rootId);continue;}
+      const root=JSON.parse(rootRes.getContentText());
+      // 위에서 아래로 — 루트를 먼저 낮춰야 상속분이 따라 내려가고 하위엔 따로 박힌 편집자만 남는다.
+      const queue=[root];
+      while(queue.length){
+        if(Date.now()-started>240000){timedOut=true;break;}
+        const node=queue.shift();
+        const w=linkWriter(node);
+        if(w){const e=patchReader([{id:node.id,permId:w.id}]);if(e.length)Array.prototype.push.apply(errors,e);else changed++;}
+        if(node.mimeType!==FOLDER)continue;
+        const kids=listAll("'"+node.id+"' in parents and trashed = false");
+        const writers=kids.filter(function(f){return f.mimeType!==FOLDER&&linkWriter(f);}).map(function(f){return{id:f.id,permId:linkWriter(f).id};});
+        const e=patchReader(writers);
+        Array.prototype.push.apply(errors,e);
+        changed+=writers.length-e.length;
+        kids.forEach(function(f){if(f.mimeType===FOLDER)queue.push(f);});
+      }
+      if(!timedOut)done.push(rootId);
+    }catch(e){errors.push({id:rootId,message:e.message});done.push(rootId);}
+  }
+  const remainingRootIds=rootIds.filter(function(id){return done.indexOf(id)<0;});
+  return{ok:true,changed:changed,doneRoots:done.length,remainingRootIds:remainingRootIds,errors:errors.slice(0,30),errorCount:errors.length,ms:Date.now()-started,
+    note:remainingRootIds.length?'시간예산(240초) 소진 — remainingRootIds 로 다시 실행하면 이어서 처리합니다(멱등).':'완료. 조회(dryRun)를 다시 돌려 남은 편집자 공유가 없는지 확인하세요.'};
+}
+
 function resolvePassportDeliveryFolder_(payload,name,dateStr){
   payload=payload||{};
   const explicitRef=String(payload.driveFolderId||payload.driveUrl||'').trim();
-  const shareOptions={recursive:true,includeFiles:true,maxItems:300,maxDepth:3};
-  if(explicitRef)return ensureDriveFolderEditorLink_(explicitRef,shareOptions);
+  const shareOptions={recursive:true,includeFiles:true,maxItems:300,maxDepth:3,dryRun:payload.dryRun===true};
+  if(explicitRef)return ensureDriveFolderViewerLink_(explicitRef,shareOptions);
   const folders=findDriveFoldersForCustomerDate_(name,dateStr);
   if(!folders.length){
     return{ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'예약 고객명/촬영일과 일치하는 Drive 폴더를 찾지 못했습니다.'};
@@ -24363,7 +24472,7 @@ function resolvePassportDeliveryFolder_(payload,name,dateStr){
       candidates:folders.slice(0,8)
     };
   }
-  const shared=ensureDriveFolderEditorLink_(top.id,shareOptions);
+  const shared=ensureDriveFolderViewerLink_(top.id,shareOptions);
   if(shared.ok)shared.autoMatched=true;
   return shared;
 }
@@ -24375,8 +24484,8 @@ function resolveSelectDeliveryFolder_(payload,name,dateStr){
   payload=payload||{};
   const explicitRef=String(payload.driveFolderId||payload.driveUrl||payload.driveFolderUrl||payload.driveFolderLink||payload.driveLink||'').trim();
   // 셀렉은 원본 폴더 안 사진 파일까지 링크로 열람돼야 하므로 파일 포함 공유.
-  const shareOptions={recursive:true,includeFiles:true,maxItems:300,maxDepth:3};
-  if(explicitRef)return ensureDriveFolderEditorLink_(explicitRef,shareOptions);
+  const shareOptions={recursive:true,includeFiles:true,maxItems:300,maxDepth:3,dryRun:payload.dryRun===true};
+  if(explicitRef)return ensureDriveFolderViewerLink_(explicitRef,shareOptions);
   const folders=findDriveFoldersForCustomerDate_(name,dateStr);
   if(!folders.length){
     return{ok:false,code:'DRIVE_FOLDER_NOT_FOUND',message:'셀렉 고객명/촬영일과 일치하는 Drive 폴더를 찾지 못했습니다. driveFolderId를 지정해 다시 시도해 주세요.'};
@@ -24391,7 +24500,7 @@ function resolveSelectDeliveryFolder_(payload,name,dateStr){
       candidates:folders.slice(0,8)
     };
   }
-  const shared=ensureDriveFolderEditorLink_(top.id,shareOptions);
+  const shared=ensureDriveFolderViewerLink_(top.id,shareOptions);
   if(shared.ok)shared.autoMatched=true;
   return shared;
 }
@@ -24420,7 +24529,7 @@ const SELECT_DELIVERY_MAX_PHOTOS=1200;                   // 평소 600~800장 �
 const SELECT_DELIVERY_MAX_BYTES=6*1024*1024*1024;        // 6GB
 const SELECT_DELIVERY_SPLIT_HINT_BYTES=2*1024*1024*1024; // Drive 일괄 다운로드가 실질적으로 깨지는 선
 const SELECT_DELIVERY_SCAN_CAP=3000;                     // 스캔 상한 — 폴더가 커도 발송이 타임아웃되지 않게
-const SELECT_DELIVERY_SCAN_DEPTH=3;                      // ensureDriveFolderEditorLink_ 와 같은 깊이
+const SELECT_DELIVERY_SCAN_DEPTH=3;                      // ensureDriveFolderViewerLink_ 와 같은 깊이
 const SELECT_DELIVERY_SCAN_BUDGET_MS=30000;              // Drive 가 느린 날 발송 자체가 멎지 않도록
 
 // 갤러리가 재귀로 훑는 것과 같은 기준(사진 파일만)으로 폴더 규모를 잰다.
@@ -24627,7 +24736,7 @@ function createSelectSession(token,data){
     const selSh=ensureSelectSheet_(sheets.ss);
     let driveLink=data.driveLink||data.driveFolderUrl||data.driveFolderLink||'';
     if(data.driveFolderId){
-      try{const f=DriveApp.getFolderById(data.driveFolderId);f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.EDIT);driveLink=f.getUrl();}
+      try{const f=DriveApp.getFolderById(data.driveFolderId);f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);driveLink=f.getUrl();}
       catch(e){Logger.log('Drive sharing error:'+e.message);}
     }
     const bookingRowIndex=String(data.bookingRowIndex||data.rowIndex||'').trim();
@@ -28629,7 +28738,7 @@ function updateSelectDriveLinkAdmin(token,bookingRowIndex,data){
       if(sizeCheck&&sizeCheck.ok!==true)return sizeCheck;
       sizeNotice=String((sizeCheck&&sizeCheck.notice)||'');
     }
-    const shared=ensureDriveFolderEditorLink_(folderRef,{recursive:false,includeFiles:false,maxItems:20,maxDepth:0});
+    const shared=ensureDriveFolderViewerLink_(folderRef,{recursive:false,includeFiles:false,maxItems:20,maxDepth:0});
     if(!shared||!shared.ok) return{ok:false,message:(shared&&shared.message)||'Drive 폴더를 확인하지 못했습니다.'};
 
     const driveLink=shared.url||rawLink;
@@ -28776,7 +28885,7 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
         const folderName=yymmdd+'_'+data.name;
         const root=DriveApp.getFolderById(DRIVE_ROOT_FOLDER_ID);
         const it=root.getFoldersByName(folderName);
-        if(it.hasNext()){const f=it.next();f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.EDIT);dLink=f.getUrl();}
+        if(it.hasNext()){const f=it.next();f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);dLink=f.getUrl();}
       }catch(e){}
       const first=_makeSelectRow_({
         name:data.name,email:data.email,phone:data.phone,date:data.dateStr,itemGroup:data.itemGroup,
@@ -31969,7 +32078,9 @@ function _createInvoiceRecordCore_(payload){
   const duplicated=findExistingInvoiceForPayload_(invoiceSheet,{
     bookingRowIndex:linkedBookingRow,
     type:requestedType,
-    refundAmount:payload.refundAmount
+    refundAmount:payload.refundAmount,
+    // 부분환불 이벤트 단위 발행 — 이걸 안 넘기면 가드 쪽 우회가 죽어 두 번째 환불 인보이스가 막힌다
+    refundEventTs:payload.refundEventTs
   });
   if(duplicated){
     throw new Error(`이미 발행된 인보이스가 있습니다. 기존 번호: ${duplicated.number}`);
@@ -32118,6 +32229,10 @@ function _createInvoiceRecordCore_(payload){
   return {ok:true, invoiceNumber:invNo, pdfUrl:pdf.url, mailSentAt, mailSubject, mailBody, mailResult, bookingSync};
 }
 
+/* 중복 가드에서 '없는 인보이스'로 치는 상태. 발행취소(Storno)는 결번으로 남지만 효력이 없으므로
+   같은 예약에 대체 인보이스를 발행할 수 있어야 한다(KOTRA row252: 260017·260018 취소 후 260019, 2026-09-14). */
+const INVOICE_VOID_STATUSES_=['PDF오류','발행실패','발행취소'];
+
 function findExistingInvoiceForPayload_(invoiceSheet,payload){
   const bookingRowIndex=parseInt(payload&&payload.bookingRowIndex,10)||0;
   if(!bookingRowIndex) return null;
@@ -32128,9 +32243,7 @@ function findExistingInvoiceForPayload_(invoiceSheet,payload){
     .map(function(row,idx){return invoiceRowToObject_(row,idx+2);})
     .filter(function(inv){
       if(Number(inv&&inv.bookingRowIndex||0)!==bookingRowIndex) return false;
-      const status=String(inv&&inv.status||'').trim();
-      if(status==='PDF오류'||status==='발행실패') return false;
-      return true;
+      return INVOICE_VOID_STATUSES_.indexOf(String(inv&&inv.status||'').trim())===-1;
     });
   if(!invoices.length) return null;
   if(isRefundRequest){
@@ -32208,6 +32321,50 @@ function updateInvoiceAdmin(token, payload){
   if(idx===-1) throw new Error('인보이스를 찾을 수 없습니다.');
   const rowIndex=idx+2;
   const current=invoiceRowToObject_(rows[idx+1],rowIndex);
+  /* 예약 사후 연결(bookingRowIndex, 0=해제) — Storno 후 수기로 뽑은 대체 인보이스를 원 예약에 붙인다
+     (STMIN-260019 → row252, 2026-09-14). 예약행 번호 열만 쓴다: 금액·품목·PDF 불변, 예약행 동기화도 안 함
+     (총액 정본은 booking-set-amount). 수정 필드 없이 오면 PDF 재생성 없이 여기서 끝난다. */
+  if(payload.bookingRowIndex!=null){
+    const rawRow=String(payload.bookingRowIndex).trim();
+    if(!/^\d+$/.test(rawRow)) throw new Error('bookingRowIndex 는 예약 행 번호여야 합니다(연결 해제는 0): '+rawRow);
+    const nextRow=parseInt(rawRow,10);
+    const prevRow=Number(current.bookingRowIndex||0);
+    const bookingSheet=ensureSheets_().bookingSheet;
+    let bRow=null;
+    if(nextRow){
+      if(nextRow<2||nextRow>bookingSheet.getLastRow()) throw new Error('존재하지 않는 예약 행입니다: '+nextRow);
+      bRow=bookingSheet.getRange(nextRow,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+      if(!bRow[BOOKING_COL['고객명']]&&!bRow[BOOKING_COL['예약일시']]) throw new Error('빈 예약 행입니다: '+nextRow);
+      const expectName=String(payload.expectName||'').trim();
+      if(expectName&&String(bRow[BOOKING_COL['고객명']]||'').trim()!==expectName){
+        throw new Error('행 고객명 불일치: 행='+bRow[BOOKING_COL['고객명']]+' / 기대='+expectName);
+      }
+      // 연결로 생성 가드를 우회하지 않는다 — 살아 있는 인보이스를 이미 가진 예약에는 붙이지 않는다
+      if(nextRow!==prevRow&&INVOICE_VOID_STATUSES_.indexOf(String(current.status||'').trim())===-1){
+        const dup=findExistingInvoiceForPayload_(invoiceSheet,{bookingRowIndex:nextRow,type:current.type,refundAmount:current.refund});
+        if(dup) throw new Error('예약 '+nextRow+'행에 이미 발행된 인보이스가 있습니다: '+dup.number+' (먼저 발행취소)');
+      }
+    }
+    let auditLine='';
+    if(nextRow!==prevRow){
+      invoiceSheet.getRange(rowIndex,INVOICE_COL['예약행번호']+1).setValue(nextRow||'');
+      // 감사줄은 예약 메모에 남긴다 — 인보이스 메모는 고객 PDF 에 인쇄된다
+      const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+      auditLine='[인보이스연결 '+stamp+'] '+invNumber+' 예약행 '+(prevRow||'-')+'→'+(nextRow||'-');
+      [prevRow,nextRow].filter(function(r){return r>=2&&r<=bookingSheet.getLastRow();}).forEach(function(r){
+        const cell=bookingSheet.getRange(r,BOOKING_COL['요청사항']+1);
+        cell.setValue([String(cell.getValue()||'').trim(),auditLine].filter(Boolean).join('\n'));
+      });
+    }
+    const EDIT_KEYS=['customerName','customerEmail','customerPhone','customerAddress','memo','dateStr','status',
+      'businessInvoiceNeeded','businessCompanyName','businessVatId','businessInvoiceEmail','businessInvoiceRef'];
+    if(!EDIT_KEYS.some(function(k){return payload[k]!==undefined;})){
+      return {ok:true,invoiceNumber:invNumber,bookingRowIndex:nextRow,previousBookingRowIndex:prevRow,
+        bookingName:bRow?String(bRow[BOOKING_COL['고객명']]||''):'',
+        invoiceTotal:current.total,bookingTotal:bRow?parseMoneyValue_(bRow[BOOKING_COL['총결제액']]):null,
+        invoiceStatus:current.status,auditLine:auditLine,pdfSkipped:true};
+    }
+  }
   const businessInvoiceNeeded=payload.businessInvoiceNeeded===undefined ? current.businessInvoiceNeeded : !!payload.businessInvoiceNeeded;
   const invoiceLang='de';
   const updates={
@@ -36930,7 +37087,7 @@ ${reviewBlock.de}
     const memoCol=BOOKING_COL['요청사항'];
     const stamp=Utilities.formatDate(new Date(),CONFIG.TZ||'Europe/Berlin','yyyy-MM-dd HH:mm');
     const existing=String(row[memoCol]||'');
-    const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${folderResult.name?' · '+folderResult.name:''} · 링크 편집 권한 적용 (${permissionSummary})${note?' ('+note+')':''}`;
+    const entry=`[${stamp}] 여권사진 메일 발송 → ${driveUrl}${folderResult.name?' · '+folderResult.name:''} · 링크 보기 권한 적용 (${permissionSummary})${note?' ('+note+')':''}`;
     sh.getRange(rowIndex,memoCol+1).setValue(existing?existing+'\n'+entry:entry);
     /* 리뷰 요청이 이 메일에 실렸으므로 별도 감사메일(1~14일 후 자동)이 또 나가면 이중 요청이 된다 —
        감사메일 타임스탬프를 여기서 스탬프해 그 잡이 자연 스킵되게 한다(2026-08-31). */
@@ -36972,8 +37129,8 @@ ${reviewBlock.de}
     }
     // 상태를 '작업완료'로 (셀렉 생략)
     try{sh.getRange(rowIndex,BOOKING_COL['상태']+1).setValue('작업완료');}catch(e){}
-    try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[여권 발송] ${name} — ${dateStr}`,htmlBody:`<p>${escapeHtml_(name)}님(${escapeHtml_(email)})에게 여권사진 발송 완료.<br>폴더: ${escapeHtml_(folderResult.name||'-')}<br>권한: 링크가 있는 모든 사용자 편집자 (${escapeHtml_(permissionSummary)})<br>링크: <a href="${safeDriveUrl}">${safeDriveUrl}</a></p>`});}catch(e){}
-    return{ok:true,to:email,lang:L,driveUrl:driveUrl,folderName:folderResult.name||'',permission:folderResult.permission||'editor',permissionStats:permissionStats,autoMatched:!!folderResult.autoMatched};
+    try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[여권 발송] ${name} — ${dateStr}`,htmlBody:`<p>${escapeHtml_(name)}님(${escapeHtml_(email)})에게 여권사진 발송 완료.<br>폴더: ${escapeHtml_(folderResult.name||'-')}<br>권한: 링크가 있는 모든 사용자 뷰어 (${escapeHtml_(permissionSummary)})<br>링크: <a href="${safeDriveUrl}">${safeDriveUrl}</a></p>`});}catch(e){}
+    return{ok:true,to:email,lang:L,driveUrl:driveUrl,folderName:folderResult.name||'',permission:folderResult.permission||'viewer',permissionStats:permissionStats,autoMatched:!!folderResult.autoMatched};
   } finally{try{lock.releaseLock();}catch(e){}}
 }
 
@@ -37023,7 +37180,7 @@ function sendFinalDeliveryAdmin(token,rowIndex,payload){
         const it=parent.getFoldersByName(subName);
         if(it.hasNext()){
           const sub=it.next();
-          sub.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+          if(payload.dryRun!==true)sub.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
           retouchUrl=sub.getUrl();
           retouchFolderName=sub.getName();
         }

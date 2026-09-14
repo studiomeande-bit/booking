@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-09-13 Europe/Berlin
+Updated: 2026-09-14 Europe/Berlin
 
 ## Immediate
 
@@ -63,6 +63,56 @@ Updated: 2026-09-13 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-14 · 🔒 고객 Drive 링크 공유 편집자 → 뷰어 · 일괄 하향 액션 · 여권/최종납품 dryRun 공유 차단 (@954 · @955)
+
+**발견.** 납품 폴더 링크 공유가 `ANYONE_WITH_LINK + Permission.EDIT` — 링크를 받은 누구나 고객 원본을 지우거나 덮어쓸 수 있었다
+(고객은 링크를 가족·지인에게 전달한다). 실례: KOTRA `260910_Kotra_GP` `{type:anyone, role:writer}`, 여권 발송 사장님 알림
+"권한: 링크가 있는 모든 사용자 편집자"(조치준 9/12 · 나용민 9/9 · 곽희원 9/9). **근거 조사**: EDIT 는 최초 커밋(0747cd6)부터 그대로
+옮겨졌고 git log·docs 어디에도 이유가 없다. 폴더에 쓰는 주체는 스크립트(USER_DEPLOYING=소유자)뿐이라 고객 쪽 쓰기 권한은 불필요 —
+뷰어도 폴더 열람·다운로드는 그대로 된다.
+
+- **신규 발송 VIEW**: `applyDriveEditorSharing_`→`applyDriveViewerSharing_`, `ensureDriveFolderEditorLink_`→`ensureDriveFolderViewerLink_`
+  (여권 발송·셀렉 자동탐색·최종납품·셀렉 드라이브링크 교체 전부 이 경로), `createSelectSession` 명시 폴더 · `resendSelectLinkAdmin` 폴더 탐색의
+  직접 `setSharing(…EDIT)` 2곳도 VIEW. 코드에 `Permission.EDIT` 0건. 여권 메모 "링크 보기 권한 적용", 사장님 알림 "뷰어", 응답 `permission:'viewer'`,
+  어드민 여권 발송 확인창 문구 "링크가 있는 모든 사용자: 뷰어".
+- **곁가지 수리 — dryRun 이 링크를 먼저 열던 것**: `sendPassportPhotosAdmin`·`sendFinalDeliveryAdmin` 의 dryRun(오늘촬영 보드 원탭 미리보기)은
+  "권한부여를 건너뛴다"고 적혀 있었지만 폴더 해결기가 dryRun 검사 **앞에서** 공유를 걸었다 → 확인 전에 링크가 공개됐다.
+  해결기 shareOptions 에 `dryRun` 전달(개수만 셈) + 최종납품 `보정본` 서브폴더 공유도 dryRun 이면 건너뜀.
+- **`drive-link-editor-downgrade`** (신규 에이전트 액션, 이미 나간 것 정리):
+  - 조회(기본, 무변경): `'me' in owners` + 링크공개 **폴더 + 구글 문서류**만 Drive v3 REST 로 훑어 anyone+writer 를 최상위 단위로 묶는다.
+    첫 버전(@954)은 링크공개 **파일 전체**를 훑다가 CLI 5분 타임아웃 — 셀렉 사진이 개별 공유라 수만 장. 코드가 파일에 편집자를 건 곳은 전부
+    편집자 폴더 안이므로 폴더 한정으로 충분(@955, 21초). ponytail: 폴더 밖에 손으로 편집자 공유한 사진·PDF 는 목록 밖.
+  - 실행: `{"apply":true,"rootIds":[…]}` — 루트마다 위→아래(폴더 먼저 낮춰 상속분이 따라 내려가게) 하위 전부를 훑어 anyone+writer 만
+    `permissions.patch role:reader`(fetchAll 25개씩). 240초 예산 초과 시 `remainingRootIds` 로 재호출(멱등).
+- **조회 결과(2026-09-14 20시)**: 최상위 **115 폴더**(2026-03-17 ~ 오늘), 문서류 0. 대부분 `YYMMDD_고객명`(샘플·여권 포함).
+  고객 폴더 패턴 밖이라 사장님 확인이 필요한 것: `2026HSAD트렌지션제작`(+4) · `2026어린이날 영상` · `260627_KOTRA`(+124) ·
+  `260818_morgenkorea`(+5) · `재수정`(+1) · 부모 없이 떠 있는 `보정본` 7개.
+- ⏳ **미적용 — 사장님 승인 대기.** 적용: `node scripts/erp-agent.mjs drive-link-editor-downgrade --json '{"apply":true,"rootIds":[…]}'` →
+  조회 재실행으로 0 확인. 신규 발송 실검증은 다음 여권/셀렉 발송의 사장님 알림 "권한: … 뷰어" + 조회 목록에 새 폴더가 안 뜨는 것으로 확인.
+- 배포: 같은 시각 인보이스 세션이 작업트리를 쓰고 있어, 라이브 스냅샷(clasp pull)에 이 변경만 얹어 push. 작업트리 == 라이브 @955 확인.
+
+### 2026-09-14 · 발행취소 인보이스 중복가드 제외 · invoice-update 예약 사후연결 · booking-get 인보이스 표시 (@953)
+
+**원인.** `findExistingInvoiceForPayload_`(`invoice-create` 의 예약당 1건 가드)가 `PDF오류`·`발행실패` 만 건너뛰고
+`발행취소`(Storno) 는 살아 있는 인보이스로 셌다 → 취소 후 같은 예약에 대체 인보이스를 발행하는 정상 독일식 흐름이 막혔다.
+실사례: KOTRA row252 — 대체본 STMIN-260019(€462,50)를 예약 없이 `수기` 로 뽑아야 했다.
+
+- **가드**: 제외 상태를 `INVOICE_VOID_STATUSES_=['PDF오류','발행실패','발행취소']` 한 곳으로. 살아 있는 `발행` 은 계속 차단.
+  호출자는 `_createInvoiceRecordCore_` 하나뿐(grep 확인).
+- **곁가지 수리**: 같은 호출이 `refundEventTs` 를 가드에 안 넘겨, 부분환불 이벤트 단위 발행 우회(f5270c7 설계)가 한 번도 동작한 적 없었다
+  — 한 예약의 **두 번째** 환불 인보이스가 '이미 발행됨'으로 막히던 것. 한 줄 전달로 수리.
+- **`invoice-update` 에 `bookingRowIndex`**(0=연결 해제, `expectName` 옵션): 행 존재·빈 행·고객명 대조, 대상 예약에 살아 있는
+  인보이스가 있으면 거부(연결로 생성 가드를 우회하지 않음). **인보이스의 예약행번호 열만** 쓴다 — 금액·품목 불변, 예약행 동기화 없음,
+  수정 필드 없이 오면 **PDF 재생성 없이** 종료. 감사줄 `[인보이스연결 YYYY-MM-DD] 번호 예약행 이전→이후` 는 **예약 메모**(이전·새 행)에 남긴다
+  (인보이스 메모는 고객 PDF 에 인쇄되므로). `preserveAuditMemoLines_` 보존 접두어에 `인보이스연결` 추가. 어드민 수정 모달은 이 필드를 안 보내 영향 없음.
+- **`booking-get`** 응답에 `invoices:[{number,type,status,total,issuedAt,mailSentAt}]`(예약행번호 기준, 발행취소 포함).
+- 회귀: `node scripts/check-invoice-relink.mjs` (12건, Code.gs 원본 함수를 가짜 시트에서 실행).
+- **라이브 적용**: STMIN-260019 → row252 연결(`pdfSkipped:true`, PDF 파일ID `1tJOXa2O…` 불변, 메일 무발송). `booking-get 252` 에 260019 표시 확인.
+  타입은 `수기` 그대로(가드상 본 인보이스로 취급되어 이후 중복 발행도 막힌다).
+- ⚠️ 확인 필요: **STMIN-260017 은 인보이스 시트에 행이 없다**(invoice-list·doc-preview-text 모두 없음) — 발행취소가 아니라 삭제된 상태.
+  260018 은 `발행취소`·예약 미연결. 결번 기록은 회계 폴더 문서 쪽 확인.
+- 배포는 git HEAD(=라이브) + 이 변경만 담은 스냅샷에서 push — 같은 시각 다른 세션이 작업 중이던 Drive 공유 권한 수정(EDIT→VIEW)은 **@953 에 미포함**.
 
 ### 2026-09-13 · 예약 실패→재시도 오판 수리 · B2B 셀렉관리 제외 · 배지현 TFP 전환 · 안내문 여러 장 할인 (@950 · 프런트 이 커밋)
 

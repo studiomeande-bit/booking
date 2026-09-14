@@ -15267,7 +15267,7 @@ function applyPassportAffiliateDiscount(rowIndex,btn){
 
 /* ===== 여권사진 직접 발송 (셀렉 생략) ===== */
 function sendPassportPhotosUI(rowIndex,btn){
-  if(!confirm('여권사진 메일을 발송합니다.\nDrive 폴더를 자동으로 찾고, 권한을 "링크가 있는 모든 사용자: 편집자"로 전환한 뒤 고객에게 전달합니다.\n\n계속하시겠습니까?'))return;
+  if(!confirm('여권사진 메일을 발송합니다.\nDrive 폴더를 자동으로 찾고, 권한을 "링크가 있는 모든 사용자: 뷰어"로 전환한 뒤 고객에게 전달합니다.\n\n계속하시겠습니까?'))return;
   const note=prompt('추가 메모 (선택)','')||'';
   sendPassportPhotosRequest_(rowIndex,{autoFind:true,note:note},btn);
 }
