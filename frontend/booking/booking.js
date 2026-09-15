@@ -8,6 +8,15 @@ const LANG_STORAGE_KEY = 'studio-mean-lang';
 const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
 const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
+// 여권 5인 이상 가족 단체 할인 — 할인율은 서버 설정(pass_family_discount)에서 온다. Code.gs PASS_FAMILY_DISCOUNT_MIN_PEOPLE 과 같이 고칠 것.
+const PASS_FAMILY_DISCOUNT_MIN_PEOPLE = 5;
+
+// 여권 촬영시간(분): 1인 15 · 2인 20 · 3인 30 · 4인 40 · 이후 인당 +10. Code.gs getPassportComboDurationMin_ 과 동일.
+function passportDurationMin(people) {
+  const n = Math.max(1, parseInt(people, 10) || 1);
+  const table = [0, 15, 20, 30, 40];
+  return n <= 4 ? table[n] : 40 + (n - 4) * 10;
+}
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
 const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v1';
@@ -1766,8 +1775,9 @@ function wireEvents() {
   els.form.elements.email?.addEventListener('change', maybeLookupContact);
   els.form.elements.phone?.addEventListener('change', maybeLookupContact);
   els.form.elements.address?.addEventListener('input', refreshStepLocks);
-  els.form.elements.businessInvoiceNeeded?.addEventListener('change', () => {
+  els.form.elements.businessInvoiceNeeded?.addEventListener('change', async () => {
     syncConditionalFields();
+    await handleQuoteInputChange(); // 여권 5인 이상 가족 할인은 법인 인보이스 체크 시 빠진다
     renderReview();
     refreshStepLocks();
   });
@@ -3595,6 +3605,7 @@ function getPreviewQuote() {
     }, 0) + (otherCountry ? 1 : 0)
     : 0;
   let total = Number(item.p || 0);
+  let familyDiscount = 0;
 
   if (isGenericBusinessProduct(item)) {
     const business = getBusinessSelection();
@@ -3610,6 +3621,7 @@ function getPreviewQuote() {
       product: item,
       marketingDiscount: 0,
       returnDiscount: 0,
+      familyDiscount: 0,
       passAddon: false,
       passAddonPeople: 0,
       passAddonDur: 0,
@@ -3634,6 +3646,11 @@ function getPreviewQuote() {
       return sum + Number(item.p || 0) + extra;
     }, 0);
     if (!passPersonCountries.length) total = item.p * people;
+    if (people >= PASS_FAMILY_DISCOUNT_MIN_PEOPLE && !els.form?.elements?.businessInvoiceNeeded?.checked) {
+      const familyRate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+      familyDiscount = roundCurrency(total * (familyRate / 100));
+      total = roundCurrency(total - familyDiscount);
+    }
   }
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
@@ -3693,11 +3710,11 @@ function getPreviewQuote() {
     const passItem = (state.init?.products || []).find((prod) => prod.g === 'pass');
     passAddonPrice = Number(passItem?.p || 0) * passAddonPeople;
     total += passAddonPrice;
-    passAddonDur = ([0, 15, 20, 30, 40][Math.min(passAddonPeople, 4)] || 40);
+    passAddonDur = passportDurationMin(passAddonPeople);
   }
 
   const duration = item.t === 'passport'
-    ? ([0, 15, 20, 30, 40][Math.min(people, 4)] || 40)
+    ? passportDurationMin(people)
     : Number(item.d || 0);
   const prep = Number(item.prep || 0);
   return {
@@ -3713,6 +3730,7 @@ function getPreviewQuote() {
     earlyBirdDiscount,
     marketingDiscount,
     returnDiscount: 0,
+    familyDiscount,
     passAddon,
     passAddonPeople,
     passAddonDur,
@@ -4572,6 +4590,14 @@ function getAppliedDiscountLines() {
       : state.lang === 'de'
         ? `Aktionsrabatt -${state.quote.eventDiscount}€ angewendet.`
         : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`);
+  }
+  if (state.quote.familyDiscount > 0) {
+    const rate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+    lines.push(state.lang === 'en'
+      ? `Family group discount ${rate}% for ${PASS_FAMILY_DISCOUNT_MIN_PEOPLE}+ people (-€${formatEuroAmount(state.quote.familyDiscount)}) applied.`
+      : state.lang === 'de'
+        ? `Familienrabatt ${rate}% ab ${PASS_FAMILY_DISCOUNT_MIN_PEOPLE} Personen (-${formatEuroAmount(state.quote.familyDiscount)}€) angewendet.`
+        : `가족 단체 할인 ${rate}% (${PASS_FAMILY_DISCOUNT_MIN_PEOPLE}인 이상, -€${formatEuroAmount(state.quote.familyDiscount)})가 적용되었습니다.`);
   }
   if (state.quote.returnDiscount > 0) {
     const rate = Number(state.init?.settings?.returnDiscount || 10) || 10;

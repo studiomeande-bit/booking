@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-09-14 Europe/Berlin
+Updated: 2026-09-15 Europe/Berlin
 
 ## Immediate
 
@@ -63,6 +63,34 @@ Updated: 2026-09-14 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-15 · 여권 5인 이상 가족 단체 할인(%) · 4인 초과 촬영시간 인당 +10분 (clasp push 완료 · **배포 대기**)
+
+**배경.** 여권 단체 할인 기준 논의. 예약장부 실측 — 2025 161건: 1인 65% · 2인 17% · 3인 9% · 4인 4% / 2026 1~9월 169건:
+1인 78% · 2인 9% · 3인 9% · 4인 이상 2%(4인 2건·5인 2건). 4인까지는 부모+아이 가족 단위로 이미 정가 결제 → 할인 없음.
+5인 이상은 2년간 2건뿐 → **가족에 한해 % 할인**(사장님 확정). 총영사관·KOTRA 40명은 단체 프로필이라 여권 전례가 아니다.
+여권 가격 인상(H2 전략 9/1 €35)은 이번에 손대지 않음 — 상품표 €30 그대로.
+
+- **촬영시간**: `getPassportComboDurationMin_` 4인 초과는 인당 +10분(5인 50 · 8인 80). 이전엔 `[0,15,20,30,40]` 표가
+  Code.gs 3곳·AdminV2 3곳·booking.js 2곳에 복사돼 있었고 4인 초과가 40분 고정 → 여권은 앞뒤 버퍼 0분이라 5인 이상이
+  온라인으로 들어오면 슬롯이 모자랐다. Code.gs 는 공용 함수 한 곳으로, AdminV2·booking.js 는 각각 `passportDurationMin` 로 통일.
+- **가족 할인**: `calculateQuote_` 여권 블록에서 `people>=PASS_FAMILY_DISCOUNT_MIN_PEOPLE(5)` 이고 `businessInvoiceNeeded`
+  가 아니면 `총액×율`(국가 추가금 포함 후). 율은 설정 시트 `pass_family_discount`(기본 10, 상한 50) — 어드민 설정 탭
+  "여권 5인 이상 가족 할인율" 입력 신설, init `settings.passFamilyDiscount` 로 프런트·어드민에 전달. **가족 판정 = 법인 인보이스
+  체크 없음** — 유학생 등 비가족 5인이 온라인으로 오면 `booking-set-amount` 로 정가 복원(연 0~2건이라 UI 안 만듦).
+  수기등록(AdminV2 calcManualPrice)도 5인 이상이면 설정 탭 율로 깎는다 — 회사 단체면 m_price 를 직접 정가로.
+- 기록: 캘린더 설명·추가항목·확정메일·인보이스 옵션문에 `가족 단체 할인(5인 이상) -15€` 라벨. 프런트 견적 안내 3개국어 문구.
+  법인 인보이스 체크 토글 시 견적 재계산(`handleQuoteInputChange`).
+- 헬스체크 `quote-passport-family-discount`(bookingE2EDiagnostics 안): 5인 가족 할인 = 정가×율 · 법인 미적용 · 4인 미적용 · 50/40분.
+- ⚠️ **하네스가 잡은 버그**: `parsePercentSetting_` 은 빈 값을 0 으로 읽는다(`Number('')===0`). 설정 행이 없으면 할인 0 →
+  프런트(기본 10)와 서버 총액 불일치. `getPassportFamilyDiscountRate_` 에서 빈 값이면 10 고정. 사장님이 설정 탭에서 0 을 저장하면 할인 끔.
+- 검증: node 하네스(`calculateQuote_` 추출)로 1/4/5/8인·법인·국가추가·설정 0/20% 통과. **브라우저 로드 확인은 자동 모드
+  분류기가 차단** → 배포 후 사장님이 booking.studio-mean.com 에서 여권 5명 골라 "가족 단체 할인 10%" 줄·총액 €135 눈으로 확인.
+- 배포: `clasp push` 완료(ThreadsPublisher.gs 도 .claspignore 대로 함께 올라감). **`clasp deploy` 와 프런트 `git push` 는
+  분류기 차단 → 사장님.** 순서: **clasp deploy 먼저, 그다음 git push** (프런트가 먼저 나가면 서버가 안 깎는 할인이 화면에 보인다).
+  프런트는 빌드·스탬프(`booking.min.js?v=d2a4547fc0`) 완료.
+- 남은 것: 가격표 이미지(`2026년 가격표/2025 가격-01.jpg`)·상품 설명문에 "5인 이상 가족 할인" 문구 없음 — 필요하면 추가.
+
 
 ### 2026-09-14 · 🔒 고객 Drive 링크 공유 편집자 → 뷰어 · 일괄 하향 액션 · 여권/최종납품 dryRun 공유 차단 (@954 · @955)
 

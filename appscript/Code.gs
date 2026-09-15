@@ -637,6 +637,24 @@ function bookingE2EDiagnosticsAdmin(token, payload){
     };
   });
 
+  runCheck('quote-passport-family-discount','여권 5인 이상 가족 할인·촬영시간',function(){
+    const passItem=products.filter(function(p){return p&&(String(p.g)==='pass'||String(p.t)==='passport');})[0];
+    if(!passItem) return {status:'warn',detail:'여권/비자 상품을 찾지 못해 계산 점검을 건너뛰었습니다.'};
+    const fam=calculateQuote_({itemId:passItem.id,people:5,date:today});
+    const biz=calculateQuote_({itemId:passItem.id,people:5,date:today,businessInvoiceNeeded:true});
+    const four=calculateQuote_({itemId:passItem.id,people:4,date:today});
+    const rate=getPassportFamilyDiscountRate_();
+    const wantDiscount=roundCurrency_(passItem.p*5*rate/100);
+    const ok=Number(fam.familyDiscount||0)===wantDiscount && fam.totalPrice===roundCurrency_(passItem.p*5-wantDiscount)
+      && Number(biz.familyDiscount||0)===0 && Number(four.familyDiscount||0)===0
+      && fam.duration===50 && four.duration===40;
+    return {
+      status:ok?'ok':'fail',
+      detail:ok?('5인 가족 '+rate+'% -'+formatEuroAmount_(fam.familyDiscount)+'€ / 50분, 법인·4인 미적용'):'여권 가족 할인 또는 촬영시간 계산이 기대와 다릅니다.',
+      extra:{fam:{total:fam.totalPrice,discount:fam.familyDiscount,duration:fam.duration},biz:{total:biz.totalPrice,discount:biz.familyDiscount},four:{total:four.totalPrice,discount:four.familyDiscount,duration:four.duration}}
+    };
+  });
+
   runCheck('calendar-read','Google Calendar 접근',function(){
     calendar=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
     return {
@@ -7096,6 +7114,14 @@ function getEventDiscountRate_(){
 function getReturnDiscountRate_(){
   return parsePercentSetting_(getSettingsMap_().return_discount,10,50);
 }
+const PASS_FAMILY_DISCOUNT_MIN_PEOPLE=5;
+function getPassportFamilyDiscountRate_(){
+  // 여권 5인 이상 가족 단체 할인 % — 설정 시트 pass_family_discount (기본 10, 상한 50)
+  const v=getSettingsMap_().pass_family_discount;
+  // 설정 행이 아직 없으면 10. parsePercentSetting_ 은 빈 값을 0 으로 읽는다(Number('')===0) — 하네스로 잡힌 버그.
+  if(v===undefined||v===null||String(v).trim()==='') return 10;
+  return parsePercentSetting_(v,10,50);
+}
 function upsertSetting_(key,value) {
   const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues();
   SETTINGS_MAP_CACHE=null;
@@ -7518,9 +7544,12 @@ function getBookingProductForRow_(row){
 }
 
 function getPassportComboDurationMin_(people){
+  /* 여권 촬영시간(분). 4인 초과는 인당 +10분 — 사장님 확정 2026-09-15.
+     이전엔 40분 고정이라 5인 이상이 온라인으로 들어오면 슬롯이 모자랐다(여권은 앞뒤 버퍼 0분).
+     같은 표가 AdminV2.html passportDurationMin / booking.js passportDurationMin 에도 있다 — 같이 고칠 것. */
   const n=Math.max(1,parseInt(people,10)||1);
   const table=[0,15,20,30,40];
-  return table[Math.min(n,4)]||40;
+  return n<=4?table[n]:40+(n-4)*10;
 }
 
 function getBookingPassportComboDurationMinFromRow_(row){
@@ -8285,7 +8314,7 @@ function isPromoDateAllowed_(dateStr){
 function getInitDataCustomer() {
   const s=getSettingsMap_();
   const promo=getPromoConfig_();
-  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCustomerProducts_(),promoProducts:getPromoProducts_(),tfpProducts:getTfpProducts_(),partners:getPartners_().map(function(p){
+  return{settings:{ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),passFamilyDiscount:String(getPassportFamilyDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||''},products:getCustomerProducts_(),promoProducts:getPromoProducts_(),tfpProducts:getTfpProducts_(),partners:getPartners_().map(function(p){
     return{id:p.id,name:p.name,links:p.links,descKo:p.descKo,descEn:p.descEn,descDe:p.descDe,
       langs:p.langs,area:p.area,groups:p.groups,placements:p.placements};
   })};
@@ -8827,7 +8856,7 @@ function saveSiteSettings(token,s){
   }
   upsertSetting_('morning_block_ranges',formatDateRangeListSetting_(parseDateRangeListSetting_(morningBlockRaw)));
   upsertSetting_('weekday_hours',normalizedWeekdayHours);upsertSetting_('saturday_hours',normalizedSaturdayHours);upsertSetting_('event_rate',s.eventRate||'');
-  upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',String(parsePercentSetting_(s.returnDiscount,10,50)));upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
+  upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',String(parsePercentSetting_(s.returnDiscount,10,50)));if(s.passFamilyDiscount!==undefined) upsertSetting_('pass_family_discount',String(parsePercentSetting_(s.passFamilyDiscount,10,50)));upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
   upsertSetting_('promo_end',s.promoEnd||PROMO_CONFIG.END);
   upsertSetting_('promo_content_json',JSON.stringify(s.promoContent||{}));
@@ -8977,12 +9006,18 @@ function calculateQuote_(request){
     if(people>4) total+=(people-4)*20;
     if(extraRetouchCount) total+=extraRetouchCount*15;
     }
+  let familyDiscount=0;
   if(item.t==='passport'){
     total=passPersonCountries.reduce(function(sum,codes){
       const extra=Math.max(0,codes.filter(function(code){ return code && code!=='OTHER'; }).length-1)*5;
       return sum + item.p + extra;
     },0);
     if(!passPersonCountries.length) total=item.p*people;
+    // 5인 이상 가족 단체 할인(%) — 사장님 확정 2026-09-15. 법인 인보이스 체크 건은 회사 단체로 보고 제외.
+    if(people>=PASS_FAMILY_DISCOUNT_MIN_PEOPLE&&!isPublicTruthy_(request.businessInvoiceNeeded)){
+      familyDiscount=roundCurrency_(total*(getPassportFamilyDiscountRate_()/100));
+      total=roundCurrency_(total-familyDiscount);
+    }
   }
   else if(item.t==='group'&&people>2) total+=(people-2)*30;
   else if(item.t==='snap'&&!isMyRealTripProduct_(item)&&people>2) total+=(people-2)*30;
@@ -9031,20 +9066,19 @@ function calculateQuote_(request){
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
   if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
-  const PASS_DUR=[0,15,20,30,40];
   const duration=isGenericBusinessProduct_(item)
     ? businessHours*60
-    : (item.t==='passport'?PASS_DUR[Math.min(people,4)]||40:item.d);
+    : (item.t==='passport'?getPassportComboDurationMin_(people):item.d);
   // 여권 콤보 추가 시 duration에 합산
   const passAddon=(item.g==='prof'||item.g==='stud')&&!!request.passAddon;
   const passAddonPeople=parseInt(request.passAddonPeople)||1;
-  const passAddonDur=passAddon?PASS_DUR[Math.min(passAddonPeople,4)]||40:0;
+  const passAddonDur=passAddon?getPassportComboDurationMin_(passAddonPeople):0;
   const passItem=passAddon?getCachedProducts_().find(x=>x.g==='pass'):null;
   const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo'&&!isQuoteOnly;
   const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel};
 }
 
 function getBookingAgeGroupLabel_(ageGroup){
@@ -9060,6 +9094,11 @@ function getBookingAgeDiscountLabel_(quote){
   if(quote.seniorDiscountLabel) return quote.seniorDiscountLabel+' 적용';
   if(Number(quote.kidsDiscount||0)>0) return '키즈 할인 -'+formatEuroAmount_(quote.kidsDiscount)+'€ 적용';
   return '';
+}
+
+function getPassportFamilyDiscountLabel_(quote){
+  const amt=Number(quote&&quote.familyDiscount||0);
+  return amt>0?'가족 단체 할인('+PASS_FAMILY_DISCOUNT_MIN_PEOPLE+'인 이상) -'+formatEuroAmount_(amt)+'€':'';
 }
 
 function getBookingBabyTypeLabel_(babyType){
@@ -11731,6 +11770,8 @@ function buildCalendarDescription_(data,quote,surveyStr,memo){
   if(quote.totalDuration) lines.push(`총소요시간=${quote.totalDuration}분`);
   if(ageLabel) lines.push(`촬영대상=${ageLabel}`);
   if(ageDiscountLabel) lines.push(`할인=${ageDiscountLabel}`);
+  const familyDiscountLabel=getPassportFamilyDiscountLabel_(quote);
+  if(familyDiscountLabel) lines.push(`할인=${familyDiscountLabel}`);
   const calendarBabyTypeLabel=getBookingBabyTypeLabel_(data.babyType);
   if(calendarBabyTypeLabel) lines.push(`아기촬영=${calendarBabyTypeLabel}`);
   if(quote.passAddon) lines.push(`여권콤보=${quote.passAddonPeople||1}명 / 추가 ${quote.passAddonDur||getPassportComboDurationMin_(quote.passAddonPeople||1)}분`);
@@ -11770,6 +11811,8 @@ function _buildBookingExtraItem_(data, quote, surveyStr){
   if (data.profileAge) bits.push(`나이: ${String(data.profileAge).trim()}`);
   if (data.studioFamilyMembers) bits.push(`가족구성: ${String(data.studioFamilyMembers).trim()}`);
   if (ageDiscountLabel) bits.push(`할인: ${ageDiscountLabel}`);
+  const familyDiscountLabel=getPassportFamilyDiscountLabel_(quote);
+  if (familyDiscountLabel) bits.push(`할인: ${familyDiscountLabel}`);
   const bgColors=_bookingList_(data.bgColors,/[|,]/);
   if (surveyStr) bits.push(`분위기: ${surveyStr}`);
   if (bgColors.length) bits.push(`배경: ${bgColors.join(', ')}`);
@@ -11864,6 +11907,7 @@ function buildBookingDetailsRows_(data,quote,opts){
   const bgText=_bookingList_(data.bgColors,/[|,]/).join(', ');
   const discountParts=[
     ageDiscountLabel,
+    getPassportFamilyDiscountLabel_(quote),
     Number(quote.returnDiscount||0)>0?'재촬영 할인 -'+formatEuroAmount_(quote.returnDiscount)+'€':'',
     Number(quote.eventDiscount||0)>0?'이벤트 할인 -'+formatEuroAmount_(quote.eventDiscount)+'€':'',
     Number(quote.earlyBirdDiscount||0)>0?'얼리 예약 할인 -'+formatEuroAmount_(quote.earlyBirdDiscount)+'€':'',
@@ -12542,8 +12586,7 @@ function getConfirmProductPublicDurationMin_(itemGroup,prodLocal,fallbackMin,peo
     if(product){
       if(product.t==='passport'||product.g==='pass'){
         const people=Math.max(1,parseInt(peopleValue,10)||1);
-        const passDur=[0,15,20,30,40][Math.min(people,4)]||40;
-        return Math.max(15,passDur);
+        return Math.max(15,getPassportComboDurationMin_(people));
       }
       if(isGenericBusinessProduct_(product)){
         const hourMatch=String(name||'').match(/(\d+)\s*(?:시간|h|std\.?|stunden?)/i);
@@ -31865,6 +31908,8 @@ function buildInvoicePricingOptionText_(quote,payload){
   const ageDiscountLabel=getBookingAgeDiscountLabel_(quote);
   if(ageLabel) parts.push('촬영대상: '+ageLabel);
   if(ageDiscountLabel) parts.push(ageDiscountLabel);
+  const familyDiscountLabel=getPassportFamilyDiscountLabel_(quote);
+  if(familyDiscountLabel) parts.push(familyDiscountLabel);
   if(quote.weekendSurcharge) parts.push('토요일 추가금 '+formatEuroAmount_(quote.weekendSurcharge)+'€');
   if(quote.itemId==='biz'&&quote.businessHours) parts.push('행사 '+quote.businessHours+'시간');
   if(quote.itemId==='biz'&&quote.businessMode==='hybrid') parts.push('사진+영상 '+(quote.businessVideoEdit||'raw'));
@@ -31930,6 +31975,7 @@ function buildInvoicePricingPreview_(payload){
       seniorDiscountLabel:quote.seniorDiscountLabel,
       weekendSurcharge:quote.weekendSurcharge,
       returnDiscount:quote.returnDiscount,
+      familyDiscount:quote.familyDiscount,
       eventDiscount:quote.eventDiscount,
       earlyBirdDiscount:quote.earlyBirdDiscount,
       marketingDiscount:quote.marketingDiscount
