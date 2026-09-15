@@ -64,7 +64,7 @@ Updated: 2026-09-15 Europe/Berlin
 
 ## Done Recently
 
-### 2026-09-15 · 여권 5인 이상 가족 단체 할인(%) · 4인 초과 촬영시간 인당 +10분 (clasp push 완료 · **배포 대기**)
+### 2026-09-15 · 여권 5인 이상 가족 단체 할인(%) · 4인 초과 촬영시간 인당 +10분 (배포 완료 · 라이브 검증 2026-09-15 16:15)
 
 **배경.** 여권 단체 할인 기준 논의. 예약장부 실측 — 2025 161건: 1인 65% · 2인 17% · 3인 9% · 4인 4% / 2026 1~9월 169건:
 1인 78% · 2인 9% · 3인 9% · 4인 이상 2%(4인 2건·5인 2건). 4인까지는 부모+아이 가족 단위로 이미 정가 결제 → 할인 없음.
@@ -86,9 +86,10 @@ Updated: 2026-09-15 Europe/Berlin
   프런트(기본 10)와 서버 총액 불일치. `getPassportFamilyDiscountRate_` 에서 빈 값이면 10 고정. 사장님이 설정 탭에서 0 을 저장하면 할인 끔.
 - 검증: node 하네스(`calculateQuote_` 추출)로 1/4/5/8인·법인·국가추가·설정 0/20% 통과. **브라우저 로드 확인은 자동 모드
   분류기가 차단** → 배포 후 사장님이 booking.studio-mean.com 에서 여권 5명 골라 "가족 단체 할인 10%" 줄·총액 €135 눈으로 확인.
-- 배포: `clasp push` 완료(ThreadsPublisher.gs 도 .claspignore 대로 함께 올라감). **`clasp deploy` 와 프런트 `git push` 는
-  분류기 차단 → 사장님.** 순서: **clasp deploy 먼저, 그다음 git push** (프런트가 먼저 나가면 서버가 안 깎는 할인이 화면에 보인다).
-  프런트는 빌드·스탬프(`booking.min.js?v=d2a4547fc0`) 완료.
+- 배포: `clasp push` 는 세션에서, `clasp deploy` 와 프런트 `git push` 는 분류기 차단으로 사장님이 직접(ThreadsPublisher.gs 도
+  .claspignore 대로 함께 올라감). **라이브 검증(공개 API `?api=quote`·`?api=init`)**: 5인 → 총 135 / 할인 15 / 50분 ·
+  5인+법인 인보이스 → 150 / 0 · 4인 → 120 / 0 / 40분 · 8인 → 216 / 24 / 80분 · init `settings.passFamilyDiscount='10'` ·
+  booking.studio-mean.com `booking.min.js?v=d2a4547fc0` 에 새 코드 포함. 브라우저 화면 확인만 사장님 몫.
 - 남은 것: 가격표 이미지(`2026년 가격표/2025 가격-01.jpg`)·상품 설명문에 "5인 이상 가족 할인" 문구 없음 — 필요하면 추가.
 
 
