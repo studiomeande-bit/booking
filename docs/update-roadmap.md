@@ -64,6 +64,26 @@ Updated: 2026-09-15 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-17 · 추가금 면제가 인화장부 미수 행까지 정리 — `select-clear-extras` (@962 · 배포 완료 · 라이브 적용·검증 15:30)
+
+실제 사례: 이윤경(세션 AsPNSRCuUZCN3W8sndqG, 예약행 225) €4 추가인화를 사장님이 면제. `select-clear-extras` 가 셀렉 시트 3칸만 0 으로 만들고
+인화장부(인화주문) 행 12 는 `€4 미결제` 로 남아 미수 목록·브리핑·보드·C6 결제요청·장부 openAmount 에 계속 잡혔다. 에이전트 수단은 행 삭제(기록 소실)뿐이었다.
+- **Code.gs**: `planSelectPrintWaive_`(읽기 전용 판정: none / neutralize / paid) + `applySelectPrintWaive_`(쓰기). 미결제 행을 **지우지 않고 중화** —
+  금액 0 · 결제수단 `면제` · 상태 `청구취소` · 메모에 감사 줄(세션 태그 뒤에 덧붙임). 인화항목 문자열은 보존. 쓰기 직전 세션 태그 재대조(행 밀림이면 거부).
+- 가드: 셀렉 `ALREADY_BILLED` 그대로 · 인화장부 행이 **이미 수납**이면 `PRINT_ROW_PAID`(환불 건). `force:true` 는 셀렉 금액만 0 으로 하고 수납 행은 **건드리지 않는다**
+  (`printRow.skipped:'PAID_REFUND_CASE'`, 감사 줄에 "기수납 유지 — 환불 확인") — 받은 돈을 0 으로 지우면 지난 날짜 시재·매출이 바뀌고, 환불은 예약행 환불 이벤트가 정본.
+  인화장부 행 고객명 ≠ 셀렉 고객명이면 `PRINT_NAME_MISMATCH`.
+- 셀렉 금액이 이미 0 이어도 인화장부 행이 미결제면 처리(옛 버전으로 정정한 건 대응). 둘 다 정리돼 있으면 `unchanged`.
+  응답: `before/after`(셀렉) + `printRow{found,rowIndex,before,after,changed,skipped}` + `auditLine`, `dryRun` 은 둘 다 계획만. 보드 캐시 무효화.
+- 리더 점검(코드 추적): 미수 목록·`getUnpaidExtraForSession_`·C6 결제요청·보드 결제 컨텍스트 → 금액 0/취소로 제외 · 일마감·현금장부·회계장부 → 금액 0·`청구취소`
+  로 매출/시재 제외(ledger 주석의 "결제 전 무효" 용도와 일치) · 고객 디렉터리는 예약행 총결제액만 읽어 무관 · 출력 큐·브리핑 '인화 대기'는 셀렉 시트
+  추가인화 JSON 기준이라 **인쇄 대상 유지** · `selectHasPendingExternal_` 는 입고일만 봄.
+- 검증: `scripts/check-print-payment.mjs` 시나리오 99건 + 결함주입 22/22(면제 4종 추가). 검증기가 이미 깨져 있던 것(PRINT_HEADERS 여러 줄화 9/10, `printRowPayRequestedAt_` 미추출) 같이 수리.
+  배포 전 `clasp pull` ↔ 작업트리 diff 0. 라이브: dryRun → 적용 → `select-print-order-get` total 0 · 면제 · unpaid:false · 항목 보존,
+  `select-extra-unpaid` 에서 이윤경 제외(남은 2건 현주현·조미정 €33), 재실행 `unchanged`.
+- ⚠ 한계(미착수): 셀렉이 아직 `작업대기`(마감 전)라 고객이 같은 주문을 **다시 제출**하면 `syncSelectPrintOrder_` 가 €0→€4 로 보고
+  `미결제` + `[수납해제] … (기수납 면제)` 로 되살린다(셀렉 시트 금액도 재계산 — 기존과 같은 노출). 미수 목록에 다시 뜨므로 눈에는 띈다.
+
 ### 2026-09-17 · 셀렉 보정 0장 + 출력만 허용 (@961 · 프런트 380c447 · 배포 완료 · 라이브 검증 15:21)
 
 실제 사례: 이윤경(예약행 225, 야외/홈스냅 Plus, 세션 AsPNSRCuUZCN3W8sndqG — v2) 이 보정 없이 8장 출력만 원했는데
@@ -84,8 +104,25 @@ Updated: 2026-09-15 Europe/Berlin
 - 검증: 배포 전 `clasp pull` ↔ 작업트리 diff 0 · 프리뷰 데모(로컬)로 0장/반쯤 채운 행/서비스컷 회귀 · 라이브 테스트 세션(사장님 메일, 예약행 없음, 스냅 Plus)
   별점 2 → 보정 0 → 출력 2장(원본·포함 무료) → 픽업 제출: 상태 `보정본확인완료`, 인화주문 행 없음(0€), raw-select-pending 에 번호 2개,
   메일 2통 발송 성공(내용은 오프라인 렌더로 3개국어 확인), 보정본 발송 가드 오프라인 확인 → 테스트 세션 삭제(셀렉행 140).
-- ⚠ 운영 확인 필요(개발 아님): 이윤경 인화주문 행이 아직 `4€ 미결제` — 셀렉 추가금은 0 으로 정정됐지만 우편이라 출력완료 후 C6 결제요청이 4€ 로 나갈 수 있다.
+- ~~⚠ 운영 확인 필요: 이윤경 인화주문 행이 아직 `4€ 미결제`~~ → 같은 날 @962 로 면제 처리(위 항목).
 - 미착수(범위 밖): 고객 메일의 출력 줄(`formatSelectPrintItemHtml_`)이 EN/DE 에서도 한국어("번 · 원본 (무료(기본 제공))").
+
+### 2026-09-17 · 인스타 발행기 → Threads 동시 게시에 전용 캡션 (@960 · 배포 완료 · 라이브 검증 12:27)
+
+사장님 지시: 인스타와 Threads 는 같은 사진을 올리되 **Threads 는 광고성보다 일상·촬영 경험 이야기**로 쓴다.
+- `Code.gs`: '인스타검수' 시트에 `캡션스레드` 열(맨 끝, `ensureHeaderSheet_` 가 기존 시트에 자동 추가).
+  `insta-review-upsert` 가 `captionThreads` 를 받을 때만 갱신(500자 컷), `listInstaReviewAdmin` 이 같이 돌려줌.
+  ※ 이 3줄은 같은 작업트리를 쓰던 안내문 세션 커밋 183de7e 에 함께 들어갔다(기능 영향 없음).
+- `InstaPublisher.gs`: 인스타 게시 성공 뒤 `threadsMirror_(slides, caption, thCaption)` — 전용 캡션이 있으면 그대로,
+  없으면 종전대로 인스타 캡션 첫 문단(예약 URL 제외). `insta-publisher-dryrun` 행에 `threadsCaptionLen`.
+- `ThreadsPublisher.gs`(**git 미추적 — 커밋 필요**, `.claspignore` 화이트리스트에 있어 push 에는 포함):
+  이미지 컨테이너 생성 2회 재시도 + URL 후보 순회(일시적 2207052 대응), 게시 전 컨테이너 상태 폴링.
+- `AdminV2.html`: 검수 카드에 "캡션 (Threads · 읽기 전용)" 미리보기. 수정은 로컬 `caption_threads.txt` 에서.
+- 로컬(`~/Desktop/Studio_mean/automation/`): `push_review.py` 가 `caption_threads.txt` 를 `captionThreads` 로 전송,
+  `report_caption_review.py` 로 사진↔캡션 대조 리포트. 토큰은 인스타=만료 없는 Page 토큰, Threads=60일(`threads_refresh.py` 자동 갱신).
+- 검증: 배포 직전·직후 `clasp pull` ↔ 작업트리 diff 0 · dryrun 에서 `campaign-xmasmarket-1..6` 전부 승인, 슬라이드 5/5/5/5/6/5,
+  `threadsCaptionLen` 179/176/174/182/178/136 = 로컬 파일(UTF-16 길이)과 일치 · `threads-status` @studio_mean.
+  첫 실게시는 2026-09-17 15:45(크리스마스마켓 1).
 
 ### 2026-09-17 · 고객 안내문 「추가 보정 · 인화」 새 디자인(KO/EN/DE) · 추가보정 단가 묶음 확정 (@959)
 
@@ -104,6 +141,11 @@ Updated: 2026-09-15 Europe/Berlin
   **사장님 결정: €10 유지**(€20 은 프리웨딩·웨딩만). 반영: 기본 단가 함수에서 암트/돌잔치/가족파티 키워드 제거(@959) · 새/옛 안내문 3+2장 문구 · 설계 문서 5-4 ·
   생성기에 가드(두 함수의 €20 그룹이 바뀌면 생성이 멈춘다). 영향받은 기존 세션 없음.
 - 남은 것: 새 판 확정 후 옛 파일 교체 · 액자 A4용 실물 확인(마운트 창 ↔ A4).
+- **A4 인쇄본 (같은 날 오후)**: `build-print-guide.mjs --pdf` → `추가보정-인화안내_KO_A4.pdf` · `Retouching-Prints_EN_A4.pdf` · `Retusche-Abzuege_DE_A4.pdf`,
+  **A4 한 장 앞뒤(2쪽)**. 그대로 뽑으면 4쪽에 어색하게 끊겼다(측정: DE 앞면 몫 ≈1,600 / 뒷면 ≈1,380 디자인 px, 한 쪽 예산 ≈1,414).
+  인쇄 CSS만 추가(화면·PNG 불변 — 화면 높이 4,034px 동일 확인): 앞면 = 추가 보정 + 인화 가격(규격 사다리를 작게·이름만 그려 시그니처·포토카드 표 옆 칸으로),
+  뒷면 = 액자·대형부터(`break-before:page`). 배경은 흰 종이(여백 없는 인쇄 불가 프린터 대비). 검사: 3개 언어 모두 2쪽·A4·Cormorant/Noto Sans KR 포함,
+  앞뒤 경계 = 범례 / '액자·대형', 하단 여백 최소 14.6mm(DE 뒷면)·좌우 13.4mm.
 
 ### 2026-09-17 · 온라인 예약 2027-06-30 까지 오픈 + 예약 페이지 달 상한 하드코딩 제거 (배포 완료 · 라이브 검증 2026-09-17 08:20)
 

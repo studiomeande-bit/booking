@@ -21,14 +21,18 @@
  * 사용법:
  *   node scripts/build-print-guide.mjs           3개 파일을 다시 쓴다 (→ PNG 도 다시 내보낼 것)
  *   node scripts/build-print-guide.mjs --check   쓰지 않고 디스크의 파일과 대조 (다르면 exit 1)
+ *   node scripts/build-print-guide.mjs --pdf     생성 + A4 인쇄용 PDF 3장(한 장 앞뒤 = 2쪽). 2쪽이 아니거나 폰트가 빠지면 exit 1
+ *                                                (크롬 경로는 CHROME 환경변수로 바꿀 수 있다. 쪽수·폰트 검사는 poppler 의 pdfinfo·pdffonts)
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, '..', '..', '2026년 가격표', '추가보정-인화안내');
 const CHECK = process.argv.includes('--check');
+const PDF = process.argv.includes('--pdf');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 const die = (msg) => { console.error('❌ ' + msg); process.exit(1); };
 
@@ -186,12 +190,14 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const money = (lang) => (n) => (lang === 'de' ? `${n} €` : `€${n}`);
 const cmText = (lang, cm) => (lang === 'de' ? cm.replace(/\./g, ',') : cm);
 
-/* ── 같은 축척 규격 사다리 (1 cm = S px). 크기는 카탈로그 cm 에서 읽는다 — 그림도 정본을 따른다. ── */
-const S = 6;
+/* ── 같은 축척 규격 사다리 (1 cm = S px). 크기는 카탈로그 cm 에서 읽는다 — 그림도 정본을 따른다.
+      opts.scale/cm/frames — 화면은 기본값(6px/cm · cm 줄 · 액자 포함), A4 인쇄 앞면은 작게·이름만·액자 없이(액자는 뒷면 표에 있다). ── */
 const dims = (id) => { const m = cat[id].cm.match(/([\d.]+)\s*×\s*([\d.]+)/); return m ? [Math.min(+m[1], +m[2]), Math.max(+m[1], +m[2])] : null; };
-function ladderSvg(lang) {
+function ladderSvg(lang, opts = {}) {
   const t = T[lang];
-  const base = 322, x0 = 2;
+  const S = opts.scale ?? 6, showCm = opts.cm ?? true, showFrames = opts.frames ?? true;
+  const x0 = 2;
+  const base = Math.ceil(Math.max(showFrames ? dims('frame_a3')[1] : 0, dims('premium_a3plus')[1]) * S) + 22;   // 화면(6px/cm·액자) = 322
   const steps = [
     ['premium_a3plus', 'A3+'], ['premium_a3', 'A3'], ['basic_a4', 'A4'], ['basic_10x15', '10 × 15 cm'], ['photocard_single', t.cardName],
   ];
@@ -203,6 +209,10 @@ function ladderSvg(lang) {
     const y = base - h;
     out += `<rect x="${x0}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${id === 'photocard_single' ? '#EDE3D6' : 'none'}" stroke="#201C1F" stroke-width="1"/>`;
     out += `<line x1="${(x0 + w).toFixed(1)}" y1="${y.toFixed(1)}" x2="${labelX - 6}" y2="${y.toFixed(1)}" stroke="#B9AC9C" stroke-width="1" stroke-dasharray="2 3"/>`;
+    if (!showCm) {   // 이름만 — 픽업 전용 점은 이름 뒤에 붙인다
+      out += `<text x="${labelX}" y="${(y + 4.5).toFixed(1)}" class="lb">${esc(name)}${isPickupOnly(id) ? '<tspan fill="#C58D66" font-size="10"> ●</tspan>' : ''}</text>`;
+      return;
+    }
     const dot = isPickupOnly(id) ? `<circle cx="${labelX + 3}" cy="${(y + 17).toFixed(1)}" r="3" fill="#C58D66"/>` : '';
     out += `<text x="${labelX}" y="${(y + 4.5).toFixed(1)}" class="lb">${esc(name)}</text>`;
     // 이름이 곧 규격인 줄(10 × 15)은 cm 를 한 번 더 찍지 않는다
@@ -210,6 +220,10 @@ function ladderSvg(lang) {
     if (cmLabel.replace(/\s|cm/g, '') !== name.replace(/\s|cm/g, '')) out += `<text x="${labelX + (dot ? 11 : 0)}" y="${(y + 21).toFixed(1)}" class="ls">${esc(cmLabel)}</text>`;
     out += dot;
   });
+  if (!showFrames) {
+    const w = labelX + 78;
+    return `<svg viewBox="0 0 ${w} ${base + 8}" width="${w}" height="${base + 8}" role="img" aria-label="${esc(t.ladderCap)}" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="${base + 0.5}" x2="${w}" y2="${base + 0.5}" stroke="#201C1F" stroke-width="1"/>${out}</svg>`;
+  }
   /* 액자: 외곽(카탈로그 cm) 안에 그 액자가 담는 인화 규격을 같은 축척으로 넣는다 → 마운트 폭이 눈에 보인다. */
   let fx = labelX + 138;
   [['frame_a4', 'basic_a4'], ['frame_a3', 'premium_a3']].forEach(([fid, pid]) => {
@@ -314,7 +328,56 @@ td.p.q{font-family:var(--body);font-size:13px;font-weight:400;letter-spacing:.08
 .crop{margin-top:16px}
 footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--ink);font-size:12px;color:var(--mute);line-height:1.8;display:flex;justify-content:space-between;gap:30px}
 footer .r{text-align:right}
-@media print{@page{size:A4;margin:0}body{width:210mm;zoom:.794}section,.grade{break-inside:avoid}}
+.prn{display:none}
+/* ── A4 인쇄: 한 장 앞뒤(2쪽). 앞면 = 추가 보정·인화 가격, 뒷면 = 액자·대형부터. 1000px 디자인 폭 × .794 = 210mm.
+      배경은 흰 종이 — 여백 없는 인쇄가 안 되는 프린터에서 아이보리 판이 흰 테두리와 함께 찍히는 걸 피한다.
+      넘치면 쪽수가 3 이 된다 — build-print-guide.mjs --pdf 가 그걸 실패로 잡는다. ── */
+@media print{
+@page{size:A4;margin:0}
+html,body{background:#fff}
+body{zoom:.794}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.sheet{padding:50px 64px 0}
+header{padding-bottom:14px}
+header img{width:150px;height:49px}
+h1{margin-top:22px;font-size:44px}
+h1.ko{font-size:32px}
+h1+.latin{font-size:21px;margin-top:0}
+.lede{margin-top:10px;font-size:14px;max-width:none}
+section{margin-top:26px;break-inside:avoid}
+.sec{padding-bottom:6px;margin-bottom:14px}
+.sec h2{font-size:25px}
+.sec h2.ko{font-size:18px}
+.sec .latin{font-size:16px}
+.rate .k{min-height:0}
+.rate .v{font-size:38px;margin-top:2px}
+.rate .n{margin-top:2px}
+.note{margin-top:12px;padding:9px 14px;font-size:12.5px}
+.scr{display:none}
+.prn{display:block}
+.prints{display:grid;grid-template-columns:238px 1fr;column-gap:28px;grid-template-areas:"lad sig" "lad card" "fine fine" "key key";align-items:start}
+.prints .ladder{grid-area:lad;margin:4px 0 0}
+.grade{margin-top:16px;break-inside:avoid}
+.g-sig{grid-area:sig;margin-top:0}
+.g-card{grid-area:card}
+.g-fine{grid-area:fine}
+.prints .key{grid-area:key}
+.gnote{margin-top:3px;font-size:12.5px;max-width:none;line-height:1.6}
+table{margin-top:4px}
+th,td{padding:5px 0}
+thead th{padding-bottom:4px}
+td.p,td.p.add{font-size:20px}
+td.p.sub{font-size:17px}
+.key{margin-top:10px}
+section.pg2{break-before:page;margin-top:0;padding-top:50px}
+.tiers .num{font-size:26px}
+.plain li{margin-top:5px;font-size:13.5px}
+.method{gap:14px 40px}
+.method p{font-size:12.5px;line-height:1.65}
+.method p+p{margin-top:5px}
+.crop{margin-top:8px}
+footer{margin-top:26px;padding-top:12px}
+}
 `;
 
 function page(lang) {
@@ -327,9 +390,9 @@ function page(lang) {
     return `<tr><td>${esc(label)}${isPickupOnly(id) ? '<span class="dot"></span>' : ''}</td><td class="cm">${cm.replace(/\s/g, '') === String(label).replace(/\s/g, '') ? '' : esc(cm)}</td><td class="p num">${eur(p.ret)}</td><td class="p sub num">${eur(p.orig)}</td></tr>`;
   };
   const thead = `<thead><tr><th>${esc(t.colSize)}</th><th></th><th class="p">${esc(t.colRet)}</th><th class="p">${esc(t.colOrig)}</th></tr></thead>`;
-  const grade = (key, rows) => {
+  const grade = (key, rows, cls = '') => {
     const g = PRINT_TIERS[key];
-    return `<div class="grade"><div class="ghead"><h3${ko ? '' : ' class="lat"'}>${esc(g.name[lang])}</h3><span>${esc(g.paperSpec[lang])}</span></div>
+    return `<div class="grade${cls ? ' ' + cls : ''}"><div class="ghead"><h3${ko ? '' : ' class="lat"'}>${esc(g.name[lang])}</h3><span>${esc(g.paperSpec[lang])}</span></div>
       <p class="gnote">${esc(g.character[lang])} ${esc(g.bestFor[lang])}</p>
       <table>${thead}<tbody>${rows}</tbody></table></div>`;
   };
@@ -371,17 +434,20 @@ function page(lang) {
 
 <section>
   <div class="sec">${h2(t.secPrints, t.secPrintsLatin)}<p>${esc(PRINT_MICROCOPY.selectStepNote[lang])}</p></div>
-  <div class="ladder">${ladderSvg(lang)}</div>
-  <p class="cap">${esc(t.ladderCap)}</p>
-  ${grade('signature', ['basic_10x15', 'basic_a4'].map((id) => row(id, sizeLabel(id))).join(''))}
-  ${grade('fineart', ['premium_10x15', 'premium_a4', 'premium_a3', 'premium_a3plus'].map((id) => row(id, sizeLabel(id))).join(''))}
-  <div class="grade"><div class="ghead"><h3${ko ? '' : ' class="lat"'}>${esc(tierName('photocard'))}</h3><span>${esc(t.cardSpec)}</span></div>
+  <div class="prints">
+  <div class="ladder scr">${ladderSvg(lang)}</div>
+  <p class="cap scr">${esc(t.ladderCap)}</p>
+  <div class="ladder prn">${ladderSvg(lang, { scale: 4.2, cm: false, frames: false })}<p class="cap">${esc(t.ladderCap)}</p></div>
+  ${grade('signature', ['basic_10x15', 'basic_a4'].map((id) => row(id, sizeLabel(id))).join(''), 'g-sig')}
+  ${grade('fineart', ['premium_10x15', 'premium_a4', 'premium_a3', 'premium_a3plus'].map((id) => row(id, sizeLabel(id))).join(''), 'g-fine')}
+  <div class="grade g-card"><div class="ghead"><h3${ko ? '' : ' class="lat"'}>${esc(tierName('photocard'))}</h3><span>${esc(t.cardSpec)}</span></div>
     <p class="gnote">${esc(t.cardBody)}</p>
     <table>${thead}<tbody>${row('photocard_single', t.single)}${row('photocard_double', t.double)}</tbody></table></div>
   <div class="key"><span><b>${esc(t.colRet)}</b>${esc(t.keyRet)}</span><span><b>${esc(t.colOrig)}</b>${esc(t.keyOrig)}</span><span><span class="dot"></span>${esc(t.pickupMark)}</span></div>
+  </div>
 </section>
 
-<section>
+<section class="pg2">
   <div class="sec">${h2(t.secFrames, t.secFramesLatin)}</div>
   <div class="grade" style="margin-top:0"><div class="ghead"><h3${ko ? '' : ' class="lat"'}>${esc(tierName('frame'))}</h3><span>${esc(PRINT_TIERS.frame.paper[lang])}</span></div>
     <table><tbody>
@@ -440,4 +506,27 @@ for (const lang of ['ko', 'en', 'de']) {
   }
 }
 if (drift) { console.error('\n✗ node scripts/build-print-guide.mjs 로 재생성하고 PNG 를 다시 내보내세요.'); process.exit(1); }
+
+if (PDF && !CHECK) {
+  const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  if (!existsSync(CHROME)) die(`크롬을 찾지 못했습니다: ${CHROME} (CHROME 환경변수로 지정)`);
+  const PDF_NAME = { ko: '추가보정-인화안내_KO_A4.pdf', en: 'Retouching-Prints_EN_A4.pdf', de: 'Retusche-Abzuege_DE_A4.pdf' };
+  let bad = 0;
+  for (const lang of ['ko', 'en', 'de']) {
+    const out = join(OUT_DIR, PDF_NAME[lang]);
+    // 웹폰트(Google Fonts)가 들어올 때까지 가상 시간을 준다 — 모자라면 아래 폰트 검사가 잡는다
+    const r = spawnSync(CHROME, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--virtual-time-budget=10000',
+      `--print-to-pdf=${out}`, pathToFileURL(join(OUT_DIR, `guide-${lang}.html`)).href], { encoding: 'utf8' });
+    if (r.status !== 0 || !existsSync(out)) { console.error(`❌ [${lang}] PDF 생성 실패: ${r.stderr?.slice(-300)}`); bad += 1; continue; }
+    const info = spawnSync('pdfinfo', [out], { encoding: 'utf8' });
+    const pages = +((info.stdout || '').match(/^Pages:\s+(\d+)/m) || [])[1];
+    const a4 = /Page size:\s+59[45]\.\d+ x 84[12]\.\d+ pts/.test(info.stdout || '');
+    const fonts = spawnSync('pdffonts', [out], { encoding: 'utf8' }).stdout || '';
+    const hasFonts = /Cormorant/i.test(fonts) && /NotoSansKR/i.test(fonts);
+    const ok = pages === 2 && a4 && hasFonts;
+    if (!ok) bad += 1;
+    console.log(`${ok ? '✅' : '❌'} [${lang}] ${PDF_NAME[lang]} — ${pages}쪽${pages === 2 ? '' : ' (2쪽이어야 한다 — 내용이 A4 를 넘쳤다)'}${a4 ? ' · A4' : ' · A4 아님'}${hasFonts ? ' · 폰트 포함' : ' · ⚠ 웹폰트 누락(Cormorant/Noto Sans KR)'}`);
+  }
+  if (bad) { console.error('\n✗ 인쇄용 PDF 검사 실패'); process.exit(1); }
+}
 console.log(CHECK ? '\n✅ 전부 정본과 일치합니다.' : '\n✅ 3개 언어 생성 완료 — PNG 를 다시 내보낼 것.');
