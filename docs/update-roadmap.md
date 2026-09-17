@@ -64,6 +64,31 @@ Updated: 2026-09-15 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-17 · 온라인 예약 2027-06-30 까지 오픈 + 예약 페이지 달 상한 하드코딩 제거 (배포 완료 · 라이브 검증 2026-09-17 08:20)
+
+**배경.** 사장님 지시 "2027년 6월 말까지 예약 오픈". 점검 중 **라이브 버그** 발견 — 8/17 에 서버 지평선을 2027-03-31 로
+늘렸지만 `booking.js` 에 `new Date(2026,11,1)`(updateMonthNavAvailability) · `MAX_BOOKING_MONTH={2026,11}`(changeMonth·
+findEarliestAvailableSlot·prefetchNextCalendarMonth) 가 남아 있어 **고객은 12월에서 '다음 달'이 막혀 2027년 달로 갈 수 없었다.**
+한도가 두 곳에 있어 한쪽만 바뀐 것.
+
+- 서버 `PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR` 2027-03-31 → **2027-06-30** (@958).
+- `/api/init` `settings.maxBookingDate` 로 이 값을 노출, 프런트 `getMaxBookingMonth()` 가 읽어 4곳 전부 교체
+  (폴백 '2027-06-30' 은 init 도착 전용 — 틀려도 서버가 지평선 밖 달을 전부 마감으로 돌려준다). 커밋 0abda4a.
+  → **다음 연장은 Code.gs 상수 한 줄 + clasp 배포만.**
+- 같이 점검(변경 없음):
+  - 헤센 공휴일은 부활절 계산식 — 2027 Karfreitag 03-26 · Ostermontag 03-29 · 05-01 · Himmelfahrt 05-06 · Pfingstmontag 05-17 ·
+    Fronleichnam 05-27 산출 일치, pass/prof/stud 휴무.
+  - `FFM_BLOCKER_COVERED_UNTIL_='2027-01-06'` 은 모닝 브리핑 전용(30일 윈도) — 고객 예약엔 무관. 12월 초부터 브리핑이 스스로
+    stale 경고를 띄우므로 지금 손대지 않음. visitfrankfurt 2027 대형행사 PDF(연초) 나오면 4~6월 행사 추가.
+  - `promo/promo.js PROMO_END_LIMIT='2026-12-31'` 은 2026 슐튀테 시즌(06-23~08-15, 종료) 전용 상한 → 의도적으로 안 따라감.
+  - 셀렉 픽업 `SELECT_PICKUP_LOOKAHEAD_DAYS=120` 롤링, 상담 날짜 입력은 max 없음 → 무관.
+  - 코드·init 공지(notice_ko/en/de 공란)에 구 지평선 문구("2027-03"·"3월"·"März"·"Dezember 2026") 없음.
+  - `morning_block_ranges` (2027-01 화~금 오전 차단) 그대로.
+- **라이브 검증**(읽기 전용, 예약 생성 없음): init maxBookingDate=2027-06-30 · 슬롯 2027-06-12(토) pass 16건 · 06-26(토) stud 27건 ·
+  06-29(화) prof 18건 · 04-15 pass 18건 / 05-06 pass·stud 0 · 05-27 prof 0 · 03-26 0 · 07-01 pass 0 · 07-03 stud 0 ·
+  calendar-batch 2027-07 31/31 마감 / 2027-01-12(화) 15:30부터(오전 차단) · 01-16(토) 09:00부터.
+  booking.studio-mean.com 실제 화면에서 여권 선택 → 달 넘김이 **2027년 6월에서 멈추고 '다음 달' 비활성**, 6월 날짜·시간 표시 확인.
+
 ### 2026-09-15 · 여권 5인 이상 가족 단체 할인(%) · 4인 초과 촬영시간 인당 +10분 (배포 완료 · 라이브 검증 2026-09-15 16:15)
 
 **배경.** 여권 단체 할인 기준 논의. 예약장부 실측 — 2025 161건: 1인 65% · 2인 17% · 3인 9% · 4인 4% / 2026 1~9월 169건:
