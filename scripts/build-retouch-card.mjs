@@ -18,7 +18,7 @@
  *   인화 단가   → appscript/Code.gs  PRINT_LABELS      (check-print-prices.mjs 가 6곳 대조)
  *   여러 장 할인 → appscript/Code.gs  SELECT_VOLUME_TIER_DEFAULTS_.print (price-card 와 같은 정규식)
  *   추가보정 단가 → appscript/Code.gs  getDefaultSelectRetouchPrice_
- *                  (wed / 암트·돌잔치·가족파티·웨딩 계열 → 20, 그 외 → 10)
+ *                  (wed 그룹·웨딩 계열 → 20, 그 외 → 10 — 암트·돌잔치·가족파티도 10, 사장님 결정 2026-09-17)
  *                  ⚠ 세션별로 '리터칭단가' 컬럼이 덮어쓸 수 있다 — 안내문엔 **기본값**임을 명시할 것.
  *
  * 사용법:

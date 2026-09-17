@@ -175,7 +175,7 @@ const TRAVEL_COL=TRAVEL_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_SCHEDULE_HEADERS=['예약장부행','등록일시','업데이트일시','고객명','연락처','이메일','촬영일시','촬영종류','상품','마케팅동의','콘텐츠상태','플랫폼','게시예정일','게시시간','게시상태','업로드여부','게시URL','드라이브링크','캡션메모','관리메모','담당자'];
 const MARKETING_SCHEDULE_COL=MARKETING_SCHEDULE_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 인스타 검수: 로컬 파이프라인의 built(게시대기) 항목을 ERP에서 미리보기+승인 (릴스·캐러셀·캠페인 공통)
-const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL','캡션릴스','슬라이드파일명','편집JSON','편집상태','예정ISO'];
+const INSTA_REVIEW_HEADERS=['큐키','유형','이름','상태','커버URL','슬라이드URL','캡션','예정슬롯','슬라이드수','폴더','등록일시','업데이트일시','승인일시','영상URL','캡션릴스','슬라이드파일명','편집JSON','편집상태','예정ISO','캡션스레드'];
 const INSTA_REVIEW_COL=INSTA_REVIEW_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const MARKETING_CONTENT_STATUSES=['후보','선정','편집중','업로드준비','예약됨','게시완료','보류'];
 const MARKETING_POST_STATUSES=['미정','준비중','예약됨','게시완료','보류'];
@@ -3756,6 +3756,8 @@ function upsertInstaReviewForAgent_(token,payload){
   if(!edited) row[INSTA_REVIEW_COL['캡션']]=String(payload.caption||'').slice(0,2000);
   if(INSTA_REVIEW_COL['캡션릴스']!=null && !edited) row[INSTA_REVIEW_COL['캡션릴스']]=String(payload.captionReel||'').slice(0,2000);
   if(INSTA_REVIEW_COL['슬라이드파일명']!=null) row[INSTA_REVIEW_COL['슬라이드파일명']]=String(payload.slideNames||'');
+  // Threads 전용 캡션(일상·촬영 경험 톤, 사장님 2026-09-17). 로컬이 보낼 때만 갱신 — 없으면 발행기가 인스타 캡션 첫 문단으로 대체한다.
+  if(INSTA_REVIEW_COL['캡션스레드']!=null && payload.captionThreads!=null) row[INSTA_REVIEW_COL['캡션스레드']]=String(payload.captionThreads||'').slice(0,500);
   // 예정ISO: 현재 예약된 첫 게시 시각(raw, 'yyyy-MM-ddTHH:mm') — 어드민 입력칸 프리필용. 편집과 무관하게 갱신.
   if(INSTA_REVIEW_COL['예정ISO']!=null && payload.schedISO!=null) row[INSTA_REVIEW_COL['예정ISO']]=String(payload.schedISO||'');
   row[INSTA_REVIEW_COL['예정슬롯']]=String(payload.slot||'');
@@ -3812,7 +3814,8 @@ function listInstaReviewAdmin(token){
       slideNames:INSTA_REVIEW_COL['슬라이드파일명']!=null?String(r[INSTA_REVIEW_COL['슬라이드파일명']]||''):'',
       editJson:INSTA_REVIEW_COL['편집JSON']!=null?String(r[INSTA_REVIEW_COL['편집JSON']]||''):'',
       editState:INSTA_REVIEW_COL['편집상태']!=null?String(r[INSTA_REVIEW_COL['편집상태']]||''):'',
-      schedISO:INSTA_REVIEW_COL['예정ISO']!=null?String(r[INSTA_REVIEW_COL['예정ISO']]||''):''
+      schedISO:INSTA_REVIEW_COL['예정ISO']!=null?String(r[INSTA_REVIEW_COL['예정ISO']]||''):'',
+      captionThreads:INSTA_REVIEW_COL['캡션스레드']!=null?String(r[INSTA_REVIEW_COL['캡션스레드']]||''):''
     });
   }
   items.sort(function(a,b){return String(b.updatedAt).localeCompare(String(a.updatedAt));});
@@ -24099,7 +24102,10 @@ function getDefaultSelectRetouchPrice_(itemGroup,productName){
   const g=String(itemGroup||'').trim().toLowerCase();
   const p=String(productName||'');
   if(g==='wed') return 20;
-  if(/암트|standesamt|civil|돌잔치|가족파티|family party|familienfeier|웨딩|wedding|hochzeit/i.test(p)) return 20;
+  /* €20 은 프리웨딩·웨딩만이다 — 사장님 결정 2026-09-17. 암트 예식·돌잔치·가족파티는 €10.
+     종전엔 이 함수만 암트/돌잔치/가족파티를 20 으로 봤고 실제 세션 생성(getRetouchInfo_)은 10 을 매겨,
+     고객 안내문(€20)과 셀렉 메일·청구(€10)가 어긋나 있었다(안내문 검토 워크플로 적발). 라이브가 정본으로 확정됐다. */
+  if(/웨딩|wedding|hochzeit/i.test(p)) return 20;
   return 10;
 }
 
