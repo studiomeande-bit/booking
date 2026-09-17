@@ -11603,7 +11603,8 @@ function viewSubmission(rowIndex){
       ${sel.marketing==='Y'?'<span style="background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;">마케팅동의</span>':''}
     </div>`;
   let photos=[];
-  try{photos=JSON.parse(sel.selectedPhotos||'[]');}catch(e){}
+  // 빈 무료 슬롯(placeholder)은 '[object Object]번'으로 찍혔다 — 실제 보정 요청만 보인다
+  try{photos=JSON.parse(sel.selectedPhotos||'[]').filter(function(p){return (p&&typeof p==='object')?(String(p.num||'').trim()||String(p.note||'').trim()):String(p||'').trim();});}catch(e){}
   currentSelectCaptureOneText=buildCaptureOneSearchText(photos);
   const captureOneHtml=currentSelectCaptureOneText
     ?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:10px 12px;margin-bottom:10px;display:grid;gap:8px;">
@@ -11624,7 +11625,7 @@ function viewSubmission(rowIndex){
         const printLabel=getPhotoPrintLabel(p);
         return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${num}번</span><div style="display:flex;flex-direction:column;gap:4px;"><span style="display:inline-block;font-size:11px;font-weight:700;color:#7c5a12;background:#fef3c7;border-radius:999px;padding:2px 8px;width:max-content;">${printLabel}</span>${note?`<span style="font-size:12px;color:#475569;white-space:pre-line;">${note}</span>`:'<span style="font-size:11px;color:#94a3b8;">요청사항 없음</span>'}</div></div>`;
       }).join('')}</div>`
-    :'<div style="color:#94a3b8;font-size:13px;">선택 사진 없음</div>';
+    :'<div style="color:#94a3b8;font-size:13px;">보정 요청 없음 — 출력만(원본)</div>';
   const revisionNote=String(sel.revisionNote||'').trim();
   const revisionHistory=Array.isArray(sel.revisionHistory)?sel.revisionHistory.filter(function(item){return item&&item.note;}):[];
   const normalizedHistory=revisionHistory.length

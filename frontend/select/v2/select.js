@@ -3411,8 +3411,10 @@ function updateReview() {
   const base = Number(state.session?.baseRetouchCount || 0);
   const retouchPrice = Number(state.session?.retouchPrice || 0);
 
-  els.reviewPhotos.innerHTML = state.photos.length
-    ? state.photos.map((photo, index) => {
+  // 안 쓴 무료 슬롯(빈 보너스·서비스 행)은 보정이 아니다 — 목록에 찍으면 보정 0장 주문이 보정 주문처럼 보인다
+  const reviewRows = state.photos.map((photo, index) => [photo, index]).filter(([photo]) => !(photo.isBonus && isRetouchRowEmpty(photo)));
+  els.reviewPhotos.innerHTML = reviewRows.length
+    ? reviewRows.map(([photo, index]) => {
         const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
         const paid = isPhotoPaid(photo, index);
         const extra = paid
@@ -3508,7 +3510,7 @@ function validateStep1() {
   // 별점(찜) 1장 이상이면 진행 — 보정 담기는 2단계 픽커에서 한다(자동 채움 제거, 2026-08-09).
   // canProceedStep1 과 반드시 같은 조건이어야 한다: 버튼만 켜지고 클릭이 튕기면 "고장"으로 보인다.
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  if (state.gallery.ratings.size < 1 && regularCount < 1) {
+  if (state.gallery.ratings.size < 1 && regularCount < 1 && !state.prints.length) {
     setBanner(copy().errRateAtLeastOne, 'error');
     return false;
   }
@@ -3536,6 +3538,12 @@ function findIncompleteRetouchIndex() {
 function countCompleteRetouchRows() {
   return state.photos.filter(isRetouchRowComplete).length;
 }
+/* 보정 0장 + 출력만 (2026-09-17 이윤경: "보정 선택 안 하면 출력 선택 안 됨") — 보정은 필수가 아니다.
+   진행 조건은 '보정 또는 출력(포함 포토카드) 중 하나라도 있음'이고, 확인은 출력 단계에서 한다
+   (2단계에서 막으면 출력을 고를 3단계에 닿지 못한다). */
+function hasAnySelection() {
+  return countCompleteRetouchRows() > 0 || state.prints.length > 0 || hasIncludedPhotocard();
+}
 // 안 쓰고 남은 서비스 컷 수 — 마케팅 보너스와 달리 서버가 흡수해 주지 않아 그대로 소멸한다
 function countUnusedServiceSlots() {
   return state.photos.filter((photo) => photo?.isService && isRetouchRowEmpty(photo)).length;
@@ -3543,7 +3551,6 @@ function countUnusedServiceSlots() {
 
 function validateStep2() {
   if (isReprintSession()) return true;   // 재주문은 보정 자체가 없다
-  if (countCompleteRetouchRows() < 1) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
   const invalid = findIncompleteRetouchIndex();
   if (invalid >= 0) {
     setBanner(copy().errRetouchRow(invalid + 1), 'error');
@@ -3559,6 +3566,7 @@ function validateStep2() {
 
 const MAIL_LATIN_RE = /^[\x20-\x7E\r\n\u00A0-\u024F€]*$/;
 function validateStep3() {
+  if (!isReprintSession() && !hasAnySelection()) { setBanner(copy().errNothingSelected, 'error'); return false; }
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
   // 견적형은 희망 사이즈가 없으면 랩에 견적을 물어볼 수 없다 — 빈 채로 접수하면 되물어야 한다.
@@ -3595,11 +3603,10 @@ function collectStepProblems(step) {
   if (step === 1) {
     if (!state.marketing) push(c.errPickMarketing, pick('#marketingBox'));
     const regularCount = state.photos.filter((p) => !p.isBonus).length;
-    if (state.gallery.ratings.size < 1 && regularCount < 1) push(c.errRateAtLeastOne, pick('#galleryGrid'));
+    if (state.gallery.ratings.size < 1 && regularCount < 1 && !state.prints.length) push(c.errRateAtLeastOne, pick('#galleryGrid'));
   }
 
   if (step === 2) {
-    if (countCompleteRetouchRows() < 1) push(c.errRetouchAtLeastOne, pick('#pickRetouchBtn') || pick('#photoList'));
     state.photos.forEach((photo, i) => {
       if (photo && photo.isBonus && isRetouchRowEmpty(photo)) return;   // 안 쓴 무료 슬롯은 문제가 아니다
       if (isRetouchRowComplete(photo)) return;
@@ -3613,6 +3620,7 @@ function collectStepProblems(step) {
   }
 
   if (step === 3) {
+    if (!isReprintSession() && !hasAnySelection()) push(c.errNothingSelected, pick('#addPrintBtn'));
     state.prints.forEach((print, i) => {
       if (String(print.photoNum || '').trim()) return;
       push(c.errPrintRow(i + 1), pick(`[data-print-photo="${i}"]`) || pick('#printList'));
@@ -3751,7 +3759,7 @@ function canSubmit() {
     return true;   // v1 은 픽업 전용 — 수령방식 입력 자체가 없다
   }
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
-  if (countCompleteRetouchRows() < 1) return false;
+  if (!hasAnySelection()) return false;
   if (findIncompleteRetouchIndex() >= 0) return false;
   if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
@@ -3787,15 +3795,15 @@ function canProceedStep1() {
   if (!state.marketing) return false;
   // 별점(찜) 1장 이상이면 진행 — 보정 담기는 다음 단계에서 한다. 수정 모드는 복원된 보정 목록으로도 통과
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  return state.gallery.ratings.size >= 1 || regularCount >= 1;
+  return state.gallery.ratings.size >= 1 || regularCount >= 1 || state.prints.length >= 1;
 }
 
 function canProceedStep2() {
-  if (countCompleteRetouchRows() < 1) return false;   // 실제로 고른 사진이 최소 1장
   return findIncompleteRetouchIndex() < 0 && !getPhotocardWarning();
 }
 
 function canProceedStep3() {
+  if (!isReprintSession() && !hasAnySelection()) return false;
   return !state.prints.some((print) => !String(print.photoNum || '').trim());
 }
 
@@ -3810,17 +3818,17 @@ function renderStepWarnings() {
   const incompleteIdx = findIncompleteRetouchIndex();
   const unusedService = countUnusedServiceSlots();
   const step2Message = canProceedStep2()
-    // 진행은 되지만 서비스 컷은 안 쓰면 그대로 소멸한다(보너스와 달리 흡수 안 됨) — 알려만 준다
-    ? (unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
-    : countCompleteRetouchRows() < 1
-      ? c.warnNoRetouch
-      : getPhotocardWarning()
+    // 진행은 되지만 알려야 할 것: 보정 0장이면 원본 출력만 된다 / 서비스 컷은 안 쓰면 소멸(보너스와 달리 흡수 안 됨)
+    ? (countCompleteRetouchRows() < 1
+      ? c.noteNoRetouch(Number(state.session?.baseRetouchCount || 0))
+      : unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
+    : getPhotocardWarning()
         ? getPhotocardWarning()
         // "다 넣었는데 안 넘어감"을 막으려면 몇 번 칸인지 짚어야 한다
         : incompleteIdx >= 0
           ? c.errRetouchRow(incompleteIdx + 1)
           : c.warnRetouchIncomplete;
-  const step3Message = canProceedStep3() ? '' : c.warnPrintNumbers;
+  const step3Message = canProceedStep3() ? '' : !hasAnySelection() ? c.errNothingSelected : c.warnPrintNumbers;
   const step4Message = canSubmit()
     ? ''
     : !requiresDeliverySelection()
