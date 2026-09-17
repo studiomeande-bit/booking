@@ -2616,7 +2616,8 @@ function updateMonthNavAvailability() {
   const now = new Date();
   const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const currentTs = new Date(state.calendarYear, state.calendarMonth, 1).getTime();
-  const maxTs = new Date(2026, 11, 1).getTime();
+  const { year: maxYear, month: maxMonth } = getMaxBookingMonth();
+  const maxTs = new Date(maxYear, maxMonth, 1).getTime();
   if (els.prevMonthBtn) els.prevMonthBtn.disabled = !!els.prevMonthBtn.disabled || currentTs <= minTs;
   if (els.nextMonthBtn) els.nextMonthBtn.disabled = !!els.nextMonthBtn.disabled || currentTs >= maxTs;
 }
@@ -5057,7 +5058,13 @@ async function warmSelectedProductCalendar(product, durationOverride) {
 // 현재 달은 가용성 변동에 민감해 짧게, 미래 달은 서버 캐시(30분)와 정렬해 길게 유지
 const MONTH_CACHE_TTL_CURRENT_MS = 4 * 60 * 1000;
 const MONTH_CACHE_TTL_FUTURE_MS = 20 * 60 * 1000;
-const MAX_BOOKING_MONTH = { year: 2026, month: 11 };
+/* 예약 지평선의 마지막 달 — 정본은 서버 PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR(/api/init settings.maxBookingDate).
+   폴백은 init 도착 전·구형 캐시용일 뿐이고, 서버가 지평선 너머 달을 전부 마감으로 돌려주므로 틀려도 예약은 안 새어 나간다. */
+function getMaxBookingMonth() {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(state.init?.settings?.maxBookingDate || '2027-06-30'))
+    || ['', '2027', '06'];
+  return { year: Number(m[1]), month: Number(m[2]) - 1 };
+}
 
 function getMonthCacheTtlMs(year, month) {
   const now = new Date();
@@ -5320,7 +5327,8 @@ async function findEarliestAvailableSlot(product, duration) {
   if (!product) return null;
   const months = [{ year: state.calendarYear, month: state.calendarMonth }];
   const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
-  if (next.getFullYear() < MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() <= MAX_BOOKING_MONTH.month)) {
+  const maxMonth = getMaxBookingMonth();
+  if (next.getFullYear() < maxMonth.year || (next.getFullYear() === maxMonth.year && next.getMonth() <= maxMonth.month)) {
     months.push({ year: next.getFullYear(), month: next.getMonth() });
   }
   for (const ref of months) {
@@ -5879,9 +5887,10 @@ async function prefetchNextCalendarMonth() {
   if (!state.selectedProduct) return;
   const duration = getCalendarDuration();
   const tasks = [];
+  const maxMonth = getMaxBookingMonth();
   for (let offset = 1; offset <= 2; offset += 1) {
     const next = new Date(state.calendarYear, state.calendarMonth + offset, 1);
-    if (next.getFullYear() > MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() > MAX_BOOKING_MONTH.month)) break;
+    if (next.getFullYear() > maxMonth.year || (next.getFullYear() === maxMonth.year && next.getMonth() > maxMonth.month)) break;
     const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
     if (state.calendarCache.has(nextKey)) continue;
     tasks.push({ year: next.getFullYear(), month: next.getMonth(), itemGroup: state.selectedProduct.g, totalDur: duration });
@@ -6549,7 +6558,8 @@ async function changeMonth(offset) {
   const now = new Date();
   const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const nextTs = new Date(next.getFullYear(), next.getMonth(), 1).getTime();
-  const maxTs = new Date(MAX_BOOKING_MONTH.year, MAX_BOOKING_MONTH.month, 1).getTime();
+  const maxMonth = getMaxBookingMonth();
+  const maxTs = new Date(maxMonth.year, maxMonth.month, 1).getTime();
   if (nextTs < minTs || nextTs > maxTs) return;
   state.calendarYear = next.getFullYear();
   state.calendarMonth = next.getMonth();
