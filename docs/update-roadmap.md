@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-09-15 Europe/Berlin
+Updated: 2026-09-18 Europe/Berlin
 
 ## Immediate
 
@@ -63,6 +63,30 @@ Updated: 2026-09-15 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-18 · 소비자 철회 안내 + § 356a 온라인 철회 버튼 + 조기 이행 요청 (@963 · 프런트 e4ce355 · 배포 완료 · 라이브 검증 16:47)
+
+**배경.** 2026-09-18 법 점검 — 웹으로 맺는 원격계약엔 2026-06-19 부터 「Vertrag widerrufen」 기능(§ 356a BGB)이 필요한데 예약 흐름엔
+철회 안내도 버튼도 없었다. 유일한 문구(Fotografenvertrag § 13)도 현행 공식 서식과 달랐다(Wertersatz 문장·온라인 철회 문장 없음 → 촬영 후 철회 시 대가 0).
+계획·결정: `docs/widerruf-function-plan.md` — 사장님 승인: 여권 무구속 예약 · 여가 예외(§ 312g Abs. 2 Nr. 9) 미적용 · 철회 시 자동 취소 없음 · FV-v2.
+- **정본 문구 두 벌**: `Code.gs` `WIDERRUF_TEXT_` ↔ `frontend/booking/widerruf/widerruf-text.js` — `scripts/check-widerruf.mjs` 가 한 글자씩 대조(ops-checklist 등재).
+  독일어는 Anlage 1·2 EGBGB 원문(2026-09-18 gesetze-im-internet.de 대조), ko/en 은 이해용 번역.
+- **예약 화면 4/4**: 여권 외 「Widerrufsbelehrung」 펼침 + 계약 조건 「취소 및 환불」에 "법정 철회권은 별개·기간 안엔 우선" 한 줄 ·
+  여권은 무구속 예약 고지 + 필수 동의 문구 교체 · 촬영일이 21일 안이면 **조기 이행 요청 필수**('필수 전체 선택'에서 제외) → 예약행 맨 뒤 새 열 `early_start_requested`.
+  계약 조건 버전 `…_v2`. 하단 링크 「Vertrag widerrufen」.
+- **메일**: 확정 메일(5경로 공통 `_sendConfirmEmail`) 끝에 철회 안내 전문 + 서식 + 서명 ref 가 붙은 철회 버튼 + (요청 시) 조기 이행 요청 인용 ·
+  여권은 무구속 고지 · 접수/확정 메일 환불 상자에 철회권 한 줄(<span> — 계약서 § 10 인용 불변) · 관리자 접수 메일에 조기 이행 요청 ✔/⚠.
+- **철회 버튼**: `/widerruf/`(로그인 없음) → 「Widerruf bestätigen」 → `booking-withdraw`(POST 전용) → 고객 수신확인(보낸 내용 + 접수 시각, 장부 값 미노출) ·
+  `[철회 접수]` 사장님 알림(매칭 예약·철회기한·환불기한 = 접수+14일·'예약 바로 취소') · 예약 메모 한 줄 · 메시지로그 유형 `철회`. 상태 변경 없음.
+  매칭 = 포털 ref 우선, 없으면 같은 이메일 활성 예약 1건일 때만. 입구: 사이트 하단 + 고객 포털(`/status`, 여권·취소건 제외).
+- **Fotografenvertrag FV-v2**: 새 계약부터 § 13 = 정본 문구. 기존 FV-v1 은 서명본 재생성까지 옛 문구 — 조항해시 골든값 4건으로 고정(`check-contract-b2c.mjs`).
+- **검증**: `check-widerruf.mjs`(결함 주입 4종 탐지 확인) · `check-contract-b2c.mjs`(v1 해시 = 배포 전 코드 산출값) · refund/sheet-date/release-gate(offline) 통과 ·
+  배포 전·후 `clasp pull` ↔ 작업트리 diff 0 · 로컬·라이브 브라우저: 콘솔 오류 0(CSP), 여권/비여권/21일 안·밖/de·ko·en, 모바일 가로 스크롤 없음 ·
+  **라이브 E2E(사장님 승인)**: 테스트 예약 `TEST 철회검증`(스튜디오 Basic 9/30 17:15, 사장님 메일) → `booking-confirm-mail` → 포털 버튼 → 미리 채움 → 철회 확정 →
+  수신확인·관리자 알림 발송 성공, 메모 기록, 상태 확정됨 유지 → `booking-delete`(캘린더 삭제·슬롯 복구 확인).
+- ⚠ **행 번호 이동**: 테스트 행 삭제로 주여원(여권 9/19, 다른 세션이 16:43 생성) 291 → **290**.
+- 사장님 메일함의 테스트 메일 5통(접수·새 예약·확정·수신확인·철회 접수)은 지워도 된다.
+- 남은 것(범위 밖, 계획서 5장): 셀렉 추가 보정·인화 온라인 주문 · 굿샤인 판매 · 견적 메일 수락 계약의 철회 안내, 배포 전 확정분 사후 고지(변호사), 혼합계약·Lieferkosten 문구(변호사).
 
 ### 2026-09-17 · 추가금 면제가 인화장부 미수 행까지 정리 — `select-clear-extras` (@962 · 배포 완료 · 라이브 적용·검증 15:30)
 
