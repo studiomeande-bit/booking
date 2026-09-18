@@ -19,7 +19,10 @@ function passportDurationMin(people) {
 }
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
-const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v1';
+// v2 (2026-09-18): 철회 안내 + 여권 무구속 예약 + 조기 이행 요청 — docs/widerruf-function-plan.md
+const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v2';
+/* 조기 이행 요청을 받는 창 — 철회기간 14일 + 확정 대기 여유 7일. Code.gs WIDERRUF_EARLY_START_WINDOW_DAYS_ 와 같은 값. */
+const EARLY_START_WINDOW_DAYS = 21;
 const DEFAULT_SHOOTING_LOCATION = 'Holzweg-Passage 3, 61440 Oberursel';
 const INIT_CACHE_KEY = 'studioMeanBookingInit:v2';
 /* 첫 화면 즉시 렌더용 스냅샷 TTL.
@@ -819,7 +822,7 @@ const COPY = {
       { t: '비용 및 결제', p: '모든 금액은 brutto 기준입니다.<br>계약금이 있는 상품의 경우 계약금 입금 후 예약이 확정됩니다.<br>잔금은 촬영 당일 또는 촬영 후 7일 이내, 원본 또는 결과물 전달 전까지 지급합니다.<br>세금 표기는 최종 Rechnung 기준으로 처리합니다.' },
       { t: '납품 및 원본 전달', p: '납품 내용과 방식은 선택한 상품 또는 별도 합의 내용을 기준으로 합니다.<br>원본 전달이 포함된 경우, 기술적으로 사용 가능한 촬영 원본 디지털 파일을 전달합니다.<br>테스트 컷, 심한 중복 컷, 초점 실패, 노출 실패, 카메라 오류 등 납품 가치가 없는 파일은 제외될 수 있습니다.<br>RAW 파일은 상품 또는 별도 합의에 포함된 경우에만 제공됩니다.<br>RAW 파일 전달이 포함된 경우, 저장매체는 의뢰자가 준비하며 수령은 방문 수령으로 진행합니다.' },
       { t: '포함되지 않는 항목', p: '각 상품에 기본 포함된 인화는 상품 설명에 표시된 만큼 제공됩니다. 별도 합의가 없는 한 상세 보정, 색감 보정본, 피부 보정, 합성, 앨범, <b>기본 포함분 외 추가 인화</b>, 영상 촬영, 영상 편집, 추가 촬영 시간, 별도 출장비, 주차비, 입장료, 장소 촬영 허가비는 포함되지 않습니다.' },
-      { t: '취소 및 환불', p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
+      { t: '취소 및 환불', storno: true, p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
       { t: '저작권 및 이용권', p: '촬영물의 저작권 및 원저작권은 Studio mean에 있습니다.<br>고객은 전달받은 사진 또는 영상을 개인 보관, 가족 및 지인 공유, 개인 SNS 게시, 개인 인화 목적으로 사용할 수 있습니다.<br>상업적 사용, 재판매, 제3자 브랜드 또는 매체 제공, 대량 편집 및 2차 제작은 별도 서면 동의가 필요합니다.' },
       { t: '외부 공개 및 마케팅 사용', p: '본 표준 계약 동의에는 Studio mean이 식별 가능한 사진 또는 영상을 포트폴리오, SNS, 웹사이트, 광고 또는 홍보 자료로 사용하는 허락이 포함되지 않습니다.<br>외부 공개가 필요한 경우 별도 서면 동의를 받습니다.' },
       { t: '개인정보 및 보관', p: '개인정보와 이미지 파일은 예약, 계약 이행, 커뮤니케이션, 청구, 납품, 보관 목적에 한해 처리됩니다.<br>전달 파일은 납품 후 3개월 동안 보관될 수 있으며 이후 삭제될 수 있습니다.<br>보정 대상 사진 선택(셀렉)은 원본 전달일로부터 3개월 이내 접수 기준이며, 안내에도 불구하고 기한 내 접수되지 않으면 보관 파일은 삭제되고 보정 제공 의무는 종료됩니다.' }
@@ -828,6 +831,14 @@ const COPY = {
     contractTermsSummaryHint: '필수 동의 전 필요한 경우 펼쳐서 확인해 주세요.',
     contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
     contractTermsSub: '예약 시 선택한 상품·일정·장소·비용과 위 표준 계약 조건이 함께 적용됩니다.',
+    passConsentLabel: '[필수] 무구속 방문 예약 안내를 확인했고, 스튜디오 촬영에는 위 표준 촬영 조건이 적용되는 데 동의합니다.',
+    passConsentSub: '예약은 무료이며, 계약은 스튜디오에서 촬영할 때 성립합니다.',
+    widerrufSummary: '철회 안내 (Widerrufsbelehrung)',
+    widerrufSummaryHint: '소비자는 계약 후 14일 안에 철회할 수 있습니다. 펼쳐서 전문과 서식을 확인해 주세요.',
+    earlyStartGroupLabel: '철회기간 중 촬영',
+    earlyStartCheckLabel: '[필수] 철회기간 중 촬영 시작 요청',
+    earlyStartSub: '촬영일이 철회기간(14일) 안이라 이 요청이 있어야 예약할 수 있습니다. 더 먼 날짜를 고르시면 이 항목은 사라집니다.',
+    earlyStartMissing: '철회기간 중 촬영 시작 요청에 체크해 주세요.',
     gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
     gdprSub: '수집 항목은 예약·결제·촬영 진행·파일 전달에 필요한 범위로 한정되며, 별도 동의 없이 외부에 공개되지 않습니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
@@ -1041,7 +1052,7 @@ const COPY = {
       { t: 'Fees and payment', p: 'All amounts are gross (incl. VAT).<br>For packages with a deposit, the booking is confirmed once the deposit has been received.<br>The balance is due on the day of the shoot or within 7 days after it, and in any case before the files or results are delivered.<br>Tax is shown as stated on the final invoice (Rechnung).' },
       { t: 'Delivery and original files', p: 'The content and method of delivery follow the booked package or a separate agreement.<br>Where original files are included, technically usable original digital files are delivered.<br>Test shots, heavy duplicates, out-of-focus or clearly mis-exposed frames, camera errors and files with no delivery value may be sorted out.<br>RAW files are provided only if they are included in the package or in a separate agreement.<br>Where RAW files are delivered, the client provides the storage medium and collection takes place in person at the studio.' },
       { t: 'Services not included', p: 'The prints included in each package are as stated in the package description. Unless separately agreed, detailed retouching, colour-graded selects, skin retouching, composings, albums, <b>prints beyond the quantity included in the package</b>, video recording, video editing, additional shooting time, separate travel costs, parking fees, entrance fees or venue permit fees are not included.' },
-      { t: 'Cancellation and refund', p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
+      { t: 'Cancellation and refund', storno: true, p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
       { t: 'Copyright and usage rights', p: 'The copyright and related rights in the images remain with Studio mean.<br>The client receives a simple right of use for private archiving, sharing with family and friends, private social media use and private prints.<br>Commercial use, resale, provision to third-party brands or media, and extensive editing or derivative work require separate written consent.' },
       { t: 'Publication and marketing use', p: 'This standard contract consent does not include permission for Studio mean to use identifiable photos or videos for portfolio, social media, website, advertising or self-promotion.<br>If external publication is desired, separate written consent is obtained for it.' },
       { t: 'Data protection and storage', p: 'Personal data and image files are processed only for booking, performance of the contract, communication, invoicing, delivery and storage.<br>Delivered files may be retained for 3 months after delivery and may be deleted thereafter.<br>Photo selection for retouching must be submitted within 3 months of delivery of the originals; if no selection is received within this period despite reminders, stored files are deleted and the retouching obligation ends.' }
@@ -1050,6 +1061,14 @@ const COPY = {
     contractTermsSummaryHint: 'Expand to read them before giving the required consent.',
     contractTermsLabel: '[Required] I agree to the standard photography contract and booking terms.',
     contractTermsSub: 'The package, date, location and price selected at booking apply together with the standard terms above.',
+    passConsentLabel: '[Required] I have read the note on the non-binding reservation and agree that the standard shooting terms above apply to the shoot at the studio.',
+    passConsentSub: 'The reservation is free; the contract is concluded when you are photographed at the studio.',
+    widerrufSummary: 'Withdrawal instructions (Widerrufsbelehrung)',
+    widerrufSummaryHint: 'Consumers may withdraw within 14 days of the contract. Expand for the full text and the form.',
+    earlyStartGroupLabel: 'Shoot during the withdrawal period',
+    earlyStartCheckLabel: '[Required] Request to start during the withdrawal period',
+    earlyStartSub: 'Your shoot falls within the 14-day withdrawal period, so this request is needed to book it. Choose a later date and this item disappears.',
+    earlyStartMissing: 'Please tick the request to start during the withdrawal period.',
     gdprLabel: '[Required] I agree that my personal data is processed for booking, payment, carrying out the shoot and delivering the files.',
     gdprSub: 'Data is limited to what is needed for booking, payment, carrying out the shoot and delivering files, and is not published without separate consent.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
@@ -1263,7 +1282,7 @@ const COPY = {
       { t: 'Vergütung und Zahlung', p: 'Alle Beträge verstehen sich brutto.<br>Bei Buchungen mit Anzahlung ist der Termin nach Eingang der Anzahlung verbindlich reserviert.<br>Der Restbetrag ist am Shootingtag oder innerhalb von 7 Tagen nach dem Termin, jedenfalls vor Lieferung der Dateien oder Ergebnisse, fällig.<br>Die steuerliche Ausweisung erfolgt gemäß Rechnung.' },
       { t: 'Lieferung und Originaldateien', p: 'Inhalt und Art der Lieferung richten sich nach dem gebuchten Paket oder einer gesonderten Vereinbarung.<br>Wenn Originaldateien enthalten sind, werden technisch verwertbare digitale Originaldateien geliefert.<br>Testaufnahmen, starke Dubletten, unscharfe oder deutlich fehlbelichtete Aufnahmen, Kamerafehler und Dateien ohne Lieferwert können aussortiert werden.<br>RAW-Dateien werden nur geliefert, wenn sie im Paket oder in einer gesonderten Vereinbarung enthalten sind.<br>Wenn RAW-Dateien geliefert werden, stellt die Auftraggeberin bzw. der Auftraggeber das Speichermedium bereit. Die Übergabe erfolgt persönlich bei Abholung vor Ort.' },
       { t: 'Nicht enthaltene Leistungen', p: 'Die im jeweiligen Paket enthaltenen Abzüge sind in der Paketbeschreibung angegeben. Soweit nicht gesondert vereinbart, sind Detailretusche, farblich bearbeitete Auswahlbilder, Hautretusche, Composings, Alben, <b>Abzüge über die im Paket enthaltene Menge hinaus</b>, Videoaufnahmen, Videoschnitt, zusätzliche Shootingzeit, gesonderte Reisekosten, Parkgebühren, Eintrittsgebühren oder Genehmigungsgebühren der Location nicht enthalten.' },
-      { t: 'Stornierung und Erstattung', p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
+      { t: 'Stornierung und Erstattung', storno: true, p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
       { t: 'Urheberrecht und Nutzungsrecht', p: 'Die Urheber- und Leistungsschutzrechte an den Aufnahmen verbleiben bei Studio mean.<br>Die Kundin bzw. der Kunde erhält ein einfaches Nutzungsrecht für private Archivierung, Weitergabe an Familie und Freunde, private Social-Media-Nutzung und private Prints.<br>Kommerzielle Nutzung, Weiterverkauf, Weitergabe an Marken oder Medien sowie umfangreiche Bearbeitung oder Weiterverarbeitung bedürfen einer gesonderten schriftlichen Zustimmung.' },
       { t: 'Veröffentlichung und Werbung', p: 'Diese Standard-Vertragszustimmung enthält keine Einwilligung, identifizierbare Fotos oder Videos für Portfolio, Social Media, Website, Werbung oder Eigenwerbung von Studio mean zu verwenden.<br>Falls eine externe Veröffentlichung gewünscht wird, wird dafür eine gesonderte schriftliche Einwilligung eingeholt.' },
       { t: 'Datenschutz und Speicherung', p: 'Personenbezogene Daten und Bilddateien werden zur Buchung, Vertragsdurchführung, Kommunikation, Abrechnung, Lieferung und Speicherung verarbeitet.<br>Gelieferte Dateien können nach Lieferung 3 Monate gesichert und danach gelöscht werden.<br>Die Fotoauswahl für die Retusche ist innerhalb von 3 Monaten nach Lieferung der Originale einzureichen; geht trotz Erinnerungen keine Auswahl ein, werden gespeicherte Dateien gelöscht und die Retusche-Verpflichtung endet.' }
@@ -1272,6 +1291,14 @@ const COPY = {
     contractTermsSummaryHint: 'Bei Bedarf vor der Pflichtzustimmung ausklappen.',
     contractTermsLabel: '[Pflicht] Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
     contractTermsSub: 'Das bei der Buchung gewählte Paket, der Termin, der Ort und der Preis gelten zusammen mit den obigen Standardbedingungen.',
+    passConsentLabel: '[Pflicht] Ich habe den Hinweis zur unverbindlichen Reservierung gelesen und bin einverstanden, dass für die Aufnahme im Studio die obigen Standardbedingungen gelten.',
+    passConsentSub: 'Die Reservierung ist kostenfrei; der Vertrag kommt bei der Aufnahme im Studio zustande.',
+    widerrufSummary: 'Widerrufsbelehrung',
+    widerrufSummaryHint: 'Verbraucher können binnen 14 Tagen nach Vertragsschluss widerrufen. Zum Lesen der Belehrung und des Formulars ausklappen.',
+    earlyStartGroupLabel: 'Termin innerhalb der Widerrufsfrist',
+    earlyStartCheckLabel: '[Pflicht] Beginn vor Ablauf der Widerrufsfrist',
+    earlyStartSub: 'Ihr Termin liegt innerhalb der 14-tägigen Widerrufsfrist; ohne diese Erklärung ist die Buchung nicht möglich. Bei einem späteren Termin entfällt sie.',
+    earlyStartMissing: 'Bitte bestätigen Sie den Beginn vor Ablauf der Widerrufsfrist.',
     gdprLabel: '[Pflicht] Ich stimme zu, dass meine personenbezogenen Daten für Buchung, Zahlung, Durchführung des Shootings und Lieferung der Dateien verarbeitet werden.',
     gdprSub: 'Die Daten beschränken sich auf das, was für Buchung, Zahlung, Durchführung des Shootings und Lieferung nötig ist, und werden ohne gesonderte Einwilligung nicht veröffentlicht.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
@@ -1442,6 +1469,7 @@ const els = {
   optionField: document.getElementById('optionField'),
   reshootingField: document.getElementById('reshootingField'),
   reshootingConsent: document.getElementById('reshootingConsent'),
+  earlyStartConsent: document.getElementById('earlyStartConsent'),
   reshootingText: document.getElementById('reshootingText'),
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
@@ -1788,6 +1816,7 @@ function wireEvents() {
   els.studioFamilyInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.reshootingConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
+  els.earlyStartConsent?.addEventListener('change', refreshStepLocks);
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
@@ -2338,6 +2367,7 @@ function applyCopy() {
   setText('consentTitle', copy.consentTitle);
   setText('consentCopy', copy.consentCopy);
   renderContractTerms(copy);
+  renderWiderrufText(copy);
   setText('requiredConsentLabel', copy.requiredConsentLabel);
   setText('optionalConsentLabel', copy.optionalConsentLabel);
   setText('selectAllLabel', copy.selectAllLabel);
@@ -2920,6 +2950,7 @@ function getContractSubmissionData(formData = new FormData(els.form)) {
     contract_terms_version: CONTRACT_TERMS_VERSION,
     contract_terms_accepted: formData.get('contractTermsConsent') === 'on',
     privacy_terms_accepted: formData.get('gdprConsent') === 'on',
+    early_start_requested: needsEarlyStartConsent() && !!els.earlyStartConsent?.checked,
     accepted_at: new Date().toISOString(),
     accepted_language: state.lang || 'ko',
     selected_service: getDisplayProductTitle(state.selectedProduct) || getProductLabel(state.selectedProduct),
@@ -2975,6 +3006,7 @@ function syncConsentVisibility() {
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
   }
+  syncWiderrufConsent();
   syncSelectAllRequired();
 }
 
@@ -3068,11 +3100,86 @@ function renderContractTerms(copy = getCopy()) {
     title.textContent = item.t || '';
     const body = document.createElement('p');
     appendContractText(body, item.p);
+    // 취소 규정 아래 "법정 철회권은 별개" 한 줄 — 없으면 30/8/2일 규정이 철회권을 가리는 문구가 된다(UWG)
+    if (item.storno && window.SM_WIDERRUF_TEXT) appendContractText(body, `<br>${window.SM_WIDERRUF_TEXT[widerrufLangKey()].stornoNote}`);
     li.append(title, body);
     list.appendChild(li);
   });
   const section = document.getElementById('contractTermsSection');
   if (section) section.setAttribute('aria-label', copy.consentTitle || '');
+}
+
+/* ── 소비자 철회 (docs/widerruf-function-plan.md) ──
+   문구 정본은 widerruf/widerruf-text.js(window.SM_WIDERRUF_TEXT) — Code.gs 와 한 글자씩 대조된다(scripts/check-widerruf.mjs).
+   여권은 무구속 방문 예약(계약은 스튜디오에서 성립)이라 철회 안내 대신 무구속 고지를 띄운다. */
+function widerrufLangKey() {
+  return state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+}
+
+function berlinToday() {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date()); } catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+
+/* 조기 이행 요청(§ 356 Abs. 5 Nr. 2 · § 357a Abs. 2) — 촬영일이 베를린 오늘부터 창 안이면 필수. 서버 bookingNeedsEarlyStart_ 와 같은 판정. */
+function needsEarlyStartConsent(product = state.selectedProduct) {
+  if (!product || product.g === 'pass' || !/^\d{4}-\d{2}-\d{2}$/.test(state.selectedDate || '')) return false;
+  const days = Math.round((Date.parse(`${state.selectedDate}T00:00:00Z`) - Date.parse(`${berlinToday()}T00:00:00Z`)) / 86400000);
+  return days <= EARLY_START_WINDOW_DAYS;
+}
+
+function renderWiderrufText(copy = getCopy()) {
+  setText('widerrufSummary', copy.widerrufSummary);
+  setText('widerrufSummaryHint', copy.widerrufSummaryHint);
+  setText('earlyStartGroupLabel', copy.earlyStartGroupLabel);
+  setText('earlyStartSub', copy.earlyStartSub);
+  setText('earlyStartLabel', copy.earlyStartCheckLabel);
+  const W = window.SM_WIDERRUF_TEXT;
+  const box = document.getElementById('widerrufText');
+  if (!W || !box) return;
+  const lang = widerrufLangKey();
+  const el = (tag, text, cls) => { const n = document.createElement(tag); n.textContent = text; if (cls) n.className = cls; return n; };
+  const block = (t, langAttr) => {
+    const wrap = document.createElement('div');
+    wrap.lang = langAttr;
+    wrap.appendChild(el('h4', t.title));
+    t.sections.forEach((s) => { wrap.appendChild(el('h5', s.h)); s.ps.forEach((p) => wrap.appendChild(el('p', p))); });
+    wrap.append(el('h5', t.noteTitle), el('p', t.note));
+    return wrap;
+  };
+  box.replaceChildren(el('p', W[lang].intro, 'widerruf-intro'));
+  if (lang !== 'de') box.append(el('p', W[lang].bindingNote, 'widerruf-binding'), block(W[lang], lang));
+  const original = block(W.de, 'de');
+  original.className = lang !== 'de' ? 'widerruf-original' : '';
+  original.appendChild(el('h5', W.de.formTitle));
+  if (lang !== 'de') original.appendChild(el('p', W[lang].formNote, 'widerruf-binding'));
+  original.appendChild(el('p', W.de.formNote));
+  W.de.form.forEach((line) => original.appendChild(el('p', line, 'widerruf-form-line')));
+  box.appendChild(original);
+  setText('earlyStartText', W[lang].earlyStart); // 고객이 체크하는 의사표시 문장 그대로 — 확정 메일이 같은 문장을 인용한다
+}
+
+/* 매 갱신마다(updateSubmitState → syncConsentVisibility) 부른다 — 촬영일·상품이 바뀌면 필수 여부가 바뀐다. */
+function syncWiderrufConsent() {
+  const product = state.selectedProduct;
+  const isPass = state.selectedGroup === 'pass' || product?.g === 'pass';
+  const W = window.SM_WIDERRUF_TEXT;
+  const copy = getCopy();
+  const section = document.getElementById('widerrufSection');
+  if (section) section.hidden = isPass;
+  const passNote = document.getElementById('passReservationNote');
+  if (passNote) {
+    passNote.hidden = !isPass;
+    passNote.textContent = isPass && W ? W[widerrufLangKey()].passNote : '';
+  }
+  setText('contractTermsLabel', isPass ? copy.passConsentLabel : copy.contractTermsLabel);
+  setText('contractTermsSub', isPass ? copy.passConsentSub : copy.contractTermsSub);
+  const need = needsEarlyStartConsent(product);
+  const group = document.getElementById('earlyStartGroup');
+  if (group) group.hidden = !need;
+  if (els.earlyStartConsent) {
+    els.earlyStartConsent.disabled = !need;
+    if (!need) els.earlyStartConsent.checked = false; // 날짜를 바꿨다 돌아오면 다시 명시적으로 체크해야 한다
+  }
 }
 
 function renderGroups() {
@@ -3442,6 +3549,7 @@ function renderStepWarnings() {
   const gdprOk = formData.get('gdprConsent') === 'on';
   const babyNameOk = !needsBabyNameForBooking(product) || !!String(formData.get('babyName') || '').trim();
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const earlyStartOk = !needsEarlyStartConsent(product) || !!els.earlyStartConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
     step5Message = state.lang === 'en'
@@ -3473,6 +3581,8 @@ function renderStepWarnings() {
       : state.lang === 'de'
         ? 'Stimmen Sie der Richtlinie für erneute Aufnahmen zu.'
         : '재촬영 약관 동의가 필요합니다.';
+  } else if (!earlyStartOk) {
+    step5Message = getCopy().earlyStartMissing;
   }
 
   if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
@@ -6531,13 +6641,14 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !needsBabyNameForBooking(product) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const earlyStartOk = !needsEarlyStartConsent(product) || !!els.earlyStartConsent?.checked;
   const phoneDigitsOk = (String(formData.get('phone') || '').replace(/\D/g, '').length >= 6); // 숫자 없는 전화가 '+49'로 저장되던 문제
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
     || (businessInvoice.companyName
       && businessInvoice.companyAddress
       && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
-  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
+  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && earlyStartOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -6733,6 +6844,11 @@ async function onSubmit(event) {
         { duration: 1600, iterations: 2 }
       );
     } catch (e) {}
+    return;
+  }
+  if (needsEarlyStartConsent(state.selectedProduct) && !els.earlyStartConsent?.checked) {
+    setBanner(getCopy().earlyStartMissing, 'error');
+    try { document.getElementById('earlyStartGroup')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
     return;
   }
   if (payload.babyName) {

@@ -202,5 +202,23 @@ const t = M._contractSpecialTermsFromQuote_('- Jede weitere Stunde: 150,00 EUR/S
 check('견적 옵션·조건은 특약으로 이관', t.text.includes('Jede weitere Stunde'));
 check('견적 전용 문구는 제외', !t.text.includes('freibleibend') && !t.text.includes('gültig') && t.dropped.length === 2);
 
+/* ── 7) FV-v1 하위호환 — 이미 만든 소비자 계약은 서명본 재생성까지 옛 § 13 그대로 (골든값: FV-v2 도입 직전 코드에서 채취) ── */
+console.log('\n── FV-v1 하위호환 (조항해시 골든값) ──');
+[['v1-de', '40086d1ccb', {}], ['v1-de 14일 안', '58715a1569', { schedule: '2026-08-25' }], ['v1-ko', '682e6e7ede', { lang: 'ko' }], ['v1-en', '59ed18e692', { lang: 'en' }]]
+  .forEach(([label, want, over]) => { const got = M._contractClauseHash_(b2c(over)); check(`${label} 조항해시 ${want}`, got === want, `실제 ${got}`); });
+
+/* ── 8) FV-v2 (2026-09-18) — § 13 = 공식 서식 정본(WIDERRUF_TEXT_, scripts/check-widerruf.mjs 가 원문 대조) ── */
+console.log('\n── FV-v2 § 13 ──');
+const v2 = (over) => M.buildDrehvertragHtml_(b2c(Object.assign({ clauseVersion: 'FV-v2 (2026-09-18)' }, over || {})));
+const v2de = v2();
+check('v2: Wertersatz 문장 (v1 에 없던 것 — 없으면 § 357a Abs. 2 대가 0)', v2de.includes('so haben Sie uns einen angemessenen Betrag zu zahlen'));
+check('v2: 온라인 철회 문장 (Art. 246a § 1 Abs. 2 Nr. 1)', v2de.includes('Sie können Ihr Widerrufsrecht auch online unter https://booking.studio-mean.com/widerruf/ ausüben'));
+check('v2: 현행 서식 "oder eine E-Mail"', v2de.includes('versandter Brief oder eine E-Mail'));
+check('v2: 조기 소멸 고지는 촬영일과 무관하게 항상, 옛 조문 번호 없음', v2de.includes('Vorzeitiges Erlöschen des Widerrufsrechts') && !v2de.includes('§ 356 Abs. 4'));
+check('v2: 스토노 우선 조항·별지는 그대로', v2de.includes('geht das gesetzliche Widerrufsrecht diesen Stornoregelungen vor') && v2de.includes('Unzutreffendes streichen'));
+const v2ko = v2({ lang: 'ko' });
+check('v2 ko: 독일어 원문 + 한국어 번역', v2ko.includes('Folgen des Widerrufs') && v2ko.includes('철회의 효과') && v2ko.includes('독일어 원문이 법적 효력을 가진다'));
+check('v2 en: 독일어 원문 + 영어 번역', v2({ lang: 'en' }).includes('Effects of withdrawal') && v2({ lang: 'en' }).includes('binnen vierzehn Tagen'));
+
 console.log(fails ? `\n❌ 실패 ${fails}건` : '\n✅ 전부 통과');
 process.exit(fails ? 1 : 0);

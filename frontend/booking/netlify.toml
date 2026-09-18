@@ -77,6 +77,13 @@
   status = 200
   force = true
 
+# § 356a BGB 온라인 철회 페이지 — 문서 경로 한 줄만(와일드카드 금지: 페이지 자신의 js 까지 삼킨다). 에셋은 절대경로로 싣는다.
+[[redirects]]
+  from = "/widerruf"
+  to = "/widerruf/index.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/dress"
   to = "/dress/index.html"
@@ -140,6 +147,18 @@
 
 [[headers]]
   for = "/status/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/widerruf/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/widerruf/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
     X-Robots-Tag = "noindex, nofollow"
