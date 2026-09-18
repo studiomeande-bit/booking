@@ -2387,7 +2387,7 @@ function applyCopy() {
   if (els.slotPanelTitle) els.slotPanelTitle.textContent = copy.slotPanelTitle;
   setText('legendFullLabel', copy.legendFullLabel);
   setText('legendClosedLabel', copy.legendClosedLabel);
-  els.submitBtn.textContent = copy.submitLabel;
+  els.submitBtn.textContent = getSubmitLabel(copy);
   if (els.generalPeopleCustom) els.generalPeopleCustom.placeholder = copy.peopleCustomPlaceholder;
   if (els.locationInput) els.locationInput.placeholder = copy.locationPlaceholder;
   if (els.businessInput) els.businessInput.placeholder = copy.businessPlaceholder;
@@ -3161,6 +3161,16 @@ function renderWiderrufText(copy = getCopy()) {
   setText('earlyStartText', W[lang].earlyStart); // 고객이 체크하는 의사표시 문장 그대로 — 확정 메일이 같은 문장을 인용한다
 }
 
+/* § 312j Abs. 3 BGB — 돈을 내야 하는 예약의 제출 버튼은 "zahlungspflichtig" 문구여야 한다(아니면 Abs. 4: 계약 불성립).
+   여권(무료·무구속 예약)·상담 견적(값 미정)·0원 예약은 결제 의무가 없어 기존 문구. 문구는 widerruf-text.js 정본. */
+function getSubmitLabel(copy = getCopy()) {
+  const product = state.selectedProduct;
+  const W = window.SM_WIDERRUF_TEXT;
+  if (!product || !W || state.selectedGroup === 'pass' || product.g === 'pass') return copy.submitLabel;
+  const snap = getContractPriceSnapshot();
+  return !snap.quoteOnly && Number(snap.total) > 0 ? W[widerrufLangKey()].bookButton : copy.submitLabel;
+}
+
 /* 매 갱신마다(updateSubmitState → syncConsentVisibility) 부른다 — 촬영일·상품이 바뀌면 필수 여부가 바뀐다. */
 function syncWiderrufConsent() {
   const product = state.selectedProduct;
@@ -3176,6 +3186,8 @@ function syncWiderrufConsent() {
   }
   setText('contractTermsLabel', isPass ? copy.passConsentLabel : copy.contractTermsLabel);
   setText('contractTermsSub', isPass ? copy.passConsentSub : copy.contractTermsSub);
+  // 제출 중('제출 중...')에는 onSubmit 이 버튼 문구를 쥐고 있다
+  if (els.submitBtn && els.submitBtn.textContent !== copy.submitLoading) els.submitBtn.textContent = getSubmitLabel(copy);
   const need = needsEarlyStartConsent(product);
   const group = document.getElementById('earlyStartGroup');
   if (group) group.hidden = !need;
@@ -6903,7 +6915,7 @@ async function onSubmit(event) {
       setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
     }
   } finally {
-    els.submitBtn.textContent = getCopy().submitLabel;
+    els.submitBtn.textContent = getSubmitLabel();
     updateSubmitState();
     renderReturnNotice();
     syncSelectAllRequired();

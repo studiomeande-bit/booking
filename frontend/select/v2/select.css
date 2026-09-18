@@ -2564,3 +2564,47 @@ strong.quote{ color: var(--sm-warn); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) {
   .blocked-modal, .blocked-card { animation: none; }
 }
+
+/* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md) ── */
+.vat-note {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: .82;
+}
+.order-legal {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--sm-line, #e8e4dd);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--sm-text, #171513);
+}
+.order-legal-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+}
+.order-legal-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+.order-legal-note {
+  margin: 0;
+  color: #5c544b;
+}
+.order-legal-link {
+  font-size: 12.5px;
+  color: var(--sm-brand-ink);
+}
+.site-footer-links a.footer-withdraw {
+  font-weight: 600;
+  border-bottom: 1px solid currentColor;
+}

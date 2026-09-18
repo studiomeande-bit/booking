@@ -4,6 +4,7 @@ import {
   fetchSelectPickupCalendar,
   fetchSelectPickupSlots,
   fetchSelectSession,
+  fetchWiderrufText,
   saveSelectRatings,
   submitSelectSession,
   updateSelectSession
@@ -401,6 +402,14 @@ const els = {
   reviewTotal: document.getElementById('reviewTotal'),
   submitHint: document.getElementById('submitHint'),
   submitBtn: document.getElementById('submitBtn'),
+  vatNote: document.getElementById('vatNote'),
+  orderLegalBox: document.getElementById('orderLegalBox'),
+  earlyStartRetouchRow: document.getElementById('earlyStartRetouchRow'),
+  earlyStartRetouchInput: document.getElementById('earlyStartRetouchInput'),
+  earlyStartRetouchText: document.getElementById('earlyStartRetouchText'),
+  printNoWiderrufNote: document.getElementById('printNoWiderrufNote'),
+  widerrufInfoLink: document.getElementById('widerrufInfoLink'),
+  footerWithdrawLink: document.getElementById('footerWithdrawLink'),
   successTitle: document.getElementById('successTitle'),
   successCopy: document.getElementById('successCopy'),
   successName: document.getElementById('successName'),
@@ -524,7 +533,7 @@ function rerenderForLang() {
   /* Skip while a submit is in flight — the button then shows a progress label
      that onSubmit owns. updateSubmitState() re-derives disabled separately. */
   if (els.submitBtn && !els.submitBtn.disabled) {
-    els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+    els.submitBtn.textContent = submitButtonLabel();
   }
 }
 
@@ -547,6 +556,7 @@ async function boot() {
   if (state.previewMode) {
     try {
       const mock = buildMockSession();
+      mock.legal = await fetchWiderrufText().catch(() => null);
       hydrateSession(mock);
       renderHeader();
       renderSessionSummary();
@@ -3498,8 +3508,46 @@ function updateReview() {
   if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
   const total = calcTotal();
   els.reviewTotal.textContent = total === 0 ? c.printFree : `€${total}`;
+  syncOrderLegal();
   updateSubmitState();
   renderStepWarnings();
+}
+
+/* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md, 2026-09-18) ──
+   추가 보정 = 서비스 → 조기 이행 요청 필수 체크(§ 356 Abs. 5 Nr. 2 · § 357a Abs. 2) + 철회 안내 링크.
+   인화·액자·포토카드 = 맞춤 제작품 → 철회권 없음 고지(§ 312g Abs. 2 Nr. 1). 합계 > 0 이면 버튼 "zahlungspflichtig"(§ 312j Abs. 3).
+   문구는 서버 정본(session.legal ← Code.gs WIDERRUF_TEXT_) — 셀렉 사이트는 CSP 로 예약 사이트 문구 파일을 못 싣는다. */
+function legalCopy() {
+  const legal = state.session?.legal;
+  return legal ? (legal[state.lang] || legal.ko) : null;
+}
+function hasPaidRetouch() { return calcRetouchDiscount().raw > 0; }
+function hasPaidPrints() { return calcPrintDiscount().raw > 0; }
+function submitButtonLabel() {
+  const L = legalCopy();
+  if (L && calcTotal() > 0) return L.orderButton;
+  return state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+}
+function syncOrderLegal() {
+  const L = legalCopy();
+  const paidRetouch = !!L && hasPaidRetouch();
+  const paidPrints = !!L && hasPaidPrints();
+  if (els.vatNote) els.vatNote.textContent = L && calcTotal() > 0 ? `(${L.vatIncluded})` : '';
+  els.orderLegalBox?.classList.toggle('hidden', !(paidRetouch || paidPrints));
+  els.earlyStartRetouchRow?.classList.toggle('hidden', !paidRetouch);
+  if (els.earlyStartRetouchText) els.earlyStartRetouchText.textContent = paidRetouch ? L.earlyStartRetouch : '';
+  // 유료 보정이 빠졌다가 다시 담기면 다시 명시적으로 체크해야 한다
+  if (!paidRetouch && els.earlyStartRetouchInput) els.earlyStartRetouchInput.checked = false;
+  els.printNoWiderrufNote?.classList.toggle('hidden', !paidPrints);
+  if (els.printNoWiderrufNote) els.printNoWiderrufNote.textContent = paidPrints ? L.printNoWiderruf : '';
+  if (els.widerrufInfoLink) {
+    els.widerrufInfoLink.classList.toggle('hidden', !paidRetouch);
+    els.widerrufInfoLink.textContent = copy().widerrufInfoLink;
+    els.widerrufInfoLink.href = `${state.session?.legal?.url || 'https://booking.studio-mean.com/widerruf/'}?lang=${state.lang}`;
+  }
+  // 하단 「Vertrag widerrufen」 — 예약행이 있으면 서명 ref 가 붙어 /widerruf/ 가 미리 채운다
+  if (els.footerWithdrawLink && state.session?.withdrawUrl) els.footerWithdrawLink.href = `${state.session.withdrawUrl}&lang=${state.lang}`;
+  if (els.submitBtn && !els.submitBtn.disabled) els.submitBtn.textContent = submitButtonLabel();
 }
 
 function validateStep1() {
@@ -3912,6 +3960,12 @@ async function onSubmit() {
   if (!validateStep2()) { goStep(2); showBlockedModal(collectStepProblems(2)); return; }
   if (!validateStep3()) { goStep(3); showBlockedModal(collectStepProblems(3)); return; }
   if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
+  // 유료 추가 보정 — 조기 이행 요청은 명시적 체크여야 한다(묶음 동의·자동 체크 없음)
+  if (legalCopy() && hasPaidRetouch() && !els.earlyStartRetouchInput?.checked) {
+    setBanner(copy().warnEarlyStartRetouch, 'error');
+    els.orderLegalBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   if (state.previewMode) {
     alert(copy().previewSubmitAlert);
     return;
@@ -3960,6 +4014,7 @@ async function onSubmit() {
     mailName: deliveryRequired && state.deliveryMethod === 'mail' ? getMailNameForSubmission() : '',
     mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
     photocard: getPhotocardPayload(),
+    earlyStartRetouch: !!(legalCopy() && hasPaidRetouch() && els.earlyStartRetouchInput?.checked),
     suppressCustomerEmail: state.testMode
   };
   try {
@@ -3975,7 +4030,7 @@ async function onSubmit() {
   } finally {
     if (!state.submitted) {
       els.submitBtn.disabled = false;
-      els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+      els.submitBtn.textContent = submitButtonLabel();
     }
   }
 }

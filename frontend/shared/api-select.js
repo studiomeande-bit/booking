@@ -75,6 +75,12 @@ export async function updateSelectSession(sessionId, submission, requestId) {
   );
 }
 
+// 유료 추가 주문의 법정 문구 — 셀렉 미리보기(?preview=1) 전용. 실세션은 select-session 응답의 legal 로 받는다.
+export async function fetchWiderrufText() {
+  const response = await fetch(buildUrl('widerruf-text', {}), { cache: 'no-store' });
+  return parseJsonResponse(response);
+}
+
 export async function fetchSelectPickupCalendar(year, month) {
   const response = await fetch(buildUrl('select-pickup-calendar', { year, month }), { cache: 'no-store' });
   return parseJsonResponse(response);

@@ -47,7 +47,13 @@ window.SM_WIDERRUF_TEXT = /* WIDERRUF_TEXT:BEGIN */
     "stornoNote": "Das gesetzliche Widerrufsrecht für Verbraucherinnen und Verbraucher (siehe Widerrufsbelehrung) bleibt unberührt und geht dieser Staffel innerhalb der Widerrufsfrist vor.",
     "statement": "Hiermit widerrufe ich den von mir abgeschlossenen Vertrag.",
     "withdrawLabel": "Vertrag widerrufen",
-    "confirmLabel": "Widerruf bestätigen"
+    "confirmLabel": "Widerruf bestätigen",
+    "earlyStartRetouch": "Ich verlange ausdrücklich, dass Studio mean vor Ablauf der Widerrufsfrist mit der bestellten Zusatzretusche beginnt. Mir ist bekannt, dass ich bei einem Widerruf einen angemessenen Betrag für die bis dahin erbrachten Leistungen zahlen muss und dass mein Widerrufsrecht mit vollständiger Vertragserfüllung durch Studio mean erlischt.",
+    "printNoWiderruf": "Für Abzüge, Rahmen und Fotokarten, die nach Ihrer Auswahl angefertigt werden, besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 1 BGB).",
+    "orderButton": "Zahlungspflichtig bestellen",
+    "bookButton": "Zahlungspflichtig buchen",
+    "vatIncluded": "inkl. MwSt.",
+    "selectContract": "Zusatzbestellung aus der Fotoauswahl (Retusche/Abzüge)"
   },
   "ko": {
     "intro": "소비자(독일 민법 제13조)에게는 아래 철회 안내에 따른 철회권이 있습니다.",
@@ -81,7 +87,13 @@ window.SM_WIDERRUF_TEXT = /* WIDERRUF_TEXT:BEGIN */
     "stornoNote": "소비자의 법정 철회권(철회 안내 참조)은 이 규정과 관계없이 보장되며, 철회기간 안에는 이 환불 규정보다 우선합니다.",
     "statement": "본인이 체결한 계약을 철회합니다.",
     "withdrawLabel": "계약 철회 · Vertrag widerrufen",
-    "confirmLabel": "철회 확정 · Widerruf bestätigen"
+    "confirmLabel": "철회 확정 · Widerruf bestätigen",
+    "earlyStartRetouch": "철회기간(14일)이 끝나기 전에 Studio mean 이 주문한 추가 보정을 시작해 줄 것을 명시적으로 요청합니다. 철회하면 그때까지 제공된 서비스에 대한 적정 금액을 지불해야 하고, Studio mean 이 계약을 완전히 이행하면 철회권이 소멸한다는 점을 알고 있습니다.",
+    "printNoWiderruf": "고르신 사진으로 만드는 인화·액자·포토카드는 맞춤 제작품이라 철회권이 없습니다(독일 민법 제312g조 제2항 제1호).",
+    "orderButton": "결제 의무가 있는 주문하기",
+    "bookButton": "결제 의무가 있는 예약하기",
+    "vatIncluded": "부가세 포함",
+    "selectContract": "셀렉 추가 주문(추가 보정·인화)"
   },
   "en": {
     "intro": "Consumers (Section 13 German Civil Code, BGB) have a right of withdrawal in accordance with the following instructions.",
@@ -115,6 +127,12 @@ window.SM_WIDERRUF_TEXT = /* WIDERRUF_TEXT:BEGIN */
     "stornoNote": "Consumers' statutory right of withdrawal (see the withdrawal instructions) remains unaffected and takes precedence over this schedule during the withdrawal period.",
     "statement": "I hereby withdraw from the contract I concluded.",
     "withdrawLabel": "Withdraw from contract · Vertrag widerrufen",
-    "confirmLabel": "Confirm withdrawal · Widerruf bestätigen"
+    "confirmLabel": "Confirm withdrawal · Widerruf bestätigen",
+    "earlyStartRetouch": "I expressly request that Studio mean begin the ordered additional retouching before the withdrawal period ends. I understand that if I withdraw, I must pay a reasonable amount for the services provided up to that point, and that my right of withdrawal expires once Studio mean has fully performed the contract.",
+    "printNoWiderruf": "Prints, frames and photo cards made from the photos you select are made to your specification, so there is no right of withdrawal (Section 312g(2) no. 1 German Civil Code).",
+    "orderButton": "Order with obligation to pay",
+    "bookButton": "Book with obligation to pay",
+    "vatIncluded": "incl. VAT",
+    "selectContract": "Additional order from the photo selection (retouching/prints)"
   }
 }/* WIDERRUF_TEXT:END */;

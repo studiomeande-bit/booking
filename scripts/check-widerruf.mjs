@@ -63,6 +63,11 @@ check('서식(Anlage 2) 줄 그대로', JSON.stringify(W.de.form.slice(1)) === J
   '– Unterschrift des/der Verbraucher(s) (nur bei Mitteilung auf Papier)', '– Datum', '(*) Unzutreffendes streichen.']));
 check('ko/en 번역이 같은 구조(단락 수)', ['ko', 'en'].every((l) => JSON.stringify(W[l].sections.map((s) => s.ps.length)) === JSON.stringify(W.de.sections.map((s) => s.ps.length))));
 check('세 언어 모두 버튼 문구에 법문 표현 포함', ['de', 'ko', 'en'].every((l) => W[l].withdrawLabel.includes('Vertrag widerrufen') && W[l].confirmLabel.includes('Widerruf bestätigen')));
+check('주문·예약 버튼 = § 312j Abs. 3 문구(독일어 법문 · 지침 영어판)', W.de.orderButton === 'Zahlungspflichtig bestellen' && W.de.bookButton === 'Zahlungspflichtig buchen'
+  && W.en.orderButton === 'Order with obligation to pay' && W.en.bookButton === 'Book with obligation to pay' && !!W.ko.orderButton && !!W.ko.bookButton);
+check('셀렉 문구 세 언어 모두 있음(보정용 조기 이행·인화 철회권 없음·부가세·철회 페이지 계약명)', ['de', 'ko', 'en'].every((l) => ['earlyStartRetouch', 'printNoWiderruf', 'vatIncluded', 'selectContract'].every((k) => String(W[l][k] || '').length > 3)));
+check('인화 고지는 § 312g Abs. 2 Nr. 1 근거', W.de.printNoWiderruf.includes('§ 312g Abs. 2 Nr. 1 BGB') && W.en.printNoWiderruf.includes('312g(2) no. 1') && W.ko.printNoWiderruf.includes('제312g조'));
+check('보정용 조기 이행 문장 = 요청 + 대가 + 완전 이행 시 소멸', W.de.earlyStartRetouch.includes('ausdrücklich') && W.de.earlyStartRetouch.includes('angemessenen Betrag') && W.de.earlyStartRetouch.includes('vollständiger Vertragserfüllung'));
 
 /* ── ③ Code.gs 로드 (GAS 스텁) ── */
 const pad = (n) => String(n).padStart(2, '0');
@@ -92,12 +97,15 @@ globalThis.Logger = { log() {} };
 for (const n of ['DriveApp', 'SpreadsheetApp', 'CalendarApp', 'GmailApp', 'UrlFetchApp', 'HtmlService', 'ContentService']) globalThis[n] = nope(n);
 
 const EXPORTS = ['CONFIG', 'WIDERRUF_TEXT_', 'EMAIL_I18N', 'submitBookingWithdrawal_', 'buildWiderrufMailHtml_', 'buildPassReservationNoteHtml_',
-  'withWiderrufStornoNote_', 'bookingNeedsEarlyStart_', 'bookingNeedsWiderrufNotice_', 'getWiderrufMailContext_', 'createBookingRowActionRef_'];
+  'withWiderrufStornoNote_', 'bookingNeedsEarlyStart_', 'bookingNeedsWiderrufNotice_', 'getWiderrufMailContext_', 'createBookingRowActionRef_',
+  'buildSelectLegalPayload_', 'buildSelectExtraLegalHtml_', 'buildSelectWithdrawUrl_', 'selectEarlyStartAlertRow_', 'recordSelectEarlyStart_',
+  'SELECT_HEADERS', 'SELECT_SHEET_NAME'];
 const dir = mkdtempSync(join(tmpdir(), 'smwiderruf-'));
 const modPath = join(dir, 'code.cjs');
 writeFileSync(modPath, `${gsSrc}
 getDbSheet=function(){return globalThis.__sheet;};
 ensureSheets_=function(){return {bookingSheet:globalThis.__sheet,messageLogSheet:globalThis.__log};};
+ensureSelectSheet_=function(){return globalThis.__select;};
 module.exports={${EXPORTS.join(',')}};\n`);
 const M = (await import(pathToFileURL(modPath).href)).default;
 rmSync(dir, { recursive: true, force: true });
@@ -203,6 +211,51 @@ check('취소된 예약은 연결하지 않는다', sent[1].htmlBody.includes('�
 sent.length = 0;
 M.submitBookingWithdrawal_({ name: 'Mallory', contract: 'x', email: 'mallory@example.com', ref: 'row:2:forgedtoken123', lang: 'en' });
 check('위조 ref 는 매칭되지 않는다', sent[1].htmlBody.includes('자동 연결 못 함'));
+
+/* ── 셀렉 유료 추가 주문 (docs/select-widerruf-plan.md) ── */
+console.log('\n── 셀렉 유료 추가 주문 ──');
+const LP = M.buildSelectLegalPayload_();
+check('세션 응답 legal = 서버 정본 부분집합(세 언어)', ['ko', 'en', 'de'].every((l) => LP[l].earlyStartRetouch === W[l].earlyStartRetouch && LP[l].orderButton === W[l].orderButton
+  && LP[l].printNoWiderruf === W[l].printNoWiderruf && LP[l].vatIncluded === W[l].vatIncluded) && LP.url === W.url);
+const wUrl = M.buildSelectWithdrawUrl_(2, S.data[1]);
+check('셀렉 철회 링크 = 서명 ref + what=select / 예약행 없으면 what=select 만', wUrl.startsWith(`${W.url}?ref=`) && wUrl.endsWith('&what=select') && M.buildSelectWithdrawUrl_(0, null) === `${W.url}?what=select`);
+const legalBoth = M.buildSelectExtraLegalHtml_('ko', { paidRetouch: true, paidPrints: true, earlyStartAt: '2026-09-18 10:00 | WB-2026-09', withdrawUrl: wUrl });
+check('접수 메일: 유료 보정 → 확정 문장 + 철회 안내 + 보정용 요청 인용 + 셀렉 철회 링크', legalBoth.includes('추가 주문') && legalBoth.includes('Widerrufsbelehrung')
+  && legalBoth.includes(W.ko.earlyStartRetouch) && legalBoth.includes('주문하실 때') && legalBoth.includes(wUrl.replace(/&/g, '&amp;')));
+check('접수 메일: 유료 인화 → 철회권 없음(번역 + 독일어)', legalBoth.includes(W.ko.printNoWiderruf) && legalBoth.includes(W.de.printNoWiderruf));
+const legalPrints = M.buildSelectExtraLegalHtml_('de', { paidRetouch: false, paidPrints: true, withdrawUrl: wUrl });
+check('인화만 → 철회 안내 전문 없음, 인화 고지만', legalPrints.includes(W.de.printNoWiderruf) && !legalPrints.includes('Folgen des Widerrufs') && !legalPrints.includes(wUrl));
+check('0원 → 안내 없음', M.buildSelectExtraLegalHtml_('ko', { paidRetouch: false, paidPrints: false }) === '');
+const tdS = (l, v) => `<tr><td>${l}</td><td>${v}</td></tr>`;
+check('관리자 알림 철회권 줄: 유료 보정 없으면 없음 · 요청 ✔ · 없음 ⚠', M.selectEarlyStartAlertRow_(tdS, 0, '') === ''
+  && M.selectEarlyStartAlertRow_(tdS, 2, '2026-09-18 10:00 | WB-2026-09').includes('✔') && M.selectEarlyStartAlertRow_(tdS, 2, '').includes('⚠'));
+
+/* 가짜 셀렉 시트 — 예약행 2 에 연결된 제출 세션 */
+const SH = M.SELECT_HEADERS;
+const selData = [SH.slice(), SH.map((h) => ({ 세션ID: 'sessTEST1', 예약장부행: 2, 제출일시: '2026-09-18 10:00', 상태: '작업대기', 셀렉마감일: '2026-12-01', 페이지버전: 'v2' }[h] ?? ''))];
+globalThis.__select = {
+  data: selData,
+  getLastRow: () => selData.length,
+  getLastColumn: () => SH.length,
+  getRange: (r, c, nr, nc) => (nr ? { getValues: () => selData.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)) }
+    : { getValue: () => selData[r - 1][c - 1], setValue: (v) => { selData[r - 1][c - 1] = v; } }),
+};
+S.getParent = () => ({ getSheetByName: (n) => (n === M.SELECT_SHEET_NAME ? globalThis.__select : null) });
+const colEarly = SH.indexOf('추가보정조기이행요청');
+check('셀렉 시트 새 열은 맨 뒤', colEarly === SH.length - 1);
+check('유료 보정 + 체크 → 시각·문구 버전 기록', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 2, '2026-09-18 10:00') === '2026-09-18 10:00 | WB-2026-09'
+  && selData[1][colEarly] === '2026-09-18 10:00 | WB-2026-09');
+check('유료 보정 없음(수정으로 빠짐) → 지운다', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 0, '2026-09-18 11:00') === '' && selData[1][colEarly] === '');
+check('체크 안 함 → 비움', M.recordSelectEarlyStart_(null, globalThis.__select, 2, {}, 3, '2026-09-18 12:00') === '');
+
+sent.length = 0;
+const refS = M.createBookingRowActionRef_(2, S.data[1]);
+M.submitBookingWithdrawal_({ name: 'Anna Beispiel', contract: '셀렉 추가 주문(추가 보정·인화) — 스튜디오 Basic · 2026-10-10', email: 'anna@example.com', ref: refS, what: 'select', lang: 'ko' });
+const adminSel = sent[1];
+check('셀렉 철회 알림: 제목·대상 줄·품목별 안내', adminSel.subject.includes('셀렉 추가 주문') && adminSel.htmlBody.includes('<b>셀렉 추가 주문</b>') && adminSel.htmlBody.includes('select-clear-extras'));
+check('셀렉 철회기간 = 셀렉 제출일 기준(예약 확정일 아님)', adminSel.htmlBody.includes('셀렉 제출 2026-09-18 10:00 → 철회기한 2026-10-02') && !adminSel.htmlBody.includes('확정 2026-09-18 11:00'));
+check('셀렉 철회엔 예약 취소 버튼을 주지 않는다', !adminSel.htmlBody.includes('예약 바로 취소') && !adminSel.htmlBody.includes('action=cancel'));
+check('셀렉 철회 메모 표기', String(col(S, 2, '요청사항')).includes('법정 철회 접수(셀렉 추가 주문'));
 
 console.log(fails ? `\n❌ ${fails}건 실패` : '\n✅ 전부 통과');
 process.exit(fails ? 1 : 0);

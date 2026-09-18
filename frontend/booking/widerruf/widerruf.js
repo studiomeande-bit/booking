@@ -10,6 +10,8 @@
   var W = window.SM_WIDERRUF_TEXT;
   var params = new URLSearchParams(location.search);
   var ref = (params.get('ref') || '').trim();
+  // 셀렉 사이트 하단 링크(what=select) — 촬영 예약이 아니라 셀렉 유료 추가 주문의 철회다
+  var what = params.get('what') === 'select' ? 'select' : '';
   var lang = normalizeLang(params.get('lang') || storedLang() || 'ko');
   var sending = false;
 
@@ -136,7 +138,11 @@
         var f = form();
         if (!f.elements.name.value) f.elements.name.value = d.name || '';
         if (!f.elements.email.value) f.elements.email.value = d.email || '';
-        if (!f.elements.contract.value) f.elements.contract.value = [d.product, [d.date, d.time].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+        if (!f.elements.contract.value) {
+          f.elements.contract.value = what === 'select' && W
+            ? W[lang].selectContract + ' — ' + [d.product, d.date].filter(Boolean).join(' · ')
+            : [d.product, [d.date, d.time].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+        }
         if (!params.get('lang') && !storedLang() && d.lang) { lang = normalizeLang(d.lang); render(); }
       })
       .catch(function () {});
@@ -161,7 +167,7 @@
     fetch(API_BASE + '?api=booking-withdraw', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ requestId: requestId(), data: { ref: ref, name: name, contract: contract, email: email, lang: lang, website: f.elements.website.value } })
+      body: JSON.stringify({ requestId: requestId(), data: { ref: ref, what: what, name: name, contract: contract, email: email, lang: lang, website: f.elements.website.value } })
     })
       .then(function (r) { return r.json(); })
       .then(function (res) {
@@ -206,6 +212,7 @@
   });
   form().addEventListener('submit', submit);
   render();
+  if (what === 'select' && !ref && W) form().elements.contract.value = W[lang].selectContract + ' — ';
   prefill();
   // 웹앱 콜드 스타트(최대 30초대) 완화 — 폼을 채우는 동안 컨테이너를 데운다
   try { fetch(API_BASE + '?api=warmup', { cache: 'no-store' }).catch(function () {}); } catch (e) {}

@@ -64,6 +64,24 @@ Updated: 2026-09-18 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-18 · 셀렉 유료 추가 주문 철회 안내 + 주문·예약 버튼 § 312j (@966 · 배포 완료 · 로컬 브라우저 검증, 라이브 E2E 는 사장님 확인 뒤)
+
+**배경.** 셀렉에서 기본 제공분을 넘겨 고르는 유료 추가 보정·인화는 웹 화면으로 맺는 새 원격계약인데 철회 안내가 없었고,
+버튼이 「제출 / Absenden」이었다 — § 312j Abs. 3·4 BGB: 유료 주문 버튼이 "zahlungspflichtig" 류가 아니면 **계약 자체가 성립하지 않는다**.
+같은 이유로 예약 페이지 「예약 제출 / Buchung senden」도 걸린다. 계획·결정: `docs/select-widerruf-plan.md`(사장님 승인: 보정 조기 이행 필수 체크 · 예약 버튼 같이 · 기존 /widerruf/ 재사용).
+- **정본 문구 확장**: `WIDERRUF_TEXT_` ↔ `widerruf-text.js` 에 보정용 조기 이행 문장 · 인화류 철회권 없음(§ 312g Abs. 2 Nr. 1) · 주문/예약 버튼 · 부가세 · 철회 페이지 계약명.
+  셀렉 사이트는 CSP 로 예약 사이트 문구 파일을 못 실어 **서버가 세션 응답에 `legal` 로** 내려보낸다(미리보기는 새 읽기 전용 라우트 `widerruf-text`).
+- **셀렉 4단계**: 합계 「(부가세 포함)」 · 유료 보정 → 필수 체크(묶음 없음, 빠졌다 다시 담기면 재체크) + 철회 안내 링크 · 유료 인화·액자·포토카드 → 철회권 없음 한 줄 ·
+  합계>0 이면 버튼 「결제 의무가 있는 주문하기 / Order with obligation to pay / Zahlungspflichtig bestellen」, 0원은 종전 문구 · 하단 「Vertrag widerrufen」(예약행 있으면 서명 ref).
+- **서버**: 셀렉 시트 맨 뒤 새 열 `추가보정조기이행요청`(시각 | 문구 버전, 수정으로 빠지면 지움) · 관리자 제출/수정 알림에 ✔/⚠ ·
+  접수 메일 C4/C5 에 유료분 법정 안내(확정 문장 + 인화 고지 + 보정 철회 안내 전문) · `/widerruf/?what=select` → 알림 제목·대상 줄·**셀렉 제출일 기준 철회기한**·보정본 발송일,
+  **예약 취소 버튼 없음**(추가금은 `select-clear-extras`).
+- **예약 페이지 버튼**: 여권·상담 견적·0원 외 「결제 의무가 있는 예약하기 / Book with obligation to pay / Zahlungspflichtig buchen」.
+- **검증**: `check-widerruf.mjs` 셀렉 18건 추가(결함 주입 3종 탐지) · select-amounts·print-payment·contract-b2c·refund·print-prices·sheet-date·release-gate(offline) 통과 ·
+  배포 직전 원격에 다른 세션 변경(@964·@965, 같은 작업트리)이 있어 diff 가 내 변경뿐임을 확인 후 push · 배포 후 `clasp pull` = 작업트리 ·
+  로컬 브라우저(미리보기): 유료 보정+인화 €71 / 인화만 €41 / 0원 세 상태, ko·en·de, 체크 없이 제출 차단, 콘솔 0 · 예약 버튼 여권/스튜디오/프로필 · `/widerruf/?what=select` 미리 채움.
+- 남은 것: 라이브 E2E(테스트 셀렉 세션 — `select-create` 가 링크 메일을 보내 사장님 확인 필요) · 배포 전 추가 주문의 계약 성립 문제(변호사) · `select-print-order` 죽은 경로.
+
 ### 2026-09-18 · 고객 피드백 "예약이 잘 안 된다" 점검 · 조회 시간 제한 + 재시도 · 로딩 안내 정정 (프런트 4331c28)
 
 - **라이브 흐름 점검(모바일 390px)**: 여권(한국) · 프로필 Basic 을 제출 버튼 활성화까지 진행 — 정상. 달력 데이터 정상
