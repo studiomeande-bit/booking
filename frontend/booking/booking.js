@@ -891,6 +891,7 @@ const COPY = {
     businessInvoiceEmailInvalid: '송장 수신 이메일 형식을 확인해 주세요.',
     consentRequired: '필수 동의 항목을 체크해 주세요.',
     slotLoadingForDate: '{date} 기준 예약 가능 시간을 불러오는 중입니다.',
+    slotLoading: '예약 가능한 시간을 불러오는 중입니다.',
     slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
     slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
     slotSectionRecommended: '추천 시간',
@@ -1121,6 +1122,7 @@ const COPY = {
     businessInvoiceEmailInvalid: 'Please check the invoice email format.',
     consentRequired: 'Please check the required consent items.',
     slotLoadingForDate: 'Loading available times for {date}.',
+    slotLoading: 'Loading available times.',
     slotLoadedForDate: 'Available times for {date}.',
     slotFailForDate: 'Failed to load available times for {date}.',
     slotSectionRecommended: 'Recommended times',
@@ -1351,6 +1353,7 @@ const COPY = {
     businessInvoiceEmailInvalid: 'Bitte prüfen Sie das Format der Rechnungs-E-Mail.',
     consentRequired: 'Bitte bestätigen Sie die Pflicht-Einwilligungen.',
     slotLoadingForDate: 'Verfügbare Zeiten für {date} werden geladen.',
+    slotLoading: 'Verfügbare Zeiten werden geladen.',
     slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
     slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
     slotSectionRecommended: 'Empfohlene Zeiten',
@@ -6046,7 +6049,7 @@ async function loadSlotsForDate(dateKey) {
   const dateLabel = formatDateLabel(dateKey);
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().slotLoading);
   const cachedSlots = getCachedSlots(slotKey);
   if (Array.isArray(cachedSlots)) {
     if (token !== state.slotRequestToken) return;
@@ -6162,12 +6165,15 @@ async function selectDate(dateKey, options = {}) {
   state.slotRequestToken += 1;
   state.selectedDate = dateKey;
   state.activeStep = 3;
+  const hadSlot = !!state.selectedSlot;
   state.selectedSlot = '';
   state.selectedSlotMeta = null;
   state.showAllSlots = false;
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: formatDateLabel(dateKey) });
+  // 시간을 골랐다가 날짜를 바꾸면 선택이 풀린다 — 위쪽 '날짜와 시간이 선택되었습니다' 를 남겨 두면 거짓이 된다
+  if (hadSlot) setBanner(getCopy().calendarLoaded, 'success');
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().slotLoading);
   renderSeniorWarning();
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
