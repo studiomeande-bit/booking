@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-19T08:57:48.302Z
- * 포함 함수 53개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-19T19:45:35.178Z
+ * 포함 함수 54개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -286,6 +286,37 @@ function readPrepByBookingRow_(rowIndexes){
   return want;
 }
 
+function _selectPrintLinesForBoard_(raw){
+  let arr=[];
+  try{ arr=JSON.parse(String(raw||'[]')); }catch(e){ return []; }
+  if(!Array.isArray(arr)) return [];
+  const groups={},order=[];
+  arr.forEach(function(p){
+    if(!p||typeof p!=='object') return;
+    const label=String(p.label||p.printId||'인화').trim();
+    const finish=String(p.finish||'').trim();
+    const key=label+'|'+finish;
+    if(!groups[key]){ groups[key]={label:label,finish:finish,qty:0,inc:0,nums:[],notes:[]}; order.push(key); }
+    const g=groups[key];
+    const q=Number(p.qty||p.quantity||1)||1;
+    g.qty+=q;
+    if(p.included) g.inc+=q;
+    const n=String(p.photoNum||'').trim();
+    if(n&&n!=='-'&&g.nums.indexOf(n)<0) g.nums.push(n);
+    const note=String(p.note||'').trim();
+    if(note&&g.notes.indexOf(note)<0) g.notes.push(note);
+  });
+  return order.map(function(k){
+    const g=groups[k];
+    const split=!g.inc?'':(g.inc>=g.qty?' (포함)':' (포함 '+g.inc+' · 추가 '+(g.qty-g.inc)+')');
+    // finish 는 제출 정규화값 full|border (26134행) — 인화 설정 그대로 읽히게 한국어로
+    const fin={full:'여백 없음',border:'흰 테두리'}[g.finish]||g.finish;
+    return g.label+(fin?' · '+fin:'')+' × '+g.qty+split
+      +(g.nums.length?' — '+g.nums.join(', '):'')
+      +(g.notes.length?' · 요청: '+g.notes.join(' / '):'');
+  });
+}
+
 function _readSelectRowsForBoard_(){
   const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
   if(!sh) return [];
@@ -320,7 +351,8 @@ function readPickupsForDate_(dateStr,ctx){
         method:String(r[SELECT_COL['수령방식']]||''),
         status:String(r[SELECT_COL['상태']]||''),
         doneAt:doneAt,
-        done:!!doneAt
+        done:!!doneAt,
+        printLines:_selectPrintLinesForBoard_(r[SELECT_COL['추가인화']])
       });
     });
     if(out.length){ const enrich=ctx?ctx.enrich():_selectPayContextReader_(); out.forEach(enrich); }
@@ -441,7 +473,9 @@ function readShipQueue_(ctx){
         printed:!!printDoneAt||st==='출력',
         printDoneAt:printDoneAt,
         submittedAt:String(parseDateSafe_(r[SELECT_COL['제출일시']]).str||'').slice(0,10),
-        mailAddress:String(r[SELECT_COL['우편주소']]||'').trim()
+        mailAddress:String(r[SELECT_COL['우편주소']]||'').trim(),
+        printLines:_selectPrintLinesForBoard_(r[SELECT_COL['추가인화']]),
+        printedCount:SELECT_COL['출력완료매수']!=null?(parseInt(r[SELECT_COL['출력완료매수']],10)||0):0
       });
     });
     if(out.length){
