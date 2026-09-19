@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-09T17:13:58.242Z
- * 포함 함수 49개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-19T08:57:48.302Z
+ * 포함 함수 53개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -50,9 +50,13 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드','early_start_requested'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
-  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
+  /* ⚠ 새 열은 **맨 뒤**에만 붙인다. 중간 삽입 금지 — 레거시 판정이 colMap['매출날짜']===1 로
+     헤더 위치를 보고, 읽기는 헤더 이름 기반 colMap 이라 뒤에 붙는 건 안전하다.
+     뒤 6개는 대형 외주(월아트) 추적용 — Phase 2 make-vs-buy 리포트의 원천 데이터다(2026-09-10). */
+  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜',
+                  '외주업체','랩매입_총액','랩매입_인화분','규격_cm','액자포함','발주일','입고일'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   // '스케쥴/스케줄' 두 표기 모두 — 이름 정확일치로 매칭하므로 한 글자 다르면 개인 일정이 슬롯을 못 막는다
@@ -282,13 +286,26 @@ function readPrepByBookingRow_(rowIndexes){
   return want;
 }
 
-function readPickupsForDate_(dateStr){
+function _readSelectRowsForBoard_(){
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return [];
+  const last=sh.getLastRow();
+  return last<2?[]:sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+}
+
+function _boardReadCtx_(bookRows){
+  let sel=null,enrich=null;
+  return {
+    bookRows:bookRows,
+    selRows:function(){ if(sel===null) sel=_readSelectRowsForBoard_(); return sel; },
+    enrich:function(){ if(!enrich) enrich=_selectPayContextReader_(bookRows); return enrich; }
+  };
+}
+
+function readPickupsForDate_(dateStr,ctx){
   const out=[];
   try{
-    const ss=ensureSheets_().ss;
-    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
-    if(!sh||sh.getLastRow()<2) return out;
-    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    const rows=ctx?ctx.selRows():_readSelectRowsForBoard_();
     rows.forEach(function(r,i){
       const at=String(parseDateSafe_(r[SELECT_COL['픽업일시']]).str||'');
       if(at.slice(0,10)!==dateStr) return;
@@ -306,13 +323,13 @@ function readPickupsForDate_(dateStr){
         done:!!doneAt
       });
     });
-    if(out.length){ const enrich=_selectPayContextReader_(); out.forEach(enrich); }
+    if(out.length){ const enrich=ctx?ctx.enrich():_selectPayContextReader_(); out.forEach(enrich); }
     out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
   }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
   return out;
 }
 
-function _selectPayContextReader_(){
+function _selectPayContextReader_(bookRows){
   const ss=ensureSheets_().ss;
   const bkSh=getDbSheet();
   let printSh=null;
@@ -329,7 +346,8 @@ function _selectPayContextReader_(){
     // 잔금 컨텍스트(예약행) — 실패해도 추가금 읽기는 계속한다(별도 try)
     try{
       if(p.bookingRowIndex>1){
-        const row=bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+        const row=bookRows?bookRows[p.bookingRowIndex-2]
+          :bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
         if(row&&row[BOOKING_COL['고객명']]&&!isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))){
           const pm=String(row[BOOKING_COL['결제수단']]||'').trim();
           p.payMethod=pm;
@@ -393,15 +411,13 @@ function readTodayWalkins_(dateStr){
   return out;
 }
 
-function readShipQueue_(){
+function readShipQueue_(ctx){
   const out=[];
   try{
-    const ss=ensureSheets_().ss;
-    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
-    if(!sh||sh.getLastRow()<2) return out;
-    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    const rows=ctx?ctx.selRows():_readSelectRowsForBoard_();
     let bookStatus=[];
-    try{
+    if(ctx) bookStatus=ctx.bookRows.map(function(r){ return [r[BOOKING_COL['상태']]]; });
+    else try{
       const bSh=getDbSheet(),bLast=bSh.getLastRow();
       if(bLast>1) bookStatus=bSh.getRange(2,BOOKING_COL['상태']+1,bLast-1,1).getValues();
     }catch(e){}
@@ -429,7 +445,7 @@ function readShipQueue_(){
       });
     });
     if(out.length){
-      const enrich=_selectPayContextReader_();
+      const enrich=ctx?ctx.enrich():_selectPayContextReader_();
       out.forEach(function(p){
         enrich(p);
         const due=roundCurrency_((p.balanceDue||0)+(p.extraDue||0));
@@ -520,7 +536,7 @@ function buildTodayBoard_(dateStr){
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
     const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
     const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
-    const unpaid=/미결제|offen|unpaid/i.test(payMethod);
+    const balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
     shoots.push({
       rowIndex:idx+2,
       time:hhmm||'--:--',
@@ -540,8 +556,10 @@ function buildTodayBoard_(dateStr){
       payMethod:payMethod,
       /* 현장 수령액 = 잔금 + (계약금 미입금이면 계약금). 김혜수 사례(2026-08-29):
          [계약금예외]로 계약금 50 미입금·잔금 260 → 현장 수령은 310 인데 260 만 표시됐다.
-         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다. */
-      dueOnSite:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다.
+         잔금 확인(잔금결제여부 Y)이 끝났으면 0 — 잔금 셀은 수납 후에도 금액 그대로라, 이걸 안 보면
+         이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
+      dueOnSite:balancePaid?0:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
@@ -646,23 +664,26 @@ function buildTodayBoard_(dateStr){
     if(s.overlapsNext) warnings.push(`${s.name}님 촬영이 다음(${s.nextName}님)과 ${Math.abs(s.gapToNextMin)}분 겹칩니다`);
   });
   // 픽업은 한 번만 읽는다 — 결제 컨텍스트(인화주문 스캔 포함)를 경고문용으로 중복 계산하지 않게
+  const readCtx=_boardReadCtx_(rows);
   let pickupsToday=[];
   try{
-    pickupsToday=readPickupsForDate_(today);
+    pickupsToday=readPickupsForDate_(today,readCtx);
     const pk=pickupsToday.filter(function(p){return !p.done;});
     if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
   }catch(e){ pickupsToday=[]; }
+  _t.pickups=Date.now()-_t0;
   // 워크인 접수 — 그날 현장 접수분(예약장부 전환 전)
   let walkins=[];
   try{
     walkins=readTodayWalkins_(today);
     if(walkins.length) warnings.push(`워크인 접수 ${walkins.length}건 — ${walkins.map(function(w){return w.name||'(이름없음)';}).join(', ')} · 예약장부 등록 대기`);
   }catch(e){ walkins=[]; }
+  _t.walkins=Date.now()-_t0;
   // 우편발송 큐 — 날짜와 무관한 현재 백로그라 오늘 보드에만
   let shipQueue=[];
   if(today===Utilities.formatDate(now,tz,'yyyy-MM-dd')){
     try{
-      shipQueue=readShipQueue_();
+      shipQueue=readShipQueue_(readCtx);
       const ready=shipQueue.filter(function(q){return q.stage==='발송가능';});
       if(ready.length) warnings.push(`발송 가능 ${ready.length}건 — ${ready.map(function(q){return q.name;}).join(', ')}`);
     }catch(e){ shipQueue=[]; }
@@ -753,7 +774,9 @@ function getBookingProductForRow_(row){
   const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
   const productName=String(row[BOOKING_COL['상품']]||'').trim();
   if(!itemGroup||!productName) return null;
-  return getCachedProducts_().find(function(p){
+  // 상품설정 시트 밖의 코드 상품(프로모·TFP)도 찾는다 — getProductById_ 와 같은 탐색 범위.
+  // 빠뜨리면 그 예약의 캘린더 소요시간이 이전 상품 길이로 남는다(리뷰 적발 2026-09-13: 여권→TFP 전환 시 75분이 아닌 여권 길이).
+  return getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(function(p){
     return String(p.g||'').trim()===itemGroup && [p.nameKo,p.nameEn,p.nameDe,p.id].some(function(name){
       return String(name||'').trim()===productName;
     });
@@ -761,9 +784,12 @@ function getBookingProductForRow_(row){
 }
 
 function getPassportComboDurationMin_(people){
+  /* 여권 촬영시간(분). 4인 초과는 인당 +10분 — 사장님 확정 2026-09-15.
+     이전엔 40분 고정이라 5인 이상이 온라인으로 들어오면 슬롯이 모자랐다(여권은 앞뒤 버퍼 0분).
+     같은 표가 AdminV2.html passportDurationMin / booking.js passportDurationMin 에도 있다 — 같이 고칠 것. */
   const n=Math.max(1,parseInt(people,10)||1);
   const table=[0,15,20,30,40];
-  return table[Math.min(n,4)]||40;
+  return n<=4?table[n]:40+(n-4)*10;
 }
 
 function getBookingPassportComboDurationMinFromRow_(row){
@@ -800,6 +826,70 @@ function getCachedProducts_() {
   const p=getProductsFromSheet_();
   try{cache.put(PRODUCTS_CACHE_KEY(),JSON.stringify(p),CONFIG.PRODUCTS_CACHE_TTL_SEC);}catch(e){}
   return p;
+}
+
+function getTfpProducts_(){
+  return [{
+    id:'tfp_portfolio',
+    g:'tfp',
+    t:'tfp',
+    nameKo:'포트폴리오 협업 촬영',
+    nameEn:'Portfolio Collaboration Session',
+    nameDe:'Portfolio-Kollaboration',
+    p:0,
+    d:60,
+    prep:15,
+    descKo:'상호 무페이 협업 촬영 · 60분 · 결과물은 양측 포트폴리오에 사용합니다.',
+    descEn:'Unpaid collaboration session (TFP) · 60 min · images used for both portfolios.',
+    descDe:'Unbezahltes Kollaborations-Shooting (TFP) · 60 Min. · Bilder für beide Portfolios.'
+  }];
+}
+
+function getPromoProducts_(){
+  return [
+    {
+      id:'promo_schultuete_mini_2026',
+      g:'promo',
+      t:'promoSchultueteMini',
+      nameKo:'Schultüte Mini',
+      nameEn:'Schultüte Mini',
+      nameDe:'Schultüte Mini',
+      p:69,
+      d:20,
+      prep:15,
+      descKo:'입학 예정 아이 1명 단독 / 20분 촬영 / 보정본 2장',
+      descEn:'One school starter child / 20 min session / 2 retouched photos',
+      descDe:'Ein Einschulungskind / 20 Min. Shooting / 2 bearbeitete Bilder'
+    },
+    {
+      id:'promo_schultuete_classic_2026',
+      g:'promo',
+      t:'promoSchultueteClassic',
+      nameKo:'Schultüte Classic',
+      nameEn:'Schultüte Classic',
+      nameDe:'Schultüte Classic',
+      p:119,
+      d:30,
+      prep:15,
+      descKo:'입학 예정 아이 1명 + 가족 짧은 컷 / 30분 촬영 / 보정본 4장',
+      descEn:'One school starter child + short family portraits / 30 min session / 4 retouched photos',
+      descDe:'Ein Einschulungskind + kurze Familienbilder / 30 Min. Shooting / 4 bearbeitete Bilder'
+    },
+    {
+      id:'promo_schultuete_family_2026',
+      g:'promo',
+      t:'promoSchultueteFamily',
+      nameKo:'Schultüte Family',
+      nameEn:'Schultüte Family',
+      nameDe:'Schultüte Family',
+      p:159,
+      d:40,
+      prep:15,
+      descKo:'가족 최대 4인 / 40분 촬영 / 보정본 5장',
+      descEn:'Family up to 4 people / 40 min session / 5 retouched photos',
+      descDe:'Familie bis 4 Personen / 40 Min. Shooting / 5 bearbeitete Bilder'
+    }
+  ];
 }
 
 function roundCurrency_(value){
@@ -866,7 +956,7 @@ const PREP_COL=PREP_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
 
 const SELECT_SHEET_NAME='사진셀렉';
 
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
