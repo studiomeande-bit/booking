@@ -1,4 +1,5 @@
-import { READ, buildPayloadUrl, buildUrl, postPayload, requestJson } from './api-core.js';
+import { READ, buildPayloadUrl, buildReadUrl, buildUrl, postPayload, requestJson } from './api-core.js';
+import { CONFIG } from './config.js';
 
 /* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
    GET + ?payload= 는 URL 길이 한계에 걸린다 — 실측 2026-08-27: URL 약 12,000자 초과 시 구글이 HTTP 400.
@@ -25,16 +26,28 @@ export function fetchPartners() {
   return requestJson(buildUrl('partners'), READ);
 }
 
+/* 조회 3종은 셔틀(appscript-public, 1~3초) 먼저 — 실패하면 메인(3~5초 바닥). 셔틀이 아직 승인 전이면
+   HTML 승인 페이지가 와서 GATEWAY 로 떨어지고 그대로 메인을 탄다. 짧은 제한(12초·재시도 없음)인 이유:
+   셔틀이 막힌 날 고객을 12초 넘게 세워 두지 않고 메인으로 넘기기 위해서다. 제출·홀드는 절대 셔틀을 쓰지 않는다. */
+const READ_SHUTTLE = { timeoutMs: 12000, retries: 0 };
+async function readViaShuttle(route, params = {}) {
+  if (CONFIG.readApiBaseUrl && CONFIG.readApiBaseUrl !== CONFIG.apiBaseUrl) {
+    try { return await requestJson(buildReadUrl(route, params), READ_SHUTTLE); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildUrl(route, params), READ);
+}
+
 export function fetchInitData() {
-  return requestJson(buildUrl('init'), READ);
+  return readViaShuttle('init');
 }
 
 export function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
-  return requestJson(buildUrl('calendar-batch', { year, month, totalDur, itemGroup }), READ);
+  return readViaShuttle('calendar-batch', { year, month, totalDur, itemGroup });
 }
 
 export function fetchSlots({ date, totalDur, itemGroup }) {
-  return requestJson(buildUrl('slots', { date, totalDur, itemGroup }), READ);
+  return readViaShuttle('slots', { date, totalDur, itemGroup });
 }
 
 export function fetchQuote(data) {

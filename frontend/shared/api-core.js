@@ -11,6 +11,18 @@ export function buildUrl(route, params = {}) {
   return base.toString();
 }
 
+/* 조회 셔틀 URL — CONFIG.readApiBaseUrl 이 비어 있으면 메인과 같다 */
+export function buildReadUrl(route, params = {}) {
+  const base = new URL(CONFIG.readApiBaseUrl || CONFIG.apiBaseUrl);
+  base.searchParams.set('api', route);
+  base.searchParams.set('_ts', String(Date.now()));
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    base.searchParams.set(key, value);
+  });
+  return base.toString();
+}
+
 export function buildPayloadUrl(route, data = {}, extraParams = {}) {
   return buildUrl(route, {
     ...extraParams,
