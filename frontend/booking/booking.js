@@ -742,6 +742,12 @@ const COPY = {
     submitCardReturn: '재촬영 할인 대상 예약으로 접수되었습니다.',
     submitCardAction: '새 예약 시작',
     submitFail: '예약 제출 실패',
+    /* 통신 오류 문구 — api-core 의 err.code 로 찾는다(SERVER 는 서버 메시지를 그대로 쓴다). */
+    apiError: {
+      TIMEOUT: '서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.',
+      NETWORK: '서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.',
+      GATEWAY: '서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+    },
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
     earliestSlotTitle: '가장 빠른 예약 가능',
@@ -973,6 +979,11 @@ const COPY = {
     submitCardReturn: 'This booking was received with the same-day reshoot discount.',
     submitCardAction: 'Start another booking',
     submitFail: 'Booking submission failed',
+    apiError: {
+      TIMEOUT: 'The server is taking too long to respond. Your booking may already have been received — please check your email first. If there is no email, submit again.',
+      NETWORK: 'Could not reach the server. Please check your connection and try again.',
+      GATEWAY: 'The server did not respond properly. Please try again in a moment.'
+    },
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
     earliestSlotTitle: 'Earliest available booking',
@@ -1204,6 +1215,11 @@ const COPY = {
     submitCardReturn: 'Diese Buchung wurde mit Rabatt für erneute Aufnahme erfasst.',
     submitCardAction: 'Neue Buchung starten',
     submitFail: 'Buchung fehlgeschlagen',
+    apiError: {
+      TIMEOUT: 'Der Server antwortet zu langsam. Ihre Buchung ist möglicherweise schon eingegangen — bitte prüfen Sie zuerst Ihre E-Mails. Ohne E-Mail bitte erneut absenden.',
+      NETWORK: 'Keine Verbindung zum Server. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.',
+      GATEWAY: 'Der Server hat vorübergehend nicht geantwortet. Bitte versuchen Sie es in Kürze erneut.'
+    },
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
     earliestSlotTitle: 'Frühester verfügbarer Termin',
@@ -1569,7 +1585,7 @@ async function boot() {
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
-    if (!cachedInit) setBanner(`${getCopy().initFail}: ${error.message}`, 'error');
+    if (!cachedInit) setBanner(`${getCopy().initFail}: ${errText(error)}`, 'error');
   } finally {
     if (!cachedInit) hideLoadingScreen();
   }
@@ -2116,6 +2132,11 @@ function setupBookingContactHelpers() {
 
 function getCopy() {
   return COPY[state.lang] || COPY.ko;
+}
+
+// 통신 오류는 코드(TIMEOUT·NETWORK·GATEWAY)로 현재 언어 문구를 찾고, 서버가 준 메시지(SERVER)는 그대로 쓴다.
+function errText(error) {
+  return getCopy().apiError?.[error?.code] || error?.message || String(error);
 }
 
 /* 상담 창구는 홈페이지 문의 폼으로 통합됐다 (2026-08-26) — 실제 문의가 전부 그쪽으로 들어왔고,
@@ -5936,8 +5957,8 @@ async function loadCalendar() {
     } catch (error) {
       if (token !== state.calendarRequestToken) return;
       console.error(error);
-      setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
-      els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(error.message)}</div>`;
+      setBanner(`${getCopy().calendarFail}: ${errText(error)}`, 'error');
+      els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(errText(error))}</div>`;
       setCalendarBusy(false);
       return;
     }
@@ -6912,7 +6933,7 @@ async function onSubmit(event) {
          서버도 실패 시 키를 되돌려 주지만, 여기서도 새 시도로 취급해 두 겹으로 막는다.
          TIMEOUT·NETWORK 는 서버에 닿았을 수 있으니 requestId 를 유지한다(중복 예약 방지가 우선). */
       if (error?.code === 'SERVER') state.bookingRequestId = null;
-      setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+      setBanner(`${getCopy().submitFail}: ${errText(error)}`, 'error');
     }
   } finally {
     els.submitBtn.textContent = getSubmitLabel();

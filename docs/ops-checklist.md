@@ -1,6 +1,6 @@
 # Ops Checklist
 
-Updated: 2026-07-15 Europe/Berlin
+Updated: 2026-09-20 Europe/Berlin
 
 운영·배포·회귀 점검을 한 페이지로. (로드맵 #12)
 
@@ -9,9 +9,10 @@ Updated: 2026-07-15 Europe/Berlin
 ### 백엔드 (Apps Script)
 
 ```bash
-cd appscript
-clasp push                                   # HEAD 업로드 (이것만으론 웹앱 미반영!)
-clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "설명"
+# 레포 루트에서 (.clasp.json 이 루트에 있고 rootDir=appscript — appscript/.clasp.json 은 없다)
+node scripts/check-sheet-date-compare.mjs    # 배포 전 게이트
+clasp push -f                                # HEAD 업로드 (이것만으론 웹앱 미반영! 트리거는 반영)
+clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "@NNN 설명"
 ```
 
 - **이 배포 ID가 유일한 라이브** — 프론트·문서·이메일 링크 전부 이것만 참조. 절대 `clasp undeploy` 금지, 새 배포 생성 금지 (항상 `-i` 갱신).
@@ -22,13 +23,13 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
 
 ```bash
 cd frontend
-npm run build:booking-site        # 또는 build:select-site / 개별 빌드
-# index.html의 ?v= 캐시버스트 갱신 (필수!)
-git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2분)
+npm run build:booking-site        # 또는 build:select-site / build:portfolio-site — 끝에 npm run stamp 가 돌아 ?v= 을 내용 해시로 갱신
+git add -A && git commit && git push origin main   # Netlify 가 각 사이트 netlify.toml 의 같은 build:*-site 를 직접 실행해 배포 (1~2분)
 ```
 
-- min.js/min.css를 수정 후 **캐시버스트(?v=)를 안 올리면 CDN이 구버전 서빙** — 반드시 함께.
-- booking과 select는 별도 Netlify 사이트 (booking.studio-mean.com / select.studio-mean.com).
+- **`?v=` 는 손으로 올리지 않는다** — `npm run stamp`(`frontend/scripts/stamp-assets.mjs`, build:*-site 에 포함)가 에셋 내용 해시로 붙인다(멱등, 변경 없으면 diff 없음). 커밋된 번들은 위 스크립트로 다시 빌드해서 올린다.
+- **라이브 검증은 내용 토큰으로**: 이번에 새로 넣은 문자열을 라이브 번들(`/booking.min.js`, `/v2/select.min.js` 등)에서 `curl | grep` 한다. **md5 비교 금지** — Netlify 가 돌린 esbuild 산출물은 로컬 번들과 바이트가 다르다.
+- booking·select·portfolio 는 별도 Netlify 사이트 (booking.studio-mean.com / select.studio-mean.com / studio-mean.com) — 빌드 명령은 각 폴더의 `netlify.toml`.
 
 ### ERP 에이전트 (Claude)
 
@@ -105,7 +106,7 @@ git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2�
 
 ## 4. 문제 발생 시
 
-- 웹앱 변경이 안 보임 → redeploy 했는지 + 캐시버스트 확인
+- 웹앱 변경이 안 보임 → GAS 는 `-i` redeploy 했는지, 프론트는 번들 재빌드(stamp 해시가 바뀌었는지)·라이브 번들 내용 토큰 확인
 - 배포 실패 "200 versions" → 버전 정리 (위 참조)
 - ERP 에이전트 UNAUTHORIZED → 키 재발급 후 `.secrets/erp-automation-key` 갱신
 - 견적/굿샤인 캘린더 이벤트 고아 발생 → 어드민 해제 버튼 또는 일일 배치가 정리

@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-19T19:45:35.178Z
+ * 생성 시각: 2026-09-20T13:57:13.949Z
  * 포함 함수 54개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -40,11 +40,6 @@ const CONFIG = {
   PRODUCTS_CACHE_TTL_SEC: 3600,
   UNAVAIL_CACHE_TTL_SEC: 1800,
   SLOTS_CACHE_TTL_SEC: 1800,
-  LEXWARE_PUSH_BATCH_MAX: 40,
-  LEXWARE_STATUS_BATCH_MAX: 60,
-  LEXWARE_BATCH_TIME_BUDGET_MS: 240000,
-  LEXWARE_SYNC_GUARD_SEC: 900,
-  LEXWARE_REQUEST_DELAY_MS: 650,
   MIN_BOOKING_NOTICE_MIN: 180,
   BUFFER_OUTDOOR_MIN: 60,
   BUFFER_STUDIO_MIN: 15,
@@ -153,7 +148,8 @@ function _inqDigits_(v){ return String(v==null?'':v).replace(/[^0-9]/g,''); }
 
 function _inqPhoneKey_(v){
   const d=_inqDigits_(v);
-  return d.length>=8 ? d.slice(-9) : '';
+  const k=d.length>=8 ? d.slice(-9) : '';
+  return /^0+$/.test(k) ? '' : k;   // MRT 자리표시 '+49 000 000000' 이 모든 MRT 고객을 한 사람으로 합치던 구멍(감사 2026-09-20)
 }
 
 function _inqEmailKey_(v){
@@ -571,6 +567,7 @@ function buildTodayBoard_(dateStr){
     const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
     const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
     const balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+    const partialPaid=balancePaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));   // 부분수납 누적(플래그 없음)
     shoots.push({
       rowIndex:idx+2,
       time:hhmm||'--:--',
@@ -593,7 +590,8 @@ function buildTodayBoard_(dateStr){
          종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다.
          잔금 확인(잔금결제여부 Y)이 끝났으면 0 — 잔금 셀은 수납 후에도 금액 그대로라, 이걸 안 보면
          이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
-      dueOnSite:balancePaid?0:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+      dueOnSite:balancePaid?0:roundCurrency_(Math.max(0,balance-partialPaid)+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+      balancePartialPaid:partialPaid,
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */

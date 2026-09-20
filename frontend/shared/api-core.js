@@ -50,7 +50,7 @@ export async function postPayload(route, data = {}, extraParams = {}) {
     if (error?.name === 'AbortError') {
       throw tagged('서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.', 'TIMEOUT');
     }
-    if (error?.message === 'Failed to fetch') {
+    if (error instanceof TypeError) {   // 네트워크 실패 — 문구는 브라우저마다 다르다(requestJson 주석 참고)
       throw tagged('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.', 'NETWORK');
     }
     throw error;
@@ -60,26 +60,29 @@ export async function postPayload(route, data = {}, extraParams = {}) {
   return parseJsonResponse(response);
 }
 
-function tagged(message, code) {
+export function tagged(message, code) {
   const err = new Error(message);
   err.code = code;
   return err;
 }
 
-export async function parseJsonResponse(response) {
+/* 본문을 JSON 으로 읽는다. JSON 이 아니면 대개 구글이 스크립트에 닿기 전에 낸 오류 페이지다(길이 초과·일시 장애·점검).
+   원문 HTML 을 그대로 보여 주면 고객은 무슨 일인지 알 수 없다 — 사람이 읽을 문장(GATEWAY)으로 바꾼다. */
+export async function readJsonBody(response) {
   const text = await response.text();
-  let payload;
   try {
-    payload = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
-    /* JSON 이 아니면 대개 구글이 스크립트에 닿기 전에 낸 오류 페이지다(길이 초과·일시 장애·점검).
-       원문 HTML 을 그대로 보여 주면 고객은 무슨 일인지 알 수 없다 — 사람이 읽을 문장으로 바꾼다. */
     const status = response?.status || 0;
     if (status === 400 || status === 413 || status === 414) {
       throw tagged('입력 내용이 너무 길어 전송하지 못했습니다. 요청사항을 조금 줄여 다시 시도해 주세요.', 'GATEWAY');
     }
     throw tagged('서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'GATEWAY');
   }
+}
+
+export async function parseJsonResponse(response) {
+  const payload = await readJsonBody(response);
   if (!payload.ok) {
     const err = tagged(payload.error?.message || 'API request failed', 'SERVER');
     err.apiCode = payload.error?.code || '';
@@ -87,3 +90,37 @@ export async function parseJsonResponse(response) {
   }
   return payload.data;
 }
+
+/* 조회(GET) 공용 — 시간 제한 + 재시도. 조회는 부작용이 없어 한 번 더 보내도 안전하다.
+   parse 로 응답 해석을 바꿀 수 있다(셀렉 세션은 ok:false 여도 submitted 를 통과시킨다). */
+export async function requestJson(url, { timeoutMs = 0, retries = 0, parse = parseJsonResponse } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
+    try {
+      response = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined });
+    } catch (error) {
+      if (attempt < retries) continue;
+      if (error?.name === 'AbortError') {
+        throw tagged('서버 응답이 늦어지고 있습니다. 잠시 후 다시 시도해 주세요.', 'TIMEOUT');
+      }
+      /* fetch 가 네트워크 단계에서 죽으면 TypeError 다 — 문구는 브라우저마다 다르다
+         (Chrome 'Failed to fetch', Safari 'Load failed', Firefox 'NetworkError…'). 문구 비교로 잡으면 Safari 를 놓친다.
+         URL 이 너무 길어 브라우저가 요청 자체를 못 보내는 경우도 여기로 온다(2026-08-27 실제 신고). */
+      if (error instanceof TypeError) {
+        throw tagged('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.', 'NETWORK');
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return parse(response);
+  }
+}
+
+/* 조회(페이지 준비·달력·시간·견적·셀렉 세션)는 시간 제한 + 1회 재시도를 건다.
+   Apps Script 는 평소 요청당 3~5초인데, 가끔 한 요청이 수십 초 멈춘다(2026-09-18 실측: 같은 계정의
+   작은 스크립트가 98초). 제한이 없으면 고객 화면은 그동안 '불러오는 중'에서 멈춰 보인다 — 끊고 다시 보낸다.
+   25초 = 평소 최장(콜드 스타트 18초 실측) 위. 제출·홀드처럼 부작용 있는 요청에는 걸지 않는다. */
+export const READ = { timeoutMs: 25000, retries: 1 };

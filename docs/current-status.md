@@ -1,6 +1,6 @@
 # Current Status
 
-Updated: 2026-09-13 Europe/Berlin (@950 기준). **변경 이력은 여기 아님** — 최신 사실은 `docs/update-roadmap.md`의 "Done Recently" + `git log`가 정본. 이 파일은 구조 지도만 유지한다.
+Updated: 2026-09-20 Europe/Berlin (@969 · board-api @11 기준). **변경 이력은 여기 아님** — 최신 사실은 `docs/update-roadmap.md`의 "Done Recently" + `git log`가 정본. 이 파일은 구조 지도만 유지한다.
 
 ## Resume Order
 
@@ -18,9 +18,10 @@ Updated: 2026-09-13 Europe/Berlin (@950 기준). **변경 이력은 여기 아�
 
 ## Architecture Map
 
-- **`appscript/Code.gs`** (~36k줄) — 백엔드/ERP 전부: 공개 예약·셀렉 API, 어드민(AdminV2.html), 자동화 트리거, erp-agent 액션 148+. 시트=DB, 구글캘린더=가용성 정본, 애플캘린더('사진촬영 일정' iCloud) 연동.
+- **`appscript/Code.gs`** (~39.4k줄 / 2.36 MB) — 백엔드/ERP 전부: 공개 예약·셀렉 API, 어드민(AdminV2.html), 자동화 트리거, erp-agent 액션 211(`actions-list` 2026-09-20 기준). 시트=DB, 구글캘린더=가용성 정본, 애플캘린더('사진촬영 일정' iCloud) 연동.
 - **`appscript-board/`** — 오늘촬영 보드 고속 읽기 경로(1.4s vs 메인 4.5~8s 로드 고정비). `Board.gs`는 **생성 파일**(`node scripts/build-board-api.mjs`) — 직접 수정 금지, 보드 로직은 Code.gs가 정본.
-- **`frontend/booking/`** — 예약 프론트(3개국어, 단계형). 번들 커밋물: `cd frontend && npm run build && npm run stamp` 후 push.
+- **`booking-settle-onsite`**(erp-agent, 2026-09-19 @967) — 보드의 **현장 정산 원샷**: (선택) 할인·무료 → 계약금 확인(메일 억제) → 잔금 확인을 한 실행에, `expectDue` 불일치 거부·`requestId` 멱등·받은 계약금 아래 할인 금지. 오늘촬영 앱 잔금 시트와 같은 경로.
+- **`frontend/booking/`** — 예약 프론트(3개국어, 단계형). 번들 커밋물: `cd frontend && npm run build:booking-site`(esbuild + stamp 포함) 후 push — Netlify 도 같은 스크립트로 자체 빌드.
 - **`frontend/select/v2/`** — 셀렉/보정/인화 플로우(v1 은퇴, 크림+그린 톤 확정). 보정본엔 시그니처 10×15 인화 쿼터 포함.
 - **`frontend/portfolio/`** — 24페이지 3개국어 SEO/법정 사이트. 리디자인은 브랜치+PR 프리뷰 후 머지.
 - **`scripts/erp-agent.mjs`** — 자동화 키 인증 CLI(키: `.secrets/erp-automation-key`, 출력 금지). 액션 정본은 `actions-list`. **`--json '{...}'` 외 플래그는 조용히 무시됨.**
@@ -28,8 +29,8 @@ Updated: 2026-09-13 Europe/Berlin (@950 기준). **변경 이력은 여기 아�
 
 ## Deployment
 
-- 메인 GAS: `clasp push -f` 후 **라이브 배포 ID로 `clasp deploy -i AKfycbxnHuB2u4-...`** (push만으론 /exec 미반영, 트리거는 push만으로 반영). 버전 200개 한도 주의.
-- board-api: 위의 -i 규칙 필수.
+- 메인 GAS: 레포 루트에서 `clasp push -f` 후 **라이브 배포 ID로 `clasp deploy -i AKfycbxnHuB2u4-...`** (push만으론 /exec 미반영, 트리거는 push만으로 반영). 버전 200개 한도 — 2026-09-20 현재 **136/200 사용**.
+- board-api: `node scripts/build-board-api.mjs` 재생성 후 `appscript-board/` 에서 push + 위의 -i 규칙 필수(현재 @11).
 - 프론트: main push → Netlify 자체 빌드. 수동 `?v=` 캐시버스팅 금지.
 - 상세: `docs/deployment.md`, 운영 점검: `docs/ops-checklist.md` + `erp-agent ops-checklist` 액션.
 
@@ -48,5 +49,5 @@ Updated: 2026-09-13 Europe/Berlin (@950 기준). **변경 이력은 여기 아�
 
 - 인화앱 쓰기 라우트(print-auth/print-result-upload) — 보안 보강 선행, 미착수.
 - 보류 메일 2건: 잔금 결제 확인 고객 메일, 굿샤인 본문 3개국어화 (사장님 결정 대기).
-- 깨진 전화 5건(브리핑 감사가 매일 상기) — 실번호 확보 시 보정.
+- 깨진 전화 6건(브리핑 감사가 매일 상기) — 실번호 확보 시 보정.
 - 드레스 소품 사진 촬영 + EN/DE 문구 검수, 인화 실물 테스트 1장 (사장님 액션).

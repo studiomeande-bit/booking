@@ -404,6 +404,13 @@ export const COPY = {
     warnEarlyStartRetouch: '유료 추가 보정을 주문하시려면 "철회기간 중 보정 시작 요청"에 체크해 주세요.',
     widerrufInfoLink: '철회 안내 전문 보기 (Widerrufsbelehrung)',
     submitFailed: (msg) => `셀렉 제출 실패: ${msg}`,
+    /* 통신 오류 문구 — api-core 의 err.code 로 찾는다. 셀렉은 조회·제출이 같은 문구를 쓰므로 '예약'을 말하지 않는다. */
+    apiError: {
+      TIMEOUT: '서버 응답이 너무 오래 걸립니다. 방금 제출하셨다면 이미 접수됐을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 잠시 후 다시 시도해 주세요.',
+      NETWORK: '서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.',
+      GATEWAY: '서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      DUPLICATE: '이미 접수된 제출입니다. 확인 메일을 먼저 확인해 주세요.'
+    },
     submitDone: '셀렉 제출이 완료됐습니다.',
     submitDoneEdit: '수정 제출이 완료됐습니다.',
     /* ---- dynamic: photocard / snap retouch scope ---- */
@@ -814,6 +821,12 @@ export const COPY = {
     warnEarlyStartRetouch: 'To order paid additional retouching, please tick the request to start during the withdrawal period.',
     widerrufInfoLink: 'Full withdrawal instructions (Widerrufsbelehrung)',
     submitFailed: (msg) => `Submission failed: ${msg}`,
+    apiError: {
+      TIMEOUT: 'The server is taking too long to respond. If you just submitted, it may already have been received — please check your email first. If there is no email, try again in a moment.',
+      NETWORK: 'Could not reach the server. Please check your connection and try again.',
+      GATEWAY: 'The server did not respond properly. Please try again in a moment.',
+      DUPLICATE: 'This submission was already received — please check your email first.'
+    },
     submitDone: 'Your selection has been submitted.',
     submitDoneEdit: 'Your changes have been submitted.',
     /* ---- dynamic: photocard / snap retouch scope ---- */
@@ -1224,6 +1237,12 @@ export const COPY = {
     warnEarlyStartRetouch: 'Für die kostenpflichtige Zusatzretusche bestätigen Sie bitte den Beginn vor Ablauf der Widerrufsfrist.',
     widerrufInfoLink: 'Widerrufsbelehrung ansehen',
     submitFailed: (msg) => `Senden fehlgeschlagen: ${msg}`,
+    apiError: {
+      TIMEOUT: 'Der Server antwortet zu langsam. Falls Sie gerade abgeschickt haben, ist es möglicherweise schon eingegangen — bitte prüfen Sie zuerst Ihre E-Mails. Ohne E-Mail bitte in Kürze erneut versuchen.',
+      NETWORK: 'Keine Verbindung zum Server. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.',
+      GATEWAY: 'Der Server hat vorübergehend nicht geantwortet. Bitte versuchen Sie es in Kürze erneut.',
+      DUPLICATE: 'Diese Übermittlung ist bereits eingegangen – bitte prüfen Sie zuerst Ihre E-Mail.'
+    },
     submitDone: 'Ihre Auswahl wurde gesendet.',
     submitDoneEdit: 'Ihre Änderungen wurden gesendet.',
     /* ---- dynamic: photocard / snap retouch scope ---- */

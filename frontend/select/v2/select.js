@@ -304,6 +304,9 @@ const state = {
   mailName: '',
   mailAddress: '',
   editMode: false,
+  selectRequestId: null,   // 같은 제출 시도의 재클릭에 재사용하는 서버 중복 가드 키(입력이 바뀌면 updateSubmitState 가 버린다)
+  selectPayloadSig: '',    // 위 id 를 만들 때의 입력 지문 — 단계 이동·언어 전환은 입력이 같으니 id 를 지키고, 지문이 다를 때만 버린다
+  submitting: false,       // 전송 중(응답 대기) — 이 동안은 어떤 경로도 selectRequestId 를 버리지 않는다
   studioA4Dismissed: false,
   printsSeeded: false,
   step: 0,
@@ -442,6 +445,16 @@ const els = {
  */
 function copy() {
   return getCopy(state.lang);
+}
+
+// 통신 오류는 코드(TIMEOUT·NETWORK·GATEWAY)로 현재 언어 문구를 찾고, 서버가 준 메시지(SERVER)는 그대로 쓴다.
+// 예외: 서버 중복 가드(assertPublicRequestId_)의 영어 원문 'Duplicate submission' 은 고객 언어 문구(DUPLICATE)로 바꾼다.
+function isDuplicateSubmit(error) {
+  return /duplicate submission/i.test(String(error?.message || error || ''));
+}
+function errText(error) {
+  if (isDuplicateSubmit(error)) return copy().apiError.DUPLICATE;
+  return copy().apiError?.[error?.code] || error?.message || String(error);
 }
 
 function applyCopy() {
@@ -607,7 +620,7 @@ async function boot() {
     setBanner(state.editMode ? copy().bannerLoadedEdit : copy().bannerLoaded, 'success');
   } catch (error) {
     console.error(error);
-    showError(error.message);
+    showError(errText(error));
   }
   hideLoading();
 }
@@ -667,6 +680,8 @@ function wireEvents() {
     state.mailAddress = els.mailAddressInput.value;
     updateReview();
   });
+  // 조기 이행 체크는 제출 payload 에 실린다 — 바뀌면 새 제출 시도(updateSubmitState 가 requestId 를 버린다)
+  els.earlyStartRetouchInput?.addEventListener('change', updateSubmitState);
   els.pickupPrevMonthBtn?.addEventListener('click', () => movePickupMonth(-1));
   els.pickupNextMonthBtn?.addEventListener('click', () => movePickupMonth(1));
 }
@@ -3830,7 +3845,21 @@ function markStepBtn(btn, ready) {
   btn.disabled = false;
   btn.classList.toggle('needs-input', !ready);
 }
+/* 제출 payload 에 실리는 입력의 지문 — onSubmit 의 payload 와 같은 필드. 값이 같으면 같은 제출 시도다. */
+function payloadSig() {
+  return JSON.stringify([
+    state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '']),
+    state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
+    state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
+    state.photocard, !!els.earlyStartRetouchInput?.checked
+  ]);
+}
 function updateSubmitState() {
+  /* 제출 payload 에 실리는 입력이 바뀌는 모든 경로(사진·메모·출력·배송·주소·포토카드·마케팅 동의·조기 이행)가
+     updateReview 를 거쳐 여기로 모인다 — 바뀐 선택은 새 제출 시도이므로 requestId 를 버린다.
+     단계 이동(goStep)·언어 전환도 여기를 지나므로 입력 지문이 실제로 달라졌을 때만 버린다 —
+     타임아웃 뒤 그대로 재클릭하면 같은 id 로 가서 서버 중복 가드에 걸린다(이중 주문 방지). 전송 중에는 절대 버리지 않는다. */
+  if (!state.submitting && state.selectRequestId && payloadSig() !== state.selectPayloadSig) state.selectRequestId = null;
   markStepBtn(els.step1NextBtn, canProceedStep1());
   markStepBtn(els.step2NextBtn, canProceedStep2());
   markStepBtn(els.step3NextBtn, canProceedStep3());
@@ -4018,16 +4047,33 @@ async function onSubmit() {
     suppressCustomerEmail: state.testMode
   };
   try {
-    const requestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
+    /* requestId 는 같은 시도의 재제출(타임아웃 재클릭)에 재사용해야 서버 중복 가드(assertPublicRequestId_)가 작동한다 —
+       클릭마다 새로 만들면 가드가 영원히 안 걸려 이중 주문이 가능했다(booking.js 2026-08-31 과 같은 결함).
+       입력이 바뀌면 updateSubmitState 가 버린다. */
+    if (!state.selectRequestId) {
+      state.selectRequestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
+      state.selectPayloadSig = payloadSig();
+    }
+    state.submitting = true;
     const result = state.editMode
-      ? await updateSelectSession(state.sessionId, payload, requestId)
-      : await submitSelectSession(state.sessionId, payload, requestId);
+      ? await updateSelectSession(state.sessionId, payload, state.selectRequestId)
+      : await submitSelectSession(state.sessionId, payload, state.selectRequestId);
     setBanner(state.editMode ? copy().submitDoneEdit : copy().submitDone, 'success');
     renderSuccess(result);
   } catch (error) {
     console.error(error);
-    setBanner(copy().submitFailed(error.message), 'error');
+    /* 서버가 명시적으로 거절(SERVER)했거나 스크립트에 닿기 전에 막힌(GATEWAY) 제출은 성립하지 않았다 → 다음 시도는 새 id.
+       TIMEOUT·NETWORK 는 서버에 닿았을 수 있으니 id 를 유지한다(재클릭은 중복으로 거절되는 게 맞다). */
+    if (isDuplicateSubmit(error)) {
+      // 서버가 같은 id 를 이미 접수했다(타임아웃 뒤 재클릭) — 제출은 성립했으니 성공처럼 재제출 버튼을 잠근다. id 는 유지.
+      state.submitted = true;
+      setBanner(errText(error), 'success');
+    } else {
+      if (error?.code === 'SERVER' || error?.code === 'GATEWAY') state.selectRequestId = null;
+      setBanner(copy().submitFailed(errText(error)), 'error');
+    }
   } finally {
+    state.submitting = false;
     if (!state.submitted) {
       els.submitBtn.disabled = false;
       els.submitBtn.textContent = submitButtonLabel();
@@ -4042,6 +4088,7 @@ function setBanner(message, variant) {
 
 function renderSuccess(result) {
   state.submitted = true;
+  state.selectRequestId = null;
   els.progressRow.classList.add('hidden');
   els.stepPanels.forEach((panel) => panel.classList.add('hidden'));
   els.successPanel.classList.remove('hidden');
