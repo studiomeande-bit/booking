@@ -71,7 +71,7 @@ Updated: 2026-09-18 Europe/Berlin
   ✅ 17:38 사장님 `setup()` 승인 완료 → 셔틀 **@5 라이브**. 검증: init·달력(stud/pass)·슬롯(stud/pass/prof) 6조합 모두 메인과 응답 동일, 웜 1.7~2.8초(메인 2.7~6.9초). `diag`: 캘린더 4·cal_cache_ver 브리지 동작.
   추출기(`gas-extract.mjs`)에서 잡은 결함 3개: ① 이름만 넘기는 참조(`.map(parseTimeBlock_)`)를 안 따라감 ② 주석·문자열 제거 시도가 정규식 리터럴·URL 에 걸려 코드가 지워짐(formatHourMin_ 누락 → 원문 스캔으로 되돌림, 과포함은 무해) ③ 한 줄 const 의 꼬리 `// 주석` 을 다중행으로 오판해 통째로 누락(DAY_CHARS_·MORNING_BLOCK_CUTOFF_MIN). Board.gs 도 같은 규칙으로 재생성(53→89 함수, @16) — 종전 보드 번들에도 잠재 누락이 있었던 셈.
   스코프: readonly 는 `SpreadsheetApp.openById` 가 거부(setup 실측) → 메인과 같은 calendar·spreadsheets, 읽기 전용은 코드(쓰기 호출 0)로 보장.
-  Apple ICS 속성(ICLOUD_*/APPLE_*)은 셔틀에 없어 ICS 피드 생략(공유 구글 캘린더로 애플 일정은 잡힘) — 필요하면 프로젝트 설정에 4개 속성 복사.
+  Apple ICS 속성: 18:2x `public-api-sync-props`(메인 @972, 셔틀 @6 `sync-props` POST, TOFU 다이제스트) 로 구글↔구글 복사 — ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD 3개(메인에 ICLOUD_CAL_URL 은 원래 없음). `diag` icsConfigured:true. 앱 비밀번호를 바꾸면 이 액션을 다시 실행.
 - **캘린더 화해**: 예약장부 맨 뒤에 `캘린더동기화일시`(시스템이 이벤트를 쓴 시각, `ensureBookingCalendarEventForRow_` 가 찍음). 정합 점검(`calendar-audit`, D7 브리핑)이 불일치를 만나면 `reconcileBookingCalendarDrift_`: ① MRT 시간미정(00:00)인데 캘린더에 시간 → 채택 ② 이벤트 수정시각 > 스탬프+2분 → 사람이 캘린더에서 옮김 → 장부 반영 ③ 아니면 캘린더를 장부에 맞춤 ④ 스탬프 없는 옛 행은 보고만(일치 행엔 스탬프 백필). 메모 `[일정동기화 날짜] 이전 → 이후 · 사유`, 고객 메일 없음. 브리핑에 🟢 줄. `calendar-audit {"reconcile":false}` = 보고만.
 ### 2026-09-20 · 시스템 전체 점검 + 감사 수리 배포 (@970 · board-api @12 · 프런트 c479185 · 앱 재빌드)
 

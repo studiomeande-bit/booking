@@ -103,4 +103,37 @@ function _pub_(e) {
   }
 }
 function doGet(e) { return _pub_(e); }
-function doPost(e) { return jsonError_('METHOD_NOT_ALLOWED', 'public-api 는 GET 조회 전용입니다.'); }
+
+/* ── 메인 → 셔틀 속성 동기화 (POST api=sync-props) ────────────────────────
+ * iCloud/Apple 속성(ICLOUD_CAL_URL·ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD)은 프로젝트별 저장이라 셔틀에는 없다.
+ * 메인의 erp-agent 액션 `public-api-sync-props` 가 값을 **구글↔구글로만** 보낸다 — 사람·에이전트 터미널을 거치지 않는다.
+ * 인증은 board-api 와 같은 TOFU: 자동화 키의 SHA-256 다이제스트만 저장(PUBLIC_SYNC_DIGEST), 첫 호출이 등록한다. */
+function _tokenDigest_(token) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+}
+function _checkSyncToken_(token) {
+  const t = String(token || '').trim();
+  if (t.length < 24) return false;
+  const props = PropertiesService.getScriptProperties();
+  const stored = String(props.getProperty('PUBLIC_SYNC_DIGEST') || '').trim();
+  const digest = _tokenDigest_(t);
+  if (!stored) { props.setProperty('PUBLIC_SYNC_DIGEST', digest); return true; }
+  return stored === digest;
+}
+const SYNC_PROP_ALLOWLIST_ = ['ICLOUD_CAL_URL', 'ICLOUD_ICS_URL', 'APPLE_ID', 'APPLE_APP_PASSWORD', 'PUBLIC_DB_ID'];
+function doPost(e) {
+  let body = {};
+  try { if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {}; } catch (err) {}
+  const api = String(((e && e.parameter) || {}).api || body.api || '').trim();
+  if (api !== 'sync-props') return jsonError_('METHOD_NOT_ALLOWED', 'public-api 는 GET 조회 전용입니다.');
+  if (!_checkSyncToken_(body.apiKey)) return jsonError_('UNAUTHORIZED', 'sync token invalid');
+  const props = PropertiesService.getScriptProperties();
+  const set = [];
+  SYNC_PROP_ALLOWLIST_.forEach(function (k) {
+    const v = body.props && body.props[k];
+    if (typeof v === 'string' && v.trim()) { props.setProperty(k, v.trim()); set.push(k); }
+  });
+  try { CacheService.getScriptCache().remove('busy_cal_meta_v3'); } catch (err) {}   // 캘린더 메타 캐시 — ICS 유무가 바뀌었으니 다시 읽게
+  return jsonOk_({ set: set });
+}
