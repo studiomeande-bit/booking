@@ -1,4 +1,4 @@
-import { READ, READ_SHUTTLE, buildUrl, parseJsonResponse, postPayload, readJsonBody, readViaShuttle, requestJson, tagged } from './api-core.js';
+import { READ, READ_SHUTTLE, buildUrl, parseJsonResponse, postPayload, readJsonBody, readViaShuttle, requestJson, tagged, takeEarlyResponse } from './api-core.js';
 
 const SELECT_PHOTOS_TIMEOUT_MS = 60000;
 const SELECT_PHOTOS_BATCH_SIZE = 300;
@@ -39,7 +39,10 @@ async function parseSelectSession(response) {
 
 /* 세션·사진 목록은 셔틀(appscript-public) 먼저 — 브라우저 실측(2026-09-20) 메인 5.6초·8.7초. 실패·미공유 폴더(ok:false)면 메인.
    사진 목록은 Drive 열거 자체가 수 초라 셔틀에도 60초 단발을 준다 — 12초에 끊고 메인에서 다시 열거하면 더 늦다. */
-export function fetchSelectSession(sessionId) {
+export async function fetchSelectSession(sessionId) {
+  // select/v2/index.html <head> 가 번들보다 먼저 띄운 요청(window.__smSessionEarly, 같은 id)이 있으면 그걸 쓴다 — 한 번만.
+  const early = (globalThis.__smSessionEarlyId === sessionId) ? await takeEarlyResponse('__smSessionEarly') : null;
+  if (early) { try { return await parseSelectSession(early); } catch (error) { /* 정상 경로로 */ } }
   return readViaShuttle('select-session', { id: sessionId }, {
     shuttle: { ...READ_SHUTTLE, parse: parseSelectSession },
     main: { ...READ, parse: parseSelectSession }

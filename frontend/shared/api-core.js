@@ -156,6 +156,17 @@ export async function readViaShuttle(route, params = {}, { shuttle = READ_SHUTTL
   }
   return requestJson(buildUrl(route, params), main);
 }
+/* 페이지 <head> 인라인 스크립트가 번들보다 먼저 띄운 fetch(예: booking/index.html 의 window.__smInitEarly, select 의 __smSessionEarly).
+   약속을 한 번만 꺼내 쓴다(두 번째 호출부터 null). 12초 안에 응답이 없거나 실패하면 null — 호출자는 정상 경로로 간다. */
+export async function takeEarlyResponse(name) {
+  const early = globalThis[name];
+  if (!early) return null;
+  globalThis[name] = null;
+  try {
+    return await Promise.race([early, new Promise((_, reject) => setTimeout(() => reject(new Error('early timeout')), READ_SHUTTLE.timeoutMs))]);
+  } catch (error) { return null; }
+}
+
 export async function readPayloadViaShuttle(route, data, { shuttle = READ_SHUTTLE, main = READ } = {}) {
   if (shuttleEnabled()) {
     try { return await requestJson(buildReadPayloadUrl(route, data), shuttle); }

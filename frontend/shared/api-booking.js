@@ -1,4 +1,4 @@
-import { READ, buildPayloadUrl, buildUrl, postPayload, readPayloadViaShuttle, readViaShuttle, requestJson } from './api-core.js';
+import { READ, buildPayloadUrl, buildUrl, parseJsonResponse, postPayload, readPayloadViaShuttle, readViaShuttle, requestJson, takeEarlyResponse } from './api-core.js';
 
 /* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
    GET + ?payload= 는 URL 길이 한계에 걸린다 — 실측 2026-08-27: URL 약 12,000자 초과 시 구글이 HTTP 400.
@@ -26,7 +26,10 @@ export function fetchPartners() {
 }
 
 /* 조회 4종(init·calendar-batch·slots·quote)은 셔틀 먼저 — readViaShuttle 은 api-core.js(셀렉 조회와 공유). */
-export function fetchInitData() {
+export async function fetchInitData() {
+  // booking/index.html <head> 가 번들보다 먼저 띄운 요청(window.__smInitEarly)이 있으면 그걸 쓴다 — 한 번만, 실패·지연이면 정상 경로.
+  const early = await takeEarlyResponse('__smInitEarly');
+  if (early) { try { return await parseJsonResponse(early); } catch (error) { /* 정상 경로로 */ } }
   return readViaShuttle('init');
 }
 

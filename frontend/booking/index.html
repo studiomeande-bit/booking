@@ -11,6 +11,13 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <script>
+    /* init 선요청 — 번들(booking.min.js, 본문 끝)이 내려와 실행되기까지 ~1.5초를 기다리지 않고 지금 셔틀에 띄운다.
+       shared/api-booking.js fetchInitData 가 이 약속을 먼저 쓰고, 실패·지연이면 정상 경로로 간다.
+       URL 은 shared/config.js readApiBaseUrl(셔틀 배포 ID, -i 재배포라 고정)과 같아야 한다. */
+    window.__smInitEarly = fetch('https://script.google.com/macros/s/AKfycbyb1y964F-MAO4-043gq3LdIg9fPqXb-My_1iV1qcjQwQIiZnfMl17i0wAnRBn6tAj6/exec?api=init&_ts=' + Date.now(), { cache: 'no-store' });
+    window.__smInitEarly.catch(function () {});
+  </script>
   <link rel="preload" href="./booking.min.css?v=e9caa251f3" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
@@ -500,6 +507,6 @@
     </div>
   </footer>
   <script src="./widerruf/widerruf-text.js?v=8a53d8486d"></script>
-  <script src="./booking.min.js?v=338c3830af"></script>
+  <script src="./booking.min.js?v=55932a0046"></script>
 </body>
 </html>
