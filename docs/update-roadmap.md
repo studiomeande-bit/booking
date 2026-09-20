@@ -64,6 +64,32 @@ Updated: 2026-09-18 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-20 · 시스템 전체 점검 + 감사 수리 배포 (@970 · board-api @12 · 프런트 c479185 · 앱 재빌드)
+
+**진행.** 읽기 전용 감사 워크플로(감사자 8 + 반박 검증 31 = 39 에이전트) → 확정 결함 28건 · 개선 47건 → 수리 → 수리분 재검토 워크플로(25 에이전트, 확정 19 · 반박 2) → 2차 수리 → 배포 → 합성행 E2E(테스트감사E/F/G, 삭제 확인). 결과 원본: 이 세션 스크래치(`audit/result.json`, `review2.json`).
+
+**배경 관측.** 메시지로그 21,780행 중 `erp-agent:today-board` 폴링이 분당 1행씩(9/19 앱 헤지 4초 → board-api 가 보통 4초를 넘겨 매분 메인까지 호출, 09:36~15:04 269회). 흐름진단이 보는 최근 900행이 폴링으로 차서 이윤경 9/17 접수확인을 '미발송 의심'으로 오판(Gmail 발송 확인). board-api 는 이따금 구글 HTML 오류 페이지를 29~55초 만에 돌려준다(5회 중 2회 실측) — 앱 폴링 헤지 8초로 조정(정상 응답은 다 들어오고 막힌 날만 메인이 받침), 서버는 today-board 를 로그에 안 남기고 흐름진단은 3000행 중 메일 행만 본다.
+
+**돈(확정 결함 → 수리).**
+- 잔금 부분수납 모델: `confirmBookingBalanceAdmin` 이 금액과 무관하게 Y 를 굳혀 덜 받은 나머지가 보드·결제검토·브리핑에서 사라졌다 → `partial:true` 로만 부분수납, 플래그는 비워 두고 잔금결제금액에 누적 + 메모 `[부분수납 날짜] X€ 수단 (누적/잔금)`. 보드 dueOnSite(`balancePartialPaid`)·결제검토·브리핑 미수·현장정산 expectDue/balDue 는 누적을 뺀 나머지, 마감대조·현금장부는 메모 줄을 날짜별로(완납일은 누적−회차합). 금액 생략 = 나머지. 어드민 잔금확인 모달은 남은 금액으로 프리필·부분수납 confirm. 잔금 셀 `35|CARD|날짜` 꼬리 제외 파싱.
+- 총액 ≤100€ 로 내려가면 미입금 계약금을 잔금에 합산(계약금 0) — set-amount(3회차 혜택 포함)·재촬영/제휴사 할인(`_depositAfterTotalChange_`)·굿샤인 미리보기/적용 공통. 종전엔 `getEffectiveBookingDeposit_` 가 100€ 이하를 '계약금 없음'으로 봐 계약금 확인이 거부되고 현장정산이 죽었다.
+- 완납(Y) 뒤 총액 변경은 force 필수 + 감사줄에 과수납/추가청구 차액; 부분수납 뒤에도 받은 돈 아래로 못 내림. 어드민 저장의 잔금 꼬리 보존. 굿샤인은 완납 뒤 거부.
+- 계약금 재확인은 force 필수(입금일·금액·수단 덮어쓰기 방지), 총결제액 초과 금액 거부. 취소 환불 `refundMethod`(bank/cash/sumup, 검증) — 현금 환불이 현금장부에 잡힌다. 발행·발송된 인보이스는 삭제 대신 `발행취소`, 연번은 `INVOICE_LAST_SEQ_` 고수위로 재사용 불가.
+- 반박됨(수정 안 함): SumUp/은행 매칭이 부분수납을 덮어쓴다(정확 금액 매칭이라 도달 불가) · 잔금 꼬리 셀 파싱(보드 등은 이미 처리).
+
+**보안.** 어드민 주간 그리드 고객명 XSS(escapeAdminHtml) + 폴더 피커 onclick(`_instaJs`) · 예약/워크인/일정변경 메일의 고객 입력 이스케이프 · 공개 예약 이름에서 `<>` 제거 · `confirmBooking/cancelBooking` 을 `_` 전역으로(서명 검증 라우트에서만) · 일정변경 폼은 서명 참조 `row:N:token` 만 · `sendReminderEmails` 는 트리거 이벤트일 때만 · 공개 폼 메일 캡(10통/10분·일일 쿼터 20통 예비, `meta.public`: 철회·워크인·상담·대기자·포트폴리오 문의) · 철회 수신확인·메모·원클릭 취소는 서명 링크 또는 이메일+이름 일치일 때만 · 비밀번호 공개 라우트 4곳 지연·잠금 + 기본 비밀번호 거부(`_publicAdminPasswordOk_`) · 셀렉 미리보기 폴더 allowlist.
+
+**데이터·운영.** 행 삭제 참조보정에 결제대조 `매칭행`(굿샤인 판매 제외)·워크인 `연결예약행` 추가 · MRT 자리표시 전화 `000000000` 신원키 제외 · 3회차 판정에 전화 3항 · ops-checklist `sheets` 에 예약장부/사진셀렉 헤더 어긋남 검사 · data-audit 오탐 2종(MRT 결제수단·빈 셀렉행) 제거 · 셀렉 제출 메일 2통은 스크립트 락 밖에서 · 셀렉 submit/update 라우트 실패 시 requestId 반환 · 브리핑에 '자동화 실패(24h)' 섹션 · Twilio 저장 빈칸 유지 + 설정 카드 로더 · **Lexware 잔재 57 함수 + 고아 13 함수 1,651줄 삭제**(구 트리거 대비 4개 이름은 disabled 스텁, 2.36→2.31MB).
+
+**프런트.** 셀렉 requestId 시도당 1회 유지(페이로드 지문 변경 시만 갱신, SERVER/GATEWAY 시 재발급, 'Duplicate submission' → 3개국어 '이미 접수') · 셀렉 세션/픽업/갤러리 읽기 25초+1회 재시도 · 오류 코드 3개국어(`apiError`), Safari/Firefox 네트워크 오류 인식 · Impressum/Datenschutz 푸터 7페이지 · studio-mean.com CSP connect-src 에 script.google.com.
+
+**로컬 자동화.** raw_select_sync 150초·3회 재시도, 실패해도 대기열 처리 계속 · comment_guard 비예약 게시물 재시도 중단 · insta-kpi launchd zsh 래퍼(TCC).
+
+**문서.** deployment.md(`-i` 필수·board-api 절), ops-checklist.md(스탬프·토큰 검증), current-status.md(@969/211 액션), SKILL.md 액션표 148→211(33행 추가, neutralize/paid 는 오탐 주석), ~/CLAUDE.md 사실 정정, widerruf 계획서 구현 상태.
+
+**남은 개선(제안, 미착수).** ① 공개 예약 API 셔틀(build-board-api 방식으로 init/calendar-batch/slots 분리, 폐쇄 108 함수/78KB — 예약 첫 방문 5~7초 단축, 캐시버전은 설정 시트로 브리지) ② 예약 제출이 달력 4회·시트 2회 읽는 락 구간 ③ calendar-batch 의 PropertiesService 3~4회 ④ ensureSheets_ 콜드 경로(17 시트) ⑤ 트리거 목록 읽기 액션(삭제 검증용) ⑥ 월 이벤트 캐시 95KB 초과 시 무캐시 무신호 ⑦ 메시지로그 21k 행 보관 정책 ⑧ 저사양 보안: 어드민 해시 솔트·GET 비밀 라우트·TOFU 다이제스트·contact-lookup 주소 반환.
+**운영 세션 몫(사장님 확인).** 김미빈 9/23 예약 시간 미정(00:00)↔캘린더 10:00 → `booking-set-time` · Anna Matsuura 9/26 13:30 두 캘린더 중복 · 한혜정 취소행 254 캘린더ID 잔존(시트에서 비우기) · 전화 불완전 6행(169·175·187·188·233·282, 285 김미빈 MRT 보강) · 결제대조 은행 2건 검토 · 상담 8건 진행 중 · automation/.env.bak 4개·insta-publisher.plist.bak 정리.
+
 ### 2026-09-19 (밤) · 보드 출력·수령·발송 내용 전부 표시 + 항상 위 토글 꺼내기 + 앱 실행 불가 수리 (@969 · board-api @11 · 앱 재빌드)
 
 - **앱이 안 열림("macOS 28 이상 필요")**: 코드가 아니라 빌드 — Swift 6.3.3 이 `-target` 없는 swiftc 에 minos **28.0** 을 찍었다(이 맥은 27.0). `build.sh` 에 `-target arm64-apple-macos14.0` 고정(Info.plist 14.0 과 동일), `vtool -show-build` 로 minos 14.0 확인.
