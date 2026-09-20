@@ -4,7 +4,8 @@
  * board-api 가 증명했듯 작은 프로젝트는 1~3초에 답한다(감사 2026-09-20 perf-1). 제출(api=booking)과 그 fresh 가용성
  * 가드(slotAvailable_)는 메인에 그대로 — 이중예약 보호는 여기 영향 없음.
  *
- * 읽기 전용: 스코프가 calendar.readonly · spreadsheets.readonly 라 쓰기 코드가 섞여 들어와도 실행 시 throw 한다.
+ * 읽기 전용은 코드로 보장한다(Public.gs 에 setValue/appendRow/insertSheet 없음 — 생성기가 스캔, doPost 거절). readonly 스코프는
+ *   SpreadsheetApp.openById 가 거부해(2026-09-20 setup 실측 "Specified permissions are not sufficient") 메인과 같은 calendar·spreadsheets 스코프.
  * Public.gs 는 생성 파일(정본 appscript/Code.gs, 재생성 node scripts/build-public-api.mjs). 이 파일이 대신하는 것:
  *   ensureSheets_ · ensureHeaderSheet_ · ensurePartnerSheet_ (읽기 전용) · getCalCacheVer_ (설정 시트 cal_cache_ver,
  *   메인 bumpCalCacheVer_ 가 같은 키를 갱신) · bumpCalCacheVer_ (no-op) · 라우팅 · 워밍 트리거.
