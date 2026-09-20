@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T15:45:14.026Z
- * 포함 함수 110개 / 상수 18개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T17:58:58.305Z
+ * 포함 함수 125개 / 상수 22개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -104,6 +104,12 @@ const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 
 const STUDIO_PRESENCE_EVENT_MARKER = '[studio_presence_auto]';
 
+const WEDDING_EARLY_BOOKING_MONTHS = 6;
+
+const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
+
+const WEDDING_MARKETING_DISCOUNT_RATE = 5;
+
 const PARTNER_HEADERS=['id','분류','업체명','한줄설명KO','한줄설명EN','한줄설명DE','상담언어','지역','상담링크','인스타링크','적용그룹','노출위치','순서','활성','제휴메모'];
 
 const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
@@ -119,6 +125,33 @@ function sanitizeInitDataForApi_(data){
     partners:data&&data.partners||[],
     serverTime:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,"yyyy-MM-dd'T'HH:mm:ss")
   };
+}
+
+function parsePublicJsonBody_(e){
+  const body=String((e&&e.postData&&e.postData.contents)||'').trim();
+  if(!body) return {};
+  try{return JSON.parse(body);}catch(err){throw new Error('Invalid JSON body');}
+}
+
+function getPublicPayloadFromRequest_(e){
+  const p=(e&&e.parameter)||{};
+  const rawPayload=String(p.payload||'').trim();
+  if(rawPayload){
+    try{
+      const parsed=JSON.parse(rawPayload);
+      return {body:parsed||{},payload:(parsed&&parsed.data)||parsed||{}};
+    }catch(err){
+      throw new Error('Invalid payload parameter');
+    }
+  }
+  const body=parsePublicJsonBody_(e);
+  return {body:body||{},payload:(body&&body.data)||body||{}};
+}
+
+function isPublicTruthy_(value){
+  if(value===true) return true;
+  const s=String(value||'').trim().toLowerCase();
+  return s==='true'||s==='1'||s==='y'||s==='yes'||s==='on';
 }
 
 function jsonOk_(data){
@@ -247,6 +280,8 @@ function getReturnDiscountRate_(){
   return parsePercentSetting_(getSettingsMap_().return_discount,10,50);
 }
 
+const PASS_FAMILY_DISCOUNT_MIN_PEOPLE=5;
+
 function getPassportFamilyDiscountRate_(){
   // 여권 5인 이상 가족 단체 할인 % — 설정 시트 pass_family_discount (기본 10, 상한 50)
   const v=getSettingsMap_().pass_family_discount;
@@ -264,6 +299,15 @@ function parseDateListSetting_(value){
       return true;
     })
     .sort();
+}
+
+function getPassportComboDurationMin_(people){
+  /* 여권 촬영시간(분). 4인 초과는 인당 +10분 — 사장님 확정 2026-09-15.
+     이전엔 40분 고정이라 5인 이상이 온라인으로 들어오면 슬롯이 모자랐다(여권은 앞뒤 버퍼 0분).
+     같은 표가 AdminV2.html passportDurationMin / booking.js passportDurationMin 에도 있다 — 같이 고칠 것. */
+  const n=Math.max(1,parseInt(people,10)||1);
+  const table=[0,15,20,30,40];
+  return n<=4?table[n]:40+(n-4)*10;
 }
 
 function getPromoConfig_(){
@@ -437,6 +481,10 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   return out;
 }
 
+function _monthEventsTtlSec_(){
+  return (typeof PUBLIC_MONTH_EVENT_TTL_SEC_!=='undefined'&&Number(PUBLIC_MONTH_EVENT_TTL_SEC_)>0)?Number(PUBLIC_MONTH_EVENT_TTL_SEC_):120;
+}
+
 function getCachedMonthEvents_(year,month,wantDetailed){
   const ver=getCalCacheVer_();
   const cache=CacheService.getScriptCache();
@@ -451,7 +499,7 @@ function getCachedMonthEvents_(year,month,wantDetailed){
     ? getBusyEventsDetailedForRange_(start,end)
     : getEventsForRange_(start,end);
   if(wantDetailed||!CAL_READ_FAILED_){
-    try{ const j=JSON.stringify(events); if(j.length<95000) cache.put(key,j,120); }catch(e){}
+    try{ const j=JSON.stringify(events); if(j.length<95000) cache.put(key,j,_monthEventsTtlSec_()); }catch(e){}
   }
   return events;
 }
@@ -539,11 +587,216 @@ function buildClosedMonthSummary_(year,month){
   return out;
 }
 
+function getProductById_(itemId){
+  const p=getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(x=>x.id===itemId);
+  if(!p)throw new Error('유효하지 않은 상품입니다.');
+  return p;
+}
+
+function isGenericBusinessProduct_(item){
+  return !!item&&item.g==='biz'&&item.id==='biz';
+}
+
 function isMyRealTripProduct_(item){
   if(!item) return false;
   const hay=[item.id,item.g,item.nameKo,item.nameEn,item.nameDe,item.descKo,item.descEn,item.descDe]
     .map(function(v){return String(v||'');}).join(' ');
   return /myrealtrip|my real trip|마이리얼트립/i.test(hay);
+}
+
+function getWeekendSurcharge_(item,dateStr){
+  if(!item||!dateStr) return 0;
+  if(isMyRealTripProduct_(item)) return 0;
+  const d=parseYmdDateAtNoon_(dateStr);
+  if(!d||d.getDay()!==6) return 0;
+  const map={amtp:50,dolp:50,ob:20,op:30,oprm:40};
+  return map[item.id]||0;
+}
+
+function parseYmdDateAtNoon_(dateStr){
+  const m=String(dateStr||'').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0,0);
+}
+
+function addMonthsClamped_(date,months){
+  const d=new Date(date.getTime());
+  const originalDay=d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth()+months);
+  const lastDay=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  d.setDate(Math.min(originalDay,lastDay));
+  return d;
+}
+
+function isWeddingEarlyBookingEligible_(shootDateStr,baseDate){
+  const shootDate=parseYmdDateAtNoon_(shootDateStr);
+  if(!shootDate) return false;
+  const base=baseDate instanceof Date?new Date(baseDate.getTime()):new Date();
+  const thresholdBase=new Date(base.getFullYear(),base.getMonth(),base.getDate(),12,0,0,0);
+  const threshold=addMonthsClamped_(thresholdBase,WEDDING_EARLY_BOOKING_MONTHS);
+  return shootDate.getTime()>=threshold.getTime();
+}
+
+function roundCurrency_(value){
+  return Math.round((Number(value)||0)*100)/100;
+}
+
+function formatEuroAmount_(value){
+  const rounded=roundCurrency_(value);
+  return Number.isInteger(rounded)?String(rounded):rounded.toFixed(2);
+}
+
+function calculateQuote_(request){
+  const item=getProductById_(request.itemId);
+  const people=Math.max(1,parseInt(request.people)||1);
+  const optionKeys=(request.optionKeys||[]).filter(Boolean);
+  const passPersonCountries=(request.passPersonCountries||[])
+    .map(function(entry){
+      if(Array.isArray(entry)) return entry.filter(Boolean);
+      return entry ? [entry] : [];
+    })
+    .filter(function(entry){ return entry.length; });
+  const passCountries=(request.passCountries||[]).filter(Boolean);
+  const otherCountry=(request.otherCountry||'').trim();
+  const totalCountries=passPersonCountries.reduce(function(sum,codes){
+    return sum + codes.filter(function(code){ return code && code!=='OTHER'; }).length;
+  },0) + (otherCountry?1:0);
+  let total=item.p;
+  const isQuoteOnly=item.t==='custom'||Number(item.p)<=0;
+  let productLabelKo=item.nameKo, productLabelEn=item.nameEn, productLabelDe=item.nameDe;
+  let businessMode=String(request.businessMode||'photo');
+  if(['photo','video','hybrid'].indexOf(businessMode)<0) businessMode='photo';
+  let businessHours=Math.min(8,Math.max(2,parseInt(request.businessHours,10)||2));
+  let businessVideoEdit=String(request.businessVideoEdit||'raw');
+  const businessAddonKeys=(request.businessAddonKeys||[]).filter(Boolean);
+  if(isGenericBusinessProduct_(item)){
+    // 행사/기업 촬영 금액은 상담 후 견적으로만 안내 — 시간제 단가표 계산 제거 (roadmap #10 Phase 1)
+    total=0;
+    const hourKo=businessHours+'시간';
+    const hourEn=businessHours+'h';
+    const hourDe=businessHours+' Std.';
+    const usesVideo=businessMode==='video'||businessMode==='hybrid';
+    if(usesVideo){
+      const editKo=businessVideoEdit==='basic'?'기본 편집':businessVideoEdit==='full'?'풀 편집':'촬영만';
+      const editEn=businessVideoEdit==='basic'?'Basic Edit':businessVideoEdit==='full'?'Full Edit':'Raw Footage';
+      const editDe=businessVideoEdit==='basic'?'Basis-Schnitt':businessVideoEdit==='full'?'Vollschnitt':'Rohmaterial';
+      if(businessMode==='hybrid'){
+        productLabelKo='행사 사진+영상 '+hourKo+' ('+editKo+')';
+        productLabelEn='Event Photo+Video '+hourEn+' ('+editEn+')';
+        productLabelDe='Event Foto+Video '+hourDe+' ('+editDe+')';
+      }else{
+        productLabelKo='행사 영상 '+hourKo+' ('+editKo+')';
+        productLabelEn='Event Video '+hourEn+' ('+editEn+')';
+        productLabelDe='Event Video '+hourDe+' ('+editDe+')';
+      }
+    }else{
+      productLabelKo='행사 사진 '+hourKo;
+      productLabelEn='Event Photo '+hourEn;
+      productLabelDe='Event Foto '+hourDe;
+    }
+  }
+  else if(item.g==='promo'){
+    if(item.id==='promo_schultuete_mini_2026'){
+      total=69;
+    }else if(item.id==='promo_schultuete_classic_2026'){
+      total=119;
+    }else if(item.id==='promo_schultuete_family_2026'){
+      total=159;
+    }
+    const promoOptionKeys=(request.optionKeys||[]).map(function(k){return String(k||'').trim();}).filter(Boolean);
+    const hasPromoOption=function(key){return promoOptionKeys.indexOf(key)>-1;};
+    const schoolChildCount=String(request.schoolChildCount||'').trim();
+    const siblingOption=String(request.siblingOption||'').trim();
+    const extraRetouchFromKey=promoOptionKeys.reduce(function(max,key){
+      const m=key.match(/^extra_retouch_(\d+)$/);
+      return m?Math.max(max,parseInt(m[1],10)||0):max;
+    },0);
+    const extraRetouchCount=Math.max(0,Math.min(10,parseInt(request.extraRetouchCount,10)||extraRetouchFromKey||0));
+    if(schoolChildCount==='2'||hasPromoOption('school_child_2')) total+=40;
+    if(siblingOption==='together'||siblingOption==='both'||hasPromoOption('sibling_together')) total+=20;
+    if(siblingOption==='solo'||siblingOption==='both'||hasPromoOption('sibling_solo')) total+=30;
+    if(people>4) total+=(people-4)*20;
+    if(extraRetouchCount) total+=extraRetouchCount*15;
+    }
+  let familyDiscount=0;
+  if(item.t==='passport'){
+    total=passPersonCountries.reduce(function(sum,codes){
+      const extra=Math.max(0,codes.filter(function(code){ return code && code!=='OTHER'; }).length-1)*5;
+      return sum + item.p + extra;
+    },0);
+    if(!passPersonCountries.length) total=item.p*people;
+    // 5인 이상 가족 단체 할인(%) — 사장님 확정 2026-09-15. 법인 인보이스 체크 건은 회사 단체로 보고 제외.
+    if(people>=PASS_FAMILY_DISCOUNT_MIN_PEOPLE&&!isPublicTruthy_(request.businessInvoiceNeeded)){
+      familyDiscount=roundCurrency_(total*(getPassportFamilyDiscountRate_()/100));
+      total=roundCurrency_(total-familyDiscount);
+    }
+  }
+  else if(item.t==='group'&&people>2) total+=(people-2)*30;
+  else if(item.t==='snap'&&!isMyRealTripProduct_(item)&&people>2) total+=(people-2)*30;
+  else if(item.t==='snap'&&!isMyRealTripProduct_(item)&&people===1) total-=30;
+  const weekendSurcharge=getWeekendSurcharge_(item,request.date);
+  if(weekendSurcharge) total+=weekendSurcharge;
+  const optMeta={dog:15,bg:20,outfit:20};
+  if(item.t!=='custom') optionKeys.forEach(k=>{if(optMeta[k])total+=optMeta[k];});
+  // 연령 기반 프로필 가격 로직
+  const ageGroup=request.ageGroup||'adult';
+  let kidsDiscount=0,seniorFree=false;
+  let seniorDiscApplied=false;
+  let seniorDiscount=0,seniorDiscountKind='';
+  if(item.g==='prof'){
+    if(ageGroup==='kids'){kidsDiscount=10;total=Math.max(0,total-kidsDiscount);}
+    else if(ageGroup==='senior'&&request.date){
+      const d=new Date(request.date+'T12:00:00'),day=d.getDay();
+      if(item.id==='pb'){
+        // 프로필 Basic: 시니어 평일(화~금) 무료
+        if(day>=2&&day<=5){seniorFree=true;seniorDiscount=roundCurrency_(total);seniorDiscountKind='weekday_free';total=0;}
+      } else if(item.id==='pbus'||item.id==='pp'){
+        // 프로필 Business/Professional: 시니어 평일 -50€
+        if(day>=2&&day<=5){seniorDiscount=50;seniorDiscountKind='weekday';total=Math.max(0,total-seniorDiscount);seniorDiscApplied=true;}
+        // 프로필 Professional: 시니어 토요일 -30€
+        else if(day===6&&item.id==='pp'){seniorDiscount=30;seniorDiscountKind='saturday';total=Math.max(0,total-seniorDiscount);seniorDiscApplied=true;}
+      }
+    }
+  }
+  const seniorDiscountLabel=seniorDiscountKind==='weekday_free'
+    ? '시니어 평일 무료 혜택'
+    : (seniorDiscountKind==='weekday'
+      ? '시니어 평일 할인 -'+formatEuroAmount_(seniorDiscount)+'€'
+      : (seniorDiscountKind==='saturday'?'시니어 토요일 할인 -'+formatEuroAmount_(seniorDiscount)+'€':''));
+  let productDiscount=0,eventDiscount=0,returnDiscount=0;
+  productDiscount=0;
+  const settings=getSettingsMap_();const evRate=getEventDiscountRate_();
+  if(evRate>0&&settings.event_start&&settings.event_end&&request.date&&request.date>=settings.event_start&&request.date<=settings.event_end){eventDiscount=Math.round(total*(evRate/100));total-=eventDiscount;}
+  if(request.isReturn && isReturnDiscountEligibleItem_(item)){
+    const rate=getReturnDiscountRate_();
+    returnDiscount=roundCurrency_(total*(rate/100));
+    total=roundCurrency_(total-returnDiscount);
+  }
+  const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
+  let earlyBirdDiscount=0;
+  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  let marketingDiscount=0;
+  if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
+  if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
+  const duration=isGenericBusinessProduct_(item)
+    ? businessHours*60
+    : (item.t==='passport'?getPassportComboDurationMin_(people):item.d);
+  // 여권 콤보 추가 시 duration에 합산
+  const passAddon=(item.g==='prof'||item.g==='stud')&&!!request.passAddon;
+  const passAddonPeople=parseInt(request.passAddonPeople)||1;
+  const passAddonDur=passAddon?getPassportComboDurationMin_(passAddonPeople):0;
+  const passItem=passAddon?getCachedProducts_().find(x=>x.g==='pass'):null;
+  const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
+  if(passAddon)total+=passAddonPrice;
+  const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo'&&!isQuoteOnly;
+  const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel};
+}
+
+function isReturnDiscountEligibleItem_(item){
+  if(!item) return false;
+  return !(String(item.g||'').trim()==='pass' || String(item.t||'').trim()==='passport');
 }
 
 function getBusyCalendarIds_(){

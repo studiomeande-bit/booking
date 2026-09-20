@@ -12,6 +12,8 @@
  * 프런트(frontend/shared/api-booking.js)는 셔틀이 실패하면(미승인 HTML·타임아웃) 메인으로 되돌아간다. */
 
 const PUBLIC_DB_ID_DEFAULT_ = '1STWAMt30xku--NnFDHp1WOgpdGNQCH8T9Y0mZP6H8fI';   // docs/current-status.md 의 예약 DB
+// 월 이벤트 캐시 TTL(초) — 5분 워밍 트리거가 항상 덮도록 7분(Code.gs _monthEventsTtlSec_ 가 읽는다). 메인은 120초.
+const PUBLIC_MONTH_EVENT_TTL_SEC_ = 420;
 let _publicSheetsCache_ = null;
 function ensureSheets_() {
   if (_publicSheetsCache_) return _publicSheetsCache_;
@@ -80,6 +82,13 @@ function _pub_(e) {
       });
     }
     if (route === 'init') return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
+    if (route === 'quote') {   // 견적(가격 계산)도 읽기 전용 — 메인 handlePublicApiRequest_ 의 quote 분기와 동일
+      const request = getPublicPayloadFromRequest_(e);
+      const payload = request.payload;
+      if (!payload || !payload.itemId) return jsonError_('INVALID_ARGUMENT', 'Missing quote parameters');
+      if (!isPublicBookingProduct_(getProductById_(payload.itemId))) return jsonError_('INVALID_ARGUMENT', 'Unavailable product');
+      return jsonOk_(calculateQuote_(payload));
+    }
     if (route === 'calendar-batch') {
       const year = asNumber_(p.year);
       const month = asNumber_(p.month);
@@ -97,7 +106,7 @@ function _pub_(e) {
       if (!isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
       return jsonOk_(getPublicSlots_(date, totalDur, itemGroup));
     }
-    return jsonError_('NOT_FOUND', 'public-api: init · calendar-batch · slots 만 제공합니다.');
+    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots 만 제공합니다.');
   } catch (err) {
     return jsonError_('PUBLIC_API_ERROR', String((err && err.message) || err));
   }

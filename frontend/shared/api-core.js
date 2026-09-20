@@ -23,6 +23,10 @@ export function buildReadUrl(route, params = {}) {
   return base.toString();
 }
 
+export function buildReadPayloadUrl(route, data = {}, extraParams = {}) {
+  return buildReadUrl(route, { ...extraParams, payload: JSON.stringify({ ...extraParams, data }) });
+}
+
 export function buildPayloadUrl(route, data = {}, extraParams = {}) {
   return buildUrl(route, {
     ...extraParams,

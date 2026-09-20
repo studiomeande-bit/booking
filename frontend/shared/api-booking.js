@@ -1,4 +1,4 @@
-import { READ, buildPayloadUrl, buildReadUrl, buildUrl, postPayload, requestJson } from './api-core.js';
+import { READ, buildPayloadUrl, buildReadPayloadUrl, buildReadUrl, buildUrl, postPayload, requestJson } from './api-core.js';
 import { CONFIG } from './config.js';
 
 /* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
@@ -38,6 +38,14 @@ async function readViaShuttle(route, params = {}) {
   return requestJson(buildUrl(route, params), READ);
 }
 
+async function readPayloadViaShuttle(route, data) {
+  if (CONFIG.readApiBaseUrl && CONFIG.readApiBaseUrl !== CONFIG.apiBaseUrl) {
+    try { return await requestJson(buildReadPayloadUrl(route, data), READ_SHUTTLE); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildPayloadUrl(route, data), READ);
+}
+
 export function fetchInitData() {
   return readViaShuttle('init');
 }
@@ -51,7 +59,7 @@ export function fetchSlots({ date, totalDur, itemGroup }) {
 }
 
 export function fetchQuote(data) {
-  return requestJson(buildPayloadUrl('quote', data), READ);
+  return readPayloadViaShuttle('quote', data);   // 가격 계산은 읽기 전용 — 셔틀 먼저(브라우저 실측 메인 5.7초)
 }
 
 export function fetchReturnEligibility(data) {

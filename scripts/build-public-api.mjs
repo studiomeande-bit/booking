@@ -18,7 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const r = extractClosure({
   src: path.join(ROOT, 'appscript', 'Code.gs'),
   roots: ['getInitDataCustomer', 'sanitizeInitDataForApi_', 'getPublicCalendarBatch_', 'getPublicSlots_',
-          'isPublicBookingItemGroup_', 'asNumber_', 'jsonOk_', 'jsonError_'],
+          'isPublicBookingItemGroup_', 'asNumber_', 'jsonOk_', 'jsonError_',
+          'calculateQuote_', 'isPublicBookingProduct_', 'getProductById_', 'getPublicPayloadFromRequest_'],   // quote 도 셔틀(2026-09-20 브라우저 실측: 메인 5.7초)
   exclude: ['ensureSheets_', 'getCalCacheVer_', 'bumpCalCacheVer_', 'ensureHeaderSheet_', 'ensurePartnerSheet_'],   // 전부 Shim.gs 가 읽기 전용으로 대체
   out: path.join(ROOT, 'appscript-public', 'Public.gs'),
   label: 'node scripts/build-public-api.mjs',
