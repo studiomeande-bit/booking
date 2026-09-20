@@ -64,6 +64,12 @@ Updated: 2026-09-18 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-20 (오후) · 예약 조회 셔틀(public-api) + 캘린더 드리프트 화해·MRT 시간 채택 (@971 · board-api @13 · public-api @1 · 프런트 feaee30)
+
+- **public-api 셔틀**: `appscript-public/` 새 GAS 프로젝트. `scripts/gas-extract.mjs`(공용 추출기, board-api 생성기도 이걸 씀)로 Code.gs 에서 init·calendar-batch·slots 폐쇄(104 함수/78KB)를 `Public.gs` 로 생성. `Shim.gs`: DB 는 ID 로 열고(PUBLIC_DB_ID 속성 override), `ensureHeaderSheet_/ensurePartnerSheet_` 는 읽기 전용 대체, `getCalCacheVer_` 는 설정 시트 `cal_cache_ver`(메인 `bumpCalCacheVer_` 가 함께 갱신 — 브리지), 라우팅 3종 + ping/diag, `setup()` = 권한 승인 + 5분 워밍 트리거. 스코프는 calendar.readonly·spreadsheets.readonly(쓰기 코드가 들어와도 throw).
+  프런트 `readViaShuttle`: 셔틀 12초·무재시도 → 실패 시 메인 25초+1회. **사장님 승인 전엔 셔틀이 HTML 을 돌려줘 자동으로 메인을 탄다**(고객 영향 없음). 승인 후 기대: 첫 방문 init→달력→슬롯 5~7초 단축.
+  ⚠️ 미완: 편집기에서 `setup()` 1회 실행(사장님), Apple ICS 속성(ICLOUD_*/APPLE_*)은 셔틀에 없어 ICS 피드는 생략(공유 구글 캘린더로 애플 일정은 잡힘) — 필요하면 프로젝트 설정에 4개 속성 복사.
+- **캘린더 화해**: 예약장부 맨 뒤에 `캘린더동기화일시`(시스템이 이벤트를 쓴 시각, `ensureBookingCalendarEventForRow_` 가 찍음). 정합 점검(`calendar-audit`, D7 브리핑)이 불일치를 만나면 `reconcileBookingCalendarDrift_`: ① MRT 시간미정(00:00)인데 캘린더에 시간 → 채택 ② 이벤트 수정시각 > 스탬프+2분 → 사람이 캘린더에서 옮김 → 장부 반영 ③ 아니면 캘린더를 장부에 맞춤 ④ 스탬프 없는 옛 행은 보고만(일치 행엔 스탬프 백필). 메모 `[일정동기화 날짜] 이전 → 이후 · 사유`, 고객 메일 없음. 브리핑에 🟢 줄. `calendar-audit {"reconcile":false}` = 보고만.
 ### 2026-09-20 · 시스템 전체 점검 + 감사 수리 배포 (@970 · board-api @12 · 프런트 c479185 · 앱 재빌드)
 
 **진행.** 읽기 전용 감사 워크플로(감사자 8 + 반박 검증 31 = 39 에이전트) → 확정 결함 28건 · 개선 47건 → 수리 → 수리분 재검토 워크플로(25 에이전트, 확정 19 · 반박 2) → 2차 수리 → 배포 → 합성행 E2E(테스트감사E/F/G, 삭제 확인). 결과 원본: 이 세션 스크래치(`audit/result.json`, `review2.json`).
