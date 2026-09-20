@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-09-18 Europe/Berlin
+Updated: 2026-09-20 Europe/Berlin
 
 ## Immediate
 
@@ -63,6 +63,18 @@ Updated: 2026-09-18 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-20 (저녁) · 셀렉 조회 2종 셔틀 이관 + 세션·사진 목록 동시 요청 + 사진 목록 캐시 100KB 초과 수리 (메인 @975 · public-api @9 · 프런트 c0904b9)
+
+- **셀렉 페이지 브라우저 실측(전, 빌트인 브라우저 첫 방문)**: 페이지 1.9s · `select-session` 5.6s(메인) · `select-photos` 8.7s(메인, 169장 콜드) · 썸네일 중앙값 0.8s(lazy). 세션→사진 순차라 사진 목록은 세션 뒤에야 시작.
+- **셔틀 이관**: `scripts/build-public-api.mjs` 루트에 `getSelectSession`·`listSelectPhotosPublic_` 추가(폐쇄 173 함수/140KB), Shim 라우트 `select-session`·`select-photos`(메인 분기와 동일 검증), 스코프 **drive.readonly** 추가, 생성기에 시트/속성 쓰기 가드.
+  폴더 공유 넓히기(`setSharing`)는 셔틀이 못 한다 → Code.gs `listDriveFolderPhotosPublic_`: 이미 `ANYONE_WITH_LINK` 면 쓰기 생략(메인도 매 호출 setSharing 하던 불필요 쓰기 제거), 셔틀(`PUBLIC_API_READONLY_`)에서 넓혀야 하면 `ok:false 'Drive share pending'` → 프런트가 메인으로 폴백해 메인이 넓힌다.
+  철회 링크 서명: 세션 payload 의 `selectWithdrawUrl` 이 `ACTION_SECRET` HMAC 이라 `public-api-sync-props` 허용목록에 `ACTION_SECRET` 추가 후 동기화(21:2x, sent 4 = ICS·APPLE_ID·APP_PASSWORD·ACTION_SECRET). 셔틀 세션 응답 = 메인과 `_timing` 외 전부 동일(철회 URL 포함).
+- **프런트**: `readViaShuttle`/`readPayloadViaShuttle` 를 `api-core.js` 로 옮겨 `{shuttle, main}` 옵션(제한·parse) 지원 → `api-select.js` 세션(12초 단발→메인 25초+1회)·사진(셔틀도 60초 단발 — 12초에 끊고 메인에서 다시 열거하면 더 늦다). `select.js` boot 가 sessionStorage 캐시가 없으면 **첫 배치 `fetchSelectPhotos` 를 세션 조회와 동시에** 띄우고(`state.gallery.prefetch`) `loadGallery` 첫 배치가 `takeGalleryPrefetch` 로 소비(재시도·force 는 새로 받음).
+- **재승인 사고(21:37~21:53)**: 사장님 편집기 탭이 오후의 옛 코드를 물고 있다가 '실행' 자동 저장으로 **HEAD 를 옛 Shim·readonly manifest 로 되돌림** → "Specified permissions are not sufficient … spreadsheets"(manifest 수준, 권한 창 없음), 5분 워밍 트리거도 같이 실패. 배포본 @8 은 스냅샷이라 라이브는 정상. `.clasp.json` 만 둔 scratch 에서 `clasp pull` 로 확인 → `clasp push -f` 재실행 → 탭 새로고침 후 `setup()` 21:53 `ok`. 교훈: 재승인 요청 전에 **탭 새로고침** 을 함께 요청.
+- **사진 목록 서버 캐시가 실제로는 무캐시였다**: CacheService 값 상한 100KB 인데 169장 목록이 JSON 165KB → 세션 캐시 `put` 은 try/catch 로 조용히 실패, 폴더 캐시는 90KB 넘으면 아예 건너뜀 → 새로고침마다 Drive 열거 5~10초(메인 8.7~14.5s 의 본체). `_selPhotoCachePut_/_selPhotoCacheGet_`(gzip+base64, 접두 `gz:`, 키 v6)로 담고, `clearSelectPhotoCache_(sessionId, driveLink)` 가 폴더 키도 지운다(재촬영은 같은 폴더에 사진이 늘어나므로). curl: 셔틀 4.9s(콜드) → 1.7s → **1.2s**, 메인 14.5s(콜드) → 4.5s.
+- **브라우저 실측(후, 셔틀 @9 · sessionStorage 비움)**: 페이지 0.7s · `select-session` **3.1s**(셔틀) ∥ `select-photos` **1.7s**(셔틀, 캐시) — 둘 다 t=0.6s 에 동시 출발, 사진 목록이 세션보다 먼저 도착. 첫 화면 ≈ **3.8s**(전: 1.9 + 5.6 + 8.7 순차 ≈ 16s). 메인 폴백 0회. 남은 병목은 `getSelectSession`(시트 3장 읽기 3s) — 다음 후보.
+- 남는 것: 셔틀의 CacheService 는 메인과 별개라 재촬영·링크 교체 직후 최대 15분 옛 목록 가능(드묾, 필요 시 `cal_cache_ver` 같은 버전 브리지). 테스트 행(예약 291 · 셀렉 146, 수기등록 메일이라 발송 없음) 측정 후 삭제.
 
 ### 2026-09-20 (오후) · 예약 조회 셔틀(public-api) + 캘린더 드리프트 화해·MRT 시간 채택 (@971 · board-api @13 · public-api @1 · 프런트 feaee30)
 

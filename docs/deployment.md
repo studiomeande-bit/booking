@@ -56,12 +56,16 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
 
 ### public-api (`appscript-public/`) — 예약 조회 셔틀
 
-- 역할: 예약 페이지 조회 3종 `api=init · calendar-batch · slots` 만 서빙(읽기 전용 스코프). 제출·홀드는 메인.
+- 역할: 예약·셀렉 페이지 조회 `api=init · quote · calendar-batch · slots · select-session · select-photos` 만 서빙. 제출·홀드·별점 저장은 메인.
+- 스코프: calendar·spreadsheets(readonly 는 `openById` 거부) + **drive.readonly**(셀렉 사진 목록). 읽기 전용은 코드로 보장 — 생성기가 시트/속성 쓰기 호출을 스캔해 실패시킨다.
+  Drive 의 `setSharing`(폴더 공유 넓히기)만 예외: Code.gs `listDriveFolderPhotosPublic_` 가 이미 공개된 폴더는 쓰지 않고, 셔틀(Shim 의 `PUBLIC_API_READONLY_`)에서 넓혀야 하면 `ok:false` 를 돌려 프런트가 메인으로 넘어간다.
+- **manifest(스코프)를 바꾸면 사장님이 편집기에서 `setup()` 을 다시 실행**해야 한다(재승인). 그 전엔 새 스코프가 필요한 라우트만 실패하고 프런트는 메인으로 폴백한다.
+- 속성 동기화: `node scripts/erp-agent.mjs public-api-sync-props --json '{}'` — 메인 → 셔틀 POST `sync-props`(TOFU 다이제스트). Apple ICS 4종 + `ACTION_SECRET`(셀렉 세션의 철회 링크 서명이 메인과 같아야 함). 값은 구글↔구글로만 오가고 출력엔 키 이름만.
 - 생성 파일: `Public.gs` ← `node scripts/build-public-api.mjs` (정본 Code.gs, 직접 수정 금지). `Shim.gs` 가 DB 해석·라우팅·워밍 트리거.
 - 배포: `node scripts/build-public-api.mjs && cd appscript-public && clasp push -f && clasp deploy -i AKfycbyb1y964F-MAO4-043gq3LdIg9fPqXb-My_1iV1qcjQwQIiZnfMl17i0wAnRBn6tAj6`
 - 스크립트 ID `1uu8qRws0kjbFN6B75Au_x4MfzOZCZ0RasPEJzWTIM-wpc8UwJnQk_iLN` · 최초 1회 편집기에서 `setup()` 실행(권한 승인 + 5분 워밍 트리거).
 - 캐시 버전 브리지: 메인 `bumpCalCacheVer_` 가 설정 시트 `cal_cache_ver` 도 올린다 — 셔틀은 이것으로 가용성 캐시를 무효화한다.
-- 프런트 `frontend/shared/config.js` `readApiBaseUrl` 이 셔틀 URL. 셔틀 실패(미승인 HTML·12초 초과·오류)는 메인으로 자동 폴백.
+- 프런트 `frontend/shared/config.js` `readApiBaseUrl` 이 셔틀 URL. `api-core.js` `readViaShuttle`(예약·셀렉 공용): 셔틀 실패(미승인 HTML·12초 초과·오류·`ok:false`)는 메인으로 자동 폴백. 셀렉 사진 목록만 셔틀에도 60초 단발(Drive 열거가 수 초).
 - Code.gs 의 조회 경로를 고치면 **board-api 와 마찬가지로 재생성·재배포**해야 한다.
 
 ### board-api (`appscript-board/`)

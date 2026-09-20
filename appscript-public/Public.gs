@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T19:21:20.650Z
- * 포함 함수 173개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T19:57:23.608Z
+ * 포함 함수 175개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -2672,15 +2672,31 @@ const SELECT_PHOTO_LIST_TIME_BUDGET_MS=45000;
 
 const SELECT_PHOTO_EXT_RE=/\.(jpe?g|png|webp|gif|heic|heif|tiff?|bmp|avif|dng|cr2|cr3|nef|nrw|arw|srf|sr2|raf|rw2|orf|srw|pef|x3f)$/i;
 
+function _selPhotoCachePut_(cache,key,obj,ttlSec){
+  try{
+    const b64=Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(obj),'application/json')).getBytes());
+    if(b64.length<100000) cache.put(key,'gz:'+b64,ttlSec);
+  }catch(e){}
+}
+
+function _selPhotoCacheGet_(cache,key){
+  try{
+    const raw=cache.get(key);
+    if(!raw) return null;
+    if(raw.indexOf('gz:')!==0) return JSON.parse(raw);
+    return JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(raw.slice(3)),'application/x-gzip')).getDataAsString());
+  }catch(e){return null;}
+}
+
 function listSelectPhotosPublic_(sessionId,options){
   const opts=options||{};
   const limit=Math.max(1,Math.min(parseInt(opts.limit,10)||SELECT_PHOTO_LIST_DEFAULT_LIMIT,SELECT_PHOTO_LIST_MAX_LIMIT));
   const recursive=opts.recursive!==false;
   const cache=CacheService.getScriptCache();
   const hasCursor=String(opts.cursor||'').trim()!=='';
-  const key='selphotos:v5:'+sessionId+':'+limit+':'+(recursive?'r1':'r0')+':first';
-  const cached=cache.get(key);
-  if(!hasCursor&&cached){try{return JSON.parse(cached);}catch(e){}}
+  const key='selphotos:v6:'+sessionId+':'+limit+':'+(recursive?'r1':'r0')+':first';
+  const cached=hasCursor?null:_selPhotoCacheGet_(cache,key);
+  if(cached) return cached;
   const ss=ensureSheets_().ss;
   const sh=ss.getSheetByName(SELECT_SHEET_NAME);
   if(!sh) return{ok:false,message:'Session store unavailable'};
@@ -2696,9 +2712,7 @@ function listSelectPhotosPublic_(sessionId,options){
     allowShare:true // 유효한 셀렉 세션의 폴더만 공개 열람 허용
   });
   if(!out||out.ok===false) return out||{ok:false,message:'Drive folder not linked'};
-  if(!hasCursor){
-    try{cache.put(key,JSON.stringify(out),900);}catch(e){} // 15min
-  }
+  if(!hasCursor) _selPhotoCachePut_(cache,key,out,900); // 15min
   return out;
 }
 
@@ -2713,9 +2727,9 @@ function listDriveFolderPhotosPublic_(folderRef,options){
   const cache=CacheService.getScriptCache();
   const rawCursor=String(opts.cursor||'').trim();
   const hasCursor=rawCursor!=='';
-  const cacheKey='selphotos_folder:v5:'+folderId+':'+(recursive?'r1':'r0')+':'+limit+':first';
-  const cached=cache.get(cacheKey);
-  if(!hasCursor&&cached){try{return JSON.parse(cached);}catch(e){}}
+  const cacheKey='selphotos_folder:v6:'+folderId+':'+(recursive?'r1':'r0')+':'+limit+':first';
+  const cached=hasCursor?null:_selPhotoCacheGet_(cache,cacheKey);
+  if(cached) return cached;
   let folder;
   try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
   // 🔒 ACL 강제확장은 신뢰된 세션 경로(select-photos, allowShare:true)에서만 허용.
@@ -2831,12 +2845,7 @@ function listDriveFolderPhotosPublic_(folderRef,options){
     scannedFolders:scannedFolders,
     photos
   };
-  if(!hasCursor){
-    try{
-      const raw=JSON.stringify(out);
-      if(raw.length < 90000) cache.put(cacheKey,raw,900);
-    }catch(e){}
-  }
+  if(!hasCursor) _selPhotoCachePut_(cache,cacheKey,out,900);
   return out;
 }
 
