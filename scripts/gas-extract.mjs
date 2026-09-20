@@ -31,7 +31,9 @@ export function extractClosure({ src, roots, exclude = [], out, label, header })
     m = lines[i].match(/^(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/);
     if (m) {
       let end = i;
-      if (!/;\s*$/.test(lines[i])) {
+      // 한 줄 const 뒤에 `// 주석` 이 붙으면 `;` 로 안 끝나 다중행으로 오판 → 끝을 못 찾아 통째로 빠졌다
+      // (DAY_CHARS_·MORNING_BLOCK_CUTOFF_MIN, 2026-09-20). 꼬리 주석을 떼고 판정한다.
+      if (!/;\s*$/.test(lines[i].replace(/\s*\/\/.*$/, ''))) {
         end = -1;
         for (let j = i + 1; j < lines.length; j++) {
           if (/^\};?/.test(lines[j]) || /^\];?/.test(lines[j])) { end = j; break; }
@@ -55,7 +57,11 @@ export function extractClosure({ src, roots, exclude = [], out, label, header })
     if (!def) { console.error(`⚠️  함수 추출 실패: ${name} — Code.gs 포맷 확인 필요`); failed = true; continue; }
     wantFns.add(name);
     const body = bodyOf(def);
-    for (const mm of body.matchAll(/(?<![.\w$])([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)) {
+    /* 호출(`foo(`)뿐 아니라 이름만 넘기는 참조(`.map(parseTimeBlock_)`)도 따라간다 — 2026-09-20 public-api 첫 배포가
+       'parseTimeBlock_ is not defined' 로 죽은 원인. 주석·문자열을 벗겨 내려다 정규식 리터럴·URL 의 따옴표/슬래시에
+       걸려 코드가 통째로 지워졌다(formatHourMin_·DAY_CHARS_ 누락) — 원문 그대로 본다. 주석에 적힌 이름 때문에
+       함수가 몇 개 더 들어오는 과포함은 무해하다(크기만 조금 큼); 누락은 런타임 사망이다. */
+    for (const mm of body.matchAll(/(?<![.\w$])([A-Za-z_$][A-Za-z0-9_$]*)\b/g)) {
       const callee = mm[1];
       if (fnDefs.has(callee) && !wantFns.has(callee) && !EXCLUDE_FN.has(callee)) queue.push(callee);
     }
@@ -88,5 +94,19 @@ export function extractClosure({ src, roots, exclude = [], out, label, header })
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const code = head + pieces.map(bodyOf).join('\n\n') + '\n';
   fs.writeFileSync(out, code);
-  return { fns: [...wantFns].sort(), consts: [...wantConsts].sort(), blocks: pieces.length, failed, code };
+  // 정적 점검: 번들 안에서 호출되지만 어디에도(번들·Shim·플랫폼 전역) 정의되지 않은 이름
+  const shimPath = path.join(path.dirname(out), 'Shim.gs');
+  const shim = fs.existsSync(shimPath) ? fs.readFileSync(shimPath, 'utf8') : '';
+  const defined = new Set([...wantFns, ...wantConsts, ...[...shim.matchAll(/^(?:function|const|let|var)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1])]);
+  const PLATFORM = new Set(['Utilities','CalendarApp','SpreadsheetApp','CacheService','PropertiesService','UrlFetchApp','ContentService','HtmlService','Logger','ScriptApp','LockService','MailApp','GmailApp','DriveApp','Session','Math','JSON','Date','String','Number','Array','Object','Boolean','RegExp','Error','Map','Set','parseInt','parseFloat','isFinite','isNaN','encodeURIComponent','decodeURIComponent','encodeURI','decodeURI','escape','unescape','Promise','Symbol','console','undefined','NaN','Infinity','arguments','this','new','typeof','instanceof','function','return','if','else','for','while','switch','case','break','continue','try','catch','finally','throw','var','let','const','in','of','do','void','delete','null','true','false','default','class','super','extends']);
+  const undefinedCalls = new Set();
+  const stripped = (code + '\n' + shim).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/`(?:\\.|[^`\\])*`/g, '""').replace(/'(?:\\.|[^'\\\n])*'/g, "''").replace(/"(?:\\.|[^"\\\n])*"/g, '""');
+  for (const mm of stripped.matchAll(/(?<![.\w$])([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g)) {
+    const n = mm[1];
+    if (!defined.has(n) && !PLATFORM.has(n) && !/^[A-Z][a-z]/.test(n) === false ? false : (!defined.has(n) && !PLATFORM.has(n))) undefinedCalls.add(n);
+  }
+  // 지역 함수/파라미터 이름은 오탐이 되므로 밑줄로 끝나는(내부 헬퍼 관례) 이름만 강하게 본다
+  const suspicious = [...undefinedCalls].filter(n => /_$/.test(n) || /^[a-z]+[A-Z]/.test(n)).filter(n => !new RegExp('(?:function|const|let|var)\\s+' + n.replace(/\$/g, '\\$') + '\\b').test(stripped) && !new RegExp('\\b' + n.replace(/\$/g, '\\$') + '\\s*=\\s*function').test(stripped) && !new RegExp('\\(\\s*[^)]*\\b' + n.replace(/\$/g, '\\$') + '\\b[^)]*\\)\\s*(?:=>|\\{)').test(stripped));
+  if (suspicious.length) console.error('⚠️  번들에 정의되지 않은 호출 의심:', suspicious.join(', '));
+  return { fns: [...wantFns].sort(), consts: [...wantConsts].sort(), blocks: pieces.length, failed, code, suspicious };
 }

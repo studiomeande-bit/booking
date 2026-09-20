@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T14:22:37.577Z
- * 포함 함수 104개 / 상수 16개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T15:45:14.026Z
+ * 포함 함수 110개 / 상수 18개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -87,6 +87,10 @@ const DEFAULT_BOOKING_HOURS = {
   weekday: '09:30-13:00,15:30-18:00',   // 2026-08-17 사장님 변경 (구: 09:30-11:30,15:00-17:30)
   saturday: '09:00-16:00'
 };
+
+const MORNING_BLOCK_CUTOFF_MIN = 13 * 60;   // morning_block_ranges 의 '오전' 경계 = 13:00 (평일 오전 세션의 끝)
+
+const DAY_CHARS_ = '일월화수목금토';        // getDay() 인덱스와 일치 — 요일 조건 표기용
 
 const SLOT_RECOMMENDATION_DEFAULTS = {
   beforeHours: 2,
@@ -315,6 +319,10 @@ function isPublicBookingItemGroup_(itemGroup){
   return String(itemGroup||'').trim()!=='마이리얼트립';
 }
 
+function isPublicBookingProduct_(product){
+  return !!product && !isMyRealTripProduct_(product);
+}
+
 function getCustomerProducts_(){
   return getCachedProducts_().filter(isPublicBookingProduct_);
 }
@@ -529,6 +537,13 @@ function buildClosedMonthSummary_(year,month){
   const out={};
   out[`${year}_${month}`]={unavail,closed:unavail.slice(),slotCounts:{},slotsByDate:{}};
   return out;
+}
+
+function isMyRealTripProduct_(item){
+  if(!item) return false;
+  const hay=[item.id,item.g,item.nameKo,item.nameEn,item.nameDe,item.descKo,item.descEn,item.descDe]
+    .map(function(v){return String(v||'');}).join(' ');
+  return /myrealtrip|my real trip|마이리얼트립/i.test(hay);
 }
 
 function getBusyCalendarIds_(){
@@ -1126,6 +1141,16 @@ function isWeekendOrHolidayBlocked_(dateStr,itemGroup){
   return false;   // custom_holidays 는 위에서 이미 판정됨 (전 상품 공통)
 }
 
+function parseTimeBlock_(raw){
+  const match=String(raw||'').trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if(!match) return null;
+  const startHour=parseInt(match[1],10),startMin=parseInt(match[2],10),endHour=parseInt(match[3],10),endMin=parseInt(match[4],10);
+  if([startHour,endHour].some(v=>!isFinite(v)||v<0||v>23)) return null;
+  if([startMin,endMin].some(v=>![0,15,30,45].includes(v))) return null;
+  if(startHour*60+startMin>=endHour*60+endMin) return null;
+  return {startHour,startMin,endHour,endMin};
+}
+
 function normalizeLegacyTimeBlocksSetting_(raw){
   return String(raw||'').trim().replace(/\b11:40\b/g,'11:30');
 }
@@ -1366,6 +1391,17 @@ function getSlotRecommendationConfig_(){
     manualIncludeByDate: parseRecommendationSlotMap_(settings.recommend_force_slots),
     manualExcludeByDate: parseRecommendationSlotMap_(settings.recommend_exclude_slots)
   };
+}
+
+function isPublicRecommendationAnchorEvent_(ev){
+  if(!ev) return false;
+  if(ev.isPersonal) return false;
+  const title = String(ev.title || '').trim();
+  if(!title) return false;
+  if(isSelectPickupEventTitle_(title)) return false;
+  if(title.indexOf(STUDIO_PRESENCE_EVENT_MARKER) >= 0) return false;
+  if(/Studio Open|Studio Presence|Studio Available|스튜디오 오픈|스튜디오 상주/i.test(title)) return false;
+  return true;
 }
 
 function isExternalRecommendationAnchorTitle_(title){
@@ -1669,6 +1705,36 @@ function getBusyEventsDetailedForRange_(start,end){
 function roundUpToQuarterHour_(ms){
   const step=15*60000;
   return Math.ceil(ms/step)*step;
+}
+
+function warmupCacheTrigger(){
+  /* **이벤트 캐시** 프리워밍 — 슬롯의 진짜 병목은 캘린더 다중읽기(~5s)다. 이벤트는 totalDur 무관이라
+     달당 한 번만 데우면 **모든 콤보·모든 날짜**의 슬롯이 그 위에서 fresh 하게 빠르게 계산된다
+     (getCachedMonthEvents_). 3개월 × (이벤트+상세) = 6읽기로 끝 — 예전 콤보별 슬롯 워밍(~200읽기)이
+     예산 터뜨려 month+2 굶던 문제가 원천 해소. 세션 내 다중 날짜 클릭은 첫 조회가 이미 캐시를 채워 항상
+     빠름. 트리거 5분·이벤트 TTL 120초라 첫 클릭 커버는 부분적이지만, 캐시 자체가 다중날짜를 커버한다. */
+  const now=new Date();
+  for(let offset=0;offset<3;offset++){
+    const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
+    try{
+      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),false);
+      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),true);
+    }catch(e){ Logger.log('warmup events '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message); }
+  }
+  _pingWebAppWarmup_();
+}
+
+function _pingWebAppWarmup_(){
+  try{
+    const now=new Date();
+    const h=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'H'));
+    const m=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'m'));
+    if(h<8||h>=22) return;
+    if(m%10>=5) return;
+    const url=GAS_LIVE_EXEC_URL_+'?api=warmup&_ts='+Date.now();
+    const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,followRedirects:true});
+    Logger.log('warmup ping '+res.getResponseCode());
+  }catch(e){ Logger.log('warmup ping skipped: '+e.message); }
 }
 
 const TRAVEL_KM_TABLE_=[

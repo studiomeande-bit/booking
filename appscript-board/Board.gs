@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-20T14:22:37.521Z
- * 포함 함수 54개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T15:45:13.969Z
+ * 포함 함수 89개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -64,7 +64,24 @@ const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},
 
 const BOOKING_STATUS_CANCELLED = '취소됨';
 
+const DEFAULT_BOOKING_HOURS = {
+  weekday: '09:30-13:00,15:30-18:00',   // 2026-08-17 사장님 변경 (구: 09:30-11:30,15:00-17:30)
+  saturday: '09:00-16:00'
+};
+
+const MORNING_BLOCK_CUTOFF_MIN = 13 * 60;   // morning_block_ranges 의 '오전' 경계 = 13:00 (평일 오전 세션의 끝)
+
+const DAY_CHARS_ = '일월화수목금토';        // getDay() 인덱스와 일치 — 요일 조건 표기용
+
+const WEEKDAY_MORNING_END_MIN = 13 * 60;
+
+const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
+
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
+
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+
+let SETTINGS_MAP_CACHE = null;
 
 function normalizeBookingStatus_(status){
   return String(status||'').trim();
@@ -740,6 +757,26 @@ function buildTodayBoard_(dateStr){
   };
 }
 
+function getSettingsMap_() {
+  if(SETTINGS_MAP_CACHE) return SETTINGS_MAP_CACHE;
+  const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues(),map={};
+  for(let i=1;i<vals.length;i++) if(vals[i][0]){
+    const key=String(vals[i][0]).trim();
+    map[key]=normalizeSettingCellValue_(key,vals[i][1]);
+  }
+  SETTINGS_MAP_CACHE=map;
+  return map;
+}
+
+function normalizeSettingCellValue_(key,value){
+  if(value===null||value===undefined) return '';
+  if(Object.prototype.toString.call(value)==='[object Date]'){
+    const pattern=DATE_SETTING_KEYS.indexOf(String(key))>=0?'yyyy-MM-dd':'yyyy-MM-dd HH:mm';
+    return Utilities.formatDate(value,CONFIG.TIMEZONE,pattern);
+  }
+  return String(value).trim();
+}
+
 let _fastDateFmtOk_=null;
 
 function _canFormatDateFast_(){
@@ -924,6 +961,12 @@ function getPromoProducts_(){
   ];
 }
 
+function getProductById_(itemId){
+  const p=getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(x=>x.id===itemId);
+  if(!p)throw new Error('유효하지 않은 상품입니다.');
+  return p;
+}
+
 function roundCurrency_(value){
   return Math.round((Number(value)||0)*100)/100;
 }
@@ -937,12 +980,348 @@ function normalizeReturnName_(name){
   return String(name||'').replace(/\s+/g,'').trim().toLowerCase();
 }
 
+function classifyBookingType_(itemGroup){
+  if(itemGroup==='pass') return 'A';
+  if(itemGroup==='snap'||itemGroup==='wed'||itemGroup==='biz') return 'C';
+  return 'B';
+}
+
+function isStudioAutoOpenEligibleGroup_(itemGroup){
+  return itemGroup==='pass'||itemGroup==='prof'||itemGroup==='stud';
+}
+
+function isStudioAutoOpenEventByFields_(title,location,isPersonal){
+  if(isPersonal) return false;
+  const safeTitle=String(title||'');
+  if(!safeTitle) return false;
+  const explicitOpen=/studio[\s_-]*(open|presence|available)|studio open|studio presence|스튜디오[\s_-]*(오픈|상주|가능)|상주/i;
+  if(explicitOpen.test(safeTitle)) return true;
+  if(!isStudioLocation_(location)) return false;
+  return false;
+}
+
+var TRAVEL_MIN_MEMO_={};
+
+function travelOneWayMinForLocation_(loc){
+  const key=String(loc||'').trim();
+  if(!key||isStudioLocation_(key)) return null;
+  if(Object.prototype.hasOwnProperty.call(TRAVEL_MIN_MEMO_,key)) return TRAVEL_MIN_MEMO_[key];
+  const hit=travelKmLookup_(key);
+  const min=hit?Math.min(180,Math.max(20,Math.round(hit.km*0.9))):null;
+  TRAVEL_MIN_MEMO_[key]=min;
+  return min;
+}
+
+function travelAwareOutdoorBuffer_(loc){
+  const oneWay=travelOneWayMinForLocation_(loc);
+  if(oneWay==null) return CONFIG.BUFFER_OUTDOOR_MIN;
+  return Math.max(CONFIG.BUFFER_OUTDOOR_MIN, oneWay+15);
+}
+
+function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
+  // R (Remote consultation) → direct overlap only, no travel/setup buffer.
+  if(typeNew==='R'||typeEx==='R') return 0;
+  // P (Personal) → 60 min buffer (same as outdoor/snap Type C)
+  if(typeNew==='P'||typeEx==='P') return CONFIG.BUFFER_OUTDOOR_MIN;
+  // A vs A only → no buffer (passport back-to-back)
+  if(typeNew==='A'&&typeEx==='A') return 0;
+  /* ⚠️ C 판정을 A 일반 규칙보다 **먼저** 둔다. 원래 A||A→15 가 앞에 있어 여권↔야외가
+     15분으로 뚫려 있었다(내장 assert 'A vs C → 60' 은 이미 60을 기대 — 코드만 어긋난
+     잠복 버그, 2026-08-16 이동시간 버퍼 작업 중 로컬 하네스로 발견). */
+  // Both C → same-location exception (같은 현장 연속 세션), 다른 장소면 두 이동 중 큰 쪽
+  if(typeNew==='C'&&typeEx==='C'){
+    const sameLocation=locNew&&locEx&&locNew.trim()===locEx.trim();
+    if(sameLocation) return CONFIG.BUFFER_STUDIO_MIN;
+    return Math.max(travelAwareOutdoorBuffer_(locNew),travelAwareOutdoorBuffer_(locEx));
+  }
+  // At least one C (A↔C, B↔C 포함) → 이동시간 인식 버퍼 (C 쪽의 장소 기준)
+  if(typeNew==='C'||typeEx==='C') return travelAwareOutdoorBuffer_(typeNew==='C'?locNew:locEx);
+  // A vs B → 15 min (여권↔스튜디오/프로필)
+  if(typeNew==='A'||typeEx==='A') return CONFIG.BUFFER_STUDIO_MIN;
+  // Both B → 15 min
+  return CONFIG.BUFFER_STUDIO_MIN;
+}
+
+function checkConflict_(events,slotStart,slotEnd,itemGroup,newLocation){
+  const newType=classifyBookingType_(itemGroup);
+  const newLoc=newLocation||'';
+  const MAX_BUF_MS=CONFIG.BUFFER_OUTDOOR_MIN*60000;  // 최대 버퍼 (60분)
+  // events가 start asc로 정렬되어 있다고 가정 → 조기 종료 적용
+  for(let i=0;i<events.length;i++){
+    const ev=events[i];
+    // 이벤트 시작이 slotEnd + MAX_BUF 이후면 이후 이벤트도 모두 범위 밖 → 종료
+    if(ev.start>=slotEnd+MAX_BUF_MS) break;
+    // 이벤트 종료가 slotStart - MAX_BUF 이전이면 이 이벤트는 무관 → 다음
+    if(ev.end<=slotStart-MAX_BUF_MS) continue;
+    const bufMs=getRequiredBuffer_(newType,newLoc,ev.type,ev.location)*60000;
+    if((slotStart-bufMs)<ev.end&&(slotEnd+bufMs)>ev.start) return true;
+  }
+  return false;
+}
+
+function parseTimeBlock_(raw){
+  const match=String(raw||'').trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if(!match) return null;
+  const startHour=parseInt(match[1],10),startMin=parseInt(match[2],10),endHour=parseInt(match[3],10),endMin=parseInt(match[4],10);
+  if([startHour,endHour].some(v=>!isFinite(v)||v<0||v>23)) return null;
+  if([startMin,endMin].some(v=>![0,15,30,45].includes(v))) return null;
+  if(startHour*60+startMin>=endHour*60+endMin) return null;
+  return {startHour,startMin,endHour,endMin};
+}
+
+function normalizeLegacyTimeBlocksSetting_(raw){
+  return String(raw||'').trim().replace(/\b11:40\b/g,'11:30');
+}
+
+function parseTimeBlocksSetting_(raw,fallback){
+  const source=normalizeLegacyTimeBlocksSetting_(raw);
+  const fallbackSource=normalizeLegacyTimeBlocksSetting_(fallback);
+  const blocks=(source||fallbackSource).split(',').map(parseTimeBlock_).filter(Boolean);
+  if(blocks.length) return blocks;
+  if(source&&fallbackSource&&source!==fallbackSource) return fallbackSource.split(',').map(parseTimeBlock_).filter(Boolean);
+  return [];
+}
+
+function normalizeWeekdayBookingBlocks_(blocks){
+  return (blocks||[]).map(block=>{
+    const startMin=block.startHour*60+block.startMin;
+    const endMin=block.endHour*60+block.endMin;
+    if(startMin>=12*60||endMin<=WEEKDAY_MORNING_END_MIN) return block;
+    if(startMin>=WEEKDAY_MORNING_END_MIN) return null;
+    return {startHour:block.startHour,startMin:block.startMin,endHour:Math.floor(WEEKDAY_MORNING_END_MIN/60),endMin:WEEKDAY_MORNING_END_MIN%60};
+  }).filter(Boolean);
+}
+
+function ensureWeekdayMorningBookingBlocks_(blocks){
+  const normalized=normalizeWeekdayBookingBlocks_(blocks);
+  const morningBlock={startHour:9,startMin:30,endHour:Math.floor(WEEKDAY_MORNING_END_MIN/60),endMin:WEEKDAY_MORNING_END_MIN%60};
+  return mergeTimeBlocks_(normalized.concat([morningBlock]));
+}
+
+function roundDownToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.floor(ms/step)*step;
+}
+
+function minutesToTimeBlock_(startMinutes,endMinutes){
+  const safeStart=Math.max(0,startMinutes);
+  const safeEnd=Math.min(24*60,endMinutes);
+  if(safeEnd<=safeStart) return null;
+  return {
+    startHour:Math.floor(safeStart/60),
+    startMin:safeStart%60,
+    endHour:Math.floor(safeEnd/60),
+    endMin:safeEnd%60
+  };
+}
+
+function mergeTimeBlocks_(blocks){
+  const ranges=(blocks||[]).map(block=>{
+    if(!block) return null;
+    const start=block.startHour*60+block.startMin;
+    const end=block.endHour*60+block.endMin;
+    if(end<=start) return null;
+    return {start,end};
+  }).filter(Boolean).sort((a,b)=>a.start-b.start);
+  if(!ranges.length) return [];
+  const merged=[ranges[0]];
+  for(let i=1;i<ranges.length;i+=1){
+    const current=ranges[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged.map(range=>minutesToTimeBlock_(range.start,range.end)).filter(Boolean);
+}
+
+function getStudioAutoOpenWindows_(events){
+  const candidates=(events||[])
+    .filter(ev=>isStudioAutoOpenEventByFields_(ev&&ev.title,ev&&ev.location,!!(ev&&ev.isPersonal)))
+    .map(ev=>({start:ev.start,end:ev.end}))
+    .sort((a,b)=>a.start-b.start);
+  if(!candidates.length) return [];
+  const merged=[candidates[0]];
+  for(let i=1;i<candidates.length;i+=1){
+    const current=candidates[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged;
+}
+
+function getLastStudioBookingEndMsForDate_(events){
+  return (events||[])
+    .filter(function(ev){
+      if(!ev) return false;
+      if(isStudioAutoOpenEventByFields_(ev.title,ev.location,!!ev.isPersonal)) return false;
+      return isStudioPresenceEvent_(ev);
+    })
+    .reduce(function(maxEnd,ev){
+      const endMs=Number(ev.end)||0;
+      return endMs>maxEnd?endMs:maxEnd;
+    },0);
+}
+
+function getStudioAutoOpenBlocksForDate_(dateStr,events){
+  const windows=getStudioAutoOpenWindows_(events);
+  if(!windows.length) return [];
+  const dayStart=new Date(`${dateStr}T00:00:00`).getTime();
+  const dayEnd=new Date(`${dateStr}T23:59:59`).getTime()+1000;
+  const lastStudioBookingEndMs=getLastStudioBookingEndMsForDate_(events);
+  const extendedEndMs=lastStudioBookingEndMs>0
+    ? Math.min(dayEnd,lastStudioBookingEndMs+(30*60000))
+    : 0;
+  return windows.map(window=>{
+    const start=roundUpToQuarterHour_(Math.max(window.start,dayStart));
+    const effectiveWindowEnd=extendedEndMs>0?Math.max(window.end,extendedEndMs):window.end;
+    const end=roundDownToQuarterHour_(Math.min(effectiveWindowEnd,dayEnd));
+    if(end<=start) return null;
+    return minutesToTimeBlock_(
+      Math.floor((start-dayStart)/60000),
+      Math.floor((end-dayStart)/60000)
+    );
+  }).filter(Boolean);
+}
+
+function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
+  return applyMorningBlock_(dateStr,getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents));
+}
+
+function getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents){
+  const baseBlocks=getTimeBlocksForDate_(dateStr,itemGroup);
+  if(!isStudioAutoOpenEligibleGroup_(itemGroup)) return baseBlocks;
+  const extraBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+  if(!extraBlocks.length) return baseBlocks;
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(dateStr===todayStr){
+    return extraBlocks;
+  }
+  return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
+}
+
+function parseDateRangeListSetting_(raw){
+  return String(raw||'').split(',').map(part=>part.trim()).filter(Boolean).map(function(part){
+    let days=null;
+    const dayMatch=part.match(/[\s(]+([일월화수목금토]{1,7})\)?$/);
+    if(dayMatch){
+      const parsed=dayMatch[1].split('').map(ch=>DAY_CHARS_.indexOf(ch));
+      days=parsed.filter((d,i)=>parsed.indexOf(d)===i).sort((a,b)=>a-b);
+      part=part.slice(0,dayMatch.index).trim();
+    }
+    const range=part.match(/^(\d{4}-\d{2}-\d{2})\s*[~–—]\s*(\d{4}-\d{2}-\d{2})$/);
+    if(range){
+      const from=range[1]<=range[2]?range[1]:range[2],to=range[1]<=range[2]?range[2]:range[1];
+      return{from,to,days};
+    }
+    if(/^\d{4}-\d{2}-\d{2}$/.test(part)) return{from:part,to:part,days};
+    return null;
+  }).filter(Boolean);
+}
+
+function isMorningBlockedDate_(dateStr){
+  const day=new Date(`${dateStr}T00:00:00`).getDay();
+  return parseDateRangeListSetting_(getSettingsMap_().morning_block_ranges||'')
+    .some(r=>dateStr>=r.from&&dateStr<=r.to&&(!r.days||!r.days.length||r.days.indexOf(day)>-1));
+}
+
+function applyMorningBlock_(dateStr,blocks){
+  if(!blocks.length||!isMorningBlockedDate_(dateStr)) return blocks;
+  const cut=MORNING_BLOCK_CUTOFF_MIN;
+  return blocks.map(function(b){
+    const start=b.startHour*60+b.startMin,end=b.endHour*60+b.endMin;
+    if(end<=cut) return null;      // 통째로 오전 → 삭제
+    if(start>=cut) return b;       // 통째로 오후 → 유지
+    return {startHour:Math.floor(cut/60),startMin:cut%60,endHour:b.endHour,endMin:b.endMin};  // 걸침 → 13:00부터
+  }).filter(Boolean);
+}
+
+function getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents){
+  const now=Date.now();
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    const autoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+    const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    if(autoOpenBlocks.length&&dateStr===todayStr){
+      return roundUpToQuarterHour_(now);
+    }
+  }
+  return now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+}
+
+function getWeekdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return ensureWeekdayMorningBookingBlocks_(parseTimeBlocksSetting_(settings.weekday_hours,DEFAULT_BOOKING_HOURS.weekday));
+}
+
+function getSaturdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return parseTimeBlocksSetting_(settings.saturday_hours,DEFAULT_BOOKING_HOURS.saturday);
+}
+
+function getTimeBlocksForDate_(dateStr,itemGroup){
+  const day=new Date(`${dateStr}T00:00:00`).getDay();
+  if(itemGroup==='wed'||itemGroup==='biz') return[{startHour:8,startMin:0,endHour:22,endMin:0}];
+  if(day>=2&&day<=5) return getWeekdayBookingBlocks_();
+  if(day===6) return getSaturdayBookingBlocks_();
+  return[];
+}
+
+function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
+  const slotSet={},loc=newLocation||'';
+  const leadTimeCutoff=getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents);
+  getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).forEach(b=>{
+    const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
+    const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
+    for(let t=bs;t<be;t+=15*60000){
+      if(t<leadTimeCutoff||t+totalDur*60000>be) continue;
+      if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)){
+        const dt=new Date(t);
+        const key=`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`;
+        slotSet[key]=true;
+      }
+    }
+  });
+  return Object.keys(slotSet).sort();
+}
+
+function isSelectPickupEventTitle_(title){
+  return String(title||'').indexOf(SELECT_PICKUP_EVENT_PREFIX)===0;
+}
+
 function isStudioLocation_(location){
   const safe=String(location||'').toLowerCase().replace(/[\s,.-]/g,'');
   if(!safe) return false;
   return safe.indexOf('holzwegpassage3')>=0
     || safe.indexOf('61440oberursel')>=0
     || safe.indexOf('holzwegpassgae3')>=0;
+}
+
+function isStudioPresenceEvent_(ev){
+  const isPersonal=!!(ev&&ev.isPersonal);
+  if(isPersonal) return false;
+  const safeTitle=String(ev&&ev.title||'');
+  if(!safeTitle||isSelectPickupEventTitle_(safeTitle)) return false;
+  /* ⚠️ 부재(야외) 판정을 **위치보다 먼저** 본다. 수기/MRT 예약 이벤트에는 스튜디오 주소가
+     location 으로 박히는 경우가 있어, 위치를 먼저 믿으면 야외 촬영이 "재실"로 둔갑한다 —
+     2026-08-30(일) MRT 야외촬영 시간에 픽업 슬롯이 열려 실제 예약이 들어온 사고(차수진 16:00).
+     픽업 가능 시간 = 사장님이 스튜디오에 머무는 시간(사장님 규칙 2026-08-16). */
+  if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(kw=>safeTitle.indexOf(kw)>=0)) return false;
+  if(/기업|행사|영상|Corporate|Event|Video|Firmen|Individualangebot/i.test(safeTitle)) return false;
+  if(/마이리얼트립|리얼트립|MRT|출장/i.test(safeTitle)) return false;
+  if(isStudioLocation_(ev&&ev.location)) return true;
+  if(/여권|비자|Passfoto|Passport|passport/i.test(safeTitle)) return true;
+  return /프로필|profile|Profil|스튜디오|studio|가족|family|커플|couple|백일|돌|baby/i.test(safeTitle);
+}
+
+function roundUpToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.ceil(ms/step)*step;
 }
 
 function _isExternalBookingItemGroup_(itemGroup){
@@ -1008,4 +1387,32 @@ function isSelectHandoverOpen_(row){
   if(!handoverAt) return true;
   const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
   return !!(printAt&&printAt>handoverAt);
+}
+
+const TRAVEL_KM_TABLE_=[
+  {re:/bad\s*homburg|kur-?\s*und\s*kongress|바트\s*홈부르크/i, city:'바트홈부르크', km:8},
+  {re:/steinbach|슈타인바흐/i,                  city:'슈타인바흐',   km:6},
+  {re:/kronberg|k[öo]nigstein|oberursel|크론베르크|쾨니히슈타인|오버우어젤/i, city:'크론베르크·쾨니히슈타인', km:7},
+  {re:/flughafen|fraport|airport|공항/i,        city:'프랑크푸르트 공항', km:25},
+  {re:/messe|메세/i,                            city:'프랑크푸르트 메세',  km:20},
+  {re:/frankfurt|프랑크푸르트/i,                city:'프랑크푸르트',      km:17},
+  {re:/hanau|하나우/i,       city:'하나우',        km:40},
+  {re:/wiesbaden|비스바덴/i, city:'비스바덴',      km:46},
+  {re:/darmstadt|다름슈타트/i, city:'다름슈타트',  km:45},
+  {re:/gie[sß]en|기센/i,     city:'기센',          km:45},
+  {re:/mainz|마인츠/i,       city:'마인츠',        km:50},
+  {re:/aschaffenburg|아샤펜부르크/i, city:'아샤펜부르크', km:75},
+  {re:/marburg|마르부르크/i, city:'마르부르크',    km:80},
+  {re:/heidelberg|하이델베르크/i, city:'하이델베르크', km:100},
+  {re:/fulda|풀다/i,         city:'풀다',          km:105},
+  {re:/koblenz|코블렌츠/i,   city:'코블렌츠',      km:125},
+  {re:/k[öo]ln|cologne|쾰른/i, city:'쾰른',        km:170},
+];
+
+function travelKmLookup_(text){
+  const t=String(text||'');
+  for(let i=0;i<TRAVEL_KM_TABLE_.length;i++){
+    if(TRAVEL_KM_TABLE_[i].re.test(t)) return TRAVEL_KM_TABLE_[i];
+  }
+  return null;
 }
