@@ -5481,17 +5481,9 @@ async function findEarliestAvailableSlot(product, duration) {
     const batch = await getCalendarMonthData(ref.year, ref.month, duration, product.g);
     const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
     for (const dateKey of candidateDates) {
-      const slotKey = `${dateKey}_${product.g}_${duration}`;
-      let slots = getCachedSlots(slotKey);
-      if (!Array.isArray(slots)) {
-        try {
-          slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g });
-          setCachedSlots(slotKey, slots);
-        } catch (error) {
-          console.error(error);
-          slots = [];
-        }
-      }
+      let slots;
+      try { slots = await prefetchSlotsForDate(dateKey, product, duration); }   // 캐시·진행 중 요청 재사용 — 클릭과 겹쳐도 1회
+      catch (error) { console.error(error); slots = []; }
       if (Array.isArray(slots) && slots.length) {
         const first = typeof slots[0] === 'string' ? slots[0] : slots[0]?.time;
         if (first) return { dateKey, time: first };
@@ -6060,15 +6052,17 @@ function setCachedSlots(slotKey, slots) {
   state.slotCache.set(slotKey, { slots, savedAt: Date.now() });
 }
 
-function prefetchSlotsForDate(dateKey) {
-  if (!state.selectedProduct || !dateKey) return null;
-  const duration = getCalendarDuration();
-  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
+/* 슬롯 조회의 **단일 창구** — 캐시 → 진행 중 프로미스 → 새 요청. '가장 빠른 시간 찾기'(findEarliestAvailableSlot)·호버 프리페치·날짜 클릭
+   (loadSlotsForDate) 이 전부 여기를 탄다. 예전엔 찾기가 직접 fetchSlots 를 불러, 찾기가 조회 중인 날짜를 고객이 클릭하면 같은 날짜
+   slots 가 300ms 간격으로 2번 나갔다(2026-09-20 브라우저 실측). */
+function prefetchSlotsForDate(dateKey, product = state.selectedProduct, duration = getCalendarDuration()) {
+  if (!product || !dateKey) return null;
+  const slotKey = `${dateKey}_${product.g}_${duration}`;
   const cachedPrefetch = getCachedSlots(slotKey);
   if (cachedPrefetch !== undefined) return Promise.resolve(cachedPrefetch);
   const existing = state.slotPrefetchInFlight.get(slotKey);
   if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
-  const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g })
+  const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g })
     .then((slots) => { setCachedSlots(slotKey, slots); return slots; })
     .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
   state.slotPrefetchInFlight.set(slotKey, promise);
@@ -6092,14 +6086,9 @@ async function loadSlotsForDate(dateKey) {
   }
   let slots = [];
   try {
-    // 프리페치(호버/터치)가 진행 중이면 그 요청에 올라타 중복 조회를 피한다. 실패 시 신선 재시도.
-    const inflight = state.slotPrefetchInFlight.get(slotKey);
-    if (inflight) {
-      try { slots = await inflight; }
-      catch (e) { slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g }); }
-    } else {
-      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
-    }
+    // 프리페치(호버/터치)·'가장 빠른 시간 찾기'가 진행 중이면 그 요청에 올라탄다. 실패 시 한 번 신선 재시도.
+    try { slots = await prefetchSlotsForDate(dateKey); }
+    catch (e) { slots = await prefetchSlotsForDate(dateKey); }
     if (token !== state.slotRequestToken) return;
     setCachedSlots(slotKey, slots);
   } catch (error) {
