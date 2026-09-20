@@ -64,7 +64,7 @@ Updated: 2026-09-20 Europe/Berlin
 
 ## Done Recently
 
-### 2026-09-20 (저녁) · 셀렉 조회 2종 셔틀 이관 + 세션·사진 목록 동시 요청 + 사진 목록 캐시 100KB 초과 수리 (메인 @975 · public-api @9 · 프런트 c0904b9)
+### 2026-09-20 (저녁) · 셀렉 조회 2종 셔틀 이관 + 세션·사진 목록 동시 요청 + 사진 목록 캐시 100KB 초과 수리 + getSelectSession 단축 (메인 @977 · public-api @11 · 프런트 c0904b9)
 
 - **셀렉 페이지 브라우저 실측(전, 빌트인 브라우저 첫 방문)**: 페이지 1.9s · `select-session` 5.6s(메인) · `select-photos` 8.7s(메인, 169장 콜드) · 썸네일 중앙값 0.8s(lazy). 세션→사진 순차라 사진 목록은 세션 뒤에야 시작.
 - **셔틀 이관**: `scripts/build-public-api.mjs` 루트에 `getSelectSession`·`listSelectPhotosPublic_` 추가(폐쇄 173 함수/140KB), Shim 라우트 `select-session`·`select-photos`(메인 분기와 동일 검증), 스코프 **drive.readonly** 추가, 생성기에 시트/속성 쓰기 가드.
@@ -75,6 +75,7 @@ Updated: 2026-09-20 Europe/Berlin
 - **사진 목록 서버 캐시가 실제로는 무캐시였다**: CacheService 값 상한 100KB 인데 169장 목록이 JSON 165KB → 세션 캐시 `put` 은 try/catch 로 조용히 실패, 폴더 캐시는 90KB 넘으면 아예 건너뜀 → 새로고침마다 Drive 열거 5~10초(메인 8.7~14.5s 의 본체). `_selPhotoCachePut_/_selPhotoCacheGet_`(gzip+base64, 접두 `gz:`, 키 v6)로 담고, `clearSelectPhotoCache_(sessionId, driveLink)` 가 폴더 키도 지운다(재촬영은 같은 폴더에 사진이 늘어나므로). curl: 셔틀 4.9s(콜드) → 1.7s → **1.2s**, 메인 14.5s(콜드) → 4.5s.
 - **브라우저 실측(후, 셔틀 @9 · sessionStorage 비움)**: 페이지 0.7s · `select-session` **3.1s**(셔틀) ∥ `select-photos` **1.7s**(셔틀, 캐시) — 둘 다 t=0.6s 에 동시 출발, 사진 목록이 세션보다 먼저 도착. 첫 화면 ≈ **3.8s**(전: 1.9 + 5.6 + 8.7 순차 ≈ 16s). 메인 폴백 0회. 남은 병목은 `getSelectSession`(시트 3장 읽기 3s) — 다음 후보.
 - 남는 것: 셔틀의 CacheService 는 메인과 별개라 재촬영·링크 교체 직후 최대 15분 옛 목록 가능(드묾, 필요 시 `cal_cache_ver` 같은 버전 브리지). 테스트 행(예약 291 · 셀렉 146, 수기등록 메일이라 발송 없음) 측정 후 삭제.
+- **getSelectSession 단축(22:2x~22:5x, 메인 @977 · 셔틀 @11)**: `_timing` 으로 본 서버 작업 1.2~2.0초 → **0.7~1.3초**. ① `findSelectRowBySessionId_` — 셀렉 시트 전체(getDataRange, JSON 열 수백 KB) 대신 세션ID 열 1개 + 행 1줄(크기 무관; `listSelectPhotosPublic_` 도 사용). TextFinder 는 실측 300~1,400ms 로 더 느려 폐기. ② `getSettingsMap_` 셔틀만 CacheService 60초(값 전부 문자열) — 설정 시트 읽기 100~150ms 제거; 가용성 버전 `cal_cache_ver` 는 Shim `getCalCacheVer_` 가 셀을 직접 읽어 지연 없음(실행당 1회 메모). ③ Shim `ensureSheets_` 의 헤더 셀 getValue(요청마다 1호출) 제거 — 모든 셔틀 라우트에 적용. curl 셔틀 3.0~4.4s → **2.3~2.9s**(메인 4.3~5.2s), 응답 메인과 동일. 브라우저 3회: 세션 3.2/2.7/**2.3s**(전 3.1s), 사진 1.3~2.4s(캐시). 남은 것은 GAS 요청 바닥(셔틀 ping 1.2~1.5s) + Sheets 왕복 4회(openById·ID열·행·예약행 ≈ 0.7s) — 더 줄이려면 세션 payload 자체를 캐시해야 하는데 제출·어드민 수정 무효화가 메인↔셔틀에 걸쳐 필요해 보류.
 
 ### 2026-09-20 (오후) · 예약 조회 셔틀(public-api) + 캘린더 드리프트 화해·MRT 시간 채택 (@971 · board-api @13 · public-api @1 · 프런트 feaee30)
 

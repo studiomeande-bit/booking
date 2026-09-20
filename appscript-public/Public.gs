@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T19:57:23.608Z
- * 포함 함수 175개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T20:29:00.265Z
+ * 포함 함수 176개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -266,12 +266,18 @@ function normalizeConsultationPlaceType_(method,location,explicitType){
 
 function getSettingsMap_() {
   if(SETTINGS_MAP_CACHE) return SETTINGS_MAP_CACHE;
+  /* 셔틀(public-api, Shim 이 PUBLIC_API_READONLY_ 정의)만 CacheService 60초 — 요청마다 설정 시트를 읽던 100~150ms 를 뺀다(값은 전부 문자열이라
+     JSON 왕복 무해). 메인은 저장 직후 재읽기(어드민 설정 저장)가 있어 그대로. 가용성 캐시 버전 cal_cache_ver 는 Shim getCalCacheVer_ 가
+     이 맵을 거치지 않고 셀을 직접 읽어 지연 없음. */
+  const cache=(typeof PUBLIC_API_READONLY_!=='undefined')?CacheService.getScriptCache():null;
+  if(cache){ try{ const hit=cache.get('settings_map:v1'); if(hit){ SETTINGS_MAP_CACHE=JSON.parse(hit); return SETTINGS_MAP_CACHE; } }catch(e){} }
   const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues(),map={};
   for(let i=1;i<vals.length;i++) if(vals[i][0]){
     const key=String(vals[i][0]).trim();
     map[key]=normalizeSettingCellValue_(key,vals[i][1]);
   }
   SETTINGS_MAP_CACHE=map;
+  if(cache){ try{ cache.put('settings_map:v1',JSON.stringify(map),60); }catch(e){} }
   return map;
 }
 
@@ -2422,6 +2428,17 @@ function buildSubmittedSelectSessionPayload_(row,base){
   };
 }
 
+function findSelectRowBySessionId_(sh,sessionId){
+  const id=String(sessionId||'').trim();
+  if(!id) return null;
+  const col=(SELECT_COL['세션ID']||0)+1;
+  const ids=sh.getRange(1,col,sh.getMaxRows(),1).getValues();
+  let rowIndex=0;
+  for(let i=1;i<ids.length;i++){ if(String(ids[i][0]).trim()===id){ rowIndex=i+1; break; } }
+  if(!rowIndex) return null;
+  return {rowIndex:rowIndex,row:sh.getRange(rowIndex,1,1,sh.getLastColumn()).getValues()[0]};
+}
+
 function getSelectSession(sessionId){
   try{
     const _t0=Date.now(); const _timing={};
@@ -2429,9 +2446,9 @@ function getSelectSession(sessionId){
     _timing.sheets=Date.now()-_t0;
     const sh=bundle.ss.getSheetByName(SELECT_SHEET_NAME);
     if(!sh)return{ok:false,message:'준비 중입니다.'};
-    const rows=sh.getDataRange().getValues();
+    const found=findSelectRowBySessionId_(sh,sessionId);
     _timing.read=Date.now()-_t0;
-    const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
+    const row=found?found.row:null;
     if(!row)return{ok:false,message:'유효하지 않은 링크입니다.'};
     // 예약장부에서 마케팅 동의 여부 확인 (이미 동의했으면 셀렉 페이지에서 재요청 불필요)
     let bookingMarketing='';
@@ -2700,8 +2717,8 @@ function listSelectPhotosPublic_(sessionId,options){
   const ss=ensureSheets_().ss;
   const sh=ss.getSheetByName(SELECT_SHEET_NAME);
   if(!sh) return{ok:false,message:'Session store unavailable'};
-  const rows=sh.getDataRange().getValues();
-  const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
+  const found=findSelectRowBySessionId_(sh,sessionId);
+  const row=found?found.row:null;
   if(!row) return{ok:false,message:'Invalid session'};
   const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
   const out=listDriveFolderPhotosPublic_(driveLink,{

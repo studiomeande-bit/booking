@@ -25,7 +25,8 @@ function ensureSheets_() {
   const id = String(props.getProperty('PUBLIC_DB_ID') || '').trim() || PUBLIC_DB_ID_DEFAULT_;
   const ss = SpreadsheetApp.openById(id);
   const bk = ss.getSheetByName(CONFIG.BOOKING_SHEET);
-  if (!bk || String(bk.getRange(1, 1).getValue()).trim() !== CONFIG.BOOKING_HEADERS[0]) throw new Error('예약 DB 가 아닙니다: ' + id);
+  // 헤더 셀 getValue 로 DB 를 확인하던 것은 요청마다 Sheets 호출 1회(~100ms)였다 — 시트 3장의 존재로 대신한다.
+  if (!bk) throw new Error('예약 DB 가 아닙니다: ' + id);
   const settingsSheet = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   const productsSheet = ss.getSheetByName(CONFIG.PRODUCTS_SHEET);
   if (!settingsSheet || !productsSheet) throw new Error('설정/상품설정 시트가 없습니다.');
@@ -40,8 +41,17 @@ function ensureHeaderSheet_(ss, sheetName) {
 }
 function ensurePartnerSheet_(ss) { return ensureHeaderSheet_(ss, CONFIG.PARTNER_SHEET); }
 // 가용성 캐시 버전 — 메인이 예약·셀렉 제출 때마다 설정 시트 cal_cache_ver 를 올린다(브리지). 없으면 '1'.
+// getSettingsMap_ 은 셔틀에서 60초 CacheService 를 타므로(Code.gs) 여기서는 셀을 직접 읽어 지연 없이 본다(실행당 1회).
+let _calCacheVerMemo_ = null;
 function getCalCacheVer_() {
-  try { return String(getSettingsMap_().cal_cache_ver || '1'); } catch (e) { return '1'; }
+  if (_calCacheVerMemo_ !== null) return _calCacheVerMemo_;
+  try {
+    const sh = ensureSheets_().settingsSheet;
+    const vals = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 2).getValues();
+    const hit = vals.find(function (r) { return String(r[0]).trim() === 'cal_cache_ver'; });
+    _calCacheVerMemo_ = String((hit && hit[1]) || '1');
+  } catch (e) { _calCacheVerMemo_ = '1'; }
+  return _calCacheVerMemo_;
 }
 function bumpCalCacheVer_() {}
 
