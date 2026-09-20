@@ -1,4 +1,4 @@
-/* public-api 셔틀 — 예약 페이지 **조회** 3종(api=init · calendar-batch · slots)만 제공하는 경량 웹앱.
+/* public-api 셔틀 — 예약·셀렉 페이지 **조회**(api=init · quote · calendar-batch · slots · select-session · select-photos)만 제공하는 경량 웹앱.
  *
  * 왜: 메인 Code.gs(2.3MB)는 /exec 요청마다 3~5초 로드 바닥이 붙고, 예약 첫 방문은 그 요청이 3번(init→달력→슬롯)이다.
  * board-api 가 증명했듯 작은 프로젝트는 1~3초에 답한다(감사 2026-09-20 perf-1). 제출(api=booking)과 그 fresh 가용성
@@ -6,6 +6,8 @@
  *
  * 읽기 전용은 코드로 보장한다(Public.gs 에 setValue/appendRow/insertSheet 없음 — 생성기가 스캔, doPost 거절). readonly 스코프는
  *   SpreadsheetApp.openById 가 거부해(2026-09-20 setup 실측 "Specified permissions are not sufficient") 메인과 같은 calendar·spreadsheets 스코프.
+ *   Drive 만 drive.readonly — 셀렉 사진 목록의 폴더 공유 넓히기(setSharing)는 여기서 실패하고, Code.gs 가 PUBLIC_API_READONLY_ 를 보고
+ *   ok:false 를 돌려 프런트가 메인으로 넘어간다(이미 공개된 폴더는 쓰기 없이 통과).
  * Public.gs 는 생성 파일(정본 appscript/Code.gs, 재생성 node scripts/build-public-api.mjs). 이 파일이 대신하는 것:
  *   ensureSheets_ · ensureHeaderSheet_ · ensurePartnerSheet_ (읽기 전용) · getCalCacheVer_ (설정 시트 cal_cache_ver,
  *   메인 bumpCalCacheVer_ 가 같은 키를 갱신) · bumpCalCacheVer_ (no-op) · 라우팅 · 워밍 트리거.
@@ -14,6 +16,8 @@
 const PUBLIC_DB_ID_DEFAULT_ = '1STWAMt30xku--NnFDHp1WOgpdGNQCH8T9Y0mZP6H8fI';   // docs/current-status.md 의 예약 DB
 // 월 이벤트 캐시 TTL(초) — 5분 워밍 트리거가 항상 덮도록 7분(Code.gs _monthEventsTtlSec_ 가 읽는다). 메인은 120초.
 const PUBLIC_MONTH_EVENT_TTL_SEC_ = 420;
+// Code.gs 의 쓰기 분기가 "여기는 셔틀" 임을 아는 표식(listDriveFolderPhotosPublic_ 의 setSharing 실패 → ok:false).
+const PUBLIC_API_READONLY_ = true;
 let _publicSheetsCache_ = null;
 function ensureSheets_() {
   if (_publicSheetsCache_) return _publicSheetsCache_;
@@ -106,7 +110,19 @@ function _pub_(e) {
       if (!isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
       return jsonOk_(getPublicSlots_(date, totalDur, itemGroup));
     }
-    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots 만 제공합니다.');
+    // 셀렉 조회 2종 — 메인 handlePublicApiRequest_ 의 select-session / select-photos 분기와 동일. 제출·별점 저장은 메인.
+    if (route === 'select-session') {
+      const sessionId = String(p.id || '').trim();
+      if (!sessionId) return jsonError_('INVALID_SESSION', 'Missing session id');
+      return jsonOk_(getSelectSession(sessionId));
+    }
+    if (route === 'select-photos') {
+      const sessionId = String(p.id || '').trim();
+      if (!sessionId) return jsonError_('INVALID_SESSION', 'Missing session id');
+      const recursive = String(p.recursive || '1').trim().toLowerCase();
+      return jsonOk_(listSelectPhotosPublic_(sessionId, { limit: p.limit, recursive: recursive !== '0' && recursive !== 'false', cursor: p.cursor }));
+    }
+    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · select-session · select-photos 만 제공합니다.');
   } catch (err) {
     return jsonError_('PUBLIC_API_ERROR', String((err && err.message) || err));
   }
@@ -114,7 +130,7 @@ function _pub_(e) {
 function doGet(e) { return _pub_(e); }
 
 /* ── 메인 → 셔틀 속성 동기화 (POST api=sync-props) ────────────────────────
- * iCloud/Apple 속성(ICLOUD_CAL_URL·ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD)은 프로젝트별 저장이라 셔틀에는 없다.
+ * iCloud/Apple 속성(ICLOUD_CAL_URL·ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD)과 ACTION_SECRET 은 프로젝트별 저장이라 셔틀에는 없다.
  * 메인의 erp-agent 액션 `public-api-sync-props` 가 값을 **구글↔구글로만** 보낸다 — 사람·에이전트 터미널을 거치지 않는다.
  * 인증은 board-api 와 같은 TOFU: 자동화 키의 SHA-256 다이제스트만 저장(PUBLIC_SYNC_DIGEST), 첫 호출이 등록한다. */
 function _tokenDigest_(token) {
@@ -130,7 +146,7 @@ function _checkSyncToken_(token) {
   if (!stored) { props.setProperty('PUBLIC_SYNC_DIGEST', digest); return true; }
   return stored === digest;
 }
-const SYNC_PROP_ALLOWLIST_ = ['ICLOUD_CAL_URL', 'ICLOUD_ICS_URL', 'APPLE_ID', 'APPLE_APP_PASSWORD', 'PUBLIC_DB_ID'];
+const SYNC_PROP_ALLOWLIST_ = ['ICLOUD_CAL_URL', 'ICLOUD_ICS_URL', 'APPLE_ID', 'APPLE_APP_PASSWORD', 'PUBLIC_DB_ID', 'ACTION_SECRET'];   // ACTION_SECRET: 셀렉 철회 링크 서명 일치
 function doPost(e) {
   let body = {};
   try { if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {}; } catch (err) {}

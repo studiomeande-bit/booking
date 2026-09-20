@@ -140,3 +140,26 @@ export async function requestJson(url, { timeoutMs = 0, retries = 0, parse = par
    작은 스크립트가 98초). 제한이 없으면 고객 화면은 그동안 '불러오는 중'에서 멈춰 보인다 — 끊고 다시 보낸다.
    25초 = 평소 최장(콜드 스타트 18초 실측) 위. 제출·홀드처럼 부작용 있는 요청에는 걸지 않는다. */
 export const READ = { timeoutMs: 25000, retries: 1 };
+
+/* 조회는 셔틀(appscript-public, 1~3초) 먼저 — 실패하면 메인(3~5초 바닥). 셔틀이 아직 승인 전이면 HTML 승인 페이지가 와서
+   GATEWAY 로 떨어지고 그대로 메인을 탄다. 셔틀 기본 제한이 짧은(12초·재시도 없음) 이유: 셔틀이 막힌 날 고객을 12초 넘게
+   세워 두지 않고 메인으로 넘기기 위해서다. shuttle/main 으로 제한·parse 를 따로 줄 수 있다(셀렉 사진 목록은 60초 단발).
+   제출·홀드·저장은 절대 셔틀을 쓰지 않는다. */
+export const READ_SHUTTLE = { timeoutMs: 12000, retries: 0 };
+function shuttleEnabled() {
+  return !!(CONFIG.readApiBaseUrl && CONFIG.readApiBaseUrl !== CONFIG.apiBaseUrl);
+}
+export async function readViaShuttle(route, params = {}, { shuttle = READ_SHUTTLE, main = READ } = {}) {
+  if (shuttleEnabled()) {
+    try { return await requestJson(buildReadUrl(route, params), shuttle); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildUrl(route, params), main);
+}
+export async function readPayloadViaShuttle(route, data, { shuttle = READ_SHUTTLE, main = READ } = {}) {
+  if (shuttleEnabled()) {
+    try { return await requestJson(buildReadPayloadUrl(route, data), shuttle); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildPayloadUrl(route, data), main);
+}

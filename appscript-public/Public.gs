@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T17:58:58.305Z
- * 포함 함수 125개 / 상수 22개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-20T19:21:20.650Z
+ * 포함 함수 173개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -57,6 +57,8 @@ const CONFIG = {
   // '스케쥴/스케줄' 두 표기 모두 — 이름 정확일치로 매칭하므로 한 글자 다르면 개인 일정이 슬롯을 못 막는다
   PERSONAL_CALENDAR_NAMES: ['여보랑나랑', '태웅 개인스케줄', '태웅 개인스케쥴']
 };
+
+const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
 const PUBLIC_API_CONFIG = {
   ALLOWED_ORIGINS: [
@@ -169,6 +171,30 @@ function jsonError_(code,message){
 function asNumber_(value){
   const n=Number(value);
   return isFinite(n)?n:NaN;
+}
+
+function _openSpreadsheetByIdSafe_(id){
+  const safeId=String(id||'').trim();
+  if(!safeId) return null;
+  try{
+    return SpreadsheetApp.openById(safeId);
+  }catch(e){
+    return null;
+  }
+}
+
+let _sheetsBundleCache_ = null;
+
+function getSheetsReadonly_(){
+  if(_sheetsBundleCache_) return _sheetsBundleCache_;
+  try{
+    const dbId=PropertiesService.getScriptProperties().getProperty('DB_SHEET_ID');
+    const ss=_openSpreadsheetByIdSafe_(dbId);
+    if(!ss) return ensureSheets_();
+    const bookingSheet=ss.getSheetByName(CONFIG.BOOKING_SHEET);
+    if(!bookingSheet) return ensureSheets_();
+    return {ss:ss,bookingSheet:bookingSheet,readonly:true};
+  }catch(e){return ensureSheets_();}
 }
 
 function getPartners_(){
@@ -299,6 +325,45 @@ function parseDateListSetting_(value){
       return true;
     })
     .sort();
+}
+
+let _fastDateFmtOk_=null;
+
+function _canFormatDateFast_(){
+  if(_fastDateFmtOk_===null){
+    try{_fastDateFmtOk_=(String(Session.getScriptTimeZone())===String(CONFIG.TIMEZONE));}catch(e){_fastDateFmtOk_=false;}
+  }
+  return _fastDateFmtOk_;
+}
+
+function formatDateMinuteFast_(d){
+  const p=function(n){return (n<10?'0':'')+n;};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+
+function formatDateMinute_(d){
+  return _canFormatDateFast_() ? formatDateMinuteFast_(d) : Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
+}
+
+function parseDateSafe_(rawDate) {
+  if(Object.prototype.toString.call(rawDate)==='[object Date]'){
+    return{obj:rawDate,str:isNaN(rawDate.getTime())?'':formatDateMinute_(rawDate)};
+  }
+  const str=String(rawDate||'').trim();
+  if(!str) return {obj:new Date(NaN),str:''};
+  const candidates=[str];
+  if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(str)) candidates.push(str.replace(' ','T'));
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) candidates.push(str+'T00:00:00');
+  let obj=new Date(NaN);
+  for(let i=0;i<candidates.length;i++){
+    const candidate=candidates[i];
+    const parsed=new Date(candidate);
+    if(!isNaN(parsed.getTime())){
+      obj=parsed;
+      break;
+    }
+  }
+  return{obj,str:!isNaN(obj.getTime())?formatDateMinute_(obj):str};
 }
 
 function getPassportComboDurationMin_(people){
@@ -1960,6 +2025,587 @@ function roundUpToQuarterHour_(ms){
   return Math.ceil(ms/step)*step;
 }
 
+const WIDERRUF_TEXT_=/* WIDERRUF_TEXT:BEGIN */
+{
+  "version": "WB-2026-09",
+  "url": "https://booking.studio-mean.com/widerruf/",
+  "de": {
+    "intro": "Verbraucherinnen und Verbrauchern (§ 13 BGB) steht ein Widerrufsrecht nach Maßgabe der folgenden Widerrufsbelehrung zu.",
+    "title": "Widerrufsbelehrung",
+    "sections": [
+      {
+        "h": "Widerrufsrecht",
+        "ps": [
+          "Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen.",
+          "Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag des Vertragsabschlusses.",
+          "Um Ihr Widerrufsrecht auszuüben, müssen Sie uns (Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, Telefon: +49 176 6093 9400, E-Mail: studio.mean.de@gmail.com) mittels einer eindeutigen Erklärung (z. B. ein mit der Post versandter Brief oder eine E-Mail) über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das beigefügte Muster-Widerrufsformular verwenden, das jedoch nicht vorgeschrieben ist.",
+          "Sie können Ihr Widerrufsrecht auch online unter https://booking.studio-mean.com/widerruf/ ausüben. Wenn Sie diese Online-Funktion nutzen, übermitteln wir Ihnen auf einem dauerhaften Datenträger (z. B. durch eine E-Mail) unverzüglich eine Eingangsbestätigung mit Informationen zum Inhalt der Widerrufserklärung sowie dem Datum und der Uhrzeit ihres Eingangs.",
+          "Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden."
+        ]
+      },
+      {
+        "h": "Folgen des Widerrufs",
+        "ps": [
+          "Wenn Sie diesen Vertrag widerrufen, haben wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben, einschließlich der Lieferkosten (mit Ausnahme der zusätzlichen Kosten, die sich daraus ergeben, dass Sie eine andere Art der Lieferung als die von uns angebotene, günstigste Standardlieferung gewählt haben), unverzüglich und spätestens binnen vierzehn Tagen ab dem Tag zurückzuzahlen, an dem die Mitteilung über Ihren Widerruf dieses Vertrags bei uns eingegangen ist. Für diese Rückzahlung verwenden wir dasselbe Zahlungsmittel, das Sie bei der ursprünglichen Transaktion eingesetzt haben, es sei denn, mit Ihnen wurde ausdrücklich etwas anderes vereinbart; in keinem Fall werden Ihnen wegen dieser Rückzahlung Entgelte berechnet.",
+          "Haben Sie verlangt, dass die Dienstleistungen während der Widerrufsfrist beginnen soll, so haben Sie uns einen angemessenen Betrag zu zahlen, der dem Anteil der bis zu dem Zeitpunkt, zu dem Sie uns von der Ausübung des Widerrufsrechts hinsichtlich dieses Vertrags unterrichten, bereits erbrachten Dienstleistungen im Vergleich zum Gesamtumfang der im Vertrag vorgesehenen Dienstleistungen entspricht."
+        ]
+      }
+    ],
+    "noteTitle": "Vorzeitiges Erlöschen des Widerrufsrechts",
+    "note": "Ihr Widerrufsrecht erlischt vorzeitig mit der vollständigen Erbringung der Dienstleistung, wenn Sie vor Beginn der Erbringung ausdrücklich zugestimmt haben, dass wir mit der Erbringung der Dienstleistung vor Ablauf der Widerrufsfrist beginnen, und Ihre Kenntnis davon bestätigt haben, dass Ihr Widerrufsrecht mit vollständiger Vertragserfüllung durch uns erlischt.",
+    "formTitle": "Muster-Widerrufsformular",
+    "formNote": "(Wenn Sie den Vertrag widerrufen wollen, dann füllen Sie bitte dieses Formular aus und senden Sie es zurück.)",
+    "form": [
+      "– An Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, studio.mean.de@gmail.com:",
+      "– Hiermit widerrufe(n) ich/wir (*) den von mir/uns (*) abgeschlossenen Vertrag über den Kauf der folgenden Waren (*)/die Erbringung der folgenden Dienstleistung (*)",
+      "– Bestellt am (*)/erhalten am (*)",
+      "– Name des/der Verbraucher(s)",
+      "– Anschrift des/der Verbraucher(s)",
+      "– Unterschrift des/der Verbraucher(s) (nur bei Mitteilung auf Papier)",
+      "– Datum",
+      "(*) Unzutreffendes streichen."
+    ],
+    "earlyStart": "Ich verlange ausdrücklich, dass Studio mean vor Ablauf der Widerrufsfrist mit der Ausführung der gebuchten Leistung (dem Shooting) beginnt. Mir ist bekannt, dass ich bei einem Widerruf einen angemessenen Betrag für die bis dahin erbrachten Leistungen zahlen muss und dass mein Widerrufsrecht mit vollständiger Vertragserfüllung durch Studio mean erlischt.",
+    "passNote": "Die Terminreservierung für Pass- und Visafotos ist unverbindlich und kostenfrei. Der Vertrag über die Aufnahmen kommt erst vor Ort im Studio zustande; bis dahin entstehen Ihnen keine Kosten, auch wenn Sie den Termin nicht wahrnehmen. Bitte sagen Sie den Termin ab, wenn Sie nicht kommen können.",
+    "stornoNote": "Das gesetzliche Widerrufsrecht für Verbraucherinnen und Verbraucher (siehe Widerrufsbelehrung) bleibt unberührt und geht dieser Staffel innerhalb der Widerrufsfrist vor.",
+    "statement": "Hiermit widerrufe ich den von mir abgeschlossenen Vertrag.",
+    "withdrawLabel": "Vertrag widerrufen",
+    "confirmLabel": "Widerruf bestätigen",
+    "earlyStartRetouch": "Ich verlange ausdrücklich, dass Studio mean vor Ablauf der Widerrufsfrist mit der bestellten Zusatzretusche beginnt. Mir ist bekannt, dass ich bei einem Widerruf einen angemessenen Betrag für die bis dahin erbrachten Leistungen zahlen muss und dass mein Widerrufsrecht mit vollständiger Vertragserfüllung durch Studio mean erlischt.",
+    "printNoWiderruf": "Für Abzüge, Rahmen und Fotokarten, die nach Ihrer Auswahl angefertigt werden, besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 1 BGB).",
+    "orderButton": "Zahlungspflichtig bestellen",
+    "bookButton": "Zahlungspflichtig buchen",
+    "vatIncluded": "inkl. MwSt.",
+    "selectContract": "Zusatzbestellung aus der Fotoauswahl (Retusche/Abzüge)"
+  },
+  "ko": {
+    "intro": "소비자(독일 민법 제13조)에게는 아래 철회 안내에 따른 철회권이 있습니다.",
+    "title": "철회 안내",
+    "bindingNote": "참고 번역입니다. 법적 효력은 아래 독일어 원문(Widerrufsbelehrung)에 있습니다.",
+    "sections": [
+      {
+        "h": "철회권",
+        "ps": [
+          "귀하는 이유를 밝히지 않고 14일 이내에 이 계약을 철회할 권리가 있습니다.",
+          "철회기간은 계약 체결일로부터 14일입니다.",
+          "철회권을 행사하려면 계약을 철회하겠다는 결정을 명확한 의사표시(예: 우편으로 보낸 편지 또는 이메일)로 저희(Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, 전화 +49 176 6093 9400, 이메일 studio.mean.de@gmail.com)에게 알려 주셔야 합니다. 함께 드리는 철회 서식을 쓰실 수 있지만 의무는 아닙니다.",
+          "https://booking.studio-mean.com/widerruf/ 에서 온라인으로도 철회하실 수 있습니다. 이 온라인 기능을 이용하시면 철회 내용과 접수 날짜·시각이 담긴 수신 확인을 지체 없이 영구 보관이 가능한 매체(예: 이메일)로 보내 드립니다.",
+          "철회기간을 지키려면 기간이 끝나기 전에 철회 통지를 보내시는 것으로 충분합니다."
+        ]
+      },
+      {
+        "h": "철회의 효과",
+        "ps": [
+          "이 계약을 철회하시면 저희는 귀하에게서 받은 모든 대금을 배송비를 포함하여(저희가 제공하는 가장 저렴한 기본 배송 대신 다른 배송 방식을 고르셔서 생긴 추가 비용은 제외) 철회 통지가 저희에게 도착한 날부터 지체 없이, 늦어도 14일 안에 돌려드립니다. 반환은 처음 결제하실 때와 같은 결제수단으로 하며, 따로 명시적으로 합의한 경우는 예외입니다. 반환 때문에 귀하에게 수수료가 부과되는 일은 없습니다.",
+          "철회기간 중에 서비스를 시작해 달라고 요청하셨다면, 철회를 알려 주신 시점까지 이미 제공된 서비스가 계약상 전체 서비스에서 차지하는 비율만큼 적정한 금액을 저희에게 지불하셔야 합니다."
+        ]
+      }
+    ],
+    "noteTitle": "철회권의 조기 소멸",
+    "note": "서비스가 시작되기 전에, 철회기간이 끝나기 전에 서비스를 시작하는 데 명시적으로 동의하고 계약이 완전히 이행되면 철회권이 소멸한다는 점을 확인하셨다면, 서비스가 완전히 제공되는 때 철회권은 기간보다 먼저 소멸합니다.",
+    "formTitle": "철회 서식 (Muster-Widerrufsformular)",
+    "formNote": "(계약을 철회하시려면 이 서식을 작성해 보내 주세요. 법정 서식이라 독일어 원문 그대로 싣습니다.)",
+    "earlyStart": "철회기간(14일)이 끝나기 전에 Studio mean 이 예약한 서비스(촬영)를 시작해 줄 것을 명시적으로 요청합니다. 철회하면 그때까지 제공된 서비스에 대한 적정 금액을 지불해야 하고, Studio mean 이 계약을 완전히 이행하면 철회권이 소멸한다는 점을 알고 있습니다.",
+    "passNote": "여권·비자 사진 예약은 무료이며 구속력이 없습니다. 촬영 계약은 스튜디오 현장에서 성립하며, 그 전까지는 예약 시간에 오지 못하셔도 비용이 생기지 않습니다. 오지 못하시게 되면 예약을 취소해 주세요.",
+    "stornoNote": "소비자의 법정 철회권(철회 안내 참조)은 이 규정과 관계없이 보장되며, 철회기간 안에는 이 환불 규정보다 우선합니다.",
+    "statement": "본인이 체결한 계약을 철회합니다.",
+    "withdrawLabel": "계약 철회 · Vertrag widerrufen",
+    "confirmLabel": "철회 확정 · Widerruf bestätigen",
+    "earlyStartRetouch": "철회기간(14일)이 끝나기 전에 Studio mean 이 주문한 추가 보정을 시작해 줄 것을 명시적으로 요청합니다. 철회하면 그때까지 제공된 서비스에 대한 적정 금액을 지불해야 하고, Studio mean 이 계약을 완전히 이행하면 철회권이 소멸한다는 점을 알고 있습니다.",
+    "printNoWiderruf": "고르신 사진으로 만드는 인화·액자·포토카드는 맞춤 제작품이라 철회권이 없습니다(독일 민법 제312g조 제2항 제1호).",
+    "orderButton": "결제 의무가 있는 주문하기",
+    "bookButton": "결제 의무가 있는 예약하기",
+    "vatIncluded": "부가세 포함",
+    "selectContract": "셀렉 추가 주문(추가 보정·인화)"
+  },
+  "en": {
+    "intro": "Consumers (Section 13 German Civil Code, BGB) have a right of withdrawal in accordance with the following instructions.",
+    "title": "Withdrawal instructions",
+    "bindingNote": "Courtesy translation. The German original (Widerrufsbelehrung) below is legally binding.",
+    "sections": [
+      {
+        "h": "Right of withdrawal",
+        "ps": [
+          "You have the right to withdraw from this contract within 14 days without giving any reason.",
+          "The withdrawal period will expire after 14 days from the day of the conclusion of the contract.",
+          "To exercise the right of withdrawal, you must inform us (Studio mean, Inhaber Taewoong Min, Holzweg-Passage 3, 61440 Oberursel, Germany, phone +49 176 6093 9400, email studio.mean.de@gmail.com) of your decision to withdraw from this contract by an unequivocal statement (e.g. a letter sent by post or an email). You may use the attached model withdrawal form, but it is not obligatory.",
+          "You can also exercise your right of withdrawal online at https://booking.studio-mean.com/widerruf/. If you use this online function, we will send you an acknowledgement of receipt on a durable medium (e.g. by email) without delay, containing the content of your withdrawal statement and the date and time of its receipt.",
+          "To meet the withdrawal deadline, it is sufficient for you to send your communication concerning your exercise of the right of withdrawal before the withdrawal period has expired."
+        ]
+      },
+      {
+        "h": "Effects of withdrawal",
+        "ps": [
+          "If you withdraw from this contract, we shall reimburse to you all payments received from you, including the costs of delivery (with the exception of the supplementary costs resulting from your choice of a type of delivery other than the least expensive type of standard delivery offered by us), without undue delay and in any event not later than 14 days from the day on which we are informed about your decision to withdraw from this contract. We will carry out such reimbursement using the same means of payment as you used for the initial transaction, unless you have expressly agreed otherwise; in any event, you will not incur any fees as a result of such reimbursement.",
+          "If you requested to begin the performance of services during the withdrawal period, you shall pay us an amount which is in proportion to what has been provided until you have communicated us your withdrawal from this contract, in comparison with the full coverage of the contract."
+        ]
+      }
+    ],
+    "noteTitle": "Early expiry of the right of withdrawal",
+    "note": "Your right of withdrawal expires early upon complete performance of the service if, before performance began, you expressly consented to us beginning the service before the end of the withdrawal period and acknowledged that your right of withdrawal expires once we have fully performed the contract.",
+    "formTitle": "Model withdrawal form (Muster-Widerrufsformular)",
+    "formNote": "(Complete and return this form only if you wish to withdraw from the contract. It is a statutory form and is reproduced in the German original.)",
+    "earlyStart": "I expressly request that Studio mean begin the booked service (the shoot) before the withdrawal period ends. I understand that if I withdraw, I must pay a reasonable amount for the services provided up to that point, and that my right of withdrawal expires once Studio mean has fully performed the contract.",
+    "passNote": "Reservations for passport and visa photos are free and non-binding. The contract for the photos is only concluded on site at the studio; until then no costs arise, even if you do not attend. Please cancel your reservation if you cannot come.",
+    "stornoNote": "Consumers' statutory right of withdrawal (see the withdrawal instructions) remains unaffected and takes precedence over this schedule during the withdrawal period.",
+    "statement": "I hereby withdraw from the contract I concluded.",
+    "withdrawLabel": "Withdraw from contract · Vertrag widerrufen",
+    "confirmLabel": "Confirm withdrawal · Widerruf bestätigen",
+    "earlyStartRetouch": "I expressly request that Studio mean begin the ordered additional retouching before the withdrawal period ends. I understand that if I withdraw, I must pay a reasonable amount for the services provided up to that point, and that my right of withdrawal expires once Studio mean has fully performed the contract.",
+    "printNoWiderruf": "Prints, frames and photo cards made from the photos you select are made to your specification, so there is no right of withdrawal (Section 312g(2) no. 1 German Civil Code).",
+    "orderButton": "Order with obligation to pay",
+    "bookButton": "Book with obligation to pay",
+    "vatIncluded": "incl. VAT",
+    "selectContract": "Additional order from the photo selection (retouching/prints)"
+  }
+}/* WIDERRUF_TEXT:END */;
+
+function buildSelectLegalPayload_(){
+  const W=WIDERRUF_TEXT_,out={version:W.version,url:W.url};
+  ['ko','en','de'].forEach(function(l){
+    const t=W[l];
+    out[l]={earlyStartRetouch:t.earlyStartRetouch,printNoWiderruf:t.printNoWiderruf,orderButton:t.orderButton,vatIncluded:t.vatIncluded,withdrawLabel:t.withdrawLabel,title:t.title};
+  });
+  return out;
+}
+
+function buildSelectWithdrawUrl_(bookingRowIndex,bookingRow){
+  const base=WIDERRUF_TEXT_.url+'?what=select';
+  if(!(bookingRowIndex>=2)||!bookingRow) return base;
+  try{return WIDERRUF_TEXT_.url+'?ref='+encodeURIComponent(createBookingRowActionRef_(bookingRowIndex,bookingRow))+'&what=select';}
+  catch(e){return base;}
+}
+
+function bookingRowActionSeedPart_(v){
+  if(Object.prototype.toString.call(v)==='[object Date]') return Utilities.formatDate(v,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  return String(v==null?'':v).trim();
+}
+
+function bookingRowActionTokenFromSeed_(seed){
+  const secret=PropertiesService.getScriptProperties().getProperty('ACTION_SECRET')||'studio-mean-action';
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(seed,secret)).replace(/=+$/g,'').slice(0,18);
+}
+
+function bookingRowActionToken_(row){
+  const seed=[
+    bookingRowActionSeedPart_(row[BOOKING_COL['고객명']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['연락처']]),
+    bookingRowActionSeedPart_(row[BOOKING_COL['이메일']]).toLowerCase(),
+    bookingRowActionSeedPart_(row[BOOKING_COL['동의시각']])
+  ].join('|');
+  return bookingRowActionTokenFromSeed_(seed);
+}
+
+function createBookingRowActionRef_(rowIndex,row){
+  return `row:${rowIndex}:${bookingRowActionToken_(row)}`;
+}
+
+function findBookingProductMeta_(products,itemGroup,productName){
+  const g=String(itemGroup||'').trim();
+  const name=String(productName||'').trim();
+  if(!g||!name) return null;
+  return (products||[]).find(function(p){
+    return String(p.g||'').trim()===g && [p.nameKo,p.nameEn,p.nameDe,p.id].some(function(v){
+      return String(v||'').trim()===name;
+    });
+  })||null;
+}
+
+const SELECT_SHEET_NAME='사진셀렉';
+
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청'];
+
+const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
+
+function normalizeSelectPageVersion_(value){
+  return String(value||'').toLowerCase().trim()==='v2' ? 'v2' : 'classic';
+}
+
+function getDefaultSelectMarketingBonusCount_(itemGroup,productName,payMethod){
+  const haystack=[itemGroup,productName,payMethod].map(function(v){return String(v||'').trim();}).join(' ').toLowerCase();
+  if(/myrealtrip|my real trip|마이리얼트립/.test(haystack)) return 5;
+  return 2;
+}
+
+function selectIsMyRealTrip_(itemGroup,productName,payMethod){
+  const haystack=[itemGroup,productName,payMethod].map(function(v){return String(v||'').trim();}).join(' ').toLowerCase();
+  return /myrealtrip|my real trip|마이리얼트립/.test(haystack);
+}
+
+function selectOutputExcludedByText_(text){
+  return /출력물\s*없음|인화\s*없음|프린트\s*없음|우편\s*없음|배송\s*없음|디지털\s*(전용|만|only)|파일\s*(전용|만)|원본\s*전달\s*만|digital\s*only|files?\s*only|no\s*prints?|prints?\s*not\s*included|without\s*prints?|ohne\s*(druck|ausdruck|abzug)|kein(?:e|en)?\s*(druck|ausdruck|abzug)|nur\s*(digital|datei|dateien)/i.test(String(text||''));
+}
+
+function selectTextHasPhysicalOutput_(text){
+  const value=String(text||'');
+  if(selectOutputExcludedByText_(value)) return false;
+  return /출력|인화|프린트|우편발송|배송|print|prints|printed|druck|ausdruck|abzug|fotokarte|포토카드|photocard|photo card|10\s*[×x]\s*15|6\s*[×x]\s*4|a[34]\b/i.test(value);
+}
+
+function getSelectProductMeta_(itemGroup,productName){
+  try{
+    return findBookingProductMeta_(getCachedProducts_().concat(getPromoProducts_()),itemGroup,productName);
+  }catch(e){
+    return null;
+  }
+}
+
+function buildSelectProductText_(itemGroup,productName,productMeta){
+  return [
+    itemGroup,
+    productName,
+    productMeta&&productMeta.id,
+    productMeta&&productMeta.nameKo,
+    productMeta&&productMeta.nameEn,
+    productMeta&&productMeta.nameDe,
+    productMeta&&productMeta.descKo,
+    productMeta&&productMeta.descEn,
+    productMeta&&productMeta.descDe
+  ].map(function(v){return String(v||'').trim();}).filter(Boolean).join(' ');
+}
+
+const SELECT_INCLUDED_PRINT_QUOTA_BY_PRODUCT_={
+  pb:[{id:'basic_10x15',qty:1}],
+  pbus:[{id:'basic_10x15',qty:2}],
+  pp:[{id:'basic_10x15',qty:3}],
+  sb:[{id:'basic_a4',qty:1},{id:'basic_10x15',qty:2}],
+  sp:[{id:'basic_a4',qty:1},{id:'basic_10x15',qty:4}],
+  sprm:[{id:'basic_a4',qty:1},{id:'basic_10x15',qty:6}],
+  ob:[{id:'basic_10x15',qty:5}],
+  op:[{id:'basic_10x15',qty:7}],       // 2026-08-07 사장님 확정 (이전 빈값 → 포함 인화 없음으로 취급됐다)
+  oprm:[{id:'basic_10x15',qty:10}],    // 〃
+  wp:[{id:'premium_a3',qty:1},{id:'basic_a4',qty:2},{id:'basic_10x15',qty:3}],
+  wprm:[{id:'premium_a3',qty:1},{id:'basic_a4',qty:2},{id:'basic_10x15',qty:3}],
+  amtp:[{id:'basic_10x15',qty:15}]
+};
+
+function normalizeSelectProductKeyText_(value){
+  return String(value||'').toLowerCase().replace(/\s+/g,'').replace(/[._\-()［］\[\]{}+]/g,'');
+}
+
+function getSelectProductKey_(itemGroup,productName){
+  const productMeta=getSelectProductMeta_(itemGroup,productName);
+  if(productMeta&&productMeta.id) return String(productMeta.id||'').trim();
+  const group=String(itemGroup||'').trim().toLowerCase();
+  const text=normalizeSelectProductKeyText_(productName);
+  if(group==='prof'){
+    if(/professional|프로필professional|프로페셔널/.test(text)) return 'pp';
+    if(/business|프로필business|비즈니스/.test(text)) return 'pbus';
+    if(/basic|프로필basic|베이직/.test(text)) return 'pb';
+  }
+  if(group==='stud'){
+    if(/premium|프리미엄/.test(text)) return 'sprm';
+    if(/plus|플러스/.test(text)) return 'sp';
+    if(/basic|베이직/.test(text)) return 'sb';
+  }
+  if(group==='snap'){
+    if(/premium|프리미엄/.test(text)) return 'oprm';
+    if(/plus|플러스/.test(text)) return 'op';
+    if(/basic|베이직/.test(text)) return 'ob';
+  }
+  if(group==='wed'){
+    if(/premium|프리미엄/.test(text)) return 'wprm';
+    if(/plus|플러스/.test(text)) return 'wp';
+  }
+  if(group==='biz'&&/(암트결혼식사진촬영|civilweddingphoto|standesamtfoto)/.test(text)) return 'amtp';
+  return '';
+}
+
+function getSelectIncludedPrintQuota_(itemGroup,productName){
+  const key=getSelectProductKey_(itemGroup,productName);
+  const quota=SELECT_INCLUDED_PRINT_QUOTA_BY_PRODUCT_[key];
+  if(!quota) return null;
+  return quota.map(function(item){return{id:item.id,qty:parseInt(item.qty,10)||0};});
+}
+
+function selectProductHasFixedPrintQuota_(itemGroup,productName){
+  const key=getSelectProductKey_(itemGroup,productName);
+  return key&&Object.prototype.hasOwnProperty.call(SELECT_INCLUDED_PRINT_QUOTA_BY_PRODUCT_,key);
+}
+
+function selectSessionRequiresDelivery_(itemGroup,productName,payMethod){
+  if(selectIsMyRealTrip_(itemGroup,productName,payMethod)) return false;
+  if(selectProductHasFixedPrintQuota_(itemGroup,productName)){
+    const quota=getSelectIncludedPrintQuota_(itemGroup,productName)||[];
+    return quota.some(function(item){return Number(item.qty)>0;});
+  }
+  const productMeta=getSelectProductMeta_(itemGroup,productName);
+  const text=buildSelectProductText_(itemGroup,productName,productMeta);
+  if(selectOutputExcludedByText_(text)) return false;
+  return selectTextHasPhysicalOutput_(text);
+}
+
+function normalizeSelectMarketingBonusCount_(value,itemGroup,productName,payMethod){
+  if(value!==undefined&&value!==null&&String(value).trim()!==''){
+    const n=parseInt(value,10);
+    return isNaN(n)||n<0 ? 0 : n;
+  }
+  return getDefaultSelectMarketingBonusCount_(itemGroup,productName,payMethod);
+}
+
+function formatDriveSizeShort_(bytes){
+  const n=Number(bytes)||0;
+  if(n>=1024*1024*1024)return(n/(1024*1024*1024)).toFixed(1)+'GB';
+  if(n>=1024*1024)return Math.round(n/(1024*1024))+'MB';
+  return Math.max(1,Math.round(n/1024))+'KB';
+}
+
+function listSelectZipBundle_(folderRef){
+  const folderId=_extractDriveFolderId_(folderRef);
+  if(!folderId)return[];
+  const cache=CacheService.getScriptCache();
+  const key='selzips:v1:'+folderId;
+  const cached=cache.get(key);
+  if(cached){try{return JSON.parse(cached);}catch(e){}}
+  const out=[];
+  try{
+    const it=DriveApp.getFolderById(folderId).getFiles();
+    while(it.hasNext()&&out.length<40){
+      const f=it.next();
+      const name=String(f.getName()||'');
+      if(!/\.zip$/i.test(name))continue;
+      const id=f.getId();
+      out.push({
+        id:id,
+        name:name,
+        bytes:Number(f.getSize())||0,
+        size:formatDriveSizeShort_(Number(f.getSize())||0),
+        // uc?export=download 는 대용량에서 바이러스 검사 안내가 한 번 끼지만 "그래도 다운로드"로 이어진다.
+        download:'https://drive.google.com/uc?export=download&id='+encodeURIComponent(id),
+        view:'https://drive.google.com/file/d/'+encodeURIComponent(id)+'/view'
+      });
+    }
+  }catch(e){return[];} // 폴더를 못 읽으면 없는 것으로 — 셀렉페이지는 기존 버튼으로 폴백
+  out.sort(function(a,b){return String(a.name).localeCompare(String(b.name),undefined,{numeric:true});});
+  try{cache.put(key,JSON.stringify(out),900);}catch(e){}
+  return out;
+}
+
+function isSelectFinalLockedStatus_(status){
+  const s=String(status||'').trim();
+  return ['최종작업완료','작업완료'].indexOf(s)>-1;
+}
+
+function selectJsonArrayHasItems_(raw){
+  try{
+    const parsed=JSON.parse(String(raw||'[]'));
+    return Array.isArray(parsed)&&parsed.length>0;
+  }catch(e){
+    return false;
+  }
+}
+
+function hasSelectSubmittedContent_(row){
+  if(!row) return false;
+  if(String(row[SELECT_COL['제출일시']]||'').trim()) return true;
+  if(selectJsonArrayHasItems_(row[SELECT_COL['선택사진']])) return true;
+  if(selectJsonArrayHasItems_(row[SELECT_COL['추가인화']])) return true;
+  if(String(row[SELECT_COL['포토카드선택']]||'').trim()) return true;
+  return false;
+}
+
+function buildSubmittedSelectSessionPayload_(row,base){
+  let existingPhotos=[],existingPrints=[],existingPhotocard=null;
+  try{existingPhotos=JSON.parse(String(row[SELECT_COL['선택사진']]||'[]'));}catch(e){}
+  try{existingPrints=JSON.parse(String(row[SELECT_COL['추가인화']]||'[]'));}catch(e){}
+  try{existingPhotocard=parseSelectPhotocard_(row[SELECT_COL['포토카드선택']]);}catch(e){}
+  return {
+    ok:false,
+    submitted:true,
+    canEdit:true,
+    status:String(row[SELECT_COL['상태']]||''),
+    ...base,
+    existingPhotos,
+    existingPrints,
+    existingPhotocard,
+    existingMarketing:String(row[SELECT_COL['마케팅동의']]||'N')
+  };
+}
+
+function getSelectSession(sessionId){
+  try{
+    const _t0=Date.now(); const _timing={};
+    const bundle=getSheetsReadonly_();
+    _timing.sheets=Date.now()-_t0;
+    const sh=bundle.ss.getSheetByName(SELECT_SHEET_NAME);
+    if(!sh)return{ok:false,message:'준비 중입니다.'};
+    const rows=sh.getDataRange().getValues();
+    _timing.read=Date.now()-_t0;
+    const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
+    if(!row)return{ok:false,message:'유효하지 않은 링크입니다.'};
+    // 예약장부에서 마케팅 동의 여부 확인 (이미 동의했으면 셀렉 페이지에서 재요청 불필요)
+    let bookingMarketing='';
+    let bookingAddress='';
+    let bookingPayMethod='';
+    let selectWithdrawUrl=buildSelectWithdrawUrl_(0,null);
+    try{
+      const bri=parseInt(row[SELECT_COL['예약장부행']])||0;
+      if(bri>=2){
+        const bookSh=bundle.bookingSheet;
+        const bRow=bookSh.getRange(bri,1,1,bookSh.getLastColumn()).getValues()[0];
+        selectWithdrawUrl=buildSelectWithdrawUrl_(bri,bRow);
+        bookingMarketing=String(bRow[BOOKING_COL['마케팅동의']]||'');
+        bookingAddress=String(bRow[BOOKING_COL['고객주소']]||'');
+        bookingPayMethod=String(bRow[BOOKING_COL['결제수단']]||'');
+      }
+    }catch(e){}
+    _timing.booking=Date.now()-_t0;
+    const productMeta=getSelectProductMeta_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']]);
+    _timing.meta=Date.now()-_t0;
+    const productDescription=String((productMeta&&(productMeta.descKo||productMeta.descEn||productMeta.descDe))||'');
+    const existingMail=parseSelectMailAddressText_(row[SELECT_COL['우편주소']],row[SELECT_COL['고객명']]);
+    const base={
+      name:row[SELECT_COL['고객명']],
+      email:row[SELECT_COL['이메일']],
+      date:parseDateSafe_(row[SELECT_COL['촬영일']]).str.slice(0,10),
+      itemGroup:row[SELECT_COL['촬영종류']],
+      product:row[SELECT_COL['상품']],
+      productDescription:productDescription,
+      baseRetouchCount:parseInt(row[SELECT_COL['기본보정수']])||0,
+      retouchPrice:parseInt(row[SELECT_COL['리터칭단가']])||10,
+      volumeTiers:{retouch:getSelectVolumeTiers_('retouch'),print:getSelectVolumeTiers_('print')},
+      existingRatings:(function(){
+        try{
+          if(SELECT_COL['별점JSON']==null) return {};
+          const parsed=JSON.parse(String(row[SELECT_COL['별점JSON']]||'{}'));
+          return (parsed&&typeof parsed==='object'&&!Array.isArray(parsed))?parsed:{};
+        }catch(e){return {};}
+      })(),
+      marketingBonusCount:normalizeSelectMarketingBonusCount_(row[SELECT_COL['마케팅보너스수']],row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
+      serviceCutCount:Math.max(0,parseInt(row[SELECT_COL['서비스컷수']],10)||0),
+      lang:row[SELECT_COL['언어']]||'ko',
+      driveLink:row[SELECT_COL['드라이브링크']]||'',
+      zipFolderLink:SELECT_COL['압축본링크']!=null?String(row[SELECT_COL['압축본링크']]||''):'',
+      zips:SELECT_COL['압축본링크']!=null?listSelectZipBundle_(row[SELECT_COL['압축본링크']]):[],
+      bookingMarketing,
+      bookingAddress,
+      deadline:String(row[SELECT_COL['셀렉마감일']]||''),
+      revisionCount:parseInt(row[SELECT_COL['재수정요청횟수']])||0,
+      extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
+      pageVersion:normalizeSelectPageVersion_(row[SELECT_COL['페이지버전']]),
+      existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
+      existingPickupAt:parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16), // 시트 Date 자동변환 정규화
+
+      existingMailName:existingMail.mailName,
+      existingMailAddress:existingMail.mailAddress,
+      existingMailAddressRaw:String(row[SELECT_COL['우편주소']]||''),
+      existingPickupEventId:String(row[SELECT_COL['픽업캘린더ID']]||''),
+      hasPhotocard:selectHasIncludedPhotocard_(row),
+      requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
+      photocardSupported:true,
+      printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
+      printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:'',
+      printDoneAt:SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str:'',
+      printDoneCount:SELECT_COL['출력완료매수']!=null?(parseInt(row[SELECT_COL['출력완료매수']],10)||0):0,
+      handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16):'',
+      // 유료 추가 주문의 법정 문구(서버 정본) + 하단 「Vertrag widerrufen」 링크 — docs/select-widerruf-plan.md
+      legal:buildSelectLegalPayload_(),
+      withdrawUrl:selectWithdrawUrl
+    };
+    _timing.build=Date.now()-_t0;
+    base._timing=_timing;
+    const rawStatus=String(row[SELECT_COL['상태']]||'').trim();
+    if(hasSelectSubmittedContent_(row)){
+      if(isSelectFinalLockedStatus_(rawStatus)){
+        /* 마감된 세션 — 쓰기는 계속 막되(제출·수정·픽업예약·우편전환 가드는 그대로), 읽기는 안내가 되게 한다.
+           맨 {ok:false,message} 로 내려보내면 api-select 가 throw 로 바꿔 셀렉 v2 는 오류 패널,
+           픽업 페이지는 빨간 배너(언어 교체 전이라 EN/DE 고객도 한국어)를 본다.
+           수령 기록이 이제 자동으로 마감을 찍으므로 픽업 고객 전원이 그 화면을 만나게 된다.
+           submitted 를 붙여 프론트가 정상 응답으로 받게 하고, finalLocked 로 완료 화면을 띄우게 한다.
+           필드는 최소한만 — 열린 세션이 이미 주는 것보다 적게(주소·이메일·보정 선택내역 제외).
+           단 existingPrints 는 남긴다: 인화앱이 재인화 주문을 이 필드로 읽으므로(print/app.js
+           select-session → existingPrints), 빼면 마감된 건은 사장님이 재인화를 못 건다. */
+        let lockedPrints=[];
+        try{lockedPrints=JSON.parse(String(row[SELECT_COL['추가인화']]||'[]'));}catch(e){}
+        return{
+          ok:false,submitted:true,finalLocked:true,
+          lang:base.lang,name:base.name,driveLink:base.driveLink,
+          zipFolderLink:base.zipFolderLink,zips:base.zips, // 마감 후에도 원본 내려받기는 열어 둔다
+          handoverAt:base.handoverAt,
+          existingDeliveryMethod:base.existingDeliveryMethod,
+          existingPrints:Array.isArray(lockedPrints)?lockedPrints:[],
+          // 인화앱의 '이미 출력한 세션입니다' 재인화 경고가 이 두 필드로 뜬다. 빼면 경고가 가장 필요한
+          // 케이스(이미 건네준 건)에서만 조용히 사라져 중복 출력이 난다.
+          printDoneAt:base.printDoneAt,printDoneCount:base.printDoneCount,
+          message:'최종 작업이 완료되어 수정 제출이 마감되었습니다.'
+        };
+      }
+      return buildSubmittedSelectSessionPayload_(row,base);
+    }
+    return{ok:true,...base};
+  }catch(e){return{ok:false,message:e.message};}
+}
+
+const SELECT_VOLUME_TIER_DEFAULTS_={retouch:'5:10,10:15,20:20',print:'5:10,10:15,20:20'};
+
+function getSelectVolumeTiers_(kind){
+  const key='select_volume_discount_'+String(kind||'');
+  let raw='';
+  try{ raw=String(getSettingsMap_()[key]||'').trim(); }catch(e){}
+  if(!raw) raw=SELECT_VOLUME_TIER_DEFAULTS_[kind]||'';
+  const tiers=[];
+  raw.split(',').forEach(function(tok){
+    const m=String(tok||'').trim().match(/^(\d+)\s*:\s*(\d+)$/);
+    if(!m) return;
+    const count=parseInt(m[1],10),pct=parseInt(m[2],10);
+    // 퍼센트 상한 50 — 설정 오타(예: 10:90)가 매출을 반토막 내지 않게 방어
+    if(count>0&&pct>0&&pct<=50) tiers.push({count:count,percent:pct});
+  });
+  tiers.sort(function(a,b){return a.count-b.count;});
+  return tiers;
+}
+
+function selectHasIncludedPhotocard_(row){
+  const text=String((row&&row[SELECT_COL['상품']]||'')+' '+(row&&row[SELECT_COL['촬영종류']]||'')).toLowerCase();
+  return /포토카드|photocard|photo card|fotokarte/.test(text);
+}
+
+function parseSelectPhotocard_(raw){
+  if(!raw) return null;
+  if(typeof raw==='object') return raw;
+  try{
+    const parsed=JSON.parse(String(raw||''));
+    return parsed&&typeof parsed==='object'?parsed:null;
+  }catch(e){
+    return null;
+  }
+}
+
+function normalizeSelectMailAddress_(value){
+  return String(value||'')
+    .replace(/\r\n?/g,'\n')
+    .split('\n')
+    .map(function(line){return line.replace(/\s+/g,' ').trim();})
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeSelectMailName_(value){
+  return String(value||'').replace(/\s+/g,' ').trim();
+}
+
+function parseSelectMailAddressText_(value,fallbackName){
+  let lines=normalizeSelectMailAddress_(value).split('\n').filter(Boolean);
+  let mailName='';
+  if(lines.length){
+    const nameMatch=lines[0].match(/^(?:수령인|받으실\s*분\s*성함|성함|recipient|name|empf[aä]nger(?:in)?)\s*[:：]\s*(.+)$/i);
+    if(nameMatch){
+      mailName=normalizeSelectMailName_(nameMatch[1]);
+      lines=lines.slice(1);
+    }
+  }
+  if(lines.length){
+    const addressMatch=lines[0].match(/^(?:주소|배송\s*주소|address|adresse)\s*[:：]\s*(.*)$/i);
+    if(addressMatch){
+      lines[0]=addressMatch[1]||'';
+    }
+  }
+  return {
+    mailName:mailName||normalizeSelectMailName_(fallbackName),
+    mailAddress:normalizeSelectMailAddress_(lines.join('\n'))
+  };
+}
+
 function warmupCacheTrigger(){
   /* **이벤트 캐시** 프리워밍 — 슬롯의 진짜 병목은 캘린더 다중읽기(~5s)다. 이벤트는 totalDur 무관이라
      달당 한 번만 데우면 **모든 콤보·모든 날짜**의 슬롯이 그 위에서 fresh 하게 빠르게 계산된다
@@ -2016,4 +2662,238 @@ function travelKmLookup_(text){
     if(TRAVEL_KM_TABLE_[i].re.test(t)) return TRAVEL_KM_TABLE_[i];
   }
   return null;
+}
+
+const SELECT_PHOTO_LIST_DEFAULT_LIMIT=300;
+
+const SELECT_PHOTO_LIST_MAX_LIMIT=300;
+
+const SELECT_PHOTO_LIST_TIME_BUDGET_MS=45000;
+
+const SELECT_PHOTO_EXT_RE=/\.(jpe?g|png|webp|gif|heic|heif|tiff?|bmp|avif|dng|cr2|cr3|nef|nrw|arw|srf|sr2|raf|rw2|orf|srw|pef|x3f)$/i;
+
+function listSelectPhotosPublic_(sessionId,options){
+  const opts=options||{};
+  const limit=Math.max(1,Math.min(parseInt(opts.limit,10)||SELECT_PHOTO_LIST_DEFAULT_LIMIT,SELECT_PHOTO_LIST_MAX_LIMIT));
+  const recursive=opts.recursive!==false;
+  const cache=CacheService.getScriptCache();
+  const hasCursor=String(opts.cursor||'').trim()!=='';
+  const key='selphotos:v5:'+sessionId+':'+limit+':'+(recursive?'r1':'r0')+':first';
+  const cached=cache.get(key);
+  if(!hasCursor&&cached){try{return JSON.parse(cached);}catch(e){}}
+  const ss=ensureSheets_().ss;
+  const sh=ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return{ok:false,message:'Session store unavailable'};
+  const rows=sh.getDataRange().getValues();
+  const row=rows.slice(1).find(r=>String(r[0])===String(sessionId));
+  if(!row) return{ok:false,message:'Invalid session'};
+  const driveLink=String(row[SELECT_COL['드라이브링크']]||'');
+  const out=listDriveFolderPhotosPublic_(driveLink,{
+    limit:limit,
+    recursive:recursive,
+    timeBudgetMs:opts.timeBudgetMs,
+    cursor:opts.cursor,
+    allowShare:true // 유효한 셀렉 세션의 폴더만 공개 열람 허용
+  });
+  if(!out||out.ok===false) return out||{ok:false,message:'Drive folder not linked'};
+  if(!hasCursor){
+    try{cache.put(key,JSON.stringify(out),900);}catch(e){} // 15min
+  }
+  return out;
+}
+
+function listDriveFolderPhotosPublic_(folderRef,options){
+  const folderId=_extractDriveFolderId_(folderRef);
+  if(!folderId) return{ok:false,message:'Drive folder not linked'};
+  const opts=options||{};
+  const recursive=opts.recursive!==false;
+  const limit=Math.max(1,Math.min(parseInt(opts.limit,10)||SELECT_PHOTO_LIST_DEFAULT_LIMIT,SELECT_PHOTO_LIST_MAX_LIMIT));
+  const timeBudgetMs=Math.max(3000,Math.min(parseInt(opts.timeBudgetMs,10)||SELECT_PHOTO_LIST_TIME_BUDGET_MS,SELECT_PHOTO_LIST_TIME_BUDGET_MS));
+  const startedAt=Date.now();
+  const cache=CacheService.getScriptCache();
+  const rawCursor=String(opts.cursor||'').trim();
+  const hasCursor=rawCursor!=='';
+  const cacheKey='selphotos_folder:v5:'+folderId+':'+(recursive?'r1':'r0')+':'+limit+':first';
+  const cached=cache.get(cacheKey);
+  if(!hasCursor&&cached){try{return JSON.parse(cached);}catch(e){}}
+  let folder;
+  try{folder=DriveApp.getFolderById(folderId);}catch(e){return{ok:false,message:'Drive folder inaccessible'};}
+  // 🔒 ACL 강제확장은 신뢰된 세션 경로(select-photos, allowShare:true)에서만 허용.
+  // 임의 folder ID를 받는 공개 미리보기(select-photos-preview)는 폴더를 공개로 바꾸지 못하게 한다.
+  if(opts.allowShare===true){
+    try{
+      // 이미 링크 공개면 쓰지 않는다(매 호출 setSharing 은 불필요한 쓰기). 셔틀(public-api, drive.readonly)은 넓히지 못하므로
+      // 실패를 돌려 프런트가 메인(쓰기 가능)으로 폴백하게 한다 — 메인은 종전처럼 조용히 계속.
+      if(folder.getSharingAccess()!==DriveApp.Access.ANYONE_WITH_LINK) folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+    }catch(e){
+      if(typeof PUBLIC_API_READONLY_!=='undefined') return{ok:false,message:'Drive share pending'};
+    }
+  }
+  const photos=[];
+  const seenFiles=new Set();
+  const state=_getSelectPhotoCursorState_(rawCursor,folderId,recursive);
+  let partial=false;
+  let scannedFolders=Number(state.scannedFolders||0)||0;
+  try{
+    while(photos.length<limit){
+      if(Date.now()-startedAt>timeBudgetMs){partial=true;break;}
+      if(!state.current){
+        if(!state.queue||!state.queue.length)break;
+        state.current=state.queue.shift();
+        state.current.fileDone=!!state.current.fileDone;
+        state.current.folderDone=recursive?!!state.current.folderDone:true;
+        scannedFolders++;
+      }
+      const current=state.current;
+      const currentFolder=DriveApp.getFolderById(current.id);
+      const currentPath=current.path||[];
+
+      if(!current.fileDone){
+        const it=current.fileToken?DriveApp.continueFileIterator(current.fileToken):currentFolder.getFiles();
+        while(it.hasNext()&&photos.length<limit){
+          if(Date.now()-startedAt>timeBudgetMs){partial=true;break;}
+          const f=it.next();
+          const mime=String(f.getMimeType()||'');
+          const fileName=String(f.getName()||'');
+          if(!_isDrivePhotoFile_(mime,fileName)) continue;
+          const fileId=f.getId();
+          if(seenFiles.has(fileId)) continue;
+          seenFiles.add(fileId);
+          photos.push({
+            id:fileId,
+            name:fileName,
+            folderName:currentFolder.getName(),
+            folderPath:currentPath.join(' / '),
+            mimeType:mime,
+            thumb:_buildDriveThumbnailUrl_(fileId,480),
+            thumbSet:[240,360,480,720,960].map(function(width){return _buildDriveThumbnailUrl_(fileId,width)+' '+width+'w';}).join(', '),
+            full:_buildDriveThumbnailUrl_(fileId,1800),
+            fallback:_buildDrivePublicImageUrl_(fileId),
+            view:'https://drive.google.com/file/d/'+encodeURIComponent(fileId)+'/view'
+          });
+        }
+        if(partial){
+          if(it.hasNext()) current.fileToken=it.getContinuationToken();
+          else{current.fileDone=true;delete current.fileToken;}
+          break;
+        }
+        if(it.hasNext()){
+          current.fileToken=it.getContinuationToken();
+          break;
+        }
+        current.fileDone=true;
+        delete current.fileToken;
+        if(photos.length>=limit)break;
+      }
+
+      if(recursive&&!current.folderDone){
+        const folders=current.folderToken?DriveApp.continueFolderIterator(current.folderToken):currentFolder.getFolders();
+        while(folders.hasNext()){
+          if(Date.now()-startedAt>timeBudgetMs){partial=true;break;}
+          const child=folders.next();
+          state.queue.push({
+            id:child.getId(),
+            path:currentPath.concat([child.getName()])
+          });
+        }
+        if(partial){
+          if(folders.hasNext()) current.folderToken=folders.getContinuationToken();
+          else{current.folderDone=true;delete current.folderToken;}
+          break;
+        }
+        current.folderDone=true;
+        delete current.folderToken;
+      }
+      state.current=null;
+    }
+  }catch(e){return{ok:false,message:'Drive listing failed: '+e.message};}
+  state.scannedFolders=scannedFolders;
+  photos.sort((a,b)=>{
+    const ap=String(a.folderPath||'');
+    const bp=String(b.folderPath||'');
+    if(ap!==bp)return ap.localeCompare(bp,undefined,{numeric:true,sensitivity:'base'});
+    return String(a.name).localeCompare(String(b.name),undefined,{numeric:true,sensitivity:'base'});
+  });
+  const hasMore=!!(partial||state.current||(state.queue&&state.queue.length));
+  const nextCursor=hasMore?_encodeSelectPhotoCursorState_(state):'';
+  const out={
+    ok:true,
+    folderId,
+    count:photos.length,
+    recursive:recursive,
+    partial:partial,
+    truncated:hasMore,
+    hasMore:hasMore,
+    cursor:nextCursor,
+    nextCursor:nextCursor,
+    limit:limit,
+    batchSize:limit,
+    scannedFolders:scannedFolders,
+    photos
+  };
+  if(!hasCursor){
+    try{
+      const raw=JSON.stringify(out);
+      if(raw.length < 90000) cache.put(cacheKey,raw,900);
+    }catch(e){}
+  }
+  return out;
+}
+
+function _getSelectPhotoCursorState_(rawCursor,rootFolderId,recursive){
+  const fresh={
+    v:1,
+    rootFolderId:rootFolderId,
+    recursive:!!recursive,
+    queue:[{id:rootFolderId,path:[]}],
+    current:null,
+    scannedFolders:0
+  };
+  const decoded=_decodeSelectPhotoCursorState_(rawCursor);
+  if(!decoded||decoded.v!==1)return fresh;
+  if(String(decoded.rootFolderId||'')!==String(rootFolderId))return fresh;
+  if(!!decoded.recursive!==!!recursive)return fresh;
+  if(!Array.isArray(decoded.queue))decoded.queue=[];
+  decoded.current=decoded.current||null;
+  decoded.scannedFolders=Number(decoded.scannedFolders||0)||0;
+  return decoded;
+}
+
+function _encodeSelectPhotoCursorState_(state){
+  try{
+    return Utilities.base64EncodeWebSafe(JSON.stringify(state));
+  }catch(e){return'';}
+}
+
+function _decodeSelectPhotoCursorState_(rawCursor){
+  if(!rawCursor)return null;
+  try{
+    const bytes=Utilities.base64DecodeWebSafe(String(rawCursor||''));
+    return JSON.parse(Utilities.newBlob(bytes).getDataAsString());
+  }catch(e){return null;}
+}
+
+function _isDrivePhotoFile_(mime,name){
+  const m=String(mime||'').toLowerCase();
+  if(m.indexOf('image/')===0) return true;
+  return SELECT_PHOTO_EXT_RE.test(String(name||''));
+}
+
+function _buildDrivePublicImageUrl_(fileId){
+  return 'https://drive.google.com/uc?export=view&id='+encodeURIComponent(String(fileId||'').trim());
+}
+
+function _buildDriveThumbnailUrl_(fileId,width){
+  return 'https://drive.google.com/thumbnail?id='+encodeURIComponent(String(fileId||'').trim())+'&sz=w'+(parseInt(width,10)||480);
+}
+
+function _extractDriveFolderId_(url){
+  if(!url)return'';
+  const m1=String(url).match(/\/folders\/([A-Za-z0-9_-]{10,})/);
+  if(m1)return m1[1];
+  const m2=String(url).match(/[?&]id=([A-Za-z0-9_-]{10,})/);
+  if(m2)return m2[1];
+  const m3=String(url).match(/^([A-Za-z0-9_-]{15,})$/);
+  if(m3)return m3[1];
+  return'';
 }

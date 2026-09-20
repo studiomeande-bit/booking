@@ -1,4 +1,4 @@
-import { READ, buildUrl, parseJsonResponse, postPayload, readJsonBody, requestJson, tagged } from './api-core.js';
+import { READ, READ_SHUTTLE, buildUrl, parseJsonResponse, postPayload, readJsonBody, readViaShuttle, requestJson, tagged } from './api-core.js';
 
 const SELECT_PHOTOS_TIMEOUT_MS = 60000;
 const SELECT_PHOTOS_BATCH_SIZE = 300;
@@ -37,8 +37,13 @@ async function parseSelectSession(response) {
   throw tagged(payload.error?.message || payload.message || 'API request failed', 'SERVER');
 }
 
+/* 세션·사진 목록은 셔틀(appscript-public) 먼저 — 브라우저 실측(2026-09-20) 메인 5.6초·8.7초. 실패·미공유 폴더(ok:false)면 메인.
+   사진 목록은 Drive 열거 자체가 수 초라 셔틀에도 60초 단발을 준다 — 12초에 끊고 메인에서 다시 열거하면 더 늦다. */
 export function fetchSelectSession(sessionId) {
-  return requestJson(buildUrl('select-session', { id: sessionId }), { ...READ, parse: parseSelectSession });
+  return readViaShuttle('select-session', { id: sessionId }, {
+    shuttle: { ...READ_SHUTTLE, parse: parseSelectSession },
+    main: { ...READ, parse: parseSelectSession }
+  });
 }
 
 // 별점(찜) 영속화 — 디바운스 저장. 실패해도 조용히(다음 변경 때 재시도), 찜은 UX 보조 데이터다.
@@ -74,12 +79,12 @@ export function fetchSelectPickupSlots(date, ignoreEventId = '') {
 }
 
 export function fetchSelectPhotos(sessionId, options = {}) {
-  return requestJson(buildUrl('select-photos', {
+  return readViaShuttle('select-photos', {
     id: sessionId,
     limit: options.limit || SELECT_PHOTOS_BATCH_SIZE,
     recursive: options.recursive === false ? '0' : '1',
     cursor: options.cursor || ''
-  }), SELECT_PHOTOS);
+  }, { shuttle: SELECT_PHOTOS, main: SELECT_PHOTOS });
 }
 
 export function fetchSelectPreviewPhotos(folder, options = {}) {

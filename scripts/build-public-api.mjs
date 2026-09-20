@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* public-api 생성기 — 예약 페이지의 **조회** 3종(api=init · calendar-batch · slots)을 Code.gs 에서 떼어
+/* public-api 생성기 — 예약·셀렉 페이지의 **조회**(api=init · quote · calendar-batch · slots · select-session · select-photos)를 Code.gs 에서 떼어
    appscript-public/Public.gs 를 만든다. 제출(api=booking)과 그 fresh 가용성 가드는 메인에 그대로 둔다.
 
    왜: 메인 2.3MB 의 요청당 3~5초 바닥이 예약 첫 방문에 3번(init→달력→슬롯) 붙는다. board-api 가 증명한 대로
@@ -19,7 +19,8 @@ const r = extractClosure({
   src: path.join(ROOT, 'appscript', 'Code.gs'),
   roots: ['getInitDataCustomer', 'sanitizeInitDataForApi_', 'getPublicCalendarBatch_', 'getPublicSlots_',
           'isPublicBookingItemGroup_', 'asNumber_', 'jsonOk_', 'jsonError_',
-          'calculateQuote_', 'isPublicBookingProduct_', 'getProductById_', 'getPublicPayloadFromRequest_'],   // quote 도 셔틀(2026-09-20 브라우저 실측: 메인 5.7초)
+          'calculateQuote_', 'isPublicBookingProduct_', 'getProductById_', 'getPublicPayloadFromRequest_',   // quote 도 셔틀(2026-09-20 브라우저 실측: 메인 5.7초)
+          'getSelectSession', 'listSelectPhotosPublic_'],   // 셀렉 조회 2종(2026-09-20 브라우저 실측: 메인 5.6초·8.7초)
   exclude: ['ensureSheets_', 'getCalCacheVer_', 'bumpCalCacheVer_', 'ensureHeaderSheet_', 'ensurePartnerSheet_'],   // 전부 Shim.gs 가 읽기 전용으로 대체
   out: path.join(ROOT, 'appscript-public', 'Public.gs'),
   label: 'node scripts/build-public-api.mjs',
@@ -35,3 +36,6 @@ const scan = (re) => [...new Set([...code.matchAll(re)].map(m => m[0]))];
 console.log('ensureSheets_ 멤버:', scan(/ensureSheets_\(\)\.[A-Za-z_]+/g).join(', '));
 console.log('Properties:', scan(/getProperty\('([A-Z_]+)'\)/g).join(', '));
 console.log('서비스:', ['CalendarApp','CacheService','UrlFetchApp','DriveApp','MailApp','LockService','PropertiesService','ScriptApp','SpreadsheetApp'].filter(s => code.includes(s)).join(', '));
+// 쓰기 가드 — 시트/속성 쓰기가 섞이면 실패. Drive 의 setSharing 만 예외(drive.readonly 스코프가 막고 Code.gs 가 ok:false 로 폴백).
+const writes = scan(/\.(setValue|setValues|appendRow|insertSheet|deleteRow|deleteRows|setProperty|deleteProperty|createFile|createFolder|setTrashed)\(/g);
+if (writes.length) { console.error('❌ 쓰기 호출 포함 — 셔틀은 조회 전용:', writes.join(', ')); process.exitCode = 1; }

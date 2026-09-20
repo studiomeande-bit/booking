@@ -314,6 +314,7 @@ const state = {
   gallery: {
     loaded: false,
     loading: false,
+    prefetch: null,         // boot 가 세션 조회와 동시에 띄운 첫 배치 약속(takeGalleryPrefetch 가 소비)
     photos: [],
     byKey: new Map(),
     filter: '',
@@ -595,6 +596,12 @@ async function boot() {
     return;
   }
   try {
+    /* 사진 목록(Drive 열거, 수 초)을 세션 조회와 **동시에** 시작한다 — loadGallery 가 첫 배치로 이 약속을 쓴다.
+       sessionStorage 캐시가 있으면 서버에 갈 일이 없으니 시작하지 않는다. 실패는 loadGallery 쪽에서 재시도 버튼으로 흡수. */
+    if (!readGalleryCache(getGalleryCacheKey())) {
+      state.gallery.prefetch = fetchSelectPhotos(state.sessionId, { limit: GALLERY_BATCH_SIZE, recursive: true, cursor: '' });
+      state.gallery.prefetch.catch(() => {});
+    }
     const session = await fetchSelectSession(state.sessionId);
     /* 최종작업완료로 마감된 세션 — 오류가 아니라 '끝났습니다' 안내다.
        hydrate 하면 canEdit 이 없어 신규 제출 모드로 열리고, 고객이 다 채운 뒤 제출에서 거절당한다. */
@@ -1633,7 +1640,7 @@ async function loadGallery(options = {}) {
             recursive: true,
             cursor
           })
-        : await fetchSelectPhotos(state.sessionId, {
+        : (await takeGalleryPrefetch(cursor)) || await fetchSelectPhotos(state.sessionId, {
             limit: GALLERY_BATCH_SIZE,
             recursive: true,
             cursor
@@ -1683,6 +1690,13 @@ async function loadGallery(options = {}) {
 function showGalleryPartialNotice(res) {
   if (!res?.partial && !res?.truncated && !res?.hasMore) return;
   updateGalleryLoadingNotice();
+}
+
+/* boot 에서 미리 띄운 첫 배치 약속 — 첫 배치(cursor 없음)에서 한 번만 소비한다. 재시도·force 는 새로 받는다. */
+function takeGalleryPrefetch(cursor) {
+  const p = state.gallery.prefetch;
+  state.gallery.prefetch = null;
+  return (!cursor && p) ? p : null;
 }
 
 function resetGalleryForLoad() {
