@@ -11,18 +11,7 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <script>
-    /* 세션 선요청 — 번들(select.min.js, 본문 끝)이 실행되기 전에 셔틀에 select-session 을 띄운다(?id= 가 있을 때만).
-       shared/api-select.js fetchSelectSession 이 같은 id 면 이 약속을 먼저 쓰고, 실패·지연이면 정상 경로.
-       URL 은 shared/config.js readApiBaseUrl(셔틀 배포 ID, -i 재배포라 고정)과 같아야 한다. */
-    (function () {
-      var id = new URLSearchParams(location.search).get('id') || '';
-      if (!id) return;
-      window.__smSessionEarlyId = id;
-      window.__smSessionEarly = fetch('https://script.google.com/macros/s/AKfycbyb1y964F-MAO4-043gq3LdIg9fPqXb-My_1iV1qcjQwQIiZnfMl17i0wAnRBn6tAj6/exec?api=select-session&id=' + encodeURIComponent(id) + '&_ts=' + Date.now(), { cache: 'no-store' });
-      window.__smSessionEarly.catch(function () {});
-    })();
-  </script>
+  <script src="./early-session.js?v=c26ad047c6"></script>
   <link rel="preload" href="./select.min.css?v=0e82d41c26" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
