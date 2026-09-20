@@ -61,6 +61,7 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
   Drive 의 `setSharing`(폴더 공유 넓히기)만 예외: Code.gs `listDriveFolderPhotosPublic_` 가 이미 공개된 폴더는 쓰지 않고, 셔틀(Shim 의 `PUBLIC_API_READONLY_`)에서 넓혀야 하면 `ok:false` 를 돌려 프런트가 메인으로 넘어간다.
 - **manifest(스코프)를 바꾸면 사장님이 편집기에서 `setup()` 을 다시 실행**해야 한다(재승인) — **탭 새로고침 후** 실행(오래 연 탭은 '실행' 자동 저장으로 옛 코드·manifest 를 HEAD 에 되돌린다, 2026-09-20 사고). 그 전엔 새 스코프가 필요한 라우트만 실패하고 프런트는 메인으로 폴백한다.
 - 셔틀 전용 캐시(Code.gs 가 `PUBLIC_API_READONLY_` 로 분기): 설정 맵 60초(`settings_map:v1`), 사진 목록 gzip 15분. 가용성 버전 `cal_cache_ver` 는 Shim `getCalCacheVer_` 가 설정 시트 셀을 직접 읽는다(캐시 지연 없음).
+- **선요청 파일**: `frontend/booking/early-init.js`(api=init)·`frontend/select/v2/early-session.js`(api=select-session, `?id=`)가 `<head>` 맨 앞에서 셔틀 URL 을 **하드코딩**해 요청을 먼저 띄운다(`api-core.js takeEarlyResponse` 가 소비). 셔틀 배포 ID 는 `-i` 재배포라 바뀌지 않지만, 바꾸게 되면 `shared/config.js` 와 이 두 파일을 같이 고칠 것. CSP(`script-src 'self'`) 때문에 인라인 불가 — 파일로 두고 `npm run stamp`.
 - 속성 동기화: `node scripts/erp-agent.mjs public-api-sync-props --json '{}'` — 메인 → 셔틀 POST `sync-props`(TOFU 다이제스트). Apple ICS 4종 + `ACTION_SECRET`(셀렉 세션의 철회 링크 서명이 메인과 같아야 함). 값은 구글↔구글로만 오가고 출력엔 키 이름만.
 - 생성 파일: `Public.gs` ← `node scripts/build-public-api.mjs` (정본 Code.gs, 직접 수정 금지). `Shim.gs` 가 DB 해석·라우팅·워밍 트리거.
 - 배포: `node scripts/build-public-api.mjs && cd appscript-public && clasp push -f && clasp deploy -i AKfycbyb1y964F-MAO4-043gq3LdIg9fPqXb-My_1iV1qcjQwQIiZnfMl17i0wAnRBn6tAj6`

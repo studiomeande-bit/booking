@@ -64,6 +64,13 @@ Updated: 2026-09-20 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-20 (밤) · 예약 init·셀렉 세션 **선요청**(번들보다 먼저) — 프런트 efbcf36
+
+- **진단**: init·quote 서버 작업은 이미 셔틀 바닥(curl init 1.3~1.7s · quote 1.4~1.7s; 설정 맵 60초 캐시·헤더 셀 제거가 예약 라우트에도 적용된 결과. quote 는 프런트가 `getPreviewQuote()` 로 값을 즉시 그리고 서버 확정치로 덮음). 남은 지연은 **요청 시작 시점**: 번들(booking.min.js)이 본문 끝이라 init 이 페이지 load 뒤(t≈1.6s)에야 출발.
+- **수리**: `<head>` 맨 앞(폰트 스타일시트보다 앞)의 작은 파일 `booking/early-init.js`·`select/v2/early-session.js` 가 `window.__smInitEarly`/`__smSessionEarly` 에 fetch 약속을 두고, `api-core.js takeEarlyResponse` 가 한 번 소비(12초 한도, 실패·지연 시 정상 경로). 인라인 `<script>` 는 CSP(`script-src 'self'`)가 막아(콘솔 실측) 파일로. 셔틀 URL 이 두 파일에 하드코딩됨(배포 ID 는 -i 고정) — deployment.md 에 명시.
+- **실측(빌트인 브라우저, 캐시 없음)**: 예약 init 출발 **1,606ms → 441ms**(HTML 도착 직후), 완료 3.4s → 2.2~3.2s(셔틀 응답 자체는 1.6~2.8s 변동). 셀렉 세션 출발 617~906ms → **292ms**, 완료 2.5s; 사진 목록 1.2s(캐시). 예약 UI 흐름(스튜디오 Basic → 다음 → 날짜): quote 2.1 → 1.6 → 1.2 → **0.9s**, 달력 2개월 병렬 2.7/3.1s → 1.8/2.4s, 슬롯 2.2~2.4s — 전부 셔틀, 메인 폴백 0회. 테스트 세션(예약 291·셀렉 146) 삭제.
+- 관찰: 날짜 클릭 시 `slots` 가 300ms 간격으로 2번 나간다(추천 날짜 자동 선택 + 클릭 추정) — 다음 후보(요청 1회 절약).
+
 ### 2026-09-20 (저녁) · 셀렉 조회 2종 셔틀 이관 + 세션·사진 목록 동시 요청 + 사진 목록 캐시 100KB 초과 수리 + getSelectSession 단축 (메인 @977 · public-api @11 · 프런트 c0904b9)
 
 - **셀렉 페이지 브라우저 실측(전, 빌트인 브라우저 첫 방문)**: 페이지 1.9s · `select-session` 5.6s(메인) · `select-photos` 8.7s(메인, 169장 콜드) · 썸네일 중앙값 0.8s(lazy). 세션→사진 순차라 사진 목록은 세션 뒤에야 시작.
