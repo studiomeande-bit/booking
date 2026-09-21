@@ -5,7 +5,7 @@ Updated: 2026-09-20 Europe/Berlin
 ## Immediate
 
 1. ~~Booking end-to-end verification~~ → **완료 (2026-08-02, Update 4 릴리스 게이트)**: 라이브 합성 예약 1건으로 Netlify 제출→시트행→캘린더(버퍼 슬롯 차단 실증)→고객·관리자 메일까지 통과, 정리(booking-delete)·슬롯 원복까지 확인. 상세는 `docs/update-4-plan.md`
-- 잔여(오너): Apps Script 200버전 한도 정리 — 배포 자체는 계속 가능한 상태
+- 잔여(오너): Apps Script 200버전 한도 정리 — **2026-09-21 현재 152/200**(오늘만 18회 배포). 남은 슬롯 48. 삭제는 소유자만 가능(Apps Script 편집기 → 프로젝트 기록). clasp 에는 버전 삭제 명령이 없다.
 
 2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
@@ -63,6 +63,14 @@ Updated: 2026-09-20 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-21 (밤) · 잡일 정리 (메인 @986)
+
+- ✅ **캘린더 드리프트 잔여 없음**: `calendar-audit` 14건 점검 → missing/drifted/adopted/resynced 전부 0. 9/20 감사의 "한혜정 row 254 낡은 캘린더 ID" 는 그 행이 **취소됨**(중복 MRT 행, 실제 촬영은 row 256 9/18 촬영완료)이라 실무 영향 없음 — 항목 종결.
+- ✅ **data-audit 상시 오경보 4건 정정**: 전화가 `+49` 단독·`미기재` 인 행 5건을 매일 '신원 쪼개짐 위험'으로 올리고 있었다. 실제로는 `_inqPhoneKey_` 가 숫자 8자리 미만이면 **빈 키**를 돌려주므로 전화로 신원이 합쳐지지 않고 이메일 키로 넘어간다(코드 확인). 이메일이 있으면 신원은 멀쩡 → 문구를 '연락 불가(신원은 이메일로 유지)' 로 낮추고, **이메일까지 없는 행만** 진짜 신원 위험으로 남긴다. 결과: 진짜 위험 1건(row 233 SOLUM Europe GmbH, 수기등록·메일없음)만 남음. 데이터는 손대지 않았다(완료된 과거 예약이고 번호를 지어낼 수 없다).
+- 📋 **오너 처리 대기**: ① Apps Script 버전 슬롯 152/200 — 편집기 프로젝트 기록에서 옛 버전 삭제(clasp 명령 없음) ② Lexware 계정 API 키 폐기(7/16 은퇴 후 유일 잔여).
+- 📋 **운영 세션 몫**(ops-checklist 경고 3건, 개발 아님): 셀렉 작업대기 1건 · 진행 중 상담 8건·상담예약 2건 · 결제 대조 검토필요 2건(은행, 최근 45일).
+- 손대지 않은 것: 작업트리의 다른 세션 파일(`.claspignore(.bak)`·`InstaPublisher.gs`·`ThreadsPublisher.gs`·`appscript-retired/`·`skills-lock.json`·`.claude/`) — 소유 세션이 정리.
 
 ### 2026-09-21 (저녁 2) · 셀렉 사진 목록 캐시 — 메인이 셔틀 캐시를 비운다 (메인 @985 · public-api @21)
 
