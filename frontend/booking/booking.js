@@ -1436,6 +1436,7 @@ const state = {
   calendarCache: new Map(),
   slotCache: new Map(),
   slotPrefetchInFlight: new Map(),
+  calendarBatchInFlight: new Map(),   // `${year}_${month}_${g}_${duration}` → 진행 중 calendar-batch 약속(fetchAndStoreCalendarBatch)
   slotMonthFlights: new Map(),   // `${year}_${month}_${g}_${duration}` → { promise, at, done } — 월 단위 슬롯 일괄 조회(prefetchSlotsMonth)
   gutschein: null,
   gutscheinDraftId: '',
@@ -5991,7 +5992,19 @@ async function loadCalendar() {
   prefetchNextCalendarMonth();
 }
 
-async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+/* calendar-batch 의 **단일 창구** — 같은 달·상품·소요시간 요청이 진행 중이면 그 약속을 같이 쓴다. 상품을 고르면 '가장 빠른 시간 찾기'와
+   달력 프리워밍(warmSelectedProductCalendar)이 같은 당월을 동시에 불러, 한 흐름에 calendar-batch 가 5번 나갔다(2026-09-21 브라우저 실측). */
+function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+  const key = `${year}_${month}_${itemGroup}_${duration}`;
+  const existing = state.calendarBatchInFlight.get(key);
+  if (existing) return existing;
+  const promise = fetchAndStoreCalendarBatchOnce(year, month, duration, itemGroup)
+    .finally(() => { state.calendarBatchInFlight.delete(key); });
+  state.calendarBatchInFlight.set(key, promise);
+  return promise;
+}
+
+async function fetchAndStoreCalendarBatchOnce(year, month, duration, itemGroup) {
   const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
   const batch = await fetchCalendarBatch({
     year,

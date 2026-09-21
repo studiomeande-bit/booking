@@ -14,8 +14,13 @@
  * 프런트(frontend/shared/api-booking.js)는 셔틀이 실패하면(미승인 HTML·타임아웃) 메인으로 되돌아간다. */
 
 const PUBLIC_DB_ID_DEFAULT_ = '1STWAMt30xku--NnFDHp1WOgpdGNQCH8T9Y0mZP6H8fI';   // docs/current-status.md 의 예약 DB
-// 월 이벤트 캐시 TTL(초) — 5분 워밍 트리거가 항상 덮도록 7분(Code.gs _monthEventsTtlSec_ 가 읽는다). 메인은 120초.
-const PUBLIC_MONTH_EVENT_TTL_SEC_ = 420;
+// 월 이벤트 캐시 TTL(초, Code.gs _monthEventsTtlSec_ 가 읽는다. 메인은 120초) — 15분. 5분 워밍 트리거가 **400초 넘은 항목을 미리 갱신**해
+// (PUBLIC_MONTH_EVENT_REFRESH_SEC_) 캐시가 끊기지 않는다. 전엔 TTL 7분에 '없으면 채움'뿐이라 10분 중 3분이 콜드였다(2026-09-21).
+// 갱신 주기(≈10분마다 재계산)는 전과 같아 트리거 런타임은 그대로. 기준 400초인 이유: 틱에 맞춰 쓰인 항목은 다음 틱에 나이 ≈300(<400, 건너뜀),
+// 그다음 틱에 ≈600(갱신) → 10분 주기. 틱 사이에 쓰인 항목(예약 직후 방문자가 채운 것)은 나이 400~700초에 갱신된다.
+// 그래서 캘린더를 **직접** 고친 변경의 반영은 보통 ≤10분, 최악 ≈12분(전: 7분 + 콜드 구간). 시스템 예약은 버전 상승으로 즉시.
+const PUBLIC_MONTH_EVENT_TTL_SEC_ = 900;
+const PUBLIC_MONTH_EVENT_REFRESH_SEC_ = 400;
 // Code.gs 의 쓰기 분기가 "여기는 셔틀" 임을 아는 표식(listDriveFolderPhotosPublic_ 의 setSharing 실패 → ok:false).
 const PUBLIC_API_READONLY_ = true;
 let _publicSheetsCache_ = null;
@@ -63,17 +68,19 @@ function getCalCacheVer_() {
 function bumpCalCacheVer_() {}
 
 // ── 워밍 ─────────────────────────────────────────────────────────
-// 메인 warmupCacheTrigger 와 같은 몸통: 3개월 이벤트 캐시(TTL 120초)를 5분마다 데워 첫 클릭을 빠르게 한다.
+// 3개월 월 이벤트 캐시를 데운다. 5분 트리거(미리 갱신) · 페이지의 warm-months(없으면 채움) · setup() 이 같이 쓴다.
 function warmupPublicCache(onlyOffset) {
   const now = new Date();
+  // 시간 트리거는 이벤트 객체를 첫 인자로 준다 — 그때만 '미리 갱신'. 페이지의 warm-months(숫자)·setup()(undefined)은 없으면 채움만(방문자 경로는 싸게).
+  const refreshSec = (typeof onlyOffset === 'object' && onlyOffset !== null) ? PUBLIC_MONTH_EVENT_REFRESH_SEC_ : 0;
   // onlyOffset(0~2): 그 달만 — 페이지가 3개월을 **병렬 요청**으로 나눠 데우면 13초(순차) → 5~6초(가장 느린 달)로 준다. 트리거는 인자 없이 전부.
   const only = (onlyOffset === 0 || onlyOffset === 1 || onlyOffset === 2) ? onlyOffset : -1;
   for (let offset = 0; offset < 3; offset++) {
     if (only >= 0 && offset !== only) continue;
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     try {
-      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), false);
-      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), true);
+      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), false, refreshSec);
+      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), true, refreshSec);
     } catch (e) { Logger.log('warmup ' + d.getFullYear() + '-' + (d.getMonth() + 1) + ': ' + e.message); }
   }
 }

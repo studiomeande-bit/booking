@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-21T07:59:26.814Z
+ * 생성 시각: 2026-09-21T08:33:09.984Z
  * 포함 함수 179개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -558,7 +558,7 @@ function _monthEventsTtlSec_(){
   return (typeof PUBLIC_MONTH_EVENT_TTL_SEC_!=='undefined'&&Number(PUBLIC_MONTH_EVENT_TTL_SEC_)>0)?Number(PUBLIC_MONTH_EVENT_TTL_SEC_):120;
 }
 
-function getCachedMonthEvents_(year,month,wantDetailed){
+function getCachedMonthEvents_(year,month,wantDetailed,refreshIfOlderSec){
   const ver=getCalCacheVer_();
   const cache=CacheService.getScriptCache();
   const key=`month_evt_${wantDetailed?'d':'e'}_v2_${ver}_${year}_${month}`;
@@ -570,7 +570,11 @@ function getCachedMonthEvents_(year,month,wantDetailed){
     return null;
   };
   const hit=readHit();
-  if(hit) return hit;
+  let refreshDue=false;
+  if(hit&&refreshIfOlderSec>0){
+    try{ refreshDue=(Date.now()-(parseInt(cache.get(key+'_at'),10)||0))>=refreshIfOlderSec*1000; }catch(e){}
+  }
+  if(hit&&!refreshDue) return hit;
   /* 셔틀(public-api) 전용 단일 비행 — 콜드 월 계산은 캘린더 4개+애플을 읽어 3~5초(상세까지 6~8초, 2026-09-21 실측)다.
      방문자의 warm-months(페이지 열 때 선요청)와 calendar-batch 가 같은 월에서 겹치면 표식(30초)을 보고 결과 캐시를 최대 12초 기다렸다
      쓴다 — 같은 월을 두 번 읽지 않는다. 계산이 실패해 캐시가 안 심기면 표식이 지워지므로 기다리던 쪽이 직접 계산한다.
@@ -592,13 +596,22 @@ function getCachedMonthEvents_(year,month,wantDetailed){
   }
   const dim=new Date(year,month+1,0).getDate();
   const start=new Date(year,month,1),end=new Date(year,month,dim,23,59,59);
-  const events=wantDetailed
-    ? getBusyEventsDetailedForRange_(start,end)
-    : getEventsForRange_(start,end);
-  if(wantDetailed||!CAL_READ_FAILED_){
-    try{ const j=JSON.stringify(events); if(j.length<95000) cache.put(key,j,_monthEventsTtlSec_()); }catch(e){}
+  let events;
+  try{
+    events=wantDetailed
+      ? getBusyEventsDetailedForRange_(start,end)
+      : getEventsForRange_(start,end);
+    /* 심는 조건 — 일반: 캘린더 읽기가 온전할 때만(종전 그대로). 상세: 종전처럼 항상 심되, **미리 갱신 중 애플 피드가 실패했으면 건너뛴다**
+       (상세 읽기는 오류를 삼키고 부분 목록을 돌려주므로, 멀쩡한 옛 값을 반쪽짜리로 덮지 않게 — 옛 값과 _at 이 남아 다음 트리거가 다시 시도).
+       구글 캘린더 쪽 오류는 상세 읽기가 표시를 안 남겨 여전히 덮을 수 있다(종전에도 그 반쪽짜리가 심겼다). */
+    const okToPut=wantDetailed ? !(refreshDue&&ICLOUD_DETAIL_READ_FAILED_) : !CAL_READ_FAILED_;
+    if(okToPut){
+      try{ const j=JSON.stringify(events); if(j.length<95000){ cache.put(key,j,_monthEventsTtlSec_()); cache.put(key+'_at',String(Date.now()),_monthEventsTtlSec_()); } }catch(e){}
+    }
+  }finally{
+    // 계산이 예외로 끝나도 표식은 지운다 — 남으면 30초 동안 다음 요청이 빈 캐시를 12초 폴링한다(2026-09-21 검토)
+    if(single){ try{ cache.remove(flightKey); }catch(e){} }
   }
-  if(single){ try{ cache.remove(flightKey); }catch(e){} }
   return events;
 }
 
