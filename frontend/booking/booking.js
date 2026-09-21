@@ -1425,6 +1425,7 @@ const state = {
   returnNoticeTimer: null,
   returnNoticeToken: 0,
   quoteToken: 0,
+  quoteMemo: null,          // { key, at, promise } — 같은 견적 요청 재사용(refreshQuote)
   earliestSlotToken: 0,
   calendarRequestToken: 0,
   slotRequestToken: 0,
@@ -5601,6 +5602,20 @@ function getQuoteRequest() {
   };
 }
 
+/* 서버 견적은 요청 payload 의 순수 함수다(시간은 payload 에 없다). '다음'·시간 선택처럼 입력이 안 바뀐 재호출이 같은 quote 를
+   1초씩 또 부르던 것(2026-09-20 실측: 한 흐름에 4회, 그중 2회는 직전과 같은 payload)을 막는다 — 같은 payload 면 진행 중·완료된
+   약속을 재사용한다. 가격·이벤트 설정이 바뀔 수 있어 5분 뒤엔 다시 묻고, 실패한 약속은 버린다. 청구 정본은 제출 시 서버 재계산. */
+const QUOTE_MEMO_TTL_MS = 5 * 60 * 1000;
+function fetchQuoteMemo(request) {
+  const key = JSON.stringify(request);
+  const memo = state.quoteMemo;
+  if (memo && memo.key === key && Date.now() - memo.at < QUOTE_MEMO_TTL_MS) return memo.promise;
+  const promise = fetchQuote(request);
+  state.quoteMemo = { key, at: Date.now(), promise };
+  promise.catch(() => { if (state.quoteMemo && state.quoteMemo.promise === promise) state.quoteMemo = null; });
+  return promise;
+}
+
 async function refreshQuote() {
   if (!state.selectedProduct) return;
   const token = ++state.quoteToken;
@@ -5609,7 +5624,7 @@ async function refreshQuote() {
   renderProductDetail();
   renderReview();
   try {
-    const nextQuote = await fetchQuote(getQuoteRequest());
+    const nextQuote = await fetchQuoteMemo(getQuoteRequest());
     if (token !== state.quoteToken) return;
     state.quote = nextQuote;
   } catch (error) {
