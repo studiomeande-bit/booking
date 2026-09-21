@@ -22,7 +22,8 @@ const r = extractClosure({
           'calculateQuote_', 'isPublicBookingProduct_', 'getProductById_', 'getPublicPayloadFromRequest_',   // quote 도 셔틀(2026-09-20 브라우저 실측: 메인 5.7초)
           'getSelectSession', 'listSelectPhotosPublic_',   // 셀렉 조회 2종(2026-09-20 브라우저 실측: 메인 5.6초·8.7초)
           'warmPublicSlotsForMonth_', 'getCustomerProducts_', 'getTfpProducts_', 'normalizeSettingCellValue_'],   // slots-month(월 슬롯 일괄, dryRun 만) · Shim 설정맵 채우기
-  exclude: ['ensureSheets_', 'getCalCacheVer_', 'bumpCalCacheVer_', 'ensureHeaderSheet_', 'ensurePartnerSheet_'],   // 전부 Shim.gs 가 읽기 전용으로 대체
+  exclude: ['ensureSheets_', 'getCalCacheVer_', 'bumpCalCacheVer_', 'ensureHeaderSheet_', 'ensurePartnerSheet_',
+            'warmupCacheTrigger'],   // 주석에서 이름만 언급되는 메인 트리거 — 추출기는 원문(주석 포함)을 훑으므로, 빼지 않으면 그 본문이 부르는 것까지(dailyTasks → 전부) 딸려 온다(2026-09-21: 179 → 740 함수·쓰기 호출 포함)   // 전부 Shim.gs 가 읽기 전용으로 대체
   out: path.join(ROOT, 'appscript-public', 'Public.gs'),
   label: 'node scripts/build-public-api.mjs',
   header: null,

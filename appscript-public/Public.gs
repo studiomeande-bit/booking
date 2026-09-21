@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-21T08:33:09.984Z
- * 포함 함수 179개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-21T10:07:55.227Z
+ * 포함 함수 177개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -819,8 +819,9 @@ function calculateQuote_(request){
       return entry ? [entry] : [];
     })
     .filter(function(entry){ return entry.length; });
-  const passCountries=(request.passCountries||[]).filter(Boolean);
-  const otherCountry=(request.otherCountry||'').trim();
+  // 고객 메일·시트에 그대로 실리는 값 — 폼은 KR/DE/JP/CN/US 코드와 자유입력(기타 국가)만 보낸다. 마크업이 실리면 스튜디오 Gmail 발 피싱 메일이 된다(2026-09-21 감사).
+  const passCountries=(Array.isArray(request.passCountries)?request.passCountries:[]).map(function(c){return String(c||'').replace(/[^A-Za-z]/g,'').slice(0,5);}).filter(Boolean);
+  const otherCountry=String(request.otherCountry||'').replace(/[<>]/g,'').trim().slice(0,40);
   const totalCountries=passPersonCountries.reduce(function(sum,codes){
     return sum + codes.filter(function(code){ return code && code!=='OTHER'; }).length;
   },0) + (otherCountry?1:0);
@@ -887,7 +888,8 @@ function calculateQuote_(request){
       const extra=Math.max(0,codes.filter(function(code){ return code && code!=='OTHER'; }).length-1)*5;
       return sum + item.p + extra;
     },0);
-    if(!passPersonCountries.length) total=item.p*people;
+    // 국가 구성을 덜 보낸 인원도 기본가로 셈한다 — 구성 1명만 보내고 인원 4명이면 1명 값만 나오던 구멍(2026-09-21 감사). 빈 구성(전원 기본가)도 같은 식.
+    total+=item.p*Math.max(0,people-passPersonCountries.length);
     // 5인 이상 가족 단체 할인(%) — 사장님 확정 2026-09-15. 법인 인보이스 체크 건은 회사 단체로 보고 제외.
     if(people>=PASS_FAMILY_DISCOUNT_MIN_PEOPLE&&!isPublicTruthy_(request.businessInvoiceNeeded)){
       familyDiscount=roundCurrency_(total*(getPassportFamilyDiscountRate_()/100));
@@ -946,7 +948,7 @@ function calculateQuote_(request){
     : (item.t==='passport'?getPassportComboDurationMin_(people):item.d);
   // 여권 콤보 추가 시 duration에 합산
   const passAddon=(item.g==='prof'||item.g==='stud')&&!!request.passAddon;
-  const passAddonPeople=parseInt(request.passAddonPeople)||1;
+  const passAddonPeople=Math.max(1,Math.min(10,parseInt(request.passAddonPeople,10)||1));   // 음수를 보내면 총액·계약금이 깎였다(2026-09-21 감사) — 폼은 1~4 만 보낸다
   const passAddonDur=passAddon?getPassportComboDurationMin_(passAddonPeople):0;
   const passItem=passAddon?getCachedProducts_().find(x=>x.g==='pass'):null;
   const passAddonPrice=passItem?passItem.p*passAddonPeople:0;
@@ -1979,6 +1981,11 @@ function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation,studioPrese
 }
 
 function getUnavailableDays(year,month,totalDur,itemGroup,lightMode){
+  // 이 함수는 google.script.run 으로도 직접 불린다 — 이번 달~지평선 밖(과거 월·터무니없는 연도)은 캘린더를 읽지 않는다(getPublicCalendarBatch_ 와 같은 창)
+  const _fm=new Date(year,month,1).getTime(),_nw=new Date();
+  if(!(_fm>=new Date(_nw.getFullYear(),_nw.getMonth(),1).getTime()&&_fm<=new Date(`${PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR}T23:59:59`).getTime())){
+    return buildClosedMonthSummary_(year,month)[`${year}_${month}`]||{unavail:[],closed:[],slotCounts:{},slotsByDate:{}};   // 정상 반환과 같은 모양({unavail,closed,slotCounts,slotsByDate})
+  }
   const ver=getCalCacheVer_(),cacheKey=`unavail_v13_${ver}_${year}_${month}_${itemGroup}_${totalDur}`;
   const cache=CacheService.getScriptCache();
   try{const h=cache.get(cacheKey);if(h)return JSON.parse(h);}catch(e){}
@@ -2715,36 +2722,6 @@ function parseSelectMailAddressText_(value,fallbackName){
     mailName:mailName||normalizeSelectMailName_(fallbackName),
     mailAddress:normalizeSelectMailAddress_(lines.join('\n'))
   };
-}
-
-function warmupCacheTrigger(){
-  /* **이벤트 캐시** 프리워밍 — 슬롯의 진짜 병목은 캘린더 다중읽기(~5s)다. 이벤트는 totalDur 무관이라
-     달당 한 번만 데우면 **모든 콤보·모든 날짜**의 슬롯이 그 위에서 fresh 하게 빠르게 계산된다
-     (getCachedMonthEvents_). 3개월 × (이벤트+상세) = 6읽기로 끝 — 예전 콤보별 슬롯 워밍(~200읽기)이
-     예산 터뜨려 month+2 굶던 문제가 원천 해소. 세션 내 다중 날짜 클릭은 첫 조회가 이미 캐시를 채워 항상
-     빠름. 트리거 5분·이벤트 TTL 120초라 첫 클릭 커버는 부분적이지만, 캐시 자체가 다중날짜를 커버한다. */
-  const now=new Date();
-  for(let offset=0;offset<3;offset++){
-    const d=new Date(now.getFullYear(),now.getMonth()+offset,1);
-    try{
-      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),false);
-      getCachedMonthEvents_(d.getFullYear(),d.getMonth(),true);
-    }catch(e){ Logger.log('warmup events '+d.getFullYear()+'-'+(d.getMonth()+1)+': '+e.message); }
-  }
-  _pingWebAppWarmup_();
-}
-
-function _pingWebAppWarmup_(){
-  try{
-    const now=new Date();
-    const h=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'H'));
-    const m=Number(Utilities.formatDate(now,CONFIG.TIMEZONE,'m'));
-    if(h<8||h>=22) return;
-    if(m%10>=5) return;
-    const url=GAS_LIVE_EXEC_URL_+'?api=warmup&_ts='+Date.now();
-    const res=UrlFetchApp.fetch(url,{muteHttpExceptions:true,followRedirects:true});
-    Logger.log('warmup ping '+res.getResponseCode());
-  }catch(e){ Logger.log('warmup ping skipped: '+e.message); }
 }
 
 const TRAVEL_KM_TABLE_=[

@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-20T15:45:13.969Z
- * 포함 함수 89개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-21T10:07:55.286Z
+ * 포함 함수 90개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -759,12 +759,18 @@ function buildTodayBoard_(dateStr){
 
 function getSettingsMap_() {
   if(SETTINGS_MAP_CACHE) return SETTINGS_MAP_CACHE;
+  /* 셔틀(public-api, Shim 이 PUBLIC_API_READONLY_ 정의)만 CacheService 60초 — 요청마다 설정 시트를 읽던 100~150ms 를 뺀다(값은 전부 문자열이라
+     JSON 왕복 무해). 메인은 저장 직후 재읽기(어드민 설정 저장)가 있어 그대로. 가용성 캐시 버전 cal_cache_ver 는 Shim getCalCacheVer_ 가
+     이 맵을 거치지 않고 셀을 직접 읽어 지연 없음. */
+  const cache=(typeof PUBLIC_API_READONLY_!=='undefined')?CacheService.getScriptCache():null;
+  if(cache){ try{ const hit=cache.get('settings_map:v1'); if(hit){ SETTINGS_MAP_CACHE=JSON.parse(hit); return SETTINGS_MAP_CACHE; } }catch(e){} }
   const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues(),map={};
   for(let i=1;i<vals.length;i++) if(vals[i][0]){
     const key=String(vals[i][0]).trim();
     map[key]=normalizeSettingCellValue_(key,vals[i][1]);
   }
   SETTINGS_MAP_CACHE=map;
+  if(cache){ try{ cache.put('settings_map:v1',JSON.stringify(map),60); }catch(e){} }
   return map;
 }
 
@@ -979,6 +985,8 @@ function formatEuroAmount_(value){
 function normalizeReturnName_(name){
   return String(name||'').replace(/\s+/g,'').trim().toLowerCase();
 }
+
+function getCalCacheVer_(){return PropertiesService.getScriptProperties().getProperty('CAL_CACHE_VER')||'1';}
 
 function classifyBookingType_(itemGroup){
   if(itemGroup==='pass') return 'A';
