@@ -64,6 +64,19 @@ Updated: 2026-09-20 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-21 (오후 2) · 어드민 대시보드 열기 속도 (메인 @982 · public-api @20 · board-api @18)
+
+**진행.** 에이전트 계측 액션 `admin-init-timing`(@981, ms·바이트·행 수만 반환) → 분석 워크플로 4갈래(서버 비용·클라이언트 부팅·HTML 무게·구조 대안) → 수리 → mock `google.script.run` 하네스로 부팅 5경로 검증 → 배포 전 검토 워크플로(발견 6 · 확정 3 · 반박 3) → 수리 → 배포 → 실측.
+
+- **실측(전)**: `/exec` HTML 1.56MB · TTFB 4.1~4.8s / `getInitDataAdmin` 왕복 7.7~10.8s(서버 3.1~4.2s = 대시보드 1.9~3.8 + 고객용 init 0.3~1.2, payload 665KB 중 customers 645KB·289건) / 로그인과 데이터 로드가 **순차 별도 RPC** — 기억기기는 `getAdminDeviceInfo → deviceLogin → getInitDataAdmin` 3회, 비밀번호·PIN 은 2회(메인은 요청마다 3~5초 바닥). 합산 17~20s.
+- **로그인 + 첫 화면 데이터 1요청**: `verifyAdmin(pw,true)`·`deviceLogin(dt,pin,true)` 가 성공한 같은 실행에서 `getInitDataAdmin` 을 실어 온다(`attachAdminInit_`, 실패한 로그인은 무거운 경로 미도달·init 실패 시 클라이언트가 `loadAll()` 폴백). 기억기기는 `deviceLogin(dt,'',true)` 한 번 — PIN 기기는 실패 횟수 집계 **전에** `needPin` 을 돌려준다(`getAdminDeviceInfo` 왕복 제거; 함수는 열려 있는 옛 탭용으로 유지). 요청 바닥 3→1회(기억기기)·2→1회(비밀번호·PIN).
+- **서버**: `ensureSelectSheet_` 가 부를 때마다(66곳) 헤더 마이그레이션 + 수리 2종으로 셀렉 시트를 통째로 2번 더 읽던 것 → 실행당 메모 + CacheService 플래그 10분(키 = 헤더 수 + 스프레드시트 ID, `invalidateSheetsCache_` 가 메모 초기화). `getInitDataAdmin` 은 설정만(`getCustomerInitSettings_` — 고객 init 과 공유, 셔틀 init 출력 **바이트 동일** 확인)·상품 캐시 1회. 대시보드 서버 1.9~3.8s → **1.2~1.5s**(플래그 웜).
+- **클라이언트**: 저장마다 불리는 `loadAll()`(호출처 28곳)에서 설정 패널 3종(추천 디버그·SumUp·Twilio)은 부팅·'전체 새로고침'(`loadAll(true)`) 때만 — 실패하면 플래그를 되돌려 다음에 재시도(빈 SumUp 폼 저장 = 15분 동기화 꺼짐 방지). 로그인 중복 제출 가드 + '로그인 중…' 표시(응답이 길어져 Enter 연타 시 세션 5개·기억기기 8개 상한을 밀어낼 수 있었다).
+- **HTML 1,231KB → 966KB**: `.logo img{display:none!important}` 로 숨겨져 **보이지도 않던** 148KB 인라인 로고 제거, 인쇄용 `LOGO_B64` 는 `Logo.gs` 의 480px 공식 자산(30KB). 전송 1.56MB → 1.275MB.
+- **하네스 검증**(scratch 사본 + mock 서버 채널): 기억기기 1요청 진입 · PIN(needPin→오답→정답) · 비밀번호(오답→정답 1요청) · 같은 탭 새로고침(getInitDataAdmin) · 만료 기기(토큰 삭제→비밀번호 폼) · 설정 패널 부팅 1회/저장 후 그대로/전체 새로고침 시 재로드 — JS 오류 0.
+- **안 한 것(분석 결론)**: 미사용 필드 11개 제거(−12% 이지만 0.1s 미만), 오래된 예약 지연 로드(클라이언트가 allCustomers 를 메모리 DB 로 씀 — 0.1~0.3s 이득에 버그 표면), 계산 payload 캐시(신뢰할 변경 표식 없음), 탭별 JS 지연 로드(탭마다 3~5s 바닥), 어드민 전용 경량 GAS(익명 엔드포인트가 고객 PII 전량을 내줌), Netlify 정적 셸(HTML 4.5s 제거 가능하나 2~4일 + 보안 검토의 별도 프로젝트).
+- 예상 체감: 새로 열기 17~20s → **10~12s**(HTML 4.5 + 1요청). 사장님 실사용 확인 필요(저는 비밀번호 입력 불가).
+
 ### 2026-09-21 (오후) · 공개 라우트 전수 보안 감사 + 수리 (메인 @980 · public-api @19 · board-api @17 · 프런트 b3504b8)
 
 **진행.** 읽기 전용 감사 워크플로(공개 라우트 ~50개 · 5묶음 + 묶음별 반박 검증: 발견 29 · 확정 27 · 반박 2) → 수리 → 배포 전 검토 워크플로(자동화 회귀·수리 완결성·고객 흐름 회귀: 발견 15 · 확정 14 · 반박 1, **자동화 회귀 0건**) → 수리 → 배포 → 라이브 검증.
