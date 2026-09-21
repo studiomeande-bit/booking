@@ -56,7 +56,7 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
 
 ### public-api (`appscript-public/`) — 예약 조회 셔틀
 
-- 역할: 예약·셀렉 페이지 조회 `api=init · quote · calendar-batch · slots · select-session · select-photos` 만 서빙. 제출·홀드·별점 저장은 메인.
+- 역할: 예약·셀렉 페이지 조회 `api=init · quote · calendar-batch · slots · slots-month · warm-months · select-session · select-photos` 만 서빙. `slots-month` 는 셔틀 전용(월 시더 dryRun — 캐시 무기록, 메인엔 없는 라우트라 프런트가 폴백하지 않고 날짜별 `slots` 로 동작). 제출·홀드·별점 저장은 메인.
 - 스코프: calendar·spreadsheets(readonly 는 `openById` 거부) + **drive.readonly**(셀렉 사진 목록). 읽기 전용은 코드로 보장 — 생성기가 시트/속성 쓰기 호출을 스캔해 실패시킨다.
   Drive 의 `setSharing`(폴더 공유 넓히기)만 예외: Code.gs `listDriveFolderPhotosPublic_` 가 이미 공개된 폴더는 쓰지 않고, 셔틀(Shim 의 `PUBLIC_API_READONLY_`)에서 넓혀야 하면 `ok:false` 를 돌려 프런트가 메인으로 넘어간다.
 - **manifest(스코프)를 바꾸면 사장님이 편집기에서 `setup()` 을 다시 실행**해야 한다(재승인) — **탭 새로고침 후** 실행(오래 연 탭은 '실행' 자동 저장으로 옛 코드·manifest 를 HEAD 에 되돌린다, 2026-09-20 사고). 그 전엔 새 스코프가 필요한 라우트만 실패하고 프런트는 메인으로 폴백한다.
