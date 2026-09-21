@@ -57,9 +57,12 @@ function bumpCalCacheVer_() {}
 
 // ── 워밍 ─────────────────────────────────────────────────────────
 // 메인 warmupCacheTrigger 와 같은 몸통: 3개월 이벤트 캐시(TTL 120초)를 5분마다 데워 첫 클릭을 빠르게 한다.
-function warmupPublicCache() {
+function warmupPublicCache(onlyOffset) {
   const now = new Date();
+  // onlyOffset(0~2): 그 달만 — 페이지가 3개월을 **병렬 요청**으로 나눠 데우면 13초(순차) → 5~6초(가장 느린 달)로 준다. 트리거는 인자 없이 전부.
+  const only = (onlyOffset === 0 || onlyOffset === 1 || onlyOffset === 2) ? onlyOffset : -1;
   for (let offset = 0; offset < 3; offset++) {
+    if (only >= 0 && offset !== only) continue;
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     try {
       getCachedMonthEvents_(d.getFullYear(), d.getMonth(), false);
@@ -89,8 +92,9 @@ function _pub_(e) {
        직후의 콜드 월 계산(월당 6~8초: 캘린더 4개+애플을 2번 읽음, 2026-09-21 probe 실측 events 2.2~3.8s + detailed 3.1~4.8s)을 방문자가
        상품을 고르는 동안 미리 끝낸다. 월 이벤트는 상품과 무관하다. 이미 웜이면 캐시 6번 읽고 끝(≈1.5초). 파라미터 없음 — 증폭 불가. */
     if (route === 'warm-months') {
-      warmupPublicCache();
-      return jsonOk_({ warmed: true, calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
+      const off = parseInt(p.offset, 10);   // 0~2 만 의미 있음(그 외는 3개월 전부) — 임의 월을 계산시키는 증폭 불가
+      warmupPublicCache(off);
+      return jsonOk_({ warmed: true, offset: (off === 0 || off === 1 || off === 2) ? off : 'all', calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
     }
     if (route === 'diag') {
       // 메인과의 드리프트 확인용(민감정보 없음): 캘린더 수·ICS 설정 유무·캐시 버전
