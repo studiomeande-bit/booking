@@ -85,6 +85,13 @@ function _pub_(e) {
   const t0 = Date.now();
   try {
     if (route === 'ping' || route === 'warmup') return jsonOk_({ pong: true, at: new Date().toISOString() });
+    /* 월 이벤트 캐시 선워밍 — 예약 페이지가 열릴 때 booking/early-init.js 가 기다리지 않고 쏜다. 가용성 캐시 버전이 막 올라간(누군가 예약한)
+       직후의 콜드 월 계산(월당 6~8초: 캘린더 4개+애플을 2번 읽음, 2026-09-21 probe 실측 events 2.2~3.8s + detailed 3.1~4.8s)을 방문자가
+       상품을 고르는 동안 미리 끝낸다. 월 이벤트는 상품과 무관하다. 이미 웜이면 캐시 6번 읽고 끝(≈1.5초). 파라미터 없음 — 증폭 불가. */
+    if (route === 'warm-months') {
+      warmupPublicCache();
+      return jsonOk_({ warmed: true, calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
+    }
     if (route === 'diag') {
       // 메인과의 드리프트 확인용(민감정보 없음): 캘린더 수·ICS 설정 유무·캐시 버전
       const props = PropertiesService.getScriptProperties();
@@ -132,7 +139,7 @@ function _pub_(e) {
       const recursive = String(p.recursive || '1').trim().toLowerCase();
       return jsonOk_(listSelectPhotosPublic_(sessionId, { limit: p.limit, recursive: recursive !== '0' && recursive !== 'false', cursor: p.cursor }));
     }
-    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · select-session · select-photos 만 제공합니다.');
+    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · warm-months · select-session · select-photos 만 제공합니다.');
   } catch (err) {
     return jsonError_('PUBLIC_API_ERROR', String((err && err.message) || err));
   }

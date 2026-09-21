@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-20T20:29:00.265Z
+ * 생성 시각: 2026-09-21T06:30:39.151Z
  * 포함 함수 176개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -560,10 +560,34 @@ function getCachedMonthEvents_(year,month,wantDetailed){
   const ver=getCalCacheVer_();
   const cache=CacheService.getScriptCache();
   const key=`month_evt_${wantDetailed?'d':'e'}_v2_${ver}_${year}_${month}`;
-  try{
-    const h=cache.get(key);
-    if(h){ const p=JSON.parse(h); if(Array.isArray(p)){ if(!wantDetailed) CAL_READ_FAILED_=false; return p; } }
-  }catch(e){}
+  const readHit=function(){
+    try{
+      const h=cache.get(key);
+      if(h){ const p=JSON.parse(h); if(Array.isArray(p)){ if(!wantDetailed) CAL_READ_FAILED_=false; return p; } }
+    }catch(e){}
+    return null;
+  };
+  const hit=readHit();
+  if(hit) return hit;
+  /* 셔틀(public-api) 전용 단일 비행 — 콜드 월 계산은 캘린더 4개+애플을 읽어 3~5초(상세까지 6~8초, 2026-09-21 실측)다.
+     방문자의 warm-months(페이지 열 때 선요청)와 calendar-batch 가 같은 월에서 겹치면 표식(30초)을 보고 결과 캐시를 최대 12초 기다렸다
+     쓴다 — 같은 월을 두 번 읽지 않는다. 계산이 실패해 캐시가 안 심기면 표식이 지워지므로 기다리던 쪽이 직접 계산한다.
+     메인은 제외: 메인엔 제출 경로가 있어 표시 경로가 기다리는 구조를 넣지 않는다(메인 동작 불변). */
+  const single=(typeof PUBLIC_API_READONLY_!=='undefined');
+  const flightKey='computing_'+key;
+  if(single){
+    try{
+      if(cache.get(flightKey)){
+        for(let i=0;i<24;i++){
+          Utilities.sleep(500);
+          const late=readHit();
+          if(late) return late;
+          if(!cache.get(flightKey)) break;
+        }
+      }
+      cache.put(flightKey,'1',30);
+    }catch(e){}
+  }
   const dim=new Date(year,month+1,0).getDate();
   const start=new Date(year,month,1),end=new Date(year,month,dim,23,59,59);
   const events=wantDetailed
@@ -572,6 +596,7 @@ function getCachedMonthEvents_(year,month,wantDetailed){
   if(wantDetailed||!CAL_READ_FAILED_){
     try{ const j=JSON.stringify(events); if(j.length<95000) cache.put(key,j,_monthEventsTtlSec_()); }catch(e){}
   }
+  if(single){ try{ cache.remove(flightKey); }catch(e){} }
   return events;
 }
 
