@@ -64,6 +64,15 @@ Updated: 2026-09-20 Europe/Berlin
 
 ## Done Recently
 
+### 2026-09-21 (저녁 2) · 셀렉 사진 목록 캐시 — 메인이 셔틀 캐시를 비운다 (메인 @985 · public-api @21)
+
+- **공백**: 사진 목록은 셔틀이 서빙하고 15분 gzip 캐시를 쓴다(오늘 100KB 초과 수리로 캐시가 **실제로** 동작하기 시작했다). CacheService 는 프로젝트별이라 재촬영·폴더 교체·세션 재생성 때 메인이 `clearSelectPhotoCache_` 로 자기 캐시를 비워도 셔틀은 최대 15분간 옛 목록을 서빙했다 — 재촬영 직후 "새 사진이 안 보인다" 로 이어지는 구간.
+- **수리**: `notifyShuttleSelectCacheClear_` 가 셔틀 `?api=cache-clear` 로 서명 POST. 서명은 양쪽이 공유하는 `ACTION_SECRET` HMAC(`public-api-sync-props` 가 복사 — **새 비밀값 없음**) + 5분 타임스탬프 창. 셔틀은 **그 세션·그 폴더의 사진 목록 키 4개만 remove**(쓰기·조회 반환 없음). 실패는 무시(15분 뒤 자연 만료).
+- 🔒 **검토에서 잡은 고위험 1건**: `createSelectSession` 은 전역 `LockService` 락 안에서 `clearSelectPhotoCache_` 를 부른다 → 새로 붙인 네트워크 호출이 락 안으로 들어갔다. **UrlFetchApp 에는 타임아웃 옵션이 없고**(내가 주석에 '3초 제한'이라 잘못 적었다) 셔틀이 콜드면 수십 초다(자매 프로젝트 board-api 실측 29~55초). 그 사이 같은 락을 기다리는 **고객 예약 제출이 '동시 예약 처리 중'으로 튕긴다**. → 시트 쓰기 뒤 **락을 먼저 해제**하고 통지(두 리뷰어가 독립적으로 같은 결함 확정). 다른 두 호출처(`updateSelectDriveLinkAdmin`·`addSelectReshootForAgent_`)는 락 없음 확인.
+- **라이브 검증**(테스트 세션, 수기등록이라 메일 없음): 셔틀 사진 목록 프라임 11.6s → 캐시 1.8s·1.8s → **메인에서 clear 트리거 → 7.5s(미스=새로 읽음)** → 2.7s(다시 캐시). 위조 방어(브라우저에서 실제 POST): 서명 위조 `UNAUTHORIZED` · 서명 없음 `UNAUTHORIZED` · 5분 밖 ts `INVALID_ARGUMENT`, 세 번 시도 후에도 캐시 유지(1.3s) = **무효화되지 않음**. 테스트 행 삭제(잔여 0).
+- 참고: curl 로 Apps Script `/exec` 에 POST 하면 구글 리다이렉트가 본문을 삼켜 HTML 이 온다(메모리 `inquiry-intake-pipeline` 과 같은 함정) — 공개 POST 라우트 검증은 브라우저 `fetch` 나 메인의 UrlFetchApp 경로로.
+- 남은 것(검토 반박·저위험): 셔틀 `selzips:` 캐시는 무효화 대상 아님(압축본 폴더 교체 시 최대 15분), `sendPassportPhotosAdmin`·`sendFinalDeliveryAdmin` 의 드라이브링크 재지정은 같은 블록에서 최종작업완료로 바꿔 갤러리가 잠기므로 영향 없음.
+
 ### 2026-09-21 (오후 2) · 어드민 대시보드 열기 속도 (메인 @982 · public-api @20 · board-api @18)
 
 **진행.** 에이전트 계측 액션 `admin-init-timing`(@981, ms·바이트·행 수만 반환) → 분석 워크플로 4갈래(서버 비용·클라이언트 부팅·HTML 무게·구조 대안) → 수리 → mock `google.script.run` 하네스로 부팅 5경로 검증 → 배포 전 검토 워크플로(발견 6 · 확정 3 · 반박 3) → 수리 → 배포 → 실측.

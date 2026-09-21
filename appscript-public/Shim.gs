@@ -210,6 +210,30 @@ function doPost(e) {
   let body = {};
   try { if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {}; } catch (err) {}
   const api = String(((e && e.parameter) || {}).api || body.api || '').trim();
+  /* 셀렉 사진 목록 캐시 무효화 — 메인이 재촬영·폴더 교체·세션 생성 때 보낸다(CacheService 는 프로젝트별이라 메인이 못 지운다).
+     인증은 양쪽이 공유하는 ACTION_SECRET HMAC(sync-props 로 복사) + 5분 창. 지우는 것은 **이 세션·이 폴더의 사진 목록 키뿐**이고
+     값을 쓰거나 돌려주지 않는다(최악의 경우 다음 조회가 Drive 를 다시 읽을 뿐). */
+  if (api === 'cache-clear') {
+    const sessionId = String(body.sessionId || '').trim();
+    const folderId = String(body.folderId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+    const ts = String(body.ts || '').trim();
+    if (!sessionId || !/^\d{10,}$/.test(ts) || Math.abs(Date.now() - Number(ts)) > 300000) return jsonError_('INVALID_ARGUMENT', 'stale or malformed');
+    const expect = bookingRowActionTokenFromSeed_(['selcacheclear', sessionId, folderId, ts].join('|'));
+    if (String(body.sig || '') !== expect) return jsonError_('UNAUTHORIZED', 'bad signature');
+    const cache = CacheService.getScriptCache();
+    const removed = [];
+    [300].forEach(function (limit) {
+      ['r1', 'r0'].forEach(function (rec) {
+        const k = 'selphotos:v6:' + sessionId + ':' + limit + ':' + rec + ':first';
+        try { cache.remove(k); removed.push(k); } catch (err) {}
+        if (folderId) {
+          const fk = 'selphotos_folder:v6:' + folderId + ':' + rec + ':' + limit + ':first';
+          try { cache.remove(fk); removed.push(fk); } catch (err) {}
+        }
+      });
+    });
+    return jsonOk_({ cleared: removed.length });
+  }
   if (api !== 'sync-props') return jsonError_('METHOD_NOT_ALLOWED', 'public-api 는 GET 조회 전용입니다.');
   if (!_checkSyncToken_(body.apiKey)) return jsonError_('UNAUTHORIZED', 'sync token invalid');
   const props = PropertiesService.getScriptProperties();
