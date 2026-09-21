@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Vertrag widerrufen — Studio mean</title>
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="icon" href="/studio-mean-logo.png" type="image/png">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Studio mean — Widerrufsbelehrung und Online-Widerruf (§ 356a BGB)">
+  <!-- 절대경로 — /widerruf(슬래시 없음)로 들어와도 에셋이 루트로 풀리지 않게(/status 와 같은 이유) -->
+  <link rel="stylesheet" href="/status/status.min.css?v=480430c8f1">
+  <style>
+    .wr-title{font-size:22px;font-weight:800;letter-spacing:-.03em;color:var(--brand);margin-bottom:8px;}
+    .wr-form{display:grid;gap:14px;margin-top:18px;}
+    .wr-field{display:grid;gap:6px;font-size:13px;font-weight:700;color:var(--brand);}
+    .wr-field input{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;font-size:16px;font-weight:400;color:var(--ink);background:#fff;}
+    .wr-field input:focus-visible{outline:2px solid var(--brand);outline-offset:1px;}
+    .wr-field small{font-weight:400;}
+    .wr-statement{padding:12px 14px;background:var(--soft);border:1px solid var(--line);border-radius:12px;font-size:13.5px;}
+    .wr-statement p + p{margin-top:4px;}
+    .wr-error{color:#b91c1c;font-size:13px;}
+    .wr-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
+    .wr-pass{margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:13px;}
+    .wr-done{display:grid;gap:10px;width:100%;margin-top:6px;text-align:left;}
+    .wr-done div{display:grid;grid-template-columns:minmax(96px,34%) 1fr;gap:10px;font-size:13.5px;}
+    .wr-done dt{color:var(--faint);font-weight:700;}
+    .wr-done dd{margin:0;word-break:break-word;}
+    .wr-legal{font-size:13px;line-height:1.7;color:var(--ink);}
+    .wr-legal h2{font-size:15px;font-weight:800;color:var(--brand);margin:0 0 8px;}
+    .wr-legal h3{font-size:13.5px;font-weight:700;color:var(--brand);margin:14px 0 4px;}
+    .wr-legal p{margin:0 0 8px;}
+    .wr-legal .wr-binding{color:var(--mute);font-size:12.5px;}
+    .wr-legal .wr-original{margin-top:16px;padding-top:6px;border-top:1px dashed var(--line);}
+    .wr-legal .wr-form-line{margin:0 0 3px;}
+    .foot a{color:inherit;}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a href="/"><img class="brand-logo" src="/studio-mean-logo.svg?v=20260415-logo3" alt="Studio mean" width="150" height="46"></a>
+      <div class="lang-panel" aria-label="Language">
+        <button type="button" class="lang-btn" data-lang="ko">한국어</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="de">DE</button>
+      </div>
+    </header>
+
+    <section id="formCard" class="card">
+      <h1 id="pageTitle" class="wr-title">Vertrag widerrufen</h1>
+      <p id="pageIntro" class="muted small"></p>
+      <form id="wrForm" class="wr-form" novalidate>
+        <label class="wr-field"><span id="lblName"></span><input name="name" autocomplete="name" maxlength="120" required></label>
+        <label class="wr-field"><span id="lblContract"></span><input name="contract" maxlength="500" required><small id="hintContract" class="muted"></small></label>
+        <label class="wr-field"><span id="lblEmail"></span><input name="email" type="email" autocomplete="email" maxlength="120" required><small id="hintEmail" class="muted"></small></label>
+        <input type="text" name="website" class="wr-hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div class="wr-statement">
+          <div id="lblStatement" class="sum-label"></div>
+          <p id="statementText"></p>
+          <p id="statementDe" class="muted small" lang="de"></p>
+        </div>
+        <p id="formError" class="wr-error hidden" role="alert"></p>
+        <button id="confirmBtn" class="btn btn-primary" type="submit">Widerruf bestätigen</button>
+      </form>
+      <p id="passHint" class="wr-pass muted"></p>
+    </section>
+
+    <section id="doneCard" class="card center hidden" aria-live="polite">
+      <h2 id="doneTitle"></h2>
+      <p id="doneText" class="muted small"></p>
+      <dl id="doneList" class="wr-done"></dl>
+    </section>
+
+    <section class="card">
+      <div id="legal" class="wr-legal"></div>
+    </section>
+
+    <footer class="foot">Studio mean · Holzweg-Passage 3 · 61440 Oberursel · studio.mean.de@gmail.com · <a href="/impressum/">Impressum</a> · <a href="/datenschutz/">Datenschutz</a></footer>
+  </main>
+  <script src="/widerruf/widerruf-text.js?v=8a53d8486d"></script>
+  <script defer src="/widerruf/widerruf.js?v=9ace54b746"></script>
+</body>
+</html>

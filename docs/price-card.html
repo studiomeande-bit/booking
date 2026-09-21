@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>인화 가격표 — Studio mean</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Noto+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* CI v1 §4 인쇄 기본 팔레트 */
+  :root{
+    --ink:#201C1F; --ivory:#F8F3EB; --taupe:#6D5A49; --sand:#EDE3D6; --copper:#C58D66;
+  }
+  /* A4 정확히 한 장. 넘치면 인쇄 시 2페이지가 되어 카운터에 둘 수 없다 —
+     2026-09-10 대형(견적) 행 추가로 332mm 가 되어 다시 조였다. SKU 를 또 늘리면 별도 카드로 뺄 것 —
+     SKU 를 늘리면 실제 렌더 높이를 다시 재고 여백을 조일 것(2026-09-10: 317mm 였다). */
+  @page{ size:A4; margin:0; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#e9e4dc; }
+  body{
+    font-family:'Noto Sans KR','Avenir Next',system-ui,sans-serif; font-weight:300;
+    color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  .sheet{
+    width:210mm; min-height:297mm; margin:0 auto; padding:12mm 18mm 9mm;
+    background:var(--ivory); display:flex; flex-direction:column;
+  }
+  header{ text-align:center; margin-bottom:3.5mm; }
+  .logo{
+    font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:600;
+    font-size:23pt; letter-spacing:.01em; margin:0;
+  }
+  .tag{ margin:2mm 0 0; font-size:7.5pt; letter-spacing:.32em; text-transform:uppercase; color:var(--taupe); }
+  h1{
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:19pt;
+    margin:4mm 0 1mm; letter-spacing:.02em;
+  }
+  h1 .de{ font-size:11pt; color:var(--taupe); font-style:italic; margin-left:3mm; }
+  .rule{ height:1px; background:var(--ink); opacity:.22; margin:0 0 4.5mm; }
+
+  table{ width:100%; border-collapse:collapse; }
+  thead th{
+    font-size:8pt; font-weight:500; letter-spacing:.06em; color:var(--taupe);
+    padding:0 0 2.5mm; text-align:right; border-bottom:1px solid rgba(32,28,31,.22);
+  }
+  thead th.l{ text-align:left; }
+  thead th .de{ display:block; font-size:6.8pt; letter-spacing:.04em; opacity:.75; font-weight:300; }
+  tbody tr.grp-start td{ border-top:1px solid rgba(32,28,31,.12); }
+  tbody tr:first-child td{ border-top:none; }
+  td{ padding:1.15mm 0; vertical-align:middle; }
+  td.grp{
+    width:26%; font-size:10.5pt; font-weight:400; padding-right:4mm; vertical-align:top; padding-top:3.4mm;
+  }
+  td.grp .grp-ko{ display:block; }
+  td.grp .grp-de{ display:block; font-size:7.4pt; color:var(--taupe); letter-spacing:.04em; margin-top:.6mm; }
+  td.sz{ width:32%; font-size:9.5pt; }
+  td.sz .sz-de{ display:block; font-size:7.2pt; color:var(--taupe); margin-top:.4mm; }
+  td.p{
+    width:21%; text-align:right; font-size:11pt; font-weight:400;
+    font-variant-numeric:tabular-nums; letter-spacing:.01em;
+  }
+  td.p.muted{ color:var(--taupe); font-weight:300; }
+  td.p.add{ color:var(--ink); }
+  td.p.quote{ color:var(--taupe); font-size:9.5pt; }
+  td.p.quote .de{ font-size:7pt; font-style:italic; }
+
+  .vol-band{
+    display:flex; align-items:baseline; gap:5mm; margin-top:3mm;
+    padding:2mm 3.5mm; background:var(--sand); border-radius:2mm;
+  }
+  .vol-k{ font-size:8.4pt; letter-spacing:.04em; }
+  .vol-k .de{ color:var(--taupe); font-size:7pt; font-style:italic; }
+  .vol-v{ margin-left:auto; font-size:10pt; letter-spacing:.02em; font-variant-numeric:tabular-nums; }
+
+  h2.sub{
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; font-size:13pt;
+    margin:7mm 0 1mm; letter-spacing:.02em;
+  }
+  h2.sub .de{ font-size:8.5pt; color:var(--taupe); font-style:italic; margin-left:2.5mm; }
+  .crop{
+    display:flex; gap:6mm; align-items:center;
+    border-top:1px solid rgba(32,28,31,.22); padding-top:3.5mm;
+  }
+  .crop .fig{ flex:0 0 78mm; height:19mm; }
+  .crop-text{ font-size:7.8pt; line-height:1.55; }
+  .crop-text p{ margin:0; }
+  .crop-text p.de{ color:var(--taupe); font-size:7pt; margin-top:1.2mm; }
+
+  .notes{ margin-top:auto; padding-top:3mm; }
+  .note{
+    display:flex; gap:4mm; align-items:baseline; padding:1.45mm 0;
+    border-top:1px solid rgba(32,28,31,.10); font-size:7.5pt; line-height:1.4;
+  }
+  .note:first-child{ border-top:none; }
+  .note .k{ flex:0 0 30mm; color:var(--taupe); font-size:7.6pt; letter-spacing:.05em; }
+  .note .v .de{ display:block; color:var(--taupe); font-size:7.4pt; margin-top:.6mm; }
+  footer{
+    margin-top:3.5mm; padding-top:2mm; border-top:1px solid rgba(32,28,31,.16);
+    display:flex; justify-content:space-between; font-size:7pt; color:var(--taupe); letter-spacing:.04em;
+  }
+  .sheet.back{ margin-top:8mm; }
+  .sheet.back h1{ margin-top:0; }
+  .lead{ font-size:9pt; line-height:1.7; margin:0; }
+  .lead.de{ color:var(--taupe); font-size:8pt; margin-top:2mm; }
+  .fig{ width:100%; height:auto; margin:8mm 0 2mm; }
+  .back-notes{ margin-top:auto; }
+
+  @media print{
+    html,body{ background:var(--ivory); }
+    .sheet{ margin:0; }
+    /* 양면 인쇄 — 앞면 가격, 뒷면 규격·잘림. */
+    .sheet.back{ margin-top:0; page-break-before:always; break-before:page; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <p class="logo">Studio mean</p>
+    <p class="tag">make meaningful moment</p>
+  </header>
+
+  <h1>인화 가격<span class="de">Druckpreise</span></h1>
+  <div class="rule"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="l" colspan="2">종류 · 규격<span class="de">Papier &amp; Format</span></th>
+        <th>보정본<span class="de">retuschiert</span></th>
+        <th>원본<span class="de">unbearbeitet</span></th>
+      </tr>
+    </thead>
+    <tbody>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">시그니처</span><span class="grp-de">Signature</span></td><td class="sz"><span class="sz-ko">10 × 15 cm</span></td><td class="p">€3</td><td class="p muted">€4</td></tr>
+<tr><td class="sz"><span class="sz-ko">A4</span></td><td class="p">€10</td><td class="p muted">€15</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="4"><span class="grp-ko">파인아트</span><span class="grp-de">FineArt</span></td><td class="sz"><span class="sz-ko">10 × 15 cm</span></td><td class="p">€6</td><td class="p muted">€8</td></tr>
+<tr><td class="sz"><span class="sz-ko">A4</span></td><td class="p">€15</td><td class="p muted">€20</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3</span></td><td class="p">€32</td><td class="p muted">€38</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3+</span></td><td class="p">€41</td><td class="p muted">€48</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">포토카드</span><span class="grp-de">Fotokarte</span></td><td class="sz"><span class="sz-ko">단면</span><span class="sz-de">einseitig</span></td><td class="p">€5</td><td class="p muted">€6</td></tr>
+<tr><td class="sz"><span class="sz-ko">양면</span><span class="sz-de">beidseitig</span></td><td class="p">€7</td><td class="p muted">€9</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="2"><span class="grp-ko">액자</span><span class="grp-de">Rahmen</span></td><td class="sz"><span class="sz-ko">A4 인화용</span><span class="sz-de">für A4-Druck</span></td><td class="p add" colspan="2">+ €29</td></tr>
+<tr><td class="sz"><span class="sz-ko">A3 인화용</span><span class="sz-de">für A3-Druck</span></td><td class="p add" colspan="2">+ €35</td></tr>
+<tr class="grp-start"><td class="grp" rowspan="1"><span class="grp-ko">대형</span><span class="grp-de">Großformat</span></td><td class="sz"><span class="sz-ko">60×80 등 · 액자 포함</span><span class="sz-de">z. B. 60×80, gerahmt</span></td><td class="p quote" colspan="2">견적 <span class="de">Angebot</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="vol-band">
+    <span class="vol-k">여러 장 주문 할인 <span class="de">Mengenrabatt</span></span>
+    <span class="vol-v">5장 −10% · 10장 −15% · 20장 −20%</span>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <span class="k">보정본 · 원본</span>
+      <span class="v">보정을 마친 사진은 보정본 가격으로, 보정하지 않은 촬영 원본은 원본 가격으로 인화합니다.
+        <span class="de">Bereits retuschierte Bilder zum Preis „retuschiert“, unbearbeitete Aufnahmen zum Preis „unbearbeitet“.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">할인 적용 대상</span>
+      <span class="v">유료 인화 장수 기준입니다. 포함 인화·무료 컷과 액자는 장수에 넣지 않습니다.
+        <span class="de">ab 5 Stk. −10% · ab 10 Stk. −15% · ab 20 Stk. −20% — gilt für kostenpflichtige Drucke; enthaltene Abzüge und Rahmen zählen nicht mit.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">용지</span>
+      <span class="v">시그니처는 반광 프로 사진용지, 파인아트는 매트 파이버 파인아트지입니다.
+        <span class="de">Signature: Semigloss-Fotopapier. FineArt: mattes FineArt-Papier.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">액자</span>
+      <span class="v">마운트를 포함한 목재 프레임에 끼워 조립해 드립니다.
+        <span class="de">Montage im Holzrahmen mit Passepartout.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">규격과 잘림</span>
+      <span class="v">규격에 따라 사진 가장자리가 조금 잘립니다. 자세한 내용은 <b>뒷면</b>을 봐 주세요.
+        <span class="de">Je nach Format wird der Rand etwas beschnitten — Details auf der <b>Rückseite</b>.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">대형</span>
+      <span class="v">액자까지 끼워 완성된 상태로 나갑니다. 파인아트 전문 랩에 맡겨 제작하며 <b>10~14일</b> 걸립니다. 규격에 따라 값이 달라 견적으로 안내드립니다.
+        <span class="de">Fertig gerahmt geliefert · Herstellung durch ein FineArt-Labor, 10–14 Tage. Preis nach Format — individuelles Angebot.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">수령</span>
+      <span class="v">촬영 고객은 우편 발송비를 따로 받지 않습니다. 인화만 주문하시는 경우 스튜디오 픽업으로 안내드립니다.
+        <b>A3+ · 액자 · 대형은 스튜디오 픽업만 가능합니다</b> — 액자·대형은 유리 파손 위험이 있고, A3+ 는 우편 규격을 넘깁니다.
+        <span class="de">Für Shooting-Kunden ist der Versand inklusive. Reine Druckbestellungen holen Sie im Studio ab.
+        <b>A3+, gerahmte und großformatige Bilder nur zur Abholung</b> — Bruchgefahr bzw. Überschreitung des Flachversandmaßes.</span></span>
+    </div>
+  </div>
+
+  <footer>
+    <span>모든 가격은 부가세 포함 · Alle Preise inkl. MwSt.</span>
+    <span>뒷면 · 규격과 잘림 안내 / Rückseite: Format &amp; Beschnitt</span>
+  </footer>
+</div>
+
+<div class="sheet back">
+  <h1>규격과 잘림<span class="de">Format &amp; Beschnitt</span></h1>
+  <div class="rule"></div>
+
+  <p class="lead">인화지 규격과 사진 비율이 늘 같지는 않아, 규격에 따라 가장자리가 조금 잘립니다. 10×15는 저희 카메라 원본(3:2)과 비율이 같아 거의 그대로 나가고, A4·A3는 긴 변에서 약 6%가 잘려 세로 사진은 위아래 여백이 조금 좁아집니다(A3+는 그보다 적습니다). 휴대폰 사진처럼 비율이 다른 원본은 조금 더 잘릴 수 있습니다.</p>
+  <p class="lead de">Papierformat und Bildseitenverhältnis stimmen nicht immer überein — je nach Format wird der Rand etwas beschnitten. 10×15 entspricht dem Originalverhältnis unserer Kameras (3:2), hier geht fast nichts verloren; bei A4 und A3 sind es rund 6 % der langen Seite, wodurch Hochformate oben und unten etwas knapper werden (bei A3+ weniger). Bei Dateien mit anderem Seitenverhältnis, etwa Handyfotos, ist es etwas mehr.</p>
+
+  <svg class="fig" viewBox="0 0 340 132" role="img" aria-label="규격별 잘림 비교">
+    <g transform="translate(4,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1.1" opacity=".5"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">그대로</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">unverändert</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">10 × 15</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">3:2 · 카메라 원본</text>
+    </g>
+    <g transform="translate(110,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1" opacity=".26"/>
+      <rect x="0" y="0" width="62" height="5.6" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="87.4" width="62" height="5.6" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="5.6" width="62" height="81.8" fill="none" stroke="#201C1F" stroke-width="1.1"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">약 6%</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">ca. 6 %</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">A4 · A3</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">긴 변이 잘립니다</text>
+    </g>
+    <g transform="translate(216,8)">
+      <rect x="0" y="0" width="62" height="93" fill="none" stroke="#201C1F" stroke-width="1" opacity=".26"/>
+      <rect x="0" y="0" width="62" height="2" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="91" width="62" height="2" fill="#C58D66" opacity=".5"/>
+      <rect x="0" y="2" width="62" height="89" fill="none" stroke="#201C1F" stroke-width="1.1"/>
+      <text x="31" y="48" text-anchor="middle" font-size="8" fill="#6D5A49">약 2%</text>
+      <text x="31" y="59" text-anchor="middle" font-size="6.5" fill="#6D5A49">ca. 2 %</text>
+      <text x="31" y="108" text-anchor="middle" font-size="8.5" fill="#201C1F">A3+</text>
+      <text x="31" y="118" text-anchor="middle" font-size="6.5" fill="#6D5A49">잘림이 가장 적습니다</text>
+    </g>
+    <g transform="translate(292,40)">
+      <rect x="0" y="0" width="9" height="5" fill="#C58D66" opacity=".5"/>
+      <text x="13" y="4.6" font-size="6.8" fill="#6D5A49">잘리는 부분</text>
+      <text x="13" y="13" font-size="6.2" fill="#6D5A49">Beschnitt</text>
+      <text x="0" y="26" font-size="6.2" fill="#6D5A49">세로 사진 기준</text>
+      <text x="0" y="34" font-size="6.2" fill="#6D5A49">Hochformat</text>
+    </g>
+  </svg>
+
+  <div class="notes back-notes">
+    <div class="note">
+      <span class="k">잘리는 부분을 미리 확인합니다</span>
+      <span class="v">저희는 인화 전에 한 장씩 보고 크롭을 직접 맞춥니다. 인물이 화면 끝에 걸려 잘라내기 어렵거나 원하시는 크롭이 따로 있으시면, 여백을 두고 인화하거나 미리 여쭙습니다.
+        <span class="de">Wir sehen uns jedes Bild vor dem Druck einzeln an und legen den Ausschnitt selbst fest. Steht jemand ganz am Bildrand oder wünschen Sie einen bestimmten Ausschnitt, drucken wir mit Rand oder melden uns vorher bei Ihnen.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">여백 없음 · 풀프레임</span>
+      <span class="v">용지 끝까지 사진으로 꽉 채웁니다 (가장자리가 약간 잘릴 수 있어요).
+        <span class="de">Ohne Rand · randlos — Das Bild füllt das Papier vollständig aus (die äußersten Ränder können leicht beschnitten werden).</span></span>
+    </div>
+    <div class="note">
+      <span class="k">흰 테두리</span>
+      <span class="v">사진 둘레에 흰 여백을 남겨 인화합니다.
+        <span class="de">Weißer Rand — Wird mit weißem Rand um das Bild gedruckt.</span></span>
+    </div>
+    <div class="note">
+      <span class="k">휴대폰 사진</span>
+      <span class="v">비율이 달라 조금 더 잘릴 수 있습니다. 원하시는 크롭이 있으면 말씀해 주세요.
+        <span class="de">Handyfotos haben ein anderes Seitenverhältnis — hier wird etwas mehr beschnitten. Sagen Sie uns gern, welchen Ausschnitt Sie möchten.</span></span>
+    </div>
+  </div>
+
+  <footer>
+    <span>Studio mean</span>
+    <span>2026-09-10</span>
+  </footer>
+</div>
+</body>
+</html>

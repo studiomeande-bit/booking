@@ -1,0 +1,223 @@
+/* public-api 셔틀 — 예약·셀렉 페이지 **조회**(api=init · quote · calendar-batch · slots · select-session · select-photos)만 제공하는 경량 웹앱.
+ *
+ * 왜: 메인 Code.gs(2.3MB)는 /exec 요청마다 3~5초 로드 바닥이 붙고, 예약 첫 방문은 그 요청이 3번(init→달력→슬롯)이다.
+ * board-api 가 증명했듯 작은 프로젝트는 1~3초에 답한다(감사 2026-09-20 perf-1). 제출(api=booking)과 그 fresh 가용성
+ * 가드(slotAvailable_)는 메인에 그대로 — 이중예약 보호는 여기 영향 없음.
+ *
+ * 읽기 전용은 코드로 보장한다(Public.gs 에 setValue/appendRow/insertSheet 없음 — 생성기가 스캔, doPost 거절). readonly 스코프는
+ *   SpreadsheetApp.openById 가 거부해(2026-09-20 setup 실측 "Specified permissions are not sufficient") 메인과 같은 calendar·spreadsheets 스코프.
+ *   Drive 만 drive.readonly — 셀렉 사진 목록의 폴더 공유 넓히기(setSharing)는 여기서 실패하고, Code.gs 가 PUBLIC_API_READONLY_ 를 보고
+ *   ok:false 를 돌려 프런트가 메인으로 넘어간다(이미 공개된 폴더는 쓰기 없이 통과).
+ * Public.gs 는 생성 파일(정본 appscript/Code.gs, 재생성 node scripts/build-public-api.mjs). 이 파일이 대신하는 것:
+ *   ensureSheets_ · ensureHeaderSheet_ · ensurePartnerSheet_ (읽기 전용) · getCalCacheVer_ (설정 시트 cal_cache_ver,
+ *   메인 bumpCalCacheVer_ 가 같은 키를 갱신) · bumpCalCacheVer_ (no-op) · 라우팅 · 워밍 트리거.
+ * 프런트(frontend/shared/api-booking.js)는 셔틀이 실패하면(미승인 HTML·타임아웃) 메인으로 되돌아간다. */
+
+const PUBLIC_DB_ID_DEFAULT_ = '1STWAMt30xku--NnFDHp1WOgpdGNQCH8T9Y0mZP6H8fI';   // docs/current-status.md 의 예약 DB
+// 월 이벤트 캐시 TTL(초, Code.gs _monthEventsTtlSec_ 가 읽는다. 메인은 120초) — 15분. 5분 워밍 트리거가 **400초 넘은 항목을 미리 갱신**해
+// (PUBLIC_MONTH_EVENT_REFRESH_SEC_) 캐시가 끊기지 않는다. 전엔 TTL 7분에 '없으면 채움'뿐이라 10분 중 3분이 콜드였다(2026-09-21).
+// 갱신 주기(≈10분마다 재계산)는 전과 같아 트리거 런타임은 그대로. 기준 400초인 이유: 틱에 맞춰 쓰인 항목은 다음 틱에 나이 ≈300(<400, 건너뜀),
+// 그다음 틱에 ≈600(갱신) → 10분 주기. 틱 사이에 쓰인 항목(예약 직후 방문자가 채운 것)은 나이 400~700초에 갱신된다.
+// 그래서 캘린더를 **직접** 고친 변경의 반영은 보통 ≤10분, 최악 ≈12분(전: 7분 + 콜드 구간). 시스템 예약은 버전 상승으로 즉시.
+const PUBLIC_MONTH_EVENT_TTL_SEC_ = 900;
+const PUBLIC_MONTH_EVENT_REFRESH_SEC_ = 400;
+// Code.gs 의 쓰기 분기가 "여기는 셔틀" 임을 아는 표식(listDriveFolderPhotosPublic_ 의 setSharing 실패 → ok:false).
+const PUBLIC_API_READONLY_ = true;
+let _publicSheetsCache_ = null;
+function ensureSheets_() {
+  if (_publicSheetsCache_) return _publicSheetsCache_;
+  const props = PropertiesService.getScriptProperties();
+  const id = String(props.getProperty('PUBLIC_DB_ID') || '').trim() || PUBLIC_DB_ID_DEFAULT_;
+  const ss = SpreadsheetApp.openById(id);
+  const bk = ss.getSheetByName(CONFIG.BOOKING_SHEET);
+  // 헤더 셀 getValue 로 DB 를 확인하던 것은 요청마다 Sheets 호출 1회(~100ms)였다 — 시트 3장의 존재로 대신한다.
+  if (!bk) throw new Error('예약 DB 가 아닙니다: ' + id);
+  const settingsSheet = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+  const productsSheet = ss.getSheetByName(CONFIG.PRODUCTS_SHEET);
+  if (!settingsSheet || !productsSheet) throw new Error('설정/상품설정 시트가 없습니다.');
+  _publicSheetsCache_ = { ss: ss, bookingSheet: bk, settingsSheet: settingsSheet, productsSheet: productsSheet };
+  return _publicSheetsCache_;
+}
+// 메인의 ensureHeaderSheet_ 는 없으면 만들고 헤더를 늘린다(쓰기) — 여기서는 있으면 돌려주고 없으면 실패한다.
+function ensureHeaderSheet_(ss, sheetName) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) throw new Error('시트 없음: ' + sheetName);
+  return sh;
+}
+function ensurePartnerSheet_(ss) { return ensureHeaderSheet_(ss, CONFIG.PARTNER_SHEET); }
+// 가용성 캐시 버전 — 메인이 예약·셀렉 제출 때마다 설정 시트 cal_cache_ver 를 올린다(브리지). 없으면 '1'.
+// getSettingsMap_ 은 셔틀에서 60초 CacheService 를 타므로(Code.gs) 여기서는 셀을 직접 읽어 지연 없이 본다(실행당 1회).
+let _calCacheVerMemo_ = null;
+function getCalCacheVer_() {
+  if (_calCacheVerMemo_ !== null) return _calCacheVerMemo_;
+  try {
+    const sh = ensureSheets_().settingsSheet;
+    const vals = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 2).getValues();
+    const hit = vals.find(function (r) { return String(r[0]).trim() === 'cal_cache_ver'; });
+    _calCacheVerMemo_ = String((hit && hit[1]) || '1');
+    // 방금 읽은 A:B 가 곧 설정 맵이다 — getSettingsMap_ 의 실행당 메모를 채워 두면 가용성 라우트는 CacheService 조회도, 60초 지연도 없다
+    // (getSettingsMap_ 과 같은 규칙: 머리행 제외·키 trim·normalizeSettingCellValue_).
+    if (!SETTINGS_MAP_CACHE) {
+      const map = {};
+      for (let i = 1; i < vals.length; i++) if (vals[i][0]) { const k = String(vals[i][0]).trim(); map[k] = normalizeSettingCellValue_(k, vals[i][1]); }
+      SETTINGS_MAP_CACHE = map;
+    }
+  } catch (e) { _calCacheVerMemo_ = '1'; }
+  return _calCacheVerMemo_;
+}
+function bumpCalCacheVer_() {}
+
+// ── 워밍 ─────────────────────────────────────────────────────────
+// 3개월 월 이벤트 캐시를 데운다. 5분 트리거(미리 갱신) · 페이지의 warm-months(없으면 채움) · setup() 이 같이 쓴다.
+function warmupPublicCache(onlyOffset) {
+  const now = new Date();
+  // 시간 트리거는 이벤트 객체를 첫 인자로 준다 — 그때만 '미리 갱신'. 페이지의 warm-months(숫자)·setup()(undefined)은 없으면 채움만(방문자 경로는 싸게).
+  const refreshSec = (typeof onlyOffset === 'object' && onlyOffset !== null) ? PUBLIC_MONTH_EVENT_REFRESH_SEC_ : 0;
+  // onlyOffset(0~2): 그 달만 — 페이지가 3개월을 **병렬 요청**으로 나눠 데우면 13초(순차) → 5~6초(가장 느린 달)로 준다. 트리거는 인자 없이 전부.
+  const only = (onlyOffset === 0 || onlyOffset === 1 || onlyOffset === 2) ? onlyOffset : -1;
+  for (let offset = 0; offset < 3; offset++) {
+    if (only >= 0 && offset !== only) continue;
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    try {
+      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), false, refreshSec);
+      getCachedMonthEvents_(d.getFullYear(), d.getMonth(), true, refreshSec);
+    } catch (e) { Logger.log('warmup ' + d.getFullYear() + '-' + (d.getMonth() + 1) + ': ' + e.message); }
+  }
+}
+/* 에디터에서 **한 번** 실행: 권한 승인(캘린더·시트 읽기, 외부요청, 트리거) + 5분 워밍 트리거 설치.
+   웹앱은 승인 전엔 HTML 승인 페이지를 돌려주고, 프런트는 그동안 메인으로 폴백한다. */
+function setup() {
+  ScriptApp.getProjectTriggers()
+    .filter(function (t) { return t.getHandlerFunction() === 'warmupPublicCache'; })
+    .forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('warmupPublicCache').timeBased().everyMinutes(5).create();
+  warmupPublicCache();
+  return 'ok: ' + ensureSheets_().ss.getName();
+}
+
+// ── 라우팅 (메인 handlePublicApiRequest_ 의 세 분기와 동일한 검증) ────
+function _pub_(e) {
+  const p = (e && e.parameter) || {};
+  const route = String(p.api || '').trim().toLowerCase();
+  const t0 = Date.now();
+  try {
+    if (route === 'ping' || route === 'warmup') return jsonOk_({ pong: true, at: new Date().toISOString() });
+    /* 월 이벤트 캐시 선워밍 — 예약 페이지가 열릴 때 booking/early-init.js 가 기다리지 않고 쏜다. 가용성 캐시 버전이 막 올라간(누군가 예약한)
+       직후의 콜드 월 계산(월당 6~8초: 캘린더 4개+애플을 2번 읽음, 2026-09-21 probe 실측 events 2.2~3.8s + detailed 3.1~4.8s)을 방문자가
+       상품을 고르는 동안 미리 끝낸다. 월 이벤트는 상품과 무관하다. 이미 웜이면 캐시 6번 읽고 끝(≈1.5초). 파라미터 없음 — 증폭 불가. */
+    if (route === 'warm-months') {
+      const off = parseInt(p.offset, 10);   // 0~2 만 의미 있음(그 외는 3개월 전부) — 임의 월을 계산시키는 증폭 불가
+      warmupPublicCache(off);
+      return jsonOk_({ warmed: true, offset: (off === 0 || off === 1 || off === 2) ? off : 'all', calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
+    }
+    if (route === 'diag') {
+      // 메인과의 드리프트 확인용(민감정보 없음): 캘린더 수·ICS 설정 유무·캐시 버전
+      const props = PropertiesService.getScriptProperties();
+      return jsonOk_({
+        calendars: getBusyCalendarMeta_().length,
+        icsConfigured: !!(props.getProperty('ICLOUD_ICS_URL') || props.getProperty('ICLOUD_CAL_URL')),
+        calCacheVer: getCalCacheVer_(),
+        ms: Date.now() - t0
+      });
+    }
+    if (route === 'init') return jsonOk_(sanitizeInitDataForApi_(getInitDataCustomer()));
+    if (route === 'quote') {   // 견적(가격 계산)도 읽기 전용 — 메인 handlePublicApiRequest_ 의 quote 분기와 동일
+      const request = getPublicPayloadFromRequest_(e);
+      const payload = request.payload;
+      if (!payload || !payload.itemId) return jsonError_('INVALID_ARGUMENT', 'Missing quote parameters');
+      if (!isPublicBookingProduct_(getProductById_(payload.itemId))) return jsonError_('INVALID_ARGUMENT', 'Unavailable product');
+      return jsonOk_(calculateQuote_(payload));
+    }
+    if (route === 'calendar-batch') {
+      const year = asNumber_(p.year);
+      const month = asNumber_(p.month);
+      const totalDur = asNumber_(p.totalDur);
+      const itemGroup = String(p.itemGroup || '').trim();
+      if (!itemGroup || !isFinite(year) || !isFinite(month) || !isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT', 'Missing calendar batch parameters');
+      if (!isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
+      return jsonOk_(getPublicCalendarBatch_(year, month, totalDur, itemGroup));
+    }
+    if (route === 'slots') {
+      const date = String(p.date || '').trim();
+      const totalDur = asNumber_(p.totalDur);
+      const itemGroup = String(p.itemGroup || '').trim();
+      if (!date || !itemGroup || !isFinite(totalDur)) return jsonError_('INVALID_ARGUMENT', 'Missing slot parameters');
+      if (!isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
+      return jsonOk_(getPublicSlots_(date, totalDur, itemGroup));
+    }
+    /* 그 달의 날짜별 슬롯을 한 번에 — 달력이 뜬 직후 프런트가 받아 날짜별 캐시에 심어 두면 날짜 클릭이 요청 없이 열린다(클릭당 ~2초 → 0).
+       계산은 검증된 월 시더 warmPublicSlotsForMonth_ 를 **dryRun(캐시 무기록)** 으로, 월 이벤트 캐시 위에서 돌린다 — getPublicSlots_ 표시 경로와
+       같은 함수·같은 입력이라 날짜별 조회와 결과가 같다. 캘린더 읽기 실패면 아무것도 돌려주지 않는다(거짓 가용성 금지). 쓰기가 없어 캐시 오염도 없다.
+       월은 이번 달~예약 지평선, totalDur 는 5분 단위 5~840, 실제 상품이 있는 그룹만(promo 는 날짜 제한이 있어 날짜별 경로 그대로). */
+    if (route === 'slots-month') {
+      const year = asNumber_(p.year), month = asNumber_(p.month), totalDur = asNumber_(p.totalDur);
+      const itemGroup = String(p.itemGroup || '').trim();
+      if (!Number.isInteger(year) || !Number.isInteger(month) || month < 0 || month > 11) return jsonError_('INVALID_ARGUMENT', 'Invalid month');
+      if (!Number.isInteger(totalDur) || totalDur < 5 || totalDur > 840 || totalDur % 5 !== 0) return jsonError_('INVALID_ARGUMENT', 'Invalid duration');
+      if (!itemGroup || itemGroup === 'promo' || !isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
+      if (!getCustomerProducts_().concat(getTfpProducts_()).some(function (x) { return x.g === itemGroup; })) return jsonError_('INVALID_ARGUMENT', 'Unknown item group');
+      const now = new Date(), first = new Date(year, month, 1).getTime();
+      // 긍정 조건으로 — `first < lo || first > hi` 는 NaN(연도 275761 이상)을 통과시킨다
+      if (!(first >= new Date(now.getFullYear(), now.getMonth(), 1).getTime() && first <= new Date(PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR + 'T23:59:59').getTime())) {
+        return jsonError_('INVALID_ARGUMENT', 'Month out of range');
+      }
+      const events = getCachedMonthEvents_(year, month, false);
+      if (CAL_READ_FAILED_) return jsonOk_({ entries: {}, skipped: 'calReadFailed' });
+      const detailed = getCachedMonthEvents_(year, month, true);
+      const seeded = warmPublicSlotsForMonth_(year, month, totalDur, itemGroup, true, { events: events, detailed: detailed, daysInMonth: new Date(year, month + 1, 0).getDate() });
+      const entries = {};
+      Object.keys((seeded && seeded.entries) || {}).forEach(function (d) { try { entries[d] = JSON.parse(seeded.entries[d]); } catch (err) {} });
+      return jsonOk_({ entries: entries, calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
+    }
+    // 셀렉 조회 2종 — 메인 handlePublicApiRequest_ 의 select-session / select-photos 분기와 동일. 제출·별점 저장은 메인.
+    if (route === 'select-session') {
+      const sessionId = String(p.id || '').trim();
+      if (!sessionId) return jsonError_('INVALID_SESSION', 'Missing session id');
+      return jsonOk_(getSelectSession(sessionId));
+    }
+    if (route === 'select-photos') {
+      const sessionId = String(p.id || '').trim();
+      if (!sessionId) return jsonError_('INVALID_SESSION', 'Missing session id');
+      const recursive = String(p.recursive || '1').trim().toLowerCase();
+      return jsonOk_(listSelectPhotosPublic_(sessionId, { limit: p.limit, recursive: recursive !== '0' && recursive !== 'false', cursor: p.cursor }));
+    }
+    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · slots-month · warm-months · select-session · select-photos 만 제공합니다.');
+  } catch (err) {
+    return jsonError_('PUBLIC_API_ERROR', String((err && err.message) || err));
+  }
+}
+function doGet(e) { return _pub_(e); }
+
+/* ── 메인 → 셔틀 속성 동기화 (POST api=sync-props) ────────────────────────
+ * iCloud/Apple 속성(ICLOUD_CAL_URL·ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD)과 ACTION_SECRET 은 프로젝트별 저장이라 셔틀에는 없다.
+ * 메인의 erp-agent 액션 `public-api-sync-props` 가 값을 **구글↔구글로만** 보낸다 — 사람·에이전트 터미널을 거치지 않는다.
+ * 인증은 board-api 와 같은 TOFU: 자동화 키의 SHA-256 다이제스트만 저장(PUBLIC_SYNC_DIGEST), 첫 호출이 등록한다. */
+function _tokenDigest_(token) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+}
+function _checkSyncToken_(token) {
+  const t = String(token || '').trim();
+  if (t.length < 24) return false;
+  const props = PropertiesService.getScriptProperties();
+  const stored = String(props.getProperty('PUBLIC_SYNC_DIGEST') || '').trim();
+  const digest = _tokenDigest_(t);
+  if (!stored) { props.setProperty('PUBLIC_SYNC_DIGEST', digest); return true; }
+  return stored === digest;
+}
+const SYNC_PROP_ALLOWLIST_ = ['ICLOUD_CAL_URL', 'ICLOUD_ICS_URL', 'APPLE_ID', 'APPLE_APP_PASSWORD', 'PUBLIC_DB_ID', 'ACTION_SECRET'];   // ACTION_SECRET: 셀렉 철회 링크 서명 일치
+function doPost(e) {
+  let body = {};
+  try { if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents) || {}; } catch (err) {}
+  const api = String(((e && e.parameter) || {}).api || body.api || '').trim();
+  if (api !== 'sync-props') return jsonError_('METHOD_NOT_ALLOWED', 'public-api 는 GET 조회 전용입니다.');
+  if (!_checkSyncToken_(body.apiKey)) return jsonError_('UNAUTHORIZED', 'sync token invalid');
+  const props = PropertiesService.getScriptProperties();
+  const set = [];
+  SYNC_PROP_ALLOWLIST_.forEach(function (k) {
+    const v = body.props && body.props[k];
+    if (typeof v === 'string' && v.trim()) { props.setProperty(k, v.trim()); set.push(k); }
+  });
+  try { CacheService.getScriptCache().remove('busy_cal_meta_v3'); } catch (err) {}   // 캘린더 메타 캐시 — ICS 유무가 바뀌었으니 다시 읽게
+  return jsonOk_({ set: set });
+}

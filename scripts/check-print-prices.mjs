@@ -69,7 +69,7 @@ function parseI18nLabels(src, constName) {
 function parseTierIds(src) {
   const block = src.split('PRINT_ID_TIER')[1] || '';
   const body = block.slice(0, block.indexOf('};') + 1);
-  return [...body.matchAll(/([a-z0-9_]+):\s*'(signature|fineart|photocard|frame)'/g)].map((m) => m[1]);
+  return [...body.matchAll(/([a-z0-9_]+):\s*'(signature|fineart|photocard|frame|wallart)'/g)].map((m) => m[1]);
 }
 
 const gs = read('appscript/Code.gs');

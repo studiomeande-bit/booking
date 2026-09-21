@@ -1,24 +1,11 @@
-import { buildPayloadUrl, buildUrl, parseJsonResponse, postPayload } from './api-core.js';
+import { READ, READ_SHUTTLE, buildPayloadUrl, buildReadUrl, buildUrl, parseJsonResponse, postPayload, readPayloadViaShuttle, readViaShuttle, requestJson, takeEarlyResponse } from './api-core.js';
+import { CONFIG } from './config.js';
 
 /* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
    GET + ?payload= 는 URL 길이 한계에 걸린다 — 실측 2026-08-27: URL 약 12,000자 초과 시 구글이 HTTP 400.
    한글은 URL 인코딩에서 1자가 9자가 되므로 요청사항 한글 1,300자 남짓이면 넘긴다. 상세 = api-core.js 주석.
-   조회 계열(quote·contact-lookup·address-lookup·gutschein-validate 등)은 payload 가 짧아 GET 을 유지한다. */
-
-async function requestJson(url) {
-  let response;
-  try {
-    response = await fetch(url, { cache: 'no-store' });
-  } catch (error) {
-    /* URL 이 너무 길면 브라우저가 요청 자체를 못 보내고 'Failed to fetch' 로 죽는다.
-       그 문구가 그대로 화면에 뜨면 고객은 원인을 알 수 없다(2026-08-27 실제 신고). */
-    if (error?.message === 'Failed to fetch') {
-      throw new Error('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
-    }
-    throw error;
-  }
-  return parseJsonResponse(response);
-}
+   조회 계열(quote·contact-lookup·address-lookup·gutschein-validate 등)은 payload 가 짧아 GET 을 유지한다.
+   requestJson / READ(25초 + 1회 재시도)는 api-core.js 에 있다 — 셀렉 조회와 공유. */
 
 /* 협력업체 클릭 집계 — 응답을 기다리지 않는다(링크는 이미 새 탭에서 열렸다).
    keepalive 로 페이지가 바뀌어도 전송이 살아남는다. 실패는 조용히 무시: 집계 때문에
@@ -36,27 +23,39 @@ export function pingPartnerClick({ partnerId, source, lang, itemGroup, linkKind 
 }
 
 export function fetchPartners() {
-  return requestJson(buildUrl('partners'));
+  return requestJson(buildUrl('partners'), READ);
 }
 
-export function fetchInitData() {
-  return requestJson(buildUrl('init'));
+/* 조회 4종(init·calendar-batch·slots·quote)은 셔틀 먼저 — readViaShuttle 은 api-core.js(셀렉 조회와 공유). */
+export async function fetchInitData() {
+  // booking/index.html <head> 가 번들보다 먼저 띄운 요청(window.__smInitEarly)이 있으면 그걸 쓴다 — 한 번만, 실패·지연이면 정상 경로.
+  const early = await takeEarlyResponse('__smInitEarly');
+  if (early) { try { return await parseJsonResponse(early); } catch (error) { /* 정상 경로로 */ } }
+  return readViaShuttle('init');
 }
 
 export function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
-  return requestJson(buildUrl('calendar-batch', { year, month, totalDur, itemGroup }));
+  return readViaShuttle('calendar-batch', { year, month, totalDur, itemGroup });
 }
 
 export function fetchSlots({ date, totalDur, itemGroup }) {
-  return requestJson(buildUrl('slots', { date, totalDur, itemGroup }));
+  return readViaShuttle('slots', { date, totalDur, itemGroup });
+}
+
+/* 그 달의 날짜별 슬롯을 한 번에(셔틀 전용 slots-month — 메인엔 없는 라우트라 폴백하지 않는다). 실패·미지원이면 null:
+   호출자는 날짜별 fetchSlots 로 그대로 동작한다. month 는 calendar-batch 와 같은 0-기준. */
+export async function fetchSlotsMonth({ year, month, totalDur, itemGroup }) {
+  if (!CONFIG.readApiBaseUrl || CONFIG.readApiBaseUrl === CONFIG.apiBaseUrl) return null;
+  try { return await requestJson(buildReadUrl('slots-month', { year, month, totalDur, itemGroup }), READ_SHUTTLE); }
+  catch (error) { return null; }
 }
 
 export function fetchQuote(data) {
-  return requestJson(buildPayloadUrl('quote', data));
+  return readPayloadViaShuttle('quote', data);   // 가격 계산은 읽기 전용 — 셔틀 먼저(브라우저 실측 메인 5.7초)
 }
 
 export function fetchReturnEligibility(data) {
-  return requestJson(buildPayloadUrl('return-check', data));
+  return requestJson(buildPayloadUrl('return-check', data), READ);
 }
 
 export function submitBooking(data, requestId) {
@@ -68,7 +67,7 @@ export function submitWalkinIntake(data, requestId) {
 }
 
 export function fetchWalkinToken() {
-  return requestJson(buildUrl('walkin-token'));
+  return requestJson(buildUrl('walkin-token'), READ);
 }
 
 export function submitConsultation(data, requestId) {
@@ -80,19 +79,19 @@ export function joinWaitlist(data, requestId) {
 }
 
 export function lookupContact(data) {
-  return requestJson(buildPayloadUrl('contact-lookup', data));
+  return requestJson(buildPayloadUrl('contact-lookup', data), READ);
 }
 
 export function lookupAddress(data) {
-  return requestJson(buildPayloadUrl('address-lookup', data));
+  return requestJson(buildPayloadUrl('address-lookup', data), READ);
 }
 
 export function fetchGutscheinTicket(code) {
-  return requestJson(buildUrl('gutschein-ticket', { code }));
+  return requestJson(buildUrl('gutschein-ticket', { code }), READ);
 }
 
 export function validateGutschein(data) {
-  return requestJson(buildPayloadUrl('gutschein-validate', data));
+  return requestJson(buildPayloadUrl('gutschein-validate', data), READ);
 }
 
 export function holdGutschein(data, requestId) {

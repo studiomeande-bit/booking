@@ -1,6 +1,6 @@
 # Update Roadmap
 
-Updated: 2026-09-09 Europe/Berlin
+Updated: 2026-09-20 Europe/Berlin
 
 ## Immediate
 
@@ -19,6 +19,8 @@ Updated: 2026-09-09 Europe/Berlin
 - 정산(settlement) 리뷰 큐 140건 정리는 별도 트랙 → **소진 (2026-08-03 확인)**: 최근 14일 review 0건, 미수는 2건 €330(정다은·박지은, 둘 다 잔금)뿐. 트랙 종료
 
 ## Next
+
+0. **KOTRA STMIN-260017 (€450, 9/10) 주차비** — 주차 영수증 금액 확인 후 ① 별도 소액 인보이스(견적 조건과 일치) 또는 ② 260017 `status:발행취소` + 합산 재발행. 그 뒤 `invoice-send` (sy.hyun@kotra.or.kr). 사장님 지시 2026-09-13 "내일".
 
 6. ~~Gutschein V2 customer redemption design~~ → 전항목 배포 완료 (2026-07-14, Done Recently 참조). 실전 코드 적용 1회 확인만 남음
 
@@ -61,6 +63,466 @@ Updated: 2026-09-09 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-21 · 월 단위 슬롯 일괄 조회 + 🔒 보안 2건 (메인 @979 · public-api @17 · 프런트 1343baf)
+
+**진행.** 슬롯 속도 요청 → 읽기 전용 분석 워크플로(서버 비용·프런트 흐름·기존 시딩 장치·안전 불변식 4갈래) → 구현 → 배포 전 검토 워크플로(결과 동일성·프런트 상태·보안/개인정보·Shim 설정맵 4갈래 + 갈래별 반박 검증, 발견 6 · 확정 3 · 반박 3) → 수리 → 배포 → 라이브 검증.
+
+- 🔒 **공개 슬롯 응답의 캘린더 제목 유출(메인 @978 · 셔틀 @16)**: 무인증 `api=slots` 의 추천 슬롯 항목 `anchorTitle` 에 **옆 예약의 캘린더 제목(`상품 | 고객명 | 인원 | 금액€`)** 이 실려 나갔다(pass/prof/stud, 라이브 2026-09-26 건 확인). 도입은 2026-04-26 커밋 6d73669('Add recommended booking times…') — 노출 기간 약 5개월. 프런트·제출 경로 모두 안 읽는 필드. `buildPublicSlotEntries_` 가 항상 빈 값(키는 유지), 슬롯 캐시 키 `public_slots_v1_`→`v2_` 로 기존 캐시 즉시 폐기, 양쪽 라이브 3그룹 빈 값 확인. **DSGVO 통지 여부는 사장님 판단 사항.**
+- 🔒 **위조 가능한 사진 목록 커서(메인 @979 · 셔틀 @17)**: `select-photos`·`select-photos-preview` 의 페이지 커서가 평문 base64(JSON)이라, `queue/current` 에 임의 폴더 ID 를 넣은 커서를 위조하면 `listDriveFolderPhotosPublic_` 가 **소유자 권한으로** 그 폴더를 열거했다 — 메인 preview 는 세션도 불필요(9/20 에 `folder` 파라미터로 막은 구멍이 `cursor` 로 열려 있던 것). 커서를 `<b64>.<HMAC(ACTION_SECRET)>` 로 서명, 불일치는 첫 페이지부터. 라이브 검증: 위조(빈 queue) 무시됨 · 정상 2페이지 중복 0 · 서명 변조 → 첫 페이지.
+- **공개 달력·슬롯 입력 창**: `getPublicCalendarBatch_`·`getPublicSlots_`(+월 시더 미러)가 이번 달~예약 지평선 밖·형식 불량 날짜는 캘린더를 읽지 않고 닫힘/빈 배열(`isPublicSlotDateInWindow_`, NaN 안전한 긍정 조건). 전엔 임의의 과거 월로 콜드 캘린더+ICS 읽기를 강제하고 캐시 키를 찍어낼 수 있었다. 1990년 요청 1.5~1.9s 즉답 확인.
+- **슬롯 계측(셔틀 probe, 월 이벤트 웜)**: 서버 0.42~0.65s = 버전 읽기 0.31~0.38s(설정 시트 열기) + 휴일 판정 0.03~0.24s + 월 이벤트 캐시 2회 0.03~0.08s + **슬롯 계산 3~4ms**. 4~10s 짜리 슬롯은 그 순간 월 이벤트가 콜드였던 것. 구조적 구멍도 확인: 월 이벤트 TTL 420s 인데 5분 워밍은 적중 시 수명을 안 늘려 **10분 중 3분은 콜드**(방문자 선워밍이 덮음 — 트리거로 메우면 트리거 런타임 40~90분/일이라 보류).
+- **slots-month(셔틀 전용, 캐시 무기록)**: 검증돼 있던 월 시더 `warmPublicSlotsForMonth_` 를 `dryRun` + 월 이벤트 캐시(preRead)로 돌려 `{entries:{날짜:[슬롯]}}` 반환. 입력: 이번 달~지평선, totalDur 5분 단위 5~840, 실제 상품이 있는 그룹(promo 제외). 프런트 `prefetchSlotsMonth` 가 `loadCalendar` 시작과 '가장 빠른 시간 찾기'에서 쏘고 날짜별 캐시에 심는다(이미 있는 항목은 안 덮음, 빈 응답은 기억 안 함). 단일 창구 `prefetchSlotsForDate` 는 진행 중 월 조회를 3.5초까지 기다린 뒤 날짜별 조회로 폴백. Shim `getCalCacheVer_` 는 읽은 A:B 로 실행당 설정 맵도 채움(가용성 라우트의 CacheService 조회·60초 지연 제거).
+- **라이브 검증**: 월 응답 vs 날짜별 `api=slots` 대조 stud/prof/pass 15일 **불일치 0**(월 2.3~3.2s · 15~52KB). 브라우저(스튜디오 Basic → 다음 → 날짜 3개 클릭): 날짜 클릭 **≈50ms**(전 ~2s), 날짜별 `slots` 요청 **0건**, `slots-month` 1건.
+- **calendar-batch 단일 창구(프런트 e6d3ff7)**: 상품 선택 시 '가장 빠른 시간 찾기'와 `warmSelectedProductCalendar` 가 같은 당월을 동시에 불렀다 → `fetchAndStoreCalendarBatch` 가 `state.calendarBatchInFlight` 로 진행 중 약속을 공유. 저장소 비운 첫 방문 재검증: `calendar-batch` **5 → 3**(9·10·11월 각 1), quote 2, slots-month 1, 날짜별 slots 0, 날짜 클릭 ≈150ms, 콘솔 오류 없음.
+- **월 이벤트 캐시 콜드 구간 제거(셔틀 @18)**: TTL 420s + '없으면 채움' 트리거라 10분 중 3분이 콜드였다 → TTL 900s, 5분 트리거만 `getCachedMonthEvents_(…, refreshIfOlderSec=400)` 로 **미리 갱신**(나이는 옆 키 `<key>_at`; 방문자 경로·메인은 인자 없음=불변). 재계산 주기는 종전과 같은 ≈10분이라 트리거 런타임 불변. 검토 워크플로(발견 4 · 확정 2 · 반박 2) 반영: 단일 비행 표식 try/finally, 미리 갱신 중 애플 피드 실패면 상세 목록 미덮음. 직접 고친 캘린더 변경의 반영은 보통 ≤10분·최악 ≈12분(전 7분+콜드), 시스템 예약은 버전 상승으로 즉시. 실측: 서버 무캐시 월 계산을 40초마다 17분(TTL 초과) 표본 24개 — 중앙 2.4s · p90 3.4s, 5초 이상은 배포 직후 전환기 1건(옛 TTL 로 심긴 11월 만료 10.0s)뿐, TTL 경과 후(10:52) 3개월 전부 1.8~2.2s = 트리거가 갱신함. 메인은 HEAD 만 push(동작 불변, 라이브 @979).
+
+### 2026-09-20 (밤) · 예약 init·셀렉 세션 **선요청**(번들보다 먼저) — 프런트 efbcf36
+
+- **진단**: init·quote 서버 작업은 이미 셔틀 바닥(curl init 1.3~1.7s · quote 1.4~1.7s; 설정 맵 60초 캐시·헤더 셀 제거가 예약 라우트에도 적용된 결과. quote 는 프런트가 `getPreviewQuote()` 로 값을 즉시 그리고 서버 확정치로 덮음). 남은 지연은 **요청 시작 시점**: 번들(booking.min.js)이 본문 끝이라 init 이 페이지 load 뒤(t≈1.6s)에야 출발.
+- **수리**: `<head>` 맨 앞(폰트 스타일시트보다 앞)의 작은 파일 `booking/early-init.js`·`select/v2/early-session.js` 가 `window.__smInitEarly`/`__smSessionEarly` 에 fetch 약속을 두고, `api-core.js takeEarlyResponse` 가 한 번 소비(12초 한도, 실패·지연 시 정상 경로). 인라인 `<script>` 는 CSP(`script-src 'self'`)가 막아(콘솔 실측) 파일로. 셔틀 URL 이 두 파일에 하드코딩됨(배포 ID 는 -i 고정) — deployment.md 에 명시.
+- **실측(빌트인 브라우저, 캐시 없음)**: 예약 init 출발 **1,606ms → 441ms**(HTML 도착 직후), 완료 3.4s → 2.2~3.2s(셔틀 응답 자체는 1.6~2.8s 변동). 셀렉 세션 출발 617~906ms → **292ms**, 완료 2.5s; 사진 목록 1.2s(캐시). 예약 UI 흐름(스튜디오 Basic → 다음 → 날짜): quote 2.1 → 1.6 → 1.2 → **0.9s**, 달력 2개월 병렬 2.7/3.1s → 1.8/2.4s, 슬롯 2.2~2.4s — 전부 셔틀, 메인 폴백 0회. 테스트 세션(예약 291·셀렉 146) 삭제.
+- **slots 중복 제거(23:1x, 프런트 0d2c18f)**: 원인은 '가장 빠른 예약 가능' 찾기(`findEarliestAvailableSlot`)가 `fetchSlots` 를 직접 불러 진행 중 표(`slotPrefetchInFlight`)에 안 올렸던 것 — 찾기가 조회 중인 날짜를 고객이 클릭하면 같은 날짜가 2번. `prefetchSlotsForDate(dateKey, product, duration)` 를 슬롯 조회 **단일 창구**(캐시 → 진행 중 → 새 요청)로 만들고 찾기·호버 프리페치·날짜 클릭이 전부 이걸 탄다. 브라우저 재검증: 같은 흐름에서 `slots` 2026-09-22 **1회**, 빠른 예약 박스 정상(09:30), 슬롯 12개 렌더. **quote 재사용(09-21 08:3x, 프런트 468d8aa)**: `refreshQuote` 가 `fetchQuoteMemo`(payload JSON 키, 진행 중·완료 약속 재사용, 5분, 실패 시 폐기)를 탄다 — 서버 견적은 payload 의 순수 함수이고 시간은 payload 에 없다. 같은 흐름 재검증: `quote` **4 → 2회**(상품 선택·날짜 선택만), 리뷰 €170 정상. '다음' 클릭이 quote 를 `await` 한 뒤 달력을 부르던 1초 대기도 같이 사라짐. **달력 콜드 구간 수리(09-21 09:xx, 셔틀 @14 · 프런트 early-init.js)**: 누군가 예약해 가용성 캐시 버전이 오르면(수기 등록도 오름 — 삭제는 안 오름) 5분 워밍 전까지 첫 방문자의 달력이 콜드였다 — 재현: 버전 상승 직후 3개월 병렬 `calendar-batch` **6.8~7.9s**(브라우저 7~12s), 웜 1.9~2.9s. probe 분해(당월): 구글 캘린더 4개 읽기 1.5~1.8s + 애플 0.5~0.65s, `getEventsForRange_` 2.2~3.8s + `getBusyEventsDetailedForRange_` 3.1~4.8s(같은 캘린더를 두 번 읽음 — 필터·출처가 달라 합치지 않음) + 가용성 계산 0.4~1.0s. 수리 ① **선워밍**: `booking/early-init.js` 가 페이지 열자마자 `api=warm-months&offset=0|1|2` 3건을 쏘고 잊는다(월 이벤트는 상품과 무관 → 방문자가 상품 고르는 동안 계산, 웜이면 캐시 확인만 ≈1.5s). ② **단일 비행**: `getCachedMonthEvents_` 셔틀 전용(`PUBLIC_API_READONLY_`) — 같은 월을 다른 요청이 계산 중이면 표식(`computing_<key>`, 30초)을 보고 결과 캐시를 최대 12초 기다려 쓴다(메인은 불변: 제출 경로가 있는 메인에 대기 구조를 넣지 않음). 실측(실제 버전 상승 후): 페이지 열고 **8초 뒤 달력 2.3~2.7s**, 4초 뒤 2.8~5.4s(진행 중 계산에 올라탐), 병렬 워밍 자체는 6~9s. 메인은 HEAD 만 push(동작 불변이라 배포 버전 미소모, 라이브 @977).
+
+### 2026-09-20 (저녁) · 셀렉 조회 2종 셔틀 이관 + 세션·사진 목록 동시 요청 + 사진 목록 캐시 100KB 초과 수리 + getSelectSession 단축 (메인 @977 · public-api @11 · 프런트 c0904b9)
+
+- **셀렉 페이지 브라우저 실측(전, 빌트인 브라우저 첫 방문)**: 페이지 1.9s · `select-session` 5.6s(메인) · `select-photos` 8.7s(메인, 169장 콜드) · 썸네일 중앙값 0.8s(lazy). 세션→사진 순차라 사진 목록은 세션 뒤에야 시작.
+- **셔틀 이관**: `scripts/build-public-api.mjs` 루트에 `getSelectSession`·`listSelectPhotosPublic_` 추가(폐쇄 173 함수/140KB), Shim 라우트 `select-session`·`select-photos`(메인 분기와 동일 검증), 스코프 **drive.readonly** 추가, 생성기에 시트/속성 쓰기 가드.
+  폴더 공유 넓히기(`setSharing`)는 셔틀이 못 한다 → Code.gs `listDriveFolderPhotosPublic_`: 이미 `ANYONE_WITH_LINK` 면 쓰기 생략(메인도 매 호출 setSharing 하던 불필요 쓰기 제거), 셔틀(`PUBLIC_API_READONLY_`)에서 넓혀야 하면 `ok:false 'Drive share pending'` → 프런트가 메인으로 폴백해 메인이 넓힌다.
+  철회 링크 서명: 세션 payload 의 `selectWithdrawUrl` 이 `ACTION_SECRET` HMAC 이라 `public-api-sync-props` 허용목록에 `ACTION_SECRET` 추가 후 동기화(21:2x, sent 4 = ICS·APPLE_ID·APP_PASSWORD·ACTION_SECRET). 셔틀 세션 응답 = 메인과 `_timing` 외 전부 동일(철회 URL 포함).
+- **프런트**: `readViaShuttle`/`readPayloadViaShuttle` 를 `api-core.js` 로 옮겨 `{shuttle, main}` 옵션(제한·parse) 지원 → `api-select.js` 세션(12초 단발→메인 25초+1회)·사진(셔틀도 60초 단발 — 12초에 끊고 메인에서 다시 열거하면 더 늦다). `select.js` boot 가 sessionStorage 캐시가 없으면 **첫 배치 `fetchSelectPhotos` 를 세션 조회와 동시에** 띄우고(`state.gallery.prefetch`) `loadGallery` 첫 배치가 `takeGalleryPrefetch` 로 소비(재시도·force 는 새로 받음).
+- **재승인 사고(21:37~21:53)**: 사장님 편집기 탭이 오후의 옛 코드를 물고 있다가 '실행' 자동 저장으로 **HEAD 를 옛 Shim·readonly manifest 로 되돌림** → "Specified permissions are not sufficient … spreadsheets"(manifest 수준, 권한 창 없음), 5분 워밍 트리거도 같이 실패. 배포본 @8 은 스냅샷이라 라이브는 정상. `.clasp.json` 만 둔 scratch 에서 `clasp pull` 로 확인 → `clasp push -f` 재실행 → 탭 새로고침 후 `setup()` 21:53 `ok`. 교훈: 재승인 요청 전에 **탭 새로고침** 을 함께 요청.
+- **사진 목록 서버 캐시가 실제로는 무캐시였다**: CacheService 값 상한 100KB 인데 169장 목록이 JSON 165KB → 세션 캐시 `put` 은 try/catch 로 조용히 실패, 폴더 캐시는 90KB 넘으면 아예 건너뜀 → 새로고침마다 Drive 열거 5~10초(메인 8.7~14.5s 의 본체). `_selPhotoCachePut_/_selPhotoCacheGet_`(gzip+base64, 접두 `gz:`, 키 v6)로 담고, `clearSelectPhotoCache_(sessionId, driveLink)` 가 폴더 키도 지운다(재촬영은 같은 폴더에 사진이 늘어나므로). curl: 셔틀 4.9s(콜드) → 1.7s → **1.2s**, 메인 14.5s(콜드) → 4.5s.
+- **브라우저 실측(후, 셔틀 @9 · sessionStorage 비움)**: 페이지 0.7s · `select-session` **3.1s**(셔틀) ∥ `select-photos` **1.7s**(셔틀, 캐시) — 둘 다 t=0.6s 에 동시 출발, 사진 목록이 세션보다 먼저 도착. 첫 화면 ≈ **3.8s**(전: 1.9 + 5.6 + 8.7 순차 ≈ 16s). 메인 폴백 0회. 남은 병목은 `getSelectSession`(시트 3장 읽기 3s) — 다음 후보.
+- 남는 것: 셔틀의 CacheService 는 메인과 별개라 재촬영·링크 교체 직후 최대 15분 옛 목록 가능(드묾, 필요 시 `cal_cache_ver` 같은 버전 브리지). 테스트 행(예약 291 · 셀렉 146, 수기등록 메일이라 발송 없음) 측정 후 삭제.
+- **getSelectSession 단축(22:2x~22:5x, 메인 @977 · 셔틀 @11)**: `_timing` 으로 본 서버 작업 1.2~2.0초 → **0.7~1.3초**. ① `findSelectRowBySessionId_` — 셀렉 시트 전체(getDataRange, JSON 열 수백 KB) 대신 세션ID 열 1개 + 행 1줄(크기 무관; `listSelectPhotosPublic_` 도 사용). TextFinder 는 실측 300~1,400ms 로 더 느려 폐기. ② `getSettingsMap_` 셔틀만 CacheService 60초(값 전부 문자열) — 설정 시트 읽기 100~150ms 제거; 가용성 버전 `cal_cache_ver` 는 Shim `getCalCacheVer_` 가 셀을 직접 읽어 지연 없음(실행당 1회 메모). ③ Shim `ensureSheets_` 의 헤더 셀 getValue(요청마다 1호출) 제거 — 모든 셔틀 라우트에 적용. curl 셔틀 3.0~4.4s → **2.3~2.9s**(메인 4.3~5.2s), 응답 메인과 동일. 브라우저 3회: 세션 3.2/2.7/**2.3s**(전 3.1s), 사진 1.3~2.4s(캐시). 남은 것은 GAS 요청 바닥(셔틀 ping 1.2~1.5s) + Sheets 왕복 4회(openById·ID열·행·예약행 ≈ 0.7s) — 더 줄이려면 세션 payload 자체를 캐시해야 하는데 제출·어드민 수정 무효화가 메인↔셔틀에 걸쳐 필요해 보류.
+
+### 2026-09-20 (오후) · 예약 조회 셔틀(public-api) + 캘린더 드리프트 화해·MRT 시간 채택 (@971 · board-api @13 · public-api @1 · 프런트 feaee30)
+
+- **public-api 셔틀**: `appscript-public/` 새 GAS 프로젝트. `scripts/gas-extract.mjs`(공용 추출기, board-api 생성기도 이걸 씀)로 Code.gs 에서 init·calendar-batch·slots 폐쇄(104 함수/78KB)를 `Public.gs` 로 생성. `Shim.gs`: DB 는 ID 로 열고(PUBLIC_DB_ID 속성 override), `ensureHeaderSheet_/ensurePartnerSheet_` 는 읽기 전용 대체, `getCalCacheVer_` 는 설정 시트 `cal_cache_ver`(메인 `bumpCalCacheVer_` 가 함께 갱신 — 브리지), 라우팅 3종 + ping/diag, `setup()` = 권한 승인 + 5분 워밍 트리거. 스코프는 calendar.readonly·spreadsheets.readonly(쓰기 코드가 들어와도 throw).
+  프런트 `readViaShuttle`: 셔틀 12초·무재시도 → 실패 시 메인 25초+1회. **사장님 승인 전엔 셔틀이 HTML 을 돌려줘 자동으로 메인을 탄다**(고객 영향 없음). 승인 후 기대: 첫 방문 init→달력→슬롯 5~7초 단축.
+  ✅ 17:38 사장님 `setup()` 승인 완료 → 셔틀 **@5 라이브**. 검증: init·달력(stud/pass)·슬롯(stud/pass/prof) 6조합 모두 메인과 응답 동일, 웜 1.7~2.8초(메인 2.7~6.9초). `diag`: 캘린더 4·cal_cache_ver 브리지 동작.
+  **브라우저 실측(빌트인 브라우저, 캐시 비운 첫 방문, 스튜디오 Basic → 날짜 클릭)** — 전: init 3.6s(셔틀) · quote 5.7s(메인) · 달력 6.4~9.9s(셔틀 콜드) · 슬롯 2.0s / 9/25 클릭 8.8s(콜드).
+  후(quote 셔틀 이관 + 셔틀 이벤트 캐시 TTL 420초, 셔틀 @7·메인 @973): init 2.9s · quote 2.0~2.9s · 달력 3개월 1.5~2.4s · 슬롯 2.1~2.9s — 전부 셔틀, 메인 폴백 0회. 페이지가 상품 선택 직후 달력·첫 슬롯을 자동 선조회하므로 3단계 진입 시 이미 떠 있다.
+  추출기(`gas-extract.mjs`)에서 잡은 결함 3개: ① 이름만 넘기는 참조(`.map(parseTimeBlock_)`)를 안 따라감 ② 주석·문자열 제거 시도가 정규식 리터럴·URL 에 걸려 코드가 지워짐(formatHourMin_ 누락 → 원문 스캔으로 되돌림, 과포함은 무해) ③ 한 줄 const 의 꼬리 `// 주석` 을 다중행으로 오판해 통째로 누락(DAY_CHARS_·MORNING_BLOCK_CUTOFF_MIN). Board.gs 도 같은 규칙으로 재생성(53→89 함수, @16) — 종전 보드 번들에도 잠재 누락이 있었던 셈.
+  스코프: readonly 는 `SpreadsheetApp.openById` 가 거부(setup 실측) → 메인과 같은 calendar·spreadsheets, 읽기 전용은 코드(쓰기 호출 0)로 보장.
+  Apple ICS 속성: 18:2x `public-api-sync-props`(메인 @972, 셔틀 @6 `sync-props` POST, TOFU 다이제스트) 로 구글↔구글 복사 — ICLOUD_ICS_URL·APPLE_ID·APPLE_APP_PASSWORD 3개(메인에 ICLOUD_CAL_URL 은 원래 없음). `diag` icsConfigured:true. 앱 비밀번호를 바꾸면 이 액션을 다시 실행.
+- **캘린더 화해**: 예약장부 맨 뒤에 `캘린더동기화일시`(시스템이 이벤트를 쓴 시각, `ensureBookingCalendarEventForRow_` 가 찍음). 정합 점검(`calendar-audit`, D7 브리핑)이 불일치를 만나면 `reconcileBookingCalendarDrift_`: ① MRT 시간미정(00:00)인데 캘린더에 시간 → 채택 ② 이벤트 수정시각 > 스탬프+2분 → 사람이 캘린더에서 옮김 → 장부 반영 ③ 아니면 캘린더를 장부에 맞춤 ④ 스탬프 없는 옛 행은 보고만(일치 행엔 스탬프 백필). 메모 `[일정동기화 날짜] 이전 → 이후 · 사유`, 고객 메일 없음. 브리핑에 🟢 줄. `calendar-audit {"reconcile":false}` = 보고만.
+### 2026-09-20 · 시스템 전체 점검 + 감사 수리 배포 (@970 · board-api @12 · 프런트 c479185 · 앱 재빌드)
+
+**진행.** 읽기 전용 감사 워크플로(감사자 8 + 반박 검증 31 = 39 에이전트) → 확정 결함 28건 · 개선 47건 → 수리 → 수리분 재검토 워크플로(25 에이전트, 확정 19 · 반박 2) → 2차 수리 → 배포 → 합성행 E2E(테스트감사E/F/G, 삭제 확인). 결과 원본: 이 세션 스크래치(`audit/result.json`, `review2.json`).
+
+**배경 관측.** 메시지로그 21,780행 중 `erp-agent:today-board` 폴링이 분당 1행씩(9/19 앱 헤지 4초 → board-api 가 보통 4초를 넘겨 매분 메인까지 호출, 09:36~15:04 269회). 흐름진단이 보는 최근 900행이 폴링으로 차서 이윤경 9/17 접수확인을 '미발송 의심'으로 오판(Gmail 발송 확인). board-api 는 이따금 구글 HTML 오류 페이지를 29~55초 만에 돌려준다(5회 중 2회 실측) — 앱 폴링 헤지 8초로 조정(정상 응답은 다 들어오고 막힌 날만 메인이 받침), 서버는 today-board 를 로그에 안 남기고 흐름진단은 3000행 중 메일 행만 본다.
+
+**돈(확정 결함 → 수리).**
+- 잔금 부분수납 모델: `confirmBookingBalanceAdmin` 이 금액과 무관하게 Y 를 굳혀 덜 받은 나머지가 보드·결제검토·브리핑에서 사라졌다 → `partial:true` 로만 부분수납, 플래그는 비워 두고 잔금결제금액에 누적 + 메모 `[부분수납 날짜] X€ 수단 (누적/잔금)`. 보드 dueOnSite(`balancePartialPaid`)·결제검토·브리핑 미수·현장정산 expectDue/balDue 는 누적을 뺀 나머지, 마감대조·현금장부는 메모 줄을 날짜별로(완납일은 누적−회차합). 금액 생략 = 나머지. 어드민 잔금확인 모달은 남은 금액으로 프리필·부분수납 confirm. 잔금 셀 `35|CARD|날짜` 꼬리 제외 파싱.
+- 총액 ≤100€ 로 내려가면 미입금 계약금을 잔금에 합산(계약금 0) — set-amount(3회차 혜택 포함)·재촬영/제휴사 할인(`_depositAfterTotalChange_`)·굿샤인 미리보기/적용 공통. 종전엔 `getEffectiveBookingDeposit_` 가 100€ 이하를 '계약금 없음'으로 봐 계약금 확인이 거부되고 현장정산이 죽었다.
+- 완납(Y) 뒤 총액 변경은 force 필수 + 감사줄에 과수납/추가청구 차액; 부분수납 뒤에도 받은 돈 아래로 못 내림. 어드민 저장의 잔금 꼬리 보존. 굿샤인은 완납 뒤 거부.
+- 계약금 재확인은 force 필수(입금일·금액·수단 덮어쓰기 방지), 총결제액 초과 금액 거부. 취소 환불 `refundMethod`(bank/cash/sumup, 검증) — 현금 환불이 현금장부에 잡힌다. 발행·발송된 인보이스는 삭제 대신 `발행취소`, 연번은 `INVOICE_LAST_SEQ_` 고수위로 재사용 불가.
+- 반박됨(수정 안 함): SumUp/은행 매칭이 부분수납을 덮어쓴다(정확 금액 매칭이라 도달 불가) · 잔금 꼬리 셀 파싱(보드 등은 이미 처리).
+
+**보안.** 어드민 주간 그리드 고객명 XSS(escapeAdminHtml) + 폴더 피커 onclick(`_instaJs`) · 예약/워크인/일정변경 메일의 고객 입력 이스케이프 · 공개 예약 이름에서 `<>` 제거 · `confirmBooking/cancelBooking` 을 `_` 전역으로(서명 검증 라우트에서만) · 일정변경 폼은 서명 참조 `row:N:token` 만 · `sendReminderEmails` 는 트리거 이벤트일 때만 · 공개 폼 메일 캡(10통/10분·일일 쿼터 20통 예비, `meta.public`: 철회·워크인·상담·대기자·포트폴리오 문의) · 철회 수신확인·메모·원클릭 취소는 서명 링크 또는 이메일+이름 일치일 때만 · 비밀번호 공개 라우트 4곳 지연·잠금 + 기본 비밀번호 거부(`_publicAdminPasswordOk_`) · 셀렉 미리보기 폴더 allowlist.
+
+**데이터·운영.** 행 삭제 참조보정에 결제대조 `매칭행`(굿샤인 판매 제외)·워크인 `연결예약행` 추가 · MRT 자리표시 전화 `000000000` 신원키 제외 · 3회차 판정에 전화 3항 · ops-checklist `sheets` 에 예약장부/사진셀렉 헤더 어긋남 검사 · data-audit 오탐 2종(MRT 결제수단·빈 셀렉행) 제거 · 셀렉 제출 메일 2통은 스크립트 락 밖에서 · 셀렉 submit/update 라우트 실패 시 requestId 반환 · 브리핑에 '자동화 실패(24h)' 섹션 · Twilio 저장 빈칸 유지 + 설정 카드 로더 · **Lexware 잔재 57 함수 + 고아 13 함수 1,651줄 삭제**(구 트리거 대비 4개 이름은 disabled 스텁, 2.36→2.31MB).
+
+**프런트.** 셀렉 requestId 시도당 1회 유지(페이로드 지문 변경 시만 갱신, SERVER/GATEWAY 시 재발급, 'Duplicate submission' → 3개국어 '이미 접수') · 셀렉 세션/픽업/갤러리 읽기 25초+1회 재시도 · 오류 코드 3개국어(`apiError`), Safari/Firefox 네트워크 오류 인식 · Impressum/Datenschutz 푸터 7페이지 · studio-mean.com CSP connect-src 에 script.google.com.
+
+**로컬 자동화.** raw_select_sync 150초·3회 재시도, 실패해도 대기열 처리 계속 · comment_guard 비예약 게시물 재시도 중단 · insta-kpi launchd zsh 래퍼(TCC).
+
+**문서.** deployment.md(`-i` 필수·board-api 절), ops-checklist.md(스탬프·토큰 검증), current-status.md(@969/211 액션), SKILL.md 액션표 148→211(33행 추가, neutralize/paid 는 오탐 주석), ~/CLAUDE.md 사실 정정, widerruf 계획서 구현 상태.
+
+**남은 개선(제안, 미착수).** ① 공개 예약 API 셔틀(build-board-api 방식으로 init/calendar-batch/slots 분리, 폐쇄 108 함수/78KB — 예약 첫 방문 5~7초 단축, 캐시버전은 설정 시트로 브리지) ② 예약 제출이 달력 4회·시트 2회 읽는 락 구간 ③ calendar-batch 의 PropertiesService 3~4회 ④ ensureSheets_ 콜드 경로(17 시트) ⑤ 트리거 목록 읽기 액션(삭제 검증용) ⑥ 월 이벤트 캐시 95KB 초과 시 무캐시 무신호 ⑦ 메시지로그 21k 행 보관 정책 ⑧ 저사양 보안: 어드민 해시 솔트·GET 비밀 라우트·TOFU 다이제스트·contact-lookup 주소 반환.
+**운영 세션 몫(사장님 확인).** 김미빈 9/23 예약 시간 미정(00:00)↔캘린더 10:00 → `booking-set-time` · Anna Matsuura 9/26 13:30 두 캘린더 중복 · 한혜정 취소행 254 캘린더ID 잔존(시트에서 비우기) · 전화 불완전 6행(169·175·187·188·233·282, 285 김미빈 MRT 보강) · 결제대조 은행 2건 검토 · 상담 8건 진행 중 · automation/.env.bak 4개·insta-publisher.plist.bak 정리.
+
+### 2026-09-19 (밤) · 보드 출력·수령·발송 내용 전부 표시 + 항상 위 토글 꺼내기 + 앱 실행 불가 수리 (@969 · board-api @11 · 앱 재빌드)
+
+- **앱이 안 열림("macOS 28 이상 필요")**: 코드가 아니라 빌드 — Swift 6.3.3 이 `-target` 없는 swiftc 에 minos **28.0** 을 찍었다(이 맥은 27.0). `build.sh` 에 `-target arm64-apple-macos14.0` 고정(Info.plist 14.0 과 동일), `vtool -show-build` 로 minos 14.0 확인.
+- **출력·발송 항목 내용 전부**: 우편 주소가 `lineLimit(2)` 로 "주소:…"에서 잘려 라벨을 못 썼고, 무엇을 뽑는지는 아예 없었다. 서버 `_selectPrintLinesForBoard_` 가 셀렉 `추가인화` JSON(포함분·유료분·포토카드·액자)을
+  라벨+마감별로 묶어 `printLines` 로 싣는다 — 예: `시그니처 10×15cm · 여백 없음 × 8 (포함 7 · 추가 1) — _DS12922_Original, …`(요청 메모 포함, finish full/border → 여백 없음/흰 테두리).
+  발송 큐엔 `printedCount`(출력완료매수)도. 앱은 발송·픽업 행 아래에 인화 줄·셀렉 제출/출력 완료/결제 요청 날짜·주소 전체를 줄 수 제한 없이(드래그 복사 가능) 편다. 인화장부 행은 유료분만 있어 쓰지 않았다.
+- **항상 위에 표시 끄기**: 기능은 있었지만 톱니 팝오버 안에 숨어 있었다 → 헤더 핀 버튼(구리색=켜짐, 사선=꺼짐) · 메뉴 「항상 위에 표시」 ⌘⇧T · 메뉴바 패널 스위치. 같은 설정(`alwaysOnTop`)을 공유.
+  창 레벨은 제목줄 있는 창에만 적용(메뉴바 패널까지 .normal 로 내리면 패널이 가려질 수 있어서).
+
+### 2026-09-19 · 오늘촬영 보드 속도 + 현장 할인·무료(지인·협력사) 원샷 정산 (@967 · board-api @9 · 앱 재빌드 · 합성행 E2E 통과)
+
+**배경.** 사장님: "오늘 촬영 처리 속도 높이고, 잔금 수령 때 무료·할인 — 지인이나 협력사가 오면 바로 처리". 실측으로 원인 3개를 확인:
+잔금 시트가 계약금 확인 → fresh 리로드 → 잔금 확인 → fresh 리로드를 **차례로 기다려** 한 번에 20~40초, 보드 읽기는 board-api 15초 대기 뒤 메인 폴백(최악 45초),
+그리고 **수납 끝난 촬영에도 '현장 수납 €N'·'잔금 수령' 버튼이 남는 버그**(오늘 3건 — 헤더 합계 €300, 실제 €170. 누르면 서버가 '이미 확인' 거부 → "처리가 안 된다"로 보임).
+- **`booking-settle-onsite`(신규)** — 한 실행에 (선택) 할인·무료 → 계약금 확인(메일 억제) → 잔금 확인. 사유 지인·협력사·기타 + 메모가 감사줄
+  `[금액정정 …] 사유: [현장할인] 지인 -20€ · … (보드)` / `[무료처리] 협력사 …`로 남는다(무상 제공 세무 검토 시 토큰으로 검색).
+  규칙: 받은 계약금 아래로 못 내림(무료 = 받은 계약금까지만 청구, 돌려줄 돈은 환불 경로) · 할인 시 미입금 계약금은 잔금에 합산(총액 ≤100€면 계약금 확인이 거부되므로) ·
+  재적용 차단(토큰) · `expectDue`(화면 금액≠장부면 거부) · `requestId` 멱등 · **덜 받은 금액 거부**(전액 또는 미입금 계약금만 — `confirmBookingBalanceAdmin` 이 금액과 무관하게 잔금 Y 를 굳혀 나머지가 사라지던 종전 흐름의 구멍, 리뷰 적발).
+- **보드 dueOnSite**: 잔금결제여부 Y 면 0 (서버). 헤더 합계·버튼 동시 교정.
+- **보드 읽기 중복 제거**: 픽업·발송큐가 셀렉 시트를 각자 통째로 읽고 결제 컨텍스트가 항목마다 예약행 getRange·인화주문 2회 읽던 것을 `_boardReadCtx_` 로 1회씩. `_timing` 에 pickups/walkins 추가.
+  board-api 서버 2.9~4.0s → 2.0~3.6s. Board.gs 는 9/9 이후 미재생성이라 TFP 상품 탐색·여권 소요시간·인화 헤더가 빠져 있던 것도 이번 재생성으로 동기화.
+- **앱**: 보드 읽기 헤지(board-api 4초 무응답·실패 시 메인 동시 발사, 먼저 온 성공 채택) · 쓰기 뒤 리로드 비차단(로컬 patch 먼저) · 잔금 시트 정상/할인/무료 + 사유·메모·10/20/30/50% 버튼.
+- **검증**: 합성행 4건(`테스트정산A~D`, 2026-12-31, email 수기등록) — 할인 전액·재전송 replay·잔금Y 재정산 거부·무료(계약금 유지)·재할인 거부·금액 불일치 거부·일부 거부·계약금만→나머지·계약금 아래 할인 거부·할인만(수령 0)·이름 불일치 거부. 전건 기대대로, 합성행 삭제 확인.
+- 남은 것: 보드 읽기 자체의 GAS 바닥(요청당 2~4초)은 그대로 — 더 줄이려면 Sheets 고급서비스 batchGet(권한 재승인 필요). 일부 수납(나눠 받기)은 어드민 경로 유지.
+
+### 2026-09-18 · 셀렉 유료 추가 주문 철회 안내 + 주문·예약 버튼 § 312j (@966 · 배포 완료 · 로컬 브라우저 검증, 라이브 E2E 는 사장님 확인 뒤)
+
+**배경.** 셀렉에서 기본 제공분을 넘겨 고르는 유료 추가 보정·인화는 웹 화면으로 맺는 새 원격계약인데 철회 안내가 없었고,
+버튼이 「제출 / Absenden」이었다 — § 312j Abs. 3·4 BGB: 유료 주문 버튼이 "zahlungspflichtig" 류가 아니면 **계약 자체가 성립하지 않는다**.
+같은 이유로 예약 페이지 「예약 제출 / Buchung senden」도 걸린다. 계획·결정: `docs/select-widerruf-plan.md`(사장님 승인: 보정 조기 이행 필수 체크 · 예약 버튼 같이 · 기존 /widerruf/ 재사용).
+- **정본 문구 확장**: `WIDERRUF_TEXT_` ↔ `widerruf-text.js` 에 보정용 조기 이행 문장 · 인화류 철회권 없음(§ 312g Abs. 2 Nr. 1) · 주문/예약 버튼 · 부가세 · 철회 페이지 계약명.
+  셀렉 사이트는 CSP 로 예약 사이트 문구 파일을 못 실어 **서버가 세션 응답에 `legal` 로** 내려보낸다(미리보기는 새 읽기 전용 라우트 `widerruf-text`).
+- **셀렉 4단계**: 합계 「(부가세 포함)」 · 유료 보정 → 필수 체크(묶음 없음, 빠졌다 다시 담기면 재체크) + 철회 안내 링크 · 유료 인화·액자·포토카드 → 철회권 없음 한 줄 ·
+  합계>0 이면 버튼 「결제 의무가 있는 주문하기 / Order with obligation to pay / Zahlungspflichtig bestellen」, 0원은 종전 문구 · 하단 「Vertrag widerrufen」(예약행 있으면 서명 ref).
+- **서버**: 셀렉 시트 맨 뒤 새 열 `추가보정조기이행요청`(시각 | 문구 버전, 수정으로 빠지면 지움) · 관리자 제출/수정 알림에 ✔/⚠ ·
+  접수 메일 C4/C5 에 유료분 법정 안내(확정 문장 + 인화 고지 + 보정 철회 안내 전문) · `/widerruf/?what=select` → 알림 제목·대상 줄·**셀렉 제출일 기준 철회기한**·보정본 발송일,
+  **예약 취소 버튼 없음**(추가금은 `select-clear-extras`).
+- **예약 페이지 버튼**: 여권·상담 견적·0원 외 「결제 의무가 있는 예약하기 / Book with obligation to pay / Zahlungspflichtig buchen」.
+- **검증**: `check-widerruf.mjs` 셀렉 18건 추가(결함 주입 3종 탐지) · select-amounts·print-payment·contract-b2c·refund·print-prices·sheet-date·release-gate(offline) 통과 ·
+  배포 직전 원격에 다른 세션 변경(@964·@965, 같은 작업트리)이 있어 diff 가 내 변경뿐임을 확인 후 push · 배포 후 `clasp pull` = 작업트리 ·
+  로컬 브라우저(미리보기): 유료 보정+인화 €71 / 인화만 €41 / 0원 세 상태, ko·en·de, 체크 없이 제출 차단, 콘솔 0 · 예약 버튼 여권/스튜디오/프로필 · `/widerruf/?what=select` 미리 채움.
+- 남은 것: 라이브 E2E(테스트 셀렉 세션 — `select-create` 가 링크 메일을 보내 사장님 확인 필요) · 배포 전 추가 주문의 계약 성립 문제(변호사) · `select-print-order` 죽은 경로.
+
+### 2026-09-18 · 고객 피드백 "예약이 잘 안 된다" 점검 · 조회 시간 제한 + 재시도 · 로딩 안내 정정 (프런트 4331c28)
+
+- **라이브 흐름 점검(모바일 390px)**: 여권(한국) · 프로필 Basic 을 제출 버튼 활성화까지 진행 — 정상. 달력 데이터 정상
+  (9월 6~7일 · 10월 11~12일 · 11월 3일 · 12월 17일 가능). 접수 알림은 8/20 이후 거의 매일 1~3건, 마지막 실고객 9/17 16:51.
+  메일로 들어온 오류 신고 없음, 9/17 19:27 이후 거절 로그 0건(메시지로그 조회 한도 300행).
+- **느림의 정체**: 아무 일도 안 하는 라우트도 2.8~5.2초(Code.gs 2.3MB 로드) — 고객은 페이지 준비·달력·날짜마다 시간 조회에서 이만큼 기다린다
+  (실측 달력 4~18초, 시간 5~15초). 같은 시간대 작은 board-api 는 한 번 98초 멈춤 → 조회에 시간 제한이 없어 그런 멈춤이 곧 화면 멈춤이었다.
+- **수리(프런트만)**: 조회(init·calendar-batch·slots·quote·return-check) 25초 제한 + 1회 재시도, 두 번 다 멈추면 "서버 응답이 늦어지고 있습니다" 안내.
+  제출·굿샤인 홀드는 제외(재시도 = 중복). 시간 목록 자리에 "달력을 불러오는 중"이 뜨던 것 → "예약 가능한 시간을 불러오는 중"(3개국어),
+  시간을 고른 뒤 날짜를 바꾸면 남던 "날짜와 시간이 선택되었습니다" → 중립 문구. 가짜 fetch 검증 4건 + 라이브 확인.
+- **평일 오전 13:00 까지 개방(@965, 사장님 지시)**: 8/17 확정 영업시간 "평일 09:30–13:00"(@791)이 예약 페이지엔 반영된 적 없었다 —
+  `normalizeWeekdayBookingBlocks_`(7/13)가 평일 오전을 `WEEKDAY_MORNING_END_MIN`(11:30)에서 강제로 잘랐다(설정 13:00 무시).
+  상수를 13:00 으로, 잘림·보장 블록을 상수에서 파생하도록 수리 + `booking-hours-set` 로 시트값 기록·슬롯 캐시 무효화.
+  규칙 검증 4건(옛 11:30 시트값이 남아도 13:00) · 라이브 확인: 평일 오전 마지막 시작 여권 12:45 · 프로필 12:30 · 스튜디오 12:15.
+  같이 배포된 것: 다른 세션이 @964 로 이미 배포한 결제수단 기본값·표시 정정(HEAD 동일분 — 새 코드 없음).
+- 참고: 같은 날 16:31 다른 세션의 @963(철회 안내·§356a)으로, 촬영일이 21일 안인 비여권 예약은 '필수 전체 선택' 뒤에도 "철회기간 중 촬영 시작 요청"을
+  따로 체크해야 제출된다(안내 문구 표시됨 — 확인).
+
+### 2026-09-18 · 수기등록 결제수단 기본값 상품 기준 · booking-update `payMethod` 라벨 정정 · 세부표 결제 줄 숨김 (@964 · 배포 완료 · 라이브 검증 17:05)
+
+**배경.** 여권 수기등록(주여원, 행 290, €35, 9/19 09:45)이 `data.payMethod` 없이 만들어져 결제수단 = `계좌이체`(하드코딩 기본값)로 저장됐다.
+온라인 여권은 `미결제`다. 그래서 확정메일 세부표에 "결제 계좌이체"가 찍혔는데 같은 메일의 결제 안내는 「현장에서 현금 또는 카드」였고,
+결제 일일검토는 이 행을 '계좌입금 확인'으로, 오늘 보드는 미수가 아닌 것으로 읽었다. 만든 뒤 결제수단을 고칠 에이전트 액션도 없었다.
+- **기본값(`addManualBookingAdmin`)**: 명시 `payMethod` 우선 → MRT는 `마이리얼트립` → 계약금이 있고 아직 안 받은 행만 `계좌이체` → 그 외(여권·계약금 없는 현장결제·계약금 수령완료) `미결제`.
+- **`booking-update` `payMethod`**: `미결제`/`계좌이체`만 허용하는 **라벨 정정**(수납 기록 아님 — 현금·카드 등 실제 수납은 `booking-confirm-balance`).
+  잔금결제여부 Y 행은 거부 · 결제메모(내부 칸, 고객 메일에 안 실림)에 `[정정] 결제수단 A→B 날짜 (booking-update)` · payMethod가 섞이면 기본 무발송(`notify:true`일 때만 발송).
+  라우트에 `expectName` 추가(행 고객명 불일치 시 거부).
+- **세부표 결제 줄(`buildBookingDetailsRows_`)**: `미결제`거나 계약금 없는 현장결제 상품이면 싣지 않는다(MRT 선결제·계약금 상품은 표시). 고객 메일·.ics(추가항목의 [예약 세부내역] 블록)·관리자 알림 공통.
+  덤: 온라인 영문·독문 메일에 뜨던 "Payment: 미결제"도 사라진다.
+- **행 290 정정**: `booking-update {rowIndex:290, expectName:"주여원", data:{payMethod:"미결제", notify:false}}` → `changeMail.reason=SILENT`, 고객 메일 재발송 없음.
+  9/19 보드: 결제수단 `미결제`, 현장 수령 €35. 요청은 행 291이었지만 철회 E2E 테스트 행 삭제로 290으로 밀린 뒤였고, 291 호출은 expectName이 막았다.
+- **검증**: `scripts/check-pay-method.mjs`(Code.gs 원본 함수 추출 — 기본값 5 · 세부표 5 · 정정 가드 7) 통과 · 나머지 offline check 통과
+  (`check-calendar-consistency`·`check-select-free-cut-prints`는 스텁 누락으로 배포 전 코드에서도 같은 ReferenceError — 기존 문제) ·
+  push 전 `clasp pull` ↔ 작업트리 diff 0 · 라이브: 잘못된 expectName/`현금`/빈 행 291 거부 확인. 확정메일은 미리보기 경로가 없어 발송 검증은 하지 않았다.
+- ⚠ **미결정**: 계약금 상품의 수기 기본값 `계좌이체`는 사장님 지시대로 유지. 하지만 코드 전반(미수 잔금 브리핑 `unpaidBalances`, 셀렉 잔금 컨텍스트 `balancePaid`)은
+  결제수단 ≠ 미결제를 **잔금 수납 완료**로 읽는다 — 그 행은 촬영 후 미수로 안 잡힌다. 온라인 예약처럼 `미결제` + 계약금수단 `계좌이체`로 바꿀지는 결정 대기.
+
+### 2026-09-18 · 소비자 철회 안내 + § 356a 온라인 철회 버튼 + 조기 이행 요청 (@963 · 프런트 e4ce355 · 배포 완료 · 라이브 검증 16:47)
+
+**배경.** 2026-09-18 법 점검 — 웹으로 맺는 원격계약엔 2026-06-19 부터 「Vertrag widerrufen」 기능(§ 356a BGB)이 필요한데 예약 흐름엔
+철회 안내도 버튼도 없었다. 유일한 문구(Fotografenvertrag § 13)도 현행 공식 서식과 달랐다(Wertersatz 문장·온라인 철회 문장 없음 → 촬영 후 철회 시 대가 0).
+계획·결정: `docs/widerruf-function-plan.md` — 사장님 승인: 여권 무구속 예약 · 여가 예외(§ 312g Abs. 2 Nr. 9) 미적용 · 철회 시 자동 취소 없음 · FV-v2.
+- **정본 문구 두 벌**: `Code.gs` `WIDERRUF_TEXT_` ↔ `frontend/booking/widerruf/widerruf-text.js` — `scripts/check-widerruf.mjs` 가 한 글자씩 대조(ops-checklist 등재).
+  독일어는 Anlage 1·2 EGBGB 원문(2026-09-18 gesetze-im-internet.de 대조), ko/en 은 이해용 번역.
+- **예약 화면 4/4**: 여권 외 「Widerrufsbelehrung」 펼침 + 계약 조건 「취소 및 환불」에 "법정 철회권은 별개·기간 안엔 우선" 한 줄 ·
+  여권은 무구속 예약 고지 + 필수 동의 문구 교체 · 촬영일이 21일 안이면 **조기 이행 요청 필수**('필수 전체 선택'에서 제외) → 예약행 맨 뒤 새 열 `early_start_requested`.
+  계약 조건 버전 `…_v2`. 하단 링크 「Vertrag widerrufen」.
+- **메일**: 확정 메일(5경로 공통 `_sendConfirmEmail`) 끝에 철회 안내 전문 + 서식 + 서명 ref 가 붙은 철회 버튼 + (요청 시) 조기 이행 요청 인용 ·
+  여권은 무구속 고지 · 접수/확정 메일 환불 상자에 철회권 한 줄(<span> — 계약서 § 10 인용 불변) · 관리자 접수 메일에 조기 이행 요청 ✔/⚠.
+- **철회 버튼**: `/widerruf/`(로그인 없음) → 「Widerruf bestätigen」 → `booking-withdraw`(POST 전용) → 고객 수신확인(보낸 내용 + 접수 시각, 장부 값 미노출) ·
+  `[철회 접수]` 사장님 알림(매칭 예약·철회기한·환불기한 = 접수+14일·'예약 바로 취소') · 예약 메모 한 줄 · 메시지로그 유형 `철회`. 상태 변경 없음.
+  매칭 = 포털 ref 우선, 없으면 같은 이메일 활성 예약 1건일 때만. 입구: 사이트 하단 + 고객 포털(`/status`, 여권·취소건 제외).
+- **Fotografenvertrag FV-v2**: 새 계약부터 § 13 = 정본 문구. 기존 FV-v1 은 서명본 재생성까지 옛 문구 — 조항해시 골든값 4건으로 고정(`check-contract-b2c.mjs`).
+- **검증**: `check-widerruf.mjs`(결함 주입 4종 탐지 확인) · `check-contract-b2c.mjs`(v1 해시 = 배포 전 코드 산출값) · refund/sheet-date/release-gate(offline) 통과 ·
+  배포 전·후 `clasp pull` ↔ 작업트리 diff 0 · 로컬·라이브 브라우저: 콘솔 오류 0(CSP), 여권/비여권/21일 안·밖/de·ko·en, 모바일 가로 스크롤 없음 ·
+  **라이브 E2E(사장님 승인)**: 테스트 예약 `TEST 철회검증`(스튜디오 Basic 9/30 17:15, 사장님 메일) → `booking-confirm-mail` → 포털 버튼 → 미리 채움 → 철회 확정 →
+  수신확인·관리자 알림 발송 성공, 메모 기록, 상태 확정됨 유지 → `booking-delete`(캘린더 삭제·슬롯 복구 확인).
+- ⚠ **행 번호 이동**: 테스트 행 삭제로 주여원(여권 9/19, 다른 세션이 16:43 생성) 291 → **290**.
+- 사장님 메일함의 테스트 메일 5통(접수·새 예약·확정·수신확인·철회 접수)은 지워도 된다.
+- 남은 것(범위 밖, 계획서 5장): 셀렉 추가 보정·인화 온라인 주문 · 굿샤인 판매 · 견적 메일 수락 계약의 철회 안내, 배포 전 확정분 사후 고지(변호사), 혼합계약·Lieferkosten 문구(변호사).
+
+### 2026-09-17 · 추가금 면제가 인화장부 미수 행까지 정리 — `select-clear-extras` (@962 · 배포 완료 · 라이브 적용·검증 15:30)
+
+실제 사례: 이윤경(세션 AsPNSRCuUZCN3W8sndqG, 예약행 225) €4 추가인화를 사장님이 면제. `select-clear-extras` 가 셀렉 시트 3칸만 0 으로 만들고
+인화장부(인화주문) 행 12 는 `€4 미결제` 로 남아 미수 목록·브리핑·보드·C6 결제요청·장부 openAmount 에 계속 잡혔다. 에이전트 수단은 행 삭제(기록 소실)뿐이었다.
+- **Code.gs**: `planSelectPrintWaive_`(읽기 전용 판정: none / neutralize / paid) + `applySelectPrintWaive_`(쓰기). 미결제 행을 **지우지 않고 중화** —
+  금액 0 · 결제수단 `면제` · 상태 `청구취소` · 메모에 감사 줄(세션 태그 뒤에 덧붙임). 인화항목 문자열은 보존. 쓰기 직전 세션 태그 재대조(행 밀림이면 거부).
+- 가드: 셀렉 `ALREADY_BILLED` 그대로 · 인화장부 행이 **이미 수납**이면 `PRINT_ROW_PAID`(환불 건). `force:true` 는 셀렉 금액만 0 으로 하고 수납 행은 **건드리지 않는다**
+  (`printRow.skipped:'PAID_REFUND_CASE'`, 감사 줄에 "기수납 유지 — 환불 확인") — 받은 돈을 0 으로 지우면 지난 날짜 시재·매출이 바뀌고, 환불은 예약행 환불 이벤트가 정본.
+  인화장부 행 고객명 ≠ 셀렉 고객명이면 `PRINT_NAME_MISMATCH`.
+- 셀렉 금액이 이미 0 이어도 인화장부 행이 미결제면 처리(옛 버전으로 정정한 건 대응). 둘 다 정리돼 있으면 `unchanged`.
+  응답: `before/after`(셀렉) + `printRow{found,rowIndex,before,after,changed,skipped}` + `auditLine`, `dryRun` 은 둘 다 계획만. 보드 캐시 무효화.
+- 리더 점검(코드 추적): 미수 목록·`getUnpaidExtraForSession_`·C6 결제요청·보드 결제 컨텍스트 → 금액 0/취소로 제외 · 일마감·현금장부·회계장부 → 금액 0·`청구취소`
+  로 매출/시재 제외(ledger 주석의 "결제 전 무효" 용도와 일치) · 고객 디렉터리는 예약행 총결제액만 읽어 무관 · 출력 큐·브리핑 '인화 대기'는 셀렉 시트
+  추가인화 JSON 기준이라 **인쇄 대상 유지** · `selectHasPendingExternal_` 는 입고일만 봄.
+- 검증: `scripts/check-print-payment.mjs` 시나리오 99건 + 결함주입 22/22(면제 4종 추가). 검증기가 이미 깨져 있던 것(PRINT_HEADERS 여러 줄화 9/10, `printRowPayRequestedAt_` 미추출) 같이 수리.
+  배포 전 `clasp pull` ↔ 작업트리 diff 0. 라이브: dryRun → 적용 → `select-print-order-get` total 0 · 면제 · unpaid:false · 항목 보존,
+  `select-extra-unpaid` 에서 이윤경 제외(남은 2건 현주현·조미정 €33), 재실행 `unchanged`.
+- ⚠ 한계(미착수): 셀렉이 아직 `작업대기`(마감 전)라 고객이 같은 주문을 **다시 제출**하면 `syncSelectPrintOrder_` 가 €0→€4 로 보고
+  `미결제` + `[수납해제] … (기수납 면제)` 로 되살린다(셀렉 시트 금액도 재계산 — 기존과 같은 노출). 미수 목록에 다시 뜨므로 눈에는 띈다.
+
+### 2026-09-17 · 셀렉 보정 0장 + 출력만 허용 (@961 · 프런트 380c447 · 배포 완료 · 라이브 검증 15:21)
+
+실제 사례: 이윤경(예약행 225, 야외/홈스냅 Plus, 세션 AsPNSRCuUZCN3W8sndqG — v2) 이 보정 없이 8장 출력만 원했는데
+2단계가 "보정 사진 최소 1장"을 강제해 3단계(출력)에 닿지 못했다. _DS12922 를 보정본으로 끼워 넘기고 메모로 알렸고, 사장님이 수기 정리.
+(v1 은 은퇴 — 루트가 /v2/ 로 301, 모든 세션이 v2)
+- **select v2**: 2단계 보정 ≥1장 조건 제거(`validateStep2`·`canProceedStep2`·`collectStepProblems(2)`). 대신 `hasAnySelection()`
+  (보정 완전행 ∨ 출력행 ∨ 포함 포토카드)을 3단계·제출에서 확인 — 2단계에서 막으면 출력을 고를 곳에 못 간다.
+  반쯤 채운 행 차단·빈 무료 슬롯 통과·서비스컷 소멸 안내는 그대로. 0장이면 2단계에 비차단 안내 `noteNoRetouch(base)`,
+  최종 확인은 "보정 없음 — 출력은 원본", 빈 보너스/서비스 슬롯을 보정 목록처럼 찍지 않음. 수정 모드 1단계는 출력행만 있어도 통과. 3개국어.
+- **Code.gs**: `selectRealRetouchPhotos_`/`selectSubmittedStatus_` — 실제 보정 행이 없으면 제출·수정 상태를 `작업대기` 대신
+  **`보정본확인완료`**(출력 단계). 어드민 보정 카드·'보정본 발송' 버튼·21일 보정 지연 경고에서 빠지고 '→ 출력' 흐름으로 간다(재주문 세션도 같은 혜택).
+  `sendRetouchCompleteAdmin` 가드: 제출됐는데 보정 0장이면 거부("보정본 완성" 고객 메일 오발송 방지).
+  관리자 알림(제출·수정): "보정 없음 — 출력만(원본)", 보정 요청 빈 목록 대신 "없음". 고객 접수 메일: "보정 선택: 없음 (원본 출력만)",
+  빈 '선택 사진 목록' 제거, "보정 완료까지 2~3주" 대신 출력 준비 안내. 예약 메모 보정 장수도 실제 행 기준.
+  `raw-select-pending`: 선택사진이 비었다고 세션을 건너뛰던 것 → 제출 여부로 판정(재주문 제외) — 출력 번호 RAW 가 Selects/ 로 간다.
+- **AdminV2**: 회신 보기에서 빈 무료 슬롯이 `[object Object]번` 으로 찍히던 것 정리.
+- 그대로 동작 확인(코드 추적): 인화앱 목록·브리핑 '인화 대기'·출력완료·픽업 안내·우편 C6 결제요청은 상태/보정과 무관(인화 수 기준), 인화주문(추가금) 행은 과금분만.
+- 검증: 배포 전 `clasp pull` ↔ 작업트리 diff 0 · 프리뷰 데모(로컬)로 0장/반쯤 채운 행/서비스컷 회귀 · 라이브 테스트 세션(사장님 메일, 예약행 없음, 스냅 Plus)
+  별점 2 → 보정 0 → 출력 2장(원본·포함 무료) → 픽업 제출: 상태 `보정본확인완료`, 인화주문 행 없음(0€), raw-select-pending 에 번호 2개,
+  메일 2통 발송 성공(내용은 오프라인 렌더로 3개국어 확인), 보정본 발송 가드 오프라인 확인 → 테스트 세션 삭제(셀렉행 140).
+- ~~⚠ 운영 확인 필요: 이윤경 인화주문 행이 아직 `4€ 미결제`~~ → 같은 날 @962 로 면제 처리(위 항목).
+- 미착수(범위 밖): 고객 메일의 출력 줄(`formatSelectPrintItemHtml_`)이 EN/DE 에서도 한국어("번 · 원본 (무료(기본 제공))").
+
+### 2026-09-17 · 인스타 발행기 → Threads 동시 게시에 전용 캡션 (@960 · 배포 완료 · 라이브 검증 12:27)
+
+사장님 지시: 인스타와 Threads 는 같은 사진을 올리되 **Threads 는 광고성보다 일상·촬영 경험 이야기**로 쓴다.
+- `Code.gs`: '인스타검수' 시트에 `캡션스레드` 열(맨 끝, `ensureHeaderSheet_` 가 기존 시트에 자동 추가).
+  `insta-review-upsert` 가 `captionThreads` 를 받을 때만 갱신(500자 컷), `listInstaReviewAdmin` 이 같이 돌려줌.
+  ※ 이 3줄은 같은 작업트리를 쓰던 안내문 세션 커밋 183de7e 에 함께 들어갔다(기능 영향 없음).
+- `InstaPublisher.gs`: 인스타 게시 성공 뒤 `threadsMirror_(slides, caption, thCaption)` — 전용 캡션이 있으면 그대로,
+  없으면 종전대로 인스타 캡션 첫 문단(예약 URL 제외). `insta-publisher-dryrun` 행에 `threadsCaptionLen`.
+- `ThreadsPublisher.gs`(**git 미추적 — 커밋 필요**, `.claspignore` 화이트리스트에 있어 push 에는 포함):
+  이미지 컨테이너 생성 2회 재시도 + URL 후보 순회(일시적 2207052 대응), 게시 전 컨테이너 상태 폴링.
+- `AdminV2.html`: 검수 카드에 "캡션 (Threads · 읽기 전용)" 미리보기. 수정은 로컬 `caption_threads.txt` 에서.
+- 로컬(`~/Desktop/Studio_mean/automation/`): `push_review.py` 가 `caption_threads.txt` 를 `captionThreads` 로 전송,
+  `report_caption_review.py` 로 사진↔캡션 대조 리포트. 토큰은 인스타=만료 없는 Page 토큰, Threads=60일(`threads_refresh.py` 자동 갱신).
+- 검증: 배포 직전·직후 `clasp pull` ↔ 작업트리 diff 0 · dryrun 에서 `campaign-xmasmarket-1..6` 전부 승인, 슬라이드 5/5/5/5/6/5,
+  `threadsCaptionLen` 179/176/174/182/178/136 = 로컬 파일(UTF-16 길이)과 일치 · `threads-status` @studio_mean.
+  첫 실게시는 2026-09-17 15:45(크리스마스마켓 1).
+
+### 2026-09-17 · 고객 안내문 「추가 보정 · 인화」 새 디자인(KO/EN/DE) · 추가보정 단가 묶음 확정 (@959)
+
+- **문서 전체를 생성물로**: `scripts/build-print-guide.mjs` → `2026년 가격표/추가보정-인화안내/guide-ko·en·de.html`(자체 완결 HTML). 단가(PRINT_LABELS)·
+  추가보정 단가·여러 장 할인 구간·**픽업 전용 목록(SELECT_PICKUP_ONLY_RE_)**·규격 cm(print-catalog)·등급/액자/대형/인화방식 문구(print-tier-copy, UWG 검수
+  원문을 다듬지 않고 통째로)를 정본에서 읽는다. `--check` 는 디스크 파일이 정본과 다르면 exit 1(ops-checklist 등재). 손으로 만든 옛 파일(price-ko/de.html)은
+  보존하고 `build-retouch-card.mjs` 가 계속 지킨다.
+- **디자인**: CI v1 §4 인쇄 팔레트(Warm Ivory·Ink Black·Taupe/Sand, Copper 는 '픽업 전용' 표시 한 역할) · Cormorant Garamond + Noto Sans KR. 이 문서만의 요소 =
+  **같은 축척 규격 사다리**(포토카드→A3+ 와 액자 2종을 카탈로그 cm 로 그림, 액자는 마운트 폭이 보이게) + 잘림 띠를 실제 비율(A4·A3 5.71% · A3+ 2.13%)로 칠한 그림.
+  한 번 렌더해 보고 고친 것: SVG 라벨 겹침(hanging baseline), 한글 단어 중간 줄바꿈(`word-break:keep-all`), 할인 숫자에 명조 폴백이 섞이던 것(숫자만 디스플레이 서체).
+- **추가된 내용**: 액자 A4용 +€29 / A3용 +€35(인화가에 더해지는 금액 — 예시 계산은 단가에서 생성) · 대형·특별 규격(견적, 요청 방법) · 픽업 전용 안내 · 영어판.
+- **PNG**: `…_KO_v2.png` · `Retouching-Prints_EN_v2.png` · `…_DE_v2.png` (2000px, Playwright zoom 2). 옛 디자인 PNG 두 장도 아래 단가 묶음 정정으로 재출력. 새 판 확정 시 교체.
+- **검토 워크플로(에이전트 18 · 사실/UWG 문구/독일어/영어 렌즈, 발견마다 반박 검증)**: 확정 1건 —
+  **추가보정 €20 묶음이 실제와 달랐다.** 안내문(사장님 원본 포함)·설계 문서 5-4·`getDefaultSelectRetouchPrice_` 는 암트 예식·돌잔치·가족파티를 €20 이라 했지만,
+  세션 단가를 실제로 정하는 `getRetouchInfo_` 는 wed 그룹만 20 이고 biz 그룹(amtp·dolp)은 10 — 기본 단가 함수는 `parseInt(retouchPrice)||…` 에 가려 실행되지도 않았다.
+  **사장님 결정: €10 유지**(€20 은 프리웨딩·웨딩만). 반영: 기본 단가 함수에서 암트/돌잔치/가족파티 키워드 제거(@959) · 새/옛 안내문 3+2장 문구 · 설계 문서 5-4 ·
+  생성기에 가드(두 함수의 €20 그룹이 바뀌면 생성이 멈춘다). 영향받은 기존 세션 없음.
+- 남은 것: 새 판 확정 후 옛 파일 교체 · 액자 A4용 실물 확인(마운트 창 ↔ A4).
+- **A4 인쇄본 (같은 날 오후)**: `build-print-guide.mjs --pdf` → `추가보정-인화안내_KO_A4.pdf` · `Retouching-Prints_EN_A4.pdf` · `Retusche-Abzuege_DE_A4.pdf`,
+  **A4 한 장 앞뒤(2쪽)**. 그대로 뽑으면 4쪽에 어색하게 끊겼다(측정: DE 앞면 몫 ≈1,600 / 뒷면 ≈1,380 디자인 px, 한 쪽 예산 ≈1,414).
+  인쇄 CSS만 추가(화면·PNG 불변 — 화면 높이 4,034px 동일 확인): 앞면 = 추가 보정 + 인화 가격(규격 사다리를 작게·이름만 그려 시그니처·포토카드 표 옆 칸으로),
+  뒷면 = 액자·대형부터(`break-before:page`). 배경은 흰 종이(여백 없는 인쇄 불가 프린터 대비). 검사: 3개 언어 모두 2쪽·A4·Cormorant/Noto Sans KR 포함,
+  앞뒤 경계 = 범례 / '액자·대형', 하단 여백 최소 14.6mm(DE 뒷면)·좌우 13.4mm.
+
+### 2026-09-17 · 온라인 예약 2027-06-30 까지 오픈 + 예약 페이지 달 상한 하드코딩 제거 (배포 완료 · 라이브 검증 2026-09-17 08:20)
+
+**배경.** 사장님 지시 "2027년 6월 말까지 예약 오픈". 점검 중 **라이브 버그** 발견 — 8/17 에 서버 지평선을 2027-03-31 로
+늘렸지만 `booking.js` 에 `new Date(2026,11,1)`(updateMonthNavAvailability) · `MAX_BOOKING_MONTH={2026,11}`(changeMonth·
+findEarliestAvailableSlot·prefetchNextCalendarMonth) 가 남아 있어 **고객은 12월에서 '다음 달'이 막혀 2027년 달로 갈 수 없었다.**
+한도가 두 곳에 있어 한쪽만 바뀐 것.
+
+- 서버 `PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR` 2027-03-31 → **2027-06-30** (@958).
+- `/api/init` `settings.maxBookingDate` 로 이 값을 노출, 프런트 `getMaxBookingMonth()` 가 읽어 4곳 전부 교체
+  (폴백 '2027-06-30' 은 init 도착 전용 — 틀려도 서버가 지평선 밖 달을 전부 마감으로 돌려준다). 커밋 0abda4a.
+  → **다음 연장은 Code.gs 상수 한 줄 + clasp 배포만.**
+- 같이 점검(변경 없음):
+  - 헤센 공휴일은 부활절 계산식 — 2027 Karfreitag 03-26 · Ostermontag 03-29 · 05-01 · Himmelfahrt 05-06 · Pfingstmontag 05-17 ·
+    Fronleichnam 05-27 산출 일치, pass/prof/stud 휴무.
+  - `FFM_BLOCKER_COVERED_UNTIL_='2027-01-06'` 은 모닝 브리핑 전용(30일 윈도) — 고객 예약엔 무관. 12월 초부터 브리핑이 스스로
+    stale 경고를 띄우므로 지금 손대지 않음. visitfrankfurt 2027 대형행사 PDF(연초) 나오면 4~6월 행사 추가.
+  - `promo/promo.js PROMO_END_LIMIT='2026-12-31'` 은 2026 슐튀테 시즌(06-23~08-15, 종료) 전용 상한 → 의도적으로 안 따라감.
+  - 셀렉 픽업 `SELECT_PICKUP_LOOKAHEAD_DAYS=120` 롤링, 상담 날짜 입력은 max 없음 → 무관.
+  - 코드·init 공지(notice_ko/en/de 공란)에 구 지평선 문구("2027-03"·"3월"·"März"·"Dezember 2026") 없음.
+  - `morning_block_ranges` (2027-01 화~금 오전 차단) 그대로.
+- **라이브 검증**(읽기 전용, 예약 생성 없음): init maxBookingDate=2027-06-30 · 슬롯 2027-06-12(토) pass 16건 · 06-26(토) stud 27건 ·
+  06-29(화) prof 18건 · 04-15 pass 18건 / 05-06 pass·stud 0 · 05-27 prof 0 · 03-26 0 · 07-01 pass 0 · 07-03 stud 0 ·
+  calendar-batch 2027-07 31/31 마감 / 2027-01-12(화) 15:30부터(오전 차단) · 01-16(토) 09:00부터.
+  booking.studio-mean.com 실제 화면에서 여권 선택 → 달 넘김이 **2027년 6월에서 멈추고 '다음 달' 비활성**, 6월 날짜·시간 표시 확인.
+
+### 2026-09-15 · 여권 5인 이상 가족 단체 할인(%) · 4인 초과 촬영시간 인당 +10분 (배포 완료 · 라이브 검증 2026-09-15 16:15)
+
+**배경.** 여권 단체 할인 기준 논의. 예약장부 실측 — 2025 161건: 1인 65% · 2인 17% · 3인 9% · 4인 4% / 2026 1~9월 169건:
+1인 78% · 2인 9% · 3인 9% · 4인 이상 2%(4인 2건·5인 2건). 4인까지는 부모+아이 가족 단위로 이미 정가 결제 → 할인 없음.
+5인 이상은 2년간 2건뿐 → **가족에 한해 % 할인**(사장님 확정). 총영사관·KOTRA 40명은 단체 프로필이라 여권 전례가 아니다.
+여권 가격 인상(H2 전략 9/1 €35)은 이번에 손대지 않음 — 상품표 €30 그대로.
+
+- **촬영시간**: `getPassportComboDurationMin_` 4인 초과는 인당 +10분(5인 50 · 8인 80). 이전엔 `[0,15,20,30,40]` 표가
+  Code.gs 3곳·AdminV2 3곳·booking.js 2곳에 복사돼 있었고 4인 초과가 40분 고정 → 여권은 앞뒤 버퍼 0분이라 5인 이상이
+  온라인으로 들어오면 슬롯이 모자랐다. Code.gs 는 공용 함수 한 곳으로, AdminV2·booking.js 는 각각 `passportDurationMin` 로 통일.
+- **가족 할인**: `calculateQuote_` 여권 블록에서 `people>=PASS_FAMILY_DISCOUNT_MIN_PEOPLE(5)` 이고 `businessInvoiceNeeded`
+  가 아니면 `총액×율`(국가 추가금 포함 후). 율은 설정 시트 `pass_family_discount`(기본 10, 상한 50) — 어드민 설정 탭
+  "여권 5인 이상 가족 할인율" 입력 신설, init `settings.passFamilyDiscount` 로 프런트·어드민에 전달. **가족 판정 = 법인 인보이스
+  체크 없음** — 유학생 등 비가족 5인이 온라인으로 오면 `booking-set-amount` 로 정가 복원(연 0~2건이라 UI 안 만듦).
+  수기등록(AdminV2 calcManualPrice)도 5인 이상이면 설정 탭 율로 깎는다 — 회사 단체면 m_price 를 직접 정가로.
+- 기록: 캘린더 설명·추가항목·확정메일·인보이스 옵션문에 `가족 단체 할인(5인 이상) -15€` 라벨. 프런트 견적 안내 3개국어 문구.
+  법인 인보이스 체크 토글 시 견적 재계산(`handleQuoteInputChange`).
+- 헬스체크 `quote-passport-family-discount`(bookingE2EDiagnostics 안): 5인 가족 할인 = 정가×율 · 법인 미적용 · 4인 미적용 · 50/40분.
+- ⚠️ **하네스가 잡은 버그**: `parsePercentSetting_` 은 빈 값을 0 으로 읽는다(`Number('')===0`). 설정 행이 없으면 할인 0 →
+  프런트(기본 10)와 서버 총액 불일치. `getPassportFamilyDiscountRate_` 에서 빈 값이면 10 고정. 사장님이 설정 탭에서 0 을 저장하면 할인 끔.
+- 검증: node 하네스(`calculateQuote_` 추출)로 1/4/5/8인·법인·국가추가·설정 0/20% 통과. **브라우저 로드 확인은 자동 모드
+  분류기가 차단** → 배포 후 사장님이 booking.studio-mean.com 에서 여권 5명 골라 "가족 단체 할인 10%" 줄·총액 €135 눈으로 확인.
+- 배포: `clasp push` 는 세션에서, `clasp deploy` 와 프런트 `git push` 는 분류기 차단으로 사장님이 직접(ThreadsPublisher.gs 도
+  .claspignore 대로 함께 올라감). **라이브 검증(공개 API `?api=quote`·`?api=init`)**: 5인 → 총 135 / 할인 15 / 50분 ·
+  5인+법인 인보이스 → 150 / 0 · 4인 → 120 / 0 / 40분 · 8인 → 216 / 24 / 80분 · init `settings.passFamilyDiscount='10'` ·
+  booking.studio-mean.com `booking.min.js?v=d2a4547fc0` 에 새 코드 포함. 브라우저 화면 확인만 사장님 몫.
+- 남은 것: 가격표 이미지(`2026년 가격표/2025 가격-01.jpg`)·상품 설명문에 "5인 이상 가족 할인" 문구 없음 — 필요하면 추가.
+
+
+### 2026-09-14 · 🔒 고객 Drive 링크 공유 편집자 → 뷰어 · 일괄 하향 액션 · 여권/최종납품 dryRun 공유 차단 (@954 · @955)
+
+**발견.** 납품 폴더 링크 공유가 `ANYONE_WITH_LINK + Permission.EDIT` — 링크를 받은 누구나 고객 원본을 지우거나 덮어쓸 수 있었다
+(고객은 링크를 가족·지인에게 전달한다). 실례: KOTRA `260910_Kotra_GP` `{type:anyone, role:writer}`, 여권 발송 사장님 알림
+"권한: 링크가 있는 모든 사용자 편집자"(조치준 9/12 · 나용민 9/9 · 곽희원 9/9). **근거 조사**: EDIT 는 최초 커밋(0747cd6)부터 그대로
+옮겨졌고 git log·docs 어디에도 이유가 없다. 폴더에 쓰는 주체는 스크립트(USER_DEPLOYING=소유자)뿐이라 고객 쪽 쓰기 권한은 불필요 —
+뷰어도 폴더 열람·다운로드는 그대로 된다.
+
+- **신규 발송 VIEW**: `applyDriveEditorSharing_`→`applyDriveViewerSharing_`, `ensureDriveFolderEditorLink_`→`ensureDriveFolderViewerLink_`
+  (여권 발송·셀렉 자동탐색·최종납품·셀렉 드라이브링크 교체 전부 이 경로), `createSelectSession` 명시 폴더 · `resendSelectLinkAdmin` 폴더 탐색의
+  직접 `setSharing(…EDIT)` 2곳도 VIEW. 코드에 `Permission.EDIT` 0건. 여권 메모 "링크 보기 권한 적용", 사장님 알림 "뷰어", 응답 `permission:'viewer'`,
+  어드민 여권 발송 확인창 문구 "링크가 있는 모든 사용자: 뷰어".
+- **곁가지 수리 — dryRun 이 링크를 먼저 열던 것**: `sendPassportPhotosAdmin`·`sendFinalDeliveryAdmin` 의 dryRun(오늘촬영 보드 원탭 미리보기)은
+  "권한부여를 건너뛴다"고 적혀 있었지만 폴더 해결기가 dryRun 검사 **앞에서** 공유를 걸었다 → 확인 전에 링크가 공개됐다.
+  해결기 shareOptions 에 `dryRun` 전달(개수만 셈) + 최종납품 `보정본` 서브폴더 공유도 dryRun 이면 건너뜀.
+- **`drive-link-editor-downgrade`** (신규 에이전트 액션, 이미 나간 것 정리):
+  - 조회(기본, 무변경): `'me' in owners` + 링크공개 **폴더 + 구글 문서류**만 Drive v3 REST 로 훑어 anyone+writer 를 최상위 단위로 묶는다.
+    첫 버전(@954)은 링크공개 **파일 전체**를 훑다가 CLI 5분 타임아웃 — 셀렉 사진이 개별 공유라 수만 장. 코드가 파일에 편집자를 건 곳은 전부
+    편집자 폴더 안이므로 폴더 한정으로 충분(@955, 21초). ponytail: 폴더 밖에 손으로 편집자 공유한 사진·PDF 는 목록 밖.
+  - 실행: `{"apply":true,"rootIds":[…]}` — 루트마다 위→아래(폴더 먼저 낮춰 상속분이 따라 내려가게) 하위 전부를 훑어 anyone+writer 만
+    `permissions.patch role:reader`(fetchAll 25개씩). 240초 예산 초과 시 `remainingRootIds` 로 재호출(멱등).
+- **조회 결과(2026-09-14 20시)**: 최상위 **115 폴더**(2026-03-17 ~ 오늘), 문서류 0. 대부분 `YYMMDD_고객명`(샘플·여권 포함).
+  고객 폴더 패턴 밖이라 사장님 확인이 필요한 것: `2026HSAD트렌지션제작`(+4) · `2026어린이날 영상` · `260627_KOTRA`(+124) ·
+  `260818_morgenkorea`(+5) · `재수정`(+1) · 부모 없이 떠 있는 `보정본` 7개.
+- ⏳ **미적용 — 사장님 승인 대기.** 적용: `node scripts/erp-agent.mjs drive-link-editor-downgrade --json '{"apply":true,"rootIds":[…]}'` →
+  조회 재실행으로 0 확인. 신규 발송 실검증은 다음 여권/셀렉 발송의 사장님 알림 "권한: … 뷰어" + 조회 목록에 새 폴더가 안 뜨는 것으로 확인.
+- 배포: 같은 시각 인보이스 세션이 작업트리를 쓰고 있어, 라이브 스냅샷(clasp pull)에 이 변경만 얹어 push. 작업트리 == 라이브 @955 확인.
+
+### 2026-09-14 · 발행취소 인보이스 중복가드 제외 · invoice-update 예약 사후연결 · booking-get 인보이스 표시 (@953)
+
+**원인.** `findExistingInvoiceForPayload_`(`invoice-create` 의 예약당 1건 가드)가 `PDF오류`·`발행실패` 만 건너뛰고
+`발행취소`(Storno) 는 살아 있는 인보이스로 셌다 → 취소 후 같은 예약에 대체 인보이스를 발행하는 정상 독일식 흐름이 막혔다.
+실사례: KOTRA row252 — 대체본 STMIN-260019(€462,50)를 예약 없이 `수기` 로 뽑아야 했다.
+
+- **가드**: 제외 상태를 `INVOICE_VOID_STATUSES_=['PDF오류','발행실패','발행취소']` 한 곳으로. 살아 있는 `발행` 은 계속 차단.
+  호출자는 `_createInvoiceRecordCore_` 하나뿐(grep 확인).
+- **곁가지 수리**: 같은 호출이 `refundEventTs` 를 가드에 안 넘겨, 부분환불 이벤트 단위 발행 우회(f5270c7 설계)가 한 번도 동작한 적 없었다
+  — 한 예약의 **두 번째** 환불 인보이스가 '이미 발행됨'으로 막히던 것. 한 줄 전달로 수리.
+- **`invoice-update` 에 `bookingRowIndex`**(0=연결 해제, `expectName` 옵션): 행 존재·빈 행·고객명 대조, 대상 예약에 살아 있는
+  인보이스가 있으면 거부(연결로 생성 가드를 우회하지 않음). **인보이스의 예약행번호 열만** 쓴다 — 금액·품목 불변, 예약행 동기화 없음,
+  수정 필드 없이 오면 **PDF 재생성 없이** 종료. 감사줄 `[인보이스연결 YYYY-MM-DD] 번호 예약행 이전→이후` 는 **예약 메모**(이전·새 행)에 남긴다
+  (인보이스 메모는 고객 PDF 에 인쇄되므로). `preserveAuditMemoLines_` 보존 접두어에 `인보이스연결` 추가. 어드민 수정 모달은 이 필드를 안 보내 영향 없음.
+- **`booking-get`** 응답에 `invoices:[{number,type,status,total,issuedAt,mailSentAt}]`(예약행번호 기준, 발행취소 포함).
+- 회귀: `node scripts/check-invoice-relink.mjs` (12건, Code.gs 원본 함수를 가짜 시트에서 실행).
+- **라이브 적용**: STMIN-260019 → row252 연결(`pdfSkipped:true`, PDF 파일ID `1tJOXa2O…` 불변, 메일 무발송). `booking-get 252` 에 260019 표시 확인.
+  타입은 `수기` 그대로(가드상 본 인보이스로 취급되어 이후 중복 발행도 막힌다).
+- ⚠️ 확인 필요: **STMIN-260017 은 인보이스 시트에 행이 없다**(invoice-list·doc-preview-text 모두 없음) — 발행취소가 아니라 삭제된 상태.
+  260018 은 `발행취소`·예약 미연결. 결번 기록은 회계 폴더 문서 쪽 확인.
+- 배포는 git HEAD(=라이브) + 이 변경만 담은 스냅샷에서 push — 같은 시각 다른 세션이 작업 중이던 Drive 공유 권한 수정(EDIT→VIEW)은 **@953 에 미포함**.
+
+### 2026-09-13 · 예약 실패→재시도 오판 수리 · B2B 셀렉관리 제외 · 배지현 TFP 전환 · 안내문 여러 장 할인 (@950 · 프런트 이 커밋)
+
+**④ 고객 신고 "예약 완료 시 튕김/오류" — 코드에서 확정한 원인 하나.** `/api/booking` 은 `assertPublicRequestId_` 가 requestId 키를
+**처리 전에** 태운다. 첫 제출이 어떤 이유로든 실패하면(동시 처리 15초 초과·캘린더 일시 확인 불가·방금 마감된 슬롯·검증)
+프런트는 타임아웃 재시도용으로 같은 requestId 를 유지하므로(2026-08-31 설계, 그 자체는 옳다) 고객의 재제출이 'Duplicate submission'
+→ 화면엔 **초록색 "이미 접수된 요청입니다 — 메일함을 확인해 주세요"**. 예약은 없고 메일도 안 온다. 실패는 서버 어디에도 기록되지
+않아 그동안 보이지 않았다(메시지로그는 성공만 기록).
+- 수리(서버): 실패로 끝나는 모든 길(검증·상품·processForm)이 `fail()` 을 지나 `releasePublicRequestId_` 로 키를 되돌리고
+  메시지로그에 `booking-page/예약접수/거절` 로 남긴다('실패' 는 어드민 상태칩·운영 체크리스트가 "메일 실패" 로 세는 값이라 섞지 않음 —
+  리뷰 적발). 진짜 중복(같은 requestId 재도착)은 키를 살려 둔다. 허니팟 스팸은 기록 안 함.
+- 수리(프런트): `api-core.js` 가 오류에 code 를 단다(TIMEOUT/NETWORK/GATEWAY/SERVER). booking.js 는 **SERVER** 거절일 때만
+  requestId 를 버린다 — TIMEOUT/NETWORK 는 서버에 닿았을 수 있으니 유지(중복 예약 방지 우선). api-core 를 쓰는 번들 전부 재생성
+  (booking 6종 + select v2).
+- 배제한 후보: 라이브 번들=로컬(md5 일치), 로드 콘솔 오류 0, 모바일 렌더 정상, 9/1 이후 제출 경로 백엔드 변경 없음, 수신 메일에
+  신고 없음(다른 채널로 들어온 신고). "튕김" 자체(페이지 이탈)를 만드는 코드는 없다 — 인앱 브라우저의 30초+ 콜드스타트 대기 중 이탈
+  가능성만 남는다. 이제부터는 거절 로그가 쌓이니 다음 신고 땐 무엇에 걸렸는지 보인다.
+
+**② B2B 는 셀렉관리에서 처리하지 않는다(사장님 결정).** 기준은 촬영종류 'biz' 가 **아니라** 코드베이스의 B2B 정의인
+예약유형 '기업'(명시값 또는 사업자송장·법인 신호, `isCorporateBookingRow_`) — 'biz' 그룹엔 암트 결혼식·돌잔치·가족파티 같은
+개인 행사가 있고 셀렉이 그 상품을 지원한다(amtp 인화 15장·추가보정 €20). 첫 구현이 그룹 전체를 잘랐다가 리뷰(5에이전트)가
+잡아 고쳤다. 적용처: 셀렉 탭 `getSelectDashboard`(세션 없는 기업 예약만 제외 — 기존 세션은 계속 보여 조작 가능)·예약 리스트
+selectStatus '대상아님'(허브 배지·'셀렉 링크 발송' 할 일 소멸)·브리핑 '셀렉 미발송'·`createSelectSession`/`resendSelectLinkAdmin`
+거부(`B2B_EXCLUDED`, 폴더 공유·락보다 앞). KOTRA(행 252) 는 예약유형이 비어 있어 `booking-set-type 기업` 으로 확정.
+라이브 검증: 사장님 이메일로 만든 더미 기업 행(282)에 select-create/select-link-resend → 둘 다 `B2B_EXCLUDED`, 행 삭제·잔재 0.
+- 남은 운영: KOTRA 행 252 는 '촬영완료' 에 머문다 — 납품 끝났으면 `booking-update-status 작업완료` 로 닫을 것.
+
+**③ 배지현(행 275) → 포트폴리오 협업(TFP) · 상호 무페이.** `changeBookingProductForAgent_` 의 견적형 가드가 €0 상품을 거부해
+`itemGroup==='tfp'` 만 예외로 열었다. 결과: 여권/비자 €30 → 포트폴리오 협업 촬영 €0(계약금·잔금 0), 감사메모 2줄, 고객 메일 없음.
+리뷰 적발 1건: `getBookingProductForRow_` 가 상품설정 시트만 찾아 코드 상품(프로모·TFP)의 캘린더 소요시간이 **이전 상품 길이로
+남았다** → `getProductById_` 와 같은 탐색 범위로 넓힘. 캘린더 실측 17:45–18:45(60분, 제목 '포트폴리오 협업 촬영 | 배지현 | 1인 | 0€').
+- 목요일 18:00 마감보다 45분 늦게 끝나는 일정 — 사장님 확인(2026-09-13): 알고 잡은 것, 그대로 둔다.
+
+**⑤ 금액 없는 확정 메일(@951).** `booking-confirm-mail {rowIndex, hidePrice:true}` — 가격 블록·세부내역 금액 줄·결제 안내·.ics 금액 줄을
+전부 뺀다(시트·장부는 그대로). 사장님 이메일로 시험 발송해 본문에 €·금액·IBAN 이 없는 걸 확인한 뒤 고객에게 보냈다(소정 집사님,
+행 282, 9/19 11:00 여권 2인). 시험 발송에서 잡은 것 2건: 고객명 '소정집사님'+'님' 중복 → '소정 집사' 로, 요청사항의 내부 메모
+(`[충돌확인필요]`·플레이스홀더 설명)가 고객 메일 세부내역에 그대로 실림 → 발송 전 메모를 고객용 문장으로 정리. **수기 예약의
+요청사항은 고객이 본다** — 내부 메모는 넣지 말 것.
+
+**⑥ 인보이스 2장 발행(@952 · 날짜순 A안).** `STMIN-260016` 나용민/성원경 여권 ×2 €60(발행일 9/9, 행 274 연결, Kleinbetragsrechnung — 수취인
+Wonkyoung Sung; Lilagalerie) → PDF 텍스트 검수 후 galerielila@gmail.com 발송. `STMIN-260017` KOTRA 수출상담회 €450(발행일 9/10, 행 252) —
+**발송 보류**: 사장님이 주차 영수증 첨부를 원함(견적 조건 "Parkgebühren gesondert gegen Beleg"), 9/10 주차 지출 미기록. 내일 결정:
+별도 주차비 인보이스 vs 260017 발행취소 후 합산 재발행. 부수 수리: `invoice-update` 가 촬영일시(dateStr)를 못 고쳤고 'YYYY-MM-DD' 는
+UTC 자정으로 읽혀 PDF Leistungsdatum 에 "02:00" 이 붙었다 → dateStr 지원 추가, `'YYYY-MM-DD 00:00'` 으로 넘겨야 시각이 안 찍힌다.
+
+**① 고객 안내문에 여러 장 주문 할인 추가.** `2026년 가격표/추가보정-인화안내/price-ko·de.html` 인화 표 아래 `.volume` 블록
+(5장 −10% · 10장 −15% · 20장 −20%, 유료 보정·유료 인화 각각·포함분과 액자 제외). 숫자는 `build-retouch-card.mjs` 가
+`SELECT_VOLUME_TIER_DEFAULTS_.print` 에서 대조한다(price-card 와 같은 정규식, 블록 없으면 실패, 변이 테스트 통과). PNG 두 장을
+Playwright(Didot 있는 이 맥, 2000px·2×)로 다시 내보냈다 — 이제 고객에게 보내도 된다. 교정쇄 아티팩트 갱신.
+
+### 2026-09-10 · 출력 재주문(reprint) v1 · 월아트 Phase 0 · 인화 안내문 정본화 · 이아현 오발송 사고 (@940-949)
+
+- **재주문(reprint) 모드**(@940-943): 셀렉 v2 안에서 보정 단계를 건너뛰는 출력 재주문 — 픽업 전용, 보정본가로 청구(라이브 실측에서
+  €5/장 과다청구 발견·수리), 최종확인 문구 정정, 전용 생성 액션 `select-reprint-create`. 날짜셀 린터를 괄호 균형으로 다시 써서
+  놓치던 10건 수리(고객 화면 'Sat Sep 05' 포함).
+- **보정본 승인 가드 단방향**(@944): 재클릭이 메일을 재발송하고 상태를 되감던 것(현주현) 수리.
+- **인화 볼륨 할인 5장부터**(@945): 보정과 같은 사다리(5:10,10:15,20:20). 종전 10장부터는 한 번도 발동한 적이 없었다.
+  온라인(셀렉 화면)·오프라인(비치용 가격표 `docs/price-card.html`, 규격·잘림 양면) 안내.
+- **월아트 Phase 0**(@946-948): 견적형 상품(`wallart_custom`)·액자 SKU·외주 추적 6열·인화앱 분리, 견적 요청 문구 병합 보존,
+  A3+/액자 픽업 전용. 상세 `docs/large-format-print-lineup.md`.
+- **고객 안내문 정본화**: `price-ko·de.html` 이 손편집으로 어긋나 있었다(A3+ 원본 €60 vs 정본 €48 등 언어당 7건) →
+  `scripts/build-retouch-card.mjs` 가 숫자만 정본에서 다시 쓴다(`--check` 는 ops-checklist).
+- **⚠ 사고 — 이아현(셀렉행 129) 고객에게 실제 메일 4통 오발송**: 재주문 플로우를 실제 고객 세션으로 라이브 검증하다
+  「셀렉 접수 완료」×3 + 「인화 완료 — 픽업 예약」이 나갔다. 사장님이 직접 수습. 시트 잔재 정리, 잠복 버그 없음(픽업 안내
+  호출 4곳 전부 동기 핸들러). 규칙: **라이브 검증은 사장님 이메일로 만든 더미 행으로만, 실행 전 보고**(메모리
+  outbound-mail-conventions §4).
+
+### 2026-09-09(밤) · 인화 단가 개정 · 액자 SKU 신설 · 죽어 있던 검증기 복구 (@936-939)
+
+- **인화 단가 개정(사장님 승인)** — 파인아트 A3 원본/보정본 50/35 → **38/32**, A3+ 60/45 → **48/41**,
+  포토카드 단면 5/5 → **6/5** · 양면 8/8 → **9/7**. A4·10×15 는 시장 최저권이라 유지.
+  정의처 6곳 동시 수정(Code.gs PRINT_LABELS · AdminV2 PRINT_PRICES · select v2 PRINT_OPTIONS ·
+  print-catalog · 인보이스 라벨 서버↔어드민 · print-tier-copy 등급).
+- **액자 SKU 신설** — `frame_a4` €29(30×40) · `frame_a3` €35(40×50). 인화가 아니라 완성품 추가금이라
+  **쿼터·서비스컷/보너스 크레딧·볼륨 할인 전부에서 제외**하고 **픽업 전용**(유리 파손)으로 강제한다.
+  화면에서 우편 카드를 잠그고 서버 `validateSelectDelivery_` 도 거부(구 번들·직접 호출 대비).
+  인화앱 2곳은 액자를 인쇄 큐에서 뺀다 — `normPrintId` 가 모르는 SKU 를 조용히 `basic_10x15` 로
+  떨어뜨려 액자 한 건이 10×15 사진으로 출력될 참이었다.
+- **🔴 `check-select-amounts.mjs` 가 죽어 있었다** — 2026-08-07 에 마케팅 보너스 크레딧이
+  `computeSelectDecoupledPrints_` 안으로 들어오면서 의존 함수가 하네스에 이식되지 않아 서버 모듈이
+  ReferenceError 로 통째로 죽고, 4011건 전부 '불일치'로 찍히고 있었다. 즉 **'화면 금액 ≠ 청구 금액'을
+  막는 안전망이 한 달 넘게 무의미했다.** 복구 + 실제 빌더(`buildSelect*Nums_`) 사용 + 픽스처가
+  마케팅 축을 흔들도록 확장. **볼륨 할인 구간도 원래 안 덮고 있어** 할인 후 금액까지 대조하도록 추가.
+  변이 시험으로 실제 검출력 확인(단가 1€ 틀면 608건, 액자 할인 제외 되돌리면 1446건 실패).
+- **고객 메일 2건 수리** — ① 보정 목록 줄에 출력 라벨이 붙어 '출력 없음' 이 찍히고 seed SKU 가
+  실제 주문처럼 중복 표기됐다(사장님 지적) → 라벨 제거, 출력물 목록이 정본. ② `photos.map(fn)` 이
+  두 번째 인자로 index 를 흘려보내 **고객 영수 메일에 내부 플래그 '⚠️ 기본범위 확인' 배지가 찍히고 있었다.**
+- **입증 못 하는 카피 제거** — 라이브 3개국어 '두 등급 모두 보존을 염두에 두고 / with longevity in mind /
+  mit Blick auf Haltbarkeit'. 우리는 염료 잉크이고 시그니처는 이번에 **Epson Premium Semigloss = RC 용지**로
+  확정됐다. 금지목록에 ⑦ 항 신설. 액자 카피의 '무산성' 도 같은 이유로 배포 전 제거.
+- **용지 정체 확정(문서 §6-4 해소)** — 파인아트 = Hahnemühle **Photo Matt Fibre 200g**(Photo Rag 아님),
+  시그니처 = Epson **Premium Semigloss 251g**(아마존 아니라 Böttcher), 잉크 = EcoTank 107 염료,
+  프린터 = ET-18100. 문서가 쓰던 재료비 근거(Photo Rag A3+ €129,95)는 **우리가 사지 않는 용지**였다.
+- **빌더 정리** — `frontend/print/{index.html,app.js}` 는 `website/photo-print/index.html` 의 생성물이다.
+  캐시버스터가 빌더 밖에서 손으로 붙어 있어 빌드마다 지워지는 구조였다(`--check` 상시 exit 2)
+  → app.js 내용 sha256 에서 파생하도록 빌더 수정. 이제 `--check` 전항목 ✅.
+- **사장님 확인 대기**: ① `frame_a4` 규격(30×40 마운트 창 21×30 vs A4 인화 21×29,7 — 창이 더 크다)
+  ② 소액 취급료 €4 재상정 ③ 조립 시급 €39/h 근거 ④ 백보드 €3 이중계상 의심.
+  상세는 `docs/print-frame-pricing-2026-09.md` §6.
 
 ### 2026-09-09 · 포트폴리오 협업(TFP) 예약 페이지 · 인화/액자 단가 재검토 · 워크인 이메일 (@934-935)
 

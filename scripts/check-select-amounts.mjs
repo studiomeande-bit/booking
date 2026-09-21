@@ -64,6 +64,7 @@ const SERVER_MODULE = [
   extractFn(gs, 'mergeSelectPrintItems_'),
   /* 서비스컷·보너스 번호 빌더 — 하네스가 직접 배열을 만들면 실제 호출부(priceSelectPrints_)의
      규칙(보너스에서 isService 를 뺀다)을 재현하지 못해 없는 불일치가 생긴다. 원본을 그대로 쓴다. */
+  extractFn(gs, 'selectOrderHasFrame_'),
   extractFn(gs, 'selectPrintCreditExempt_'),
   extractFn(gs, 'buildSelectServiceCutNums_'),
   extractFn(gs, 'buildSelectMarketingBonusNums_'),
@@ -81,14 +82,27 @@ const SERVER_MODULE = [
 }`,
   /* 실제 제출 경로(priceSelectPrints_ Code.gs:25217~)와 같은 순서로 호출한다 —
      photos[] 하나에서 serviceNums·bonusNums 를 원본 빌더로 뽑고, 미동의면 보너스를 비운다. */
+  /* 볼륨 할인 — submitPhotoSelection 이 computeSelectDecoupledPrints_ **뒤에** 거는 단계라
+     이 하네스가 원래 덮지 않던 구멍이었다. 액자를 할인 대상에서 빼는 수정이 여기 없이 통과했다(2026-09-09). */
+  extractConst(gs, 'const SELECT_VOLUME_TIER_DEFAULTS_=', '};'),
+  extractFn(gs, 'getSelectVolumeTiers_'),
+  extractFn(gs, 'computeSelectVolumeDiscount_'),
+  `function getSettingsMap_(){return {};}`,
   `export function run(fx){
-  const row=[fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
+  const row=[fx.itemGroup||fx.productKey,'(상품)',fx.serviceCutCount,fx.marketingBonusCount];
   const retouchSet={};
   (fx.retouchNums||[]).forEach(function(n){retouchSet[selectPhotoNumKey_(n)]=true;});
   const photos=fx.photos||[];
   const serviceNums=buildSelectServiceCutNums_(photos);
   const bonusNums=fx.marketing==='Y'?buildSelectMarketingBonusNums_(photos):[];
-  return computeSelectDecoupledPrints_(fx.prints,row,retouchSet,serviceNums,bonusNums);
+  const pc=computeSelectDecoupledPrints_(fx.prints,row,retouchSet,serviceNums,bonusNums);
+  // submitPhotoSelection(Code.gs:27383~) 과 같은 순서·같은 필터로 볼륨 할인을 건다.
+  const volItems=(pc.items||[]).filter(function(p){return !selectOrderHasFrame_([p]);});
+  const units=volItems.reduce(function(s,p){return s+((Number(p.price)||0)>0?Math.max(1,parseInt(p.qty,10)||1):0);},0);
+  const base=volItems.reduce(function(s,p){return s+(Number(p.price)||0)*Math.max(1,parseInt(p.qty,10)||1);},0);
+  const vd=computeSelectVolumeDiscount_('print',units,roundCurrency_(base));
+  return Object.assign({},pc,{volUnits:units,volDiscount:vd.discount,volPercent:vd.percent,
+    netAmount:roundCurrency_(Number(pc.amount||0)-Number(vd.discount||0))});
 }`
 ].join('\n\n');
 
@@ -103,7 +117,12 @@ const CLIENT_MODULE = [
   extractFn(v2, 'printNumKey'),
   extractFn(v2, 'isRetouchedPhotoNum'),
   extractFn(v2, 'getServiceCutCount'),
+  extractFn(v2, 'isReprintSession'),
   extractFn(v2, 'printCreditExempt'),
+  extractConst(v2, 'const VOLUME_TIER_DEFAULTS = {', '};'),
+  extractFn(v2, 'getVolumeTiers'),
+  extractFn(v2, 'computeVolumeDiscount'),
+  extractFn(v2, 'calcPrintDiscount'),
   extractFn(v2, 'getMarketingBonusCount'),
   extractFn(v2, 'getQuotaCreditValue'),
   extractFn(v2, 'computePrintAnnotations'),
@@ -119,13 +138,16 @@ const CLIENT_MODULE = [
   state={
     lang:'ko',
     marketing:fx.marketing,
-    session:{productKey:fx.productKey,serviceCutCount:fx.serviceCutCount,marketingBonusCount:fx.marketingBonusCount},
+    session:{productKey:fx.productKey,itemGroup:fx.itemGroup||'',serviceCutCount:fx.serviceCutCount,marketingBonusCount:fx.marketingBonusCount},
     // 보정 리스트: 보정 대상 번호(서비스컷도 보정 리스트에 들어간다)
     photos:fx.photos||[],
     prints:fx.prints
   };
   const ann=computePrintAnnotations();
-  return {amount:ann.reduce(function(s,a){return s+a.amount;},0),ann:ann};
+  const pd=calcPrintDiscount(ann);
+  const amount=ann.reduce(function(s,a){return s+a.amount;},0);
+  return {amount:amount,ann:ann,volUnits:pd.units,volDiscount:pd.vd.discount,volPercent:pd.vd.percent,
+    netAmount:Math.round((amount-pd.vd.discount)*100)/100};
 }`
 ].join('\n\n');
 
@@ -142,7 +164,7 @@ try {
 }
 
 /* ── 시나리오 ──────────────────────────────────────────────────────────── */
-const SKUS = ['basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'frame_a4', 'frame_a3', 'print_none'];
+const SKUS = ['wallart_custom', 'basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a4', 'premium_a3', 'premium_a3plus', 'photocard_single', 'photocard_double', 'frame_a4', 'frame_a3', 'print_none'];
 const PRODUCTS = ['pb', 'pp', 'sb', 'sp', 'sprm', 'ob', 'op', 'wp', 'amtp'];
 
 // 재현 가능한 의사난수(LCG) — 실패 케이스를 그대로 다시 돌릴 수 있어야 한다.
@@ -220,6 +242,59 @@ REGRESSIONS.push(
     prints: [{ photoNum: 'A1', printId: 'frame_a3', qty: 1 }, { photoNum: 'A1', printId: 'basic_10x15', qty: 1 }] }
 );
 
+/* 볼륨 할인 회귀 — pb 쿼터=basic_10x15×1. 파인아트A4 보정본 15 × 12장 중 한 장이 쿼터 크레딧 3 을 받아 12,
+   나머지 11장 15 = 177. 액자 35 는 할인 대상 밖 → 총 212, 할인 12장 **15%**(구간 10:15) × 177 = 26,55, net 185,45.
+   (액자가 할인에 끼면 13장·base 212 → -31,80 → net 180,20 이 된다 — 이 두 값이 갈리는지 보는 케이스다)
+   ⚠ 기대치가 구간표에 묶여 있다. 구간을 바꾸면 여기도 같이 고쳐야 한다(2026-09-10 인화 구간 10→5 로 하향). */
+REGRESSIONS.push({
+  name: '액자는 볼륨 할인 대상이 아니다', productKey: 'pb', retouchNums: ['A1'], serviceCutCount: 0, serviceNums: [],
+  expectTotal: 212, expectNet: 185.45, expectVolUnits: 12,
+  prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 12 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
+});
+
+/* 재주문(reprint) 회귀 — 보정 리스트가 비어 있어도 **보정본가**여야 한다.
+   원본가로 새면 파인아트 A4 가 15 대신 20 이 되어 장당 €5 과다청구다.
+   itemGroup 'reprint' 는 쿼터표에 없으므로 포함 쿼터도 0 이다. */
+REGRESSIONS.push({
+  name: '재주문은 보정 리스트가 비어도 보정본가', productKey: 'reprint', itemGroup: 'reprint',
+  retouchNums: [], serviceCutCount: 0, serviceNums: [], expectTotal: 30, expectVolUnits: 2, expectNet: 30,
+  prints: [{ photoNum: 'B1', printId: 'premium_a4', qty: 2 }]
+});
+
+/* 쿼터 업그레이드(차액) 장도 볼륨 할인 '장수' 에 들어간다는 규칙을 고정한다(사장님 확인 2026-09-10).
+   sb 쿼터 = basic_a4×1 + basic_10x15×2. 파인아트A4 보정본 15 × 5장:
+     1장은 basic_a4 크레딧 10 → 5 · 2장은 basic_10x15 크레딧 3 → 12 씩 · 나머지 2장은 정가 15
+     = 5+12+12+15+15 = 59, 유료 장수 5(전부 price>0 이라 차액장도 센다).
+   기준을 'price>0' 이 아니라 '정확일치 무료가 아닌 장' 같은 걸로 바꾸면 여기서 깨진다. */
+REGRESSIONS.push({
+  name: '쿼터 업그레이드 차액장도 볼륨 장수에 든다', productKey: 'sb', retouchNums: ['A1'],
+  // 구간 하향(5:10) 이후 이 주문이 실제로 할인을 받는다 — 59 × 10% = 5,90 → net 53,10.
+  serviceCutCount: 0, serviceNums: [], expectTotal: 59, expectVolUnits: 5, expectNet: 53.1,
+  prints: [{ photoNum: 'A1', printId: 'premium_a4', qty: 5 }]
+});
+
+/* 견적형(wallart_custom)·액자는 **포함 쿼터 배정 자체에 들어가면 안 된다** (Phase 0, 2026-09-10).
+   ⚠ 금액으로는 구별되지 않는다 — 쿼터 2-pass 가 단가 내림차순이라 0원 항목은 늘 마지막이고,
+   슬롯을 먹어도 총액은 그대로다. 실제 피해는 **분류**다: matched 가 되면 그 줄이
+   'included_print'(무료·기본 제공)로 작업지시서와 화면에 찍힌다 — 견적 대기 항목이 무료로 보인다.
+   그래서 아래 expectNoIncluded 로 '포함 목록에 들어오지 않는다' 를 직접 본다. */
+REGRESSIONS.push({
+  name: '견적형은 포함 쿼터 배정에 끼지 않는다', productKey: 'sprm', retouchNums: ['A1'],
+  serviceCutCount: 0, serviceNums: [], expectNoIncluded: /^(wallart_|frame_)/,
+  prints: [{ photoNum: 'A1', printId: 'wallart_custom', qty: 1 }, { photoNum: 'A1', printId: 'frame_a3', qty: 1 }]
+});
+
+/* A3+ 는 **픽업 전용이지만 볼륨 할인은 받는다** (2026-09-10).
+   픽업 전용 목록(SELECT_PICKUP_ONLY_RE_)과 할인 제외 목록(selectOrderHasFrame_)을 하나로 합치면
+   A3+ 가 조용히 할인에서 빠진다 — 총액만 보면 눈치채기 어렵다. 그래서 값으로 고정한다.
+   pb 쿼터=basic_10x15×1. 파인아트A3+ 보정본 41 × 6장 중 한 장이 쿼터 크레딧 3 → 38,
+   나머지 5장 41 = 205 → 총 243. 6장이면 5:10 구간이라 −10% = 24,30 → net 218,70. */
+REGRESSIONS.push({
+  name: 'A3+ 는 픽업 전용이어도 볼륨 할인을 받는다', productKey: 'pb', retouchNums: ['A1'],
+  serviceCutCount: 0, serviceNums: [], expectTotal: 243, expectVolUnits: 6, expectNet: 218.7,
+  prints: [{ photoNum: 'A1', printId: 'premium_a3plus', qty: 6 }]
+});
+
 const RANDOM_N = 4000;
 /* 회귀 케이스는 photos 없이 손으로 적혀 있다 — photos 를 정본으로 쓰는 하네스에 맞춰 채워 준다.
    (마케팅 축이 없던 시절 케이스라 기본은 미동의: 보너스 크레딧 0) */
@@ -248,9 +323,35 @@ for (const fx of fixtures) {
   try { s = runServer(fx); } catch (e) { fails.push({ fx, msg: `서버 실행 오류: ${e.message}` }); continue; }
   try { c = runClient(fx); } catch (e) { fails.push({ fx, msg: `클라이언트 실행 오류: ${e.message}` }); continue; }
 
+  /* ⓪-a 견적형·액자는 '포함(무료)' 목록에 절대 들어오지 않는다 — 모든 픽스처에 거는 불변식.
+        금액이 아니라 분류를 보는 유일한 검사다(금액으론 구별이 안 된다). */
+  {
+    const leaked = (s.includedItems || [])
+      .map((it) => String(it.printId || '').replace(/_(r|e)$/, ''))
+      .filter((id) => /^(wallart_|frame_)/.test(id));
+    if (leaked.length) {
+      fails.push({ fx, msg: `쿼터 밖 SKU 가 '포함(무료)' 으로 분류됨 — ${[...new Set(leaked)].join(', ')}` });
+      continue;
+    }
+  }
+  if (fx.expectNoIncluded && (s.includedItems || []).some((it) => fx.expectNoIncluded.test(String(it.printId || '')))) {
+    fails.push({ fx, msg: `기대 위반 — ${fx.expectNoIncluded} 가 포함 목록에 있다` });
+    continue;
+  }
+
   /* ⓪ 기대 총액이 명시된 케이스는 값 자체가 맞는지 본다 — 서버와 화면이 똑같이 틀릴 수도 있다. */
   if (fx.expectTotal !== undefined && r2(s.amount) !== r2(fx.expectTotal)) {
     fails.push({ fx, msg: `기대 총액 불일치 — 서버 €${r2(s.amount)} ≠ 기대 €${r2(fx.expectTotal)}` });
+    continue;
+  }
+  if (fx.expectNet !== undefined && (r2(s.netAmount) !== r2(fx.expectNet) || (fx.expectVolUnits !== undefined && s.volUnits !== fx.expectVolUnits))) {
+    fails.push({ fx, msg: `기대 할인후 금액 불일치 — 서버 ${s.volUnits}장/net €${r2(s.netAmount)} ≠ 기대 ${fx.expectVolUnits}장/net €${r2(fx.expectNet)}` });
+    continue;
+  }
+  /* ①-b 볼륨 할인 후 금액 — 고객이 실제로 내는 값. 할인 전 총액만 맞고 할인이 갈리면
+        "화면 €90인데 청구 €95" 가 그대로 나간다(액자가 할인 대상에 끼어 있던 게 이 경로였다). */
+  if (r2(s.netAmount) !== r2(c.netAmount) || s.volUnits !== c.volUnits || r2(s.volDiscount) !== r2(c.volDiscount)) {
+    fails.push({ fx, msg: `볼륨 할인 불일치 — 서버 ${s.volUnits}장/-€${r2(s.volDiscount)}/net €${r2(s.netAmount)} ≠ 화면 ${c.volUnits}장/-€${r2(c.volDiscount)}/net €${r2(c.netAmount)}` });
     continue;
   }
   // ① 총액

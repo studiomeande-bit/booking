@@ -9,7 +9,7 @@
  *
  * 하는 일: 그들 프론트 CSP가 script-src 'self'(인라인 스크립트 금지)라, 원본의
  * 단일 인라인 <script>…</script> 블록을 외부 app.js로 분리하고, index.html에는
- * <script src="app.js"></script>만 남긴다. 인라인 CSS는 style-src 'unsafe-inline'로
+ * <script src="app.js?v=<app.js 내용해시 10자>"></script>만 남긴다. 인라인 CSS는 style-src 'unsafe-inline'로
  * 허용되므로 그대로 둔다. ERP_BASE(주문모드 ④ 기본 /exec)는 원본에 이미 들어있어
  * 그대로 실려 나간다 — 아래에서 존재 여부만 검증한다.
  *
@@ -20,6 +20,7 @@
  *   node scripts/build-print.mjs --check    # 재생성 결과가 현재 커밋본과 동일한지 검증만(쓰기 X)
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, copyFileSync, existsSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,8 +54,11 @@ if (!m) fail('인라인 <script>…</script> 블록을 찾지 못했습니다.')
 // 정규식이 </script> 앞 \n 을 구분자로 소비하므로, 파일 끝 개행(관례)을 복원해 커밋본과 바이트 동일.
 const appJs = m[1] + '\n';
 
-// index.html: 블록 전체를 한 줄짜리 외부참조로 치환.
-const outHtml = src.replace(/<script>\n[\s\S]*?\n<\/script>/, '<script src="app.js"></script>');
+/* index.html: 블록 전체를 한 줄짜리 외부참조로 치환.
+   캐시버스터는 app.js 내용 해시에서 **파생**한다 — 손으로 붙이면 빌드할 때마다 지워지고
+   (실제로 그렇게 드리프트해 있었다, 2026-09-09), 지어낸 토큰은 내용이 바뀌어도 그대로라 무용지물이다. */
+const appJsHash = createHash('sha256').update(appJs).digest('hex').slice(0, 10);
+const outHtml = src.replace(/<script>\n[\s\S]*?\n<\/script>/, `<script src="app.js?v=${appJsHash}"></script>`);
 
 // 안전장치: ERP_BASE 가 공개 GAS /exec 를 가리키는지(비어있지 않은지) 검증.
 const erp = appJs.match(/const\s+ERP_BASE\s*=\s*"([^"]*)"/);
@@ -65,7 +69,7 @@ if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(erp[1])) {
 
 // 치환이 유효했는지(인라인 스크립트가 남지 않았는지) 확인.
 if (/<script>\n/.test(outHtml)) fail('치환 후에도 인라인 <script> 가 남아있습니다.');
-if (!outHtml.includes('<script src="app.js"></script>')) fail('외부 스크립트 참조 주입 실패.');
+if (!outHtml.includes(`<script src="app.js?v=${appJsHash}"></script>`)) fail('외부 스크립트 참조 주입 실패.');
 
 // 번들 폰트(woff2) 목록 — @font-face url("fonts/<key>.woff2") 이 참조. 원본↔배포본 동기화 대상.
 const fontFiles = existsSync(SRC_FONTS) ? readdirSync(SRC_FONTS).filter(f => f.endsWith('.woff2')).sort() : [];

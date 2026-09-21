@@ -49,6 +49,7 @@
 - **트리거**: 공개 예약 폼 제출 직후 자동.
 - **제목**(EMAIL_I18N.pending_subject): ko `예약 신청이 접수되었습니다` / en `Booking Request Received` / de `Buchungsanfrage erhalten`
 - **본문**: 신청 내역(상품·일시·총금액·계약금 강조·잔금·할인·재촬영 배지), biz 견적전용이면 "맞춤 견적 발송 예정". 결제 안내+인보이스 문구, 계약금 있으면 환불규정 박스(웨딩 별도). 여권만 촬영 가이드·오시는길 전문, 그 외 티저. 버튼 3: 포털·일정 변경·취소 요청.
+  (2026-09-18 @963) 여권이면 **무구속 예약 고지**(계약은 스튜디오에서 성립), 환불규정 박스 끝에 "법정 철회권은 별개·기간 안엔 우선" 한 줄.
 - **위치**: `sendCustomerPendingEmail_` :11829
 
 ### A6. 대기자 등록 확인
@@ -69,6 +70,7 @@
 - **트리거**: ① 관리자 메일 "예약 확정하기" ② `booking-confirm-mail` ③ 포털 "예약 정보 다시 받기"(확정 상태만, 쿨다운).
 - **제목**: ko `촬영 예약이 최종 확정되었습니다! 🎉` / en `Your Booking is Confirmed! 🎉` / de `Ihre Buchung ist bestätigt! 🎉`
 - **본문**: 상품·일시·금액 3종. 계약금>0이면 계좌 박스(IBAN/BIC/송금사유+10일 자동취소 경고)+환불규정. .ics 첨부. /prep 설문 블록+촬영 가이드+협력업체+오시는길. 버튼 3.
+  (2026-09-18 @963) 여권 외 끝에 **철회 안내**(번역 + 독일어 원문=정본 + Muster-Widerrufsformular + 서명 ref 가 붙은 「Vertrag widerrufen」 버튼 + 조기 이행 요청 인용) — `hidePrice` 여도 싣는다. 여권은 무구속 예약 고지. 환불 상자 끝 철회권 한 줄. 마이리얼트립 제외.
 - **위치**: `_sendConfirmEmail` :12254
 
 ### B2. 예약금(계약금) 입금 확인
@@ -101,6 +103,7 @@
 ### B9. 문의 스레드 답장 알림 — 답장 원문+"대화 이어서 보기" 포털 버튼. :12847
 ### B10. 계약서 서명 요청 (PDF) — 계약 표+서명 버튼(HMAC 14일). `sendContractForAgent_` :36428
 ### B11. 서명 완료 계약서 (PDF) — 서명자·일시+서명본 첨부. :36698
+### B12. 철회 수신확인 (§ 356a Abs. 4, 2026-09-18 @963) — `/widerruf/` 「Widerruf bestätigen」 직후 자동. 제목 ko `계약 철회 접수 확인 (Eingangsbestätigung)` / en `Acknowledgement of receipt of your withdrawal (Eingangsbestätigung)` / de `Eingangsbestätigung Ihres Widerrufs`. 본문 = 고객이 보낸 내용만(의사표시·이름·계약·이메일) + **접수 날짜·시각(Europe/Berlin)**, 비독일어면 독일어 한 벌을 덧붙인다. 장부 값은 싣지 않는다. 같은 내용 10분 안 재전송은 재발송 없음. 사장님께는 `[철회 접수]` 알림(매칭 예약·철회기한·환불기한·'예약 바로 취소'). `submitBookingWithdrawal_`
 
 ## [C. 촬영 후~셀렉]
 
@@ -126,6 +129,7 @@
 - **트리거**: 고객 셀렉 제출 직후. `suppressCustomerEmail` 억제 가능.
 - **제목**: ko `📷 사진 셀렉 접수 완료 — ${name}님` / en `Photo Selection Received` / de `Fotoauswahl erhalten`
 - **본문**: 접수 내역(보정·추가금·포토카드·출력물·볼륨할인·수령방식·마케팅·총 추가금액+**결제 안내**)+선택 사진·출력물 목록+2-3주 소요 푸터(3개국어).
+- (2026-09-18 @966) **유료 추가금이 있으면** 끝에: 주문 확정 문장("이 메일로 추가 주문을 확정합니다" = 계약 성립 문서) + 인화·액자·포토카드 **철회권 없음**(§ 312g Abs. 2 Nr. 1) + 추가 보정 **철회 안내 전문**(보정용 조기 이행 요청 인용 · 셀렉 문맥 「Vertrag widerrufen」 버튼). 0원 제출은 그대로. `buildSelectExtraLegalHtml_`
 - **위치**: `_sendCustomerSelectReceipt` :26322
 
 ### C5. 셀렉 수정 제출 확인 — ✅ 8/31 신설 (그 전엔 고객 무통지)

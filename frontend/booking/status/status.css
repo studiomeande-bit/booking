@@ -91,6 +91,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans
 .directions a:hover{text-decoration:underline;}
 .directions b{color:var(--brand);}
 .foot{text-align:center;font-size:11px;color:var(--faint);padding-top:6px;margin-top:auto;}
+.foot a{color:inherit;}
 
 @media(max-width:420px){
   .summary-grid{grid-template-columns:1fr;gap:12px;}

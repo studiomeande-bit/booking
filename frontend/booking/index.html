@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- 선요청은 폰트 스타일시트보다 앞에 — 뒤에 두면 script 가 스타일시트 로드를 기다린다 -->
+  <script src="./early-init.js?v=025d2b329c"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
@@ -11,14 +13,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./booking.min.css?v=e9df86e23e" as="style">
+  <link rel="preload" href="./booking.min.css?v=e9caa251f3" as="style">
   <link rel="icon" href="./studio-mean-logo.png" type="image/png">
   <meta name="description" content="Studio mean - Fotostudio in Oberursel. Passbilder, Profil, Studio und Outdoor Shooting buchen.">
   <meta property="og:title" content="Studio mean Booking">
   <meta property="og:description" content="Fotoshooting in Oberursel buchen">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./booking.min.css?v=e9df86e23e">
+  <link rel="stylesheet" href="./booking.min.css?v=e9caa251f3">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -389,6 +391,15 @@
             </summary>
             <ol id="contractTermsList" class="contract-terms-list"></ol>
           </details>
+          <p id="passReservationNote" class="pass-reservation-note" hidden></p>
+          <details id="widerrufSection" class="contract-terms-section">
+            <summary class="contract-terms-summary">
+              <span id="widerrufSummary">철회 안내 (Widerrufsbelehrung)</span>
+              <small id="widerrufSummaryHint"></small>
+            </summary>
+            <div id="widerrufText" class="widerruf-text"></div>
+            <a class="widerruf-link" href="./widerruf/" target="_blank" rel="noopener">Widerrufsbelehrung · Muster-Widerrufsformular · Vertrag widerrufen</a>
+          </details>
           <div id="requiredConsentGroup" class="consent-group consent-group-required">
             <div id="requiredConsentLabel" class="consent-group-label">필수 동의</div>
             <label id="selectAllRow" class="checkbox-row consent-row consent-row-highlight">
@@ -410,6 +421,17 @@
               <span>
                 <span id="gdprLabel" class="consent-main-label">[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.</span>
                 <small id="gdprSub" class="consent-sub">Ich stimme zu, dass personenbezogene Daten zur Buchung, Zahlung, Durchführung des Shootings und Dateiübermittlung verarbeitet werden.</small>
+              </span>
+            </label>
+          </div>
+          <div id="earlyStartGroup" class="consent-group consent-group-required" hidden>
+            <div id="earlyStartGroupLabel" class="consent-group-label"></div>
+            <p id="earlyStartSub" class="consent-copy"></p>
+            <label id="earlyStartRow" class="checkbox-row consent-row">
+              <input type="checkbox" id="earlyStartConsent" name="earlyStartConsent" disabled>
+              <span>
+                <span id="earlyStartLabel" class="consent-main-label"></span>
+                <small id="earlyStartText" class="consent-sub"></small>
               </span>
             </label>
           </div>
@@ -455,6 +477,7 @@
         <nav class="site-footer-links" aria-label="Legal links">
           <a href="./impressum/">Impressum</a>
           <a href="./datenschutz/">Datenschutz</a>
+          <a href="./widerruf/" class="footer-withdraw">Vertrag widerrufen</a>
           <a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Anfahrt</a>
         </nav>
       </div>
@@ -478,6 +501,7 @@
       </div>
     </div>
   </footer>
-  <script src="./booking.min.js?v=c73f481293"></script>
+  <script src="./widerruf/widerruf-text.js?v=8a53d8486d"></script>
+  <script src="./booking.min.js?v=21bde669cf"></script>
 </body>
 </html>

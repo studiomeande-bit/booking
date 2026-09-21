@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 선요청은 폰트 스타일시트보다 앞에 — 뒤에 두면 script 가 스타일시트 로드를 기다린다 -->
+  <script src="./early-session.js?v=c26ad047c6"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
@@ -11,14 +13,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=ea6dcb2a72" as="style">
+  <link rel="preload" href="./select.min.css?v=0e82d41c26" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=ea6dcb2a72">
+  <link rel="stylesheet" href="./select.min.css?v=0e82d41c26">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -73,6 +75,7 @@
           <h2 id="welcomeTitle" data-i18n="welcomeTitle">안녕하세요!</h2>
           <p id="welcomeSub" data-i18n="welcomeSub">셀렉 안내를 확인한 뒤 다음 단계로 진행해 주세요.</p>
         </div>
+        <div id="reprintIntroBox" class="detail-box hidden"><div class="guide-copy" data-i18n="reprintIntro">이전 촬영본에서 인화만 추가로 주문하시는 페이지입니다.</div></div>
         <div id="sessionSummary" class="summary-grid"></div>
         <div id="packageSummary" class="detail-box"></div>
         <a id="driveLink" class="drive-btn hidden" target="_blank" rel="noopener noreferrer" data-i18n="driveLink">촬영 사진 보기 (Google Drive)</a>
@@ -251,6 +254,13 @@
           <h2 data-i18n="s3Title">출력 선택</h2>
           <p><span data-i18n-html="s3CopyHtml">출력할 사진을 선택하세요. <b>보정과 다른 사진</b>도 출력할 수 있습니다. 상품에 <b>기본 제공 출력물</b>이 있으면 그 수량까지는 무료이고, 넘는 만큼만 요금이 붙습니다. 사진 번호를 입력하면 아래에 썸네일이 표시됩니다.</span> <span id="printStepTierNote"></span></p>
         </div>
+        <!-- 규격·잘림 안내: 예약 페이지에만 있고 정작 인화를 주문하는 여기엔 없었다(2026-09-10).
+             문구는 print-tier-copy.js 의 UWG 검수본을 그대로 쓴다 — 여기서 새로 쓰지 않는다. -->
+        <details id="cropNoteBox" class="detail-box crop-note">
+          <summary data-i18n="cropNoteTitle">규격에 따라 사진 가장자리가 조금 잘립니다</summary>
+          <div id="cropNoteBody" class="guide-copy"></div>
+        </details>
+        <div id="printVolumeNote" class="volume-note hidden"></div>
         <div id="printPriceGuide" class="price-guide"></div>
         <div id="printList" class="list-wrap"></div>
         <button id="addPrintBtn" type="button" class="ghost-btn" data-i18n="addPrintBtn">＋ 출력할 사진 추가</button>
@@ -267,7 +277,7 @@
           <h2 data-i18n="s4Title">최종 확인</h2>
           <p id="submitHint" data-i18n="submitHint">선택 내용을 확인하고 수령 방식을 선택한 뒤 제출해 주세요. 제출 후에도 마감일 전까지는 수정 가능합니다.</p>
         </div>
-        <div class="review-block">
+        <div class="review-block" id="reviewRetouchBlock">
           <div class="review-title" data-i18n="reviewRetouch">보정 선택</div>
           <div id="reviewPhotos" class="review-list"></div>
         </div>
@@ -279,7 +289,7 @@
           <div class="review-title" data-i18n="reviewPrints">출력 선택</div>
           <div id="reviewPrints" class="review-list"></div>
         </div>
-        <div class="review-block">
+        <div class="review-block" id="reviewMarketingBlock">
           <div class="review-title" data-i18n="reviewMarketing">마케팅 동의</div>
           <div id="reviewMarketing" class="review-line"></div>
         </div>
@@ -344,10 +354,20 @@
           </div>
 
           <div id="reviewDelivery" class="review-line"></div>
+          <div id="reprintPickupBox" class="guide-copy hidden" data-i18n="reprintPickupOnly">재주문은 스튜디오 픽업으로만 수령하실 수 있습니다.</div>
         </div>
         <div class="total-box">
-          <span data-i18n="totalLabel">추가 비용 합계</span>
+          <span><span data-i18n="totalLabel">추가 비용 합계</span> <small id="vatNote" class="vat-note"></small></span>
           <strong id="reviewTotal">€0</strong>
+        </div>
+        <!-- 유료 추가 주문의 법정 안내 — 버튼 바로 위(§ 312j Abs. 2). 문구는 서버 정본(session.legal). docs/select-widerruf-plan.md -->
+        <div id="orderLegalBox" class="order-legal hidden">
+          <label id="earlyStartRetouchRow" class="order-legal-check hidden">
+            <input type="checkbox" id="earlyStartRetouchInput">
+            <span id="earlyStartRetouchText"></span>
+          </label>
+          <p id="printNoWiderrufNote" class="order-legal-note hidden"></p>
+          <a id="widerrufInfoLink" class="order-legal-link hidden" target="_blank" rel="noopener"></a>
         </div>
         <button id="submitBtn" type="button" class="primary-btn" data-i18n="submitBtn">제출하기</button>
         <div class="nav-row">
@@ -400,6 +420,7 @@
         <nav class="site-footer-links" aria-label="Legal links">
           <a href="../impressum/">Impressum</a>
           <a href="../datenschutz/">Datenschutz</a>
+          <a id="footerWithdrawLink" class="footer-withdraw" href="https://booking.studio-mean.com/widerruf/?what=select">Vertrag widerrufen</a>
           <a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Anfahrt</a>
         </nav>
       </div>
@@ -465,6 +486,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=e87ceb991a"></script>
+  <script src="./select.min.js?v=323b223ed3"></script>
 </body>
 </html>

@@ -22,7 +22,7 @@
       paid: '입금 완료', unpaid: '입금 대기', payMethodLabel: '결제수단',
       payNote: '계약금 입금 후 예약이 확정됩니다. 입금 확인은 영업일 기준 1~2일 소요될 수 있습니다.',
       manage: '예약 변경·취소', manageIntro: '일정 변경 또는 취소가 필요하시면 아래에서 신청해 주세요. 요청 후 스튜디오 확인을 거쳐 처리됩니다.',
-      reschedule: '📅 일정 변경 신청', cancel: '📩 예약 취소 요청',
+      reschedule: '📅 일정 변경 신청', cancel: '📩 예약 취소 요청', withdraw: '계약 철회 · Vertrag widerrufen',
       thread: '1:1 문의', threadIntro: '예약 관련 문의를 남겨주세요. 스튜디오 답장은 이곳과 이메일로 함께 전달됩니다.',
       threadEmpty: '아직 주고받은 메시지가 없습니다.', threadPlaceholder: '문의 내용을 입력해 주세요…',
       threadSend: '보내기', threadSending: '전송 중…', threadSent: '전송되었습니다. 답장은 보통 영업일 기준 하루 안에 드립니다.',
@@ -64,7 +64,7 @@
       paid: 'Paid', unpaid: 'Pending', payMethodLabel: 'Method',
       payNote: 'Your booking is confirmed once the deposit is received. Payment confirmation may take 1–2 business days.',
       manage: 'Change or cancel', manageIntro: 'Need to reschedule or cancel? Request below and the studio will process it after review.',
-      reschedule: '📅 Request reschedule', cancel: '📩 Request cancellation',
+      reschedule: '📅 Request reschedule', cancel: '📩 Request cancellation', withdraw: 'Withdraw from contract · Vertrag widerrufen',
       thread: 'Messages', threadIntro: 'Leave a message about your booking. Our replies appear here and are also emailed to you.',
       threadEmpty: 'No messages yet.', threadPlaceholder: 'Type your message…',
       threadSend: 'Send', threadSending: 'Sending…', threadSent: 'Sent! We usually reply within one business day.',
@@ -106,7 +106,7 @@
       paid: 'Bezahlt', unpaid: 'Offen', payMethodLabel: 'Methode',
       payNote: 'Ihre Buchung ist bestätigt, sobald die Anzahlung eingegangen ist. Die Bestätigung kann 1–2 Werktage dauern.',
       manage: 'Ändern oder stornieren', manageIntro: 'Termin ändern oder stornieren? Bitte unten anfragen – das Studio bearbeitet Ihre Anfrage nach Prüfung.',
-      reschedule: '📅 Termin ändern', cancel: '📩 Stornierung anfragen',
+      reschedule: '📅 Termin ändern', cancel: '📩 Stornierung anfragen', withdraw: 'Vertrag widerrufen',
       thread: 'Nachrichten', threadIntro: 'Hinterlassen Sie eine Nachricht zu Ihrer Buchung. Unsere Antworten erscheinen hier und per E-Mail.',
       threadEmpty: 'Noch keine Nachrichten.', threadPlaceholder: 'Ihre Nachricht…',
       threadSend: 'Senden', threadSending: 'Wird gesendet…', threadSent: 'Gesendet! Wir antworten in der Regel innerhalb eines Werktags.',
@@ -312,16 +312,17 @@
 
     // 변경·취소
     $('manageTitle').textContent = t.manage;
+    var btns = '';
     if (data.canManage && (data.rescheduleUrl || data.cancelUrl)) {
       $('manageIntro').textContent = t.manageIntro;
-      var btns = '';
       if (data.rescheduleUrl) btns += '<a class="btn btn-primary" href="' + esc(data.rescheduleUrl) + '">' + esc(t.reschedule) + '</a>';
       if (data.cancelUrl) btns += '<a class="btn btn-ghost" href="' + esc(data.cancelUrl) + '">' + esc(t.cancel) + '</a>';
-      $('manageBtns').innerHTML = btns;
     } else {
       $('manageIntro').textContent = t.noManage;
-      $('manageBtns').innerHTML = '';
     }
+    // § 356a 「Vertrag widerrufen」 — 촬영 후에도 보인다(안내 없이 확정된 옛 예약은 기간이 12개월+14일). 여권·취소건은 서버가 canWithdraw:false.
+    if (data.canWithdraw) btns += '<a class="btn btn-outline" href="/widerruf/?ref=' + encodeURIComponent(ref) + '&amp;lang=' + lang + '">' + esc(t.withdraw) + '</a>';
+    $('manageBtns').innerHTML = btns;
 
     // 사진 선택(셀렉) 링크 + 작업 진행률 (2026-08-10)
     if (data.selectUrl) {

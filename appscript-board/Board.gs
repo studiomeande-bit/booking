@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
- * 정본: appscript/Code.gs (보드 경로). 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-09T17:13:58.242Z
- * 포함 함수 49개 / 상수 17개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
+ * 생성 시각: 2026-09-21T10:07:55.286Z
+ * 포함 함수 90개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -40,19 +40,18 @@ const CONFIG = {
   PRODUCTS_CACHE_TTL_SEC: 3600,
   UNAVAIL_CACHE_TTL_SEC: 1800,
   SLOTS_CACHE_TTL_SEC: 1800,
-  LEXWARE_PUSH_BATCH_MAX: 40,
-  LEXWARE_STATUS_BATCH_MAX: 60,
-  LEXWARE_BATCH_TIME_BUDGET_MS: 240000,
-  LEXWARE_SYNC_GUARD_SEC: 900,
-  LEXWARE_REQUEST_DELAY_MS: 650,
   MIN_BOOKING_NOTICE_MIN: 180,
   BUFFER_OUTDOOR_MIN: 60,
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드','early_start_requested','캘린더동기화일시'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
-  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜'],
+  /* ⚠ 새 열은 **맨 뒤**에만 붙인다. 중간 삽입 금지 — 레거시 판정이 colMap['매출날짜']===1 로
+     헤더 위치를 보고, 읽기는 헤더 이름 기반 colMap 이라 뒤에 붙는 건 안전하다.
+     뒤 6개는 대형 외주(월아트) 추적용 — Phase 2 make-vs-buy 리포트의 원천 데이터다(2026-09-10). */
+  PRINT_HEADERS: ['주문일시','고객명','연락처','인화항목','보정항목','총수량','금액','결제수단','메모','상태','매출날짜',
+                  '외주업체','랩매입_총액','랩매입_인화분','규격_cm','액자포함','발주일','입고일'],
   EXPENSE_HEADERS: ['지출일','거래처','카테고리','설명','총액(Brutto)','순액(Netto)','부가세(Vorsteuer)','결제수단','메모','증빙링크','상태','회계분류','LexwareVoucherId','LexwareSyncStatus','LexwareSyncedAt'],
   TARGET_CALENDAR_NAMES: ['사진촬영 일정'],
   // '스케쥴/스케줄' 두 표기 모두 — 이름 정확일치로 매칭하므로 한 글자 다르면 개인 일정이 슬롯을 못 막는다
@@ -65,7 +64,24 @@ const WALKIN_COL=CONFIG.WALKIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},
 
 const BOOKING_STATUS_CANCELLED = '취소됨';
 
+const DEFAULT_BOOKING_HOURS = {
+  weekday: '09:30-13:00,15:30-18:00',   // 2026-08-17 사장님 변경 (구: 09:30-11:30,15:00-17:30)
+  saturday: '09:00-16:00'
+};
+
+const MORNING_BLOCK_CUTOFF_MIN = 13 * 60;   // morning_block_ranges 의 '오전' 경계 = 13:00 (평일 오전 세션의 끝)
+
+const DAY_CHARS_ = '일월화수목금토';        // getDay() 인덱스와 일치 — 요일 조건 표기용
+
+const WEEKDAY_MORNING_END_MIN = 13 * 60;
+
+const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
+
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
+
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+
+let SETTINGS_MAP_CACHE = null;
 
 function normalizeBookingStatus_(status){
   return String(status||'').trim();
@@ -149,7 +165,8 @@ function _inqDigits_(v){ return String(v==null?'':v).replace(/[^0-9]/g,''); }
 
 function _inqPhoneKey_(v){
   const d=_inqDigits_(v);
-  return d.length>=8 ? d.slice(-9) : '';
+  const k=d.length>=8 ? d.slice(-9) : '';
+  return /^0+$/.test(k) ? '' : k;   // MRT 자리표시 '+49 000 000000' 이 모든 MRT 고객을 한 사람으로 합치던 구멍(감사 2026-09-20)
 }
 
 function _inqEmailKey_(v){
@@ -282,13 +299,57 @@ function readPrepByBookingRow_(rowIndexes){
   return want;
 }
 
-function readPickupsForDate_(dateStr){
+function _selectPrintLinesForBoard_(raw){
+  let arr=[];
+  try{ arr=JSON.parse(String(raw||'[]')); }catch(e){ return []; }
+  if(!Array.isArray(arr)) return [];
+  const groups={},order=[];
+  arr.forEach(function(p){
+    if(!p||typeof p!=='object') return;
+    const label=String(p.label||p.printId||'인화').trim();
+    const finish=String(p.finish||'').trim();
+    const key=label+'|'+finish;
+    if(!groups[key]){ groups[key]={label:label,finish:finish,qty:0,inc:0,nums:[],notes:[]}; order.push(key); }
+    const g=groups[key];
+    const q=Number(p.qty||p.quantity||1)||1;
+    g.qty+=q;
+    if(p.included) g.inc+=q;
+    const n=String(p.photoNum||'').trim();
+    if(n&&n!=='-'&&g.nums.indexOf(n)<0) g.nums.push(n);
+    const note=String(p.note||'').trim();
+    if(note&&g.notes.indexOf(note)<0) g.notes.push(note);
+  });
+  return order.map(function(k){
+    const g=groups[k];
+    const split=!g.inc?'':(g.inc>=g.qty?' (포함)':' (포함 '+g.inc+' · 추가 '+(g.qty-g.inc)+')');
+    // finish 는 제출 정규화값 full|border (26134행) — 인화 설정 그대로 읽히게 한국어로
+    const fin={full:'여백 없음',border:'흰 테두리'}[g.finish]||g.finish;
+    return g.label+(fin?' · '+fin:'')+' × '+g.qty+split
+      +(g.nums.length?' — '+g.nums.join(', '):'')
+      +(g.notes.length?' · 요청: '+g.notes.join(' / '):'');
+  });
+}
+
+function _readSelectRowsForBoard_(){
+  const sh=ensureSheets_().ss.getSheetByName(SELECT_SHEET_NAME);
+  if(!sh) return [];
+  const last=sh.getLastRow();
+  return last<2?[]:sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+}
+
+function _boardReadCtx_(bookRows){
+  let sel=null,enrich=null;
+  return {
+    bookRows:bookRows,
+    selRows:function(){ if(sel===null) sel=_readSelectRowsForBoard_(); return sel; },
+    enrich:function(){ if(!enrich) enrich=_selectPayContextReader_(bookRows); return enrich; }
+  };
+}
+
+function readPickupsForDate_(dateStr,ctx){
   const out=[];
   try{
-    const ss=ensureSheets_().ss;
-    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
-    if(!sh||sh.getLastRow()<2) return out;
-    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    const rows=ctx?ctx.selRows():_readSelectRowsForBoard_();
     rows.forEach(function(r,i){
       const at=String(parseDateSafe_(r[SELECT_COL['픽업일시']]).str||'');
       if(at.slice(0,10)!==dateStr) return;
@@ -303,16 +364,17 @@ function readPickupsForDate_(dateStr){
         method:String(r[SELECT_COL['수령방식']]||''),
         status:String(r[SELECT_COL['상태']]||''),
         doneAt:doneAt,
-        done:!!doneAt
+        done:!!doneAt,
+        printLines:_selectPrintLinesForBoard_(r[SELECT_COL['추가인화']])
       });
     });
-    if(out.length){ const enrich=_selectPayContextReader_(); out.forEach(enrich); }
+    if(out.length){ const enrich=ctx?ctx.enrich():_selectPayContextReader_(); out.forEach(enrich); }
     out.sort(function(a,b){return String(a.time).localeCompare(String(b.time));});
   }catch(e){ Logger.log('pickup lookup skipped: '+e.message); }
   return out;
 }
 
-function _selectPayContextReader_(){
+function _selectPayContextReader_(bookRows){
   const ss=ensureSheets_().ss;
   const bkSh=getDbSheet();
   let printSh=null;
@@ -329,7 +391,8 @@ function _selectPayContextReader_(){
     // 잔금 컨텍스트(예약행) — 실패해도 추가금 읽기는 계속한다(별도 try)
     try{
       if(p.bookingRowIndex>1){
-        const row=bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+        const row=bookRows?bookRows[p.bookingRowIndex-2]
+          :bkSh.getRange(p.bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
         if(row&&row[BOOKING_COL['고객명']]&&!isBookingCancelledStatus_(String(row[BOOKING_COL['상태']]||''))){
           const pm=String(row[BOOKING_COL['결제수단']]||'').trim();
           p.payMethod=pm;
@@ -393,15 +456,13 @@ function readTodayWalkins_(dateStr){
   return out;
 }
 
-function readShipQueue_(){
+function readShipQueue_(ctx){
   const out=[];
   try{
-    const ss=ensureSheets_().ss;
-    const sh=ss.getSheetByName(SELECT_SHEET_NAME);
-    if(!sh||sh.getLastRow()<2) return out;
-    const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+    const rows=ctx?ctx.selRows():_readSelectRowsForBoard_();
     let bookStatus=[];
-    try{
+    if(ctx) bookStatus=ctx.bookRows.map(function(r){ return [r[BOOKING_COL['상태']]]; });
+    else try{
       const bSh=getDbSheet(),bLast=bSh.getLastRow();
       if(bLast>1) bookStatus=bSh.getRange(2,BOOKING_COL['상태']+1,bLast-1,1).getValues();
     }catch(e){}
@@ -425,11 +486,13 @@ function readShipQueue_(){
         printed:!!printDoneAt||st==='출력',
         printDoneAt:printDoneAt,
         submittedAt:String(parseDateSafe_(r[SELECT_COL['제출일시']]).str||'').slice(0,10),
-        mailAddress:String(r[SELECT_COL['우편주소']]||'').trim()
+        mailAddress:String(r[SELECT_COL['우편주소']]||'').trim(),
+        printLines:_selectPrintLinesForBoard_(r[SELECT_COL['추가인화']]),
+        printedCount:SELECT_COL['출력완료매수']!=null?(parseInt(r[SELECT_COL['출력완료매수']],10)||0):0
       });
     });
     if(out.length){
-      const enrich=_selectPayContextReader_();
+      const enrich=ctx?ctx.enrich():_selectPayContextReader_();
       out.forEach(function(p){
         enrich(p);
         const due=roundCurrency_((p.balanceDue||0)+(p.extraDue||0));
@@ -520,7 +583,8 @@ function buildTodayBoard_(dateStr){
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y';
     const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
     const payMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
-    const unpaid=/미결제|offen|unpaid/i.test(payMethod);
+    const balancePaid=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+    const partialPaid=balancePaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));   // 부분수납 누적(플래그 없음)
     shoots.push({
       rowIndex:idx+2,
       time:hhmm||'--:--',
@@ -540,8 +604,11 @@ function buildTodayBoard_(dateStr){
       payMethod:payMethod,
       /* 현장 수령액 = 잔금 + (계약금 미입금이면 계약금). 김혜수 사례(2026-08-29):
          [계약금예외]로 계약금 50 미입금·잔금 260 → 현장 수령은 310 인데 260 만 표시됐다.
-         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다. */
-      dueOnSite:roundCurrency_(balance+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+         종전 코드는 (조건)?balance:balance 로 양쪽이 같은 자기모순이었다.
+         잔금 확인(잔금결제여부 Y)이 끝났으면 0 — 잔금 셀은 수납 후에도 금액 그대로라, 이걸 안 보면
+         이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
+      dueOnSite:balancePaid?0:roundCurrency_(Math.max(0,balance-partialPaid)+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
+      balancePartialPaid:partialPaid,
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
@@ -646,23 +713,26 @@ function buildTodayBoard_(dateStr){
     if(s.overlapsNext) warnings.push(`${s.name}님 촬영이 다음(${s.nextName}님)과 ${Math.abs(s.gapToNextMin)}분 겹칩니다`);
   });
   // 픽업은 한 번만 읽는다 — 결제 컨텍스트(인화주문 스캔 포함)를 경고문용으로 중복 계산하지 않게
+  const readCtx=_boardReadCtx_(rows);
   let pickupsToday=[];
   try{
-    pickupsToday=readPickupsForDate_(today);
+    pickupsToday=readPickupsForDate_(today,readCtx);
     const pk=pickupsToday.filter(function(p){return !p.done;});
     if(pk.length) warnings.push(`오늘 픽업 ${pk.length}건 — ${pk.map(function(p){return p.time+' '+p.name;}).join(', ')}`);
   }catch(e){ pickupsToday=[]; }
+  _t.pickups=Date.now()-_t0;
   // 워크인 접수 — 그날 현장 접수분(예약장부 전환 전)
   let walkins=[];
   try{
     walkins=readTodayWalkins_(today);
     if(walkins.length) warnings.push(`워크인 접수 ${walkins.length}건 — ${walkins.map(function(w){return w.name||'(이름없음)';}).join(', ')} · 예약장부 등록 대기`);
   }catch(e){ walkins=[]; }
+  _t.walkins=Date.now()-_t0;
   // 우편발송 큐 — 날짜와 무관한 현재 백로그라 오늘 보드에만
   let shipQueue=[];
   if(today===Utilities.formatDate(now,tz,'yyyy-MM-dd')){
     try{
-      shipQueue=readShipQueue_();
+      shipQueue=readShipQueue_(readCtx);
       const ready=shipQueue.filter(function(q){return q.stage==='발송가능';});
       if(ready.length) warnings.push(`발송 가능 ${ready.length}건 — ${ready.map(function(q){return q.name;}).join(', ')}`);
     }catch(e){ shipQueue=[]; }
@@ -685,6 +755,32 @@ function buildTodayBoard_(dateStr){
     warnings:warnings,
     _timing:(function(){ _t.total=Date.now()-_t0; return _t; })()
   };
+}
+
+function getSettingsMap_() {
+  if(SETTINGS_MAP_CACHE) return SETTINGS_MAP_CACHE;
+  /* 셔틀(public-api, Shim 이 PUBLIC_API_READONLY_ 정의)만 CacheService 60초 — 요청마다 설정 시트를 읽던 100~150ms 를 뺀다(값은 전부 문자열이라
+     JSON 왕복 무해). 메인은 저장 직후 재읽기(어드민 설정 저장)가 있어 그대로. 가용성 캐시 버전 cal_cache_ver 는 Shim getCalCacheVer_ 가
+     이 맵을 거치지 않고 셀을 직접 읽어 지연 없음. */
+  const cache=(typeof PUBLIC_API_READONLY_!=='undefined')?CacheService.getScriptCache():null;
+  if(cache){ try{ const hit=cache.get('settings_map:v1'); if(hit){ SETTINGS_MAP_CACHE=JSON.parse(hit); return SETTINGS_MAP_CACHE; } }catch(e){} }
+  const sh=ensureSheets_().settingsSheet,vals=sh.getDataRange().getValues(),map={};
+  for(let i=1;i<vals.length;i++) if(vals[i][0]){
+    const key=String(vals[i][0]).trim();
+    map[key]=normalizeSettingCellValue_(key,vals[i][1]);
+  }
+  SETTINGS_MAP_CACHE=map;
+  if(cache){ try{ cache.put('settings_map:v1',JSON.stringify(map),60); }catch(e){} }
+  return map;
+}
+
+function normalizeSettingCellValue_(key,value){
+  if(value===null||value===undefined) return '';
+  if(Object.prototype.toString.call(value)==='[object Date]'){
+    const pattern=DATE_SETTING_KEYS.indexOf(String(key))>=0?'yyyy-MM-dd':'yyyy-MM-dd HH:mm';
+    return Utilities.formatDate(value,CONFIG.TIMEZONE,pattern);
+  }
+  return String(value).trim();
 }
 
 let _fastDateFmtOk_=null;
@@ -753,7 +849,9 @@ function getBookingProductForRow_(row){
   const itemGroup=String(row[BOOKING_COL['촬영종류']]||'').trim();
   const productName=String(row[BOOKING_COL['상품']]||'').trim();
   if(!itemGroup||!productName) return null;
-  return getCachedProducts_().find(function(p){
+  // 상품설정 시트 밖의 코드 상품(프로모·TFP)도 찾는다 — getProductById_ 와 같은 탐색 범위.
+  // 빠뜨리면 그 예약의 캘린더 소요시간이 이전 상품 길이로 남는다(리뷰 적발 2026-09-13: 여권→TFP 전환 시 75분이 아닌 여권 길이).
+  return getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(function(p){
     return String(p.g||'').trim()===itemGroup && [p.nameKo,p.nameEn,p.nameDe,p.id].some(function(name){
       return String(name||'').trim()===productName;
     });
@@ -761,9 +859,12 @@ function getBookingProductForRow_(row){
 }
 
 function getPassportComboDurationMin_(people){
+  /* 여권 촬영시간(분). 4인 초과는 인당 +10분 — 사장님 확정 2026-09-15.
+     이전엔 40분 고정이라 5인 이상이 온라인으로 들어오면 슬롯이 모자랐다(여권은 앞뒤 버퍼 0분).
+     같은 표가 AdminV2.html passportDurationMin / booking.js passportDurationMin 에도 있다 — 같이 고칠 것. */
   const n=Math.max(1,parseInt(people,10)||1);
   const table=[0,15,20,30,40];
-  return table[Math.min(n,4)]||40;
+  return n<=4?table[n]:40+(n-4)*10;
 }
 
 function getBookingPassportComboDurationMinFromRow_(row){
@@ -802,6 +903,76 @@ function getCachedProducts_() {
   return p;
 }
 
+function getTfpProducts_(){
+  return [{
+    id:'tfp_portfolio',
+    g:'tfp',
+    t:'tfp',
+    nameKo:'포트폴리오 협업 촬영',
+    nameEn:'Portfolio Collaboration Session',
+    nameDe:'Portfolio-Kollaboration',
+    p:0,
+    d:60,
+    prep:15,
+    descKo:'상호 무페이 협업 촬영 · 60분 · 결과물은 양측 포트폴리오에 사용합니다.',
+    descEn:'Unpaid collaboration session (TFP) · 60 min · images used for both portfolios.',
+    descDe:'Unbezahltes Kollaborations-Shooting (TFP) · 60 Min. · Bilder für beide Portfolios.'
+  }];
+}
+
+function getPromoProducts_(){
+  return [
+    {
+      id:'promo_schultuete_mini_2026',
+      g:'promo',
+      t:'promoSchultueteMini',
+      nameKo:'Schultüte Mini',
+      nameEn:'Schultüte Mini',
+      nameDe:'Schultüte Mini',
+      p:69,
+      d:20,
+      prep:15,
+      descKo:'입학 예정 아이 1명 단독 / 20분 촬영 / 보정본 2장',
+      descEn:'One school starter child / 20 min session / 2 retouched photos',
+      descDe:'Ein Einschulungskind / 20 Min. Shooting / 2 bearbeitete Bilder'
+    },
+    {
+      id:'promo_schultuete_classic_2026',
+      g:'promo',
+      t:'promoSchultueteClassic',
+      nameKo:'Schultüte Classic',
+      nameEn:'Schultüte Classic',
+      nameDe:'Schultüte Classic',
+      p:119,
+      d:30,
+      prep:15,
+      descKo:'입학 예정 아이 1명 + 가족 짧은 컷 / 30분 촬영 / 보정본 4장',
+      descEn:'One school starter child + short family portraits / 30 min session / 4 retouched photos',
+      descDe:'Ein Einschulungskind + kurze Familienbilder / 30 Min. Shooting / 4 bearbeitete Bilder'
+    },
+    {
+      id:'promo_schultuete_family_2026',
+      g:'promo',
+      t:'promoSchultueteFamily',
+      nameKo:'Schultüte Family',
+      nameEn:'Schultüte Family',
+      nameDe:'Schultüte Family',
+      p:159,
+      d:40,
+      prep:15,
+      descKo:'가족 최대 4인 / 40분 촬영 / 보정본 5장',
+      descEn:'Family up to 4 people / 40 min session / 5 retouched photos',
+      descDe:'Familie bis 4 Personen / 40 Min. Shooting / 5 bearbeitete Bilder'
+    }
+  ];
+}
+
+function getProductById_(itemId){
+  const p=getCachedProducts_().concat(getPromoProducts_()).concat(getTfpProducts_()).find(x=>x.id===itemId);
+  if(!p)throw new Error('유효하지 않은 상품입니다.');
+  return p;
+}
+
 function roundCurrency_(value){
   return Math.round((Number(value)||0)*100)/100;
 }
@@ -815,12 +986,350 @@ function normalizeReturnName_(name){
   return String(name||'').replace(/\s+/g,'').trim().toLowerCase();
 }
 
+function getCalCacheVer_(){return PropertiesService.getScriptProperties().getProperty('CAL_CACHE_VER')||'1';}
+
+function classifyBookingType_(itemGroup){
+  if(itemGroup==='pass') return 'A';
+  if(itemGroup==='snap'||itemGroup==='wed'||itemGroup==='biz') return 'C';
+  return 'B';
+}
+
+function isStudioAutoOpenEligibleGroup_(itemGroup){
+  return itemGroup==='pass'||itemGroup==='prof'||itemGroup==='stud';
+}
+
+function isStudioAutoOpenEventByFields_(title,location,isPersonal){
+  if(isPersonal) return false;
+  const safeTitle=String(title||'');
+  if(!safeTitle) return false;
+  const explicitOpen=/studio[\s_-]*(open|presence|available)|studio open|studio presence|스튜디오[\s_-]*(오픈|상주|가능)|상주/i;
+  if(explicitOpen.test(safeTitle)) return true;
+  if(!isStudioLocation_(location)) return false;
+  return false;
+}
+
+var TRAVEL_MIN_MEMO_={};
+
+function travelOneWayMinForLocation_(loc){
+  const key=String(loc||'').trim();
+  if(!key||isStudioLocation_(key)) return null;
+  if(Object.prototype.hasOwnProperty.call(TRAVEL_MIN_MEMO_,key)) return TRAVEL_MIN_MEMO_[key];
+  const hit=travelKmLookup_(key);
+  const min=hit?Math.min(180,Math.max(20,Math.round(hit.km*0.9))):null;
+  TRAVEL_MIN_MEMO_[key]=min;
+  return min;
+}
+
+function travelAwareOutdoorBuffer_(loc){
+  const oneWay=travelOneWayMinForLocation_(loc);
+  if(oneWay==null) return CONFIG.BUFFER_OUTDOOR_MIN;
+  return Math.max(CONFIG.BUFFER_OUTDOOR_MIN, oneWay+15);
+}
+
+function getRequiredBuffer_(typeNew, locNew, typeEx, locEx){
+  // R (Remote consultation) → direct overlap only, no travel/setup buffer.
+  if(typeNew==='R'||typeEx==='R') return 0;
+  // P (Personal) → 60 min buffer (same as outdoor/snap Type C)
+  if(typeNew==='P'||typeEx==='P') return CONFIG.BUFFER_OUTDOOR_MIN;
+  // A vs A only → no buffer (passport back-to-back)
+  if(typeNew==='A'&&typeEx==='A') return 0;
+  /* ⚠️ C 판정을 A 일반 규칙보다 **먼저** 둔다. 원래 A||A→15 가 앞에 있어 여권↔야외가
+     15분으로 뚫려 있었다(내장 assert 'A vs C → 60' 은 이미 60을 기대 — 코드만 어긋난
+     잠복 버그, 2026-08-16 이동시간 버퍼 작업 중 로컬 하네스로 발견). */
+  // Both C → same-location exception (같은 현장 연속 세션), 다른 장소면 두 이동 중 큰 쪽
+  if(typeNew==='C'&&typeEx==='C'){
+    const sameLocation=locNew&&locEx&&locNew.trim()===locEx.trim();
+    if(sameLocation) return CONFIG.BUFFER_STUDIO_MIN;
+    return Math.max(travelAwareOutdoorBuffer_(locNew),travelAwareOutdoorBuffer_(locEx));
+  }
+  // At least one C (A↔C, B↔C 포함) → 이동시간 인식 버퍼 (C 쪽의 장소 기준)
+  if(typeNew==='C'||typeEx==='C') return travelAwareOutdoorBuffer_(typeNew==='C'?locNew:locEx);
+  // A vs B → 15 min (여권↔스튜디오/프로필)
+  if(typeNew==='A'||typeEx==='A') return CONFIG.BUFFER_STUDIO_MIN;
+  // Both B → 15 min
+  return CONFIG.BUFFER_STUDIO_MIN;
+}
+
+function checkConflict_(events,slotStart,slotEnd,itemGroup,newLocation){
+  const newType=classifyBookingType_(itemGroup);
+  const newLoc=newLocation||'';
+  const MAX_BUF_MS=CONFIG.BUFFER_OUTDOOR_MIN*60000;  // 최대 버퍼 (60분)
+  // events가 start asc로 정렬되어 있다고 가정 → 조기 종료 적용
+  for(let i=0;i<events.length;i++){
+    const ev=events[i];
+    // 이벤트 시작이 slotEnd + MAX_BUF 이후면 이후 이벤트도 모두 범위 밖 → 종료
+    if(ev.start>=slotEnd+MAX_BUF_MS) break;
+    // 이벤트 종료가 slotStart - MAX_BUF 이전이면 이 이벤트는 무관 → 다음
+    if(ev.end<=slotStart-MAX_BUF_MS) continue;
+    const bufMs=getRequiredBuffer_(newType,newLoc,ev.type,ev.location)*60000;
+    if((slotStart-bufMs)<ev.end&&(slotEnd+bufMs)>ev.start) return true;
+  }
+  return false;
+}
+
+function parseTimeBlock_(raw){
+  const match=String(raw||'').trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if(!match) return null;
+  const startHour=parseInt(match[1],10),startMin=parseInt(match[2],10),endHour=parseInt(match[3],10),endMin=parseInt(match[4],10);
+  if([startHour,endHour].some(v=>!isFinite(v)||v<0||v>23)) return null;
+  if([startMin,endMin].some(v=>![0,15,30,45].includes(v))) return null;
+  if(startHour*60+startMin>=endHour*60+endMin) return null;
+  return {startHour,startMin,endHour,endMin};
+}
+
+function normalizeLegacyTimeBlocksSetting_(raw){
+  return String(raw||'').trim().replace(/\b11:40\b/g,'11:30');
+}
+
+function parseTimeBlocksSetting_(raw,fallback){
+  const source=normalizeLegacyTimeBlocksSetting_(raw);
+  const fallbackSource=normalizeLegacyTimeBlocksSetting_(fallback);
+  const blocks=(source||fallbackSource).split(',').map(parseTimeBlock_).filter(Boolean);
+  if(blocks.length) return blocks;
+  if(source&&fallbackSource&&source!==fallbackSource) return fallbackSource.split(',').map(parseTimeBlock_).filter(Boolean);
+  return [];
+}
+
+function normalizeWeekdayBookingBlocks_(blocks){
+  return (blocks||[]).map(block=>{
+    const startMin=block.startHour*60+block.startMin;
+    const endMin=block.endHour*60+block.endMin;
+    if(startMin>=12*60||endMin<=WEEKDAY_MORNING_END_MIN) return block;
+    if(startMin>=WEEKDAY_MORNING_END_MIN) return null;
+    return {startHour:block.startHour,startMin:block.startMin,endHour:Math.floor(WEEKDAY_MORNING_END_MIN/60),endMin:WEEKDAY_MORNING_END_MIN%60};
+  }).filter(Boolean);
+}
+
+function ensureWeekdayMorningBookingBlocks_(blocks){
+  const normalized=normalizeWeekdayBookingBlocks_(blocks);
+  const morningBlock={startHour:9,startMin:30,endHour:Math.floor(WEEKDAY_MORNING_END_MIN/60),endMin:WEEKDAY_MORNING_END_MIN%60};
+  return mergeTimeBlocks_(normalized.concat([morningBlock]));
+}
+
+function roundDownToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.floor(ms/step)*step;
+}
+
+function minutesToTimeBlock_(startMinutes,endMinutes){
+  const safeStart=Math.max(0,startMinutes);
+  const safeEnd=Math.min(24*60,endMinutes);
+  if(safeEnd<=safeStart) return null;
+  return {
+    startHour:Math.floor(safeStart/60),
+    startMin:safeStart%60,
+    endHour:Math.floor(safeEnd/60),
+    endMin:safeEnd%60
+  };
+}
+
+function mergeTimeBlocks_(blocks){
+  const ranges=(blocks||[]).map(block=>{
+    if(!block) return null;
+    const start=block.startHour*60+block.startMin;
+    const end=block.endHour*60+block.endMin;
+    if(end<=start) return null;
+    return {start,end};
+  }).filter(Boolean).sort((a,b)=>a.start-b.start);
+  if(!ranges.length) return [];
+  const merged=[ranges[0]];
+  for(let i=1;i<ranges.length;i+=1){
+    const current=ranges[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged.map(range=>minutesToTimeBlock_(range.start,range.end)).filter(Boolean);
+}
+
+function getStudioAutoOpenWindows_(events){
+  const candidates=(events||[])
+    .filter(ev=>isStudioAutoOpenEventByFields_(ev&&ev.title,ev&&ev.location,!!(ev&&ev.isPersonal)))
+    .map(ev=>({start:ev.start,end:ev.end}))
+    .sort((a,b)=>a.start-b.start);
+  if(!candidates.length) return [];
+  const merged=[candidates[0]];
+  for(let i=1;i<candidates.length;i+=1){
+    const current=candidates[i];
+    const prev=merged[merged.length-1];
+    if(current.start<=prev.end){
+      prev.end=Math.max(prev.end,current.end);
+      continue;
+    }
+    merged.push({start:current.start,end:current.end});
+  }
+  return merged;
+}
+
+function getLastStudioBookingEndMsForDate_(events){
+  return (events||[])
+    .filter(function(ev){
+      if(!ev) return false;
+      if(isStudioAutoOpenEventByFields_(ev.title,ev.location,!!ev.isPersonal)) return false;
+      return isStudioPresenceEvent_(ev);
+    })
+    .reduce(function(maxEnd,ev){
+      const endMs=Number(ev.end)||0;
+      return endMs>maxEnd?endMs:maxEnd;
+    },0);
+}
+
+function getStudioAutoOpenBlocksForDate_(dateStr,events){
+  const windows=getStudioAutoOpenWindows_(events);
+  if(!windows.length) return [];
+  const dayStart=new Date(`${dateStr}T00:00:00`).getTime();
+  const dayEnd=new Date(`${dateStr}T23:59:59`).getTime()+1000;
+  const lastStudioBookingEndMs=getLastStudioBookingEndMsForDate_(events);
+  const extendedEndMs=lastStudioBookingEndMs>0
+    ? Math.min(dayEnd,lastStudioBookingEndMs+(30*60000))
+    : 0;
+  return windows.map(window=>{
+    const start=roundUpToQuarterHour_(Math.max(window.start,dayStart));
+    const effectiveWindowEnd=extendedEndMs>0?Math.max(window.end,extendedEndMs):window.end;
+    const end=roundDownToQuarterHour_(Math.min(effectiveWindowEnd,dayEnd));
+    if(end<=start) return null;
+    return minutesToTimeBlock_(
+      Math.floor((start-dayStart)/60000),
+      Math.floor((end-dayStart)/60000)
+    );
+  }).filter(Boolean);
+}
+
+function getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents){
+  return applyMorningBlock_(dateStr,getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents));
+}
+
+function getBookingTimeBlocksForDateRaw_(dateStr,itemGroup,studioPresenceEvents){
+  const baseBlocks=getTimeBlocksForDate_(dateStr,itemGroup);
+  if(!isStudioAutoOpenEligibleGroup_(itemGroup)) return baseBlocks;
+  const extraBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+  if(!extraBlocks.length) return baseBlocks;
+  const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  if(dateStr===todayStr){
+    return extraBlocks;
+  }
+  return mergeTimeBlocks_(baseBlocks.concat(extraBlocks));
+}
+
+function parseDateRangeListSetting_(raw){
+  return String(raw||'').split(',').map(part=>part.trim()).filter(Boolean).map(function(part){
+    let days=null;
+    const dayMatch=part.match(/[\s(]+([일월화수목금토]{1,7})\)?$/);
+    if(dayMatch){
+      const parsed=dayMatch[1].split('').map(ch=>DAY_CHARS_.indexOf(ch));
+      days=parsed.filter((d,i)=>parsed.indexOf(d)===i).sort((a,b)=>a-b);
+      part=part.slice(0,dayMatch.index).trim();
+    }
+    const range=part.match(/^(\d{4}-\d{2}-\d{2})\s*[~–—]\s*(\d{4}-\d{2}-\d{2})$/);
+    if(range){
+      const from=range[1]<=range[2]?range[1]:range[2],to=range[1]<=range[2]?range[2]:range[1];
+      return{from,to,days};
+    }
+    if(/^\d{4}-\d{2}-\d{2}$/.test(part)) return{from:part,to:part,days};
+    return null;
+  }).filter(Boolean);
+}
+
+function isMorningBlockedDate_(dateStr){
+  const day=new Date(`${dateStr}T00:00:00`).getDay();
+  return parseDateRangeListSetting_(getSettingsMap_().morning_block_ranges||'')
+    .some(r=>dateStr>=r.from&&dateStr<=r.to&&(!r.days||!r.days.length||r.days.indexOf(day)>-1));
+}
+
+function applyMorningBlock_(dateStr,blocks){
+  if(!blocks.length||!isMorningBlockedDate_(dateStr)) return blocks;
+  const cut=MORNING_BLOCK_CUTOFF_MIN;
+  return blocks.map(function(b){
+    const start=b.startHour*60+b.startMin,end=b.endHour*60+b.endMin;
+    if(end<=cut) return null;      // 통째로 오전 → 삭제
+    if(start>=cut) return b;       // 통째로 오후 → 유지
+    return {startHour:Math.floor(cut/60),startMin:cut%60,endHour:b.endHour,endMin:b.endMin};  // 걸침 → 13:00부터
+  }).filter(Boolean);
+}
+
+function getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents){
+  const now=Date.now();
+  if(isStudioAutoOpenEligibleGroup_(itemGroup)){
+    const autoOpenBlocks=getStudioAutoOpenBlocksForDate_(dateStr,studioPresenceEvents||[]);
+    const todayStr=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    if(autoOpenBlocks.length&&dateStr===todayStr){
+      return roundUpToQuarterHour_(now);
+    }
+  }
+  return now+(CONFIG.MIN_BOOKING_NOTICE_MIN*60000);
+}
+
+function getWeekdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return ensureWeekdayMorningBookingBlocks_(parseTimeBlocksSetting_(settings.weekday_hours,DEFAULT_BOOKING_HOURS.weekday));
+}
+
+function getSaturdayBookingBlocks_(){
+  const settings=getSettingsMap_();
+  return parseTimeBlocksSetting_(settings.saturday_hours,DEFAULT_BOOKING_HOURS.saturday);
+}
+
+function getTimeBlocksForDate_(dateStr,itemGroup){
+  const day=new Date(`${dateStr}T00:00:00`).getDay();
+  if(itemGroup==='wed'||itemGroup==='biz') return[{startHour:8,startMin:0,endHour:22,endMin:0}];
+  if(day>=2&&day<=5) return getWeekdayBookingBlocks_();
+  if(day===6) return getSaturdayBookingBlocks_();
+  return[];
+}
+
+function computeSlots_(dateStr,events,totalDur,itemGroup,newLocation,studioPresenceEvents){
+  const slotSet={},loc=newLocation||'';
+  const leadTimeCutoff=getLeadTimeCutoffMs_(dateStr,itemGroup,studioPresenceEvents);
+  getBookingTimeBlocksForDate_(dateStr,itemGroup,studioPresenceEvents).forEach(b=>{
+    const bs=new Date(`${dateStr}T${('0'+b.startHour).slice(-2)}:${('0'+b.startMin).slice(-2)}:00`).getTime();
+    const be=new Date(`${dateStr}T${('0'+b.endHour).slice(-2)}:${('0'+b.endMin).slice(-2)}:00`).getTime();
+    for(let t=bs;t<be;t+=15*60000){
+      if(t<leadTimeCutoff||t+totalDur*60000>be) continue;
+      if(!checkConflict_(events,t,t+totalDur*60000,itemGroup,loc)){
+        const dt=new Date(t);
+        const key=`${('0'+dt.getHours()).slice(-2)}:${('0'+dt.getMinutes()).slice(-2)}`;
+        slotSet[key]=true;
+      }
+    }
+  });
+  return Object.keys(slotSet).sort();
+}
+
+function isSelectPickupEventTitle_(title){
+  return String(title||'').indexOf(SELECT_PICKUP_EVENT_PREFIX)===0;
+}
+
 function isStudioLocation_(location){
   const safe=String(location||'').toLowerCase().replace(/[\s,.-]/g,'');
   if(!safe) return false;
   return safe.indexOf('holzwegpassage3')>=0
     || safe.indexOf('61440oberursel')>=0
     || safe.indexOf('holzwegpassgae3')>=0;
+}
+
+function isStudioPresenceEvent_(ev){
+  const isPersonal=!!(ev&&ev.isPersonal);
+  if(isPersonal) return false;
+  const safeTitle=String(ev&&ev.title||'');
+  if(!safeTitle||isSelectPickupEventTitle_(safeTitle)) return false;
+  /* ⚠️ 부재(야외) 판정을 **위치보다 먼저** 본다. 수기/MRT 예약 이벤트에는 스튜디오 주소가
+     location 으로 박히는 경우가 있어, 위치를 먼저 믿으면 야외 촬영이 "재실"로 둔갑한다 —
+     2026-08-30(일) MRT 야외촬영 시간에 픽업 슬롯이 열려 실제 예약이 들어온 사고(차수진 16:00).
+     픽업 가능 시간 = 사장님이 스튜디오에 머무는 시간(사장님 규칙 2026-08-16). */
+  if(CONFIG.OUTDOOR_TITLE_KEYWORDS.some(kw=>safeTitle.indexOf(kw)>=0)) return false;
+  if(/기업|행사|영상|Corporate|Event|Video|Firmen|Individualangebot/i.test(safeTitle)) return false;
+  if(/마이리얼트립|리얼트립|MRT|출장/i.test(safeTitle)) return false;
+  if(isStudioLocation_(ev&&ev.location)) return true;
+  if(/여권|비자|Passfoto|Passport|passport/i.test(safeTitle)) return true;
+  return /프로필|profile|Profil|스튜디오|studio|가족|family|커플|couple|백일|돌|baby/i.test(safeTitle);
+}
+
+function roundUpToQuarterHour_(ms){
+  const step=15*60000;
+  return Math.ceil(ms/step)*step;
 }
 
 function _isExternalBookingItemGroup_(itemGroup){
@@ -866,7 +1375,7 @@ const PREP_COL=PREP_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
 
 const SELECT_SHEET_NAME='사진셀렉';
 
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
@@ -886,4 +1395,32 @@ function isSelectHandoverOpen_(row){
   if(!handoverAt) return true;
   const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
   return !!(printAt&&printAt>handoverAt);
+}
+
+const TRAVEL_KM_TABLE_=[
+  {re:/bad\s*homburg|kur-?\s*und\s*kongress|바트\s*홈부르크/i, city:'바트홈부르크', km:8},
+  {re:/steinbach|슈타인바흐/i,                  city:'슈타인바흐',   km:6},
+  {re:/kronberg|k[öo]nigstein|oberursel|크론베르크|쾨니히슈타인|오버우어젤/i, city:'크론베르크·쾨니히슈타인', km:7},
+  {re:/flughafen|fraport|airport|공항/i,        city:'프랑크푸르트 공항', km:25},
+  {re:/messe|메세/i,                            city:'프랑크푸르트 메세',  km:20},
+  {re:/frankfurt|프랑크푸르트/i,                city:'프랑크푸르트',      km:17},
+  {re:/hanau|하나우/i,       city:'하나우',        km:40},
+  {re:/wiesbaden|비스바덴/i, city:'비스바덴',      km:46},
+  {re:/darmstadt|다름슈타트/i, city:'다름슈타트',  km:45},
+  {re:/gie[sß]en|기센/i,     city:'기센',          km:45},
+  {re:/mainz|마인츠/i,       city:'마인츠',        km:50},
+  {re:/aschaffenburg|아샤펜부르크/i, city:'아샤펜부르크', km:75},
+  {re:/marburg|마르부르크/i, city:'마르부르크',    km:80},
+  {re:/heidelberg|하이델베르크/i, city:'하이델베르크', km:100},
+  {re:/fulda|풀다/i,         city:'풀다',          km:105},
+  {re:/koblenz|코블렌츠/i,   city:'코블렌츠',      km:125},
+  {re:/k[öo]ln|cologne|쾰른/i, city:'쾰른',        km:170},
+];
+
+function travelKmLookup_(text){
+  const t=String(text||'');
+  for(let i=0;i<TRAVEL_KM_TABLE_.length;i++){
+    if(TRAVEL_KM_TABLE_[i].re.test(t)) return TRAVEL_KM_TABLE_[i];
+  }
+  return null;
 }

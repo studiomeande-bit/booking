@@ -1,6 +1,6 @@
 # Ops Checklist
 
-Updated: 2026-07-15 Europe/Berlin
+Updated: 2026-09-20 Europe/Berlin
 
 운영·배포·회귀 점검을 한 페이지로. (로드맵 #12)
 
@@ -9,9 +9,10 @@ Updated: 2026-07-15 Europe/Berlin
 ### 백엔드 (Apps Script)
 
 ```bash
-cd appscript
-clasp push                                   # HEAD 업로드 (이것만으론 웹앱 미반영!)
-clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "설명"
+# 레포 루트에서 (.clasp.json 이 루트에 있고 rootDir=appscript — appscript/.clasp.json 은 없다)
+node scripts/check-sheet-date-compare.mjs    # 배포 전 게이트
+clasp push -f                                # HEAD 업로드 (이것만으론 웹앱 미반영! 트리거는 반영)
+clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "@NNN 설명"
 ```
 
 - **이 배포 ID가 유일한 라이브** — 프론트·문서·이메일 링크 전부 이것만 참조. 절대 `clasp undeploy` 금지, 새 배포 생성 금지 (항상 `-i` 갱신).
@@ -22,13 +23,13 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
 
 ```bash
 cd frontend
-npm run build:booking-site        # 또는 build:select-site / 개별 빌드
-# index.html의 ?v= 캐시버스트 갱신 (필수!)
-git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2분)
+npm run build:booking-site        # 또는 build:select-site / build:portfolio-site — 끝에 npm run stamp 가 돌아 ?v= 을 내용 해시로 갱신
+git add -A && git commit && git push origin main   # Netlify 가 각 사이트 netlify.toml 의 같은 build:*-site 를 직접 실행해 배포 (1~2분)
 ```
 
-- min.js/min.css를 수정 후 **캐시버스트(?v=)를 안 올리면 CDN이 구버전 서빙** — 반드시 함께.
-- booking과 select는 별도 Netlify 사이트 (booking.studio-mean.com / select.studio-mean.com).
+- **`?v=` 는 손으로 올리지 않는다** — `npm run stamp`(`frontend/scripts/stamp-assets.mjs`, build:*-site 에 포함)가 에셋 내용 해시로 붙인다(멱등, 변경 없으면 diff 없음). 커밋된 번들은 위 스크립트로 다시 빌드해서 올린다.
+- **라이브 검증은 내용 토큰으로**: 이번에 새로 넣은 문자열을 라이브 번들(`/booking.min.js`, `/v2/select.min.js` 등)에서 `curl | grep` 한다. **md5 비교 금지** — Netlify 가 돌린 esbuild 산출물은 로컬 번들과 바이트가 다르다.
+- booking·select·portfolio 는 별도 Netlify 사이트 (booking.studio-mean.com / select.studio-mean.com / studio-mean.com) — 빌드 명령은 각 폴더의 `netlify.toml`.
 
 ### ERP 에이전트 (Claude)
 
@@ -52,6 +53,9 @@ git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2�
 | **수령 마감 배포 전 필수** | `node scripts/check-handover-finalize.mjs` — 수령 기록(방문·대리수령)은 셀렉을 '최종작업완료'로, 예약장부를 '작업완료'로 밀어 **되돌리기 어려운 상태 전이**를 일으킨다(행이 셀렉 탭에서 사라지고 고객 페이지가 잠기고 후속 메일이 켜진다). 실제 시트로 전수 검증하려면 인화완료 기록에 스튜디오 PIN 이 필요하므로, `markSelectHandoverCore_` **원본 소스를 떼어내** 가짜 시트 위에서 13개 시나리오를 돌린다(방문/대리만 마감·인화 전 마감 금지·우편/기타 제외·미지 method 폴백·취소예약 보호·타행 보류·되돌리기 기록). 결함 5종을 격리 사본에 심어 전부 잡는 것까지 확인함 |
 | **수령 마감 규칙 요약** | 마감되는 조건 = 수령방법 ∈ {방문수령, 대리수령} **AND** 출력완료일시 존재 **AND** 마감 억제 스위치가 꺼져 있음(`skipFinalize:true` 또는 그 별칭 `finalize:false` — 문자열 `'false'` 도 받는다. 미지정이면 마감이 기본값이라 어드민·휴대폰 버튼 동작은 불변). 억제하면 수령일시·수령방법·수령메모만 남고 셀렉 상태·예약장부 상태는 그대로다 → '수령은 했지만 추가 인화·재보정이 남은' 건이 작업 대기 목록에 계속 보인다. 우편발송은 도착 미확인이라 제외(상태 '우편발송'을 안 쓰면 배송 추적 앵커가 어긋난다), '기타'는 폐기 겸 **미지 method 폴백값**이라 제외 — 그래서 화이트리스트 방향이어야 오타 payload 가 조용히 마감되지 않는다. 되돌리기는 `수령직전상태` 컬럼의 `직전값>내가쓴값[\|예약장부직전값]` 을 읽어 **지금도 내가 쓴 그대로일 때만** 복구한다 |
 | **인화 청구액 배포 전 필수** | `node scripts/check-select-amounts.mjs` — 고객 화면 금액(`select/v2/select.js` `computePrintAnnotations`)과 실제 청구액(`Code.gs` `computeSelectDecoupledPrints_`)은 **별개 구현**이라 한쪽만 고치면 "화면 €0 / 인보이스 €7" 분쟁이 난다. 두 함수의 **원본 소스를 그대로 떼어내** 4,011개 시나리오(쿼터 차액·2-pass 배정·포토카드 제외·서비스컷 상한·원본/보정 단가)로 총액 + **행별 금액**까지 대조한다. 불일치면 exit 1. 결함 6종을 격리 사본에 심어 전부 잡는 것까지 확인함 |
+| **고객 안내문 금액 대조** | `node scripts/build-retouch-card.mjs --check` — `2026년 가격표/추가보정-인화안내/price-ko.html · price-de.html` 의 금액이 정본(`PRINT_LABELS` + `getDefaultSelectRetouchPrice_` + 여러 장 할인 구간 `SELECT_VOLUME_TIER_DEFAULTS_.print`)과 같은지 본다. 이 두 파일은 손으로 관리돼 **어긋난 채 살아 있었다**(2026-09-10: 파인아트 A3+ 원본 €60 vs 정본 €48 — 한 장에 €12 과다). 어긋나면 exit 1, `--check` 없이 실행하면 **숫자만** 정본으로 다시 쓴다(디자인·문구는 손편집 그대로). 단가를 바꿨으면 실행하고 **PNG 를 다시 내보낼 것** |
+| **고객 안내문(새 디자인) 대조** | `node scripts/build-print-guide.mjs --check` — `2026년 가격표/추가보정-인화안내/guide-ko·en·de.html` 은 **생성물**이다(2026-09-17 새 디자인·액자/대형·영어판). 단가·할인 구간·픽업 전용 목록·검수 문구를 정본에서 읽어 문서 전체를 그린다. 디스크 파일이 정본과 다르면 exit 1 → `--check` 없이 재생성하고 **PNG 3장(`…_v2.png`)을 다시 내보낼 것**. 인쇄본은 `--pdf` — A4 한 장 앞뒤(2쪽) PDF 3장(`…_A4.pdf`)을 만들고 **2쪽이 아니거나 웹폰트가 빠지면 실패**한다(크롬 헤드리스 + poppler). 손으로 고치지 말 것 |
+| **철회 안내·철회 버튼 배포 전 필수** | `node scripts/check-widerruf.mjs` — 법정 철회 문구는 **두 벌**이다: `Code.gs` `WIDERRUF_TEXT_`(확정 메일·수신확인·Fotografenvertrag FV-v2) ↔ `frontend/booking/widerruf/widerruf-text.js`(예약 화면 4/4 단계·`/widerruf/` 페이지). 한 글자라도 다르면 exit 1. 같은 검증기가 독일어를 공식 서식(Anlage 1·2 EGBGB) 문장과 대조하고, Code.gs 를 통째로 로드해 조기 이행 창(21일)·확정 메일 블록·온라인 철회 접수(검증·예약 매칭·수신확인에 장부 값 미노출·중복)를 돌린다. 문구를 고치면 **두 파일을 같이** 고치고 계약서 검증기(`check-contract-b2c.mjs`)도 돌릴 것. 운용: 여권은 무구속 방문 예약(철회 대상 아님) · 나머지 개인 예약은 확정 메일 = 계약 성립 = 철회기간 14일 시작 · 철회 접수 시 자동 취소 없음 — 사장님 메일의 '예약 바로 취소' 후 **받은 금액 전액을 접수+14일 안에 같은 결제수단으로**(취소 환불 규정 적용 안 함). 계획: `docs/widerruf-function-plan.md` · **셀렉 유료 추가 주문**(`docs/select-widerruf-plan.md`, @966): 추가 보정 = 조기 이행 요청 필수 체크 · 인화류 = 철회권 없음 고지 · 셀렉 문구는 서버 정본을 세션 응답(`legal`)으로 받는다(셀렉 사이트 CSP 가 예약 사이트 문구 파일을 막는다). **버튼(§ 312j Abs. 3·4 — 어기면 계약 불성립)**: 셀렉 합계>0 「Zahlungspflichtig bestellen」, 예약(여권·상담견적·0원 제외) 「Zahlungspflichtig buchen」 — 문구를 바꾸면 이 검증기가 잡는다. 셀렉 철회는 촬영 예약과 별개라 알림 메일에 예약 취소 버튼이 없다 — 추가금은 `select-clear-extras` |
 | select 페이지 v1/v2 | `페이지버전` 컬럼으로 분기. 신규 발송 기본 v2. 인화 **가격 정의처는 4곳**(2026-07-26 v1 삭제로 5→4) — 하나만 고치면 화면가와 청구가가 어긋난다: ① `Code.gs` `PRINT_LABELS`(**과금 권위**) ② `AdminV2.html` `PRINT_PRICES`(자주 누락) ③ `select/v2/select.js` `PRINT_OPTIONS` ④ `shared/print-catalog.js` `PRINT_CATALOG`. 등급 **라벨**을 바꿀 땐 라벨→SKU 역추론은 `print/app.js` `normPrintId()`(PREMIUM_LABEL_RE) — v1 의 `resolvePrintId()`/`LEGACY_PRINT_LABEL_IDS` 는 v1 삭제와 함께 없어졌다. SKU id(`basic_10x15` 등)는 **불변** — 쿼터·인화주문·인보이스·인화앱이 전부 id로 걸림. 등급 설명 카피는 `shared/print-tier-copy.js` 한 곳(법률검수 원문, 임의 수정 금지) |
 | **배포 전 회귀 검증기** | `node scripts/verify-release-gate.mjs` — Update 4 릴리스 게이트의 회귀 항목을 기계 검증한다 (7타일·`famevt`/`b2b` realGroup·`b2b` consultOnly·셀렉 리터칭 €20/€10·토요일 할증 amtp/dolp +€50·**라이브 init API 에서 상담견적 8종 가격 0 = 단가표 미노출**·pass/prof/stud/snap/wed/biz 그룹 생존·select 루트 → `/v2/` 301+쿼리 보존). `--offline` 은 소스만. 불일치 시 exit 1. 인화 SKU 는 별도 검증기 `node scripts/check-print-prices.mjs`. 🔴 **검증 못 하는 게이트**: 실제 예약/상담 제출 2건, 사장님 미결 2건, GAS 200 버전 정리(소유자) |
 | **v1 삭제 완료 (2026-07-26)** | `select/{index.html,select.js,select.css,select.min.*,test.html,gallery-demo.html}` 제거. **404 방지는 리다이렉트로 해결**: `select/netlify.toml` 에 `/`·`/index.html` → `/v2/` (301, `force=true`, 쿼리스트링 자동 전달). 따라서 `buildSelectSessionUrl_`이 classic 을 루트 `/?id=`로 링크해도(10곳) v2 로 착지한다 — **Apps Script 수정 불필요**(200 버전 한계 회피). `sendPassportPhotosAdmin`의 `pageVersion:'classic'` 행은 `상태='최종작업완료'` 기록용이고 셀렉 링크를 발송하지 않으므로(코드 주석 "셀렉 생략") 고객 영향 없음. 헬스체크 `select-frontend`(Code.gs~2799)는 `followRedirects:true` 라 v2 본문으로 통과. 빌드 스크립트 `build:select`·`build:css:select` 도 함께 제거 |
@@ -102,7 +106,7 @@ git add -A && git commit && git push origin main   # Netlify 자동 배포 (1~2�
 
 ## 4. 문제 발생 시
 
-- 웹앱 변경이 안 보임 → redeploy 했는지 + 캐시버스트 확인
+- 웹앱 변경이 안 보임 → GAS 는 `-i` redeploy 했는지, 프론트는 번들 재빌드(stamp 해시가 바뀌었는지)·라이브 번들 내용 토큰 확인
 - 배포 실패 "200 versions" → 버전 정리 (위 참조)
 - ERP 에이전트 UNAUTHORIZED → 키 재발급 후 `.secrets/erp-automation-key` 갱신
 - 견적/굿샤인 캘린더 이벤트 고아 발생 → 어드민 해제 버튼 또는 일일 배치가 정리

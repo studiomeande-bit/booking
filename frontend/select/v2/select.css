@@ -236,6 +236,36 @@ h1 {
   background: var(--sm-surface-tint);
   cursor: pointer;
 }
+strong.quote{ color: var(--sm-warn); font-weight: 700; }
+
+/* 견적형(대형) 행의 희망 사이즈 자유입력 — 값이 비면 제출이 막히므로 눈에 띄게 둔다. */
+.quote-field{ margin-top: 10px; }
+.quote-field label{ display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.quote-field textarea{
+  width: 100%; border: 1px solid var(--sm-line-warm); border-radius: 10px; padding: 10px 12px;
+  font-size: 15px; font-family: inherit; color: var(--sm-text); background: var(--sm-surface);
+}
+.quote-field textarea:focus{ outline: 2px solid var(--sm-accent); outline-offset: -1px; }
+
+/* 볼륨 할인 안내 — 담는 중에 계속 보인다(할인을 알아야 더 담는다). */
+.volume-note{
+  margin-bottom: var(--space-2); padding: 10px 12px; border-radius: 10px;
+  background: var(--sm-surface-warm); font-size: 12.5px; line-height: 1.7; color: var(--sm-text-soft);
+}
+.volume-note .vd-on{ color: var(--sm-ok); font-weight: 600; }
+.volume-note .vd-next{ color: var(--sm-accent); }
+
+/* 규격·잘림 안내 — 기본은 접어 두고, 필요한 사람만 편다(주문 흐름을 막지 않는다). */
+.crop-note{ margin-bottom: var(--space-2); }
+.crop-note > summary{
+  cursor: pointer; font-size: 13px; font-weight: 600; list-style: none;
+  color: var(--sm-text-soft); padding: 2px 0;
+}
+.crop-note > summary::-webkit-details-marker{ display: none; }
+.crop-note > summary::before{ content: '▸ '; color: var(--sm-accent); }
+.crop-note[open] > summary::before{ content: '▾ '; }
+.crop-note .guide-copy{ margin-top: 8px; }
+
 /* 액자가 담기면 우편 수령 카드를 잠근다 — 라디오는 JS 가 disabled 로 막고, 여기선 그게 보이게만 한다. */
 .radio-card.is-disabled {
   opacity: .45;
@@ -2533,4 +2563,48 @@ h1 {
 @keyframes blocked-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
   .blocked-modal, .blocked-card { animation: none; }
+}
+
+/* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md) ── */
+.vat-note {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: .82;
+}
+.order-legal {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--sm-line, #e8e4dd);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--sm-text, #171513);
+}
+.order-legal-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+}
+.order-legal-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+.order-legal-note {
+  margin: 0;
+  color: #5c544b;
+}
+.order-legal-link {
+  font-size: 12.5px;
+  color: var(--sm-brand-ink);
+}
+.site-footer-links a.footer-withdraw {
+  font-weight: 600;
+  border-bottom: 1px solid currentColor;
 }

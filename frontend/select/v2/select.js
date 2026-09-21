@@ -4,6 +4,7 @@ import {
   fetchSelectPickupCalendar,
   fetchSelectPickupSlots,
   fetchSelectSession,
+  fetchWiderrufText,
   saveSelectRatings,
   submitSelectSession,
   updateSelectSession
@@ -18,6 +19,7 @@ import {
   productHasIncludedPrints
 } from '../../shared/product-delivery.js';
 import {
+  PRINT_METHOD_POINTS,
   getPrintMicrocopy,
   getPrintTier,
   getPrintTierCopy,
@@ -40,7 +42,9 @@ const PRINT_OPTIONS = [
   { id: 'premium_a3plus', label: '파인아트 A3+', retouched: 41, additional: 48 },
   // 액자는 인화가 아니라 추가금 — 쿼터·크레딧 밖이고 원본/보정본 단가가 같다(서버 PRINT_LABELS 와 동일).
   { id: 'frame_a4', label: '액자 (A4 인화용 · 마운트 포함)', retouched: 29, additional: 29 },
-  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 }
+  { id: 'frame_a3', label: '액자 (A3 인화용 · 마운트 포함)', retouched: 35, additional: 35 },
+  // 대형은 견적형 — 금액 0 으로 요청만 받는다(희망 사이즈는 아래 자유입력으로 세션 메모에 남는다).
+  { id: 'wallart_custom', label: '대형·특별 규격 (견적)', retouched: 0, additional: 0 }
 ];
 
 // 등급 비교 카드용 대표 SKU — 등급 카피는 print-tier-copy.js 가 단일 소스라 getPrintTierCopy(id)로만 읽는다.
@@ -50,8 +54,13 @@ const PRINT_TIER_SAMPLE_ID = { signature: 'basic_10x15', fineart: 'premium_10x15
 // 인화 사이즈(mm) — 가장자리 프리뷰의 용지 비율 계산용 (인화앱 PRINT_SIZE_MM와 일치)
 /* 서비스컷·보너스 크레딧(€3)에서 제외할 SKU — 액자는 인화가 아니라 완성품 추가금이다.
    ⚠ 서버 Code.gs selectPrintCreditExempt_ 와 규칙이 일치해야 한다(다르면 화면가≠청구가). */
+/* 견적형(대형·특별 규격) — 금액이 아직 없고 희망 사이즈를 자유입력으로 받는다. */
+function isQuotePrintId(printId) {
+  return /^wallart_/.test(String(normalizePrintTypeId(printId) || ''));
+}
+
 function printCreditExempt(printId) {
-  return /^frame_/.test(String(printId || ''));
+  return /^frame_|^wallart_/.test(String(printId || ''));
 }
 
 const PRINT_SIZE_MM_V2 = {
@@ -91,6 +100,8 @@ function printNumKey(num) {
 }
 // 출력 대상 사진이 보정 리스트에도 있으면 보정본 단가(retouched), 없으면 추가 인화가(additional).
 function isRetouchedPhotoNum(num) {
+  // 재주문은 이미 완성된 보정본을 다시 뽑는 것 — 전부 보정본가다(서버 _isReprintRow_ 와 동일 규칙).
+  if (isReprintSession()) return true;
   const key = printNumKey(num);
   if (!key) return false;
   return state.photos.some((p) => printNumKey(p.num) === key);
@@ -145,7 +156,7 @@ function computePrintAnnotations() {
     if (r.typeId === PRINT_NONE_ID) return;
     // 포토카드는 포함 쿼터 대상 밖(사장님 확정 2026-07-26) — 쿼터를 소진하지도, 상쇄받지도 않고 항상 정가.
     // 서버 computeSelectDecoupledPrints_ 의 skipQuota 와 동일 규칙.
-    const skipQuota = /^photocard_|^frame_/.test(r.typeId);
+    const skipQuota = /^photocard_|^frame_|^wallart_/.test(r.typeId);   // 견적형도 쿼터 밖(서버와 동일)
     for (let k = 0; k < r.qty; k += 1) {
       units.push({ rowIndex, typeId: r.typeId, unit: r.unit, isRetouched: r.isRetouched, credit: 0, matched: false, skipQuota });
     }
@@ -174,6 +185,7 @@ function computePrintAnnotations() {
     serviceDiscount: 0, serviceCreditUnits: 0, bonusDiscount: 0, bonusCreditUnits: 0
   }));
   let chargedUnits = 0;
+  let volumeBase = 0;   // 볼륨 할인이 걸리는 금액(액자 제외)
   // 서비스/보너스 크레딧은 서버와 같은 순서(행→장, 서비스 먼저)로 적용해야 결과가 일치한다.
   units.forEach((u) => {
     const r = rows[u.rowIndex];
@@ -203,7 +215,8 @@ function computePrintAnnotations() {
         bonusCreditsRemaining -= 1;
       }
     }
-    if (unitCharge > 0) chargedUnits += 1;   // 볼륨 할인 기준 장수 — 최종적으로 돈이 붙는 장만 (서버와 동일)
+    // 볼륨 할인 기준 장수 — 최종적으로 돈이 붙는 장만. 액자는 인화가 아니라 제외(서버와 동일).
+    if (unitCharge > 0 && !printCreditExempt(r.typeId)) { chargedUnits += 1; volumeBase += unitCharge; }
     a.amount += unitCharge;
   });
 
@@ -218,6 +231,7 @@ function computePrintAnnotations() {
     };
   });
   result.chargedUnits = chargedUnits;   // 배열에 부착 — 호출부가 볼륨 할인 계산에 쓴다
+  result.volumeBase = volumeBase;       // 액자를 뺀 할인 대상 금액 (서버 _volPrintBase 와 같은 규칙)
   return result;
 }
 // 포함 쿼터 대비 현재 사용/잔여 요약 (출력 단계 안내용).
@@ -238,6 +252,16 @@ function getPrintQuotaSummary() {
 }
 
 const TOTAL_STEPS = 5; // 0:welcome 1:gallery 2:retouch 3:print 4:review
+
+/* ===== 출력 재주문 모드 =====
+ * 촬영이 끝난 고객이 나중에 인화만 더 주문하는 세션이다. 보정이 없고 포함 쿼터도 0 이다.
+ * 판별은 세션의 itemGroup 이 'reprint' 인지로 한다 — 서버는 이미 이 값을 payload 에 실어 보내고
+ * (Code.gs:24792), getSelectProductKey_ 가 이 그룹을 매칭하지 못해 쿼터가 자동으로 0 이 된다.
+ * 쿼터 0 을 스위치로 쓰면 안 된다 — 쿼터 없는 정상 상품(op 등)이 이미 존재한다.
+ * v1 은 픽업 전용이다(사장님 확정 2026-09-10). 우편 실비 청구는 A3 우편 요금 실측 후. */
+function isReprintSession() {
+  return String(state.session?.itemGroup || '').trim().toLowerCase() === 'reprint';
+}
 const GALLERY_INITIAL_RENDER = 36;
 const GALLERY_RENDER_INCREMENT = 60;
 const GALLERY_BATCH_SIZE = 300;
@@ -280,6 +304,9 @@ const state = {
   mailName: '',
   mailAddress: '',
   editMode: false,
+  selectRequestId: null,   // 같은 제출 시도의 재클릭에 재사용하는 서버 중복 가드 키(입력이 바뀌면 updateSubmitState 가 버린다)
+  selectPayloadSig: '',    // 위 id 를 만들 때의 입력 지문 — 단계 이동·언어 전환은 입력이 같으니 id 를 지키고, 지문이 다를 때만 버린다
+  submitting: false,       // 전송 중(응답 대기) — 이 동안은 어떤 경로도 selectRequestId 를 버리지 않는다
   studioA4Dismissed: false,
   printsSeeded: false,
   step: 0,
@@ -287,6 +314,7 @@ const state = {
   gallery: {
     loaded: false,
     loading: false,
+    prefetch: null,         // boot 가 세션 조회와 동시에 띄운 첫 배치 약속(takeGalleryPrefetch 가 소비)
     photos: [],
     byKey: new Map(),
     filter: '',
@@ -359,6 +387,8 @@ const els = {
   deliveryPickupCard: document.getElementById('deliveryPickupCard'),
   deliveryMailCard: document.getElementById('deliveryMailCard'),
   framePickupOnlyNote: document.getElementById('framePickupOnlyNote'),
+  cropNoteBody: document.getElementById('cropNoteBody'),
+  printVolumeNote: document.getElementById('printVolumeNote'),
   pickupScheduler: document.getElementById('pickupScheduler'),
   pickupDeferredNote: document.getElementById('pickupDeferredNote'),
   pickupExistingLine: document.getElementById('pickupExistingLine'),
@@ -376,6 +406,14 @@ const els = {
   reviewTotal: document.getElementById('reviewTotal'),
   submitHint: document.getElementById('submitHint'),
   submitBtn: document.getElementById('submitBtn'),
+  vatNote: document.getElementById('vatNote'),
+  orderLegalBox: document.getElementById('orderLegalBox'),
+  earlyStartRetouchRow: document.getElementById('earlyStartRetouchRow'),
+  earlyStartRetouchInput: document.getElementById('earlyStartRetouchInput'),
+  earlyStartRetouchText: document.getElementById('earlyStartRetouchText'),
+  printNoWiderrufNote: document.getElementById('printNoWiderrufNote'),
+  widerrufInfoLink: document.getElementById('widerrufInfoLink'),
+  footerWithdrawLink: document.getElementById('footerWithdrawLink'),
   successTitle: document.getElementById('successTitle'),
   successCopy: document.getElementById('successCopy'),
   successName: document.getElementById('successName'),
@@ -408,6 +446,16 @@ const els = {
  */
 function copy() {
   return getCopy(state.lang);
+}
+
+// 통신 오류는 코드(TIMEOUT·NETWORK·GATEWAY)로 현재 언어 문구를 찾고, 서버가 준 메시지(SERVER)는 그대로 쓴다.
+// 예외: 서버 중복 가드(assertPublicRequestId_)의 영어 원문 'Duplicate submission' 은 고객 언어 문구(DUPLICATE)로 바꾼다.
+function isDuplicateSubmit(error) {
+  return /duplicate submission/i.test(String(error?.message || error || ''));
+}
+function errText(error) {
+  if (isDuplicateSubmit(error)) return copy().apiError.DUPLICATE;
+  return copy().apiError?.[error?.code] || error?.message || String(error);
 }
 
 function applyCopy() {
@@ -499,7 +547,7 @@ function rerenderForLang() {
   /* Skip while a submit is in flight — the button then shows a progress label
      that onSubmit owns. updateSubmitState() re-derives disabled separately. */
   if (els.submitBtn && !els.submitBtn.disabled) {
-    els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+    els.submitBtn.textContent = submitButtonLabel();
   }
 }
 
@@ -522,6 +570,7 @@ async function boot() {
   if (state.previewMode) {
     try {
       const mock = buildMockSession();
+      mock.legal = await fetchWiderrufText().catch(() => null);
       hydrateSession(mock);
       renderHeader();
       renderSessionSummary();
@@ -547,6 +596,12 @@ async function boot() {
     return;
   }
   try {
+    /* 사진 목록(Drive 열거, 수 초)을 세션 조회와 **동시에** 시작한다 — loadGallery 가 첫 배치로 이 약속을 쓴다.
+       sessionStorage 캐시가 있으면 서버에 갈 일이 없으니 시작하지 않는다. 실패는 loadGallery 쪽에서 재시도 버튼으로 흡수. */
+    if (!readGalleryCache(getGalleryCacheKey())) {
+      state.gallery.prefetch = fetchSelectPhotos(state.sessionId, { limit: GALLERY_BATCH_SIZE, recursive: true, cursor: '' });
+      state.gallery.prefetch.catch(() => {});
+    }
     const session = await fetchSelectSession(state.sessionId);
     /* 최종작업완료로 마감된 세션 — 오류가 아니라 '끝났습니다' 안내다.
        hydrate 하면 canEdit 이 없어 신규 제출 모드로 열리고, 고객이 다 채운 뒤 제출에서 거절당한다. */
@@ -572,7 +627,7 @@ async function boot() {
     setBanner(state.editMode ? copy().bannerLoadedEdit : copy().bannerLoaded, 'success');
   } catch (error) {
     console.error(error);
-    showError(error.message);
+    showError(errText(error));
   }
   hideLoading();
 }
@@ -632,6 +687,8 @@ function wireEvents() {
     state.mailAddress = els.mailAddressInput.value;
     updateReview();
   });
+  // 조기 이행 체크는 제출 payload 에 실린다 — 바뀌면 새 제출 시도(updateSubmitState 가 requestId 를 버린다)
+  els.earlyStartRetouchInput?.addEventListener('change', updateSubmitState);
   els.pickupPrevMonthBtn?.addEventListener('click', () => movePickupMonth(-1));
   els.pickupNextMonthBtn?.addEventListener('click', () => movePickupMonth(1));
 }
@@ -717,6 +774,7 @@ function hideLoading() {
 
 function hydrateSession(session) {
   state.session = session;
+  applyReprintUi();   // 보정 단계가 없는 세션이면 화면 구조부터 바꾼다(문구·점·버튼)
   /* The customer booked in some language; open the page in it. An explicit
      ?lang= or a stored manual choice takes precedence. */
   if (!state.langChosen) {
@@ -969,6 +1027,9 @@ function hasRequestedDeliveryOutput() {
 }
 
 function requiresDeliverySelection() {
+  /* 재주문 v1 은 픽업 전용이다 — 수령방식을 묻지 않는다(사장님 확정 2026-09-10).
+     우편을 열려면 배송비 실비 청구가 먼저 필요하고, A3 우편 요금이 아직 미실측이다. */
+  if (isReprintSession()) return false;
   return sessionHasIncludedDeliveryOutput() || hasRequestedDeliveryOutput();
 }
 
@@ -1384,20 +1445,34 @@ function setDeliveryMethod(value) {
   updateReview();
 }
 
-/* 액자는 유리가 들어가 우편 발송을 하지 않는다(사장님 확정 2026-09-09). 주문에 액자가 하나라도
-   있으면 우편 수령을 잠그고 픽업으로 고정한다. ⚠ 서버 submitPhotoSelection 에도 같은 가드가 있다 —
-   화면만 막으면 구 번들·직접 호출로 우편 주문이 들어온다. */
-function orderHasFrame() {
-  return (state.prints || []).some((p) => /^frame_/.test(normalizePrintTypeId(p && p.printId)));
+/* 우편으로 보내지 않는 SKU — 액자·대형(유리 파손) + 파인아트 A3+(329×483, Brief 최대 353mm 초과).
+   하나라도 담기면 우편 수령을 잠그고 픽업으로 고정한다(사장님 확정 2026-09-10).
+   ⚠ 서버 validateSelectDelivery_ 에도 같은 목록이 있다 — 화면만 막으면 구 번들로 우편 주문이 들어온다.
+   ⚠ 볼륨 할인 제외(printCreditExempt)와 **다른 목록**이다. A3+ 는 정상 인화라 할인은 받는다. */
+const PICKUP_ONLY_RE = /^(frame_|wallart_|premium_a3plus$)/;
+function orderHasPickupOnly() {
+  return (state.prints || []).some((p) => PICKUP_ONLY_RE.test(normalizePrintTypeId(p && p.printId)));
+}
+function pickupOnlyLabels() {
+  const seen = new Set();
+  (state.prints || []).forEach((p) => {
+    const id = normalizePrintTypeId(p && p.printId);
+    if (PICKUP_ONLY_RE.test(id)) seen.add(getPrintOption(id).label);
+  });
+  return [...seen];
 }
 
 function syncDeliveryUi() {
   const deliveryRequired = requiresDeliverySelection();
   if (!deliveryRequired) state.deliveryMethod = '';
-  const pickupOnly = deliveryRequired && orderHasFrame();
+  const pickupOnly = deliveryRequired && orderHasPickupOnly();
   if (pickupOnly) state.deliveryMethod = 'pickup';
   const method = deliveryRequired ? state.deliveryMethod : '';
-  els.framePickupOnlyNote?.classList.toggle('hidden', !pickupOnly);
+  if (els.framePickupOnlyNote) {
+    els.framePickupOnlyNote.classList.toggle('hidden', !pickupOnly);
+    // 무엇 때문에 잠겼는지 말한다 — 이유 없이 우편이 막히면 고장으로 읽힌다.
+    if (pickupOnly) els.framePickupOnlyNote.textContent = copy().pickupOnlyNote(pickupOnlyLabels().join(' · '));
+  }
   document.querySelectorAll('input[name="deliveryMethod"]').forEach((input) => {
     input.disabled = !deliveryRequired || (pickupOnly && input.value !== 'pickup');
     input.checked = input.value === method;
@@ -1418,7 +1493,11 @@ function syncDeliveryUi() {
   if (els.mailAddressInput) els.mailAddressInput.value = state.mailAddress || '';
   if (els.submitHint) {
     const c = copy();
-    els.submitHint.textContent = deliveryRequired ? c.submitHintDelivery : c.submitHintNoDelivery;
+    /* 재주문은 requiresDeliverySelection()=false 라 '출력물 수령이 없는 상품입니다' 가 뜬다 —
+       출력이 주문의 전부인 흐름에서 정반대로 읽힌다(실측 2026-09-10). */
+    els.submitHint.textContent = isReprintSession()
+      ? (c.reprintPickupOnly || c.submitHintNoDelivery)
+      : (deliveryRequired ? c.submitHintDelivery : c.submitHintNoDelivery);
   }
 }
 
@@ -1471,7 +1550,7 @@ function isPhotoPaid(photo, photoIndex) {
  * 페이로드가 없으면(구 세션·프리뷰) 서버 기본값과 동일한 아래 상수를 쓴다. */
 const VOLUME_TIER_DEFAULTS = {
   retouch: [{ count: 5, percent: 10 }, { count: 10, percent: 15 }, { count: 20, percent: 20 }],
-  print: [{ count: 10, percent: 10 }, { count: 20, percent: 15 }, { count: 30, percent: 20 }]
+  print: [{ count: 5, percent: 10 }, { count: 10, percent: 15 }, { count: 20, percent: 20 }]
 };
 function getVolumeTiers(kind) {
   const fromSession = state.session?.volumeTiers?.[kind];
@@ -1506,7 +1585,10 @@ function calcRetouchDiscount() {
 function calcPrintDiscount(annotations = computePrintAnnotations()) {
   const raw = annotations.reduce((sum, ann) => sum + ann.amount, 0);
   const units = Number(annotations.chargedUnits) || 0;
-  return { units, raw, vd: computeVolumeDiscount('print', units, raw) };
+  /* 할인은 액자를 뺀 금액에만 건다(서버 _volPrintBase). raw 는 총액 표시용이라 액자를 포함한 채 둔다 —
+     할인액만 base 로 계산하고 총액에서 빼면 결과가 서버와 일치한다. */
+  const base = Number(annotations.volumeBase) || 0;
+  return { units, raw, vd: computeVolumeDiscount('print', units, base) };
 }
 
 function calcTotal() {
@@ -1558,7 +1640,7 @@ async function loadGallery(options = {}) {
             recursive: true,
             cursor
           })
-        : await fetchSelectPhotos(state.sessionId, {
+        : (await takeGalleryPrefetch(cursor)) || await fetchSelectPhotos(state.sessionId, {
             limit: GALLERY_BATCH_SIZE,
             recursive: true,
             cursor
@@ -1608,6 +1690,13 @@ async function loadGallery(options = {}) {
 function showGalleryPartialNotice(res) {
   if (!res?.partial && !res?.truncated && !res?.hasMore) return;
   updateGalleryLoadingNotice();
+}
+
+/* boot 에서 미리 띄운 첫 배치 약속 — 첫 배치(cursor 없음)에서 한 번만 소비한다. 재시도·force 는 새로 받는다. */
+function takeGalleryPrefetch(cursor) {
+  const p = state.gallery.prefetch;
+  state.gallery.prefetch = null;
+  return (!cursor && p) ? p : null;
 }
 
 function resetGalleryForLoad() {
@@ -2676,7 +2765,23 @@ function thumbHtmlForNum(num) {
 }
 
 // 가장자리 마감(풀프레임/테두리) 토글 + 용지 비율 프리뷰. 인화앱 주문모드가 이 값대로 자동 셋팅한다.
+/* 견적형 행 — 가장자리 마감 대신 '희망 사이즈·액자 여부' 자유입력을 띄운다.
+   이 값이 랩 견적을 받을 때 쓰는 유일한 정보라, 비어 있으면 제출을 막는다(canSubmit). */
+function printQuoteNoteHtml(index, print) {
+  const c = copy();
+  const v = String(print.note || '');
+  return `
+    <div class="field-full quote-field">
+      <label for="quoteNote${index}">${escapeHtml(c.quoteNoteLabel)}</label>
+      <textarea id="quoteNote${index}" data-quote-note="${index}" rows="2"
+        placeholder="${escapeHtml(c.quoteNotePlaceholder)}">${escapeHtml(v)}</textarea>
+      <div class="finish-help">${escapeHtml(c.quoteNoteHelp)}</div>
+    </div>`;
+}
+
 function printFinishHtml(index, print) {
+  // 견적형은 규격이 정해지지 않아 마감 선택이 의미가 없다 — 대신 희망 사이즈를 받는다.
+  if (isQuotePrintId(print.printId)) return printQuoteNoteHtml(index, print);
   /* 액자 행은 가장자리 마감을 고르지 않는다 — 마운트가 인화 가장자리를 덮는 물건이라
      full/border 선택이 결과에 아무 영향이 없다. 선택지를 주면 고객이 오해한다. */
   if (/^frame_/.test(normalizePrintTypeId(print.printId))) return '';
@@ -3001,8 +3106,30 @@ function renderPrintQuotaBanner() {
   return `<div class="included-print-callout"><strong>${escapeHtml(c.quotaTitle)}</strong><span>${escapeHtml(c.quotaCopy)}</span><span>${getPrintMicrocopy('quotaUpgradeNote', state.lang)}</span><div class="quota-chips">${chips}</div>${serviceNote}</div>`;
 }
 
+/* 인화 볼륨 할인 안내 — 종전엔 **고객에게 한 번도 보이지 않았다**(2026-09-10 발견).
+   할인 구간을 모르면 더 담을 이유가 생기지 않아 할인이 제 일을 못 한다.
+   구간은 세션 페이로드(volumeTiers)가 정본이라 설정 시트를 고치면 문구도 같이 따라온다. */
+function renderPrintVolumeNote() {
+  const box = els.printVolumeNote;
+  if (!box) return;
+  const tiers = getVolumeTiers('print');
+  if (!tiers.length) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  const c = copy();
+  const pd = calcPrintDiscount();
+  const parts = [`<b>${escapeHtml(c.vdTiersLabel)}</b> ${escapeHtml(tiers.map((t) => c.vdTierItem(t.count, t.percent)).join(' · '))}`];
+  if (pd.vd.percent > 0) {
+    parts.push(`<span class="vd-on">${escapeHtml(c.vdNowApplied(pd.units, pd.vd.percent, money2(pd.vd.discount)))}</span>`);
+  }
+  if (pd.vd.remainToNext > 0 && pd.vd.nextPercent > 0 && pd.units > 0) {
+    parts.push(`<span class="vd-next">${escapeHtml(c.vdRemain(pd.vd.remainToNext, pd.vd.nextPercent))}</span>`);
+  }
+  box.innerHTML = parts.join('<br>');
+  box.classList.remove('hidden');
+}
+
 function renderPrints() {
   const c = copy();
+  renderPrintVolumeNote();
   const banner = renderPrintQuotaBanner();
   if (!state.prints.length) {
     els.printList.innerHTML = `${banner}<div class="empty-state">${escapeHtml(copy().printEmpty)}</div>`;
@@ -3012,9 +3139,14 @@ function renderPrints() {
   els.printList.innerHTML = banner + state.prints.map((print, index) => {
     const ann = annotations[index];
     const option = ann.option;
-    const priceRight = ann.amount === 0
-      ? `<strong class="free">${escapeHtml(ann.serviceDiscount > 0 ? c.printFreeService : c.printFree)}</strong>`
-      : `<strong class="paid">€${ann.amount}</strong>`;
+    /* 견적형은 €0 이지만 **무료가 아니다** — 아직 값이 정해지지 않은 것이다.
+       '무료'로 찍으면 고객이 대형 액자를 공짜로 이해한다(2026-09-10 라이브 실측에서 그렇게 나왔다). */
+    const isQuote = isQuotePrintId(print.printId);
+    const priceRight = isQuote
+      ? `<strong class="quote">${escapeHtml(c.printQuotePending)}</strong>`
+      : ann.amount === 0
+        ? `<strong class="free">${escapeHtml(ann.serviceDiscount > 0 ? c.printFreeService : c.printFree)}</strong>`
+        : `<strong class="paid">€${ann.amount}</strong>`;
     const tierBadge = ann.isRetouched
       ? `<span class="included-print-badge">${escapeHtml(c.printBadgeRetouched)}</span>`
       : `<span class="manual-badge">${escapeHtml(c.printBadgeOriginal)}</span>`;
@@ -3023,13 +3155,15 @@ function renderPrints() {
       : '';
     /* 쿼터 차액이 섞인 행은 '추가 N × €단가'가 성립하지 않는다(장마다 상쇄액이 다를 수 있다).
        그럴 땐 장수와 실제 합계만 말한다. */
-    const breakdown = (ann.quotaDiffQty > 0
+    const breakdown = (isQuote
+      ? `<div class="review-note">${escapeHtml(c.printQuoteNote)}</div>`
+      : ann.quotaDiffQty > 0
       ? `<div class="review-note">${escapeHtml(c.printQuotaDiffLine(ann.includedQty, ann.quotaDiffQty, Math.max(0, ann.chargedQty - ann.quotaDiffQty), ann.amount))}</div>`
       : ann.includedQty > 0 && ann.chargedQty > 0
         ? `<div class="review-note">${escapeHtml(c.printIncludedPlusExtra(ann.includedQty, ann.chargedQty, ann.unit))}</div>`
         : ann.includedQty > 0
           ? `<div class="review-note">${escapeHtml(c.printIncludedFree)}</div>`
-          : `<div class="review-note">${escapeHtml(c.printExtraLine(ann.qty, ann.unit))}</div>`) + serviceLine;
+          : `<div class="review-note">${escapeHtml(c.printExtraLine(ann.qty, ann.unit))}</div>`) + (isQuote ? '' : serviceLine);
     return `
       <div class="entry-card">
         <div class="entry-head">
@@ -3135,6 +3269,12 @@ function renderPrints() {
       state.prints.splice(Number(button.dataset.removePrint), 1);
       renderPrints();
       updateReview();
+    });
+  });
+  els.printList.querySelectorAll('[data-quote-note]').forEach((ta) => {
+    ta.addEventListener('input', () => {
+      state.prints[Number(ta.dataset.quoteNote)].note = ta.value;
+      updateSubmitState();   // 비어 있으면 제출 가드가 잡는다 — 다시 그리지 않아 커서가 유지된다
     });
   });
   els.printList.querySelectorAll('[data-zoom-entry]').forEach((btn) => {
@@ -3310,8 +3450,10 @@ function updateReview() {
   const base = Number(state.session?.baseRetouchCount || 0);
   const retouchPrice = Number(state.session?.retouchPrice || 0);
 
-  els.reviewPhotos.innerHTML = state.photos.length
-    ? state.photos.map((photo, index) => {
+  // 안 쓴 무료 슬롯(빈 보너스·서비스 행)은 보정이 아니다 — 목록에 찍으면 보정 0장 주문이 보정 주문처럼 보인다
+  const reviewRows = state.photos.map((photo, index) => [photo, index]).filter(([photo]) => !(photo.isBonus && isRetouchRowEmpty(photo)));
+  els.reviewPhotos.innerHTML = reviewRows.length
+    ? reviewRows.map(([photo, index]) => {
         const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
         const paid = isPhotoPaid(photo, index);
         const extra = paid
@@ -3395,8 +3537,46 @@ function updateReview() {
   if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
   const total = calcTotal();
   els.reviewTotal.textContent = total === 0 ? c.printFree : `€${total}`;
+  syncOrderLegal();
   updateSubmitState();
   renderStepWarnings();
+}
+
+/* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md, 2026-09-18) ──
+   추가 보정 = 서비스 → 조기 이행 요청 필수 체크(§ 356 Abs. 5 Nr. 2 · § 357a Abs. 2) + 철회 안내 링크.
+   인화·액자·포토카드 = 맞춤 제작품 → 철회권 없음 고지(§ 312g Abs. 2 Nr. 1). 합계 > 0 이면 버튼 "zahlungspflichtig"(§ 312j Abs. 3).
+   문구는 서버 정본(session.legal ← Code.gs WIDERRUF_TEXT_) — 셀렉 사이트는 CSP 로 예약 사이트 문구 파일을 못 싣는다. */
+function legalCopy() {
+  const legal = state.session?.legal;
+  return legal ? (legal[state.lang] || legal.ko) : null;
+}
+function hasPaidRetouch() { return calcRetouchDiscount().raw > 0; }
+function hasPaidPrints() { return calcPrintDiscount().raw > 0; }
+function submitButtonLabel() {
+  const L = legalCopy();
+  if (L && calcTotal() > 0) return L.orderButton;
+  return state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+}
+function syncOrderLegal() {
+  const L = legalCopy();
+  const paidRetouch = !!L && hasPaidRetouch();
+  const paidPrints = !!L && hasPaidPrints();
+  if (els.vatNote) els.vatNote.textContent = L && calcTotal() > 0 ? `(${L.vatIncluded})` : '';
+  els.orderLegalBox?.classList.toggle('hidden', !(paidRetouch || paidPrints));
+  els.earlyStartRetouchRow?.classList.toggle('hidden', !paidRetouch);
+  if (els.earlyStartRetouchText) els.earlyStartRetouchText.textContent = paidRetouch ? L.earlyStartRetouch : '';
+  // 유료 보정이 빠졌다가 다시 담기면 다시 명시적으로 체크해야 한다
+  if (!paidRetouch && els.earlyStartRetouchInput) els.earlyStartRetouchInput.checked = false;
+  els.printNoWiderrufNote?.classList.toggle('hidden', !paidPrints);
+  if (els.printNoWiderrufNote) els.printNoWiderrufNote.textContent = paidPrints ? L.printNoWiderruf : '';
+  if (els.widerrufInfoLink) {
+    els.widerrufInfoLink.classList.toggle('hidden', !paidRetouch);
+    els.widerrufInfoLink.textContent = copy().widerrufInfoLink;
+    els.widerrufInfoLink.href = `${state.session?.legal?.url || 'https://booking.studio-mean.com/widerruf/'}?lang=${state.lang}`;
+  }
+  // 하단 「Vertrag widerrufen」 — 예약행이 있으면 서명 ref 가 붙어 /widerruf/ 가 미리 채운다
+  if (els.footerWithdrawLink && state.session?.withdrawUrl) els.footerWithdrawLink.href = `${state.session.withdrawUrl}&lang=${state.lang}`;
+  if (els.submitBtn && !els.submitBtn.disabled) els.submitBtn.textContent = submitButtonLabel();
 }
 
 function validateStep1() {
@@ -3407,7 +3587,7 @@ function validateStep1() {
   // 별점(찜) 1장 이상이면 진행 — 보정 담기는 2단계 픽커에서 한다(자동 채움 제거, 2026-08-09).
   // canProceedStep1 과 반드시 같은 조건이어야 한다: 버튼만 켜지고 클릭이 튕기면 "고장"으로 보인다.
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  if (state.gallery.ratings.size < 1 && regularCount < 1) {
+  if (state.gallery.ratings.size < 1 && regularCount < 1 && !state.prints.length) {
     setBanner(copy().errRateAtLeastOne, 'error');
     return false;
   }
@@ -3435,13 +3615,19 @@ function findIncompleteRetouchIndex() {
 function countCompleteRetouchRows() {
   return state.photos.filter(isRetouchRowComplete).length;
 }
+/* 보정 0장 + 출력만 (2026-09-17 이윤경: "보정 선택 안 하면 출력 선택 안 됨") — 보정은 필수가 아니다.
+   진행 조건은 '보정 또는 출력(포함 포토카드) 중 하나라도 있음'이고, 확인은 출력 단계에서 한다
+   (2단계에서 막으면 출력을 고를 3단계에 닿지 못한다). */
+function hasAnySelection() {
+  return countCompleteRetouchRows() > 0 || state.prints.length > 0 || hasIncludedPhotocard();
+}
 // 안 쓰고 남은 서비스 컷 수 — 마케팅 보너스와 달리 서버가 흡수해 주지 않아 그대로 소멸한다
 function countUnusedServiceSlots() {
   return state.photos.filter((photo) => photo?.isService && isRetouchRowEmpty(photo)).length;
 }
 
 function validateStep2() {
-  if (countCompleteRetouchRows() < 1) { setBanner(copy().errRetouchAtLeastOne, 'error'); return false; }
+  if (isReprintSession()) return true;   // 재주문은 보정 자체가 없다
   const invalid = findIncompleteRetouchIndex();
   if (invalid >= 0) {
     setBanner(copy().errRetouchRow(invalid + 1), 'error');
@@ -3457,8 +3643,12 @@ function validateStep2() {
 
 const MAIL_LATIN_RE = /^[\x20-\x7E\r\n\u00A0-\u024F€]*$/;
 function validateStep3() {
+  if (!isReprintSession() && !hasAnySelection()) { setBanner(copy().errNothingSelected, 'error'); return false; }
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
+  // 견적형은 희망 사이즈가 없으면 랩에 견적을 물어볼 수 없다 — 빈 채로 접수하면 되물어야 한다.
+  const noQuote = state.prints.findIndex((p) => isQuotePrintId(p.printId) && !String(p.note || '').trim());
+  if (noQuote >= 0) { setBanner(copy().errQuoteNote(noQuote + 1), 'error'); return false; }
   return true;
 }
 
@@ -3490,11 +3680,10 @@ function collectStepProblems(step) {
   if (step === 1) {
     if (!state.marketing) push(c.errPickMarketing, pick('#marketingBox'));
     const regularCount = state.photos.filter((p) => !p.isBonus).length;
-    if (state.gallery.ratings.size < 1 && regularCount < 1) push(c.errRateAtLeastOne, pick('#galleryGrid'));
+    if (state.gallery.ratings.size < 1 && regularCount < 1 && !state.prints.length) push(c.errRateAtLeastOne, pick('#galleryGrid'));
   }
 
   if (step === 2) {
-    if (countCompleteRetouchRows() < 1) push(c.errRetouchAtLeastOne, pick('#pickRetouchBtn') || pick('#photoList'));
     state.photos.forEach((photo, i) => {
       if (photo && photo.isBonus && isRetouchRowEmpty(photo)) return;   // 안 쓴 무료 슬롯은 문제가 아니다
       if (isRetouchRowComplete(photo)) return;
@@ -3508,6 +3697,7 @@ function collectStepProblems(step) {
   }
 
   if (step === 3) {
+    if (!isReprintSession() && !hasAnySelection()) push(c.errNothingSelected, pick('#addPrintBtn'));
     state.prints.forEach((print, i) => {
       if (String(print.photoNum || '').trim()) return;
       push(c.errPrintRow(i + 1), pick(`[data-print-photo="${i}"]`) || pick('#printList'));
@@ -3574,8 +3764,45 @@ function showBlockedModal(problems) {
   globalThis.setTimeout(() => { try { wrap.querySelector('[data-blocked-go]').focus(); } catch (_) {} }, 60);
 }
 
+/* 재주문이면 보정 단계의 흔적을 화면에서 지운다. goStep 이 2번을 건너뛰어도
+   점과 버튼 라벨이 '보정'을 가리키고 있으면 고객은 뭔가 빠뜨렸다고 읽는다. */
+function applyReprintUi() {
+  if (!isReprintSession()) return;
+  document.body.classList.add('is-reprint');
+  const c = copy();
+  els.stepDots[2]?.classList.add('hidden');
+  document.getElementById('reprintIntroBox')?.classList.remove('hidden');
+  document.getElementById('reprintPickupBox')?.classList.remove('hidden');
+  // 최종 확인에서 재주문과 무관한 블록을 지운다 — '선택된 보정 사진이 없습니다' 는 오해를 부른다.
+  document.getElementById('reviewRetouchBlock')?.classList.add('hidden');
+  document.getElementById('reviewMarketingBlock')?.classList.add('hidden');
+  // 보정 단계 안내(진행 순서 2번)와 수령방식 선택 안내는 재주문에 해당하지 않는다.
+  document.querySelector('[data-i18n-html="process2Html"]')?.classList.add('hidden');
+  document.querySelector('[data-i18n-html="process4Html"]')?.classList.add('hidden');
+  /* ⚠ step1NextBtn 도 data-go="2" 다(앞으로 가는 버튼). 아래 뒤로가기 루프보다 **먼저**
+     처리하고 루프에서 제외해야 한다 — 안 그러면 '← 갤러리로' 로 덮인다(실측 2026-09-10). */
+  const next1 = document.getElementById('step1NextBtn');
+  if (next1) { next1.dataset.go = '3'; next1.textContent = c.reprintStep1Next || c.step3Next; }
+  document.querySelectorAll('[data-go="2"]').forEach((btn) => {
+    btn.dataset.go = '1';
+    btn.textContent = c.navBackGallery || btn.textContent;
+  });
+}
+
+/* 규격·잘림 안내 — print-tier-copy.js 의 PRINT_METHOD_POINTS 원문을 그대로 쓴다.
+   🔴 그 파일 헤더가 "UWG 법률 검수를 통과한 원문, 임의로 다듬지 말 것" 이라 여기서 새로 쓰지 않는다.
+   예약 페이지에는 있었는데 정작 인화를 주문하는 이 화면엔 없었다(2026-09-10). */
+function renderCropNote() {
+  if (!els.cropNoteBody) return;
+  const pts = (PRINT_METHOD_POINTS[state.lang] || PRINT_METHOD_POINTS.ko || {}).points || [];
+  const crop = pts.find((p) => /잘리|crop|Zuschnitt/.test(String(p && p.head)));
+  els.cropNoteBody.innerHTML = crop ? crop.body : '';
+}
+
 function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
+  // 재주문에는 보정 단계가 없다 — 어느 방향으로 들어와도 2번을 건너뛴다.
+  if (step === 2 && isReprintSession()) return goStep(state.step > 2 ? 1 : 3);
   if (step === 2 && !validateStep1()) { showBlockedModal(collectStepProblems(1)); return; }
   if (step === 3 && !validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
   if (step === 4 && !validateStep3()) { showBlockedModal(collectStepProblems(3)); return; }
@@ -3584,11 +3811,14 @@ function goStep(step) {
   els.progressRow.classList.remove('hidden');
   els.stepPanels.forEach((panel) => panel.classList.toggle('active', Number(panel.dataset.step) === step));
   els.stepPanels.forEach((panel) => panel.classList.remove('hidden'));
+  const reprint = isReprintSession();
   els.stepDots.forEach((dot, index) => {
-    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}`;
+    // className 을 통째로 다시 쓰므로 재주문의 보정 점 숨김을 여기서 다시 붙여야 한다.
+    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}${reprint && index === 2 ? ' hidden' : ''}`;
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
   if (step === 3) {
+    renderCropNote();
     seedIncludedPrints();          // 포함 인화를 주문 행으로 미리 채운다(보정 리스트 확정 후라야 번호 배정 가능)
     renderPrints();                // 보정 리스트 기준 포함 쿼터/단가 최신화
     updateSubmitState();           // 채워진 행이 제출 가드/배송 필요 여부에 즉시 반영되게
@@ -3598,11 +3828,19 @@ function goStep(step) {
 }
 
 function canSubmit() {
+  if (isReprintSession()) {
+    /* 재주문: 보정·포토카드 조건은 없고 **인화 한 줄 이상**이 조건이다.
+       (촬영 고객은 보정만 받고 출력 없이 끝낼 수 있지만, 재주문은 출력이 주문 자체다) */
+    if (!state.prints.length) return false;
+    if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+    return true;   // v1 은 픽업 전용 — 수령방식 입력 자체가 없다
+  }
   if (!state.marketing) return false; // Step 1에서 이미 체크됨
-  if (countCompleteRetouchRows() < 1) return false;
+  if (!hasAnySelection()) return false;
   if (findIncompleteRetouchIndex() >= 0) return false;
   if (getPhotocardWarning()) return false;
   if (state.prints.some((print) => !String(print.photoNum || '').trim())) return false;
+  if (state.prints.some((p) => isQuotePrintId(p.printId) && !String(p.note || '').trim())) return false;
   if (!requiresDeliverySelection()) return true;
   if (!state.deliveryMethod) return false;
   if (state.deliveryMethod === 'mail') {
@@ -3621,7 +3859,21 @@ function markStepBtn(btn, ready) {
   btn.disabled = false;
   btn.classList.toggle('needs-input', !ready);
 }
+/* 제출 payload 에 실리는 입력의 지문 — onSubmit 의 payload 와 같은 필드. 값이 같으면 같은 제출 시도다. */
+function payloadSig() {
+  return JSON.stringify([
+    state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '']),
+    state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
+    state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
+    state.photocard, !!els.earlyStartRetouchInput?.checked
+  ]);
+}
 function updateSubmitState() {
+  /* 제출 payload 에 실리는 입력이 바뀌는 모든 경로(사진·메모·출력·배송·주소·포토카드·마케팅 동의·조기 이행)가
+     updateReview 를 거쳐 여기로 모인다 — 바뀐 선택은 새 제출 시도이므로 requestId 를 버린다.
+     단계 이동(goStep)·언어 전환도 여기를 지나므로 입력 지문이 실제로 달라졌을 때만 버린다 —
+     타임아웃 뒤 그대로 재클릭하면 같은 id 로 가서 서버 중복 가드에 걸린다(이중 주문 방지). 전송 중에는 절대 버리지 않는다. */
+  if (!state.submitting && state.selectRequestId && payloadSig() !== state.selectPayloadSig) state.selectRequestId = null;
   markStepBtn(els.step1NextBtn, canProceedStep1());
   markStepBtn(els.step2NextBtn, canProceedStep2());
   markStepBtn(els.step3NextBtn, canProceedStep3());
@@ -3634,15 +3886,15 @@ function canProceedStep1() {
   if (!state.marketing) return false;
   // 별점(찜) 1장 이상이면 진행 — 보정 담기는 다음 단계에서 한다. 수정 모드는 복원된 보정 목록으로도 통과
   const regularCount = state.photos.filter((p) => !p.isBonus).length;
-  return state.gallery.ratings.size >= 1 || regularCount >= 1;
+  return state.gallery.ratings.size >= 1 || regularCount >= 1 || state.prints.length >= 1;
 }
 
 function canProceedStep2() {
-  if (countCompleteRetouchRows() < 1) return false;   // 실제로 고른 사진이 최소 1장
   return findIncompleteRetouchIndex() < 0 && !getPhotocardWarning();
 }
 
 function canProceedStep3() {
+  if (!isReprintSession() && !hasAnySelection()) return false;
   return !state.prints.some((print) => !String(print.photoNum || '').trim());
 }
 
@@ -3657,17 +3909,17 @@ function renderStepWarnings() {
   const incompleteIdx = findIncompleteRetouchIndex();
   const unusedService = countUnusedServiceSlots();
   const step2Message = canProceedStep2()
-    // 진행은 되지만 서비스 컷은 안 쓰면 그대로 소멸한다(보너스와 달리 흡수 안 됨) — 알려만 준다
-    ? (unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
-    : countCompleteRetouchRows() < 1
-      ? c.warnNoRetouch
-      : getPhotocardWarning()
+    // 진행은 되지만 알려야 할 것: 보정 0장이면 원본 출력만 된다 / 서비스 컷은 안 쓰면 소멸(보너스와 달리 흡수 안 됨)
+    ? (countCompleteRetouchRows() < 1
+      ? c.noteNoRetouch(Number(state.session?.baseRetouchCount || 0))
+      : unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
+    : getPhotocardWarning()
         ? getPhotocardWarning()
         // "다 넣었는데 안 넘어감"을 막으려면 몇 번 칸인지 짚어야 한다
         : incompleteIdx >= 0
           ? c.errRetouchRow(incompleteIdx + 1)
           : c.warnRetouchIncomplete;
-  const step3Message = canProceedStep3() ? '' : c.warnPrintNumbers;
+  const step3Message = canProceedStep3() ? '' : !hasAnySelection() ? c.errNothingSelected : c.warnPrintNumbers;
   const step4Message = canSubmit()
     ? ''
     : !requiresDeliverySelection()
@@ -3751,6 +4003,12 @@ async function onSubmit() {
   if (!validateStep2()) { goStep(2); showBlockedModal(collectStepProblems(2)); return; }
   if (!validateStep3()) { goStep(3); showBlockedModal(collectStepProblems(3)); return; }
   if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
+  // 유료 추가 보정 — 조기 이행 요청은 명시적 체크여야 한다(묶음 동의·자동 체크 없음)
+  if (legalCopy() && hasPaidRetouch() && !els.earlyStartRetouchInput?.checked) {
+    setBanner(copy().warnEarlyStartRetouch, 'error');
+    els.orderLegalBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   if (state.previewMode) {
     alert(copy().previewSubmitAlert);
     return;
@@ -3780,7 +4038,9 @@ async function onSubmit() {
           isRetouched: ann.isRetouched,
           label: ann.option.label,
           price: ann.unit,
-          finish: print.finish === 'border' ? 'border' : 'full'
+          finish: print.finish === 'border' ? 'border' : 'full',
+          // 견적형 희망 사이즈·액자 여부. 서버가 인화주문 항목 문자열과 관리자 알림에 싣는다.
+          note: isQuotePrintId(print.printId) ? String(print.note || '').trim().slice(0, 300) : ''
         };
       }),
       ...(() => {
@@ -3797,22 +4057,40 @@ async function onSubmit() {
     mailName: deliveryRequired && state.deliveryMethod === 'mail' ? getMailNameForSubmission() : '',
     mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
     photocard: getPhotocardPayload(),
+    earlyStartRetouch: !!(legalCopy() && hasPaidRetouch() && els.earlyStartRetouchInput?.checked),
     suppressCustomerEmail: state.testMode
   };
   try {
-    const requestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
+    /* requestId 는 같은 시도의 재제출(타임아웃 재클릭)에 재사용해야 서버 중복 가드(assertPublicRequestId_)가 작동한다 —
+       클릭마다 새로 만들면 가드가 영원히 안 걸려 이중 주문이 가능했다(booking.js 2026-08-31 과 같은 결함).
+       입력이 바뀌면 updateSubmitState 가 버린다. */
+    if (!state.selectRequestId) {
+      state.selectRequestId = createRequestId(state.editMode ? 'select_update' : 'select_submit');
+      state.selectPayloadSig = payloadSig();
+    }
+    state.submitting = true;
     const result = state.editMode
-      ? await updateSelectSession(state.sessionId, payload, requestId)
-      : await submitSelectSession(state.sessionId, payload, requestId);
+      ? await updateSelectSession(state.sessionId, payload, state.selectRequestId)
+      : await submitSelectSession(state.sessionId, payload, state.selectRequestId);
     setBanner(state.editMode ? copy().submitDoneEdit : copy().submitDone, 'success');
     renderSuccess(result);
   } catch (error) {
     console.error(error);
-    setBanner(copy().submitFailed(error.message), 'error');
+    /* 서버가 명시적으로 거절(SERVER)했거나 스크립트에 닿기 전에 막힌(GATEWAY) 제출은 성립하지 않았다 → 다음 시도는 새 id.
+       TIMEOUT·NETWORK 는 서버에 닿았을 수 있으니 id 를 유지한다(재클릭은 중복으로 거절되는 게 맞다). */
+    if (isDuplicateSubmit(error)) {
+      // 서버가 같은 id 를 이미 접수했다(타임아웃 뒤 재클릭) — 제출은 성립했으니 성공처럼 재제출 버튼을 잠근다. id 는 유지.
+      state.submitted = true;
+      setBanner(errText(error), 'success');
+    } else {
+      if (error?.code === 'SERVER' || error?.code === 'GATEWAY') state.selectRequestId = null;
+      setBanner(copy().submitFailed(errText(error)), 'error');
+    }
   } finally {
+    state.submitting = false;
     if (!state.submitted) {
       els.submitBtn.disabled = false;
-      els.submitBtn.textContent = state.editMode ? copy().submitLabelEdit : copy().submitLabel;
+      els.submitBtn.textContent = submitButtonLabel();
     }
   }
 }
@@ -3824,6 +4102,7 @@ function setBanner(message, variant) {
 
 function renderSuccess(result) {
   state.submitted = true;
+  state.selectRequestId = null;
   els.progressRow.classList.add('hidden');
   els.stepPanels.forEach((panel) => panel.classList.add('hidden'));
   els.successPanel.classList.remove('hidden');

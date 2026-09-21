@@ -1,4 +1,4 @@
-import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
+import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, fetchSlotsMonth, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, getProductIncludedPrintQuota, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { groupPrintCatalogByGrade, printCatalogGradeLabel, printCatalogName } from '../shared/print-catalog.js';
 import { PRINT_METHOD_POINTS, PRINT_TIERS, getPrintMicrocopy, getPrintTier } from '../shared/print-tier-copy.js';
@@ -8,9 +8,21 @@ const LANG_STORAGE_KEY = 'studio-mean-lang';
 const SUPPORTED_LANGS = new Set(['ko', 'en', 'de']);
 const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
+// 여권 5인 이상 가족 단체 할인 — 할인율은 서버 설정(pass_family_discount)에서 온다. Code.gs PASS_FAMILY_DISCOUNT_MIN_PEOPLE 과 같이 고칠 것.
+const PASS_FAMILY_DISCOUNT_MIN_PEOPLE = 5;
+
+// 여권 촬영시간(분): 1인 15 · 2인 20 · 3인 30 · 4인 40 · 이후 인당 +10. Code.gs getPassportComboDurationMin_ 과 동일.
+function passportDurationMin(people) {
+  const n = Math.max(1, parseInt(people, 10) || 1);
+  const table = [0, 15, 20, 30, 40];
+  return n <= 4 ? table[n] : 40 + (n - 4) * 10;
+}
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
-const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v1';
+// v2 (2026-09-18): 철회 안내 + 여권 무구속 예약 + 조기 이행 요청 — docs/widerruf-function-plan.md
+const CONTRACT_TERMS_VERSION = 'studio_mean_standard_shooting_contract_v2';
+/* 조기 이행 요청을 받는 창 — 철회기간 14일 + 확정 대기 여유 7일. Code.gs WIDERRUF_EARLY_START_WINDOW_DAYS_ 와 같은 값. */
+const EARLY_START_WINDOW_DAYS = 21;
 const DEFAULT_SHOOTING_LOCATION = 'Holzweg-Passage 3, 61440 Oberursel';
 const INIT_CACHE_KEY = 'studioMeanBookingInit:v2';
 /* 첫 화면 즉시 렌더용 스냅샷 TTL.
@@ -730,6 +742,12 @@ const COPY = {
     submitCardReturn: '재촬영 할인 대상 예약으로 접수되었습니다.',
     submitCardAction: '새 예약 시작',
     submitFail: '예약 제출 실패',
+    /* 통신 오류 문구 — api-core 의 err.code 로 찾는다(SERVER 는 서버 메시지를 그대로 쓴다). */
+    apiError: {
+      TIMEOUT: '서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.',
+      NETWORK: '서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.',
+      GATEWAY: '서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+    },
     productHelp: '상품을 선택하면 설명과 예약 가능 일정을 불러옵니다.',
     formHelp: '기본 예약 정보를 입력한 뒤 제출합니다.',
     earliestSlotTitle: '가장 빠른 예약 가능',
@@ -810,7 +828,7 @@ const COPY = {
       { t: '비용 및 결제', p: '모든 금액은 brutto 기준입니다.<br>계약금이 있는 상품의 경우 계약금 입금 후 예약이 확정됩니다.<br>잔금은 촬영 당일 또는 촬영 후 7일 이내, 원본 또는 결과물 전달 전까지 지급합니다.<br>세금 표기는 최종 Rechnung 기준으로 처리합니다.' },
       { t: '납품 및 원본 전달', p: '납품 내용과 방식은 선택한 상품 또는 별도 합의 내용을 기준으로 합니다.<br>원본 전달이 포함된 경우, 기술적으로 사용 가능한 촬영 원본 디지털 파일을 전달합니다.<br>테스트 컷, 심한 중복 컷, 초점 실패, 노출 실패, 카메라 오류 등 납품 가치가 없는 파일은 제외될 수 있습니다.<br>RAW 파일은 상품 또는 별도 합의에 포함된 경우에만 제공됩니다.<br>RAW 파일 전달이 포함된 경우, 저장매체는 의뢰자가 준비하며 수령은 방문 수령으로 진행합니다.' },
       { t: '포함되지 않는 항목', p: '각 상품에 기본 포함된 인화는 상품 설명에 표시된 만큼 제공됩니다. 별도 합의가 없는 한 상세 보정, 색감 보정본, 피부 보정, 합성, 앨범, <b>기본 포함분 외 추가 인화</b>, 영상 촬영, 영상 편집, 추가 촬영 시간, 별도 출장비, 주차비, 입장료, 장소 촬영 허가비는 포함되지 않습니다.' },
-      { t: '취소 및 환불', p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
+      { t: '취소 및 환불', storno: true, p: '촬영 30일 전까지 취소: 계약금 100% 환불<br>촬영 29~8일 전 취소: 계약금의 50% 환불<br>촬영 7~2일 전 취소: 계약금의 25% 환불<br>촬영 전날·당일 취소 또는 노쇼: 환불 불가<br>웨딩·프리웨딩 촬영에는 별도 환불 규정(촬영일 60/30/14/7일 기준)이 적용됩니다.' },
       { t: '저작권 및 이용권', p: '촬영물의 저작권 및 원저작권은 Studio mean에 있습니다.<br>고객은 전달받은 사진 또는 영상을 개인 보관, 가족 및 지인 공유, 개인 SNS 게시, 개인 인화 목적으로 사용할 수 있습니다.<br>상업적 사용, 재판매, 제3자 브랜드 또는 매체 제공, 대량 편집 및 2차 제작은 별도 서면 동의가 필요합니다.' },
       { t: '외부 공개 및 마케팅 사용', p: '본 표준 계약 동의에는 Studio mean이 식별 가능한 사진 또는 영상을 포트폴리오, SNS, 웹사이트, 광고 또는 홍보 자료로 사용하는 허락이 포함되지 않습니다.<br>외부 공개가 필요한 경우 별도 서면 동의를 받습니다.' },
       { t: '개인정보 및 보관', p: '개인정보와 이미지 파일은 예약, 계약 이행, 커뮤니케이션, 청구, 납품, 보관 목적에 한해 처리됩니다.<br>전달 파일은 납품 후 3개월 동안 보관될 수 있으며 이후 삭제될 수 있습니다.<br>보정 대상 사진 선택(셀렉)은 원본 전달일로부터 3개월 이내 접수 기준이며, 안내에도 불구하고 기한 내 접수되지 않으면 보관 파일은 삭제되고 보정 제공 의무는 종료됩니다.' }
@@ -819,6 +837,14 @@ const COPY = {
     contractTermsSummaryHint: '필수 동의 전 필요한 경우 펼쳐서 확인해 주세요.',
     contractTermsLabel: '[필수] 표준 촬영 계약서 및 예약 조건에 동의합니다.',
     contractTermsSub: '예약 시 선택한 상품·일정·장소·비용과 위 표준 계약 조건이 함께 적용됩니다.',
+    passConsentLabel: '[필수] 무구속 방문 예약 안내를 확인했고, 스튜디오 촬영에는 위 표준 촬영 조건이 적용되는 데 동의합니다.',
+    passConsentSub: '예약은 무료이며, 계약은 스튜디오에서 촬영할 때 성립합니다.',
+    widerrufSummary: '철회 안내 (Widerrufsbelehrung)',
+    widerrufSummaryHint: '소비자는 계약 후 14일 안에 철회할 수 있습니다. 펼쳐서 전문과 서식을 확인해 주세요.',
+    earlyStartGroupLabel: '철회기간 중 촬영',
+    earlyStartCheckLabel: '[필수] 철회기간 중 촬영 시작 요청',
+    earlyStartSub: '촬영일이 철회기간(14일) 안이라 이 요청이 있어야 예약할 수 있습니다. 더 먼 날짜를 고르시면 이 항목은 사라집니다.',
+    earlyStartMissing: '철회기간 중 촬영 시작 요청에 체크해 주세요.',
     gdprLabel: '[필수] 개인정보가 예약, 결제, 촬영 진행, 파일 전달 목적으로 처리되는 것에 동의합니다.',
     gdprSub: '수집 항목은 예약·결제·촬영 진행·파일 전달에 필요한 범위로 한정되며, 별도 동의 없이 외부에 공개되지 않습니다.',
     aiLabel: '[필수] AI 보정 및 처리 안내에 동의합니다.',
@@ -871,6 +897,7 @@ const COPY = {
     businessInvoiceEmailInvalid: '송장 수신 이메일 형식을 확인해 주세요.',
     consentRequired: '필수 동의 항목을 체크해 주세요.',
     slotLoadingForDate: '{date} 기준 예약 가능 시간을 불러오는 중입니다.',
+    slotLoading: '예약 가능한 시간을 불러오는 중입니다.',
     slotLoadedForDate: '{date} 기준 예약 가능 시간입니다.',
     slotFailForDate: '{date} 기준 예약 가능 시간 조회에 실패했습니다.',
     slotSectionRecommended: '추천 시간',
@@ -952,6 +979,11 @@ const COPY = {
     submitCardReturn: 'This booking was received with the same-day reshoot discount.',
     submitCardAction: 'Start another booking',
     submitFail: 'Booking submission failed',
+    apiError: {
+      TIMEOUT: 'The server is taking too long to respond. Your booking may already have been received — please check your email first. If there is no email, submit again.',
+      NETWORK: 'Could not reach the server. Please check your connection and try again.',
+      GATEWAY: 'The server did not respond properly. Please try again in a moment.'
+    },
     productHelp: 'Choose a package to see the description and available schedule.',
     formHelp: 'Enter the basic booking details and submit.',
     earliestSlotTitle: 'Earliest available booking',
@@ -1032,7 +1064,7 @@ const COPY = {
       { t: 'Fees and payment', p: 'All amounts are gross (incl. VAT).<br>For packages with a deposit, the booking is confirmed once the deposit has been received.<br>The balance is due on the day of the shoot or within 7 days after it, and in any case before the files or results are delivered.<br>Tax is shown as stated on the final invoice (Rechnung).' },
       { t: 'Delivery and original files', p: 'The content and method of delivery follow the booked package or a separate agreement.<br>Where original files are included, technically usable original digital files are delivered.<br>Test shots, heavy duplicates, out-of-focus or clearly mis-exposed frames, camera errors and files with no delivery value may be sorted out.<br>RAW files are provided only if they are included in the package or in a separate agreement.<br>Where RAW files are delivered, the client provides the storage medium and collection takes place in person at the studio.' },
       { t: 'Services not included', p: 'The prints included in each package are as stated in the package description. Unless separately agreed, detailed retouching, colour-graded selects, skin retouching, composings, albums, <b>prints beyond the quantity included in the package</b>, video recording, video editing, additional shooting time, separate travel costs, parking fees, entrance fees or venue permit fees are not included.' },
-      { t: 'Cancellation and refund', p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
+      { t: 'Cancellation and refund', storno: true, p: 'Cancellation up to 30 days before the shoot: 100% of the deposit refunded<br>29-8 days before the shoot: 50% of the deposit<br>7-2 days before the shoot: 25% of the deposit<br>Cancellation on the previous day, on the day of the shoot, or no-show: no refund<br>A separate refund schedule applies to wedding and prewedding shoots (60/30/14/7 days before the shoot).' },
       { t: 'Copyright and usage rights', p: 'The copyright and related rights in the images remain with Studio mean.<br>The client receives a simple right of use for private archiving, sharing with family and friends, private social media use and private prints.<br>Commercial use, resale, provision to third-party brands or media, and extensive editing or derivative work require separate written consent.' },
       { t: 'Publication and marketing use', p: 'This standard contract consent does not include permission for Studio mean to use identifiable photos or videos for portfolio, social media, website, advertising or self-promotion.<br>If external publication is desired, separate written consent is obtained for it.' },
       { t: 'Data protection and storage', p: 'Personal data and image files are processed only for booking, performance of the contract, communication, invoicing, delivery and storage.<br>Delivered files may be retained for 3 months after delivery and may be deleted thereafter.<br>Photo selection for retouching must be submitted within 3 months of delivery of the originals; if no selection is received within this period despite reminders, stored files are deleted and the retouching obligation ends.' }
@@ -1041,6 +1073,14 @@ const COPY = {
     contractTermsSummaryHint: 'Expand to read them before giving the required consent.',
     contractTermsLabel: '[Required] I agree to the standard photography contract and booking terms.',
     contractTermsSub: 'The package, date, location and price selected at booking apply together with the standard terms above.',
+    passConsentLabel: '[Required] I have read the note on the non-binding reservation and agree that the standard shooting terms above apply to the shoot at the studio.',
+    passConsentSub: 'The reservation is free; the contract is concluded when you are photographed at the studio.',
+    widerrufSummary: 'Withdrawal instructions (Widerrufsbelehrung)',
+    widerrufSummaryHint: 'Consumers may withdraw within 14 days of the contract. Expand for the full text and the form.',
+    earlyStartGroupLabel: 'Shoot during the withdrawal period',
+    earlyStartCheckLabel: '[Required] Request to start during the withdrawal period',
+    earlyStartSub: 'Your shoot falls within the 14-day withdrawal period, so this request is needed to book it. Choose a later date and this item disappears.',
+    earlyStartMissing: 'Please tick the request to start during the withdrawal period.',
     gdprLabel: '[Required] I agree that my personal data is processed for booking, payment, carrying out the shoot and delivering the files.',
     gdprSub: 'Data is limited to what is needed for booking, payment, carrying out the shoot and delivering files, and is not published without separate consent.',
     aiLabel: '[Required] I agree to the AI retouching and processing notice.',
@@ -1093,6 +1133,7 @@ const COPY = {
     businessInvoiceEmailInvalid: 'Please check the invoice email format.',
     consentRequired: 'Please check the required consent items.',
     slotLoadingForDate: 'Loading available times for {date}.',
+    slotLoading: 'Loading available times.',
     slotLoadedForDate: 'Available times for {date}.',
     slotFailForDate: 'Failed to load available times for {date}.',
     slotSectionRecommended: 'Recommended times',
@@ -1174,6 +1215,11 @@ const COPY = {
     submitCardReturn: 'Diese Buchung wurde mit Rabatt für erneute Aufnahme erfasst.',
     submitCardAction: 'Neue Buchung starten',
     submitFail: 'Buchung fehlgeschlagen',
+    apiError: {
+      TIMEOUT: 'Der Server antwortet zu langsam. Ihre Buchung ist möglicherweise schon eingegangen — bitte prüfen Sie zuerst Ihre E-Mails. Ohne E-Mail bitte erneut absenden.',
+      NETWORK: 'Keine Verbindung zum Server. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.',
+      GATEWAY: 'Der Server hat vorübergehend nicht geantwortet. Bitte versuchen Sie es in Kürze erneut.'
+    },
     productHelp: 'Wählen Sie ein Paket, um Beschreibung und verfügbare Termine zu sehen.',
     formHelp: 'Geben Sie die Basisdaten ein und senden Sie die Anfrage ab.',
     earliestSlotTitle: 'Frühester verfügbarer Termin',
@@ -1254,7 +1300,7 @@ const COPY = {
       { t: 'Vergütung und Zahlung', p: 'Alle Beträge verstehen sich brutto.<br>Bei Buchungen mit Anzahlung ist der Termin nach Eingang der Anzahlung verbindlich reserviert.<br>Der Restbetrag ist am Shootingtag oder innerhalb von 7 Tagen nach dem Termin, jedenfalls vor Lieferung der Dateien oder Ergebnisse, fällig.<br>Die steuerliche Ausweisung erfolgt gemäß Rechnung.' },
       { t: 'Lieferung und Originaldateien', p: 'Inhalt und Art der Lieferung richten sich nach dem gebuchten Paket oder einer gesonderten Vereinbarung.<br>Wenn Originaldateien enthalten sind, werden technisch verwertbare digitale Originaldateien geliefert.<br>Testaufnahmen, starke Dubletten, unscharfe oder deutlich fehlbelichtete Aufnahmen, Kamerafehler und Dateien ohne Lieferwert können aussortiert werden.<br>RAW-Dateien werden nur geliefert, wenn sie im Paket oder in einer gesonderten Vereinbarung enthalten sind.<br>Wenn RAW-Dateien geliefert werden, stellt die Auftraggeberin bzw. der Auftraggeber das Speichermedium bereit. Die Übergabe erfolgt persönlich bei Abholung vor Ort.' },
       { t: 'Nicht enthaltene Leistungen', p: 'Die im jeweiligen Paket enthaltenen Abzüge sind in der Paketbeschreibung angegeben. Soweit nicht gesondert vereinbart, sind Detailretusche, farblich bearbeitete Auswahlbilder, Hautretusche, Composings, Alben, <b>Abzüge über die im Paket enthaltene Menge hinaus</b>, Videoaufnahmen, Videoschnitt, zusätzliche Shootingzeit, gesonderte Reisekosten, Parkgebühren, Eintrittsgebühren oder Genehmigungsgebühren der Location nicht enthalten.' },
-      { t: 'Stornierung und Erstattung', p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
+      { t: 'Stornierung und Erstattung', storno: true, p: 'Bis 30 Tage vor dem Termin: 100% der Anzahlung wird erstattet<br>29-8 Tage vor dem Termin: 50% der Anzahlung<br>7-2 Tage vor dem Termin: 25% der Anzahlung<br>Stornierung am Vortag, am Shootingtag oder Nichterscheinen: keine Erstattung<br>Für Hochzeits- und Prewedding-Shootings gilt eine gesonderte Erstattungsstaffel (60/30/14/7 Tage vor dem Termin).' },
       { t: 'Urheberrecht und Nutzungsrecht', p: 'Die Urheber- und Leistungsschutzrechte an den Aufnahmen verbleiben bei Studio mean.<br>Die Kundin bzw. der Kunde erhält ein einfaches Nutzungsrecht für private Archivierung, Weitergabe an Familie und Freunde, private Social-Media-Nutzung und private Prints.<br>Kommerzielle Nutzung, Weiterverkauf, Weitergabe an Marken oder Medien sowie umfangreiche Bearbeitung oder Weiterverarbeitung bedürfen einer gesonderten schriftlichen Zustimmung.' },
       { t: 'Veröffentlichung und Werbung', p: 'Diese Standard-Vertragszustimmung enthält keine Einwilligung, identifizierbare Fotos oder Videos für Portfolio, Social Media, Website, Werbung oder Eigenwerbung von Studio mean zu verwenden.<br>Falls eine externe Veröffentlichung gewünscht wird, wird dafür eine gesonderte schriftliche Einwilligung eingeholt.' },
       { t: 'Datenschutz und Speicherung', p: 'Personenbezogene Daten und Bilddateien werden zur Buchung, Vertragsdurchführung, Kommunikation, Abrechnung, Lieferung und Speicherung verarbeitet.<br>Gelieferte Dateien können nach Lieferung 3 Monate gesichert und danach gelöscht werden.<br>Die Fotoauswahl für die Retusche ist innerhalb von 3 Monaten nach Lieferung der Originale einzureichen; geht trotz Erinnerungen keine Auswahl ein, werden gespeicherte Dateien gelöscht und die Retusche-Verpflichtung endet.' }
@@ -1263,6 +1309,14 @@ const COPY = {
     contractTermsSummaryHint: 'Bei Bedarf vor der Pflichtzustimmung ausklappen.',
     contractTermsLabel: '[Pflicht] Ich stimme dem Standard-Fotovertrag und den Buchungsbedingungen zu.',
     contractTermsSub: 'Das bei der Buchung gewählte Paket, der Termin, der Ort und der Preis gelten zusammen mit den obigen Standardbedingungen.',
+    passConsentLabel: '[Pflicht] Ich habe den Hinweis zur unverbindlichen Reservierung gelesen und bin einverstanden, dass für die Aufnahme im Studio die obigen Standardbedingungen gelten.',
+    passConsentSub: 'Die Reservierung ist kostenfrei; der Vertrag kommt bei der Aufnahme im Studio zustande.',
+    widerrufSummary: 'Widerrufsbelehrung',
+    widerrufSummaryHint: 'Verbraucher können binnen 14 Tagen nach Vertragsschluss widerrufen. Zum Lesen der Belehrung und des Formulars ausklappen.',
+    earlyStartGroupLabel: 'Termin innerhalb der Widerrufsfrist',
+    earlyStartCheckLabel: '[Pflicht] Beginn vor Ablauf der Widerrufsfrist',
+    earlyStartSub: 'Ihr Termin liegt innerhalb der 14-tägigen Widerrufsfrist; ohne diese Erklärung ist die Buchung nicht möglich. Bei einem späteren Termin entfällt sie.',
+    earlyStartMissing: 'Bitte bestätigen Sie den Beginn vor Ablauf der Widerrufsfrist.',
     gdprLabel: '[Pflicht] Ich stimme zu, dass meine personenbezogenen Daten für Buchung, Zahlung, Durchführung des Shootings und Lieferung der Dateien verarbeitet werden.',
     gdprSub: 'Die Daten beschränken sich auf das, was für Buchung, Zahlung, Durchführung des Shootings und Lieferung nötig ist, und werden ohne gesonderte Einwilligung nicht veröffentlicht.',
     aiLabel: '[Pflicht] Ich stimme dem Hinweis zur KI-Bearbeitung zu.',
@@ -1315,6 +1369,7 @@ const COPY = {
     businessInvoiceEmailInvalid: 'Bitte prüfen Sie das Format der Rechnungs-E-Mail.',
     consentRequired: 'Bitte bestätigen Sie die Pflicht-Einwilligungen.',
     slotLoadingForDate: 'Verfügbare Zeiten für {date} werden geladen.',
+    slotLoading: 'Verfügbare Zeiten werden geladen.',
     slotLoadedForDate: 'Verfügbare Zeiten für {date}.',
     slotFailForDate: 'Verfügbare Zeiten für {date} konnten nicht geladen werden.',
     slotSectionRecommended: 'Empfohlene Zeiten',
@@ -1370,6 +1425,7 @@ const state = {
   returnNoticeTimer: null,
   returnNoticeToken: 0,
   quoteToken: 0,
+  quoteMemo: null,          // { key, at, promise } — 같은 견적 요청 재사용(refreshQuote)
   earliestSlotToken: 0,
   calendarRequestToken: 0,
   slotRequestToken: 0,
@@ -1380,6 +1436,8 @@ const state = {
   calendarCache: new Map(),
   slotCache: new Map(),
   slotPrefetchInFlight: new Map(),
+  calendarBatchInFlight: new Map(),   // `${year}_${month}_${g}_${duration}` → 진행 중 calendar-batch 약속(fetchAndStoreCalendarBatch)
+  slotMonthFlights: new Map(),   // `${year}_${month}_${g}_${duration}` → { promise, at, done } — 월 단위 슬롯 일괄 조회(prefetchSlotsMonth)
   gutschein: null,
   gutscheinDraftId: '',
   gutscheinTimer: null
@@ -1433,6 +1491,7 @@ const els = {
   optionField: document.getElementById('optionField'),
   reshootingField: document.getElementById('reshootingField'),
   reshootingConsent: document.getElementById('reshootingConsent'),
+  earlyStartConsent: document.getElementById('earlyStartConsent'),
   reshootingText: document.getElementById('reshootingText'),
   peopleField: document.getElementById('peopleField'),
   generalPeople: document.getElementById('generalPeople'),
@@ -1529,7 +1588,7 @@ async function boot() {
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
-    if (!cachedInit) setBanner(`${getCopy().initFail}: ${error.message}`, 'error');
+    if (!cachedInit) setBanner(`${getCopy().initFail}: ${errText(error)}`, 'error');
   } finally {
     if (!cachedInit) hideLoadingScreen();
   }
@@ -1766,8 +1825,9 @@ function wireEvents() {
   els.form.elements.email?.addEventListener('change', maybeLookupContact);
   els.form.elements.phone?.addEventListener('change', maybeLookupContact);
   els.form.elements.address?.addEventListener('input', refreshStepLocks);
-  els.form.elements.businessInvoiceNeeded?.addEventListener('change', () => {
+  els.form.elements.businessInvoiceNeeded?.addEventListener('change', async () => {
     syncConditionalFields();
+    await handleQuoteInputChange(); // 여권 5인 이상 가족 할인은 법인 인보이스 체크 시 빠진다
     renderReview();
     refreshStepLocks();
   });
@@ -1778,6 +1838,7 @@ function wireEvents() {
   els.studioFamilyInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.form.elements.babyName?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.reshootingConsent?.addEventListener('change', () => { syncSelectAllRequired(); refreshStepLocks(); });
+  els.earlyStartConsent?.addEventListener('change', refreshStepLocks);
   document.getElementById('selectAllRequired')?.addEventListener('change', (event) => { toggleAllRequired(event); refreshStepLocks(); });
   els.locationInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
   els.businessInput?.addEventListener('input', () => { renderReview(); refreshStepLocks(); });
@@ -2076,6 +2137,11 @@ function getCopy() {
   return COPY[state.lang] || COPY.ko;
 }
 
+// 통신 오류는 코드(TIMEOUT·NETWORK·GATEWAY)로 현재 언어 문구를 찾고, 서버가 준 메시지(SERVER)는 그대로 쓴다.
+function errText(error) {
+  return getCopy().apiError?.[error?.code] || error?.message || String(error);
+}
+
 /* 상담 창구는 홈페이지 문의 폼으로 통합됐다 (2026-08-26) — 실제 문의가 전부 그쪽으로 들어왔고,
    여기서만 도달되던 /consultation 은 유입이 사실상 없었다. 언어별 경로로 바로 보낸다.
    (구 /consultation URL 도 netlify 에서 301 로 넘어가지만, 링크는 처음부터 새 주소를 가리킨다.) */
@@ -2328,6 +2394,7 @@ function applyCopy() {
   setText('consentTitle', copy.consentTitle);
   setText('consentCopy', copy.consentCopy);
   renderContractTerms(copy);
+  renderWiderrufText(copy);
   setText('requiredConsentLabel', copy.requiredConsentLabel);
   setText('optionalConsentLabel', copy.optionalConsentLabel);
   setText('selectAllLabel', copy.selectAllLabel);
@@ -2344,7 +2411,7 @@ function applyCopy() {
   if (els.slotPanelTitle) els.slotPanelTitle.textContent = copy.slotPanelTitle;
   setText('legendFullLabel', copy.legendFullLabel);
   setText('legendClosedLabel', copy.legendClosedLabel);
-  els.submitBtn.textContent = copy.submitLabel;
+  els.submitBtn.textContent = getSubmitLabel(copy);
   if (els.generalPeopleCustom) els.generalPeopleCustom.placeholder = copy.peopleCustomPlaceholder;
   if (els.locationInput) els.locationInput.placeholder = copy.locationPlaceholder;
   if (els.businessInput) els.businessInput.placeholder = copy.businessPlaceholder;
@@ -2606,7 +2673,8 @@ function updateMonthNavAvailability() {
   const now = new Date();
   const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const currentTs = new Date(state.calendarYear, state.calendarMonth, 1).getTime();
-  const maxTs = new Date(2026, 11, 1).getTime();
+  const { year: maxYear, month: maxMonth } = getMaxBookingMonth();
+  const maxTs = new Date(maxYear, maxMonth, 1).getTime();
   if (els.prevMonthBtn) els.prevMonthBtn.disabled = !!els.prevMonthBtn.disabled || currentTs <= minTs;
   if (els.nextMonthBtn) els.nextMonthBtn.disabled = !!els.nextMonthBtn.disabled || currentTs >= maxTs;
 }
@@ -2909,6 +2977,7 @@ function getContractSubmissionData(formData = new FormData(els.form)) {
     contract_terms_version: CONTRACT_TERMS_VERSION,
     contract_terms_accepted: formData.get('contractTermsConsent') === 'on',
     privacy_terms_accepted: formData.get('gdprConsent') === 'on',
+    early_start_requested: needsEarlyStartConsent() && !!els.earlyStartConsent?.checked,
     accepted_at: new Date().toISOString(),
     accepted_language: state.lang || 'ko',
     selected_service: getDisplayProductTitle(state.selectedProduct) || getProductLabel(state.selectedProduct),
@@ -2964,6 +3033,7 @@ function syncConsentVisibility() {
   if (isPass) {
     if (els.form.elements.marketing) els.form.elements.marketing.checked = false;
   }
+  syncWiderrufConsent();
   syncSelectAllRequired();
 }
 
@@ -3057,11 +3127,98 @@ function renderContractTerms(copy = getCopy()) {
     title.textContent = item.t || '';
     const body = document.createElement('p');
     appendContractText(body, item.p);
+    // 취소 규정 아래 "법정 철회권은 별개" 한 줄 — 없으면 30/8/2일 규정이 철회권을 가리는 문구가 된다(UWG)
+    if (item.storno && window.SM_WIDERRUF_TEXT) appendContractText(body, `<br>${window.SM_WIDERRUF_TEXT[widerrufLangKey()].stornoNote}`);
     li.append(title, body);
     list.appendChild(li);
   });
   const section = document.getElementById('contractTermsSection');
   if (section) section.setAttribute('aria-label', copy.consentTitle || '');
+}
+
+/* ── 소비자 철회 (docs/widerruf-function-plan.md) ──
+   문구 정본은 widerruf/widerruf-text.js(window.SM_WIDERRUF_TEXT) — Code.gs 와 한 글자씩 대조된다(scripts/check-widerruf.mjs).
+   여권은 무구속 방문 예약(계약은 스튜디오에서 성립)이라 철회 안내 대신 무구속 고지를 띄운다. */
+function widerrufLangKey() {
+  return state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
+}
+
+function berlinToday() {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date()); } catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+
+/* 조기 이행 요청(§ 356 Abs. 5 Nr. 2 · § 357a Abs. 2) — 촬영일이 베를린 오늘부터 창 안이면 필수. 서버 bookingNeedsEarlyStart_ 와 같은 판정. */
+function needsEarlyStartConsent(product = state.selectedProduct) {
+  if (!product || product.g === 'pass' || !/^\d{4}-\d{2}-\d{2}$/.test(state.selectedDate || '')) return false;
+  const days = Math.round((Date.parse(`${state.selectedDate}T00:00:00Z`) - Date.parse(`${berlinToday()}T00:00:00Z`)) / 86400000);
+  return days <= EARLY_START_WINDOW_DAYS;
+}
+
+function renderWiderrufText(copy = getCopy()) {
+  setText('widerrufSummary', copy.widerrufSummary);
+  setText('widerrufSummaryHint', copy.widerrufSummaryHint);
+  setText('earlyStartGroupLabel', copy.earlyStartGroupLabel);
+  setText('earlyStartSub', copy.earlyStartSub);
+  setText('earlyStartLabel', copy.earlyStartCheckLabel);
+  const W = window.SM_WIDERRUF_TEXT;
+  const box = document.getElementById('widerrufText');
+  if (!W || !box) return;
+  const lang = widerrufLangKey();
+  const el = (tag, text, cls) => { const n = document.createElement(tag); n.textContent = text; if (cls) n.className = cls; return n; };
+  const block = (t, langAttr) => {
+    const wrap = document.createElement('div');
+    wrap.lang = langAttr;
+    wrap.appendChild(el('h4', t.title));
+    t.sections.forEach((s) => { wrap.appendChild(el('h5', s.h)); s.ps.forEach((p) => wrap.appendChild(el('p', p))); });
+    wrap.append(el('h5', t.noteTitle), el('p', t.note));
+    return wrap;
+  };
+  box.replaceChildren(el('p', W[lang].intro, 'widerruf-intro'));
+  if (lang !== 'de') box.append(el('p', W[lang].bindingNote, 'widerruf-binding'), block(W[lang], lang));
+  const original = block(W.de, 'de');
+  original.className = lang !== 'de' ? 'widerruf-original' : '';
+  original.appendChild(el('h5', W.de.formTitle));
+  if (lang !== 'de') original.appendChild(el('p', W[lang].formNote, 'widerruf-binding'));
+  original.appendChild(el('p', W.de.formNote));
+  W.de.form.forEach((line) => original.appendChild(el('p', line, 'widerruf-form-line')));
+  box.appendChild(original);
+  setText('earlyStartText', W[lang].earlyStart); // 고객이 체크하는 의사표시 문장 그대로 — 확정 메일이 같은 문장을 인용한다
+}
+
+/* § 312j Abs. 3 BGB — 돈을 내야 하는 예약의 제출 버튼은 "zahlungspflichtig" 문구여야 한다(아니면 Abs. 4: 계약 불성립).
+   여권(무료·무구속 예약)·상담 견적(값 미정)·0원 예약은 결제 의무가 없어 기존 문구. 문구는 widerruf-text.js 정본. */
+function getSubmitLabel(copy = getCopy()) {
+  const product = state.selectedProduct;
+  const W = window.SM_WIDERRUF_TEXT;
+  if (!product || !W || state.selectedGroup === 'pass' || product.g === 'pass') return copy.submitLabel;
+  const snap = getContractPriceSnapshot();
+  return !snap.quoteOnly && Number(snap.total) > 0 ? W[widerrufLangKey()].bookButton : copy.submitLabel;
+}
+
+/* 매 갱신마다(updateSubmitState → syncConsentVisibility) 부른다 — 촬영일·상품이 바뀌면 필수 여부가 바뀐다. */
+function syncWiderrufConsent() {
+  const product = state.selectedProduct;
+  const isPass = state.selectedGroup === 'pass' || product?.g === 'pass';
+  const W = window.SM_WIDERRUF_TEXT;
+  const copy = getCopy();
+  const section = document.getElementById('widerrufSection');
+  if (section) section.hidden = isPass;
+  const passNote = document.getElementById('passReservationNote');
+  if (passNote) {
+    passNote.hidden = !isPass;
+    passNote.textContent = isPass && W ? W[widerrufLangKey()].passNote : '';
+  }
+  setText('contractTermsLabel', isPass ? copy.passConsentLabel : copy.contractTermsLabel);
+  setText('contractTermsSub', isPass ? copy.passConsentSub : copy.contractTermsSub);
+  // 제출 중('제출 중...')에는 onSubmit 이 버튼 문구를 쥐고 있다
+  if (els.submitBtn && els.submitBtn.textContent !== copy.submitLoading) els.submitBtn.textContent = getSubmitLabel(copy);
+  const need = needsEarlyStartConsent(product);
+  const group = document.getElementById('earlyStartGroup');
+  if (group) group.hidden = !need;
+  if (els.earlyStartConsent) {
+    els.earlyStartConsent.disabled = !need;
+    if (!need) els.earlyStartConsent.checked = false; // 날짜를 바꿨다 돌아오면 다시 명시적으로 체크해야 한다
+  }
 }
 
 function renderGroups() {
@@ -3431,6 +3588,7 @@ function renderStepWarnings() {
   const gdprOk = formData.get('gdprConsent') === 'on';
   const babyNameOk = !needsBabyNameForBooking(product) || !!String(formData.get('babyName') || '').trim();
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const earlyStartOk = !needsEarlyStartConsent(product) || !!els.earlyStartConsent?.checked;
   let step5Message = '';
   if (!String(formData.get('name') || '').trim() || !String(formData.get('phone') || '').trim() || !email) {
     step5Message = state.lang === 'en'
@@ -3462,6 +3620,8 @@ function renderStepWarnings() {
       : state.lang === 'de'
         ? 'Stimmen Sie der Richtlinie für erneute Aufnahmen zu.'
         : '재촬영 약관 동의가 필요합니다.';
+  } else if (!earlyStartOk) {
+    step5Message = getCopy().earlyStartMissing;
   }
 
   if (els.stepWarnings.step1) els.stepWarnings.step1.textContent = step1Message;
@@ -3595,6 +3755,7 @@ function getPreviewQuote() {
     }, 0) + (otherCountry ? 1 : 0)
     : 0;
   let total = Number(item.p || 0);
+  let familyDiscount = 0;
 
   if (isGenericBusinessProduct(item)) {
     const business = getBusinessSelection();
@@ -3610,6 +3771,7 @@ function getPreviewQuote() {
       product: item,
       marketingDiscount: 0,
       returnDiscount: 0,
+      familyDiscount: 0,
       passAddon: false,
       passAddonPeople: 0,
       passAddonDur: 0,
@@ -3634,6 +3796,11 @@ function getPreviewQuote() {
       return sum + Number(item.p || 0) + extra;
     }, 0);
     if (!passPersonCountries.length) total = item.p * people;
+    if (people >= PASS_FAMILY_DISCOUNT_MIN_PEOPLE && !els.form?.elements?.businessInvoiceNeeded?.checked) {
+      const familyRate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+      familyDiscount = roundCurrency(total * (familyRate / 100));
+      total = roundCurrency(total - familyDiscount);
+    }
   }
   else if (item.t === 'group' && people > 2) total += (people - 2) * 30;
   else if (item.t === 'snap' && people > 2) total += (people - 2) * 30;
@@ -3693,11 +3860,11 @@ function getPreviewQuote() {
     const passItem = (state.init?.products || []).find((prod) => prod.g === 'pass');
     passAddonPrice = Number(passItem?.p || 0) * passAddonPeople;
     total += passAddonPrice;
-    passAddonDur = ([0, 15, 20, 30, 40][Math.min(passAddonPeople, 4)] || 40);
+    passAddonDur = passportDurationMin(passAddonPeople);
   }
 
   const duration = item.t === 'passport'
-    ? ([0, 15, 20, 30, 40][Math.min(people, 4)] || 40)
+    ? passportDurationMin(people)
     : Number(item.d || 0);
   const prep = Number(item.prep || 0);
   return {
@@ -3713,6 +3880,7 @@ function getPreviewQuote() {
     earlyBirdDiscount,
     marketingDiscount,
     returnDiscount: 0,
+    familyDiscount,
     passAddon,
     passAddonPeople,
     passAddonDur,
@@ -4573,6 +4741,14 @@ function getAppliedDiscountLines() {
         ? `Aktionsrabatt -${state.quote.eventDiscount}€ angewendet.`
         : `이벤트 할인 -€${state.quote.eventDiscount}가 적용되었습니다.`);
   }
+  if (state.quote.familyDiscount > 0) {
+    const rate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+    lines.push(state.lang === 'en'
+      ? `Family group discount ${rate}% for ${PASS_FAMILY_DISCOUNT_MIN_PEOPLE}+ people (-€${formatEuroAmount(state.quote.familyDiscount)}) applied.`
+      : state.lang === 'de'
+        ? `Familienrabatt ${rate}% ab ${PASS_FAMILY_DISCOUNT_MIN_PEOPLE} Personen (-${formatEuroAmount(state.quote.familyDiscount)}€) angewendet.`
+        : `가족 단체 할인 ${rate}% (${PASS_FAMILY_DISCOUNT_MIN_PEOPLE}인 이상, -€${formatEuroAmount(state.quote.familyDiscount)})가 적용되었습니다.`);
+  }
   if (state.quote.returnDiscount > 0) {
     const rate = Number(state.init?.settings?.returnDiscount || 10) || 10;
     lines.push(state.lang === 'en'
@@ -5031,7 +5207,13 @@ async function warmSelectedProductCalendar(product, durationOverride) {
 // 현재 달은 가용성 변동에 민감해 짧게, 미래 달은 서버 캐시(30분)와 정렬해 길게 유지
 const MONTH_CACHE_TTL_CURRENT_MS = 4 * 60 * 1000;
 const MONTH_CACHE_TTL_FUTURE_MS = 20 * 60 * 1000;
-const MAX_BOOKING_MONTH = { year: 2026, month: 11 };
+/* 예약 지평선의 마지막 달 — 정본은 서버 PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR(/api/init settings.maxBookingDate).
+   폴백은 init 도착 전·구형 캐시용일 뿐이고, 서버가 지평선 너머 달을 전부 마감으로 돌려주므로 틀려도 예약은 안 새어 나간다. */
+function getMaxBookingMonth() {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(state.init?.settings?.maxBookingDate || '2027-06-30'))
+    || ['', '2027', '06'];
+  return { year: Number(m[1]), month: Number(m[2]) - 1 };
+}
 
 function getMonthCacheTtlMs(year, month) {
   const now = new Date();
@@ -5294,24 +5476,18 @@ async function findEarliestAvailableSlot(product, duration) {
   if (!product) return null;
   const months = [{ year: state.calendarYear, month: state.calendarMonth }];
   const next = new Date(state.calendarYear, state.calendarMonth + 1, 1);
-  if (next.getFullYear() < MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() <= MAX_BOOKING_MONTH.month)) {
+  const maxMonth = getMaxBookingMonth();
+  if (next.getFullYear() < maxMonth.year || (next.getFullYear() === maxMonth.year && next.getMonth() <= maxMonth.month)) {
     months.push({ year: next.getFullYear(), month: next.getMonth() });
   }
   for (const ref of months) {
+    prefetchSlotsMonth(ref.year, ref.month, product, duration);   // 후보 날짜 조회가 이 월 단위 응답에 올라탄다
     const batch = await getCalendarMonthData(ref.year, ref.month, duration, product.g);
     const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
     for (const dateKey of candidateDates) {
-      const slotKey = `${dateKey}_${product.g}_${duration}`;
-      let slots = getCachedSlots(slotKey);
-      if (!Array.isArray(slots)) {
-        try {
-          slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g });
-          setCachedSlots(slotKey, slots);
-        } catch (error) {
-          console.error(error);
-          slots = [];
-        }
-      }
+      let slots;
+      try { slots = await prefetchSlotsForDate(dateKey, product, duration); }   // 캐시·진행 중 요청 재사용 — 클릭과 겹쳐도 1회
+      catch (error) { console.error(error); slots = []; }
       if (Array.isArray(slots) && slots.length) {
         const first = typeof slots[0] === 'string' ? slots[0] : slots[0]?.time;
         if (first) return { dateKey, time: first };
@@ -5429,6 +5605,20 @@ function getQuoteRequest() {
   };
 }
 
+/* 서버 견적은 요청 payload 의 순수 함수다(시간은 payload 에 없다). '다음'·시간 선택처럼 입력이 안 바뀐 재호출이 같은 quote 를
+   1초씩 또 부르던 것(2026-09-20 실측: 한 흐름에 4회, 그중 2회는 직전과 같은 payload)을 막는다 — 같은 payload 면 진행 중·완료된
+   약속을 재사용한다. 가격·이벤트 설정이 바뀔 수 있어 5분 뒤엔 다시 묻고, 실패한 약속은 버린다. 청구 정본은 제출 시 서버 재계산. */
+const QUOTE_MEMO_TTL_MS = 5 * 60 * 1000;
+function fetchQuoteMemo(request) {
+  const key = JSON.stringify(request);
+  const memo = state.quoteMemo;
+  if (memo && memo.key === key && Date.now() - memo.at < QUOTE_MEMO_TTL_MS) return memo.promise;
+  const promise = fetchQuote(request);
+  state.quoteMemo = { key, at: Date.now(), promise };
+  promise.catch(() => { if (state.quoteMemo && state.quoteMemo.promise === promise) state.quoteMemo = null; });
+  return promise;
+}
+
 async function refreshQuote() {
   if (!state.selectedProduct) return;
   const token = ++state.quoteToken;
@@ -5437,7 +5627,7 @@ async function refreshQuote() {
   renderProductDetail();
   renderReview();
   try {
-    const nextQuote = await fetchQuote(getQuoteRequest());
+    const nextQuote = await fetchQuoteMemo(getQuoteRequest());
     if (token !== state.quoteToken) return;
     state.quote = nextQuote;
   } catch (error) {
@@ -5760,6 +5950,7 @@ async function loadCalendar() {
   const token = ++state.calendarRequestToken;
   const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
+  prefetchSlotsMonth(state.calendarYear, state.calendarMonth, state.selectedProduct, duration);   // 보이는 달의 슬롯을 달력과 병렬로
   let batch = state.calendarCache.get(cacheKey);
   if (!batch) {
     batch = readMonthStorage(state.calendarYear, state.calendarMonth, state.selectedProduct.g, duration);
@@ -5777,8 +5968,8 @@ async function loadCalendar() {
     } catch (error) {
       if (token !== state.calendarRequestToken) return;
       console.error(error);
-      setBanner(`${getCopy().calendarFail}: ${error.message}`, 'error');
-      els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(error.message)}</div>`;
+      setBanner(`${getCopy().calendarFail}: ${errText(error)}`, 'error');
+      els.calendarGrid.innerHTML = `<div class="empty-state">${escapeHtml(getCopy().calendarLoadError)}. ${escapeHtml(errText(error))}</div>`;
       setCalendarBusy(false);
       return;
     }
@@ -5801,7 +5992,19 @@ async function loadCalendar() {
   prefetchNextCalendarMonth();
 }
 
-async function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+/* calendar-batch 의 **단일 창구** — 같은 달·상품·소요시간 요청이 진행 중이면 그 약속을 같이 쓴다. 상품을 고르면 '가장 빠른 시간 찾기'와
+   달력 프리워밍(warmSelectedProductCalendar)이 같은 당월을 동시에 불러, 한 흐름에 calendar-batch 가 5번 나갔다(2026-09-21 브라우저 실측). */
+function fetchAndStoreCalendarBatch(year, month, duration, itemGroup) {
+  const key = `${year}_${month}_${itemGroup}_${duration}`;
+  const existing = state.calendarBatchInFlight.get(key);
+  if (existing) return existing;
+  const promise = fetchAndStoreCalendarBatchOnce(year, month, duration, itemGroup)
+    .finally(() => { state.calendarBatchInFlight.delete(key); });
+  state.calendarBatchInFlight.set(key, promise);
+  return promise;
+}
+
+async function fetchAndStoreCalendarBatchOnce(year, month, duration, itemGroup) {
   const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
   const batch = await fetchCalendarBatch({
     year,
@@ -5853,9 +6056,10 @@ async function prefetchNextCalendarMonth() {
   if (!state.selectedProduct) return;
   const duration = getCalendarDuration();
   const tasks = [];
+  const maxMonth = getMaxBookingMonth();
   for (let offset = 1; offset <= 2; offset += 1) {
     const next = new Date(state.calendarYear, state.calendarMonth + offset, 1);
-    if (next.getFullYear() > MAX_BOOKING_MONTH.year || (next.getFullYear() === MAX_BOOKING_MONTH.year && next.getMonth() > MAX_BOOKING_MONTH.month)) break;
+    if (next.getFullYear() > maxMonth.year || (next.getFullYear() === maxMonth.year && next.getMonth() > maxMonth.month)) break;
     const nextKey = `${next.getFullYear()}_${next.getMonth()}_${state.selectedProduct.g}_${duration}`;
     if (state.calendarCache.has(nextKey)) continue;
     tasks.push({ year: next.getFullYear(), month: next.getMonth(), itemGroup: state.selectedProduct.g, totalDur: duration });
@@ -5879,19 +6083,54 @@ function setCachedSlots(slotKey, slots) {
   state.slotCache.set(slotKey, { slots, savedAt: Date.now() });
 }
 
-function prefetchSlotsForDate(dateKey) {
-  if (!state.selectedProduct || !dateKey) return null;
-  const duration = getCalendarDuration();
-  const slotKey = `${dateKey}_${state.selectedProduct.g}_${duration}`;
+/* 슬롯 조회의 **단일 창구** — 캐시 → 진행 중 프로미스 → 새 요청. '가장 빠른 시간 찾기'(findEarliestAvailableSlot)·호버 프리페치·날짜 클릭
+   (loadSlotsForDate) 이 전부 여기를 탄다. 예전엔 찾기가 직접 fetchSlots 를 불러, 찾기가 조회 중인 날짜를 고객이 클릭하면 같은 날짜
+   slots 가 300ms 간격으로 2번 나갔다(2026-09-20 브라우저 실측). */
+function prefetchSlotsForDate(dateKey, product = state.selectedProduct, duration = getCalendarDuration()) {
+  if (!product || !dateKey) return null;
+  const slotKey = `${dateKey}_${product.g}_${duration}`;
   const cachedPrefetch = getCachedSlots(slotKey);
   if (cachedPrefetch !== undefined) return Promise.resolve(cachedPrefetch);
   const existing = state.slotPrefetchInFlight.get(slotKey);
   if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
-  const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g })
-    .then((slots) => { setCachedSlots(slotKey, slots); return slots; })
-    .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
+  const fetchOne = () => fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g })
+    .then((slots) => { setCachedSlots(slotKey, slots); return slots; });
+  // 그 달의 월 단위 조회가 진행 중이면 먼저 그 결과를 기다린다(같은 날짜를 또 묻지 않는다). 3.5초 안에 안 오거나 그 날짜가 빠졌으면 날짜별 조회.
+  const [yy, mm] = String(dateKey).split('-').map(Number);
+  const monthFlight = state.slotMonthFlights.get(`${yy}_${mm - 1}_${product.g}_${duration}`);
+  const viaMonth = (monthFlight && !monthFlight.done)
+    ? Promise.race([monthFlight.promise, new Promise((resolve) => setTimeout(resolve, 3500))]).then(() => {
+        const seeded = getCachedSlots(slotKey);
+        return seeded !== undefined ? seeded : fetchOne();
+      })
+    : fetchOne();
+  const promise = viaMonth.finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
   state.slotPrefetchInFlight.set(slotKey, promise);
   return promise;
+}
+
+/* 그 달의 날짜별 슬롯을 **한 번에** 받아 날짜별 캐시에 심는다 — 달력이 뜬 뒤 고객이 날짜를 고르는 동안 끝나므로 날짜 클릭이 요청 없이
+   즉시 열린다(클릭당 셔틀 왕복 ~2초 제거). 서버는 날짜별 조회와 같은 계산(검증된 월 시더, 캐시 무기록)이라 결과가 같다. 실패·미지원·빈 응답이면
+   아무것도 심지 않고, 날짜별 조회(prefetchSlotsForDate)가 그대로 동작한다. 같은 달·상품·소요시간은 슬롯 캐시 수명 동안 한 번만 묻는다. */
+function prefetchSlotsMonth(year, month, product = state.selectedProduct, duration = getCalendarDuration()) {
+  if (!product || product.g === 'promo') return null;
+  const monthKey = `${year}_${month}_${product.g}_${duration}`;
+  const prior = state.slotMonthFlights.get(monthKey);
+  if (prior && (!prior.done || Date.now() - prior.at < SLOT_CACHE_TTL_MS)) return prior.promise;
+  const flight = { at: Date.now(), done: false, promise: null };
+  flight.promise = fetchSlotsMonth({ year, month, totalDur: duration, itemGroup: product.g })
+    .then((res) => {
+      const entries = res && res.entries && typeof res.entries === 'object' ? res.entries : {};
+      Object.keys(entries).forEach((dateKey) => {
+        const slotKey = `${dateKey}_${product.g}_${duration}`;
+        if (Array.isArray(entries[dateKey]) && getCachedSlots(slotKey) === undefined) setCachedSlots(slotKey, entries[dateKey]);
+      });
+      if (!Object.keys(entries).length) state.slotMonthFlights.delete(monthKey);   // 빈 응답(실패·캘린더 읽기 실패)은 기억하지 않는다 — 다음 기회에 다시
+    })
+    .catch(() => { state.slotMonthFlights.delete(monthKey); })
+    .finally(() => { flight.done = true; });
+  state.slotMonthFlights.set(monthKey, flight);
+  return flight.promise;
 }
 
 async function loadSlotsForDate(dateKey) {
@@ -5901,7 +6140,7 @@ async function loadSlotsForDate(dateKey) {
   const dateLabel = formatDateLabel(dateKey);
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: dateLabel });
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().slotLoading);
   const cachedSlots = getCachedSlots(slotKey);
   if (Array.isArray(cachedSlots)) {
     if (token !== state.slotRequestToken) return;
@@ -5911,14 +6150,9 @@ async function loadSlotsForDate(dateKey) {
   }
   let slots = [];
   try {
-    // 프리페치(호버/터치)가 진행 중이면 그 요청에 올라타 중복 조회를 피한다. 실패 시 신선 재시도.
-    const inflight = state.slotPrefetchInFlight.get(slotKey);
-    if (inflight) {
-      try { slots = await inflight; }
-      catch (e) { slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g }); }
-    } else {
-      slots = await fetchSlots({ date: dateKey, totalDur: duration, itemGroup: state.selectedProduct.g });
-    }
+    // 프리페치(호버/터치)·'가장 빠른 시간 찾기'가 진행 중이면 그 요청에 올라탄다. 실패 시 한 번 신선 재시도.
+    try { slots = await prefetchSlotsForDate(dateKey); }
+    catch (e) { slots = await prefetchSlotsForDate(dateKey); }
     if (token !== state.slotRequestToken) return;
     setCachedSlots(slotKey, slots);
   } catch (error) {
@@ -6017,12 +6251,15 @@ async function selectDate(dateKey, options = {}) {
   state.slotRequestToken += 1;
   state.selectedDate = dateKey;
   state.activeStep = 3;
+  const hadSlot = !!state.selectedSlot;
   state.selectedSlot = '';
   state.selectedSlotMeta = null;
   state.showAllSlots = false;
   els.slotHint.textContent = fillCopy(getCopy().slotLoadingForDate, { date: formatDateLabel(dateKey) });
+  // 시간을 골랐다가 날짜를 바꾸면 선택이 풀린다 — 위쪽 '날짜와 시간이 선택되었습니다' 를 남겨 두면 거짓이 된다
+  if (hadSlot) setBanner(getCopy().calendarLoaded, 'success');
   els.slotGrid.classList.add('empty-state');
-  els.slotGrid.innerHTML = renderPanelLoading(getCopy().loadCalendar);
+  els.slotGrid.innerHTML = renderPanelLoading(getCopy().slotLoading);
   renderSeniorWarning();
   const duration = getCalendarDuration();
   renderCalendar(state.calendarCache.get(`${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`));
@@ -6496,13 +6733,14 @@ function updateSubmitState() {
   const babyName = String(formData.get('babyName') || '').trim();
   const babyNameOk = !needsBabyNameForBooking(product) || !!babyName;
   const reshootingOk = !needsReshootingConsent(product) || !!els.reshootingConsent?.checked;
+  const earlyStartOk = !needsEarlyStartConsent(product) || !!els.earlyStartConsent?.checked;
   const phoneDigitsOk = (String(formData.get('phone') || '').replace(/\D/g, '').length >= 6); // 숫자 없는 전화가 '+49'로 저장되던 문제
   const businessInvoice = getBusinessInvoiceFormData(formData);
   const businessInvoiceOk = !businessInvoice.needed
     || (businessInvoice.companyName
       && businessInvoice.companyAddress
       && (!businessInvoice.invoiceEmail || /\S+@\S+\.\S+/.test(businessInvoice.invoiceEmail)));
-  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && businessInvoiceOk);
+  els.submitBtn.disabled = !(name && phone && phoneDigitsOk && emailOk && contractOk && gdprOk && passCountriesOk && otherCountryOk && locationOk && businessOk && babyNameOk && reshootingOk && earlyStartOk && businessInvoiceOk);
 }
 
 function clearCalendarSelection() {
@@ -6523,7 +6761,8 @@ async function changeMonth(offset) {
   const now = new Date();
   const minTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const nextTs = new Date(next.getFullYear(), next.getMonth(), 1).getTime();
-  const maxTs = new Date(MAX_BOOKING_MONTH.year, MAX_BOOKING_MONTH.month, 1).getTime();
+  const maxMonth = getMaxBookingMonth();
+  const maxTs = new Date(maxMonth.year, maxMonth.month, 1).getTime();
   if (nextTs < minTs || nextTs > maxTs) return;
   state.calendarYear = next.getFullYear();
   state.calendarMonth = next.getMonth();
@@ -6699,6 +6938,11 @@ async function onSubmit(event) {
     } catch (e) {}
     return;
   }
+  if (needsEarlyStartConsent(state.selectedProduct) && !els.earlyStartConsent?.checked) {
+    setBanner(getCopy().earlyStartMissing, 'error');
+    try { document.getElementById('earlyStartGroup')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    return;
+  }
   if (payload.babyName) {
     payload.memo = `[아기 이름: ${payload.babyName}] ${payload.memo}`.trim();
   }
@@ -6737,10 +6981,15 @@ async function onSubmit(event) {
           : '이미 접수된 요청입니다 — 확인 메일함을 확인해 주세요. 메일이 없으면 잠시 후 다시 시도해 주세요.', 'success');
       state.bookingRequestId = null;
     } else {
-      setBanner(`${getCopy().submitFail}: ${error.message}`, 'error');
+      /* 서버가 명시적으로 거절한 제출(마감된 시간·동시 처리 중·검증 실패)은 성립하지 않았다.
+         같은 requestId 를 들고 다시 보내면 서버 중복가드에 걸려 "이미 접수됨" 이 떴다 — 예약은 없는데(2026-09-13).
+         서버도 실패 시 키를 되돌려 주지만, 여기서도 새 시도로 취급해 두 겹으로 막는다.
+         TIMEOUT·NETWORK 는 서버에 닿았을 수 있으니 requestId 를 유지한다(중복 예약 방지가 우선). */
+      if (error?.code === 'SERVER') state.bookingRequestId = null;
+      setBanner(`${getCopy().submitFail}: ${errText(error)}`, 'error');
     }
   } finally {
-    els.submitBtn.textContent = getCopy().submitLabel;
+    els.submitBtn.textContent = getSubmitLabel();
     updateSubmitState();
     renderReturnNotice();
     syncSelectAllRequired();

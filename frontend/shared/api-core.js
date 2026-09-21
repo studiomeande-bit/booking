@@ -11,6 +11,22 @@ export function buildUrl(route, params = {}) {
   return base.toString();
 }
 
+/* 조회 셔틀 URL — CONFIG.readApiBaseUrl 이 비어 있으면 메인과 같다 */
+export function buildReadUrl(route, params = {}) {
+  const base = new URL(CONFIG.readApiBaseUrl || CONFIG.apiBaseUrl);
+  base.searchParams.set('api', route);
+  base.searchParams.set('_ts', String(Date.now()));
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    base.searchParams.set(key, value);
+  });
+  return base.toString();
+}
+
+export function buildReadPayloadUrl(route, data = {}, extraParams = {}) {
+  return buildReadUrl(route, { ...extraParams, payload: JSON.stringify({ ...extraParams, data }) });
+}
+
 export function buildPayloadUrl(route, data = {}, extraParams = {}) {
   return buildUrl(route, {
     ...extraParams,
@@ -44,11 +60,14 @@ export async function postPayload(route, data = {}, extraParams = {}) {
       signal: controller ? controller.signal : undefined
     });
   } catch (error) {
+    /* code 는 호출자가 "이 제출이 서버에 닿았을 수 있는가" 를 판단하는 근거다.
+       TIMEOUT·NETWORK = 닿았을 수 있음(requestId 유지, 재시도는 서버 중복가드가 거른다)
+       SERVER = 서버가 명시적으로 거절(성립 안 함 → 다음 시도는 새 requestId). */
     if (error?.name === 'AbortError') {
-      throw new Error('서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.');
+      throw tagged('서버 응답이 너무 오래 걸립니다. 예약이 접수되었을 수 있으니 확인 메일을 먼저 확인해 주세요. 메일이 없으면 다시 제출해 주세요.', 'TIMEOUT');
     }
-    if (error?.message === 'Failed to fetch') {
-      throw new Error('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.');
+    if (error instanceof TypeError) {   // 네트워크 실패 — 문구는 브라우저마다 다르다(requestJson 주석 참고)
+      throw tagged('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 제출해 주세요.', 'NETWORK');
     }
     throw error;
   } finally {
@@ -57,20 +76,101 @@ export async function postPayload(route, data = {}, extraParams = {}) {
   return parseJsonResponse(response);
 }
 
-export async function parseJsonResponse(response) {
+export function tagged(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+/* 본문을 JSON 으로 읽는다. JSON 이 아니면 대개 구글이 스크립트에 닿기 전에 낸 오류 페이지다(길이 초과·일시 장애·점검).
+   원문 HTML 을 그대로 보여 주면 고객은 무슨 일인지 알 수 없다 — 사람이 읽을 문장(GATEWAY)으로 바꾼다. */
+export async function readJsonBody(response) {
   const text = await response.text();
-  let payload;
   try {
-    payload = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
-    /* JSON 이 아니면 대개 구글이 스크립트에 닿기 전에 낸 오류 페이지다(길이 초과·일시 장애·점검).
-       원문 HTML 을 그대로 보여 주면 고객은 무슨 일인지 알 수 없다 — 사람이 읽을 문장으로 바꾼다. */
     const status = response?.status || 0;
     if (status === 400 || status === 413 || status === 414) {
-      throw new Error('입력 내용이 너무 길어 전송하지 못했습니다. 요청사항을 조금 줄여 다시 시도해 주세요.');
+      throw tagged('입력 내용이 너무 길어 전송하지 못했습니다. 요청사항을 조금 줄여 다시 시도해 주세요.', 'GATEWAY');
     }
-    throw new Error('서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    throw tagged('서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요.', 'GATEWAY');
   }
-  if (!payload.ok) throw new Error(payload.error?.message || 'API request failed');
+}
+
+export async function parseJsonResponse(response) {
+  const payload = await readJsonBody(response);
+  if (!payload.ok) {
+    const err = tagged(payload.error?.message || 'API request failed', 'SERVER');
+    err.apiCode = payload.error?.code || '';
+    throw err;
+  }
   return payload.data;
+}
+
+/* 조회(GET) 공용 — 시간 제한 + 재시도. 조회는 부작용이 없어 한 번 더 보내도 안전하다.
+   parse 로 응답 해석을 바꿀 수 있다(셀렉 세션은 ok:false 여도 submitted 를 통과시킨다). */
+export async function requestJson(url, { timeoutMs = 0, retries = 0, parse = parseJsonResponse } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
+    try {
+      response = await fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined });
+    } catch (error) {
+      if (attempt < retries) continue;
+      if (error?.name === 'AbortError') {
+        throw tagged('서버 응답이 늦어지고 있습니다. 잠시 후 다시 시도해 주세요.', 'TIMEOUT');
+      }
+      /* fetch 가 네트워크 단계에서 죽으면 TypeError 다 — 문구는 브라우저마다 다르다
+         (Chrome 'Failed to fetch', Safari 'Load failed', Firefox 'NetworkError…'). 문구 비교로 잡으면 Safari 를 놓친다.
+         URL 이 너무 길어 브라우저가 요청 자체를 못 보내는 경우도 여기로 온다(2026-08-27 실제 신고). */
+      if (error instanceof TypeError) {
+        throw tagged('서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.', 'NETWORK');
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return parse(response);
+  }
+}
+
+/* 조회(페이지 준비·달력·시간·견적·셀렉 세션)는 시간 제한 + 1회 재시도를 건다.
+   Apps Script 는 평소 요청당 3~5초인데, 가끔 한 요청이 수십 초 멈춘다(2026-09-18 실측: 같은 계정의
+   작은 스크립트가 98초). 제한이 없으면 고객 화면은 그동안 '불러오는 중'에서 멈춰 보인다 — 끊고 다시 보낸다.
+   25초 = 평소 최장(콜드 스타트 18초 실측) 위. 제출·홀드처럼 부작용 있는 요청에는 걸지 않는다. */
+export const READ = { timeoutMs: 25000, retries: 1 };
+
+/* 조회는 셔틀(appscript-public, 1~3초) 먼저 — 실패하면 메인(3~5초 바닥). 셔틀이 아직 승인 전이면 HTML 승인 페이지가 와서
+   GATEWAY 로 떨어지고 그대로 메인을 탄다. 셔틀 기본 제한이 짧은(12초·재시도 없음) 이유: 셔틀이 막힌 날 고객을 12초 넘게
+   세워 두지 않고 메인으로 넘기기 위해서다. shuttle/main 으로 제한·parse 를 따로 줄 수 있다(셀렉 사진 목록은 60초 단발).
+   제출·홀드·저장은 절대 셔틀을 쓰지 않는다. */
+export const READ_SHUTTLE = { timeoutMs: 12000, retries: 0 };
+function shuttleEnabled() {
+  return !!(CONFIG.readApiBaseUrl && CONFIG.readApiBaseUrl !== CONFIG.apiBaseUrl);
+}
+export async function readViaShuttle(route, params = {}, { shuttle = READ_SHUTTLE, main = READ } = {}) {
+  if (shuttleEnabled()) {
+    try { return await requestJson(buildReadUrl(route, params), shuttle); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildUrl(route, params), main);
+}
+/* 페이지 <head> 인라인 스크립트가 번들보다 먼저 띄운 fetch(예: booking/index.html 의 window.__smInitEarly, select 의 __smSessionEarly).
+   약속을 한 번만 꺼내 쓴다(두 번째 호출부터 null). 12초 안에 응답이 없거나 실패하면 null — 호출자는 정상 경로로 간다. */
+export async function takeEarlyResponse(name) {
+  const early = globalThis[name];
+  if (!early) return null;
+  globalThis[name] = null;
+  try {
+    return await Promise.race([early, new Promise((_, reject) => setTimeout(() => reject(new Error('early timeout')), READ_SHUTTLE.timeoutMs))]);
+  } catch (error) { return null; }
+}
+
+export async function readPayloadViaShuttle(route, data, { shuttle = READ_SHUTTLE, main = READ } = {}) {
+  if (shuttleEnabled()) {
+    try { return await requestJson(buildReadPayloadUrl(route, data), shuttle); }
+    catch (error) { /* 메인으로 */ }
+  }
+  return requestJson(buildPayloadUrl(route, data), main);
 }
