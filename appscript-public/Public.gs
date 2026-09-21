@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-21T06:30:39.151Z
- * 포함 함수 176개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-21T07:59:26.814Z
+ * 포함 함수 179개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -526,7 +526,9 @@ function getPublicCalendarBatch_(year,month,totalDur,itemGroup){
   const y=d.getFullYear();
   const m=d.getMonth();
   const key=`${y}_${m}`;
-  if(new Date(y,m,1).getTime()>new Date(`${PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR}T23:59:59`).getTime()){
+  // 이번 달 ~ 예약 지평선 밖이면 캘린더를 읽지 않고 닫힌 달. NaN(터무니없는 연도)도 떨어지게 **긍정 조건**으로 쓴다 — `a>b` 꼴은 NaN 을 통과시킨다.
+  const _firstMs=new Date(y,m,1).getTime(),_now=new Date();
+  if(!(_firstMs>=new Date(_now.getFullYear(),_now.getMonth(),1).getTime()&&_firstMs<=new Date(`${PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR}T23:59:59`).getTime())){
     return buildClosedMonthSummary_(y,m);
   }
   const ver=getCalCacheVer_();
@@ -600,11 +602,18 @@ function getCachedMonthEvents_(year,month,wantDetailed){
   return events;
 }
 
+function isPublicSlotDateInWindow_(dateStr){
+  const s=String(dateStr||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return new Date(`${s}T23:59:59`).getTime()>=Date.now() && !isBeyondPublicBookingRange_(s);
+}
+
 function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
   if(!isPublicBookingItemGroup_(itemGroup)) return [];
+  if(!isPublicSlotDateInWindow_(dateStr)) return [];
   if(itemGroup==='promo'&&!isPromoDateAllowed_(dateStr)) return[];
   const cache=CacheService.getScriptCache();
-  const cacheKey=`public_slots_v1_${getCalCacheVer_()}_${dateStr}_${itemGroup}_${totalDur}`;
+  const cacheKey=`public_slots_v2_${getCalCacheVer_()}_${dateStr}_${itemGroup}_${totalDur}`;
   if(skipCache!==true){
     try{
       const hit=cache.get(cacheKey);
@@ -652,6 +661,50 @@ function getPublicSlots_(dateStr,totalDur,itemGroup,skipCache){
     try{cache.put(cacheKey,JSON.stringify(out),getAvailabilityCacheTtlSec_(itemGroup));}catch(e){}
   }
   return out;
+}
+
+function readMonthCalendarForWarm_(year,month){
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const monthStart=new Date(year,month,1),monthEnd=new Date(year,month,daysInMonth,23,59,59);
+  const events=getEventsForRange_(monthStart,monthEnd);
+  if(CAL_READ_FAILED_) return null;
+  const detailed=getBusyEventsDetailedForRange_(monthStart,monthEnd);
+  if(CAL_READ_FAILED_) return null;
+  return {events:events,detailed:detailed,daysInMonth:daysInMonth};
+}
+
+function warmPublicSlotsForMonth_(year,month,totalDur,itemGroup,dryRun,preRead){
+  if(!isPublicBookingItemGroup_(itemGroup)||itemGroup==='promo') return {seeded:0,skipped:'group',entries:{}};
+  const bundle=preRead||readMonthCalendarForWarm_(year,month);   // preRead 있으면 재사용(중복 읽기 방지)
+  if(!bundle) return {seeded:0,skipped:'calReadFailed',entries:{}};
+  const daysInMonth=bundle.daysInMonth;
+  const events=bundle.events;
+  const detailed=bundle.detailed;
+  const cache=CacheService.getScriptCache();
+  const ver=getCalCacheVer_();
+  const ttl=getAvailabilityCacheTtlSec_(itemGroup);
+  const useStudioAutoOpen=isStudioAutoOpenEligibleGroup_(itemGroup);
+  const entries={};   // dryRun: 캐시에 쓰지 않고 계산 결과만 반환(검증이 라이브 캐시를 오염시키지 않게)
+  let seeded=0;
+  for(let d=1;d<=daysInMonth;d++){
+    const dStr=`${year}-${('0'+(month+1)).slice(-2)}-${('0'+d).slice(-2)}`;
+    const dayStart=new Date(`${dStr}T00:00:00`).getTime(),dayEnd=new Date(`${dStr}T23:59:59`).getTime();
+    // 당일과 겹치는 detailed 이벤트(getPublicSlots_ 의 당일 조회 의미와 동일). 시작일 기준 분할이 아님.
+    const dayDetailed=detailed.filter(function(ev){return ev.start<dayEnd&&ev.end>dayStart;});
+    const studioPresenceEvents=useStudioAutoOpen?dayDetailed:[];
+    const hasStudioAutoOpenBlocks=useStudioAutoOpen&&getStudioAutoOpenBlocksForDate_(dStr,studioPresenceEvents).length>0;
+    const cacheKey=`public_slots_v2_${ver}_${dStr}_${itemGroup}_${totalDur}`;
+    let payload;
+    if(!isPublicSlotDateInWindow_(dStr)||isBeyondPublicBookingRange_(dStr)||(isWeekendOrHolidayBlocked_(dStr,itemGroup)&&!hasStudioAutoOpenBlocks)){
+      payload='[]';   // 지난 날짜도 getPublicSlots_ 와 똑같이 빈 배열(같은 창 판정을 미러링)
+    }else{
+      const slotStrings=computeSlots_(dStr,events,totalDur,itemGroup,'',studioPresenceEvents);
+      payload=JSON.stringify(buildPublicSlotEntries_(dStr,slotStrings,totalDur,dayDetailed,itemGroup));
+    }
+    entries[dStr]=payload;
+    if(dryRun!==true){ try{cache.put(cacheKey,payload,ttl);seeded++;}catch(e){} }
+  }
+  return {seeded:dryRun===true?0:seeded,skipped:'',entries:entries};
 }
 
 function getPublicCalendarMonthLite_(year,month,itemGroup){
@@ -1824,7 +1877,10 @@ function buildPublicSlotEntries_(dateStr, availableSlots, totalDur, detailedEven
       manualReviewRequired: true,
       distanceMin: nearest ? nearest.distanceMin : '',
       anchorWindow: nearest ? buildRecommendationAnchorLabel_(nearest) : '',
-      anchorTitle: nearest ? nearest.title : '',
+      /* 🔒 항상 빈 값. 여기 실리던 nearest.title 은 옆 예약의 캘린더 제목("상품 | 고객명 | 인원 | 금액€")이고, 이 항목은 **인증 없는 공개 조회**
+         (api=slots — 메인·셔틀)로 그대로 나갔다(2026-09-21 라이브 확인: pass/prof/stud 추천 슬롯). 프런트·제출 경로 누구도 읽지 않는다
+         (추천 라벨은 anchorWindow 만 쓴다). 키는 응답 모양 호환을 위해 남긴다. 제목이 필요해지면 공개 응답이 아닌 곳에서만. */
+      anchorTitle: '',
       recommendationSource: '',
       _candidate: !!nearest,
       _manualInclude: manualInclude.has(time),
@@ -2912,15 +2968,17 @@ function _getSelectPhotoCursorState_(rawCursor,rootFolderId,recursive){
 
 function _encodeSelectPhotoCursorState_(state){
   try{
-    return Utilities.base64EncodeWebSafe(JSON.stringify(state));
+    const b=Utilities.base64EncodeWebSafe(JSON.stringify(state));
+    return b+'.'+bookingRowActionTokenFromSeed_('selcursor|'+b);
   }catch(e){return'';}
 }
 
 function _decodeSelectPhotoCursorState_(rawCursor){
   if(!rawCursor)return null;
   try{
-    const bytes=Utilities.base64DecodeWebSafe(String(rawCursor||''));
-    return JSON.parse(Utilities.newBlob(bytes).getDataAsString());
+    const parts=String(rawCursor||'').split('.');
+    if(parts.length!==2||!parts[0]||bookingRowActionTokenFromSeed_('selcursor|'+parts[0])!==parts[1]) return null;
+    return JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
   }catch(e){return null;}
 }
 

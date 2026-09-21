@@ -1,4 +1,5 @@
-import { READ, buildPayloadUrl, buildUrl, parseJsonResponse, postPayload, readPayloadViaShuttle, readViaShuttle, requestJson, takeEarlyResponse } from './api-core.js';
+import { READ, READ_SHUTTLE, buildPayloadUrl, buildReadUrl, buildUrl, parseJsonResponse, postPayload, readPayloadViaShuttle, readViaShuttle, requestJson, takeEarlyResponse } from './api-core.js';
+import { CONFIG } from './config.js';
 
 /* 고객이 자유입력을 담아 보내는 '제출' 계열은 전부 POST 다(booking·walkin-intake·consultation·waitlist-join).
    GET + ?payload= 는 URL 길이 한계에 걸린다 — 실측 2026-08-27: URL 약 12,000자 초과 시 구글이 HTTP 400.
@@ -39,6 +40,14 @@ export function fetchCalendarBatch({ year, month, totalDur, itemGroup }) {
 
 export function fetchSlots({ date, totalDur, itemGroup }) {
   return readViaShuttle('slots', { date, totalDur, itemGroup });
+}
+
+/* 그 달의 날짜별 슬롯을 한 번에(셔틀 전용 slots-month — 메인엔 없는 라우트라 폴백하지 않는다). 실패·미지원이면 null:
+   호출자는 날짜별 fetchSlots 로 그대로 동작한다. month 는 calendar-batch 와 같은 0-기준. */
+export async function fetchSlotsMonth({ year, month, totalDur, itemGroup }) {
+  if (!CONFIG.readApiBaseUrl || CONFIG.readApiBaseUrl === CONFIG.apiBaseUrl) return null;
+  try { return await requestJson(buildReadUrl('slots-month', { year, month, totalDur, itemGroup }), READ_SHUTTLE); }
+  catch (error) { return null; }
 }
 
 export function fetchQuote(data) {

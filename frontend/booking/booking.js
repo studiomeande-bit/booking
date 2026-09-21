@@ -1,4 +1,4 @@
-import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
+import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, fetchSlotsMonth, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, getProductIncludedPrintQuota, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { groupPrintCatalogByGrade, printCatalogGradeLabel, printCatalogName } from '../shared/print-catalog.js';
 import { PRINT_METHOD_POINTS, PRINT_TIERS, getPrintMicrocopy, getPrintTier } from '../shared/print-tier-copy.js';
@@ -1436,6 +1436,7 @@ const state = {
   calendarCache: new Map(),
   slotCache: new Map(),
   slotPrefetchInFlight: new Map(),
+  slotMonthFlights: new Map(),   // `${year}_${month}_${g}_${duration}` → { promise, at, done } — 월 단위 슬롯 일괄 조회(prefetchSlotsMonth)
   gutschein: null,
   gutscheinDraftId: '',
   gutscheinTimer: null
@@ -5479,6 +5480,7 @@ async function findEarliestAvailableSlot(product, duration) {
     months.push({ year: next.getFullYear(), month: next.getMonth() });
   }
   for (const ref of months) {
+    prefetchSlotsMonth(ref.year, ref.month, product, duration);   // 후보 날짜 조회가 이 월 단위 응답에 올라탄다
     const batch = await getCalendarMonthData(ref.year, ref.month, duration, product.g);
     const candidateDates = listAvailableDatesForMonthData(batch, ref.year, ref.month).slice(0, 6);
     for (const dateKey of candidateDates) {
@@ -5947,6 +5949,7 @@ async function loadCalendar() {
   const token = ++state.calendarRequestToken;
   const duration = getCalendarDuration();
   const cacheKey = `${state.calendarYear}_${state.calendarMonth}_${state.selectedProduct.g}_${duration}`;
+  prefetchSlotsMonth(state.calendarYear, state.calendarMonth, state.selectedProduct, duration);   // 보이는 달의 슬롯을 달력과 병렬로
   let batch = state.calendarCache.get(cacheKey);
   if (!batch) {
     batch = readMonthStorage(state.calendarYear, state.calendarMonth, state.selectedProduct.g, duration);
@@ -6077,11 +6080,44 @@ function prefetchSlotsForDate(dateKey, product = state.selectedProduct, duration
   if (cachedPrefetch !== undefined) return Promise.resolve(cachedPrefetch);
   const existing = state.slotPrefetchInFlight.get(slotKey);
   if (existing) return existing;   // 이미 진행 중이면 그 프로미스를 재사용(중복 요청 방지)
-  const promise = fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g })
-    .then((slots) => { setCachedSlots(slotKey, slots); return slots; })
-    .finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
+  const fetchOne = () => fetchSlots({ date: dateKey, totalDur: duration, itemGroup: product.g })
+    .then((slots) => { setCachedSlots(slotKey, slots); return slots; });
+  // 그 달의 월 단위 조회가 진행 중이면 먼저 그 결과를 기다린다(같은 날짜를 또 묻지 않는다). 3.5초 안에 안 오거나 그 날짜가 빠졌으면 날짜별 조회.
+  const [yy, mm] = String(dateKey).split('-').map(Number);
+  const monthFlight = state.slotMonthFlights.get(`${yy}_${mm - 1}_${product.g}_${duration}`);
+  const viaMonth = (monthFlight && !monthFlight.done)
+    ? Promise.race([monthFlight.promise, new Promise((resolve) => setTimeout(resolve, 3500))]).then(() => {
+        const seeded = getCachedSlots(slotKey);
+        return seeded !== undefined ? seeded : fetchOne();
+      })
+    : fetchOne();
+  const promise = viaMonth.finally(() => { state.slotPrefetchInFlight.delete(slotKey); });
   state.slotPrefetchInFlight.set(slotKey, promise);
   return promise;
+}
+
+/* 그 달의 날짜별 슬롯을 **한 번에** 받아 날짜별 캐시에 심는다 — 달력이 뜬 뒤 고객이 날짜를 고르는 동안 끝나므로 날짜 클릭이 요청 없이
+   즉시 열린다(클릭당 셔틀 왕복 ~2초 제거). 서버는 날짜별 조회와 같은 계산(검증된 월 시더, 캐시 무기록)이라 결과가 같다. 실패·미지원·빈 응답이면
+   아무것도 심지 않고, 날짜별 조회(prefetchSlotsForDate)가 그대로 동작한다. 같은 달·상품·소요시간은 슬롯 캐시 수명 동안 한 번만 묻는다. */
+function prefetchSlotsMonth(year, month, product = state.selectedProduct, duration = getCalendarDuration()) {
+  if (!product || product.g === 'promo') return null;
+  const monthKey = `${year}_${month}_${product.g}_${duration}`;
+  const prior = state.slotMonthFlights.get(monthKey);
+  if (prior && (!prior.done || Date.now() - prior.at < SLOT_CACHE_TTL_MS)) return prior.promise;
+  const flight = { at: Date.now(), done: false, promise: null };
+  flight.promise = fetchSlotsMonth({ year, month, totalDur: duration, itemGroup: product.g })
+    .then((res) => {
+      const entries = res && res.entries && typeof res.entries === 'object' ? res.entries : {};
+      Object.keys(entries).forEach((dateKey) => {
+        const slotKey = `${dateKey}_${product.g}_${duration}`;
+        if (Array.isArray(entries[dateKey]) && getCachedSlots(slotKey) === undefined) setCachedSlots(slotKey, entries[dateKey]);
+      });
+      if (!Object.keys(entries).length) state.slotMonthFlights.delete(monthKey);   // 빈 응답(실패·캘린더 읽기 실패)은 기억하지 않는다 — 다음 기회에 다시
+    })
+    .catch(() => { state.slotMonthFlights.delete(monthKey); })
+    .finally(() => { flight.done = true; });
+  state.slotMonthFlights.set(monthKey, flight);
+  return flight.promise;
 }
 
 async function loadSlotsForDate(dateKey) {

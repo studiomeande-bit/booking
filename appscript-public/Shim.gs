@@ -50,6 +50,13 @@ function getCalCacheVer_() {
     const vals = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 2).getValues();
     const hit = vals.find(function (r) { return String(r[0]).trim() === 'cal_cache_ver'; });
     _calCacheVerMemo_ = String((hit && hit[1]) || '1');
+    // 방금 읽은 A:B 가 곧 설정 맵이다 — getSettingsMap_ 의 실행당 메모를 채워 두면 가용성 라우트는 CacheService 조회도, 60초 지연도 없다
+    // (getSettingsMap_ 과 같은 규칙: 머리행 제외·키 trim·normalizeSettingCellValue_).
+    if (!SETTINGS_MAP_CACHE) {
+      const map = {};
+      for (let i = 1; i < vals.length; i++) if (vals[i][0]) { const k = String(vals[i][0]).trim(); map[k] = normalizeSettingCellValue_(k, vals[i][1]); }
+      SETTINGS_MAP_CACHE = map;
+    }
   } catch (e) { _calCacheVerMemo_ = '1'; }
   return _calCacheVerMemo_;
 }
@@ -131,6 +138,30 @@ function _pub_(e) {
       if (!isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
       return jsonOk_(getPublicSlots_(date, totalDur, itemGroup));
     }
+    /* 그 달의 날짜별 슬롯을 한 번에 — 달력이 뜬 직후 프런트가 받아 날짜별 캐시에 심어 두면 날짜 클릭이 요청 없이 열린다(클릭당 ~2초 → 0).
+       계산은 검증된 월 시더 warmPublicSlotsForMonth_ 를 **dryRun(캐시 무기록)** 으로, 월 이벤트 캐시 위에서 돌린다 — getPublicSlots_ 표시 경로와
+       같은 함수·같은 입력이라 날짜별 조회와 결과가 같다. 캘린더 읽기 실패면 아무것도 돌려주지 않는다(거짓 가용성 금지). 쓰기가 없어 캐시 오염도 없다.
+       월은 이번 달~예약 지평선, totalDur 는 5분 단위 5~840, 실제 상품이 있는 그룹만(promo 는 날짜 제한이 있어 날짜별 경로 그대로). */
+    if (route === 'slots-month') {
+      const year = asNumber_(p.year), month = asNumber_(p.month), totalDur = asNumber_(p.totalDur);
+      const itemGroup = String(p.itemGroup || '').trim();
+      if (!Number.isInteger(year) || !Number.isInteger(month) || month < 0 || month > 11) return jsonError_('INVALID_ARGUMENT', 'Invalid month');
+      if (!Number.isInteger(totalDur) || totalDur < 5 || totalDur > 840 || totalDur % 5 !== 0) return jsonError_('INVALID_ARGUMENT', 'Invalid duration');
+      if (!itemGroup || itemGroup === 'promo' || !isPublicBookingItemGroup_(itemGroup)) return jsonError_('INVALID_ARGUMENT', 'Unavailable item group');
+      if (!getCustomerProducts_().concat(getTfpProducts_()).some(function (x) { return x.g === itemGroup; })) return jsonError_('INVALID_ARGUMENT', 'Unknown item group');
+      const now = new Date(), first = new Date(year, month, 1).getTime();
+      // 긍정 조건으로 — `first < lo || first > hi` 는 NaN(연도 275761 이상)을 통과시킨다
+      if (!(first >= new Date(now.getFullYear(), now.getMonth(), 1).getTime() && first <= new Date(PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR + 'T23:59:59').getTime())) {
+        return jsonError_('INVALID_ARGUMENT', 'Month out of range');
+      }
+      const events = getCachedMonthEvents_(year, month, false);
+      if (CAL_READ_FAILED_) return jsonOk_({ entries: {}, skipped: 'calReadFailed' });
+      const detailed = getCachedMonthEvents_(year, month, true);
+      const seeded = warmPublicSlotsForMonth_(year, month, totalDur, itemGroup, true, { events: events, detailed: detailed, daysInMonth: new Date(year, month + 1, 0).getDate() });
+      const entries = {};
+      Object.keys((seeded && seeded.entries) || {}).forEach(function (d) { try { entries[d] = JSON.parse(seeded.entries[d]); } catch (err) {} });
+      return jsonOk_({ entries: entries, calCacheVer: getCalCacheVer_(), ms: Date.now() - t0 });
+    }
     // 셀렉 조회 2종 — 메인 handlePublicApiRequest_ 의 select-session / select-photos 분기와 동일. 제출·별점 저장은 메인.
     if (route === 'select-session') {
       const sessionId = String(p.id || '').trim();
@@ -143,7 +174,7 @@ function _pub_(e) {
       const recursive = String(p.recursive || '1').trim().toLowerCase();
       return jsonOk_(listSelectPhotosPublic_(sessionId, { limit: p.limit, recursive: recursive !== '0' && recursive !== 'false', cursor: p.cursor }));
     }
-    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · warm-months · select-session · select-photos 만 제공합니다.');
+    return jsonError_('NOT_FOUND', 'public-api: init · quote · calendar-batch · slots · slots-month · warm-months · select-session · select-photos 만 제공합니다.');
   } catch (err) {
     return jsonError_('PUBLIC_API_ERROR', String((err && err.message) || err));
   }
