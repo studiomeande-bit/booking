@@ -99,7 +99,8 @@ const htmlFiles = [];
     if (entry === 'node_modules' || entry === '.netlify') continue;
     const p = join(dir, entry);
     if (statSync(p).isDirectory()) walk(p);
-    else if (entry.endsWith('.html')) htmlFiles.push(p);
+    // google*.html 은 서치콘솔 소유확인 파일(본문 한 줄) — 페이지가 아니라 테마색 검사 대상이 아니다
+    else if (entry.endsWith('.html') && !/^google[0-9a-f]+\.html$/.test(entry)) htmlFiles.push(p);
   }
 })(ROOT);
 

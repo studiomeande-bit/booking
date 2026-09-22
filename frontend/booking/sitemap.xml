@@ -1,19 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- /walkin/ 은 X-Robots-Tag noindex(내부 접수용), /consultation/ 은 studio-mean.com/contact/ 로 301 →
+     사이트맵에 넣으면 서치콘솔이 "제출됐으나 noindex/리디렉션" 오류로 잡는다 (2026-09-22 제거). -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://booking.studio-mean.com/</loc>
     <lastmod>2026-09-21</lastmod>
   </url>
   <url>
-    <loc>https://booking.studio-mean.com/walkin/</loc>
-    <lastmod>2026-09-21</lastmod>
-  </url>
-  <url>
     <loc>https://booking.studio-mean.com/promo/</loc>
-    <lastmod>2026-09-21</lastmod>
-  </url>
-  <url>
-    <loc>https://booking.studio-mean.com/consultation/</loc>
     <lastmod>2026-09-21</lastmod>
   </url>
   <url>
