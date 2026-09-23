@@ -4020,14 +4020,25 @@ function renderStepWarnings() {
 /* ========================================================================
  * 미리보기 모드
  * ====================================================================== */
+/* ?preview=1&group=prof 로 촬영군을 바꿔 볼 수 있다 — 프로필 전용 UI(인원 선택)와 촬영군별
+   보정범위 안내를 고객 세션 없이 확인하기 위한 것(2026-09-23). 미리보기는 배너가 뜨고
+   제출이 막히는 기존 디버그 경로라 새 노출면이 아니다. 알 수 없는 값이면 기본 stud. */
+const PREVIEW_MOCK_PRODUCTS = {
+  stud: { product: '스튜디오 Basic', baseRetouchCount: 3 },
+  prof: { product: '1인 프로필 Basic', baseRetouchCount: 1 },
+  snap: { product: '야외 스냅 Basic', baseRetouchCount: 7 },
+  wed: { product: '프리웨딩 Plus', baseRetouchCount: 30 }
+};
 function buildMockSession() {
+  const group = new URLSearchParams(globalThis.location.search).get('group') || 'stud';
+  const mock = PREVIEW_MOCK_PRODUCTS[group] || PREVIEW_MOCK_PRODUCTS.stud;
   return {
     name: '데모 고객',
     email: 'demo@studio-mean.com',
     date: '2026-04-15',
-    itemGroup: 'stud',
-    product: '스튜디오 Basic',
-    baseRetouchCount: 3,
+    itemGroup: PREVIEW_MOCK_PRODUCTS[group] ? group : 'stud',
+    product: mock.product,
+    baseRetouchCount: mock.baseRetouchCount,
     retouchPrice: 10,
     marketingBonusCount: 2,
     serviceCutCount: 2,
