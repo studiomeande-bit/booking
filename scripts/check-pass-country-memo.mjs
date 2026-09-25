@@ -43,7 +43,21 @@ const fns = ['_passCountryLabel_', '_parsePassCountryMemo_', '_formatPassCountry
 const ctx = new Function(`const BOOKING_COL={'요청사항':0,'옵션':1};\n${labelsLine[0]}\n${fns.map(grab).join('\n')}\nreturn {${fns.join(',')}};`)();
 const row = (memo, option) => [memo || '', option || ''];
 
-const BASE = 30, EXTRA = 5, FAMILY_MIN = 5, FAMILY_PCT = 10;
+/* 금액 상수는 **Code.gs 에서 읽는다**. 하드코딩했다가 2026-09-25 결함주입 실험에서 들켰다:
+   `PASS_EXTRA_COUNTRY_FEE_` 를 5→4 로, 가족할인 기본값을 10→12 로 바꿔도 이 게이트가 초록이었다
+   (하네스가 자기 숫자로 계산하니 Code.gs 와 어긋나도 모른다 — 헤더는 "금액 전부 일치" 라고 주장하면서).
+   BASE(1인 €30)만은 예외로 시나리오 입력이다 — 라이브 상품가는 Code.gs 가 아니라 '상품설정' 시트가 정본이라
+   여기서 단정할 수 없다(메모리 product-catalog-source-of-truth). 나머지는 소스가 바뀌면 이 게이트가 빨개진다. */
+const num = (re, what) => {
+  const m = src.match(re);
+  if (!m) throw new Error(`${what} 를 Code.gs 에서 찾지 못했습니다 — 상수명이 바뀌었나요? (${re})`);
+  return Number(m[1]);
+};
+const BASE = 30;
+const EXTRA = num(/const PASS_EXTRA_COUNTRY_FEE_=(\d+(?:\.\d+)?);/, 'PASS_EXTRA_COUNTRY_FEE_');
+const FAMILY_MIN = num(/const PASS_FAMILY_DISCOUNT_MIN_PEOPLE=(\d+);/, 'PASS_FAMILY_DISCOUNT_MIN_PEOPLE');
+// 설정 시트에 행이 없을 때의 기본 할인율 — getPassportFamilyDiscountRate_ 의 폴백 `return N;`
+const FAMILY_PCT = num(/function getPassportFamilyDiscountRate_\(\)\{[\s\S]*?String\(v\)\.trim\(\)===''\)\s*return (\d+(?:\.\d+)?);/, '가족할인 기본율');
 const round = (n) => Math.round(n * 100) / 100;
 /** calculateQuote_ passport 블록과 같은 식. */
 function price(perPerson, people, business = false) {
@@ -86,7 +100,7 @@ for (const [people, inherit] of [[5, false], [6, false], [5, true], [7, true]]) 
 const mixed = '[국가별 신청] 2명:한국+독일, 1명:한국';
 const mx = ctx._expandPassPersonCountries_(mixed, 3, true);
 ok(JSON.stringify(mx) === JSON.stringify([['KR', 'DE'], ['KR', 'DE'], ['KR']]), '다중그룹 펼치기', mx);
-ok(price(mx, 3) === 3 * BASE + 2 * EXTRA, '다중그룹 금액 = 100€', price(mx, 3));
+ok(price(mx, 3) === 100, '다중그룹 금액 = 100€ (2명 한국+독일 + 1명 한국)', price(mx, 3));
 ok(ctx._passCountriesToMemoToken_(mx) === mixed, '다중그룹 토큰 복원', ctx._passCountriesToMemoToken_(mx));
 
 // 5) 인원 축소: 토큰이 줄어든 인원으로 다시 써져야 한다(안 줄면 다음 견적이 옛 인원으로 계산된다)
@@ -96,7 +110,7 @@ ok(ctx._passCountriesToMemoToken_(ctx._expandPassPersonCountries_(memo4, 2, true
 // 6) 라벨↔코드 왕복. 미등록 국가는 OTHER 로 떨어지고 국가 수에서 빠진다(기본가)
 ok(ctx._passCountryCode_('한국') === 'KR' && ctx._passCountryCode_('KR') === 'KR', '라벨/코드 모두 KR');
 ok(ctx._passCountryCode_('Ruritania') === 'OTHER', '미등록 국가 = OTHER', ctx._passCountryCode_('Ruritania'));
-ok(price([['KR', 'OTHER']], 1) === BASE, 'OTHER 는 추가요금 없음', price([['KR', 'OTHER']], 1));
+ok(price([['KR', 'OTHER']], 1) === 30, 'OTHER 는 추가요금 없음 = 30€', price([['KR', 'OTHER']], 1));
 
 // 7) 토큰 없는 예약: 전원 기본가 (종전 동작 그대로)
 ok(price(ctx._expandPassPersonCountries_('사전 문의 메모만 있음', 3, true), 3) === 90, '토큰 없음 = 90€');
