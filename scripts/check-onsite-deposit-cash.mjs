@@ -89,6 +89,8 @@ const MODULE = [
   extractFn(gs, 'normalizeBookingStatus_'),
   extractFn(gs, 'isBookingCancelledStatus_'),
   extractFn(gs, 'parseMoneyValue_'),
+  extractFn(gs, 'roundCurrency_'),
+  extractFn(gs, 'formatEuroAmount_'),   // 입금금액 > 총결제액 가드의 오류 문구가 쓴다
   extractFn(gs, 'isPaymentConfirmedValue_'),
   extractFn(gs, 'getEffectiveBookingDeposit_'),
   extractFn(gs, 'agentBoolFlag_'),
@@ -219,9 +221,13 @@ try {
     check('⑤-8 notify:true 발송', e.mails.length, 1);
   }
 
-  // ── ⑥ 이미 입금완료 건 — 종전 스킵 사유 유지
+  // ── ⑥ 이미 입금완료 건 — 재확인은 force 로만(감사 2026-09-20), 그때도 메일은 안 나간다
   {
-    const { res, mails } = run({ 계약금입금여부: 'Y', 계약금수단: '계좌이체' }, 50, {});
+    let threw = '';
+    try { run({ 계약금입금여부: 'Y', 계약금수단: '계좌이체' }, 50, {}); } catch (e) { threw = e.message; }
+    check('⑥-0 force 없이는 거부(마감된 달 현금장부 이동 방지)', /이미 예약금 입금이 확인된 예약/.test(threw), true);
+
+    const { res, mails } = run({ 계약금입금여부: 'Y', 계약금수단: '계좌이체' }, 50, { force: true });
     check('⑥-1 ALREADY_CONFIRMED', res.mailResult.skippedReason, 'ALREADY_CONFIRMED');
     check('⑥-2 미발송', mails.length, 0);
   }

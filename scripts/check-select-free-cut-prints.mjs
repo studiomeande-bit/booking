@@ -51,7 +51,7 @@ const ctx = {
 
 function buildEngine(quota) {
   const names = ['selectPhotoNumKey_', 'buildRetouchNumSet_', 'buildSelectServiceCutNums_',
-    'buildSelectMarketingBonusNums_', 'selectQuotaCredit_', 'getPrintInfo_',
+    'buildSelectMarketingBonusNums_', 'selectQuotaCredit_', 'selectPrintCreditExempt_', 'getPrintInfo_',
     'mergeSelectPrintItems_', 'normalizeSelectMarketingBonusCount_',
     'getDefaultSelectMarketingBonusCount_', 'computeSelectDecoupledPrints_',
     'getSelectVolumeTiers_', 'computeSelectVolumeDiscount_'];
@@ -196,13 +196,15 @@ console.log('\n── 볼륨 할인 (computeSelectVolumeDiscount_) ──');
   t('보정 5장 = 10% (€50→-€5)', d('retouch', 5, 50).discount === 5, JSON.stringify(d('retouch', 5, 50)));
   t('보정 10장 = 15% (€100→-€15)', d('retouch', 10, 100).discount === 15);
   t('보정 20장 = 20% (€200→-€40)', d('retouch', 20, 200).discount === 40);
-  t('인화 9장 = 할인 없음 + 다음 구간 안내(1장 남음, 10%)',
-    d('print', 9, 50).discount === 0 && d('print', 9, 50).remainToNext === 1 && d('print', 9, 50).nextPercent === 10,
-    JSON.stringify(d('print', 9, 50)));
-  t('인화 10장 = 10%', d('print', 10, 60).discount === 6);
+  // 인화 사다리는 @945(2026-09-10)부터 보정과 같다 — 5:10 / 10:15 / 20:20
+  t('인화 4장 = 할인 없음 + 다음 구간 안내(1장 남음, 10%)',
+    d('print', 4, 50).discount === 0 && d('print', 4, 50).remainToNext === 1 && d('print', 4, 50).nextPercent === 10,
+    JSON.stringify(d('print', 4, 50)));
+  t('인화 5장 = 10%', d('print', 5, 60).discount === 6, JSON.stringify(d('print', 5, 60)));
+  t('인화 10장 = 15%', d('print', 10, 60).discount === 9, JSON.stringify(d('print', 10, 60)));
   t('인화 30장 = 20% (최고 구간)', d('print', 30, 300).discount === 60);
   t('최고 구간에선 다음 안내 없음', d('print', 35, 300).remainToNext === 0);
-  t('센트 반올림 (€33 의 10% = €3.30)', d('print', 10, 33).discount === 3.3, d('print', 10, 33).discount);
+  t('센트 반올림 (€33 의 10% = €3.30)', d('print', 5, 33).discount === 3.3, d('print', 5, 33).discount);
   t('금액 0 이면 할인 0', d('retouch', 8, 0).discount === 0);
 
   // 설정 오버라이드 + 오타 방어

@@ -110,9 +110,17 @@ const MODULE = [
      ICLOUD_DETAIL_READ_FAILED_=false;
      if(__APPLE_FAIL__){ ICLOUD_DETAIL_READ_FAILED_=true; return []; }
      return __APPLE__;
-   }`,
+   }
+   // getEventsForRange_ 의 iCloud 레인 — PropertiesService 스텁이 비어 있어 여기선 닿지 않지만,
+   // 미정의로 두면 훗날 픽스처가 URL 을 넣는 순간 ReferenceError 가 try 안에서 조용히 먹힌다.
+   function fetchAppleCalendarEvents_(s,e){ return []; }`,
   extractFn(gs, 'parseBookingExtraDays_'),
+  extractFn(gs, 'normalizeExtraDayKind_'),
+  extractFn(gs, 'buildExtraDayEventFields_'),
+  extractFn(gs, 'getCalendarEventByIdOnDate_'),
+  extractFn(gs, 'deleteExtraDayEventById_'),
   extractFn(gs, 'cleanupBookingExtraDayEvents_'),
+  extractFn(gs, 'reconcileBookingCalendarDrift_'),
   extractFn(gs, 'auditBookingCalendarConsistency_'),
   extractFn(gs, 'checkBookingTimeConflict_'),
   `export {FakeEvent,FakeCalendar,FakeSheet,__CALS__,getEventsForRange_,auditBookingCalendarConsistency_,
@@ -486,7 +494,8 @@ async function runScenarios(M, rec) {
     M.setSheet(sh7);
     rep = M.auditBookingCalendarConsistency_();
     rec('다일정: 증발 복구 healed', rep.healedCount, 1);
-    rec('다일정: 복구 이벤트 생성', cal2.events.some(e => String(e.t || '').indexOf('추가일정 복구') >= 0), true);
+    // 복구 제목은 생성 제목과 같은 규칙(일차 번호·kind)을 써야 한다 — 예전 '(추가일정 복구)' 고정 문자열은 이동일을 촬영처럼 보이게 했다
+    rec('다일정: 복구 이벤트 제목 = 생성 규칙', cal2.events.map(e => String(e.t || '')).filter(x => /일차\)$/.test(x)), ['예약 | 휘슬러 (2/2일차)']);
     const savedJson = JSON.parse(String(sh7.rows[1][COL['추가일정JSON']] || '[]'));
     rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
   }
@@ -546,7 +555,7 @@ const STRUCTURAL = [
   ['slotAvailable_ 가 읽기실패 시 false (제출 최후 방어선)',
     /if\(CAL_READ_FAILED_\) return false;\n\s*return!checkConflict_\(dayEvents/],
   ['processForm_ 이 읽기실패를 일시 오류로 구분 안내',
-    /if\(CAL_READ_FAILED_\) throw new Error\('예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
+    /if\(CAL_READ_FAILED_\) throw new Error\(\{\n\s*ko:'예약 시스템이 일정을 일시적으로 확인할 수 없습니다/],
   ['getPublicSlots_ 읽기실패 시 빈 슬롯 + 캐시 미적재',
     /if\(CAL_READ_FAILED_\)\{\n(.*\n)*?\s*return \[\];\n\s*\}\n\s*const slotStrings/],
   ['getUnavailableDays 읽기실패 시 전일 마감 + 캐시 미적재',
@@ -574,7 +583,7 @@ const STRUCTURAL = [
   ['일정변경 승인: 충돌 가드(자기 이벤트 제외) + 애플 이관 안내',
     /if\(allowConflict!==true\)\{\n\s*const cc=checkBookingTimeConflict_\([\s\S]{0,300}durationMin,String\(row\[6\]\|\|''\),parseBookingLocationFromRow_\(row\),eventId\);[\s\S]{0,2600}res\.appleNote=/],
   ['고객 일정변경 제출: 쓰기 전 충돌 재검증(3개국어 거부)',
-    /const cc=checkBookingTimeConflict_\(\n\s*Utilities\.formatDate\(newDate,CONFIG\.TIMEZONE,'yyyy-MM-dd'\),[\s\S]{0,600}return\{ok:false,conflict:true,message:msgs\[lang2\]\|\|msgs\.ko\};/],
+    /const _ymdR=Utilities\.formatDate\(newDate,CONFIG\.TIMEZONE,'yyyy-MM-dd'\)[\s\S]{0,700}const cc=checkBookingTimeConflict_\(_ymdR,_hmR,[\s\S]{0,300}return\{ok:false,conflict:true,message:msgs\[lang2\]\|\|msgs\.ko\};/],
   ['에이전트 시간설정: 충돌 가드(force 강행)',
     /if\(payload\.force!==true&&m\[2\]!=='00:00'\)\{[\s\S]{0,600}return\{ok:false,conflict:true,message:'해당 시간\('/],
   ['브리핑이 정합 점검을 포함하고 실패를 표면화',
