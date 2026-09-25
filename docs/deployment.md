@@ -45,13 +45,13 @@ Set on both sites:
 Run from the **repo root** — `.clasp.json` lives there with `rootDir: appscript` (there is no `appscript/.clasp.json`):
 
 ```bash
-node scripts/check-sheet-date-compare.mjs   # 배포 전 게이트 — 시트 날짜셀 slice 패턴 적발(위반 시 exit 1)
+node scripts/check-all.mjs                  # 배포 전 게이트 27개 전부(~0.6초) — 하나라도 실패하면 exit 1, 배포 금지
 clasp push -f                               # HEAD 업로드 — 트리거는 이것만으로 반영, /exec 웹앱은 미반영
 clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "@NNN 설명"
 ```
 
 - `-i` 없이 `clasp deploy` 금지 — 새 배포 ID가 생겨 /exec 은 그대로, 버전 슬롯(200 한도)만 소모. 트리거는 push 만으로 반영.
-- 이 배포 ID 하나가 유일한 라이브(프론트 `API_BASE_URL`·문서·메일 링크 전부 이것). 2026-09-20 현재 @969, 버전 슬롯 136/200 사용 — 한도에 닿으면 Apps Script 편집기 프로젝트 기록에서 옛 버전 수동 삭제.
+- 이 배포 ID 하나가 유일한 라이브(프론트 `API_BASE_URL`·문서·메일 링크 전부 이것). 2026-09-25 현재 @991, 버전 슬롯 158/200 사용 — 한도에 닿으면 Apps Script 편집기 프로젝트 기록에서 옛 버전 수동 삭제.
 - 배포 전 회귀 검증기·회귀 체크리스트는 `docs/ops-checklist.md` 가 정본 (여기서 중복 관리하지 않음).
 
 ### public-api (`appscript-public/`) — 예약 조회 셔틀

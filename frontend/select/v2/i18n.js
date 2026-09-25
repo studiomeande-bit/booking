@@ -439,6 +439,17 @@ export const COPY = {
     scopeSwapGood1: '“0031번: 바람에 날린 잔머리를 정리하고, 전체 색감을 조금 따뜻하게 맞춰 주세요.”',
     scopeSwapGood2: '“잔머리를 정리하고, 전체 색감을 따뜻하게 맞춰 주세요.”',
     scopeHint: '⚠️ 신체·하늘 합성, 사람 제거(합성), 의상 주름 제거 등은 스냅 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.',
+    /* 보정 범위 안내 — prof·stud 용 축약본. 사장님이 확정한 3가지(합성·사람 제거·체형)만 담는다:
+       스냅용 목록의 '의상 주름 제거'까지 얹으면 스튜디오·프로필이 약속하는 범위를 임의로 좁히게 된다. */
+    scopeTitleCore: '✂️ 보정 범위 안내',
+    scopeLeadCoreHtml: '기본 보정은 <b>인물 리터칭</b> 기준이에요 — 합성 작업은 포함되지 않습니다.',
+    scopeOutCore: ['얼굴·신체 합성 (다른 사진의 얼굴 바꿔 넣기 등)', '사람 제거(합성) — 행인·배경 인물 지우기', '체형·신체 비율 보정(합성)'],
+    scopeHintCore: '⚠️ 얼굴·신체 합성, 사람 제거(합성), 체형 보정은 기본 보정 범위 밖이에요 — 접수 후 가능 여부와 추가 비용을 개별 안내드립니다.',
+    /* 다인 컷 인원 — 프로필은 1인 기준 가격이라 인원수만큼 보정 장수를 쓴다(2026-09-23) */
+    personLabel: '이 컷에 나온 인원',
+    personHint: '프로필은 1인 기준이라, 여러 명이 나온 컷은 인원수만큼 보정 장수를 사용해요',
+    personOpt: (n) => (n >= 3 ? '3인 이상' : `${n}인`),
+    counterSlots: (used, free, cuts) => `보정 ${free}장 중 ${used}장 사용 (${cuts}컷 선택)`,
     galleryRetry: '다시 불러오기',
     galleryContactFallback: '문제가 계속되면 이메일로 연락 주세요 — 확인 후 바로 도와드리겠습니다.',
     pcPhotoNumField: (front, back) => `앞면 ${front} / 뒷면 ${back}`
@@ -855,6 +866,14 @@ export const COPY = {
     scopeSwapGood1: '“No. 0031: tidy the hair blown out of place and warm up the overall colour a little.”',
     scopeSwapGood2: '“Tidy the stray hairs and warm up the overall colour.”',
     scopeHint: '⚠️ Body or sky compositing, removing people, and taking out fabric creases fall outside standard snap retouching — we will let you know individually whether it is possible and what it would cost.',
+    scopeTitleCore: '✂️ What the retouching covers',
+    scopeLeadCoreHtml: 'Standard retouching means <b>portrait retouching</b> — compositing is not included.',
+    scopeOutCore: ['Face or body compositing (e.g. swapping in a face from another photo)', 'Removing people (compositing) — passers-by, background figures', 'Reshaping the body or changing proportions (compositing)'],
+    scopeHintCore: '⚠️ Face or body compositing, removing people, and body reshaping fall outside standard retouching — we will let you know individually whether it is possible and what it would cost.',
+    personLabel: 'People in this photo',
+    personHint: 'Profile shoots are priced per person, so a photo with several people uses one retouch per person',
+    personOpt: (n) => (n >= 3 ? '3+' : `${n}`),
+    counterSlots: (used, free, cuts) => `${used} of ${free} retouches used (${cuts} photos selected)`,
     galleryRetry: 'Try again',
     galleryContactFallback: 'If the problem persists, email us — we will help right away.',
     pcPhotoNumField: (front, back) => `front ${front} / back ${back}`
@@ -1271,6 +1290,14 @@ export const COPY = {
     scopeSwapGood1: '„Nr. 0031: die vom Wind verwehten Haare glätten und die Farbstimmung insgesamt etwas wärmer.“',
     scopeSwapGood2: '„Die Flyaway-Haare glätten und die Farbstimmung insgesamt wärmer.“',
     scopeHint: '⚠️ Composing an Körper oder Himmel, das Entfernen von Personen und das Herausretuschieren von Stofffalten liegen außerhalb der Standard-Snap-Retusche — wir sagen Ihnen individuell, ob es möglich ist und was es kostet.',
+    scopeTitleCore: '✂️ Umfang der Retusche',
+    scopeLeadCoreHtml: 'Die Standardretusche ist eine <b>Porträtretusche</b> — Composing ist nicht enthalten.',
+    scopeOutCore: ['Gesichts- oder Körper-Composing (z. B. ein Gesicht aus einem anderen Foto einsetzen)', 'Personen entfernen (Composing) — Passanten, Personen im Hintergrund', 'Figur verändern oder Körperproportionen anpassen (Composing)'],
+    scopeHintCore: '⚠️ Gesichts- oder Körper-Composing, das Entfernen von Personen und Figurkorrekturen liegen außerhalb der Standardretusche — wir sagen Ihnen individuell, ob es möglich ist und was es kostet.',
+    personLabel: 'Personen auf diesem Foto',
+    personHint: 'Bewerbungsfotos werden pro Person berechnet: Ein Foto mit mehreren Personen verbraucht pro Person eine Retusche',
+    personOpt: (n) => (n >= 3 ? '3+' : `${n}`),
+    counterSlots: (used, free, cuts) => `${used} von ${free} Retuschen genutzt (${cuts} Fotos gewählt)`,
     galleryRetry: 'Erneut laden',
     galleryContactFallback: 'Wenn das Problem weiterhin besteht, schreiben Sie uns eine E-Mail — wir helfen sofort.',
     pcPhotoNumField: (front, back) => `Vorderseite ${front} / Rückseite ${back}`

@@ -172,6 +172,9 @@ check('이메일 형식 → EMAIL_INVALID', rejects({ name: 'Anna', contract: 'x
 check('허니팟 → SPAM', rejects({ name: 'Anna', contract: 'x', email: 'a@b.de', website: 'http://spam' }, 'SPAM'));
 check('거절 건은 메일을 보내지 않는다', sent.length === 0);
 
+const adminMail = () => sent.find((m) => String(m.subject || '').startsWith('[철회 접수'));
+const receiptMail = () => sent.find((m) => !String(m.subject || '').startsWith('[철회 접수'));
+
 const ref = M.createBookingRowActionRef_(2, S.data[1]);
 const r1 = M.submitBookingWithdrawal_({ name: 'Anna Beispiel', contract: 'Studio Basic, 10.10.2026 11:00', email: 'Anna@Example.com', ref, lang: 'ko' });
 const [receipt, admin] = sent;
@@ -196,21 +199,24 @@ check('같은 내용 재전송 → 첫 접수 반환, 메일 재발송 없음', 
 
 sent.length = 0;
 M.submitBookingWithdrawal_({ name: 'Old Kunde', contract: 'Familie', email: 'old@example.com', lang: 'de' });
-check('ref 없음 + 같은 이메일 1건 → 자동 연결', sent[1].htmlBody.includes('행 6') && sent[1].htmlBody.includes('같은 이메일 예약 1건'));
-check('안내 도입 전 확정 → 12개월+14일 경고', sent[1].htmlBody.includes('12개월+14일'));
-check('de: 수신확인은 독일어 한 벌만', sent[0].subject === '[Studio mean] Eingangsbestätigung Ihres Widerrufs' && !sent[0].htmlBody.includes('의사표시'));
+check('ref 없음 + 같은 이메일 1건 → 자동 연결', adminMail().htmlBody.includes('행 6') && sent[1].htmlBody.includes('같은 이메일 예약 1건'));
+check('안내 도입 전 확정 → 12개월+14일 경고', adminMail().htmlBody.includes('12개월+14일'));
+check('de: 수신확인은 독일어 한 벌만', receiptMail().subject === '[Studio mean] Eingangsbestätigung Ihres Widerrufs' && !receiptMail().htmlBody.includes('의사표시'));
 
 sent.length = 0;
 M.submitBookingWithdrawal_({ name: 'Dup', contract: 'irgendwas', email: 'dup@example.com', lang: 'en' });
-check('같은 이메일 2건 → 자동 연결 안 함, 후보 행 안내', sent[1].htmlBody.includes('후보 행: 3, 4') && !String(col(S, 3, '요청사항')).includes('철회') && !sent[1].htmlBody.includes('예약 바로 취소'));
+check('같은 이메일 2건 → 자동 연결 안 함, 후보 행 안내', adminMail().htmlBody.includes('후보 행: 3, 4') && !String(col(S, 3, '요청사항')).includes('철회') && !adminMail().htmlBody.includes('예약 바로 취소'));
+// 감사 2026-09-20 — 이메일만 아는 제3자가 남의 예약에 수신확인을 띄우지 못한다
+check('자동 연결 실패 → 고객 수신확인 미발송 + 사장님 메일에 그 사실 표기',
+  sent.length === 1 && !receiptMail() && adminMail().htmlBody.includes('미발송'));
 
 sent.length = 0;
 M.submitBookingWithdrawal_({ name: 'Gone', contract: 'x', email: 'gone@example.com', lang: 'en' });
-check('취소된 예약은 연결하지 않는다', sent[1].htmlBody.includes('같은 이메일 예약 없음'));
+check('취소된 예약은 연결하지 않는다', adminMail().htmlBody.includes('같은 이메일 예약 없음'));
 
 sent.length = 0;
 M.submitBookingWithdrawal_({ name: 'Mallory', contract: 'x', email: 'mallory@example.com', ref: 'row:2:forgedtoken123', lang: 'en' });
-check('위조 ref 는 매칭되지 않는다', sent[1].htmlBody.includes('자동 연결 못 함'));
+check('위조 ref 는 매칭되지 않는다', adminMail().htmlBody.includes('자동 연결 못 함'));
 
 /* ── 셀렉 유료 추가 주문 (docs/select-widerruf-plan.md) ── */
 console.log('\n── 셀렉 유료 추가 주문 ──');
@@ -251,7 +257,7 @@ check('체크 안 함 → 비움', M.recordSelectEarlyStart_(null, globalThis.__
 sent.length = 0;
 const refS = M.createBookingRowActionRef_(2, S.data[1]);
 M.submitBookingWithdrawal_({ name: 'Anna Beispiel', contract: '셀렉 추가 주문(추가 보정·인화) — 스튜디오 Basic · 2026-10-10', email: 'anna@example.com', ref: refS, what: 'select', lang: 'ko' });
-const adminSel = sent[1];
+const adminSel = adminMail();
 check('셀렉 철회 알림: 제목·대상 줄·품목별 안내', adminSel.subject.includes('셀렉 추가 주문') && adminSel.htmlBody.includes('<b>셀렉 추가 주문</b>') && adminSel.htmlBody.includes('select-clear-extras'));
 check('셀렉 철회기간 = 셀렉 제출일 기준(예약 확정일 아님)', adminSel.htmlBody.includes('셀렉 제출 2026-09-18 10:00 → 철회기한 2026-10-02') && !adminSel.htmlBody.includes('확정 2026-09-18 11:00'));
 check('셀렉 철회엔 예약 취소 버튼을 주지 않는다', !adminSel.htmlBody.includes('예약 바로 취소') && !adminSel.htmlBody.includes('action=cancel'));

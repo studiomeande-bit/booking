@@ -35,7 +35,8 @@ function extractLine(src, prefix) {
   return line;
 }
 
-const printHeadersLine = gs.split('\n').find((l) => l.includes("PRINT_HEADERS: ['주문일시'"));
+// PRINT_HEADERS 는 여러 줄에 걸친다(입고일 등 추적 컬럼 추가 2026-09-10) — 첫 줄만 떼면 배열이 잘린다
+const printHeadersLine = (gs.match(/PRINT_HEADERS: \['주문일시'[\s\S]*?\]/) || [])[0];
 if (!printHeadersLine) throw new Error('PRINT_HEADERS 를 찾지 못했습니다.');
 
 // 가짜 시트 — getRange/getDataRange/appendRow/deleteRow 만 구현. 실제 SpreadsheetApp 의미와 동일하게
@@ -91,9 +92,12 @@ const MODULE = [
   `function formatDateMinute_(d){ return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'); }`,
   extractFn(gs, 'parseDateSafe_'),
   extractFn(gs, 'getPrintSheetColMap_'),
+  extractFn(gs, 'neutralizeFormula_'),
+  extractFn(gs, 'neutralizeRow_'),
   extractFn(gs, 'buildPrintSheetRow_'),
   extractFn(gs, 'isPrintRowUnpaid_'),
   extractFn(gs, 'printRowPaidDate_'),
+  extractFn(gs, 'printRowPayRequestedAt_'),
   extractFn(gs, 'normalizePrintRow_'),
   extractFn(gs, 'selectPrintMemoTag_'),
   extractFn(gs, 'findSelectPrintOrderRow_'),
@@ -106,7 +110,11 @@ const MODULE = [
   extractFn(gs, 'listUnpaidSelectExtras_'),
   extractFn(gs, 'listUnpaidSelectExtrasAdmin'),
   extractFn(gs, 'markSelectExtraPaidAdmin'),
-  `export {FakeSheet, isPrintRowUnpaid_, printRowPaidDate_, selectPrintMemoTag_, findSelectPrintOrderRow_,
+  extractLine(gs, "var PRINT_WAIVED_PAY_METHOD_="),
+  extractLine(gs, "var PRINT_WAIVED_STATUS_="),
+  extractFn(gs, 'planSelectPrintWaive_'),
+  extractFn(gs, 'applySelectPrintWaive_'),
+  `export {planSelectPrintWaive_, applySelectPrintWaive_, FakeSheet, isPrintRowUnpaid_, printRowPaidDate_, selectPrintMemoTag_, findSelectPrintOrderRow_,
     syncSelectPrintOrder_, listUnpaidSelectExtras_, markSelectExtraPaidAdmin,
     normalizePrintRow_, getPrintSheetColMap_};`,
   `export function __setSheet(s){ __SHEET__=s; }`,
@@ -303,10 +311,13 @@ async function runScenarios(M, rec) {
 
   // ── 9c) 날짜 윈도 — 창 밖은 버리지 않고 따로 보고한다 ──────────────────────
   {
+    // 창(60일)은 **오늘 기준**이다 — 고정 날짜를 박으면 시간이 지나면서 '최근'이 창 밖으로 미끄러져
+    // 이 시나리오만 조용히 빨개진다(실제로 2026-07-20 픽스처가 그렇게 썩었다). 경계에서 넉넉히 떨어뜨린다.
+    const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     const sh = new FakeSheet(H, [
-      row({ 고객명: '최근', 금액: 30, 결제수단: '미결제', 메모: '셀렉:r1', 상태: '대기중', 매출날짜: '2026-07-20' }),
-      row({ 고객명: '작년', 금액: 80, 결제수단: '미결제', 메모: '셀렉:r2', 상태: '대기중', 매출날짜: '2025-03-02' }),
-      row({ 고객명: '재작년', 금액: 40, 결제수단: '미결제', 메모: '셀렉:r3', 상태: '대기중', 매출날짜: '2024-11-11' }),
+      row({ 고객명: '최근', 금액: 30, 결제수단: '미결제', 메모: '셀렉:r1', 상태: '대기중', 매출날짜: daysAgo(10) }),
+      row({ 고객명: '작년', 금액: 80, 결제수단: '미결제', 메모: '셀렉:r2', 상태: '대기중', 매출날짜: daysAgo(500) }),
+      row({ 고객명: '재작년', 금액: 40, 결제수단: '미결제', 메모: '셀렉:r3', 상태: '대기중', 매출날짜: daysAgo(800) }),
     ]);
     M.__setSheet(sh);
     const w = M.listUnpaidSelectExtras_({ limit: 30, sinceDays: 60 });
@@ -422,6 +433,47 @@ async function runScenarios(M, rec) {
     rec('E2E: 수납 후 미수목록에서 사라짐',
       M.listUnpaidSelectExtras_({ limit: 30 }).items.map((i) => i.name), ['박서준']);
   }
+
+  // ── 7) 추가금 면제(select-clear-extras) — 인화장부 행을 지우지 않고 중화 ──────────
+  // 실측(2026-09-17 이윤경 €4): 셀렉 시트만 0 이 되고 인화장부 행은 '미결제 €4' 로 남아 미수로 계속 잡혔다.
+  {
+    const sh = new FakeSheet(H, [
+      row({ 고객명: '이윤경', 인화항목: '3번 10x15×1(4€)', 금액: 4, 결제수단: '미결제', 메모: '셀렉:sessW', 상태: '대기중', 매출날짜: '2026-09-10' }),
+      row({ 고객명: '박서준', 금액: 20, 결제수단: '카드', 메모: '셀렉:sessP [수납] 2026-09-01 카드', 상태: '완료', 매출날짜: '2026-09-01' }),
+    ]);
+    const cm = M.getPrintSheetColMap_(sh);
+    const plan = M.planSelectPrintWaive_(sh, 'sessW');
+    rec('면제계획: 미결제 행 → neutralize', plan.action, 'neutralize');
+    rec('면제계획: before 스냅샷', plan.before, { amount: 4, payMethod: '미결제', status: '대기중', unpaid: true });
+    rec('면제계획: 계획만으로는 안 씀', String(sh.rows[1][cm['결제수단']]), '미결제');
+    rec('면제계획: 수납 행 → paid(환불 건, 건드리지 않음)', M.planSelectPrintWaive_(sh, 'sessP').action, 'paid');
+    rec('면제계획: 행 없음', M.planSelectPrintWaive_(sh, 'nope').found, false);
+
+    const out = M.applySelectPrintWaive_(sh, plan, '[추가금정정 2026-09-17] 테스트 (agent)');
+    const n = M.normalizePrintRow_(sh.getDataRange().getValues()[1], 2, cm);
+    rec('면제적용: 결과 스냅샷', out, { amount: 0, payMethod: '면제', status: '청구취소', unpaid: false });
+    rec('면제적용: 행 삭제 안 함', sh.rows.length, 3);
+    rec('면제적용: 금액 0', n.total, 0);
+    rec('면제적용: 미수 아님', M.isPrintRowUnpaid_(n), false);
+    rec('면제적용: 인화항목 보존', n.items, '3번 10x15×1(4€)');
+    rec('면제적용: 세션 태그 유지 + 감사 줄', n.memo, '셀렉:sessW [추가금정정 2026-09-17] 테스트 (agent)');
+    rec('면제적용: 재조회 시 할 일 없음(멱등)', M.planSelectPrintWaive_(sh, 'sessW').action, 'none');
+    M.__setSheet(sh);
+    rec('면제적용: 미수 목록에서 빠짐', M.listUnpaidSelectExtras_({ limit: 30 }).count, 0);
+
+    // 계획 뒤 행이 밀리면 남의 행을 0 으로 만들지 않는다
+    const sh2 = new FakeSheet(H, [
+      row({ 고객명: '김민지', 금액: 9, 결제수단: '미결제', 메모: '셀렉:sessX', 상태: '대기중' }),
+      row({ 고객명: '이윤경', 금액: 4, 결제수단: '미결제', 메모: '셀렉:sessW', 상태: '대기중' }),
+    ]);
+    const plan2 = M.planSelectPrintWaive_(sh2, 'sessW');
+    sh2.deleteRow(2);
+    sh2.appendRow(row({ 고객명: '최', 금액: 7, 결제수단: '미결제', 메모: '셀렉:sessY', 상태: '대기중' }));
+    let threw = '';
+    try { M.applySelectPrintWaive_(sh2, plan2, 'x'); } catch (e) { threw = e.message; }
+    rec('면제적용: 행 밀림 → 거부', /태그 불일치/.test(threw), true);
+    rec('면제적용: 밀린 자리의 남의 행은 그대로', String(sh2.rows[2][M.getPrintSheetColMap_(sh2)['금액']]), '7');
+  }
 }
 
 // ── 본 검증 ──────────────────────────────────────────────────────────────────
@@ -471,6 +523,10 @@ const FAULTS = [
     "const sid=String(payload.sessionId||'').trim();\n  let rowIdx=parseInt(payload.printRowIndex,10)||0;\n  if(!rowIdx&&sid){"],
   ['취소 행이 미수로 집계됨', /if\(\/취소\|환불\|cancel\/i\.test\(String\(n\.status\|\|''\)\)\) continue;/, ''],
   ['수납일 스탬프를 못 읽음(현금 시재 날짜 오류)', /return m\?m\[1\]:'';\n\}/, "return '';\n}"],
+  ['면제가 미결제를 남김(미수 계속 잡힘)', /set\('결제수단',PRINT_WAIVED_PAY_METHOD_\);/, ''],
+  ['면제가 금액을 남김(장부·시재 오염)', /set\('금액',0\);/, ''],
+  ['수납된 행도 면제(받은 돈 증발)', /action:amount<=0\.005\?'none':\(unpaid\?'neutralize':'paid'\)/, "action:amount<=0.005?'none':'neutralize'"],
+  ['면제 쓰기에 행 밀림 가드 없음', /if\(selectPrintMemoTag_\(memo\)!==plan\.tag\) throw/, 'if(false) throw'],
   ['수납일이 첫 스탬프로 회귀(재수납 시 옛 결제일로 시재 오염)',
     /const m=all\[all\.length-1\]\.match/, 'const m=all[0].match'],
 ];

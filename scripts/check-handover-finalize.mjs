@@ -43,6 +43,7 @@ const MODULE = [
   // GAS 런타임 대체 — 시간은 고정값으로 두어 결과가 재현 가능하게
   `const Utilities={formatDate:(d,tz,f)=>'2026-07-27 12:00'};`,
   `const Logger={log:()=>{}};`,
+  `function formatDateMinute_(d){ return Utilities.formatDate(d,CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm'); }`,   // parseDateSafe_ 의 Date 입력 분기
   extractFn(gs, 'parseDateSafe_'),
   extractFn(gs, 'isSelectFinalLockedStatus_'),
   // isBookingCancelledStatus_ 의 의존성. 빠뜨리면 ReferenceError 가 Core 의 try/catch 에 삼켜져

@@ -890,11 +890,29 @@ function normalizePhoto(photo) {
   return {
     num: String(photo?.num || ''),
     note: String(photo?.note || ''),
+    persons: normalizePersons(photo?.persons),
     printType: normalizePrintTypeId(photo?.printType),
     isBonus,
     isService,
     source
   };
+}
+
+/* ===== 다인 컷 보정 슬롯 (사장님 확정 2026-09-23) ==========================================
+ * 프로필(prof)은 1인 기준 가격이라(pb 1장 / pbus 2장 / pp 3장) 한 컷에 여러 명이 나오면
+ * 포함 보정 슬롯을 인원수만큼 쓴다 — 1인=1 · 2인=2 · 3인 이상=3. 초과분은 기존 추가보정 단가.
+ * 스튜디오·스냅·웨딩·마이리얼트립은 장 단위 그대로.
+ * ⚠ 서버 computeSelectExtraRetouch_ 가 청구 정본이다 — 여기는 표시 미러이므로 규칙을 같게 둘 것. */
+function isPerPersonRetouchSession() {
+  return String(state.session?.itemGroup || '').trim().toLowerCase() === 'prof';
+}
+function normalizePersons(value) {
+  const n = parseInt(value, 10);
+  if (!(n > 1)) return 1;
+  return n > 3 ? 3 : n;
+}
+function photoRetouchSlots(photo) {
+  return isPerPersonRetouchSession() ? normalizePersons(photo?.persons) : 1;
 }
 
 function normalizePrintTypeId(typeId) {
@@ -1244,7 +1262,7 @@ function getMarketingBonusCount() {
 }
 
 function makeBonusPhoto() {
-  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, source: 'bonus' };
+  return { num: '', note: '', persons: 1, printType: PRINT_NONE_ID, isBonus: true, source: 'bonus' };
 }
 
 function syncMarketingBonusRows() {
@@ -1274,23 +1292,45 @@ function getServiceCutCount() {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-/* ===== 보정 범위 제한 (야외/홈스냅 · 마이리얼트립) =====
- * 스냅 계열은 간단 보정(피부·미백·잔머리·옷 라인·색감)만 기본 포함.
- * 신체 합성·하늘 합성·의상 주름 제거 등 디테일 작업은 기본 범위 밖 — 접수 후 개별 안내. */
-const RETOUCH_SCOPE_LIMITED_GROUPS = ['snap', '마이리얼트립'];
+/* ===== 보정 범위 안내 =====
+ * 스냅 계열(야외/홈스냅 · 마이리얼트립)은 간단 보정(피부·미백·잔머리·옷 라인·색감)만 기본 포함.
+ * 신체 합성·하늘 합성·의상 주름 제거 등 디테일 작업은 기본 범위 밖 — 접수 후 개별 안내.
+ *
+ * 2026-09-23: 프로필(prof)·스튜디오(stud)에도 안내를 띄운다. 프로필 고객이 얼굴 합성을
+ * 요청한 사건(9/23)의 원인이 "이 안내가 스냅·마이리얼트립에만 떴다" 는 것이었다.
+ * 다만 제외 목록은 **사장님이 확정한 3가지(합성 · 사람 제거 · 체형 합성)만** 쓴다 —
+ * 스냅용 목록에 있는 '의상 주름 제거'까지 얹으면 스튜디오·프로필 상품이 약속하는 범위를
+ * 임의로 좁히게 된다. 경고 정규식도 같은 이유로 '주름'을 뺀 좁은 쪽을 쓴다. */
+const RETOUCH_SCOPE_SNAP_GROUPS = ['snap', '마이리얼트립'];
+const RETOUCH_SCOPE_LIMITED_GROUPS = [...RETOUCH_SCOPE_SNAP_GROUPS, 'prof', 'stud'];
 const RETOUCH_SCOPE_WARN_RE = /합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|주름|사람\s*(제거|지워|삭제)|행인|인물\s*(제거|지워|삭제)|지워\s*주/i;
+// 촬영군을 가리지 않고 기본 보정이 아닌 것만 — '주름'·'지워 주'(의상 주름 문맥) 제외
+const RETOUCH_SCOPE_CORE_RE = /합성|하늘|스카이|sky|체형|몸매|다리\s*길|비율\s*보정|사람\s*(제거|지워|삭제)|행인|인물\s*(제거|지워|삭제)/i;
 
+function sessionGroupKey() {
+  return String(state.session?.itemGroup || '').trim().toLowerCase();
+}
 function isRetouchScopeLimited() {
-  const g = String(state.session?.itemGroup || '').trim().toLowerCase();
+  const g = sessionGroupKey();
   return RETOUCH_SCOPE_LIMITED_GROUPS.some((k) => g === k.toLowerCase());
+}
+// 스냅 계열이면 '간단 보정' 전문(全文), 그 외(prof·stud)는 합성류만 다루는 축약본
+function isSnapScopeSession() {
+  const g = sessionGroupKey();
+  return RETOUCH_SCOPE_SNAP_GROUPS.some((k) => g === k.toLowerCase());
+}
+function retouchScopeWarnRe() {
+  return isSnapScopeSession() ? RETOUCH_SCOPE_WARN_RE : RETOUCH_SCOPE_CORE_RE;
 }
 
 function retouchScopeNoticeHtml(compact) {
   const c = copy();
+  const snap = isSnapScopeSession();
   const items = (list) => list.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+  const outList = snap ? c.scopeOut : c.scopeOutCore;
   return `
-    <div class="detail-title">${escapeHtml(c.scopeTitle)}</div>
-    <div class="guide-copy">${c.scopeLeadHtml}</div>
+    <div class="detail-title">${escapeHtml(snap ? c.scopeTitle : c.scopeTitleCore)}</div>
+    <div class="guide-copy">${snap ? c.scopeLeadHtml : c.scopeLeadCoreHtml}</div>
     <div class="guide-examples">
       <div class="guide-ex good">
         <div class="guide-ex-head">${escapeHtml(c.scopeInHead)}</div>
@@ -1298,7 +1338,7 @@ function retouchScopeNoticeHtml(compact) {
       </div>
       <div class="guide-ex bad">
         <div class="guide-ex-head">${escapeHtml(c.scopeOutHead)}</div>
-        <ul>${items(c.scopeOut)}</ul>
+        <ul>${items(outList)}</ul>
       </div>
     </div>
     ${compact ? '' : `<div class="guide-copy lettering-note">${c.scopeFootHtml}</div>`}
@@ -1315,8 +1355,8 @@ function renderRetouchScopeNotice() {
     box.classList.remove('hidden');
     box.innerHTML = retouchScopeNoticeHtml(i === 1);
   });
-  // 정적 가이드의 "옷 주름 펴기" 예시는 스냅 기본 범위 밖 — 허용 범위 예시로 교체
-  if (limited) {
+  // 정적 가이드의 "옷 주름 펴기" 예시는 **스냅** 기본 범위 밖 — 스냅에서만 허용 예시로 교체
+  if (limited && isSnapScopeSession()) {
     document.querySelectorAll('.ex-good-wrinkle').forEach((li) => {
       li.textContent = li.textContent.includes('0031')
         ? copy().scopeSwapGood1
@@ -1327,7 +1367,7 @@ function renderRetouchScopeNotice() {
 
 function retouchNotePlaceholder() {
   const c = copy();
-  return isRetouchScopeLimited() ? c.notePlaceholderLimited : c.notePlaceholderFull;
+  return isSnapScopeSession() ? c.notePlaceholderLimited : c.notePlaceholderFull;
 }
 
 function syncRetouchScopeHint(textarea) {
@@ -1335,11 +1375,11 @@ function syncRetouchScopeHint(textarea) {
   const row = textarea.closest('.field-full');
   if (!row) return;
   let hint = row.querySelector('.scope-hint');
-  const flagged = RETOUCH_SCOPE_WARN_RE.test(String(textarea.value || ''));
+  const flagged = retouchScopeWarnRe().test(String(textarea.value || ''));
   if (flagged && !hint) {
     hint = document.createElement('div');
     hint.className = 'scope-hint';
-    hint.textContent = copy().scopeHint;
+    hint.textContent = isSnapScopeSession() ? copy().scopeHint : copy().scopeHintCore;
     row.appendChild(hint);
   } else if (!flagged && hint) {
     hint.remove();
@@ -1349,7 +1389,7 @@ function syncRetouchScopeHint(textarea) {
 // 서비스 컷: 무료 보정 슬롯(디커플드 모델 — 출력 자동 포함 없음).
 // isBonus=true 로 과금/기본장수에서 제외, isService=true 로 마케팅 보너스와 구분, source='service'.
 function makeServicePhoto() {
-  return { num: '', note: '', printType: PRINT_NONE_ID, isBonus: true, isService: true, source: 'service' };
+  return { num: '', note: '', persons: 1, printType: PRINT_NONE_ID, isBonus: true, isService: true, source: 'service' };
 }
 
 // 어드민이 설정한 서비스컷수만큼 무료 슬롯 자동 유지 (0이면 아무 흔적 없음).
@@ -1517,32 +1557,36 @@ function getRetouchFreeLimit() {
   const cap = getMarketingBonusCount();
   let filled = 0;
   state.photos.forEach((p) => {
-    if (p.isBonus && !p.isService && (String(p.num || '').trim() || String(p.note || '').trim())) filled += 1;
+    if (p.isBonus && !p.isService && (String(p.num || '').trim() || String(p.note || '').trim())) filled += photoRetouchSlots(p);
   });
   return included + Math.max(0, cap - Math.min(filled, cap));
 }
 
+// 일반(비보너스) 컷이 쓰는 보정 슬롯 합계 — prof 다인 컷은 인원수만큼
+function getRetouchUsedSlots() {
+  return state.photos.reduce((sum, p) => (p.isBonus ? sum : sum + photoRetouchSlots(p)), 0);
+}
+
 function getRetouchExtraCount() {
+  return Math.max(0, getRetouchUsedSlots() - getRetouchFreeLimit());
+}
+
+// 해당 사진 항목에서 유료로 넘어간 슬롯 수 (0 이면 전부 무료)
+function photoPaidSlots(photo, photoIndex) {
+  if (photo.isBonus) return 0;
   const freeLimit = getRetouchFreeLimit();
-  let nonBonusIndex = 0;
-  let paid = 0;
-  state.photos.forEach((p) => {
-    if (p.isBonus) return;
-    nonBonusIndex += 1;
-    if (nonBonusIndex > freeLimit) paid += 1;
-  });
-  return paid;
+  let before = 0;
+  for (let i = 0; i < photoIndex; i += 1) {
+    if (!state.photos[i].isBonus) before += photoRetouchSlots(state.photos[i]);
+  }
+  const slots = photoRetouchSlots(photo);
+  // 이 컷의 슬롯 중 무료 한도를 넘긴 몫만 유료 (다인 컷은 1장이 반만 유료일 수 있다)
+  return Math.max(0, Math.min(slots, before + slots - freeLimit));
 }
 
 // 해당 사진 항목이 유료(+€)인지 판정
 function isPhotoPaid(photo, photoIndex) {
-  if (photo.isBonus) return false;
-  const freeLimit = getRetouchFreeLimit();
-  let nonBonusPosition = 0;
-  for (let i = 0; i <= photoIndex; i += 1) {
-    if (!state.photos[i].isBonus) nonBonusPosition += 1;
-  }
-  return nonBonusPosition > freeLimit;
+  return photoPaidSlots(photo, photoIndex) > 0;
 }
 
 /* ===== 볼륨 할인 (2026-08-09) — 서버 computeSelectVolumeDiscount_ 미러 =====
@@ -1958,7 +2002,7 @@ function togglePhotoInRetouch(photoKey) {
   } else {
     const bonusIndex = state.photos.findIndex((p) => p.isBonus);
     const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
-    const entry = { num: key, note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'gallery' };
+    const entry = { num: key, note: '', persons: 1, printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'gallery' };
     if (bonusIndex >= 0) state.photos.splice(bonusIndex, 0, entry);
     else state.photos.push(entry);
   }
@@ -2539,7 +2583,7 @@ function addPhotoRow() {
   const bonusIndex = state.photos.findIndex((photo) => photo.isBonus);
   const regularIndex = state.photos.filter((photo) => !photo.isBonus).length;
   // 수동 추가 = source='manual' (기본 장수 초과 시 유료)
-  const newPhoto = { num: '', note: '', printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'manual' };
+  const newPhoto = { num: '', note: '', persons: 1, printType: getDefaultPrintTypeForRegularIndex(regularIndex), isBonus: false, source: 'manual' };
   if (bonusIndex >= 0) state.photos.splice(bonusIndex, 0, newPhoto);
   else state.photos.push(newPhoto);
   renderPhotos();
@@ -2899,6 +2943,24 @@ function wirePhotocardZoom() {
   });
 }
 
+/* 인원 선택 — 프로필 세션에서만 뜬다. 한 컷에 몇 명이 나오는지는 고객만 아는 정보이고,
+   프로필은 1인 기준 가격이라 인원수만큼 보정 슬롯을 쓴다(사장님 확정 2026-09-23).
+   기본값 1 — 대다수 프로필 컷이 1인이라 고객이 아무것도 안 만져도 종전과 같게 동작한다. */
+function personPickerHtml(photo, index) {
+  if (!isPerPersonRetouchSession()) return '';
+  const c = copy();
+  const current = normalizePersons(photo.persons);
+  const opts = [1, 2, 3].map((n) => `
+    <button type="button" class="person-opt${current === n ? ' on' : ''}" data-photo-persons="${index}" data-persons="${n}">
+      ${escapeHtml(c.personOpt(n))}
+    </button>`).join('');
+  return `
+    <div class="field field-full field-persons">
+      <label>${escapeHtml(c.personLabel)} <small style="color:#8e6235;">${escapeHtml(c.personHint)}</small></label>
+      <div class="person-picker">${opts}</div>
+    </div>`;
+}
+
 function renderPhotos() {
   const c = copy();
   const retouchIntro = `<div class="included-print-callout"><strong>${escapeHtml(c.retouchIntroTitle)}</strong><span>${escapeHtml(c.retouchIntroCopy)}</span></div>`;
@@ -2908,9 +2970,10 @@ function renderPhotos() {
   }
   const retouchPrice = Number(state.session?.retouchPrice || 0);
   els.photoList.innerHTML = retouchIntro + state.photos.map((photo, index) => {
-    const paid = isPhotoPaid(photo, index);
+    const paidSlots = photoPaidSlots(photo, index);
     const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
-    const extra = paid ? `<span class="extra-badge">+€${retouchPrice}</span>` : '';
+    // 다인 컷은 한 장에 여러 슬롯이 유료일 수 있다 — 금액을 그대로 곱해 보여준다
+    const extra = paidSlots > 0 ? `<span class="extra-badge">+€${money2(paidSlots * retouchPrice)}</span>` : '';
     const bonus = photo.isService
       ? `<span class="service-badge">${escapeHtml(c.badgeService)}</span>`
       : photo.isBonus
@@ -2933,6 +2996,7 @@ function renderPhotos() {
             <input data-photo-num="${index}" value="${escapeHtml(photo.num || '')}" placeholder="${escapeHtml(c.entryPhotoNumPlaceholder)}">
             ${thumbHtmlForNum(photo.num || '')}
           </div>
+          ${personPickerHtml(photo, index)}
           <div class="field-full">
             <label>${escapeHtml(c.entryNoteLabel)} <small style="color:#8e6235;">${escapeHtml(c.entryNoteHint)}</small></label>
             <textarea data-photo-note="${index}" placeholder="${escapeHtml(retouchNotePlaceholder())}">${escapeHtml(photo.note || '')}</textarea>
@@ -2962,6 +3026,15 @@ function renderPhotos() {
       }
       updatePhotoCounter();
       if (state.prints.length) renderPrints(); // 보정본/원본 단가 판정이 바뀔 수 있음
+      updateReview();
+    });
+  });
+  els.photoList.querySelectorAll('[data-photo-persons]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const i = Number(button.dataset.photoPersons);
+      state.photos[i].persons = normalizePersons(button.dataset.persons);
+      renderPhotos();          // 유료 배지가 뒤 항목까지 밀릴 수 있어 목록 전체를 다시 그린다
+      updatePhotoCounter();
       updateReview();
     });
   });
@@ -3006,7 +3079,11 @@ function updatePhotoCounter() {
   const bonusCount = state.photos.filter((p) => p.isBonus && !p.isService).length;
   const serviceCount = state.photos.filter((p) => p.isService).length;
   const c = copy();
-  els.photoCounter.textContent = c.counterMain(selected, base, serviceCount);
+  /* 프로필은 '장수'가 아니라 '보정 슬롯'이 한도다 — 다인 컷을 담는 순간 카운터가 움직여야
+     고객이 추가금 이유를 그 자리에서 안다(2026-09-23). 그 외 촬영군은 종전 문구 그대로. */
+  els.photoCounter.textContent = isPerPersonRetouchSession()
+    ? c.counterSlots(getRetouchUsedSlots(), getRetouchFreeLimit(), selected)
+    : c.counterMain(selected, base, serviceCount);
   const parts = [];
   if (galleryCount) parts.push(c.counterGallery(galleryCount));
   if (manualCount) parts.push(c.counterManual(manualCount));
@@ -3455,9 +3532,9 @@ function updateReview() {
   els.reviewPhotos.innerHTML = reviewRows.length
     ? reviewRows.map(([photo, index]) => {
         const source = photo.source || (photo.isBonus ? 'bonus' : 'manual');
-        const paid = isPhotoPaid(photo, index);
-        const extra = paid
-          ? `+€${retouchPrice}`
+        const paidSlots = photoPaidSlots(photo, index);
+        const extra = paidSlots > 0
+          ? `+€${money2(paidSlots * retouchPrice)}`
           : photo.isService
             ? c.badgeService
             : photo.isBonus
@@ -3468,7 +3545,7 @@ function updateReview() {
         return `
           <div class="review-item">
             <div>
-              <strong>${escapeHtml(photo.num || c.reviewPhotoFallback(index + 1))}</strong>
+              <strong>${escapeHtml(photo.num || c.reviewPhotoFallback(index + 1))}</strong>${isPerPersonRetouchSession() && normalizePersons(photo.persons) > 1 ? ` <span class="person-chip">${escapeHtml(c.personOpt(normalizePersons(photo.persons)))}</span>` : ''}
               <div class="review-note">${escapeHtml(photo.note || '')}</div>
             </div>
             <div style="text-align:right;">
@@ -3943,14 +4020,25 @@ function renderStepWarnings() {
 /* ========================================================================
  * 미리보기 모드
  * ====================================================================== */
+/* ?preview=1&group=prof 로 촬영군을 바꿔 볼 수 있다 — 프로필 전용 UI(인원 선택)와 촬영군별
+   보정범위 안내를 고객 세션 없이 확인하기 위한 것(2026-09-23). 미리보기는 배너가 뜨고
+   제출이 막히는 기존 디버그 경로라 새 노출면이 아니다. 알 수 없는 값이면 기본 stud. */
+const PREVIEW_MOCK_PRODUCTS = {
+  stud: { product: '스튜디오 Basic', baseRetouchCount: 3 },
+  prof: { product: '1인 프로필 Basic', baseRetouchCount: 1 },
+  snap: { product: '야외 스냅 Basic', baseRetouchCount: 7 },
+  wed: { product: '프리웨딩 Plus', baseRetouchCount: 30 }
+};
 function buildMockSession() {
+  const group = new URLSearchParams(globalThis.location.search).get('group') || 'stud';
+  const mock = PREVIEW_MOCK_PRODUCTS[group] || PREVIEW_MOCK_PRODUCTS.stud;
   return {
     name: '데모 고객',
     email: 'demo@studio-mean.com',
     date: '2026-04-15',
-    itemGroup: 'stud',
-    product: '스튜디오 Basic',
-    baseRetouchCount: 3,
+    itemGroup: PREVIEW_MOCK_PRODUCTS[group] ? group : 'stud',
+    product: mock.product,
+    baseRetouchCount: mock.baseRetouchCount,
     retouchPrice: 10,
     marketingBonusCount: 2,
     serviceCutCount: 2,
@@ -4023,6 +4111,7 @@ async function onSubmit() {
     photos: state.photos.map((photo) => ({
       num: String(photo.num || ''),
       note: String(photo.note || ''),
+      persons: normalizePersons(photo.persons),   // 서버가 상한(3)과 합계를 다시 계산한다
       isBonus: !!photo.isBonus,
       isService: !!photo.isService,
       source: photo.source || (photo.isService ? 'service' : photo.isBonus ? 'bonus' : 'manual')

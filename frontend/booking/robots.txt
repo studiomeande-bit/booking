@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# 개인 링크로만 쓰는 페이지 — 검색에 노출하지 않는다(페이지 자체도 noindex)
+Disallow: /status/
+Disallow: /prep/
+Disallow: /widerruf/
+Disallow: /dress/
+Disallow: /portfolio/
+Disallow: /gutschein/
+
+Host: booking.studio-mean.com
+Sitemap: https://booking.studio-mean.com/sitemap.xml
