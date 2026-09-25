@@ -814,7 +814,7 @@ const COPY = {
     babyNameLabel: '아기 이름',
     babyNamePlaceholder: '백일/돌 촬영 아기 이름',
     otherCountryLabel: '기타 국가명',
-    otherCountryPlaceholder: '예: France, Canada',
+    otherCountryPlaceholder: '예: France',
     memoLabel: '요청사항',
     consentTitle: '표준 촬영 계약서 및 예약 조건',
     consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다.',
@@ -1050,7 +1050,7 @@ const COPY = {
     babyNameLabel: 'Baby Name',
     babyNamePlaceholder: 'Baby name for baby / first birthday session',
     otherCountryLabel: 'Other Country',
-    otherCountryPlaceholder: 'e.g. France, Canada',
+    otherCountryPlaceholder: 'e.g. France',
     memoLabel: 'Notes',
     consentTitle: 'Standard photography contract and booking terms',
     consentCopy: 'Please read the standard contract terms below before completing your booking. They apply together with the shooting package, date, location, price, delivery method and any separate agreements selected or entered at booking.',
@@ -1286,7 +1286,7 @@ const COPY = {
     babyNameLabel: 'Babyname',
     babyNamePlaceholder: 'Babyname für Baby- / 1. Geburtstag-Shooting',
     otherCountryLabel: 'Anderes Land',
-    otherCountryPlaceholder: 'z. B. Frankreich, Kanada',
+    otherCountryPlaceholder: 'z. B. Frankreich',
     memoLabel: 'Hinweise',
     consentTitle: 'Standard-Fotovertrag und Buchungsbedingungen',
     consentCopy: 'Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
@@ -3791,8 +3791,10 @@ function getPreviewQuote() {
   }
 
   if (item.t === 'passport') {
+    // '기타'(OTHER)도 한 나라로 센다 — 서버 calculateQuote_ 와 같은 규칙(2026-09-25, 사장님 결정).
+    // 안내 문구 "추가 국가는 1개당 €5" 에 기타 예외가 없다. 화면과 청구가 갈리지 않게 서버와 동시에 바꾼다.
     total = passPersonCountries.reduce((sum, codes) => {
-      const extra = Math.max(0, (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER').length - 1) * 5;
+      const extra = Math.max(0, (Array.isArray(codes) ? codes : []).filter((code) => !!code).length - 1) * 5;
       return sum + Number(item.p || 0) + extra;
     }, 0);
     if (!passPersonCountries.length) total = item.p * people;

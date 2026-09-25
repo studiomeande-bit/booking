@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-21T15:07:20.406Z
- * 포함 함수 178개 / 상수 35개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-25T18:23:13.376Z
+ * 포함 함수 178개 / 상수 36개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -889,8 +889,13 @@ function calculateQuote_(request){
     }
   let familyDiscount=0;
   if(item.t==='passport'){
+    /* 2번째 국가부터 1개당 PASS_EXTRA_COUNTRY_FEE_(€5). **'기타'(OTHER, 목록 밖 국가)도 한 나라로 센다** —
+       사장님 결정 2026-09-25("받는 쪽"). 종전엔 OTHER 를 빼고 세어 한국+기타가 €30(무료)였는데, 예약 화면은
+       "추가 국가는 1개당 €5"(기타 예외 없음)라고 안내하고 창구 '국가 추가'는 €5 를 받아 경로마다 금액이 갈렸다.
+       요금도 숫자 5 가 아니라 상수 하나로 — 보드 '국가 추가'와 같은 값을 본다.
+       (여기 주석에 함수 이름을 쓰지 말 것: 셔틀 생성기가 주석도 훑어 쓰기 함수를 조회 전용 셔틀로 끌어온다.) */
     total=passPersonCountries.reduce(function(sum,codes){
-      const extra=Math.max(0,codes.filter(function(code){ return code && code!=='OTHER'; }).length-1)*5;
+      const extra=Math.max(0,codes.filter(function(code){ return !!code; }).length-1)*PASS_EXTRA_COUNTRY_FEE_;
       return sum + item.p + extra;
     },0);
     // 국가 구성을 덜 보낸 인원도 기본가로 셈한다 — 구성 1명만 보내고 인원 4명이면 1명 값만 나오던 구멍(2026-09-21 감사). 빈 구성(전원 기본가)도 같은 식.
@@ -2311,6 +2316,8 @@ function bookingRowActionToken_(row){
 function createBookingRowActionRef_(rowIndex,row){
   return `row:${rowIndex}:${bookingRowActionToken_(row)}`;
 }
+
+const PASS_EXTRA_COUNTRY_FEE_=5;
 
 function findBookingProductMeta_(products,itemGroup,productName){
   const g=String(itemGroup||'').trim();
