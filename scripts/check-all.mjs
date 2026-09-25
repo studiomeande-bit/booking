@@ -52,16 +52,32 @@ if (!targets.length) {
 const preload = FUTURE ? ['--import', join(HERE, 'lib', 'shift-clock.mjs')] : [];
 const env = FUTURE ? { ...process.env, CHECK_CLOCK_SHIFT_DAYS: String(FUTURE) } : process.env;
 
+/* 게이트 하나가 멎으면 배포 단계가 통째로 멈춘다 — 전부 0.5초면 끝나는 것들이라 넉넉히 잡아도 충분하다.
+   (`--online` 은 라이브 API 를 기다리므로 더 길게.) */
+const TIMEOUT_MS = Number(value('--timeout', ONLINE ? 120000 : 60000));
+
 function run(gate) {
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(process.execPath, [...preload, gate.file, ...gate.args],
       { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
+    let done = false;
+    const finish = (code) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve({ ...gate, code, out, ms: Date.now() - started });
+    };
+    const timer = setTimeout(() => {
+      out += `\n⏱️ ${TIMEOUT_MS / 1000}초 안에 끝나지 않아 중단했습니다 — 무한 루프이거나 네트워크를 기다리는 중일 수 있습니다.`;
+      child.kill('SIGKILL');
+      finish(124);
+    }, TIMEOUT_MS);
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
-    child.on('error', (e) => resolve({ ...gate, code: -1, out: String(e.message), ms: Date.now() - started }));
-    child.on('close', (code) => resolve({ ...gate, code, out, ms: Date.now() - started }));
+    child.on('error', (e) => { out += String(e.message); finish(-1); });
+    child.on('close', (code) => finish(code));
   });
 }
 
