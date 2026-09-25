@@ -36,11 +36,10 @@ function grab(name, kind = 'function') {
 // ── GAS 스텁 ───────────────────────────────────────────────────────────────
 const CONFIG = { TIMEZONE: 'Europe/Berlin' };
 const roundCurrency_ = (n) => Math.round((Number(n) || 0) * 100) / 100;
-const parseMoneyValue_ = (v) => {
-  if (typeof v === 'number') return v;
-  const s = String(v ?? '').replace(/[^\d.,-]/g, '').replace(',', '.');
-  return Number(s) || 0;
-};
+/* 금액 파서는 **Code.gs 원본**을 쓴다. 3줄 스텁을 쓰다가 적발됐다(2026-09-25): 스텁은 `,`→`.` 치환이라
+   독일식 천단위('5.566,00')를 NaN→0 으로 만든다. 시트가 문자열로 돌려주는 실제 형식이 바로 그것이고,
+   0 으로 읽히면 마감 스냅샷이 조용히 축소된다(드리프트 탐지가 통째로 무력화). 픽스처에도 독일식 행을 넣었다. */
+const parseMoneyValue_ = new Function(`${grab('parseMoneyValue_')}\nreturn parseMoneyValue_;`)();
 const parseDateSafe_ = (v) => {
   if (v instanceof Date) {
     const p = (n) => String(n).padStart(2, '0');
@@ -239,6 +238,15 @@ console.log('\n── 행 지문 (어느 행이 바뀌었나) ──');
 
   t('센트 왕복 정확(부동소수 흔들림 없음)',
     parseAccountingRowFp_(buildAccountingRowFp_([E('booking', 'income', 1, 1234.56)])).rows.b1.gross === 1234.56);
+
+  /* 시트는 금액을 **문자열**로 돌려줄 때가 있고 그 형식이 독일식이다('5.566,00' = €5,566.00).
+     예전 3줄 스텁은 이걸 0 으로 읽어, 마감 스냅샷이 조용히 축소돼도 드리프트가 안 잡혔다. */
+  t("독일식 천단위 문자열 '5.566,00' → 5566", parseMoneyValue_('5.566,00') === 5566, parseMoneyValue_('5.566,00'));
+  t("독일식 소수 '2.012,18' → 2012.18", parseMoneyValue_('2.012,18') === 2012.18, parseMoneyValue_('2.012,18'));
+  t("'1.428' 은 천단위 → 1428 (€1.428 이 아니다)", parseMoneyValue_('1.428') === 1428, parseMoneyValue_('1.428'));
+  t("영미식 '1,234.56' → 1234.56", parseMoneyValue_('1,234.56') === 1234.56, parseMoneyValue_('1,234.56'));
+  t("통화기호·공백 포함 '€ 155,29' → 155.29", parseMoneyValue_('€ 155,29') === 155.29, parseMoneyValue_('€ 155,29'));
+  t('빈칸·날짜문자열은 0', parseMoneyValue_('') === 0 && parseMoneyValue_('2026-07-20') === 0);
   t('지문 없으면 available=false', diffAccountingRowFp_('', base).available === false);
 
   // 셀 5만자 한도 방어

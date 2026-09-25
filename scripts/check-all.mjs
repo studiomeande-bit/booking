@@ -121,6 +121,12 @@ for (const r of failed) {
 }
 const secs = ((Date.now() - started) / 1000).toFixed(1);
 console.log(`\n${failed.length ? '❌' : '✅'} 게이트 ${results.length}개 · 통과 ${results.length - failed.length} · 실패 ${failed.length} · ${secs}s`);
+/* 오프라인 기본값 때문에 "전부 통과" 가 라이브 항목까지 봤다는 뜻으로 읽히면 안 된다(2026-09-25 적발:
+   내부 단가 노출·select 루트 301 검사가 배포 흐름에서 한 번도 돌지 않았다). 배포 전에는 --online. */
+if (!ONLINE && targets.some((g) => g.name === 'release-gate')) {
+  console.log('⏭️ 라이브 항목 미검사(release-gate --offline): 내부 단가 노출 · 상품군 생존 · select 루트 301.'
+    + ' **배포 전에는 `node scripts/check-all.mjs --online`**');
+}
 if (failed.length) {
   console.log(`실패: ${failed.map((r) => r.name).join(', ')}`);
   if (FUTURE) console.log(`⚠️ --future 실행이라 "지금은 초록, ${FUTURE}일 뒤 빨강" 일 수 있습니다 — 옵션 없이 한 번 더 돌려 구분하세요.`);
