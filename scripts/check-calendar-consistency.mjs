@@ -37,6 +37,10 @@ if (!headersLine) throw new Error('BOOKING_HEADERS 를 찾지 못했습니다.')
 const flagDecl = "var CAL_READ_FAILED_=false;";
 if (!gs.includes(flagDecl)) throw new Error('CAL_READ_FAILED_ 선언을 찾지 못했습니다.');
 
+// 이동일 안내문은 buildExtraDayEventFields_ 가 쓰는 상수 — 원본 줄을 그대로 떼어내 문구 드리프트도 함께 잡는다
+const travelNoteLine = gs.split('\n').find((l) => l.startsWith("const EXTRA_DAY_TRAVEL_NOTE_="));
+if (!travelNoteLine) throw new Error('EXTRA_DAY_TRAVEL_NOTE_ 선언을 찾지 못했습니다.');
+
 const MODULE = [
   `const CONFIG={TIMEZONE:'Europe/Berlin',MAIN_CALENDAR_ID:'main-cal',${headersLine.trim().replace(/,$/, '')}};`,
   `const BOOKING_COL=CONFIG.BOOKING_HEADERS.reduce((a,h,i)=>{a[h]=i;return a;},{});`,
@@ -114,6 +118,9 @@ const MODULE = [
    // getEventsForRange_ 의 iCloud 레인 — PropertiesService 스텁이 비어 있어 여기선 닿지 않지만,
    // 미정의로 두면 훗날 픽스처가 URL 을 넣는 순간 ReferenceError 가 try 안에서 조용히 먹힌다.
    function fetchAppleCalendarEvents_(s,e){ return []; }`,
+  // 같은 이유로 EXTRA_DAY_TRAVEL_NOTE_ 도 실어야 한다 — buildExtraDayEventFields_ 가 이동일 분기에서
+  // 이 상수를 읽는다. 지금 시나리오엔 kind:'travel' 이 없어 잠복해 있을 뿐이다.
+  travelNoteLine,
   extractFn(gs, 'parseBookingExtraDays_'),
   extractFn(gs, 'normalizeExtraDayKind_'),
   extractFn(gs, 'buildExtraDayEventFields_'),
