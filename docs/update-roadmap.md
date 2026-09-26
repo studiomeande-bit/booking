@@ -705,6 +705,63 @@ Playwright(Didot 있는 이 맥, 2000px·2×)로 다시 내보냈다 — 이제 
 - **사장님 확인 대기**: ① `frame_a4` 규격(30×40 마운트 창 21×30 vs A4 인화 21×29,7 — 창이 더 크다)
   ② 소액 취급료 €4 재상정 ③ 조립 시급 €39/h 근거 ④ 백보드 €3 이중계상 의심.
   상세는 `docs/print-frame-pricing-2026-09.md` §6.
+### 2026-09-09 밤 · 잔금 정정·분할 수령 (구현 완료 · **아직 미배포** — 2026-09-23 PR 로 제출)
+
+> **2026-09-23 상태**: 코드·검사는 그대로 유효하고 `origin/main` 에 리베이스해 PR 로 올렸다. 라이브에는
+> 아직 안 올라갔다(현재 라이브 @988~@991 에 `잔금수령내역JSON`·`booking-add-balance-payment` 없음).
+> 머지 후 아래 배포 절차대로 올리면 된다.
+
+**사고**: 나용민 워크인 현금 €60(본인 여권 €30 + 부인 성원경 여권 €30 선불, 별도 행). row273 총액을
+60→30 으로 정정했는데 **9/9 현금장부가 €185**(실물 €155). 원인은 현금 파생행이 `잔금결제금액` 셀을
+**우선**으로 보는데 그 값을 되돌릴 경로가 없던 것 — `confirmBookingBalanceAdmin` 은 '이미 확인됨'이면
+무조건 throw(force 없음), `setBookingAmountForAgent_` 은 총액·잔금만 갱신, `booking-set-balance-note` 는
+표기만, `booking-refund` 는 일어나지 않은 환불 이벤트를 남긴다. 시트를 직접 열지 않으면 복구 불가였다.
+
+- **A. 확인된 잔금의 정정** — `booking-confirm-balance` 에 `force:true`. **expectName 필수**,
+  요청사항에 `[잔금정정 2026-09-09] 60→30€ (입금일 …) 사유: … (agent)` 감사 스탬프 1줄
+  (`booking-set-amount` 의 `[금액정정 …]` 패턴과 동일). 금액·입금일·수단을 덮어쓴다.
+- **B. 분할 수령** — 신설 `booking-add-balance-payment`. 잔금 수령을 **이벤트 목록**(`잔금수령내역JSON`,
+  환불내역JSON 과 같은 패턴)으로 쌓고 `잔금결제금액` 은 그 **합계**를 유지한다(매출장부의 실수령 계산은
+  합계만 보므로 종전과 동일). 현금장부만 **수령일별로** 파생행이 갈린다 — id 는 종전과 같은
+  `booking-balance-<행>` + 2회차부터 `-2`, `-3`. 이벤트가 없는 기존 예약은 종전 단일 파생 그대로이고,
+  레거시 행에 처음 추가 수령을 붙일 때는 현재 셀 값을 첫 이벤트로 씨딩해 옛 수령일이 끌려가지 않는다.
+  회차마다 수단이 달라도 된다(현금 회차만 현금장부에).
+- **C. 조용한 불일치 방지** — `booking-set-amount` 가 총액을 낮출 때 `잔금결제금액 > 새 잔금`이면
+  응답 `warnings[]` + 감사메모에 `⚠️ 잔금결제금액 N€ 미정정`. **자동 정정은 하지 않는다** — 기록 오기와
+  실제 과수령(환불 대상)을 기계가 가를 수 없다. 조용히 어긋나던 것만 막는다.
+- 회귀 검사 신설: `node scripts/check-balance-correction.mjs` (28항목 — 정정 가드/감사 스탬프,
+  분할 수령 날짜 분리, 레거시 씨딩, 혼합 수단, 총액 초과 경고, 기존 정상 건 무변동 7종).
+  현금 파생은 베껴 쓰지 않고 `getCashLedgerAdmin` **원문 블록을 추출해** 평가한다.
+
+**당일 배포를 멈춘 이유 (2026-09-09 23:2x)**: push 하려던 시점에 **다른 세션이 인화/액자 신단가를
+같은 스크립트에 push 중**이었다(두 번의 `clasp pull` 사이에 Code.js·AdminV2.html 의 포토카드·파인아트
+단가가 바뀌었고 배포는 @936 그대로 = push 됐지만 재배포 전). 그 상태에서 `clasp deploy -i` 를 하면
+**남의 미완성 push 가 라이브로 나간다.** 그래서 코드만 남기고 배포를 미뤘다.
+
+```
+# 0) 상대 세션이 멈췄는지 확인 — 메인 작업트리 appscript/ 의 mtime 이 몇 분째 그대로인가
+# 1) 라이브를 스크래치로 받는다 (메인 작업트리에서 push 하면 안 된다 — 미승인 변경이 섞여 있다)
+mkdir -p /tmp/live && cp .clasp.json /tmp/live/ && (cd /tmp/live && clasp pull && clasp deployments)
+# 2) 이 브랜치의 Code.gs 변경만 라이브 파일에 얹는다
+git diff <이 커밋>^ <이 커밋> -- appscript/Code.gs > /tmp/mine.patch
+cp /tmp/live/appscript/Code.js /tmp/apply.gs && patch /tmp/apply.gs < /tmp/mine.patch
+diff /tmp/live/appscript/Code.js /tmp/apply.gs   # ← 내 훅만 보여야 한다
+# 3) 검사 (오버레이 결과물 기준) → push → 라이브 배포 ID 로 in-place 재배포
+cp /tmp/apply.gs /tmp/live/appscript/Code.js
+(cd /tmp/live && clasp push -f && clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w -d "잔금 정정·분할 수령")
+```
+
+**배포 후 검증** (사장님이 row273 `잔금결제금액` 을 수동으로 60→30 고쳤을 수 있으니 현재값 먼저 확인):
+`booking-get` row273 → 60 이면 `booking-confirm-balance` force 로 30 정정 →
+`accounting-ledger` 현금 9/9 = **€155**(나용민 30 + 성원경 선불 30 + 조미정 95). row274 는
+9/11 €5 를 `booking-add-balance-payment` → 잔금결제금액 35, 현금 9/9 €30 · 9/11 €5 분리.
+
+**⚠️ 별건 (2026-09-09 관측, 2026-09-23 재확인)**: 공개폼 스팸 가드(@926)의
+`isObviousSpamSubmission_` · `publicSpamDecoyResponse_` 가 그날 라이브 `clasp pull` 결과에 **0건**이었고,
+`origin/main` 에도 지금까지 **0건**이다 — 코드가 `claude/suspicious-wilbur-44b37b`(`bb85427`)에만 있고
+main 미반영이라던 그날 핸드오버 그대로다. 이후 `3778d6d`(홈페이지 문의 폼 → ERP 리드 파이프라인)로
+그 경로 자체가 바뀌었을 수 있으니, 되살릴지는 현재 폼 경로를 먼저 확인하고 판단할 것.
+(이번 패치와는 무관 — 섞지 않았다.)
 
 ### 2026-09-09 · 포트폴리오 협업(TFP) 예약 페이지 · 인화/액자 단가 재검토 · 워크인 이메일 (@934-935)
 
