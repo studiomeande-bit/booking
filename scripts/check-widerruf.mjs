@@ -248,7 +248,9 @@ globalThis.__select = {
 };
 S.getParent = () => ({ getSheetByName: (n) => (n === M.SELECT_SHEET_NAME ? globalThis.__select : null) });
 const colEarly = SH.indexOf('추가보정조기이행요청');
-check('셀렉 시트 새 열은 맨 뒤', colEarly === SH.length - 1);
+/* 의도는 "끝에 붙였다 = 기존 열 위치가 안 바뀐다" 이다(열은 인덱스로 읽는다 — 가운데 끼우면 기존 데이터가 한 칸씩 밀린다).
+   예전엔 '맨 끝인가' 로 적어, 뒤에 새 열이 붙을 때마다(2026-09-26 픽업전날알림) 거짓으로 빨개졌다. 도입 때 인덱스를 고정한다. */
+check('셀렉 시트 조기이행 열 위치 고정(59번째, 인덱스 58) — 앞에 열이 끼어들지 않았다', colEarly === 58);
 check('유료 보정 + 체크 → 시각·문구 버전 기록', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 2, '2026-09-18 10:00') === '2026-09-18 10:00 | WB-2026-09'
   && selData[1][colEarly] === '2026-09-18 10:00 | WB-2026-09');
 check('유료 보정 없음(수정으로 빠짐) → 지운다', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 0, '2026-09-18 11:00') === '' && selData[1][colEarly] === '');
