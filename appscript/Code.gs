@@ -33670,6 +33670,18 @@ function _isBaekilBookingRow_(row){
   return parseBookingBabyTypeFromRow_(row)==='baekil';
 }
 
+/* 여권 손님 감사메일에만 붙는 다른 촬영 안내 한 줄 (2026-09-27 사장님 승인 — 여권 30€ 고수, 가격 대신 교차판매).
+   utm 은 GA4(동의한 방문자)에서 이 링크 유입을 세기 위한 것 — 보수 가정(여권 손님 1% 전환)을 3개월 뒤 확인한다. */
+function _passportCrossSellHtml_(lang,row){
+  if(!isPassportBookingItem_(row[BOOKING_COL['촬영종류']],row[BOOKING_COL['상품']])) return '';
+  const url=getBookingSiteBaseUrl_()+'/?lang='+lang+'&utm_source=followup&utm_medium=email&utm_campaign=passport_crosssell';
+  const a=(t)=>`<a href="${url}" style="color:#2563eb;font-weight:700;">${t}</a>`;
+  return (lang==='en'
+    ? `Besides passport and visa photos, we also offer <b>portrait, family and children's sessions</b>. Whenever the time is right, you can find them on our ${a('booking page')}.`
+    : lang==='de'
+      ? `Neben Pass- und Visafotos bieten wir auch <b>Bewerbungs- und Porträtfotos sowie Familien- und Kindershootings</b> an. Wenn es für Sie passt, finden Sie alles auf unserer ${a('Buchungsseite')}.`
+      : `여권·비자 사진 외에도 <b>프로필 · 가족 · 아이 촬영</b>을 하고 있습니다. 필요하실 때 ${a('예약 페이지')}에서 편하게 살펴보세요.`)+'<br><br>';
+}
 function sendPostShootFollowupEmails_(){
   const sh=ensureSheets_().bookingSheet;
   const lastRow=sh.getLastRow();
@@ -33697,9 +33709,9 @@ function sendPostShootFollowupEmails_(){
       de:`[Studio mean] Vielen Dank für Ihren Besuch — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_passportCrossSellHtml_('ko',row)}${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_passportCrossSellHtml_('en',row)}${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_passportCrossSellHtml_('de',row)}${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['촬영후감사메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
