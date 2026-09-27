@@ -107,7 +107,8 @@ function igPublishCarousel_(imageUrls, caption) {
  * 메인 — 예정 시각이 지난 승인 캐러셀을 게시한다. 한 번 실행에 1건만(피드 도배 방지).
  * 시간 트리거로 15분마다 호출. 맥이 꺼져 있어도 동작한다.
  */
-function publishDueInstaCarousels() {
+function publishDueInstaCarousels(e) {
+  if (!isTrustedInvocation_(e)) return UNTRUSTED_INVOCATION_;   // 15분 트리거 전용 — 익명 google.script.run 으로 게시를 돌릴 수 있었다(2026-09-21 감사, Code.gs isTrustedInvocation_)
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(IG_PUBLISH_LOCK_MS)) { Logger.log('다른 실행이 진행 중 — 건너뜀'); return; }
   try {
@@ -140,11 +141,17 @@ function publishDueInstaCarousels() {
           .setValue(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm') + ' ' + out.url);
         Logger.log('게시 완료 [' + key + '] ' + out.url);
         // 같은 소재를 Threads 에도 (미설정이면 조용히 건너뜀, 실패해도 인스타는 유지)
-        var th = threadsMirror_(slides, caption);
+        var thCaption = INSTA_REVIEW_COL['캡션스레드'] != null ? String(row[INSTA_REVIEW_COL['캡션스레드']] || '') : '';
+        var th = threadsMirror_(slides, caption, thCaption);
         if (th && th.url) {
           sh.getRange(i + 1, INSTA_REVIEW_COL['승인일시'] + 1)
             .setValue(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm')
                       + ' ' + out.url + ' | Threads ' + th.url);
+        } else if (th && th.error) {
+          // 스레드만 실패한 건은 시트에 남긴다 — 예전엔 로그에만 찍혀서 빠진 줄 몰랐다(2026-09-20 반려견 건)
+          sh.getRange(i + 1, INSTA_REVIEW_COL['승인일시'] + 1)
+            .setValue(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm')
+                      + ' ' + out.url + ' | Threads 실패: ' + String(th.error).slice(0, 120));
         }
         igNotifyPublished_(key, String(row[INSTA_REVIEW_COL['이름']] || ''), out.url);
       } catch (e) {
@@ -169,7 +176,11 @@ function igNotifyPublished_(key, name, url) {
 }
 
 /** 1회 실행 — 15분 주기 트리거 설치 (중복 설치 방지). */
-function installInstaPublishTrigger() {
+function installInstaPublishTrigger() {   // 편집기 실행용 껍데기 — 본체는 installInstaPublishTrigger_
+  if (!isTrustedInvocation_()) return UNTRUSTED_INVOCATION_;
+  return installInstaPublishTrigger_();
+}
+function installInstaPublishTrigger_() {
   var exists = ScriptApp.getProjectTriggers().filter(function (t) {
     return t.getHandlerFunction() === 'publishDueInstaCarousels';
   });
@@ -180,6 +191,7 @@ function installInstaPublishTrigger() {
 
 /** 연결 확인용 — 토큰이 유효한지, 어느 계정인지만 본다(토큰은 출력하지 않는다). */
 function checkInstaConnection() {
+  if (!isTrustedInvocation_()) return UNTRUSTED_INVOCATION_;   // 편집기(소유자) 전용
   var info = igCall_(igProp_('IG_USER_ID'), { fields: 'username,followers_count' });
   Logger.log('연결 OK: @' + info.username + ' (팔로워 ' + info.followers_count + ')');
   return info;
@@ -210,7 +222,7 @@ function instaPublisherInstallForAgent_(token) {
   if (!props.getProperty('IG_ACCESS_TOKEN') || !props.getProperty('IG_USER_ID')) {
     throw new Error('스크립트 속성 IG_ACCESS_TOKEN / IG_USER_ID 를 먼저 등록하세요.');
   }
-  return { ok: true, message: installInstaPublishTrigger() };
+  return { ok: true, message: installInstaPublishTrigger_() };
 }
 
 /** 시크릿 등록 — 값은 스크립트 속성에만 저장하고, 응답에는 길이만 알린다(값 미반환).
@@ -253,7 +265,8 @@ function instaPublisherDryRunForAgent_(token) {
       schedRaw: schedRaw,
       schedParsed: isNaN(sched.getTime()) ? 'PARSE_FAIL' : sched.toISOString(),
       due: !isNaN(sched.getTime()) && sched <= now,
-      slideCount: slides.length
+      slideCount: slides.length,
+      threadsCaptionLen: INSTA_REVIEW_COL['캡션스레드'] != null ? String(vals[i][INSTA_REVIEW_COL['캡션스레드']] || '').length : -1
     });
   }
   return { ok: true, now: now.toISOString(), rows: out };

@@ -94,6 +94,10 @@ const MODULE = [
   // SumUp 환불 대조 — 가짜 예약 시트 위에서 원본 매처를 돌린다
   extractFn(gs, 'parseDateOnly_'),   // daysBetweenDates_ 의존
   extractFn(gs, 'daysBetweenDates_'),
+  /* matchSumupRefundToRefundEvents_ 의 `if(!sh) sh=getDbSheet();` 폴백이 부른다 — 추출 목록에 없어서
+     닿는 순간 ReferenceError 가 그 자리 catch 에 먹히고 **조용히 null** 이 됐다(2026-09-25 감사).
+     이 하네스는 항상 가짜 시트를 넘기므로 닿지 않는 게 정상 — 닿으면 시끄럽게 실패하도록 둔다. */
+  `function getDbSheet(){ throw new Error('getDbSheet 스텁이 호출됐다 — 하네스는 시트를 인자로 넘겨야 한다'); }`,
   extractFn(gs, 'matchSumupRefundToRefundEvents_'),
   `export function runMatch(rowObjs,tx){
      const rows=[new Array(CONFIG.BOOKING_HEADERS.length).fill('')].concat(rowObjs.map(makeRow));

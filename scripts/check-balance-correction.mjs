@@ -58,8 +58,9 @@ const BALANCE_BLOCK = extractBetween(
   "    const balancePaidAt=(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||bookingDate).slice(0,10);",
   '    // 현금 환불 —'
 );
-if (!BALANCE_BLOCK.includes('bookingBalanceReceipts_(row,balancePaidAt)')) {
-  throw new Error('현금장부 잔금 파생이 수령 이벤트를 쓰지 않습니다 — 블록이 바뀌었습니다.');
+if (!BALANCE_BLOCK.includes('bookingBalanceReceipts_(row,balancePaidAt)')
+    || !BALANCE_BLOCK.includes('_partialBalanceReceiptsFromMemo_')) {
+  throw new Error('현금장부 잔금 파생이 두 갈래(이벤트/메모 부분수납)를 다 쓰지 않습니다 — 블록이 바뀌었습니다.');
 }
 
 const bookingHeadersLine = extractLine(gs, "BOOKING_HEADERS: ['예약일시'").replace(/,$/, '');
@@ -123,8 +124,8 @@ const MODULE = [
   extractFn(gs, 'bookingBalanceReceiptsForWrite_'),
   extractFn(gs, 'writeBookingBalanceReceipts_'),
   extractFn(gs, 'assertBookingRowName_'),
+  extractFn(gs, '_partialBalanceReceiptsFromMemo_'),
   extractFn(gs, 'confirmBookingBalanceAdmin'),
-  extractFn(gs, 'addBookingBalancePaymentAdmin'),
   extractFn(gs, 'setBookingAmountForAgent_'),
   // 시트/권한/캐시는 스텁 — 판정 로직은 원본 그대로 돈다
   `let __SHEET__=null;`,
@@ -143,7 +144,10 @@ const MODULE = [
 ${BALANCE_BLOCK}
      return entries;
    }`,
-  `export {FakeSheet, CONFIG, BOOKING_COL, confirmBookingBalanceAdmin, addBookingBalancePaymentAdmin,
+  extractFn(gs, 'getEffectiveBookingPayment_'),
+  extractFn(gs, 'parseBookingRefunds_'),
+  extractFn(gs, 'bookingRefundTotal_'),
+  `export {FakeSheet, CONFIG, BOOKING_COL, confirmBookingBalanceAdmin,
      setBookingAmountForAgent_, bookingBalanceReceipts_, cashLedgerBalanceEntries_};`,
   `export function __setSheet(s){ __SHEET__=s; }`,
 ].join('\n\n');
@@ -204,11 +208,12 @@ try {
       ['Y', 60, '2026-09-09']);
     check('A-0-2 현금장부 €60', cash(sh), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 60 }]);
 
-    // 총액 정정 60 → 30 : C 요구사항 — 조용히 어긋나지 않는다
-    const amt = M.setBookingAmountForAgent_('t', { rowIndex: 2, total: 30, expectName: '나용민', reason: '부인분 분리' });
-    check('C-1 경고 1건', amt.warnings.length, 1);
-    check('C-2 경고에 두 금액이 다 보인다', /60/.test(amt.warnings[0]) && /30/.test(amt.warnings[0]), true);
-    check('C-3 감사메모에도 남는다', /⚠️ 잔금결제금액 60€ 미정정/.test(amt.auditLine), true);
+    // C. 조용한 불일치 방지 — 완납 뒤 총액 하향은 force 없이는 **차단**(@994 가드), 강제하면 감사줄에 차액
+    check('C-1 완납 뒤 총액 하향은 차단', /잔금 결제가 이미 확인된 예약입니다/.test(
+      threw(() => M.setBookingAmountForAgent_('t', { rowIndex: 2, total: 30, expectName: '나용민' }))), true);
+    const amt = M.setBookingAmountForAgent_('t', { rowIndex: 2, total: 30, expectName: '나용민', reason: '부인분 분리', force: true });
+    check('C-2 강제하면 차액이 감사줄에 남는다', /과수납 30€ → 환불 또는 잔금정정/.test(amt.auditLine), true);
+    check('C-3 구제수단이 환불 하나로 좁혀지지 않는다', /잔금정정/.test(amt.auditLine), true);
     check('C-4 정정 전이라 현금장부는 아직 €60', cash(sh), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 60 }]);
 
     // A-1 force 없이는 못 고친다(종전 동작 유지)
@@ -231,57 +236,70 @@ try {
     check('A-4-4 요청사항에 남는다', String(sh.rows[1][C['요청사항']]).includes(res.auditLine), true);
     check('A-5 현금장부 즉시 €30', cash(sh), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 }]);
 
-    // C-5 정정 후 총액을 다시 손대도 경고 없음
-    const amt2 = M.setBookingAmountForAgent_('t', { rowIndex: 2, total: 30, expectName: '나용민' });
-    check('C-5 어긋남 없으면 무경고', [amt2.warnings.length, /⚠️/.test(amt2.auditLine)], [0, false]);
+    // C-5 정정 후에는 차액이 0 이라 과수납 문구가 안 붙는다
+    const amt2 = M.setBookingAmountForAgent_('t', { rowIndex: 2, total: 30, expectName: '나용민', force: true });
+    check('C-5 어긋남 없으면 과수납 문구 없음', /과수납/.test(amt2.auditLine), false);
   }
 
-  // ── B. 분할 수령 ─────────────────────────────────────────────────────────
+  // ── B. 분할 수령 (main @994 의 partial 경로 + 수령일별 이벤트) ───────────
   // B-0 재현: 성원경 여권 €35 — 9/9 €30 선불 + 9/11 €5 잔여
   {
     const sh = sheetOf({ 고객명: '성원경', 예약일시: '2026-09-11 10:00', 총결제액: 35, 잔금: 35 });
-    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금' });
-    const add = M.addBookingBalancePaymentAdmin('t', 2, {
-      expectName: '성원경', paidDate: '2026-09-11', amount: 5, payMethod: '현금', reason: '촬영당일 잔여 수령'
-    });
-    check('B-1 잔금결제금액 누계 35', sh.rows[1][C['잔금결제금액']], 35);
-    check('B-2 잔금입금일은 마지막 수령일', sh.rows[1][C['잔금입금일']], '2026-09-11');
-    check('B-3 응답 누계', [add.previousBalancePaidAmount, add.added, add.balancePaidAmount], [30, 5, 35]);
-    check('B-4 현금장부가 날짜별로 쪼개진다', cash(sh), [
+    const p1 = M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금', partial: true });
+    check('B-1 부분수납은 Y 를 굳히지 않는다', [sh.rows[1][C['잔금결제여부']], p1.partial, p1.remaining], ['', true, 5]);
+    check('B-2 누적·메모', [sh.rows[1][C['잔금결제금액']], /\[부분수납 2026-09-09\] 30€ 현금/.test(String(sh.rows[1][C['요청사항']]))], [30, true]);
+    const p2 = M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-11', amount: 5, payMethod: '현금' });
+    check('B-3 나머지를 받으면 Y', [sh.rows[1][C['잔금결제여부']], sh.rows[1][C['잔금결제금액']], p2.cumulative], ['Y', 35, 35]);
+    check('B-4 잔금입금일은 마지막 수령일', sh.rows[1][C['잔금입금일']], '2026-09-11');
+    check('B-5 현금장부가 날짜별로 쪼개진다', cash(sh), [
       { id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 },
       { id: 'booking-balance-2-2', date: '2026-09-11', cashIn: 5 },
     ]);
-    check('B-5 9/9 만 보면 €30', cash(sh, '2026-09-09', '2026-09-09'), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 }]);
-    check('B-6 9/11 만 보면 €5', cash(sh, '2026-09-11', '2026-09-11'), [{ id: 'booking-balance-2-2', date: '2026-09-11', cashIn: 5 }]);
-    check('B-7 감사메모 누적 스탬프', /^\[잔금추가수령 \d{4}-\d{2}-\d{2}\] \+5€ \(2026-09-11 · 현금\) 누계 30→35€/.test(add.auditLine), true);
-    check('B-8 초과수령 아님', add.warnings.length, 0);
-    check('B-9 expectName 필수', /expectName 이 필수/.test(
-      threw(() => M.addBookingBalancePaymentAdmin('t', 2, { paidDate: '2026-09-11', amount: 5 }))), true);
+    check('B-6 9/9 만 보면 €30', cash(sh, '2026-09-09', '2026-09-09'), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 }]);
+    check('B-7 9/11 만 보면 €5', cash(sh, '2026-09-11', '2026-09-11'), [{ id: 'booking-balance-2-2', date: '2026-09-11', cashIn: 5 }]);
+    check('B-8 이벤트 정본이므로 메모 부분수납행이 겹쳐 잡히지 않는다', cash(sh).length, 2);
+    // 금액 생략 = 남은 잔금 (main @994 규칙 유지)
+    const sh2 = sheetOf({ 총결제액: 35, 잔금: 35 });
+    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금', partial: true });
+    const p3 = M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-11', payMethod: '현금' });
+    check('B-9 amount 생략은 나머지 €5', [p3.amount, sh2.rows[1][C['잔금결제금액']]], [5, 35]);
   }
-  // B-10 레거시 행(이벤트 없음, 셀만 있음)에 추가 수령 → 첫 이벤트로 씨딩되어 날짜가 안 끌려간다
+  // B-10 덜 받았는데 partial 없이 확인하면 차단 (main @994 가드 유지)
+  {
+    sheetOf({ 총결제액: 35, 잔금: 35 });
+    check('B-10 partial 없는 과소 확인 차단', /부분수납이면 partial:true/.test(
+      threw(() => M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30 }))), true);
+  }
+  // B-11 이미 Y 로 닫힌 뒤 더 받은 돈 — partial:true 로 누적, Y 유지, [추가수령] 스탬프
   {
     const sh = sheetOf({ 고객명: '성원경', 총결제액: 35, 잔금: 35, 잔금결제여부: 'Y', 잔금결제금액: 30, 잔금입금일: '2026-09-09' });
-    M.addBookingBalancePaymentAdmin('t', 2, { expectName: '성원경', paidDate: '2026-09-11', amount: 5 });
-    check('B-10 레거시 씨딩 합계', sh.rows[1][C['잔금결제금액']], 35);
-    check('B-11 레거시 첫 수령이 9/9 에 남는다', cash(sh), [
+    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-11', amount: 5, payMethod: '현금', partial: true });
+    check('B-11-1 누계 35 · Y 유지', [sh.rows[1][C['잔금결제금액']], sh.rows[1][C['잔금결제여부']]], [35, 'Y']);
+    check('B-11-2 추가수령 스탬프', /\[추가수령 2026-09-11\] \+5€ 현금 \(누계 30→35€\) \(agent\)/.test(String(sh.rows[1][C['요청사항']])), true);
+    check('B-11-3 레거시 첫 수령이 9/9 에 남는다(날짜 끌려가지 않음)', cash(sh), [
       { id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 },
       { id: 'booking-balance-2-2', date: '2026-09-11', cashIn: 5 },
     ]);
   }
-  // B-12 수단이 섞이면 현금 회차만 현금장부에
+  // B-12 라이브 부분수납 행(메모 줄만 있는 @994 데이터)이 이벤트로 넘어올 때 합계·날짜 보존
+  {
+    const sh = sheetOf({ 총결제액: 65, 잔금: 65, 잔금결제금액: 40, 잔금입금일: '2026-09-10',
+      요청사항: '[부분수납 2026-09-09] 25€ 현금 (누적 25 / 잔금 65€)\n[부분수납 2026-09-10] 15€ 현금 (누적 40 / 잔금 65€)' });
+    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-11', amount: 25, payMethod: '현금' });
+    check('B-12-1 합계 보존 40+25', sh.rows[1][C['잔금결제금액']], 65);
+    check('B-12-2 옛 회차 날짜 보존', cash(sh), [
+      { id: 'booking-balance-2', date: '2026-09-09', cashIn: 25 },
+      { id: 'booking-balance-2-2', date: '2026-09-10', cashIn: 15 },
+      { id: 'booking-balance-2-3', date: '2026-09-11', cashIn: 25 },
+    ]);
+  }
+  // B-13 회차마다 수단이 달라도 된다 — 현금 회차만 현금장부에
   {
     const sh = sheetOf({ 총결제액: 35, 잔금: 35 });
-    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금' });
-    M.addBookingBalancePaymentAdmin('t', 2, { expectName: '나용민', paidDate: '2026-09-11', amount: 5, payMethod: '카드' });
-    check('B-12 카드 회차는 제외', cash(sh), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 }]);
-    check('B-13 합계는 그대로 35', sh.rows[1][C['잔금결제금액']], 35);
-  }
-  // B-14 총결제액 초과 수령이면 경고
-  {
-    const sh = sheetOf({ 총결제액: 30, 잔금: 30 });
-    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금' });
-    const add = M.addBookingBalancePaymentAdmin('t', 2, { expectName: '나용민', paidDate: '2026-09-11', amount: 5 });
-    check('B-14 초과수령 경고', add.warnings.length, 1);
+    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, payMethod: '현금', partial: true });
+    M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-11', amount: 5, payMethod: '카드' });
+    check('B-13-1 카드 회차는 제외', cash(sh), [{ id: 'booking-balance-2', date: '2026-09-09', cashIn: 30 }]);
+    check('B-13-2 합계는 그대로 35', sh.rows[1][C['잔금결제금액']], 35);
   }
 
   // ── R. 기존 정상 건 회귀 ─────────────────────────────────────────────────
@@ -322,15 +340,18 @@ try {
     check('R-7-1 정정 차단', /취소된 예약/.test(
       threw(() => M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 30, force: true, expectName: '나용민' }))), true);
     check('R-7-2 추가수령 차단', /취소된 예약/.test(
-      threw(() => M.addBookingBalancePaymentAdmin('t', 2, { expectName: '나용민', paidDate: '2026-09-09', amount: 5 }))), true);
+      threw(() => M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 5, partial: true }))), true);
   }
   // R-8 날짜·금액 형식 가드는 종전대로
   {
     sheetOf({});
     check('R-8-1 날짜 형식', /결제일 형식/.test(
       threw(() => M.confirmBookingBalanceAdmin('t', 2, { paidDate: '09/09/2026', amount: 30 }))), true);
-    check('R-8-2 추가수령 금액 0 차단', /0보다 커야/.test(
-      threw(() => M.addBookingBalancePaymentAdmin('t', 2, { expectName: '나용민', paidDate: '2026-09-09', amount: 0 }))), true);
+    // amount 생략·0 은 '남은 잔금'을 뜻한다(@994) — 잔금까지 0 이면 그때 차단
+    check('R-8-2 amount 0 = 남은 잔금', M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09', amount: 0 }).amount, 30);
+    sheetOf({ 잔금: '', 총결제액: '' });
+    check('R-8-3 받을 게 없으면 차단', /잔금 금액이 0€/.test(
+      threw(() => M.confirmBookingBalanceAdmin('t', 2, { paidDate: '2026-09-09' }))), true);
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });

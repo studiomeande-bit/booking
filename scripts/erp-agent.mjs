@@ -27,22 +27,25 @@
  *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
  *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
  *   booking-refund-quote: 취소 환불 규정 제안액(실수령·기환불 포함) 조회
- *   booking-confirm-balance: 잔금 수령 확인. **정정**은 force:true + expectName 필수 —
- *     이미 확인된 금액·입금일·수단을 덮어쓰고 수령 기록을 이 한 건으로 재설정한다(요청사항에 [잔금정정 …] 스탬프).
- *     node scripts/erp-agent.mjs booking-confirm-balance --json '{"rowIndex":273,"paidDate":"2026-09-09","amount":30,
- *       "payMethod":"현금","force":true,"expectName":"나용민","reason":"부인 여권 €30 은 별도 행"}'
- *   booking-add-balance-payment: **분할 수령** — 첫 확인 뒤 더 받은 돈을 누적(잔금결제금액 += amount,
- *     잔금입금일=마지막 수령일). 현금장부에는 수령일마다 파생행이 따로 잡힌다(id booking-balance-<행>, -2, -3 …).
- *     node scripts/erp-agent.mjs booking-add-balance-payment --json '{"rowIndex":274,"expectName":"성원경",
- *       "paidDate":"2026-09-11","amount":5,"payMethod":"현금","reason":"촬영당일 잔여 수령"}'
+ *   booking-confirm-balance: 잔금 수령 확인. 사후 경로가 둘이고 **섞으면 안 된다**:
+ *     · partial:true = **나누어 받았다**. 수령일별로 누적한다(잔금결제금액 = 누계, 잔금입금일 = 마지막 수령일).
+ *       완납 전이면 잔금결제여부를 굳히지 않고 메모에 [부분수납 …], 이미 Y 인 행에 더 받은 돈이면 Y 를
+ *       유지하고 [추가수령 …] 줄. amount 생략은 '남은 잔금'. 현금장부에는 **수령일마다** 파생행이 따로
+ *       잡힌다(id booking-balance-<행>, -2, -3 …) — 회차별 수단이 달라도 현금 회차만 들어간다.
+ *       node scripts/erp-agent.mjs booking-confirm-balance --json '{"rowIndex":274,"paidDate":"2026-09-11",
+ *         "amount":5,"payMethod":"현금","partial":true,"reason":"촬영당일 잔여 수령"}'
+ *     · force:true = **기록이 틀렸다**. 금액·입금일·수단을 덮어쓰고 수령 기록을 이 한 건으로 재설정한다.
+ *       expectName 필수 + 요청사항에 [잔금정정 이전값→새값] 스탬프.
+ *       node scripts/erp-agent.mjs booking-confirm-balance --json '{"rowIndex":273,"paidDate":"2026-09-09","amount":30,
+ *         "payMethod":"현금","force":true,"expectName":"나용민","reason":"부인 여권 €30 은 별도 행"}'
  *     회귀 검사: node scripts/check-balance-correction.mjs
  *   booking-delete: 예약 행 삭제(expectName+confirm:'DELETE', 참조 보정 포함 — 합성행 전용, 실고객은 force)
  *
  * booking-set-amount: 예약 총결제액 정정(매출 소급 정정). 회계장부 gross는 총결제액에서 파생.
  *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'
  *   옵션: recomputeBalance(기본 true, 잔금=총결제액−계약금), expectName(행 고객명 안전확인).
- *   ⚠️ 총액을 낮췄는데 이미 확인된 잔금결제금액이 새 잔금보다 크면 응답 warnings[] 로 경고한다
- *      (자동으로 낮추지 않는다 — 기록 오기면 booking-confirm-balance force, 실제 과수령이면 booking-refund).
+ *   ⚠️ 잔금이 이미 확인된 예약은 force:true 없이는 거부된다. 강제하면 감사줄에 차액이 남는데,
+ *      구제는 둘 중 하나다 — 기록 오기면 booking-confirm-balance force:true, 실제 과수령이면 booking-refund.
  *
  * booking-change-product: 예약 상품 교체 + 재견적(총액·계약금·잔금·소요시간·캘린더 자동 반영). 고객 메일 미발송.
  *   가격은 calculateQuote_(수기등록과 동일 엔진) 재사용 — 별도 계산 없음.
@@ -65,6 +68,16 @@
  *     특정 이벤트를 콕 집으려면 각 날짜에 "eventId":"…@google.com".
  *   allowConflict: 1일차와 동일 기준(checkBookingTimeConflict_)의 충돌 검사를 강행. dryRun: 계획만 확인.
  *   조회는 booking-get 의 extraDays 필드. 회귀 검사: node scripts/check-extra-days.mjs
+ *
+ * booking-set-mrt-payout: 💶 마이리얼트립 **정산 지급일 → 잔금입금일** 정정(회계 귀속일). MRT 동기화는 잔금입금일을
+ *   선결제 **통지일**로 채우지만 §20 UStG(Ist-Versteuerung, 사장님 결정 2026-09-25) 수취시점은 **정산금이 신한계좌에 들어온 날**
+ *   (여행월 다음달 15일경 — 6월분 07-15 · 7월분 08-18). 장부(buildAccountingLedger_)는 잔금입금일을 그대로 쓰므로 이 칸만 고친다.
+ *   MRT 행만 허용 · 메일·캘린더 없음 · 요청사항에 '[MRT 정산 …]' 감사 한 줄. (booking-update 는 이 열 불가 · booking-confirm-balance 는 Y 행 거부)
+ *   node scripts/erp-agent.mjs booking-set-mrt-payout --json '{"rowIndex":187,"expectName":"유성현","payoutDate":"2026-07-15"}'
+ *   node scripts/erp-agent.mjs booking-set-mrt-payout --json '{"rowIndexes":[205,215],"payoutDate":"2026-08-18","memo":"7월 여행분 정산"}'
+ *   rowIndexes: 같은 지급일 여러 건 — 전부 검증한 뒤 기록(하나라도 막히면 아무 행도 안 바뀜). 미래 날짜 거부(지급 확인 후 기록).
+ *   dryRun:true 면 MRT 판별·현재 잔금입금일만 돌려준다(쓰기 없음). 같은 날짜면 unchanged(재실행 안전).
+ *   회귀 검사: node scripts/check-mrt-payout.mjs
  *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)

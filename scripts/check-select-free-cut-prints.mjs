@@ -33,13 +33,15 @@ function grabFn(name) {
 const HEADERS = JSON.parse('[' + src.match(/const SELECT_HEADERS=\[([\s\S]*?)\];/)[1].replace(/'/g, '"') + ']');
 const SELECT_COL = Object.fromEntries(HEADERS.map((h, i) => [h, i]));
 
-// 실제 단가 (PRINT_OPTIONS / PRINT_LABELS 와 같은 값)
-const PRINT_LABELS = {
-  basic_10x15: { label: '시그니처 10×15cm', price: 4, retouchedPrice: 3 },
-  premium_10x15: { label: '파인아트 10×15cm', price: 8, retouchedPrice: 6 },
-  basic_a4: { label: '시그니처 A4', price: 15, retouchedPrice: 10 },
-  premium_a3: { label: '파인아트 A3', price: 50, retouchedPrice: 35 },
-};
+/* 단가는 **Code.gs 의 PRINT_LABELS 원본**을 그대로 쓴다. 하드코딩 사본을 쓰다가 적발됐다(2026-09-25):
+   사본의 `premium_a3` 가 50/35 인데 라이브는 38/32 였다 — 즉 "서버 엔진을 실제로 실행한다"면서
+   **인화 단가는 한 개도 라이브와 대조되지 않았고**, A4→A3 차액 단정이 존재하지 않는 €25 를 고정하고 있었다.
+   형제 게이트 check-select-amounts.mjs 는 처음부터 원본을 추출해 쓴다. */
+const PRINT_LABELS = new Function(
+  src.match(/const PRINT_LABELS=\{[\s\S]*?\n\};/)[0] + '\nreturn PRINT_LABELS;')();
+for (const id of ['basic_10x15', 'premium_10x15', 'basic_a4', 'premium_a3']) {
+  if (!PRINT_LABELS[id]) throw new Error(`PRINT_LABELS 에 ${id} 가 없다 — SKU 이름이 바뀌었으면 이 게이트도 고칠 것`);
+}
 
 const ctx = {
   SELECT_COL,
@@ -51,7 +53,7 @@ const ctx = {
 
 function buildEngine(quota) {
   const names = ['selectPhotoNumKey_', 'buildRetouchNumSet_', 'buildSelectServiceCutNums_',
-    'buildSelectMarketingBonusNums_', 'selectQuotaCredit_', 'getPrintInfo_',
+    'buildSelectMarketingBonusNums_', 'selectQuotaCredit_', 'selectPrintCreditExempt_', 'getPrintInfo_',
     'mergeSelectPrintItems_', 'normalizeSelectMarketingBonusCount_',
     'getDefaultSelectMarketingBonusCount_', 'computeSelectDecoupledPrints_',
     'getSelectVolumeTiers_', 'computeSelectVolumeDiscount_'];
@@ -173,9 +175,9 @@ console.log('\n── 기본 출력물 · 차액 적용 검증 (2026-08-09 사�
   t('10×15 파인아트 업그레이드 차액 €3', up1.amount === 3, `€${up1.amount}`);
   t('차액 라벨 표기', up1.items.some((i) => /포함 차액/.test(i.label)), JSON.stringify(up1.items.map((i) => i.label)));
 
-  // A4 쿼터에 A3 선택 → 차액 (A3 보정본 €35 − A4 보정본 크레딧 €10 = €25)
+  // A4 쿼터에 A3 선택 → 차액 (A3 보정본 €32 − A4 보정본 크레딧 €10 = €22, 라이브 PRINT_LABELS 기준)
   const up2 = price({ quota, photos, prints: [PR('R1', 'premium_a3'), PR('R2'), PR('R3')] });
-  t('A4→A3 업그레이드 차액 €25', up2.amount === 25, `€${up2.amount}`);
+  t('A4→A3 업그레이드 차액 €22', up2.amount === 22, `€${up2.amount}`);
 
   // 입력 순서 무관 (2-pass 보증) — 같은 주문 역순
   const up2r = price({ quota, photos, prints: [PR('R3'), PR('R2'), PR('R1', 'premium_a3')] });
@@ -196,13 +198,15 @@ console.log('\n── 볼륨 할인 (computeSelectVolumeDiscount_) ──');
   t('보정 5장 = 10% (€50→-€5)', d('retouch', 5, 50).discount === 5, JSON.stringify(d('retouch', 5, 50)));
   t('보정 10장 = 15% (€100→-€15)', d('retouch', 10, 100).discount === 15);
   t('보정 20장 = 20% (€200→-€40)', d('retouch', 20, 200).discount === 40);
-  t('인화 9장 = 할인 없음 + 다음 구간 안내(1장 남음, 10%)',
-    d('print', 9, 50).discount === 0 && d('print', 9, 50).remainToNext === 1 && d('print', 9, 50).nextPercent === 10,
-    JSON.stringify(d('print', 9, 50)));
-  t('인화 10장 = 10%', d('print', 10, 60).discount === 6);
+  // 인화 사다리는 @945(2026-09-10)부터 보정과 같다 — 5:10 / 10:15 / 20:20
+  t('인화 4장 = 할인 없음 + 다음 구간 안내(1장 남음, 10%)',
+    d('print', 4, 50).discount === 0 && d('print', 4, 50).remainToNext === 1 && d('print', 4, 50).nextPercent === 10,
+    JSON.stringify(d('print', 4, 50)));
+  t('인화 5장 = 10%', d('print', 5, 60).discount === 6, JSON.stringify(d('print', 5, 60)));
+  t('인화 10장 = 15%', d('print', 10, 60).discount === 9, JSON.stringify(d('print', 10, 60)));
   t('인화 30장 = 20% (최고 구간)', d('print', 30, 300).discount === 60);
   t('최고 구간에선 다음 안내 없음', d('print', 35, 300).remainToNext === 0);
-  t('센트 반올림 (€33 의 10% = €3.30)', d('print', 10, 33).discount === 3.3, d('print', 10, 33).discount);
+  t('센트 반올림 (€33 의 10% = €3.30)', d('print', 5, 33).discount === 3.3, d('print', 5, 33).discount);
   t('금액 0 이면 할인 0', d('retouch', 8, 0).discount === 0);
 
   // 설정 오버라이드 + 오타 방어

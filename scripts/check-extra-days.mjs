@@ -32,7 +32,17 @@ function extractFn(name) {
     if (c === '/' && SRC[i + 1] === '/') { i = SRC.indexOf('\n', i); continue; }
     if (c === '/' && SRC[i + 1] === '*') { i = SRC.indexOf('*/', i) + 1; continue; }
     if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) return SRC.slice(start + 1, i + 1);
+    else if (c === '}' && --depth === 0) {
+      const body = SRC.slice(start + 1, i + 1);
+      /* 과잉 추출 가드: 이 복사본은 문자열·주석은 건너뛰지만 **정규식 리터럴**은 모른다 —
+         `/'/` 처럼 짝 없는 인용부호가 든 정규식을 만나면 문자열 스캔이 함수 끝을 넘어가
+         뒤따르는 함수 수백 개(최대 413KB)를 조용히 함께 삼킨다(2026-09-25 감사).
+         최상위 함수 본문에는 열 0 에서 시작하는 `function ` 이 있을 수 없으니, 있으면 과잉이다. */
+      if (body.indexOf('\nfunction ') !== -1) {
+        throw new Error(`추출 과잉: ${name} — 정규식 리터럴 때문에 뒤 함수까지 삼켰습니다(하네스 extractFn 수정 필요)`);
+      }
+      return body;
+    }
   }
   throw new Error(`중괄호 짝이 안 맞습니다: ${name}`);
 }

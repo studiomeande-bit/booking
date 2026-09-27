@@ -10,8 +10,10 @@
  * 검사 항목
  *   [A1] GROUP_META 가 7타일이고 famevt/b2b 가 realGroup='biz', b2b 는 consultOnly
  *        → 백엔드 시맨틱 불변 + B2B 는 슬롯 미점유
- *   [A4] getDefaultSelectRetouchPrice_ 가 웨딩급 €20 / 그 외 €10
+ *   [A4] getDefaultSelectRetouchPrice_ 가 웨딩급 €20 / 그 외 €10 (주석 제외한 코드에서 — 은퇴한 암트·돌잔치·가족파티 부재까지)
  *   [가격] getWeekendSurcharge_ 에 amtp:50, dolp:50 → 평일 €350 / 토요일 €400
+ *   [상수] LOYALTY_CREDIT_EUR_=20 · CONTRACT_MIN_TOTAL=500 · TRAVEL_KM_RATE_=0.30 (게이트가 없던 돈·법정 숫자)
+ *   [세금] 부가세 19% — CONFIG.QUOTE_VAT_RATE + 코드에 7%/16% 환산 혼입 없음 · 굿샤인 유효 36개월
  *   [Phase 1] 라이브 init API 에서 biz 상담견적 상품의 가격이 0 이어야 한다
  *        (고정가 amtp·dolp 만 노출) — 내부 단가표가 고객에게 새지 않는지
  *   [회귀] 라이브 init API 에 pass/prof/stud/snap/wed 그룹이 살아 있는지
@@ -31,6 +33,7 @@ const OFFLINE = process.argv.includes('--offline');
 
 const fails = [];
 const passes = [];
+const skipped = [];
 const ok = (msg) => passes.push(msg);
 const bad = (msg) => fails.push(msg);
 
@@ -70,9 +73,56 @@ if (/g==='wed'\)\s*return\s*20/.test(retouchFn) && /return\s*10;?\s*$/.test(reto
 } else {
   bad('[A4] 셀렉 리터칭 기본단가 규칙이 바뀌었다 (wed→20 / else 10 이어야 함)');
 }
-for (const kw of ['암트', '돌잔치', '가족파티', 'wedding', 'hochzeit']) {
-  if (retouchFn.includes(kw)) ok(`[A4] 웨딩급 €20 패턴에 '${kw}' 포함`);
-  else bad(`[A4] 웨딩급 €20 패턴에서 '${kw}' 가 빠졌다`);
+/* 주석을 걷어낸 **코드**에서만 본다. 2026-09-25 적발: 이 루프가 '암트'·'돌잔치'·'가족파티' 를 통과시킨 근거는
+   €20 패턴이 아니라 **그 규칙이 은퇴했다고 적어 둔 주석**이었다("암트 예식·돌잔치·가족파티는 €10", 사장님 결정
+   2026-09-17). 셋 중 하나라도 코드로 돌아오면 고객 안내(€20) ↔ 실제 청구(€10) 가 다시 갈린다 —
+   그래서 이제 **있어야 할 것은 있는지, 은퇴한 것은 없는지**를 함께 본다. */
+const retouchCode = retouchFn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+for (const kw of ['웨딩', 'wedding', 'hochzeit']) {
+  if (retouchCode.includes(kw)) ok(`[A4] €20 패턴에 '${kw}' 포함`);
+  else bad(`[A4] €20 패턴에서 '${kw}' 가 빠졌다 — 웨딩 리터칭이 €10 으로 떨어진다`);
+}
+for (const kw of ['암트', '돌잔치', '가족파티']) {
+  if (!retouchCode.includes(kw)) ok(`[A4] 은퇴한 €20 대상 '${kw}' 가 코드에 없다 (2026-09-17 결정)`);
+  else bad(`[A4] '${kw}' 가 €20 패턴에 되돌아왔다 — 안내문 €20 ↔ 청구 €10 불일치 재발`);
+}
+
+/* ---------- [상수] 고객에게 나가는 돈·법정 트리거 숫자 고정 ----------
+   2026-09-25 결함주입 실험(Code.gs 사본에 상수를 +1 하고 게이트 전체 실행)에서 **아무 게이트도 못 잡던**
+   숫자들이다. 셋 다 한 글자 편집으로 고객 청구액이나 계약 의무가 바뀐다 — 바꿀 땐 이 줄을 같이 고칠 것.
+   운영 노브(캐시 TTL·스캔 상한·백업 보존일 등)는 의도적으로 고정하지 않는다(소음만 늘어난다). */
+for (const [name, want, why] of [
+  ['LOYALTY_CREDIT_EUR_', '20', '3회차 혜택 −€20 — 고객 청구액'],
+  ['CONTRACT_MIN_TOTAL', '500', '이 금액부터 계약서 필요 — 법적 의무 트리거'],
+  ['TRAVEL_KM_RATE_', '0.30', 'EStG 자가용 km 공제액 — 세무 신고 숫자'],
+]) {
+  const m = gs.match(new RegExp(`const ${name}=(-?[0-9.]+);`));
+  if (!m) bad(`[상수] ${name} 를 찾지 못했다 (${why}) — 이름이 바뀌었으면 이 검증기도 고칠 것`);
+  else if (m[1] !== want) bad(`[상수] ${name} = ${m[1]} (기대 ${want}) — ${why}`);
+  else ok(`[상수] ${name} = ${want} · ${why}`);
+}
+
+/* ---------- [세금] 부가세 19% 고정 ----------
+   2026-09-25 결함주입: `CONFIG.QUOTE_VAT_RATE` 를 0.19→0.07 로, 장부·환불·세액 환산의 `/1.19` 를 `/1.07` 로
+   바꿔도 **27개 게이트 전부 초록**이었다. 이 숫자가 틀리면 ELSTER 에 신고하는 넷토·세액이 통째로 틀린다.
+   그래서 ① 설정 상수 ② 코드에 7%/16% 같은 다른 세율 제수가 끼어들지 않았는지를 함께 본다.
+   1.20 이상(레이아웃 1.45·1.7 등)은 검사하지 않는다 — 부가세와 무관한 산술이라 소음만 된다. */
+{
+  const rate = gs.match(/QUOTE_VAT_RATE:\s*([0-9.]+),/);
+  if (!rate) bad('[세금] CONFIG.QUOTE_VAT_RATE 를 찾지 못했다');
+  else if (rate[1] !== '0.19') bad(`[세금] CONFIG.QUOTE_VAT_RATE = ${rate[1]} (기대 0.19 — 독일 부가세)`);
+  else ok('[세금] CONFIG.QUOTE_VAT_RATE = 0.19');
+
+  // 주석을 걷어낸 코드에서만 본다 (주석엔 `11px/1.45` 같은 줄간격 계산이 있다)
+  const code = gs.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const wrongRates = [...new Set((code.match(/[/*]\s*1\.(?:0\d|1[0-8])\b/g) || []))];
+  if (wrongRates.length) bad(`[세금] 19% 아닌 부가세 환산이 코드에 있다: ${wrongRates.join(', ')} — 넷토·세액 계산이 갈린다`);
+  else ok('[세금] 부가세 환산 제수가 1.19 하나뿐 (7%·16% 혼입 없음)');
+
+  const months = gs.match(/GUTSCHEIN_VALID_MONTHS:\s*(\d+),/);
+  if (!months) bad('[법정] CONFIG.GUTSCHEIN_VALID_MONTHS 를 찾지 못했다');
+  else if (months[1] !== '36') bad(`[법정] GUTSCHEIN_VALID_MONTHS = ${months[1]} (기대 36 — 발행연도+3년 12/31 안내와 일치해야 한다)`);
+  else ok('[법정] GUTSCHEIN_VALID_MONTHS = 36 (발행연도+3년)');
 }
 
 /* ---------- [가격] 토요일 할증 ---------- */
@@ -99,7 +149,9 @@ const CONSULT_ONLY_IDS = ['biz', 'amtv', 'amtpr', 'amtvr', 'amtpp', 'amtvp', 'ev
 const FIXED_PRICE = { amtp: 350, dolp: 350 };
 
 if (OFFLINE) {
-  ok('[라이브] --offline 이라 API·리다이렉트 검사는 건너뜀');
+  /* 건너뜀을 passes 에 넣으면 안 된다 — "전부 통과" 로 읽힌다(2026-09-25 적발: check-all 이 기본 --offline 이라
+     **내부 단가 노출 검사와 셀렉 v1→v2 301 검사가 배포 흐름에서 한 번도 돌지 않았다**). 경고로만 남긴다. */
+  skipped.push('[라이브] API·리다이렉트 검사 (내부 단가 노출 · 상품군 생존 · select 루트 301) — --offline');
 } else if (!API_BASE) {
   bad('[라이브] shared/config.js 에서 API base URL 을 찾지 못했다');
 } else {
@@ -161,7 +213,14 @@ if (fails.length) {
   console.log(`\n${fails.length}건 실패 / ${passes.length}건 통과\n`);
   process.exit(1);
 }
-console.log(`\n✅ 회귀 항목 ${passes.length}건 전부 통과.`);
+if (skipped.length) {
+  console.log();
+  skipped.forEach((m) => console.log(`  ⏭️ ${m}`));
+  console.log(`\n⚠️ 소스 항목 ${passes.length}건 통과 · 라이브 항목 ${skipped.length}건 미검사`
+    + ` — 배포 전에는 \`node scripts/check-all.mjs --online\` 로 한 번 더 돌릴 것.`);
+} else {
+  console.log(`\n✅ 회귀 항목 ${passes.length}건 전부 통과(라이브 포함).`);
+}
 console.log('\n⚠️  이 스크립트가 검증하지 못하는 릴리스 게이트 (사람이 해야 함):');
 console.log('   · B2C 행사 예약 1건 실제 제출 (시트+캘린더+메일 생성됨)');
 console.log('   · B2B 상담 제출 후 캘린더 이벤트가 안 생기는지 확인');
