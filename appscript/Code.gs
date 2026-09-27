@@ -4568,7 +4568,7 @@ function _inquiryEchoBlockHtml_(lang,rows,message){
 function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
   const html=[
     '<div style="font-family:Arial,sans-serif;line-height:1.65;">',
-    '<h2 style="margin:0 0 12px;">새 포트폴리오 문의</h2>',
+    '<h2 style="margin:0 0 12px;">새 홈페이지 문의</h2>',
     `<p><b>고객</b>: ${escapeHtml_(lead.name)}<br>`,
     `<b>이메일</b>: ${escapeHtml_(lead.email)}<br>`,
     `<b>전화</b>: ${escapeHtml_(lead.phone||'-')}<br>`,
@@ -4582,7 +4582,7 @@ function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
   ].join('');
   try{
     // replyTo 가 없으면 사장님이 '답장'을 눌러도 고객에게 가지 않는다(구 PHP 폼엔 있던 기능) — 반드시 유지할 것
-    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:lead.email,subject:`[포트폴리오 문의] ${lead.projectType} — ${lead.name}${lead.preferredDate?' · '+lead.preferredDate:''}`,htmlBody:html},{public:true,
+    sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,replyTo:lead.email,subject:`[홈페이지 문의] ${lead.projectType} — ${lead.name}${lead.preferredDate?' · '+lead.preferredDate:''}`,htmlBody:html},{public:true,
       type:'포트폴리오문의',
       customerName:lead.name,
       email:lead.email,
