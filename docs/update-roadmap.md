@@ -72,7 +72,7 @@ Updated: 2026-09-26 Europe/Berlin
 - `_passportCrossSellHtml_` (Code.gs): `isPassportBookingItem_` 인 행에만, 리뷰 부탁 **앞에** KO/EN/DE 한 줄. 법인 여권은 기존대로 감사메일 자체 없음.
 - 링크 = 예약 사이트 `?lang=<언어>` + `utm_source=followup&utm_medium=email&utm_campaign=passport_crosssell`.
 - **3개월 뒤(2026-12 말) 확인:** GA4 에서 이 캠페인 유입 → 보수 가정 "여권 손님 1% 전환(연 3건)"이 맞는지. GA4 는 쿠키 동의자만 잡으므로 하한값이다.
-- 검증: `scripts/check-passport-crosssell.mjs` — 진짜 발송 함수를 가짜 시트로 돌려 10건 단정(언어별 문장·lang 링크·비여권 제외·법인 제외·위치·중복 없음). 여권 가드를 빼면 2건 실패하는 것 확인. check-all 31개 통과.
+- 검증: `scripts/check-passport-crosssell.mjs` — 진짜 발송 함수를 가짜 시트로 돌려 10건 단정(언어별 문장·lang 링크·비여권 제외·법인 제외·위치·중복 없음). 여권 가드를 빼면 2건 실패하는 것 확인. check-all 30개 통과.
 - 배포: 워크트리(origin/main=@995 기준)에서 push 직전 `clasp pull` 2회로 라이브 무변동 확인 → @996. 배포 후 라이브 Code == 워크트리, `actions-list` ok.
 
 ### 2026-09-26 · C7 픽업 전날 리마인드 — 예약해 둔 손님에게 "내일 ○시 픽업" (메인 @994 · 셔틀 @23 · 보드 @19)
