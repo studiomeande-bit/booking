@@ -759,6 +759,8 @@ const COPY = {
     passportTitle: '여권/비자 옵션',
     passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
+    passportFamilyHint: (rate, min) => `${min}인 이상 가족·단체는 ${rate}% 할인이 자동 적용됩니다(회사·기관 청구 건 제외).`,
+    sameDayRebookNote: (rate) => `촬영 당일, 촬영을 마친 뒤 다음 촬영을 예약하시면 ${rate}% 할인이 자동 적용됩니다. 같은 이름과 연락처(전화 또는 이메일)로 예약해 주세요. 여권·비자 사진은 제외입니다.`,
     passportPeopleLabel: '인원수',
     peopleCustomPlaceholder: '6명 이상 직접입력',
     passportConfigLabel: '구성 {index}',
@@ -995,6 +997,8 @@ const COPY = {
     passportTitle: 'Passport / Visa options',
     passportCopy: 'Add each country and people combination to reflect the correct passport / visa quote.',
     passportHint: 'One country is included. Each additional country adds €5.',
+    passportFamilyHint: (rate, min) => `Families and groups of ${min} or more get ${rate}% off automatically (not for company invoices).`,
+    sameDayRebookNote: (rate) => `Book your next session on the day of a shoot, once it has finished, and ${rate}% off is applied automatically. Please use the same name and phone or email. Passport/visa photos are excluded.`,
     passportPeopleLabel: 'People',
     peopleCustomPlaceholder: '6+ people (enter manually)',
     passportConfigLabel: 'Configuration {index}',
@@ -1231,6 +1235,8 @@ const COPY = {
     passportTitle: 'Pass / Visum Optionen',
     passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
+    passportFamilyHint: (rate, min) => `Familien und Gruppen ab ${min} Personen erhalten automatisch ${rate} % Rabatt (nicht bei Firmenrechnung).`,
+    sameDayRebookNote: (rate) => `Wenn Sie am Tag Ihres Shootings – nach dessen Ende – Ihren nächsten Termin buchen, erhalten Sie automatisch ${rate} % Rabatt. Bitte mit demselben Namen und derselben Telefonnummer oder E-Mail buchen. Ausgenommen sind Pass- und Visabilder.`,
     passportPeopleLabel: 'Personenzahl',
     peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
     passportConfigLabel: 'Konfiguration {index}',
@@ -1596,6 +1602,7 @@ async function boot() {
 
 function renderInitData(initData) {
   state.init = normalizeInitData(initData);
+  renderPassportHint();   // 가족 할인 요율은 init 설정값
   syncSelectedProductWithInitData();
   const visibleProducts = getVisibleProductsForSelectedGroup();
   renderGroups();
@@ -2309,6 +2316,23 @@ function getBusinessInvoiceFormData(source = null) {
   };
 }
 
+/* 여권 안내 + 5인 이상 가족·단체 할인 — 요율·인원은 서버 설정과 같은 값(요약의 '가족 단체 할인 적용됨' 줄과 동일).
+   applyCopy 는 init 도착 전에도 돌아서, init 을 받은 뒤 renderInitData 에서 한 번 더 부른다. */
+function renderPassportHint() {
+  if (!els.passportHint) return;
+  const copy = getCopy();
+  const rate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+  els.passportHint.textContent = `${copy.passportHint} ${copy.passportFamilyHint(rate, PASS_FAMILY_DISCOUNT_MIN_PEOPLE)}`;
+}
+
+/* 촬영 당일 다음 예약 할인(엔진의 재방문 할인) 사전 안내 — 대상은 여권·비자가 아닌 상품(엔진 isReturnDiscountEligibleItem_ 와 같은 규칙).
+   할인은 당일 촬영이 끝난 뒤 같은 이름 + 전화 또는 이메일이 맞을 때 서버가 판정한다(checkReturnCustomer_). */
+function getSameDayRebookNote(item) {
+  if (!item || item.g === 'pass' || item.t === 'passport') return '';
+  const rate = Number(state.init?.settings?.returnDiscount || 10) || 10;
+  return getCopy().sameDayRebookNote(rate);
+}
+
 function applyCopy() {
   const copy = getCopy();
   document.documentElement.lang = state.lang;
@@ -2404,7 +2428,7 @@ function applyCopy() {
   setText('gdprLabel', copy.gdprLabel);
   setText('gdprSub', copy.gdprSub);
   syncMarketingConsentCopy(copy);
-  els.passportHint.textContent = copy.passportHint;
+  renderPassportHint();
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
@@ -5927,6 +5951,7 @@ function renderProductDetail() {
     ` : `
       ${discountHtml}
       ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
+      ${getSameDayRebookNote(state.selectedProduct) ? `<div class="muted-copy same-day-rebook-note" style="margin-top:8px;">${escapeHtml(getSameDayRebookNote(state.selectedProduct))}</div>` : ''}
       ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
     `}
     ${weddingBenefitHtml}
