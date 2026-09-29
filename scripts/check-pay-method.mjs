@@ -57,8 +57,14 @@ assert.equal(pmDefault(true, { payMethod: '현금' }, 0, false), '마이리얼�
 
 // ② 세부내역 표
 const ctx = vm.createContext({});
+/* buildBookingDetailsRows_ 는 요청사항을 customerVisibleMemo_ 로 걸러 싣는다(감사줄 유출 수리 2026-09-28).
+   접두어 목록 상수는 함수 밖 최상위라 extractFn 으로 안 잡힌다 — 원문에서 그대로 떠 온다(복제 금지). */
+const prefixConst = SRC.match(/const MEMO_AUDIT_PREFIXES_='[^']*';/);
+assert.ok(prefixConst, 'MEMO_AUDIT_PREFIXES_ 를 Code.gs 에서 찾지 못했다 — 이름이 바뀌었나요?');
+vm.runInContext(prefixConst[0], ctx);
 vm.runInContext([
-  'buildBookingDetailsRows_', '_bookingDetailLabels_', '_addBookingDetailRow_', 'getBookingAgeGroupLabel_',
+  'buildBookingDetailsRows_', 'customerVisibleMemo_',
+  '_bookingDetailLabels_', '_addBookingDetailRow_', 'getBookingAgeGroupLabel_',
   'getBookingAgeDiscountLabel_', '_bookingOptionText_', '_bookingSurveyText_', '_bookingList_',
   'getPassportFamilyDiscountLabel_', 'getBookingBabyTypeLabel_', '_bookingTruthyLabel_',
   'getPassportComboDurationMin_', 'formatEuroAmount_', 'parseMoneyValue_', 'isPublicTruthy_', 'roundCurrency_',
@@ -89,7 +95,7 @@ function run(rowPatch, data) {
     getDbSheet: () => ({ getLastRow: () => 300, getRange: () => ({ getValues: () => [row.slice()], setValue() {} }) }),
     updateBookingAdmin: (t, r, merged) => { c.captured = merged; return { ok: true, changeMail: { sent: false } }; },
   });
-  vm.runInContext(extractFn('preserveAuditMemoLines_') + '\n' + extractFn('updateBookingFieldsForAgent_'), c);
+  vm.runInContext(prefixConst[0] + '\n' + extractFn('preserveAuditMemoLines_') + '\n' + extractFn('updateBookingFieldsForAgent_'), c);
   c.updateBookingFieldsForAgent_('t', 290, data);
   return c.captured;
 }

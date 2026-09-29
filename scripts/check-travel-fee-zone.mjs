@@ -144,6 +144,15 @@ const SCAN_MODULE = [
   extractFn(gs, 'parseYmdDateAtNoon_'),
   extractFn(gs, 'parseMoneyValue_'),
   extractFn(gs, '_scanTravelFeeGaps_'),
+  // 급행비를 출장비로 오인하지 않는지(2026-09-29) — 정가 비교가 옵션 열의 급행을 더한다
+  gs.split('\n').find((l) => l.startsWith('const DELIVERY_ESTIMATE_GROUPS_=')),
+  extractFn(gs, 'parseBookingOptionKeysFromText_'),
+  extractFn(gs, 'isDeliveryEstimateItem_'),
+  extractFn(gs, 'getExpressRate_'),
+  extractFn(gs, 'getExpressFeeForItem_'),
+  extractFn(gs, 'parsePercentSetting_'),
+  extractFn(gs, 'roundCurrency_'),
+  'function getSettingsMap_(){return {};}',
   // 시트·GAS 계층만 가짜로 세운다 (판정 로직은 전부 원본)
   "const Utilities={formatDate:(d)=>d.toISOString().slice(0,10)};",
   "function parseDateSafe_(v){return {obj:new Date(v),str:String(v)};}",
@@ -196,6 +205,8 @@ check('존3 €70 미반영 → 경고 1건', hit.count, 1);
 check('  경고 내용 (존/금액/km)', hit.items[0] && [hit.items[0].zone, hit.items[0].fee, hit.items[0].oneWayKm], [3, 70, 92.4]);
 check('마인츠 50.6km 정가 그대로 → 존2 €30 경고',
   runScan({ 총결제액: 350 }, [ledgerRow(2, 50.6, 'Mainz')]).items.map((x) => [x.zone, x.fee]), [[2, 30]]);
+check('급행 붙은 예약(350+급행 70=420)도 출장비 미반영이면 경고 — 급행비를 출장비로 오인 금지',
+  runScan({ 총결제액: 420, 옵션: 'express' }, HEIDELBERG).items.map((x) => [x.zone, x.fee]), [[3, 70]]);
 check('쾰른 170km → 존4 경고(금액 없음 = 상담)',
   runScan({}, [ledgerRow(2, 170, 'Köln')]).items.map((x) => [x.zone, x.fee]), [[4, null]]);
 check('토요일 할증 €40 만 얹힌 총액 €390 → 여전히 경고',

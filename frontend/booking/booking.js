@@ -523,8 +523,56 @@ const OPTION_META = {
   outfit: {
     groups: ['prof', 'stud', 'snap'],
     label: { ko: '의상 추가 (+€20)', en: 'Extra outfit (+€20)', de: 'Extra Outfit (+€20)' }
+  },
+  /* 급행(2026-09-29) — 요금은 상품마다 다르다(상품가 × expressRate%). 라벨의 금액은 optionLabelFor 가 붙인다.
+     서버 calculateQuote_ 가 정본이고, 판매 대상이 아니면 서버가 키를 지운다. */
+  express: {
+    groups: ['prof', 'stud', 'snap', 'wed'],
+    label: { ko: '⚡ 급행 — 원본 3일·보정 3일', en: '⚡ Express — originals & retouch in 3 days each', de: '⚡ Express — Originale & Retusche je in 3 Tagen' }
   }
 };
+
+/* 급행 요금 — 서버 getExpressFeeForItem_ 와 같은 식(상품 목록가 × 요율%, 할인 전). 0 이면 판매하지 않는다. */
+function getExpressFee(item) {
+  if (!item || !OPTION_META.express.groups.includes(item.g)) return 0;
+  const p = Number(item.p || 0);
+  if (!(p > 0) || item.t === 'custom' || isQuoteOnlyProduct(item)) return 0;
+  if (state.init?.settings?.expressRate == null) return 0;   // 급행을 모르는 서버(배포 전·폴백) — 팔면 요금 없이 키만 저장된다
+  const raw = String(state.init.settings.expressRate).trim();
+  const rate = raw === '' ? 20 : Number(raw);
+  if (!(rate > 0)) return 0;
+  return roundCurrency(p * rate / 100);
+}
+function ymdLabel(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const wd = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const W = { ko: ['일', '월', '화', '수', '목', '금', '토'], en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], de: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] };
+  if (state.lang === 'de') return `${W.de[wd]}, ${m[3]}.${m[2]}.`;
+  if (state.lang === 'en') return `${W.en[wd]} ${Number(m[3])}/${Number(m[2])}`;
+  return `${Number(m[2])}월 ${Number(m[3])}일(${W.ko[wd]})`;
+}
+function formatDeliveryEstimate(est) {
+  if (!est || !est.originalBy) return '';
+  const o = ymdLabel(est.originalBy);
+  if (est.express) {
+    const r = ymdLabel(est.retouchBy);
+    return state.lang === 'en' ? `⚡ Originals by ${o} · retouched within 3 days of your selection (e.g. by ${r})`
+      : state.lang === 'de' ? `⚡ Originale bis ${o} · Retusche innerhalb von 3 Tagen nach Auswahl (z. B. bis ${r})`
+        : `⚡ 원본 ${o}까지 · 보정본은 셀렉 후 3일 안에(예: ${r}까지)`;
+  }
+  const a = ymdLabel(est.retouchFrom), b = ymdLabel(est.retouchTo);
+  return state.lang === 'en' ? `Originals by ${o} · retouched 2–3 weeks after your selection (e.g. ${a}–${b})`
+    : state.lang === 'de' ? `Originale bis ${o} · Retusche 2–3 Wochen nach Auswahl (z. B. ${a}–${b})`
+      : `원본 ${o}까지 · 보정본은 셀렉 후 2~3주(예: ${a}~${b})`;
+}
+function optionLabelFor(key, item) {
+  const meta = OPTION_META[key];
+  const label = meta ? (meta.label[state.lang] || meta.label.ko) : key;
+  if (key !== 'express') return label;
+  const fee = getExpressFee(item);
+  return fee > 0 ? `${label} (+€${formatEuroAmount(fee)})` : label;
+}
 
 const BUSINESS_MODE_META = [
   { key: 'photo', label: { ko: '행사 사진', en: 'Event Photo', de: 'Event Foto' } },
@@ -3878,6 +3926,9 @@ function getPreviewQuote() {
     marketingDiscount = roundCurrency(weddingDiscountBase * (WEDDING_MARKETING_DISCOUNT_RATE / 100));
   }
   if (item.g === 'wed') total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);
+  // 급행 — 서버 calculateQuote_ 와 같은 자리(할인 뒤·여권 콤보 전). 판매 대상이 아니면 0
+  const expressFee = optionKeys.includes('express') ? getExpressFee(item) : 0;
+  total = roundCurrency(total + expressFee);
   let passAddonDur = 0;
   let passAddonPrice = 0;
   const passAddon = (item.g === 'prof' || item.g === 'stud') && !!els.passAddonToggle?.checked;
@@ -3916,6 +3967,7 @@ function getPreviewQuote() {
     otherCountry,
     totalCountries,
     optionKeys,
+    expressFee,
     weekendSurcharge,
     isQuoteOnly: isQuoteOnlyProduct(item)
   };
@@ -5421,9 +5473,9 @@ function renderGeneralPanel() {
   renderBgChips();
   renderBusinessOptions();
   const optionMarkup = Object.entries(OPTION_META)
-    .filter(([, meta]) => meta.groups.includes(product.g))
-    .map(([key, meta]) => {
-      const label = meta.label[state.lang] || meta.label.ko;
+    .filter(([key, meta]) => meta.groups.includes(product.g) && (key !== 'express' || getExpressFee(product) > 0))
+    .map(([key]) => {
+      const label = optionLabelFor(key, product);
       const selected = state.optionKeys.includes(key) ? ' selected' : '';
       return `<button type="button" class="chip-btn toggle-chip${selected}" data-option="${key}">${escapeHtml(label)}</button>`;
     }).join('');
@@ -6671,9 +6723,12 @@ function renderReview() {
   const babyName = needsBabyNameForBooking(state.selectedProduct) ? String(els.form.elements.babyName?.value || '').trim() : '';
   if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
-    const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
+    const optionLabels = state.optionKeys.map((key) => optionLabelFor(key, state.selectedProduct)).join(', ');
     rows.push([copy.reviewOptions, optionLabels]);
   }
+  /* 사진 전달 예정(2026-09-29) — 날짜는 서버 견적(deliveryEstimate)이 휴무일까지 반영해 계산한다 */
+  const deliveryText = formatDeliveryEstimate(state.quote?.deliveryEstimate);
+  if (deliveryText) rows.push([state.lang === 'en' ? 'Photo delivery' : state.lang === 'de' ? 'Fotolieferung' : '사진 전달 예정', deliveryText]);
   if (state.surveyKeys.length) {
     const surveyLabels = state.surveyKeys
       .map((key) => SURVEY_META.find((item) => item.key === key))

@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-26T09:46:05.538Z
- * 포함 함수 178개 / 상수 36개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-29T14:21:34.162Z
+ * 포함 함수 192개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -173,6 +173,8 @@ function asNumber_(value){
   return isFinite(n)?n:NaN;
 }
 
+function getDbSheet() { return ensureSheets_().bookingSheet; }
+
 function _openSpreadsheetByIdSafe_(id){
   const safeId=String(id||'').trim();
   if(!safeId) return null;
@@ -310,6 +312,63 @@ function getEventDiscountRate_(){
 
 function getReturnDiscountRate_(){
   return parsePercentSetting_(getSettingsMap_().return_discount,10,50);
+}
+
+const DELIVERY_ORIGINAL_DAYS_=7, DELIVERY_RETOUCH_MIN_DAYS_=14, DELIVERY_RETOUCH_MAX_DAYS_=21;
+
+const EXPRESS_ORIGINAL_DAYS_=3, EXPRESS_RETOUCH_DAYS_=3;
+
+const DELIVERY_ESTIMATE_GROUPS_=['prof','stud','snap','wed'];
+
+function getExpressRate_(){
+  // 빈칸은 기본 20(0 으로 읽히면 급행이 공짜가 된다) — 명시적 '0' 만 판매 중지
+  const raw=String(getSettingsMap_().express_rate==null?'':getSettingsMap_().express_rate).trim();
+  if(raw==='') return 20;
+  return parsePercentSetting_(raw,20,100);
+}
+
+function isDeliveryEstimateItem_(item){
+  if(!item) return false;
+  if(DELIVERY_ESTIMATE_GROUPS_.indexOf(String(item.g||''))<0) return false;
+  if(isMyRealTripProduct_(item)) return false;
+  return true;
+}
+
+function getExpressFeeForItem_(item){
+  if(!isDeliveryEstimateItem_(item)) return 0;
+  const p=Number(item.p)||0;
+  if(!(p>0)||item.t==='custom') return 0;
+  const rate=getExpressRate_();
+  if(!(rate>0)) return 0;
+  return roundCurrency_(p*rate/100);
+}
+
+function isDeliveryClosedDay_(ymd){
+  const day=new Date(ymd+'T12:00:00Z').getUTCDay();
+  if(day===0||day===1) return true;
+  const settings=getSettingsMap_();
+  if(parseDateListSetting_(settings.public_holiday_open_dates||'').indexOf(ymd)>-1) return false;
+  return getPublicHolidayDatesForYear_(Number(ymd.slice(0,4))).indexOf(ymd)>-1;
+}
+
+function deliveryDueDate_(fromYmd,days){
+  let d=_ffmAddDays_(fromYmd,days);
+  for(let i=0;i<10&&isDeliveryClosedDay_(d);i++) d=_ffmAddDays_(d,1);
+  return d;
+}
+
+function buildDeliveryEstimate_(shootYmd,item,express){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(shootYmd||''))||!isDeliveryEstimateItem_(item)) return null;
+  const originalBy=deliveryDueDate_(shootYmd,express?EXPRESS_ORIGINAL_DAYS_:DELIVERY_ORIGINAL_DAYS_);
+  if(express) return {originalBy:originalBy,retouchBy:deliveryDueDate_(originalBy,EXPRESS_RETOUCH_DAYS_),express:true};
+  return {originalBy:originalBy,retouchFrom:deliveryDueDate_(originalBy,DELIVERY_RETOUCH_MIN_DAYS_),
+    retouchTo:deliveryDueDate_(originalBy,DELIVERY_RETOUCH_MAX_DAYS_),express:false};
+}
+
+function retouchDueFromSubmission_(submitYmd,express){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(submitYmd||''))) return null;
+  return express ? {retouchBy:deliveryDueDate_(submitYmd,EXPRESS_RETOUCH_DAYS_),express:true}
+    : {retouchFrom:deliveryDueDate_(submitYmd,DELIVERY_RETOUCH_MIN_DAYS_),retouchTo:deliveryDueDate_(submitYmd,DELIVERY_RETOUCH_MAX_DAYS_),express:false};
 }
 
 const PASS_FAMILY_DISCOUNT_MIN_PEOPLE=5;
@@ -513,7 +572,7 @@ function isPromoDateAllowed_(dateStr){
 
 function getCustomerInitSettings_(s,promo){
   s=s||getSettingsMap_(); promo=promo||getPromoConfig_();
-  return {ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),passFamilyDiscount:String(getPassportFamilyDiscountRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||'',maxBookingDate:PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR};
+  return {ko:s.notice_ko||'',en:s.notice_en||'',de:s.notice_de||'',customHolidays:s.custom_holidays||'',publicHolidayOpenDates:s.public_holiday_open_dates||'',customPublicHolidays:s.custom_public_holidays||'',morningBlockRanges:s.morning_block_ranges||'',weekdayHours:getWeekdayBookingHours_(),saturdayHours:getSaturdayBookingHours_(),eventRate:String(getEventDiscountRate_()),eventStart:s.event_start||'',eventEnd:s.event_end||'',returnDiscount:String(getReturnDiscountRate_()),passFamilyDiscount:String(getPassportFamilyDiscountRate_()),expressRate:String(getExpressRate_()),promoEnabled:isPromoEnabledForCustomer_(s),promoStart:promo.start,promoEnd:promo.end,promoContent:getPromoContent_(),recommendBeforeHours:s.recommend_before_hours||String(SLOT_RECOMMENDATION_DEFAULTS.beforeHours),recommendAfterHours:s.recommend_after_hours||String(SLOT_RECOMMENDATION_DEFAULTS.afterHours),recommendMaxSlots:s.recommend_max_slots||String(SLOT_RECOMMENDATION_DEFAULTS.maxRecommended),recommendForceSlots:s.recommend_force_slots||'',recommendExcludeSlots:s.recommend_exclude_slots||'',maxBookingDate:PUBLIC_API_CONFIG.MAX_BOOKING_DATE_STR};
 }
 
 function getInitDataCustomer() {
@@ -817,7 +876,10 @@ function formatEuroAmount_(value){
 function calculateQuote_(request){
   const item=getProductById_(request.itemId);
   const people=Math.max(1,parseInt(request.people)||1);
-  const optionKeys=(request.optionKeys||[]).filter(Boolean);
+  /* 키는 정규화한다 — 중복('express' 두 번이면 splice 가 하나만 지워 대상 아닌 상품에 급행이 남았다)과
+     라벨 문자열('Express delivery'·'급행 작업')은 요금 없이 급행으로 읽혀 공짜 급행이 됐다(2026-09-29 검토). */
+  const optionKeys=Array.from(new Set((request.optionKeys||[]).map(function(k){return String(k||'').trim();}).filter(Boolean)))
+    .filter(function(k){return k==='express'||parseBookingOptionKeysFromText_(k).indexOf('express')<0;});
   const passPersonCountries=(request.passPersonCountries||[])
     .map(function(entry){
       if(Array.isArray(entry)) return entry.filter(Boolean);
@@ -953,6 +1015,15 @@ function calculateQuote_(request){
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
   if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
+  /* 급행(유료) — **할인 뒤에** 더한다: 재방문·이벤트·얼리버드 할인이 급행비를 깎지 않게(요금 = 상품가의 N%).
+     판매 대상이 아니면 키를 지운다 — 요금 0 인데 '급행' 라벨만 장부·메일에 남는 일을 막는다.
+     계약금 규칙(>100 → €50, 웨딩 20%)보다 먼저라 급행이 계약금 산정에 들어간다. */
+  const expressFeeOffer=getExpressFeeForItem_(item);
+  const expressIdx=optionKeys.indexOf('express');
+  const expressFee=(expressIdx>-1&&expressFeeOffer>0)?expressFeeOffer:0;
+  if(expressIdx>-1&&!(expressFee>0)) optionKeys.splice(expressIdx,1);
+  total=roundCurrency_(total+expressFee);
+  const deliveryEstimate=request.date?buildDeliveryEstimate_(String(request.date).slice(0,10),item,expressFee>0):null;
   const duration=isGenericBusinessProduct_(item)
     ? businessHours*60
     : (item.t==='passport'?getPassportComboDurationMin_(people):item.d);
@@ -965,7 +1036,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo'&&!isQuoteOnly;
   const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel,expressFee,expressFeeOffer,deliveryEstimate};
 }
 
 function isReturnDiscountEligibleItem_(item){
@@ -2144,7 +2215,7 @@ function roundUpToQuarterHour_(ms){
 
 const WIDERRUF_TEXT_=/* WIDERRUF_TEXT:BEGIN */
 {
-  "version": "WB-2026-09",
+  "version": "WB-2026-10",
   "url": "https://booking.studio-mean.com/widerruf/",
   "de": {
     "intro": "Verbraucherinnen und Verbrauchern (§ 13 BGB) steht ein Widerrufsrecht nach Maßgabe der folgenden Widerrufsbelehrung zu.",
@@ -2188,7 +2259,7 @@ const WIDERRUF_TEXT_=/* WIDERRUF_TEXT:BEGIN */
     "statement": "Hiermit widerrufe ich den von mir abgeschlossenen Vertrag.",
     "withdrawLabel": "Vertrag widerrufen",
     "confirmLabel": "Widerruf bestätigen",
-    "earlyStartRetouch": "Ich verlange ausdrücklich, dass Studio mean vor Ablauf der Widerrufsfrist mit der bestellten Zusatzretusche beginnt. Mir ist bekannt, dass ich bei einem Widerruf einen angemessenen Betrag für die bis dahin erbrachten Leistungen zahlen muss und dass mein Widerrufsrecht mit vollständiger Vertragserfüllung durch Studio mean erlischt.",
+    "earlyStartRetouch": "Ich verlange ausdrücklich, dass Studio mean vor Ablauf der Widerrufsfrist mit der bestellten Zusatzleistung (Zusatzretusche bzw. Express-Bearbeitung) beginnt. Mir ist bekannt, dass ich bei einem Widerruf einen angemessenen Betrag für die bis dahin erbrachten Leistungen zahlen muss und dass mein Widerrufsrecht mit vollständiger Vertragserfüllung durch Studio mean erlischt.",
     "printNoWiderruf": "Für Abzüge, Rahmen und Fotokarten, die nach Ihrer Auswahl angefertigt werden, besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 1 BGB).",
     "orderButton": "Zahlungspflichtig bestellen",
     "bookButton": "Zahlungspflichtig buchen",
@@ -2228,7 +2299,7 @@ const WIDERRUF_TEXT_=/* WIDERRUF_TEXT:BEGIN */
     "statement": "본인이 체결한 계약을 철회합니다.",
     "withdrawLabel": "계약 철회 · Vertrag widerrufen",
     "confirmLabel": "철회 확정 · Widerruf bestätigen",
-    "earlyStartRetouch": "철회기간(14일)이 끝나기 전에 Studio mean 이 주문한 추가 보정을 시작해 줄 것을 명시적으로 요청합니다. 철회하면 그때까지 제공된 서비스에 대한 적정 금액을 지불해야 하고, Studio mean 이 계약을 완전히 이행하면 철회권이 소멸한다는 점을 알고 있습니다.",
+    "earlyStartRetouch": "철회기간(14일)이 끝나기 전에 Studio mean 이 주문한 추가 보정·급행 작업을 시작해 줄 것을 명시적으로 요청합니다. 철회하면 그때까지 제공된 서비스에 대한 적정 금액을 지불해야 하고, Studio mean 이 계약을 완전히 이행하면 철회권이 소멸한다는 점을 알고 있습니다.",
     "printNoWiderruf": "고르신 사진으로 만드는 인화·액자·포토카드는 맞춤 제작품이라 철회권이 없습니다(독일 민법 제312g조 제2항 제1호).",
     "orderButton": "결제 의무가 있는 주문하기",
     "bookButton": "결제 의무가 있는 예약하기",
@@ -2268,7 +2339,7 @@ const WIDERRUF_TEXT_=/* WIDERRUF_TEXT:BEGIN */
     "statement": "I hereby withdraw from the contract I concluded.",
     "withdrawLabel": "Withdraw from contract · Vertrag widerrufen",
     "confirmLabel": "Confirm withdrawal · Widerruf bestätigen",
-    "earlyStartRetouch": "I expressly request that Studio mean begin the ordered additional retouching before the withdrawal period ends. I understand that if I withdraw, I must pay a reasonable amount for the services provided up to that point, and that my right of withdrawal expires once Studio mean has fully performed the contract.",
+    "earlyStartRetouch": "I expressly request that Studio mean begin the ordered additional service (additional retouching or express processing) before the withdrawal period ends. I understand that if I withdraw, I must pay a reasonable amount for the services provided up to that point, and that my right of withdrawal expires once Studio mean has fully performed the contract.",
     "printNoWiderruf": "Prints, frames and photo cards made from the photos you select are made to your specification, so there is no right of withdrawal (Section 312g(2) no. 1 German Civil Code).",
     "orderButton": "Order with obligation to pay",
     "bookButton": "Book with obligation to pay",
@@ -2330,9 +2401,29 @@ function findBookingProductMeta_(products,itemGroup,productName){
   })||null;
 }
 
+function parseBookingOptionKeysFromText_(text){
+  const raw=String(text||'');
+  const found=[];
+  const add=function(key){ if(found.indexOf(key)===-1) found.push(key); };
+  raw.split(/[|,\n]/).map(function(part){return String(part||'').trim();}).forEach(function(part){
+    if(part==='dog'||/반려동물|pet|haustier/i.test(part)) add('dog');
+    if(part==='bg'||/추가\s*배경|extra\s*background|zus[aä]tzlicher?\s*hintergrund/i.test(part)) add('bg');
+    if(part==='outfit'||/추가\s*의상|extra\s*outfit/i.test(part)) add('outfit');
+    // 급행 — 키 그대로이거나 급행 라벨(발행 동기화가 옵션 열에 라벨을 되쓴다). 셀렉 요약('급행(셀렉)')·사업자 'Express-Lieferung' 은 매칭 안 됨
+    if(part==='express'||/급행\s*작업|express\s*delivery|express-bearbeitung/i.test(part)) add('express');
+  });
+  return found;
+}
+
+function _ffmAddDays_(ymd,n){
+  const d=new Date(ymd+'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate()+n);
+  return d.toISOString().slice(0,10);
+}
+
 const SELECT_SHEET_NAME='사진셀렉';
 
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
@@ -2514,6 +2605,39 @@ function selectJsonArrayHasItems_(raw){
   }
 }
 
+function parseSelectExpressCell_(v){
+  try{ const o=JSON.parse(String(v||'')); return (o&&Number(o.amt)>0)?o:null; }catch(e){ return null; }
+}
+
+function getSelectExpressInfo_(row,bookingOptionCell){
+  const item=getSelectProductMeta_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']]);
+  const fee=getExpressFeeForItem_(item);
+  let optCell=bookingOptionCell;
+  if(optCell==null){
+    const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+    try{ optCell=bri>1?getDbSheet().getRange(bri,BOOKING_COL['옵션']+1).getValue():''; }catch(e){ optCell=''; }
+  }
+  const boughtAtBooking=parseBookingOptionKeysFromText_(String(optCell||'')).indexOf('express')>-1;
+  const stored=SELECT_COL['급행']!=null?parseSelectExpressCell_(row[SELECT_COL['급행']]):null;
+  return {fee:fee,offer:(fee>0&&!boughtAtBooking),boughtAtBooking:boughtAtBooking,
+    boughtAtSelect:!!stored,storedAmt:stored?roundCurrency_(Number(stored.amt)):0,storedAt:stored?String(stored.at||''):''};
+}
+
+function computeSelectExpressAmt_(info,sub,photos){
+  if(!info) return 0;
+  if(!(sub&&sub.express===true)) return 0;
+  if(!selectRealRetouchPhotos_(photos).length) return 0;
+  if(info.boughtAtSelect&&info.storedAmt>0&&!info.boughtAtBooking) return info.storedAmt;   // 수정 제출: 산 가격 그대로(그 사이 요율이 바뀌어도)
+  if(!info.offer) return 0;
+  return info.fee;
+}
+
+function selectRealRetouchPhotos_(photos){
+  return (photos||[]).filter(function(p){
+    return (p&&typeof p==='object') ? !!(String(p.num||'').trim()||String(p.note||'').trim()) : !!String(p||'').trim();
+  });
+}
+
 function hasSelectSubmittedContent_(row){
   if(!row) return false;
   if(String(row[SELECT_COL['제출일시']]||'').trim()) return true;
@@ -2567,6 +2691,7 @@ function getSelectSession(sessionId){
     let bookingMarketing='';
     let bookingAddress='';
     let bookingPayMethod='';
+    let bookingOptionCell='';   // 급행을 예약 때 샀는지(옵션 열 express) — 셀렉에서 두 번 팔지 않게
     let selectWithdrawUrl=buildSelectWithdrawUrl_(0,null);
     try{
       const bri=parseInt(row[SELECT_COL['예약장부행']])||0;
@@ -2577,6 +2702,7 @@ function getSelectSession(sessionId){
         bookingMarketing=String(bRow[BOOKING_COL['마케팅동의']]||'');
         bookingAddress=String(bRow[BOOKING_COL['고객주소']]||'');
         bookingPayMethod=String(bRow[BOOKING_COL['결제수단']]||'');
+        bookingOptionCell=String(bRow[BOOKING_COL['옵션']]||'');
       }
     }catch(e){}
     _timing.booking=Date.now()-_t0;
@@ -2630,7 +2756,17 @@ function getSelectSession(sessionId){
       handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(row[SELECT_COL['수령완료일시']]).str.slice(0,16):'',
       // 유료 추가 주문의 법정 문구(서버 정본) + 하단 「Vertrag widerrufen」 링크 — docs/select-widerruf-plan.md
       legal:buildSelectLegalPayload_(),
-      withdrawUrl:selectWithdrawUrl
+      withdrawUrl:selectWithdrawUrl,
+      /* 급행(2026-09-29) — 판매 여부·요금은 서버 정본. estimate = "오늘 제출하면" 보정본 예정일(휴무일 반영) */
+      express:(function(){
+        try{
+          const info=getSelectExpressInfo_(row,bookingOptionCell);
+          const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+          const kept=info.boughtAtSelect&&info.storedAmt>0&&!info.boughtAtBooking;   // 셀렉 때 산 급행 = 산 가격 그대로(computeSelectExpressAmt_ 와 같은 규칙)
+          return {offer:info.offer||kept,fee:kept?info.storedAmt:info.fee,atBooking:info.boughtAtBooking,atSelect:info.boughtAtSelect,
+            estimate:{normal:retouchDueFromSubmission_(today,false),express:retouchDueFromSubmission_(today,true)}};
+        }catch(e){ return {offer:false,fee:0,atBooking:false,atSelect:false,estimate:null}; }
+      })()
     };
     _timing.build=Date.now()-_t0;
     base._timing=_timing;

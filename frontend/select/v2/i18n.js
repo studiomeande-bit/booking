@@ -450,6 +450,10 @@ export const COPY = {
     personHint: '프로필은 1인 기준이라, 여러 명이 나온 컷은 인원수만큼 보정 장수를 사용해요',
     personOpt: (n) => (n >= 3 ? '3인 이상' : `${n}인`),
     counterSlots: (used, free, cuts) => `보정 ${free}장 중 ${used}장 사용 (${cuts}컷 선택)`,
+    expressLabel: (fee) => `⚡ 급행 작업 (+€${fee}) — 보정본을 셀렉 후 3일 안에 보내 드려요`,
+    expressAtBooking: '⚡ 예약 때 급행을 신청하셨어요 — 보정본은 셀렉 후 3일 안에 보내 드립니다.',
+    expressDueOn: (d) => `오늘 제출하시면 ${d}까지 받으실 수 있어요.`,
+    expressDueOff: (a, b) => `급행 없이 오늘 제출하시면 ${a} ~ ${b} 사이에 보내 드립니다(셀렉 후 2~3주).`,
     galleryRetry: '다시 불러오기',
     galleryContactFallback: '문제가 계속되면 이메일로 연락 주세요 — 확인 후 바로 도와드리겠습니다.',
     pcPhotoNumField: (front, back) => `앞면 ${front} / 뒷면 ${back}`
@@ -874,6 +878,10 @@ export const COPY = {
     personHint: 'Profile shoots are priced per person, so a photo with several people uses one retouch per person',
     personOpt: (n) => (n >= 3 ? '3+' : `${n}`),
     counterSlots: (used, free, cuts) => `${used} of ${free} retouches used (${cuts} photos selected)`,
+    expressLabel: (fee) => `⚡ Express processing (+€${fee}) — retouched photos within 3 days of your selection`,
+    expressAtBooking: '⚡ You booked express — your retouched photos will follow within 3 days of your selection.',
+    expressDueOn: (d) => `Submit today and you will have them by ${d}.`,
+    expressDueOff: (a, b) => `Without express, submitting today means delivery between ${a} and ${b} (2–3 weeks after selection).`,
     galleryRetry: 'Try again',
     galleryContactFallback: 'If the problem persists, email us — we will help right away.',
     pcPhotoNumField: (front, back) => `front ${front} / back ${back}`
@@ -1298,6 +1306,10 @@ export const COPY = {
     personHint: 'Bewerbungsfotos werden pro Person berechnet: Ein Foto mit mehreren Personen verbraucht pro Person eine Retusche',
     personOpt: (n) => (n >= 3 ? '3+' : `${n}`),
     counterSlots: (used, free, cuts) => `${used} von ${free} Retuschen genutzt (${cuts} Fotos gewählt)`,
+    expressLabel: (fee) => `⚡ Express-Bearbeitung (+${fee} €) — Retuschen innerhalb von 3 Tagen nach Ihrer Auswahl`,
+    expressAtBooking: '⚡ Sie haben Express gebucht — Ihre Retuschen erhalten Sie innerhalb von 3 Tagen nach Ihrer Auswahl.',
+    expressDueOn: (d) => `Bei Absendung heute erhalten Sie sie bis ${d}.`,
+    expressDueOff: (a, b) => `Ohne Express bei Absendung heute: Lieferung zwischen ${a} und ${b} (2–3 Wochen nach Auswahl).`,
     galleryRetry: 'Erneut laden',
     galleryContactFallback: 'Wenn das Problem weiterhin besteht, schreiben Sie uns eine E-Mail — wir helfen sofort.',
     pcPhotoNumField: (front, back) => `Vorderseite ${front} / Rückseite ${back}`

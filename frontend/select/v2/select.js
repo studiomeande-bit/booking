@@ -280,6 +280,7 @@ function readStoredLang() {
 }
 
 const state = {
+  express: false,   // 급행(셀렉 때) 선택 — 판매 여부·요금은 session.express(서버 정본)
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
   lang: normalizeLang(new URLSearchParams(globalThis.location.search).get('lang')) || readStoredLang() || 'ko',
   /* true once the customer picks a language by hand — stops the session's
@@ -410,6 +411,11 @@ const els = {
   orderLegalBox: document.getElementById('orderLegalBox'),
   earlyStartRetouchRow: document.getElementById('earlyStartRetouchRow'),
   earlyStartRetouchInput: document.getElementById('earlyStartRetouchInput'),
+  expressBox: document.getElementById('expressBox'),
+  expressRow: document.getElementById('expressRow'),
+  expressInput: document.getElementById('expressInput'),
+  expressLabel: document.getElementById('expressLabel'),
+  expressNote: document.getElementById('expressNote'),
   earlyStartRetouchText: document.getElementById('earlyStartRetouchText'),
   printNoWiderrufNote: document.getElementById('printNoWiderrufNote'),
   widerrufInfoLink: document.getElementById('widerrufInfoLink'),
@@ -689,6 +695,7 @@ function wireEvents() {
   });
   // 조기 이행 체크는 제출 payload 에 실린다 — 바뀌면 새 제출 시도(updateSubmitState 가 requestId 를 버린다)
   els.earlyStartRetouchInput?.addEventListener('change', updateSubmitState);
+  els.expressInput?.addEventListener('change', () => { state.express = !!els.expressInput.checked; updateReview(); });
   els.pickupPrevMonthBtn?.addEventListener('click', () => movePickupMonth(-1));
   els.pickupNextMonthBtn?.addEventListener('click', () => movePickupMonth(1));
 }
@@ -774,6 +781,7 @@ function hideLoading() {
 
 function hydrateSession(session) {
   state.session = session;
+  state.express = !!session?.express?.atSelect;
   applyReprintUi();   // 보정 단계가 없는 세션이면 화면 구조부터 바꾼다(문구·점·버튼)
   /* The customer booked in some language; open the page in it. An explicit
      ?lang= or a stored manual choice takes precedence. */
@@ -1635,10 +1643,22 @@ function calcPrintDiscount(annotations = computePrintAnnotations()) {
   return { units, raw, vd: computeVolumeDiscount('print', units, base) };
 }
 
+/* ── 급행(2026-09-29) — 서버 getSelectExpressInfo_/computeSelectExpressAmt_ 와 같은 규칙:
+   판매(offer: 대상 상품·예약 때 미구매) + 보정할 사진이 한 장 이상. 요금은 서버가 준 fee 그대로(볼륨 할인 밖). */
+function hasRetouchSelection() {
+  return state.photos.some((p) => String(p?.num || '').trim() || String(p?.note || '').trim());
+}
+function expressOffered() {
+  const x = state.session?.express;
+  return !!(x && x.offer && Number(x.fee) > 0 && hasRetouchSelection());
+}
+function expressAmount() {
+  return state.express && expressOffered() ? money2(Number(state.session.express.fee)) : 0;
+}
 function calcTotal() {
   const r = calcRetouchDiscount();
   const p = calcPrintDiscount();
-  return money2((r.raw - r.vd.discount) + (p.raw - p.vd.discount));
+  return money2((r.raw - r.vd.discount) + (p.raw - p.vd.discount) + expressAmount());
 }
 
 /* ========================================================================
@@ -3612,11 +3632,43 @@ function updateReview() {
   els.reviewMarketing.textContent = state.marketing === 'Y' ? c.marketingYes : c.marketingNo;
   syncDeliveryUi();
   if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
+  renderExpressBox();
   const total = calcTotal();
   els.reviewTotal.textContent = total === 0 ? c.printFree : `€${total}`;
   syncOrderLegal();
   updateSubmitState();
   renderStepWarnings();
+}
+
+function ymdShort(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const wd = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const W = { ko: ['일', '월', '화', '수', '목', '금', '토'], en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], de: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] };
+  if (state.lang === 'de') return `${W.de[wd]}, ${m[3]}.${m[2]}.`;
+  if (state.lang === 'en') return `${W.en[wd]} ${Number(m[3])}/${Number(m[2])}`;
+  return `${Number(m[2])}월 ${Number(m[3])}일(${W.ko[wd]})`;
+}
+function renderExpressBox() {
+  if (!els.expressBox) return;
+  const x = state.session?.express;
+  const c = copy();
+  if (x?.atBooking && hasRetouchSelection()) {        // 예약 때 이미 산 급행 — 안내만, 다시 팔지 않는다
+    els.expressBox.classList.remove('hidden');
+    els.expressRow?.classList.add('hidden');
+    els.expressNote.textContent = c.expressAtBooking;
+    return;
+  }
+  const offered = expressOffered();
+  els.expressBox.classList.toggle('hidden', !offered);
+  els.expressRow?.classList.remove('hidden');
+  if (!offered) return;
+  if (els.expressInput) els.expressInput.checked = !!state.express;
+  els.expressLabel.textContent = c.expressLabel(money2(Number(x.fee)));
+  const est = x.estimate || {};
+  els.expressNote.textContent = state.express
+    ? (est.express?.retouchBy ? c.expressDueOn(ymdShort(est.express.retouchBy)) : '')
+    : (est.normal?.retouchFrom ? c.expressDueOff(ymdShort(est.normal.retouchFrom), ymdShort(est.normal.retouchTo)) : '');
 }
 
 /* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md, 2026-09-18) ──
@@ -3627,7 +3679,7 @@ function legalCopy() {
   const legal = state.session?.legal;
   return legal ? (legal[state.lang] || legal.ko) : null;
 }
-function hasPaidRetouch() { return calcRetouchDiscount().raw > 0; }
+function hasPaidRetouch() { return calcRetouchDiscount().raw > 0 || expressAmount() > 0; }   // 급행도 유료 서비스(조기 이행 요청 대상)
 function hasPaidPrints() { return calcPrintDiscount().raw > 0; }
 function submitButtonLabel() {
   const L = legalCopy();
@@ -3942,7 +3994,7 @@ function payloadSig() {
     state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '']),
     state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
     state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
-    state.photocard, !!els.earlyStartRetouchInput?.checked
+    state.photocard, !!els.earlyStartRetouchInput?.checked, expressAmount() > 0
   ]);
 }
 function updateSubmitState() {
@@ -4147,6 +4199,7 @@ async function onSubmit() {
     mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
     photocard: getPhotocardPayload(),
     earlyStartRetouch: !!(legalCopy() && hasPaidRetouch() && els.earlyStartRetouchInput?.checked),
+    express: expressAmount() > 0,   // 요금은 서버가 다시 계산한다(화면 금액은 안 보낸다)
     suppressCustomerEmail: state.testMode
   };
   try {

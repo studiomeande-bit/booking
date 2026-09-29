@@ -1590,6 +1590,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;"><input type="checkbox" id="m_opt_dog" onchange="calcManualPrice()"> 반려동물 (+€15)</label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;"><input type="checkbox" id="m_opt_bg" onchange="calcManualPrice()"> 추가 배경 (+€20)</label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;"><input type="checkbox" id="m_opt_outfit" onchange="calcManualPrice()"> 추가 의상 (+€20)</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;"><input type="checkbox" id="m_opt_express" onchange="calcManualPrice()"> ⚡ 급행 (상품가 20%)</label>
         </div>
       </div>
       <div id="m_pass_combo_wrap" class="form-group" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">
@@ -2310,6 +2311,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
     </div>
     <div class="card">
       <div class="card-title">당일 재촬영 할인</div>
+      <div class="form-row"><div class="form-group"><label>급행 요금 (상품가의 %, 0 = 판매 중지)</label><input type="number" id="s_express_rate" min="0" max="100" placeholder="20"></div></div>
       <div class="form-row"><div class="form-group"><label>재촬영 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div><div class="form-group"><label>여권 5인 이상 가족 할인율 (%)</label><input type="number" id="s_pass_family_discount" min="0" max="50" placeholder="10"></div></div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">예약 제출 시각 기준으로 같은 날 촬영이 끝난 고객의 추가 예약을 점검합니다. 새 예약이 여권/비자일 때는 제외하고, 이전 촬영이 여권/비자인 경우는 할인 근거로 허용합니다.</div>
       <div class="inline-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3224,6 +3226,7 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500;"><input type="checkbox" id="inv_calcOptDog" style="width:auto;" onchange="previewInvoiceAutoPrice(false)"> 반려동물 +€15</label>
         <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500;"><input type="checkbox" id="inv_calcOptBg" style="width:auto;" onchange="previewInvoiceAutoPrice(false)"> 추가 배경 +€20</label>
         <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500;"><input type="checkbox" id="inv_calcOptOutfit" style="width:auto;" onchange="previewInvoiceAutoPrice(false)"> 추가 의상 +€20</label>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500;"><input type="checkbox" id="inv_calcOptExpress" style="width:auto;" onchange="previewInvoiceAutoPrice(false)"> ⚡ 급행 (상품가 20%)</label>
         <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:600;"><input type="checkbox" id="inv_syncBooking" style="width:auto;" checked> 발행 후 예약 장부의 상품/옵션/총액/계약금/잔금 자동 반영</label>
       </div>
       <div id="inv_calcPreview" class="modal-copy" style="background:#fff;border:1px solid #ece4d8;border-radius:10px;padding:10px;margin-bottom:10px;">상품과 인원을 선택하면 예약페이지 기준 금액이 계산됩니다.</div>
@@ -3524,7 +3527,8 @@ const EDIT_AGE_OPTIONS={
 const EDIT_OPTION_META=[
   {key:'dog',label:'반려동물 +15€'},
   {key:'bg',label:'추가 배경 +20€'},
-  {key:'outfit',label:'추가 의상 +20€'}
+  {key:'outfit',label:'추가 의상 +20€'},
+  {key:'express',label:'⚡ 급행 (상품가 20%)'}   // 금액은 서버 견적(상품가 × 급행 요율)
 ];
 const STUDIO_BUSINESS_INFO={
   name:'Taewoong Min',
@@ -6690,6 +6694,7 @@ function normalizeEditOptionKeys(keys){
     if(/반려동물|pet|haustier/i.test(v)&&!out.includes('dog')) out.push('dog');
     if(/추가\s*배경|extra\s*background/i.test(v)&&!out.includes('bg')) out.push('bg');
     if(/추가\s*의상|extra\s*outfit/i.test(v)&&!out.includes('outfit')) out.push('outfit');
+    if(/급행\s*작업|express\s*delivery|express-bearbeitung/i.test(v)&&!out.includes('express')) out.push('express');
   });
   return out;
 }
@@ -9208,7 +9213,7 @@ function onManualGroupChange(){
   document.getElementById('m_balance').value = '';
   document.getElementById('m_dur').value = '60';
   document.getElementById('m_options_wrap').style.display = 'none';
-  ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => document.getElementById(id).checked = false);
+  ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit','m_opt_express'].forEach(id => { const el=document.getElementById(id); if(el) el.checked = false; });
   resetManualProductSpecificFields();
 
   // 스튜디오는 기본 2인
@@ -9261,8 +9266,10 @@ function onManualProductChange(){
       else if(/^mrt_snap_2p_/.test(itemId) && Number(peopleEl.value||0)<2) peopleEl.value='2';
     }
   }
-  document.getElementById('m_options_wrap').style.display = (!isCustom&&pType!=='passport'&&['prof','stud','snap'].includes(pGroup)) ? 'block' : 'none';
-  ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => document.getElementById(id).checked = false);
+  document.getElementById('m_options_wrap').style.display = (!isCustom&&pType!=='passport'&&['prof','stud','snap','wed'].includes(pGroup)) ? 'block' : 'none';
+  // 웨딩은 급행만(반려동물·배경·의상·어린이 옵션은 웨딩 상품에 없다) — 급행 대상 그룹은 서버 DELIVERY_ESTIMATE_GROUPS_ 와 같다
+  ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => { const el=document.getElementById(id); if(el&&el.closest('label')) el.closest('label').style.display = pGroup==='wed' ? 'none' : ''; });
+  ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit','m_opt_express'].forEach(id => { const el=document.getElementById(id); if(el) el.checked = false; });
   if(isManualMyRealTripMode()){
     calcManualBalance();
     return;
@@ -9380,6 +9387,11 @@ function calcManualPrice(){
   if(pGroup==='wed' && document.getElementById('m_wed_marketing')?.checked){
     total=Math.max(0,Math.round(total*0.95*100)/100);
   }
+  // 급행 — 서버 getExpressFeeForItem_ 와 같은 식(상품 목록가 × 요율, 할인 뒤). 대상: prof·stud·snap·wed
+  if(document.getElementById('m_opt_express')?.checked && ['prof','stud','snap','wed'].includes(pGroup) && pType!=='custom' && basePrice>0){
+    const expRate=(window._adminExpressRate==null||isNaN(window._adminExpressRate))?20:window._adminExpressRate;
+    total += Math.round(basePrice*expRate/100*100)/100;
+  }
   if(passCombo?.eligible && document.getElementById('m_pass_addon')?.checked){
     const addonPeople=getManualPassAddonPeople();
     total += 30 * addonPeople;
@@ -9409,6 +9421,7 @@ function saveManual(){
   if(document.getElementById('m_opt_dog').checked) optParts.push('dog');
   if(document.getElementById('m_opt_bg').checked) optParts.push('bg');
   if(document.getElementById('m_opt_outfit').checked) optParts.push('outfit');
+  if(document.getElementById('m_opt_express')?.checked) optParts.push('express');
   const selectedMeta=getManualSelectedProductMeta()||{};
   const manualDetailKey=getManualDetailKey();
   const manualPassAddonEligible=manualDetailKey==='prof'||manualDetailKey==='stud';
@@ -9546,7 +9559,7 @@ function saveManual(){
       document.getElementById('m_pay').value = '계좌이체';
       document.getElementById('m_dep_pay').value = '-';
       document.getElementById('m_options_wrap').style.display = 'none';
-      ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit'].forEach(id => document.getElementById(id).checked = false);
+      ['m_opt_kids','m_opt_dog','m_opt_bg','m_opt_outfit','m_opt_express'].forEach(id => { const el=document.getElementById(id); if(el) el.checked = false; });
       resetManualProductSpecificFields();
       document.getElementById('m_memo').value = '';
       document.getElementById('m_extradays').value = '';
@@ -9973,6 +9986,8 @@ function loadSettings(s){
   document.getElementById('s_end').value=s.eventEnd||'';
   document.getElementById('s_return_discount').value=s.returnDiscount||'10';
   document.getElementById('s_pass_family_discount').value=s.passFamilyDiscount||'10';
+  if(document.getElementById('s_express_rate')) document.getElementById('s_express_rate').value=(s.expressRate!=null&&s.expressRate!=='')?s.expressRate:'20';
+  window._adminExpressRate=Number((s.expressRate!=null&&s.expressRate!=='')?s.expressRate:20);
   document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-13:00,15:30-18:00';
   document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';
   document.getElementById('s_morning_block_ranges').value=s.morningBlockRanges||'';
@@ -10001,6 +10016,7 @@ function saveSettings(){
     eventEnd:document.getElementById('s_end').value||'',
     returnDiscount:document.getElementById('s_return_discount').value||'10',
     passFamilyDiscount:document.getElementById('s_pass_family_discount').value||'10',
+    expressRate:document.getElementById('s_express_rate')?.value??'',
     weekdayHours:document.getElementById('s_weekday_hours').value||'',
     saturdayHours:document.getElementById('s_saturday_hours').value||'',
     morningBlockRanges:document.getElementById('s_morning_block_ranges').value||'',
@@ -10826,6 +10842,10 @@ function renderSelectDashboard(){
   const filterInvoiceRequest=document.getElementById('sel_invoiceRequestFilter').value;
   let data=allSelectDashboard.slice();
   data.sort(function(a,b){
+    // 급행(마감이 남은 건)은 맨 위 — 3일 약속이라 늦게 보면 이미 늦는다(2026-09-29)
+    const ax=a.express&&(a.express.originalDue||a.express.retouchDue)?0:1;
+    const bx=b.express&&(b.express.originalDue||b.express.retouchDue)?0:1;
+    if(ax!==bx) return ax-bx;
     const ao=getSelectTodoSortValue(a.selectStatus);
     const bo=getSelectTodoSortValue(b.selectStatus);
     if(ao!==bo) return ao-bo;
@@ -10874,7 +10894,11 @@ function renderSelectDashboard(){
 	    const editSubmitAlert=hasEditSubmitAlert
 	      ? `<div style="margin-top:4px;font-size:10px;line-height:1.35;color:#b45309;font-weight:800;">수정 제출 확인 필요${editSubmitAt?` · ${editSubmitAt.slice(5,16)}`:''}</div>`
 	      : '';
-	    const submittedLabel=(sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'')+editSubmitAlert;
+	    const expressDue=r.express?(r.express.retouchDue||r.express.originalDue||''):'';
+	    const expressBadge=r.express
+	      ? `<div style="margin-top:4px;font-size:10px;font-weight:800;color:#b91c1c;">⚡급행${expressDue?` · ${r.express.retouchDue?'보정':'원본'} ${escapeAdminHtml(String(expressDue).slice(5))}까지`:''}</div>`
+	      : '';
+	    const submittedLabel=(sel.submittedAt?`<span style="font-size:11px;">${sel.submittedAt.slice(5,16)}</span>`:'')+editSubmitAlert+expressBadge;
     const deliveryCell=renderSelectDeliveryCell(sel,r.rowIndex);
     const bsBadgeStyle=BOOKING_STATUS_BADGE[bs]||'background:#f1f5f9;color:#475569;';
     const bsBadge=`<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;${bsBadgeStyle}">${bs}</span>`;
@@ -12400,6 +12424,7 @@ function getInvoiceCalcOptionKeys(){
   if(document.getElementById('inv_calcOptDog')?.checked) keys.push('dog');
   if(document.getElementById('inv_calcOptBg')?.checked) keys.push('bg');
   if(document.getElementById('inv_calcOptOutfit')?.checked) keys.push('outfit');
+  if(document.getElementById('inv_calcOptExpress')?.checked) keys.push('express');
   return keys;
 }
 function setInvoiceCalcOptionsFromBooking(c){
@@ -12407,6 +12432,9 @@ function setInvoiceCalcOptionsFromBooking(c){
   document.getElementById('inv_calcOptDog').checked=/dog|반려|pet/i.test(optionText);
   document.getElementById('inv_calcOptBg').checked=/bg|배경|background/i.test(optionText);
   document.getElementById('inv_calcOptOutfit').checked=/outfit|의상/i.test(optionText);
+  // 급행: 키 'express' 또는 라벨 '급행 작업'. 사업자 추가옵션 'Express-Lieferung' 과 구분(하이픈 뒤 제외)
+  const expEl=document.getElementById('inv_calcOptExpress');
+  if(expEl) expEl.checked=/(^|[^\w-])express(?![\w-])|급행\s*작업/i.test(optionText);
   document.getElementById('inv_calcAgeGroup').value=/kids|어린/i.test(optionText)?'kids':(/senior|시니어/i.test(optionText)?'senior':'adult');
 }
 function refreshInvoiceCalcVisibility(){
