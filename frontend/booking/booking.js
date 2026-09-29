@@ -738,8 +738,8 @@ const COPY = {
     loadingCopy: '예약 페이지를 준비하고 있습니다.',
     noticeTitle: '공지사항',
     closureTitle: '한국 일정으로 잠시 쉬어갑니다',
-    closureBody: '2026년 10월 21일(수)부터 11월 30일(월)까지는 한국 일정으로 스튜디오 촬영이 어렵습니다.',
-    closureMeta: '12월 1일(화)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
+    closureBody: '2026년 10월 21일(수)부터 11월 25일(수)까지는 한국 일정으로 스튜디오 촬영이 어렵습니다.',
+    closureMeta: '11월 26일(수)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -976,9 +976,9 @@ const COPY = {
     hero: 'Choose your shoot type and schedule, then enter your booking details.',
     loadingCopy: 'Preparing the booking page.',
     noticeTitle: 'Notice',
-    closureTitle: 'Away Oct 21 – Nov 30, back on Dec 1',
-    closureBody: 'From Wednesday 21 October to Monday 30 November 2026 we are in Korea, so no shoots take place at the studio.',
-    closureMeta: 'We are back for you from Tuesday 1 December. Dates after that can already be booked and enquired about today.',
+    closureTitle: 'Away Oct 21 – Nov 25, back on Nov 26',
+    closureBody: 'From Wednesday 21 October to Wednesday 25 November 2026 we are in Korea, so no shoots take place at the studio.',
+    closureMeta: 'We are back for you from Wednesday 26 November. Dates after that can already be booked and enquired about today.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -1214,9 +1214,9 @@ const COPY = {
     hero: 'Wählen Sie zuerst die gewünschte Aufnahmeart und den Termin, danach geben Sie Ihre Buchungsdaten ein.',
     loadingCopy: 'Buchungsseite wird vorbereitet.',
     noticeTitle: 'Hinweis',
-    closureTitle: '21.10.–30.11. keine Shootings, ab 1.12. wieder für euch da',
-    closureBody: 'Von Mittwoch, 21. Oktober bis Montag, 30. November 2026 sind wir in Korea – in dieser Zeit finden keine Shootings im Studio statt.',
-    closureMeta: 'Ab Dienstag, 1. Dezember sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
+    closureTitle: '21.10.–25.11. keine Shootings, ab 26.11. wieder für euch da',
+    closureBody: 'Von Mittwoch, 21. Oktober bis Mittwoch, 25. November 2026 sind wir in Korea – in dieser Zeit finden keine Shootings im Studio statt.',
+    closureMeta: 'Ab Mittwoch, 26. November sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüten-Portraits zur Einschulung 2026',
     promoHighlightBody(names) {
@@ -2581,7 +2581,7 @@ function getLocalizedNoticeText() {
 
 /* 한국 일정 휴무 공지 — 종료일이 지나면 자동으로 사라진다(수동 정리 불필요).
  * 슬롯 자체는 백엔드 custom_holidays 로 이미 막혀 있고, 이 배너는 그 이유를 알리는 안내다. */
-const CLOSURE_NOTICE = { until: '2026-11-30' };
+const CLOSURE_NOTICE = { until: '2026-11-25' };
 
 function berlinTodayStr() {
   // 브라우저 로컬이 아니라 스튜디오 기준(Europe/Berlin)으로 판단해야 해외 접속자도 같은 날짜를 본다
