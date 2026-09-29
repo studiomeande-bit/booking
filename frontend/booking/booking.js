@@ -739,7 +739,7 @@ const COPY = {
     noticeTitle: '공지사항',
     closureTitle: '한국 일정으로 잠시 쉬어갑니다',
     closureBody: '2026년 10월 21일(수)부터 11월 25일(수)까지는 한국 일정으로 스튜디오 촬영이 어렵습니다.',
-    closureMeta: '11월 26일(수)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
+    closureMeta: '11월 26일(목)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -978,7 +978,7 @@ const COPY = {
     noticeTitle: 'Notice',
     closureTitle: 'Away Oct 21 – Nov 25, back on Nov 26',
     closureBody: 'From Wednesday 21 October to Wednesday 25 November 2026 we are in Korea, so no shoots take place at the studio.',
-    closureMeta: 'We are back for you from Wednesday 26 November. Dates after that can already be booked and enquired about today.',
+    closureMeta: 'We are back for you from Thursday 26 November. Dates after that can already be booked and enquired about today.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -1216,7 +1216,7 @@ const COPY = {
     noticeTitle: 'Hinweis',
     closureTitle: '21.10.–25.11. keine Shootings, ab 26.11. wieder für euch da',
     closureBody: 'Von Mittwoch, 21. Oktober bis Mittwoch, 25. November 2026 sind wir in Korea – in dieser Zeit finden keine Shootings im Studio statt.',
-    closureMeta: 'Ab Mittwoch, 26. November sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
+    closureMeta: 'Ab Donnerstag, 26. November sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüten-Portraits zur Einschulung 2026',
     promoHighlightBody(names) {
