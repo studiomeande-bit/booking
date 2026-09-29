@@ -14938,9 +14938,11 @@ function approveRetouch_(sessionId,p){
       const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
       selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
       reopenBookingIfSelectUnlocked_(selSh,idx+2,prevStatusForReopen);
-      try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. 인화 작업을 진행해 주세요.<br>상품: ${row[7]}</p>`});}catch(e){}
+      try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. ${selectRowIsMyRealTrip_(row)?'마이리얼트립 — 인화 없음(보정본 전달로 끝).':'인화 작업을 진행해 주세요.'}<br>상품: ${row[7]}</p>`});}catch(e){}
     }
-    const msgs={ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>Studio mean에서 인화 작업을 진행할 예정입니다. 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Studio mean will proceed with printing. Thank you!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Studio mean wird mit dem Druck beginnen. Vielen Dank!</p>'};
+    const msgs=selectRowIsMyRealTrip_(row)
+      ? {ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>보정본 전달을 마쳤습니다. Studio mean을 찾아 주셔서 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Your retouched photos have been delivered. Thank you for choosing Studio mean!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Ihre retuschierten Bilder wurden übergeben. Vielen Dank, dass Sie sich für Studio mean entschieden haben!</p>'}
+      : {ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>Studio mean에서 인화 작업을 진행할 예정입니다. 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Studio mean will proceed with printing. Thank you!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Studio mean wird mit dem Druck beginnen. Vielen Dank!</p>'};
     return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
   }catch(err){return HtmlService.createHtmlOutput(`<h2>❌ ${err.message}</h2>`);}
 }
@@ -25198,6 +25200,23 @@ function selectSessionRequiresDeliveryForRow_(row){
   return selectSessionRequiresDelivery_(row&&row[SELECT_COL['촬영종류']],row&&row[SELECT_COL['상품']],getSelectBookingPayMethodFromRow_(row));
 }
 
+/* 마이리얼트립 셀렉 = 출력(인화) 옵션 없음(사장님 확정 2026-09-29) — 보정할 사진만 고른다.
+   판정은 셀렉행 촬영종류·상품 + 예약 결제수단(결제수단만 MRT 인 snap 행이 있어 예약행이 필요하다).
+   재인화 세션은 사장님이 일부러 만든 예외라 제외. bookingPayMethod 를 넘기면(getSelectSession 이 이미 읽음) 다시 안 읽는다. */
+function selectRowIsMyRealTrip_(row,bookingPayMethod){
+  if(!row||isReprintSelectRow_(row)) return false;
+  const pm=bookingPayMethod!==undefined?bookingPayMethod:getSelectBookingPayMethodFromRow_(row);
+  return selectIsMyRealTrip_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],pm);
+}
+function selectMrtNoPrintsMsg_(row){
+  const L=String((row&&row[SELECT_COL['언어']])||'ko').trim();
+  return ({
+    ko:'마이리얼트립 촬영은 출력(인화) 옵션이 없습니다. 페이지를 새로고침한 뒤 보정할 사진만 골라 다시 제출해 주세요.',
+    en:'MyRealTrip sessions do not include prints. Please reload the page and submit your retouch selection again.',
+    de:'MyRealTrip-Shootings enthalten keine Abzüge. Bitte laden Sie die Seite neu und senden Sie Ihre Retusche-Auswahl erneut.'
+  })[L]||'마이리얼트립 촬영은 출력(인화) 옵션이 없습니다. 페이지를 새로고침한 뒤 보정할 사진만 골라 다시 제출해 주세요.';
+}
+
 function normalizeSelectMarketingBonusCount_(value,itemGroup,productName,payMethod){
   if(value!==undefined&&value!==null&&String(value).trim()!==''){
     const n=parseInt(value,10);
@@ -25918,6 +25937,11 @@ function createSelectSession(token,data){
     }else{
       corporate=inferBookingClientTypeFromData_(data)==='기업';
     }
+    /* 결제수단을 안 넘긴 호출(에이전트 select-create)은 예약행에서 채운다 — 결제수단만 MRT 인 스냅 예약이
+       링크 메일에서 '인화 사이즈 설정' 안내·기본 출력물을 받고(셀렉 화면은 출력을 막는데), 마케팅 보너스도 2장으로 잡혔다. */
+    if(b2bRow>=2&&!String(data.payMethod||'').trim()){
+      try{ data.payMethod=String(getDbSheet().getRange(b2bRow,BOOKING_COL['결제수단']+1).getValue()||''); }catch(e){}
+    }
     if(corporate&&!hasSession) return{ok:false,code:'B2B_EXCLUDED',message:'B2B(기업) 예약은 셀렉관리 대상이 아닙니다 — 셀렉 링크를 만들지 않습니다(2026-09-13 결정). 개인 고객이면 예약유형을 확인해 주세요.'};
     const explicitRef=String(data.driveFolderId||data.driveLink||data.driveFolderUrl||data.driveFolderLink||'').trim();
     if(explicitRef&&data.allowOversizedFolder!==true){
@@ -26104,6 +26128,8 @@ function sendSelectLinkEmail_(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const bonusCount=normalizeSelectMarketingBonusCount_(marketingBonusCount,data.itemGroup,data.product,data.payMethod);
   const printSummary=getSelectIncludedPrintSummary_(data.itemGroup,data.product,L);
   const fixedPrintQuota=selectProductHasFixedPrintQuota_(data.itemGroup,data.product);
+  // 마이리얼트립은 출력(인화) 옵션이 없다(2026-09-29) — 인화 안내·단계를 싣지 않는다(재인화 세션은 예외)
+  const noPrints=String(data.itemGroup||'').trim().toLowerCase()!=='reprint'&&selectIsMyRealTrip_(data.itemGroup,data.product,data.payMethod);
   const subj={ko:`[Studio mean] 📷 사진 셀렉 안내 — ${data.name}님`,en:`[Studio mean] 📷 Photo Selection — ${data.name}`,de:`[Studio mean] 📷 Fotoauswahl — ${data.name}`};
   if(data.isReshoot){subj.ko='[재촬영본 추가] '+subj.ko;subj.en='[Re-shoot added] '+subj.en;subj.de='[Neue Aufnahmen] '+subj.de;}
   else if(data.isResend){subj.ko='[재발송] '+subj.ko;subj.en='[Resent] '+subj.en;subj.de='[Erneut gesendet] '+subj.de;}
@@ -26114,9 +26140,9 @@ function sendSelectLinkEmail_(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     de:`<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#3730a3;line-height:1.7;"><b>📸 Neue Aufnahmen hinzugefügt</b><br>Ihre neuen Aufnahmen werden nun zusammen mit dem ursprünglichen Shooting auf einer Seite angezeigt. Bitte wählen Sie Ihre <b>${baseCount}</b> Fotos zur Bearbeitung aus beiden Sets. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
   })[L]:'';
   const resendNotice=(!data.isReshoot&&data.isResend)?({
-    ko:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 재발송 안내</b><br>이전에 보내드린 사진 셀렉 안내를 다시 보내드립니다. 보정·인화 일정 조율을 위해 <b>확인하시고 빠른 제출 부탁드립니다.</b> 진행이 어렵거나 궁금한 점이 있으면 이 메일에 바로 회신해 주세요.${data.deadline?`<br>셀렉 마감일: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
-    en:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Resent reminder</b><br>We are resending your photo selection link. <b>Please review and submit at your earliest convenience</b> so we can schedule retouching and printing. If anything is unclear, just reply to this email.${data.deadline?`<br>Selection deadline: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
-    de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir Retusche und Druck einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
+    ko:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 재발송 안내</b><br>이전에 보내드린 사진 셀렉 안내를 다시 보내드립니다. ${noPrints?'보정':'보정·인화'} 일정 조율을 위해 <b>확인하시고 빠른 제출 부탁드립니다.</b> 진행이 어렵거나 궁금한 점이 있으면 이 메일에 바로 회신해 주세요.${data.deadline?`<br>셀렉 마감일: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    en:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Resent reminder</b><br>We are resending your photo selection link. <b>Please review and submit at your earliest convenience</b> so we can schedule ${noPrints?'retouching':'retouching and printing'}. If anything is unclear, just reply to this email.${data.deadline?`<br>Selection deadline: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`,
+    de:`<div style="background:#fef3c7;border:1px solid #f0d060;border-radius:10px;padding:12px 16px;margin:0 0 18px;font-size:13px;color:#92400e;line-height:1.7;"><b>📌 Erneut gesendet</b><br>Wir senden Ihnen den Link zur Fotoauswahl erneut. <b>Bitte prüfen und möglichst bald absenden</b>, damit wir ${noPrints?'die Retusche':'Retusche und Druck'} einplanen können. Bei Fragen antworten Sie einfach auf diese E-Mail.${data.deadline?`<br>Auswahlfrist: <b>${String(data.deadline).slice(0,10)}</b>`:''}</div>`
   })[L]:'';
   const greet={ko:`안녕하세요, <b>${data.name}</b>님! 😊`,en:`Hello <b>${data.name}</b>,`,de:`Guten Tag, <b>${data.name}</b>,`};
   /* 기한 고지 — 최종 통지에서 '약관에 따라' 라고 말하려면 첫 메일부터 기한이 보였어야 한다 */
@@ -26127,9 +26153,9 @@ function sendSelectLinkEmail_(data,selectUrl,driveLink,baseCount,retouchPrice,ma
     de:`<br><span style="color:#64748b;font-size:13px;">Bitte reichen Sie Ihre Auswahl bis zum <b>${_selectDateLabel_(_dlIso,'de')}</b> ein. Danach können gespeicherte Dateien gemäß den Bedingungen gelöscht werden.</span>`
   };
   const intro={
-    ko:`촬영이 완료되었습니다! 🎉<br>아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.${_dlNote.ko}`,
-    en:`Your photo session is complete! 🎉<br>Please use the link below to select your photos for retouching and set your print preferences.${_dlNote.en}`,
-    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.${_dlNote.de}`
+    ko:`촬영이 완료되었습니다! 🎉<br>${noPrints?'아래 링크에서 보정 받으실 사진을 직접 선택해 주세요. 마이리얼트립 촬영은 출력물(인화) 없이 보정본을 파일로 전달해 드립니다.':'아래 링크에서 보정 받으실 사진을 직접 선택하고, 인화 사이즈 및 추가 옵션을 설정해 주세요.'}${_dlNote.ko}`,
+    en:`Your photo session is complete! 🎉<br>${noPrints?'Please use the link below to select your photos for retouching. MyRealTrip sessions do not include prints — your retouched photos are delivered as files.':'Please use the link below to select your photos for retouching and set your print preferences.'}${_dlNote.en}`,
+    de:`Ihr Fotoshooting ist abgeschlossen! 🎉<br>Bitte wählen Sie über den folgenden Link Ihre Fotos zur Bearbeitung aus.${noPrints?' MyRealTrip-Shootings enthalten keine Abzüge — die retuschierten Bilder erhalten Sie als Dateien.':''}${_dlNote.de}`
   };
   const steps={
     ko:['📂 촬영 사진 확인 (드라이브 링크)',`✅ 마케팅 동의 여부 선택${bonusCount>0?` (동의 시 보너스 ${bonusCount}장 추가)`:''}`,'🖼 보정 받을 사진 번호 입력','📮 기본 제공 출력 사이즈 확인 및 필요한 추가 인화 입력','📤 최종 제출'],
@@ -26155,7 +26181,7 @@ function sendSelectLinkEmail_(data,selectUrl,driveLink,baseCount,retouchPrice,ma
   const selBtn={ko:'✅ 사진 셀렉 시작하기',en:'✅ Start Photo Selection',de:'✅ Fotoauswahl starten'};
   const deadline={ko:'⏱ 보정 완료까지 약 2–3주 소요됩니다. 가급적 빠른 제출 부탁드립니다.',en:'⏱ Retouching takes approximately 2–3 weeks. Please submit as soon as possible.',de:'⏱ Die Bearbeitung dauert ca. 2–3 Wochen. Bitte reichen Sie so bald wie möglich ein.'};
   const contact={ko:'문의사항이 있으시면 언제든 연락 주세요.',en:'Please feel free to contact us if you have any questions.',de:'Bei Fragen stehen wir Ihnen gerne zur Verfügung.'};
-  const stepsHtml=(steps[L]||steps.ko).map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;"><div style="background:#2D2A26;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div><div style="font-size:13px;color:#475569;line-height:1.4;">${s}</div></div>`).join('');
+  const stepsHtml=(steps[L]||steps.ko).filter(function(s,i){return !(noPrints&&i===3);}).map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;"><div style="background:#2D2A26;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div><div style="font-size:13px;color:#475569;line-height:1.4;">${s}</div></div>`).join('');
   const html=`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
   <div style="background:linear-gradient(135deg,#2D2A26 0%,#4a4540 100%);padding:28px 25px;text-align:center;">
     <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;letter-spacing:0.5px;">📷 Studio mean</h1>
@@ -26170,7 +26196,7 @@ function sendSelectLinkEmail_(data,selectUrl,driveLink,baseCount,retouchPrice,ma
       ${stepsHtml}
     </div>
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin-bottom:20px;font-size:13px;color:#15803d;">
-      📦 ${retouchStr[L]}<br>${printStr[L]}<br><span style="color:#166534;">${printGuide[L]}</span>
+      📦 ${retouchStr[L]}${noPrints?'':`<br>${printStr[L]}<br><span style="color:#166534;">${printGuide[L]}</span>`}
     </div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
       ${driveLink?`<a href="${driveLink}" style="display:block;text-align:center;background:#f1f5f9;color:#1e293b;padding:13px 28px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;border:1.5px solid #e2e8f0;">${viewBtn[L]}</a>`:''}
@@ -26386,6 +26412,7 @@ function getSelectSession(sessionId){
       existingPickupEventId:String(row[SELECT_COL['픽업캘린더ID']]||''),
       hasPhotocard:selectHasIncludedPhotocard_(row),
       requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
+      printsDisabled:selectRowIsMyRealTrip_(row,bookingPayMethod),   // 마이리얼트립 — 셀렉 화면이 출력 단계·포토카드·수령방식을 숨긴다
       photocardSupported:true,
       printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
       printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:'',
@@ -29226,6 +29253,8 @@ function submitCustomerPrintOrder_(sessionId,order){
     const rows=selSh.getDataRange().getValues();
     const idx=rows.slice(1).findIndex(function(r){return String(r[0])===sid;});
     if(idx===-1) return{ok:false,message:'유효하지 않은 링크입니다.'};
+    // 마이리얼트립은 출력(인화) 옵션이 없다(2026-09-29) — 세션ID 만으로 들어오는 공개 경로라 여기서도 막는다
+    if(selectRowIsMyRealTrip_(rows[idx+1])) return{ok:false,message:selectMrtNoPrintsMsg_(rows[idx+1])};
     const rowNum=idx+2;
     // 주문 구조 정규화 — 신뢰 안 하는 필드는 버리고 크기 제한.
     const sheetsList=Array.isArray(order.sheets)?order.sheets.slice(0,50):[];
@@ -29346,6 +29375,9 @@ function submitPhotoSelection(sessionId,sub){
     const prints=priced.prints;
     const printUpgrade=priced.printUpgrade;
     const printsToStore=priced.printsToStore;
+    /* 마이리얼트립은 출력 옵션이 없다 — 화면이 숨겨도 구 번들·조작 payload 는 여기서 막는다(조용히 버리면 결제된 주문이 흔적 없이 취소될 수 있어 거절).
+       예약 시트는 출력이 실제로 실렸을 때만 읽는다. */
+    if(((printsToStore||[]).length||photocard||((printUpgrade&&printUpgrade.items)||[]).length)&&selectRowIsMyRealTrip_(row)) return{ok:false,message:selectMrtNoPrintsMsg_(row)};
     const displayPrints=priced.allPrints||priced.prints;
     const extraPrintsAmtRaw=priced.amount;
     /* 볼륨 할인 (2026-08-09) — 유료 장수 기준. 인화는 price>0 인 청구 항목의 장수만 센다
@@ -29737,6 +29769,9 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const prints=priced.prints;
     const printUpgrade=priced.printUpgrade;
     const printsToStore=priced.printsToStore;
+    /* 마이리얼트립은 출력 옵션이 없다 — 화면이 숨겨도 구 번들·조작 payload 는 여기서 막는다(조용히 버리면 결제된 주문이 흔적 없이 취소될 수 있어 거절).
+       예약 시트는 출력이 실제로 실렸을 때만 읽는다. */
+    if(((printsToStore||[]).length||photocard||((printUpgrade&&printUpgrade.items)||[]).length)&&selectRowIsMyRealTrip_(row)) return{ok:false,message:selectMrtNoPrintsMsg_(row)};
     const displayPrints=priced.allPrints||priced.prints;
     const extraPrintsAmtRaw=priced.amount;
     /* 볼륨 할인 (2026-08-09) — 유료 장수 기준. 인화는 price>0 인 청구 항목의 장수만 센다

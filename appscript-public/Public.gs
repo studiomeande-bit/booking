@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-29T14:21:34.162Z
- * 포함 함수 192개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-09-29T17:20:22.879Z
+ * 포함 함수 195개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -2545,6 +2545,24 @@ function selectSessionRequiresDelivery_(itemGroup,productName,payMethod){
   return selectTextHasPhysicalOutput_(text);
 }
 
+function getSelectBookingPayMethodFromRow_(row){
+  try{
+    const bri=parseInt(row&&row[SELECT_COL['예약장부행']],10)||0;
+    if(bri>=2){
+      const bookSh=ensureSheets_().bookingSheet;
+      const bRow=bookSh.getRange(bri,1,1,bookSh.getLastColumn()).getValues()[0];
+      return String(bRow[BOOKING_COL['결제수단']]||'');
+    }
+  }catch(e){}
+  return '';
+}
+
+function selectRowIsMyRealTrip_(row,bookingPayMethod){
+  if(!row||isReprintSelectRow_(row)) return false;
+  const pm=bookingPayMethod!==undefined?bookingPayMethod:getSelectBookingPayMethodFromRow_(row);
+  return selectIsMyRealTrip_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],pm);
+}
+
 function normalizeSelectMarketingBonusCount_(value,itemGroup,productName,payMethod){
   if(value!==undefined&&value!==null&&String(value).trim()!==''){
     const n=parseInt(value,10);
@@ -2748,6 +2766,7 @@ function getSelectSession(sessionId){
       existingPickupEventId:String(row[SELECT_COL['픽업캘린더ID']]||''),
       hasPhotocard:selectHasIncludedPhotocard_(row),
       requiresDelivery:selectSessionRequiresDelivery_(row[SELECT_COL['촬영종류']],row[SELECT_COL['상품']],bookingPayMethod),
+      printsDisabled:selectRowIsMyRealTrip_(row,bookingPayMethod),   // 마이리얼트립 — 셀렉 화면이 출력 단계·포토카드·수령방식을 숨긴다
       photocardSupported:true,
       printOrderStatus:SELECT_COL['고객출력주문상태']!=null?String(row[SELECT_COL['고객출력주문상태']]||''):'',
       printOrderSubmittedAt:SELECT_COL['고객출력주문일시']!=null?parseDateSafe_(row[SELECT_COL['고객출력주문일시']]).str:'',
@@ -2870,6 +2889,10 @@ function parseSelectMailAddressText_(value,fallbackName){
     mailName:mailName||normalizeSelectMailName_(fallbackName),
     mailAddress:normalizeSelectMailAddress_(lines.join('\n'))
   };
+}
+
+function isReprintSelectRow_(row){
+  return String((row&&row[SELECT_COL['촬영종류']])||'').trim().toLowerCase()==='reprint';
 }
 
 const TRAVEL_KM_TABLE_=[
