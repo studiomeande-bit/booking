@@ -13393,7 +13393,7 @@ function sendConfirmEmail_(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   const hidePrice=!!detail.hidePrice;
   // 계약금 안내 보류 중(getDepositHold_)이면 계좌 대신 "until 에 따로 보낸다" — .ics 계좌 줄도 같이 뺀다(depositAmount 0)
   const depositHold=(dep>0&&!hidePrice)?getDepositHold_():null;
-  const depositHeld=!!(depositHold&&depositHold.active);
+  const depositHeld=isDepositHeldFor_(depositHold,formattedTime.slice(0,10));
   const depositBox=(dep>0&&!hidePrice)?(depositHeld?depositHoldNoteHtml_(lang||'ko',depositHold.until):(T.confirmed_deposit_note||'')):'';
   const refundBox=withWiderrufStornoNote_((dep>0&&itemGroup!=='biz'&&!hidePrice)?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'',lang||'ko');
   /* 철회 안내(원격계약 확정 = 계약 성립 시점의 dauerhafter Datenträger, § 312f Abs. 2) — 여권은 무구속 예약 고지로 대신한다.
@@ -18449,9 +18449,9 @@ function _buildDailyBriefingData_(){
       depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),
         deposit:formatEuroAmount_(getEffectiveBookingDeposit_(row)),
         ageDays:ageDays,warned:!!warnedAt,
-        heldUntil:depHold.active?depHold.until:'',
+        heldUntil:isDepositHeldFor_(depHold,d10)?depHold.until:'',
         // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)까지 남은 일수 — 사장님이 개입할 마지막 시점
-        daysToAutoCancel:(depHold.active||clockDays==null)?null:Math.max(0,10-clockDays)});
+        daysToAutoCancel:(isDepositHeldFor_(depHold,d10)||clockDays==null)?null:Math.max(0,10-clockDays)});
     }
     /* 미수 잔금 — 판정은 **결제수단 문구**('' 또는 미결제/offen)다. 잔금결제여부 플래그가 아니다.
        이 스튜디오의 운영 규칙: 현장 수납 후 결제수단(현금/카드/계좌이체)을 기록하는 것 자체가
@@ -33778,6 +33778,8 @@ function flagAndCancelOverdueDepositBookings_(){
 /* 계약금 안내 보류 (일회성, 2026-09-30 사장님 결정) — 엘턴겔트 수급월 Lebensmonat 11(2026-10-21~11-20, '사업 완전 휴지' 신고)
    안에 계약금이 들어오면 수급기간 소득(Zufluss)이 된다. 그래서 그 창엔 계좌를 내보내지 않고 until 에 한꺼번에 보낸다.
    설정 deposit_hold_from / deposit_hold_until (YYYY-MM-DD), today ∈ [from,until) 이면 활성 · 빈칸 = 꺼짐. 조작은 erp-agent deposit-hold-*.
+   - 보류 대상 = 창 안의 모든 확정 + **창 전이라도 촬영일 ≥ until(휴직 뒤 촬영)**인 확정(사장님 2026-09-30 — 10/11~ 확정분의
+     10일 기한이 창 안에 걸리는 것까지 막는다). 창 전 확정·창 전 촬영은 종전대로 계좌·10일 기한. isDepositHeldFor_.
    - 확정 메일(sendConfirmEmail_): 계좌 블록·.ics 계좌 줄 대신 "until 에 따로 보냄".
    - L2(flagAndCancelOverdueDepositBookings_): 시계가 max(확정일, until)부터라 활성 중엔 리마인더·자동취소 없음. until 이후 첫 실행이 보류분에 계좌 메일을
      보낸다(releaseDepositHold_, 행마다 [계약금안내] 감사줄 = 재발송 방지). 창 안에 들어온 입금은 평소 확인 경로 그대로.
@@ -33794,18 +33796,23 @@ function getDepositHold_(){
     releaseDue:armed&&today>=until};
 }
 
-// 계약금 시계 경과일(7일 리마인더·10일 자동취소) — 확정일시(없으면 동의시각)부터, 보류가 시작됐으면 max(그 날, until)부터. 기준일 없으면 null.
+// 지금 이 촬영(shootYmd)의 계약금 계좌 안내를 보류하나 — 창 안이면 전부, 창 전이면 촬영일 ≥ until 만. until 부터는 보류 없음.
+function isDepositHeldFor_(hold,shootYmd){
+  return !!(hold&&hold.armed&&hold.today<hold.until&&(hold.today>=hold.from||String(shootYmd||'').slice(0,10)>=hold.until));
+}
+
+// 계약금 시계 경과일(7일 리마인더·10일 자동취소) — 확정일시(없으면 동의시각)부터. 보류가 시작됐거나 촬영이 until 이후면 max(그 날, until)부터. 기준일 없으면 null.
 function depositClockAgeDays_(row,now,hold){
   let start=getDepositDeadlineBaseDate_(row).obj;
   if(isNaN(start.getTime())) return null;
-  if(hold&&hold.started){
+  if(hold&&hold.armed&&(hold.started||parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10)>=hold.until)){
     const until=new Date(hold.until+'T00:00:00');
     if(until.getTime()>start.getTime()) start=until;
   }
   return Math.floor((now.getTime()-start.getTime())/86400000);
 }
 
-// 보류분 = until 전에 확정된(확정일 없음 포함) 미입금 계약금 예약 · 확정됨 · 촬영 전 · 현장결제 예외 아님
+// 보류분 = until 전에 확정된(확정일 없음 포함) 미입금 계약금 예약 · 확정됨 · 촬영일 ≥ max(오늘, until) · 현장결제 예외 아님
 function depositHoldRows_(hold){
   const rows=getDbSheet().getDataRange().getValues();
   const untilMs=new Date(hold.until+'T00:00:00').getTime();
@@ -33816,7 +33823,7 @@ function depositHoldRows_(hold){
     const deposit=getEffectiveBookingDeposit_(row);
     if(deposit<=0||isPaymentConfirmedValue_(row[BOOKING_COL['계약금입금여부']])||isBookingDepositOnsiteException_(row)) continue;
     const shootAt=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
-    if(!shootAt||shootAt.slice(0,10)<hold.today) continue;
+    if(!shootAt||shootAt.slice(0,10)<hold.today||shootAt.slice(0,10)<hold.until) continue;   // 휴직 뒤 촬영만 — 그 전 촬영은 계좌를 이미 받았거나 날짜가 지난다
     if(getDepositDeadlineBaseDate_(row).obj.getTime()>=untilMs) continue;   // until 이후 확정분은 확정 메일에 계좌가 이미 실렸다
     out.push({rowIndex:i+1,name:String(row[BOOKING_COL['고객명']]||''),shootAt:shootAt,deposit:deposit,
       lang:String(row[BOOKING_COL['언어']]||'ko').toLowerCase(),

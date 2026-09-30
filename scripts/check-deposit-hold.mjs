@@ -73,7 +73,7 @@ function sendDepositReminderEmail_(r){ __T__.reminded.push(r); }
 function autoCancelBookingForMissingDeposit_(r){ __T__.cancelled.push(r); __T__.rows[r-1][BOOKING_COL['자동취소일시']]='x'; }
 module.exports={__T__,setNow:(s)=>{ __NOW__=new __RealDate(s).getTime(); },CONFIG,BOOKING_COL,
   getDepositHold_,flagAndCancelOverdueDepositBookings_,depositHoldNoteHtml_,buildDepositHoldReleaseMail_,
-  depositHoldForAgent_,customerVisibleMemo_,preserveAuditMemoLines_,DEPOSIT_ONSITE_EXCEPTION_MARKER};`);
+  depositHoldForAgent_,customerVisibleMemo_,preserveAuditMemoLines_,DEPOSIT_ONSITE_EXCEPTION_MARKER,isDepositHeldFor_};`);
 const E = (await import(pathToFileURL(file).href)).default;
 rmSync(dir, { recursive: true, force: true });
 const T = E.__T__;
@@ -91,6 +91,13 @@ at('2026-10-20T23:59:00'); ok(!E.getDepositHold_().active && !E.getDepositHold_(
 at('2026-10-21T00:01:00'); ok(E.getDepositHold_().active, 'from 당일 = 활성');
 at('2026-11-20T23:59:00'); ok(E.getDepositHold_().active && !E.getDepositHold_().releaseDue, 'until 전날 = 활성');
 at('2026-11-21T08:00:00'); ok(!E.getDepositHold_().active && E.getDepositHold_().releaseDue, 'until 당일 = 해제');
+// 촬영별 판정 — 창 전엔 휴직 뒤 촬영(≥ until)만 보류, 창 안엔 전부, until 부터는 없음
+at('2026-10-05T10:00:00');
+ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-12-05') && !E.isDepositHeldFor_(E.getDepositHold_(), '2026-10-15'), '창 전: 휴직 뒤 촬영만 보류');
+ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-11-21') && !E.isDepositHeldFor_(E.getDepositHold_(), '2026-11-20'), '창 전: 경계 = until 당일 촬영부터');
+at('2026-10-25T10:00:00'); ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-10-30'), '창 안: 촬영일 무관 보류');
+at('2026-11-21T08:00:00'); ok(!E.isDepositHeldFor_(E.getDepositHold_(), '2026-12-05'), 'until 부터: 보류 없음(확정 메일에 계좌)');
+ok(!E.isDepositHeldFor_({ armed: false }, '2026-12-05') && !E.isDepositHeldFor_(null, '2026-12-05'), '설정 없음: 보류 없음');
 T.settings = { deposit_hold_from: '2026-11-21', deposit_hold_until: '2026-10-21' };
 ok(!E.getDepositHold_().armed, 'from ≥ until 이면 꺼짐');
 T.settings = { deposit_hold_from: '21.10.2026', deposit_hold_until: '2026-11-21' };
@@ -117,6 +124,7 @@ function reset() {
     mk({ name: 'PAST', confirmed: '2026-10-22 10:00', shoot: '2026-10-29 10:00' }),   // 7 촬영일 지남
     mk({ name: 'AFTER', confirmed: '2026-11-21 09:00' }),                              // 8 until 이후 확정(계좌 이미 받음)
     mk({ name: 'NOMAIL', confirmed: '2026-10-28 10:00', email: '수기' }),             // 9 이메일 없음
+    mk({ name: 'EARLY', confirmed: '2026-10-12 10:00', shoot: '2026-10-20 10:00' }),  // 10 보류 전 확정·휴직 전 촬영(계좌 받음)
   ];
 }
 const row = (n) => T.rows.findIndex((r) => r[C['고객명']] === n) + 1;
@@ -129,7 +137,10 @@ ok(T.cancelled.includes(row('WARNED')) === false, '보류 전: WARNED 는 9일�
 
 reset();
 at('2026-10-19T11:00:00'); E.flagAndCancelOverdueDepositBookings_();
-ok(T.reminded.includes(row('PRE')), '설정만 해두고 from 전: 시계는 확정일 기준(선반영 금지)', T.reminded);
+ok(T.reminded.includes(row('EARLY')), 'from 전·휴직 전 촬영: 시계는 확정일 기준(평소대로 리마인더)', T.reminded);
+ok(!T.reminded.includes(row('PRE')), 'from 전이라도 휴직 뒤 촬영: 리마인더 없음(시계 until 부터)', T.reminded);
+at('2026-10-20T11:00:00'); E.flagAndCancelOverdueDepositBookings_();
+ok(!T.cancelled.includes(row('WARNED')), 'from 전이라도 휴직 뒤 촬영: 10일차 자동취소 없음', T.cancelled);
 
 reset();
 for (const d of ['2026-10-21', '2026-10-25', '2026-11-05', '2026-11-20']) { at(`${d}T08:00:00`); E.flagAndCancelOverdueDepositBookings_(); }
@@ -177,6 +188,9 @@ threw = ''; try { E.depositHoldForAgent_('t', 'deposit-hold-set', { from: '2026-
 ok(/앞이어야/.test(threw), 'set: from ≥ until 거부', threw);
 r = E.depositHoldForAgent_('t', 'deposit-hold-set', { from: '2026-10-21', until: '2026-11-21', dryRun: false });
 ok(T.settings.deposit_hold_from === '2026-10-21' && T.settings.deposit_hold_until === '2026-11-21', 'set: 기록', T.settings);
+at('2026-10-05T10:00:00');
+r = E.depositHoldForAgent_('t', 'deposit-hold-status', {});
+ok(r.held.map((h) => h.name).sort().join() === 'IN,NOMAIL,PRE,WARNED', 'status(창 전): 휴직 전 촬영(EARLY·PAST)은 보류분 아님', r.held.map((h) => h.name));
 at('2026-10-30T10:00:00');
 r = E.depositHoldForAgent_('t', 'deposit-hold-status', {});
 ok(r.active && r.held.map((h) => h.name).sort().join() === 'IN,NOMAIL,PRE,WARNED', 'status: 보류분 목록', r.held && r.held.map((h) => h.name));
@@ -193,8 +207,9 @@ for (const a of ['deposit-hold-status', 'deposit-hold-set', 'deposit-hold-releas
 
 /* ── 6) 소스 배선 ─────────────────────────────────────────────────────────────── */
 ok(/const depositBox=\(dep>0&&!hidePrice\)\?\(depositHeld\?depositHoldNoteHtml_\(/.test(src), 'sendConfirmEmail_: 보류 중 계좌 블록 대신 안내');
+ok(src.includes('const depositHeld=isDepositHeldFor_(depositHold,formattedTime.slice(0,10));'), 'sendConfirmEmail_: 촬영일로 보류 판정');
 ok(src.includes('depositAmount:(hidePrice||depositHeld)?0:dep'), '.ics: 보류 중 계좌 줄 제외');
-ok(src.includes("heldUntil:depHold.active?depHold.until:''") && src.includes('보류(${esc(d.heldUntil'), "브리핑: '보류(MM/DD 안내)'");
+ok(src.includes("heldUntil:isDepositHeldFor_(depHold,d10)?depHold.until:''") && src.includes('보류(${esc(d.heldUntil'), "브리핑: '보류(MM/DD 안내)' — 촬영일 판정");
 ok(/DATE_SETTING_KEYS=\[[^\]]*'deposit_hold_from','deposit_hold_until'/.test(src), '설정 날짜셀 정규화 키 등록');
 
 if (SHOW) {
