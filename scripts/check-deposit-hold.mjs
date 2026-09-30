@@ -7,7 +7,7 @@
  *   틀리면 두 방향 다 실제 사고다 — 창 안에 계좌가 나가거나(수급 소득), 해제 다음 날 보류분이 일괄 자동취소된다.
  *
  * 검사 (Code.gs 를 GAS 스텁 위에 통째로 올리고 시계·시트·메일만 가짜로 — 로직 복제 없음):
- *   1) getDepositHold_ 창 판정 [from,until) · 해제 시점 · 잘못된 설정은 꺼짐
+ *   1) getDepositHold_ 창 판정 [from,until) · 해제 시점 · 잘못된 설정은 꺼짐 · 창 전 기한 당김(payByCap)·cutoff 보류
  *   2) L2 시나리오: 보류 전 정상 리마인더 → 보류 중 무동작 → until 아침 계좌 메일(1회) → +7일 리마인더 → +10일 자동취소
  *   3) 보류분 선정: 입금완료·현장결제 예외·촬영 지난 건·until 이후 확정분 제외
  *   4) 메일 문구: 확정 메일 대체 안내엔 계좌 없음 · 해제 메일엔 계좌+기한 · 감사줄은 고객 표시에서 제거
@@ -73,7 +73,7 @@ function sendDepositReminderEmail_(r){ __T__.reminded.push(r); }
 function autoCancelBookingForMissingDeposit_(r){ __T__.cancelled.push(r); __T__.rows[r-1][BOOKING_COL['자동취소일시']]='x'; }
 module.exports={__T__,setNow:(s)=>{ __NOW__=new __RealDate(s).getTime(); },CONFIG,BOOKING_COL,
   getDepositHold_,flagAndCancelOverdueDepositBookings_,depositHoldNoteHtml_,buildDepositHoldReleaseMail_,
-  depositHoldForAgent_,customerVisibleMemo_,preserveAuditMemoLines_,DEPOSIT_ONSITE_EXCEPTION_MARKER,isDepositHeldFor_};`);
+  depositHoldForAgent_,customerVisibleMemo_,preserveAuditMemoLines_,DEPOSIT_ONSITE_EXCEPTION_MARKER,isDepositHeldFor_,depositPayByText_};`);
 const E = (await import(pathToFileURL(file).href)).default;
 rmSync(dir, { recursive: true, force: true });
 const T = E.__T__;
@@ -91,10 +91,17 @@ at('2026-10-20T23:59:00'); ok(!E.getDepositHold_().active && !E.getDepositHold_(
 at('2026-10-21T00:01:00'); ok(E.getDepositHold_().active, 'from 당일 = 활성');
 at('2026-11-20T23:59:00'); ok(E.getDepositHold_().active && !E.getDepositHold_().releaseDue, 'until 전날 = 활성');
 at('2026-11-21T08:00:00'); ok(!E.getDepositHold_().active && E.getDepositHold_().releaseDue, 'until 당일 = 해제');
-// 촬영별 판정 — 창 전엔 휴직 뒤 촬영(≥ until)만 보류, 창 안엔 전부, until 부터는 없음
+// 촬영별 판정 — cutoff(창 3일 전) 전엔 보류 없음(계좌+당긴 기한), cutoff~창 전엔 휴직 뒤 촬영만, 창 안엔 전부, until 부터는 없음
+const H = () => E.getDepositHold_();
 at('2026-10-05T10:00:00');
-ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-12-05') && !E.isDepositHeldFor_(E.getDepositHold_(), '2026-10-15'), '창 전: 휴직 뒤 촬영만 보류');
-ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-11-21') && !E.isDepositHeldFor_(E.getDepositHold_(), '2026-11-20'), '창 전: 경계 = until 당일 촬영부터');
+ok(!E.isDepositHeldFor_(H(), '2026-12-05') && H().payByCap === '', '10/05 확정: 보류 없음 · 10일 기한(10/15)이 창 전이라 그대로', H().payByCap);
+at('2026-10-10T10:00:00'); ok(H().payByCap === '', '10/10 확정: 10일 기한 = 10/20 → 당김 없음', H().payByCap);
+at('2026-10-11T10:00:00'); ok(H().payByCap === '2026-10-20' && !E.isDepositHeldFor_(H(), '2026-12-05'), '10/11 확정: 기한 10/20 으로 당김·계좌는 준다', H().payByCap);
+at('2026-10-17T10:00:00'); ok(!E.isDepositHeldFor_(H(), '2026-12-05') && H().payByCap === '2026-10-20', '10/17 확정: 기한 3일 — 아직 계좌');
+at('2026-10-18T10:00:00');
+ok(E.isDepositHeldFor_(H(), '2026-12-05') && !E.isDepositHeldFor_(H(), '2026-10-19'), '10/18(cutoff) 확정: 휴직 뒤 촬영만 보류, 휴직 전 촬영은 계좌');
+ok(E.isDepositHeldFor_(H(), '2026-11-21') && !E.isDepositHeldFor_(H(), '2026-11-20'), 'cutoff 이후: 경계 = until 당일 촬영부터');
+at('2026-10-21T10:00:00'); ok(H().payByCap === '', '창 안: 당김 없음(보류가 대신)', H().payByCap);
 at('2026-10-25T10:00:00'); ok(E.isDepositHeldFor_(E.getDepositHold_(), '2026-10-30'), '창 안: 촬영일 무관 보류');
 at('2026-11-21T08:00:00'); ok(!E.isDepositHeldFor_(E.getDepositHold_(), '2026-12-05'), 'until 부터: 보류 없음(확정 메일에 계좌)');
 ok(!E.isDepositHeldFor_({ armed: false }, '2026-12-05') && !E.isDepositHeldFor_(null, '2026-12-05'), '설정 없음: 보류 없음');
@@ -137,10 +144,12 @@ ok(T.cancelled.includes(row('WARNED')) === false, '보류 전: WARNED 는 9일�
 
 reset();
 at('2026-10-19T11:00:00'); E.flagAndCancelOverdueDepositBookings_();
-ok(T.reminded.includes(row('EARLY')), 'from 전·휴직 전 촬영: 시계는 확정일 기준(평소대로 리마인더)', T.reminded);
-ok(!T.reminded.includes(row('PRE')), 'from 전이라도 휴직 뒤 촬영: 리마인더 없음(시계 until 부터)', T.reminded);
+ok(T.reminded.includes(row('EARLY')) && T.reminded.includes(row('PRE')), '창 전: 시계는 확정일 기준 — 휴직 뒤 촬영도 평소대로 리마인더(돈이 먼저)', T.reminded);
 at('2026-10-20T11:00:00'); E.flagAndCancelOverdueDepositBookings_();
-ok(!T.cancelled.includes(row('WARNED')), 'from 전이라도 휴직 뒤 촬영: 10일차 자동취소 없음', T.cancelled);
+ok(T.cancelled.includes(row('WARNED')), '창 전: 10일차 자동취소도 평소대로', T.cancelled);
+reset(); T.rows[row('WARNED') - 1][C['확정일시']] = '2026-10-11 10:00';
+at('2026-10-21T11:00:00'); E.flagAndCancelOverdueDepositBookings_();
+ok(!T.cancelled.includes(row('WARNED')), '창 전 확정이라도 10일째가 창 안이면 자동취소 멈춤(11/21 메일로 넘어감)', T.cancelled);
 
 reset();
 for (const d of ['2026-10-21', '2026-10-25', '2026-11-05', '2026-11-20']) { at(`${d}T08:00:00`); E.flagAndCancelOverdueDepositBookings_(); }
@@ -171,6 +180,8 @@ ok(!T.cancelled.includes(row('PAID')), '입금한 건은 끝까지 안전', T.ca
 const notes = { ko: E.depositHoldNoteHtml_('ko', '2026-11-21'), en: E.depositHoldNoteHtml_('en', '2026-11-21'), de: E.depositHoldNoteHtml_('de', '2026-11-21') };
 ok(notes.ko.includes('11월 21일') && notes.en.includes('21 November 2026') && notes.de.includes('21.11.2026'), '대체 안내: 3개국어 날짜', notes);
 ok(!Object.values(notes).some((h) => /IBAN|BIC|DE\d{2}/.test(h)), '대체 안내엔 계좌가 없다');
+const cap = { ko: E.depositPayByText_('ko', '2026-10-20', true), en: E.depositPayByText_('en', '2026-10-20', true), de: E.depositPayByText_('de', '2026-10-20', false) };
+ok(cap.ko.includes('10월 20일까지') && cap.en.includes('20 October 2026') && cap.de === 'Bitte überweisen Sie die Anzahlung bis zum 20.10.2026.', '당긴 기한 문구 3개국어', cap);
 const koMail = E.buildDepositHoldReleaseMail_(mk({ name: '<b>김</b>', confirmed: '2026-10-25 10:00' }), 50, '2026-11-28');
 ok(koMail.html.includes('11월 28일') && koMail.html.includes('€50.00') && koMail.html.includes('IBAN'), 'KO 해제 메일: 기한·금액·계좌');
 ok(!koMail.html.includes('<b>김</b>'), '고객명은 이스케이프');
@@ -209,6 +220,9 @@ for (const a of ['deposit-hold-status', 'deposit-hold-set', 'deposit-hold-releas
 ok(/const depositBox=\(dep>0&&!hidePrice\)\?\(depositHeld\?depositHoldNoteHtml_\(/.test(src), 'sendConfirmEmail_: 보류 중 계좌 블록 대신 안내');
 ok(src.includes('const depositHeld=isDepositHeldFor_(depositHold,formattedTime.slice(0,10));'), 'sendConfirmEmail_: 촬영일로 보류 판정');
 ok(src.includes('depositAmount:(hidePrice||depositHeld)?0:dep'), '.ics: 보류 중 계좌 줄 제외');
+ok(src.includes("const depositPayBy=(!depositHeld&&depositHold)?depositHold.payByCap:'';")
+   && src.includes(':depositPayBy?_depositBankBlockHtml_(lang||\'ko\',depositPayByText_(lang||\'ko\',depositPayBy,true))'), '확정 메일: 창 전 확정은 계좌 + 당긴 기한');
+ok(src.includes("depositDueText:depositPayBy?depositPayByText_(lang||'ko',depositPayBy,false):''") && src.includes('lines.push(info.depositDueText||labels.depositDue);'), '.ics: 당긴 기한 문구');
 ok(src.includes("heldUntil:isDepositHeldFor_(depHold,d10)?depHold.until:''") && src.includes('보류(${esc(d.heldUntil'), "브리핑: '보류(MM/DD 안내)' — 촬영일 판정");
 ok(/DATE_SETTING_KEYS=\[[^\]]*'deposit_hold_from','deposit_hold_until'/.test(src), '설정 날짜셀 정규화 키 등록');
 
@@ -216,6 +230,7 @@ if (SHOW) {
   const strip = (h) => h.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|li|div)>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\n{2,}/g, '\n').trim();
   for (const L of ['ko', 'en', 'de']) {
     console.log(`\n── 확정 메일 계좌 블록 대체 (${L}) ──\n${strip(notes[L])}`);
+    console.log(`\n── 창 전 확정(10/11~) 계좌 블록 끝줄 (${L}) ──\n${E.depositPayByText_(L, '2026-10-20', false)}`);
     const m = E.buildDepositHoldReleaseMail_(mk({ name: L === 'de' ? 'Anna Schmidt' : '홍길동', lang: L, confirmed: '2026-10-25 10:00', shoot: '2026-12-12 10:00' }), 50, '2026-11-28');
     console.log(`\n── 11/21 해제 메일 (${L}) ── 제목: ${m.subject}\n${strip(m.html)}`);
   }

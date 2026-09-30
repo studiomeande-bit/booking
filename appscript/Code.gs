@@ -13173,7 +13173,7 @@ function buildConfirmCalendarMemo_(info){
   if(info.depositAmount>0){
     lines.push('');
     lines.push(labels.depositTitle);
-    lines.push(labels.depositDue);
+    lines.push(info.depositDueText||labels.depositDue);
     lines.push(labels.account);
     lines.push(labels.bank);
     lines.push(labels.iban);
@@ -13394,7 +13394,9 @@ function sendConfirmEmail_(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   // 계약금 안내 보류 중(getDepositHold_)이면 계좌 대신 "until 에 따로 보낸다" — .ics 계좌 줄도 같이 뺀다(depositAmount 0)
   const depositHold=(dep>0&&!hidePrice)?getDepositHold_():null;
   const depositHeld=isDepositHeldFor_(depositHold,formattedTime.slice(0,10));
-  const depositBox=(dep>0&&!hidePrice)?(depositHeld?depositHoldNoteHtml_(lang||'ko',depositHold.until):(T.confirmed_deposit_note||'')):'';
+  const depositPayBy=(!depositHeld&&depositHold)?depositHold.payByCap:'';   // 창 전 확정: 10일 기한이 창에 걸리면 창 전날까지로
+  const depositBox=(dep>0&&!hidePrice)?(depositHeld?depositHoldNoteHtml_(lang||'ko',depositHold.until)
+    :depositPayBy?_depositBankBlockHtml_(lang||'ko',depositPayByText_(lang||'ko',depositPayBy,true)):(T.confirmed_deposit_note||'')):'';
   const refundBox=withWiderrufStornoNote_((dep>0&&itemGroup!=='biz'&&!hidePrice)?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'',lang||'ko');
   /* 철회 안내(원격계약 확정 = 계약 성립 시점의 dauerhafter Datenträger, § 312f Abs. 2) — 여권은 무구속 예약 고지로 대신한다.
      확정 메일 5경로(원클릭·어드민 확정·포털 재발송·수기 예약·견적→예약)가 전부 여기를 지난다. hidePrice 여도 싣는다(법정 고지). */
@@ -13417,6 +13419,7 @@ function sendConfirmEmail_(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
     depositText:hidePrice?'':(dep>0?formatEuroAmount_(dep)+'€':calendarLabels.noDeposit),
     balanceText:hidePrice?'':(isQuoteOnly?calendarLabels.quoteTbd:formatConfirmCalendarAmountText_(balanceAmount,bal,'')),
     depositAmount:(hidePrice||depositHeld)?0:dep,
+    depositDueText:depositPayBy?depositPayByText_(lang||'ko',depositPayBy,false):'',
     hidePrice:hidePrice,
     memo:detail.memo||'',
     extraItem:detail.extraItem||'',
@@ -33778,8 +33781,8 @@ function flagAndCancelOverdueDepositBookings_(){
 /* 계약금 안내 보류 (일회성, 2026-09-30 사장님 결정) — 엘턴겔트 수급월 Lebensmonat 11(2026-10-21~11-20, '사업 완전 휴지' 신고)
    안에 계약금이 들어오면 수급기간 소득(Zufluss)이 된다. 그래서 그 창엔 계좌를 내보내지 않고 until 에 한꺼번에 보낸다.
    설정 deposit_hold_from / deposit_hold_until (YYYY-MM-DD), today ∈ [from,until) 이면 활성 · 빈칸 = 꺼짐. 조작은 erp-agent deposit-hold-*.
-   - 보류 대상 = 창 안의 모든 확정 + **창 전이라도 촬영일 ≥ until(휴직 뒤 촬영)**인 확정(사장님 2026-09-30 — 10/11~ 확정분의
-     10일 기한이 창 안에 걸리는 것까지 막는다). 창 전 확정·창 전 촬영은 종전대로 계좌·10일 기한. isDepositHeldFor_.
+   - 창 전 확정은 계좌를 그대로 주되 **기한을 창 전날(from−1)로 당긴다**(payByCap — 사장님 2026-09-30 "먼저 들어오는 게 좋다").
+     단 창 3일 전(cutoff)부터 확정되는 휴직 뒤 촬영(촬영일 ≥ until)은 기한이 1~2일로 줄어드니 창 안처럼 보류. isDepositHeldFor_.
    - 확정 메일(sendConfirmEmail_): 계좌 블록·.ics 계좌 줄 대신 "until 에 따로 보냄".
    - L2(flagAndCancelOverdueDepositBookings_): 시계가 max(확정일, until)부터라 활성 중엔 리마인더·자동취소 없음. until 이후 첫 실행이 보류분에 계좌 메일을
      보낸다(releaseDepositHold_, 행마다 [계약금안내] 감사줄 = 재발송 방지). 창 안에 들어온 입금은 평소 확인 경로 그대로.
@@ -33790,22 +33793,36 @@ function getDepositHold_(){
   const from=String(s.deposit_hold_from||'').trim(), until=String(s.deposit_hold_until||'').trim();
   const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const armed=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(until)&&from<until;
+  const addDays=function(ymd,n){return Utilities.formatDate(new Date(new Date(ymd+'T12:00:00').getTime()+n*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');};
+  const lastPayDay=armed?addDays(from,-1):'';
   return {from:from,until:until,today:today,armed:armed,
     started:armed&&today>=from,
     active:armed&&today>=from&&today<until,
-    releaseDue:armed&&today>=until};
+    releaseDue:armed&&today>=until,
+    cutoff:armed?addDays(from,-3):'',   // 이날부터 확정되는 휴직 뒤 촬영은 보류 — 창 전날 기한까지 3일 미만
+    payByCap:(armed&&today<from&&addDays(today,10)>lastPayDay)?lastPayDay:''};   // 창 전 확정의 10일 기한이 창에 걸리면 창 전날로
 }
 
-// 지금 이 촬영(shootYmd)의 계약금 계좌 안내를 보류하나 — 창 안이면 전부, 창 전이면 촬영일 ≥ until 만. until 부터는 보류 없음.
+// 지금 이 촬영(shootYmd)의 계약금 계좌 안내를 보류하나 — 창 안이면 전부, cutoff~창 전이면 촬영일 ≥ until 만. until 부터는 보류 없음.
 function isDepositHeldFor_(hold,shootYmd){
-  return !!(hold&&hold.armed&&hold.today<hold.until&&(hold.today>=hold.from||String(shootYmd||'').slice(0,10)>=hold.until));
+  return !!(hold&&hold.armed&&hold.today<hold.until
+    &&(hold.today>=hold.from||(hold.today>=hold.cutoff&&String(shootYmd||'').slice(0,10)>=hold.until)));
 }
 
-// 계약금 시계 경과일(7일 리마인더·10일 자동취소) — 확정일시(없으면 동의시각)부터. 보류가 시작됐거나 촬영이 until 이후면 max(그 날, until)부터. 기준일 없으면 null.
+// 창 전 확정의 당긴 기한 문구 — 확정 메일(html)·.ics(평문)
+function depositPayByText_(lang,ymd,html){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const d=depositHoldDateText_(ymd,L);
+  const t={ko:'계약금은 '+d+'까지 입금을 부탁드립니다.',en:'Please transfer the deposit by '+d+'.',de:'Bitte überweisen Sie die Anzahlung bis zum '+d+'.'}[L];
+  return html?'<b style="color:#b45309;">※ '+t+'</b>':t;
+}
+
+// 계약금 시계 경과일(7일 리마인더·10일 자동취소) — 확정일시(없으면 동의시각)부터, 보류가 시작됐으면 max(그 날, until)부터. 기준일 없으면 null.
+// (cutoff~창 전 보류분은 창 시작 전에 7일째가 오지 않으므로 따로 볼 필요 없다)
 function depositClockAgeDays_(row,now,hold){
   let start=getDepositDeadlineBaseDate_(row).obj;
   if(isNaN(start.getTime())) return null;
-  if(hold&&hold.armed&&(hold.started||parseDateSafe_(row[BOOKING_COL['예약일시']]).str.slice(0,10)>=hold.until)){
+  if(hold&&hold.started){
     const until=new Date(hold.until+'T00:00:00');
     if(until.getTime()>start.getTime()) start=until;
   }
@@ -33963,7 +33980,7 @@ function depositHoldForAgent_(token,action,payload){
    자동취소가 나갔다(김혜수 2026-08-16 리마인더 → 08-19 자동취소).
    ⚠️ 같은 계좌 정보가 EMAIL_TEXT 의 confirmed_deposit_note 와 getConfirmCalendarLabels_ 에도 있다.
    계좌가 바뀌면 **세 곳을 함께** 고쳐야 한다. */
-function _depositBankBlockHtml_(lang){
+function _depositBankBlockHtml_(lang,extraHtml){
   const L=(lang==='en'||lang==='de')?lang:'ko';
   const t={
     ko:{title:'💳 계약금 입금 계좌',holder:'예금주',bank:'은행',ref:'송금 사유',refVal:'예약자명 + 촬영일'},
@@ -33977,6 +33994,7 @@ function _depositBankBlockHtml_(lang){
     +'IBAN: <b>'+STUDIO_BANK.iban+'</b><br>'
     +'BIC: <b>'+STUDIO_BANK.bic+'</b><br>'
     +t.ref+': '+t.refVal
+    +(extraHtml?'<br><br>'+extraHtml:'')
     +'</div>';
 }
 
