@@ -1,11 +1,11 @@
 # Update Roadmap
 
-Updated: 2026-09-29 Europe/Berlin
+Updated: 2026-09-30 Europe/Berlin
 
 ## Immediate
 
 1. ~~Booking end-to-end verification~~ → **완료 (2026-08-02, Update 4 릴리스 게이트)**: 라이브 합성 예약 1건으로 Netlify 제출→시트행→캘린더(버퍼 슬롯 차단 실증)→고객·관리자 메일까지 통과, 정리(booking-delete)·슬롯 원복까지 확인. 상세는 `docs/update-4-plan.md`
-- 잔여(오너): Apps Script 200버전 한도 정리 — **2026-09-29 현재 168/200**(@1000 기준 추산). 남은 슬롯 32. 삭제는 소유자만 가능(Apps Script 편집기 → 프로젝트 기록). clasp 에는 버전 삭제 명령이 없다.
+- 잔여(오너): Apps Script 200버전 한도 정리 — **2026-09-30 현재 169/200**(@1001). 남은 슬롯 31. 삭제는 소유자만 가능(Apps Script 편집기 → 프로젝트 기록). clasp 에는 버전 삭제 명령이 없다.
 
 2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
@@ -63,6 +63,22 @@ Updated: 2026-09-29 Europe/Berlin
 13. ~~Optional finance expansion~~ — **폐기 (2026-08-02 검수)**: Lexware 전면 은퇴(7/16)로 전제 소멸. SumUp 15분 동기화·Deutsche Bank CSV 임포트 모두 구축 완료, 로컬 장부가 정본. 잔여는 Lexware측 API키 폐기(오너 1줄 액션)뿐.
 
 ## Done Recently
+
+### 2026-09-30 · 계약금 안내 보류 — 엘턴겔트 수급월엔 계좌를 내보내지 않는다 (메인 @1001)
+
+사장님 결정: Lebensmonat 11(**2026-10-21~11-20**, '사업 완전 휴지' 신고) 안에 계약금이 들어오면 수급기간 소득(Zufluss)이 된다 → 그 창엔 계약금 계좌 안내를 보내지 않고 **11/21 에 한꺼번에**(11/21~30 입금분은 12/1 월세에도 보탬). 일회성, 기본 꺼짐.
+
+- **설정** `deposit_hold_from` / `deposit_hold_until`(YYYY-MM-DD), today ∈ [from,until) 이면 활성. 어드민 UI 없음 — erp-agent 로만.
+- **확정 메일**(`sendConfirmEmail_`, 5경로 공통): 계약금 > 0 이면 계좌 블록 대신 "계약금 계좌는 11월 21일에 별도 메일로 보내드립니다. 그 전에는 입금하지 않으셔도 되며…"(KO/EN/DE) · .ics 계좌 줄도 뺀다. 금액·세부·.ics 나머지는 그대로.
+- **L2 계약금 시계** = max(확정일, until) — 보류가 시작된 뒤엔 보류 전 미입금 건까지 리마인더·자동취소가 멈추고, 해제 후엔 until 부터 7일 리마인더·10일 자동취소(해제 다음 날 일괄 취소 방지). from 전엔 종전 그대로.
+- **자동 해제**: until 이후 첫 L2 실행(dailyTasks, 11/21 아침)이 보류분(확정됨 · 계약금 > 0 · 미입금 · 현장결제 예외 아님 · 촬영 전 · until 전 확정)에 계좌 메일(기존 계좌 블록 + **기한 = until+7일**, KO/EN/DE)을 보내고 행마다 `[계약금안내 YYYY-MM-DD]` 감사줄(재발송 방지 · 고객 표시에서 제거 · 메모 수정에도 보존). 사장님이 한국에 있어도 돈다.
+- **설정은 해제 후에도 지우지 않는다** — 시계 기준이라, 지우면 보류분이 '확정 30일 경과'로 보여 다음 날 아침 일괄 자동취소된다. 보류분이 정리된 **12월 이후**에 `deposit-hold-set {from:'',until:''}` 로 비운다. (원 스펙은 "release 가 설정을 비운다"였으나 이 이유로 변경.)
+- **브리핑**: 보류 중 계약금 대기 건은 `자동취소 D-x` 대신 `보류(11/21 안내)`.
+- **erp-agent**: `deposit-hold-status`(보류분 목록·해제 여부) · `deposit-hold-set {from,until,dryRun}`(**dryRun 기본**, 빈칸 둘 = 끄기) · `deposit-hold-release {confirm:'SEND'}`(⚠️외부발송 — 없으면 dryRun + 메일 미리보기; 자동 해제와 같은 경로라 조기 발송용).
+- 창 안에 고객이 입금해도 평소 확인 경로 그대로(거절 없음) — 그 건은 보류분에서 빠진다.
+- **게이트** `scripts/check-deposit-hold.mjs`(Code.gs 통째 + 가짜 시계·시트): 창 판정 · 보류 전/중/해제/+7/+10 시나리오 · 보류분 선정 · 멱등 · 문구 · 에이전트 가드 · 배선. 결함 주입 7/7 감지(나머지 1건 '보류 중 조기 return' 은 시계 기준과 중복이라 코드를 지웠다). `--show` 로 3개국어 문구 출력.
+- 셔틀·보드는 `DATE_SETTING_KEYS` 상수만 공유하고 새 키를 읽지 않아 재배포 없음.
+- **남은 것(사장님)**: 보류 활성화 승인 → `deposit-hold-set {"from":"2026-10-21","until":"2026-11-21","dryRun":false}` → `deposit-hold-release` dryRun 으로 대상 확인.
 
 ### 2026-09-29 · 마이리얼트립 셀렉에는 출력(인화) 옵션 없음 (메인 @1000 · 셔틀 @25 · 셀렉 화면)
 

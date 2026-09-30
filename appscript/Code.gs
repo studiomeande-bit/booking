@@ -224,7 +224,7 @@ const GUTSCHEIN_HEADERS=['코드','타입','상품ID','상품명스냅샷','구�
 const GUTSCHEIN_COL=GUTSCHEIN_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 const GUTSCHEIN_STATUS={STOCK:'재고',SOLD:'판매완료',MAILED:'메일발송',HOLD:'예약중',USED:'사용완료',EXPIRED:'만료',CANCELLED:'취소'};
 const GUTSCHEIN_HOLD_TTL_MIN=15;
-const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end','deposit_hold_from','deposit_hold_until'];
 let SETTINGS_MAP_CACHE = null;
 
 function normalizeBookingStatus_(status){
@@ -2319,6 +2319,8 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='print-list-passcode-set') return jsonOk_(setPrintListPasscodeAdmin(token,payload.passcode));
         if(action==='booking-enrich-mrt') return jsonOk_(enrichMyRealTripBookingForAgent_(token,payload||{}));
         if(action==='booking-set-mrt-payout') return jsonOk_(setMyRealTripPayoutDateForAgent_(token,payload||{}));   // 💶 MRT 정산 지급일 → 잔금입금일(§20 UStG 수취시점)
+        // 🏖️ 계약금 안내 보류(엘턴겔트 수급월) — set 은 dryRun 기본, release 는 ⚠️외부발송(confirm:'SEND')
+        if(action==='deposit-hold-status'||action==='deposit-hold-set'||action==='deposit-hold-release') return jsonOk_(depositHoldForAgent_(token,action,payload||{}));
         if(action==='booking-set-time') return jsonOk_(setBookingTimeForAgent_(token,payload||{}));
         if(action==='booking-set-balance-note'){
           /* ✏️ 잔금 셀의 **결제 흔적 표기 복원** — '35' → '35|CARD|2026-03-14'.
@@ -13389,7 +13391,10 @@ function sendConfirmEmail_(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
   /* hidePrice — 금액을 전혀 싣지 않는 확정 메일(2026-09-13 사장님 요청: 지인·교회 예약 등 가격을 보이고 싶지 않은 건).
      가격 블록·세부내역의 금액 줄·결제 안내·.ics 의 금액 줄을 전부 뺀다. 시트·장부는 그대로다(메일 표시만). */
   const hidePrice=!!detail.hidePrice;
-  const depositBox=(dep>0&&!hidePrice)?(T.confirmed_deposit_note||''):'';
+  // 계약금 안내 보류 중(getDepositHold_)이면 계좌 대신 "until 에 따로 보낸다" — .ics 계좌 줄도 같이 뺀다(depositAmount 0)
+  const depositHold=(dep>0&&!hidePrice)?getDepositHold_():null;
+  const depositHeld=!!(depositHold&&depositHold.active);
+  const depositBox=(dep>0&&!hidePrice)?(depositHeld?depositHoldNoteHtml_(lang||'ko',depositHold.until):(T.confirmed_deposit_note||'')):'';
   const refundBox=withWiderrufStornoNote_((dep>0&&itemGroup!=='biz'&&!hidePrice)?(itemGroup==='wed'?getWeddingRefundPolicyHtml_(lang||'ko'):(T.refund_policy||'')):'',lang||'ko');
   /* 철회 안내(원격계약 확정 = 계약 성립 시점의 dauerhafter Datenträger, § 312f Abs. 2) — 여권은 무구속 예약 고지로 대신한다.
      확정 메일 5경로(원클릭·어드민 확정·포털 재발송·수기 예약·견적→예약)가 전부 여기를 지난다. hidePrice 여도 싣는다(법정 고지). */
@@ -13411,7 +13416,7 @@ function sendConfirmEmail_(name,email,lang,itemGroup,prodLocal,price,timeRaw,pas
     totalText:hidePrice?'':formatConfirmCalendarAmountText_(price,totalPrice,isQuoteOnly?calendarLabels.quoteTbd:''),
     depositText:hidePrice?'':(dep>0?formatEuroAmount_(dep)+'€':calendarLabels.noDeposit),
     balanceText:hidePrice?'':(isQuoteOnly?calendarLabels.quoteTbd:formatConfirmCalendarAmountText_(balanceAmount,bal,'')),
-    depositAmount:hidePrice?0:dep,
+    depositAmount:(hidePrice||depositHeld)?0:dep,
     hidePrice:hidePrice,
     memo:detail.memo||'',
     extraItem:detail.extraItem||'',
@@ -16590,7 +16595,7 @@ function settleBookingOnsiteForAgent_(token,payload){
 /* 메모 전체 교체 시 감사줄 보존 — booking-get/search 는 메모를 300자로 잘라 보여주므로, 잘린 메모를 읽어
    되쓰면 뒤에 붙은 '[금액정정 …] 사유: [3회차혜택]' 같은 줄이 조용히 사라지고 멱등 가드가 열린다(검증 지적
    2026-09-05). 알려진 감사 접두어로 시작하는 줄이 새 메모에 없으면 끝에 다시 붙인다. */
-const MEMO_AUDIT_PREFIXES_='부분수납|금액정정|현장추가|추가금정정|촬영종류정정|제휴사할인|재촬영할인|재방문할인|자동취소|재촬영|추가촬영|상품변경|인보이스연결|정정';
+const MEMO_AUDIT_PREFIXES_='부분수납|금액정정|현장추가|추가금정정|촬영종류정정|제휴사할인|재촬영할인|재방문할인|자동취소|재촬영|추가촬영|상품변경|인보이스연결|정정|계약금안내';
 
 function preserveAuditMemoLines_(prevMemo,newMemo){
   const re=new RegExp('^\\[('+MEMO_AUDIT_PREFIXES_+')');
@@ -18395,6 +18400,7 @@ function _buildDailyBriefingData_(){
   const sh=getDbSheet();
   const rows=sh.getDataRange().getValues();
   const upcoming=[],depositWait=[],unpaidBalances=[];
+  let depHold=null;   // 계약금 안내 보류 — 대기 건이 있을 때만 설정을 읽는다
   /* 섹션별 집계 실패를 모아 브리핑 본문에 드러낸다. 지금까지는 try/catch 가 Logger 로만 남기고
      빈 배열을 그대로 내보내서, 예를 들어 수령 미완결 조회가 죽어도 브리핑은 "오늘 처리할 항목이
      없습니다 👍"로 보였다 — 조용한 실패가 '할 일 없음'으로 위장되던 구조. */
@@ -18438,11 +18444,14 @@ function _buildDailyBriefingData_(){
       const baseInfo=getDepositDeadlineBaseDate_(row);
       const ageDays=baseInfo&&baseInfo.obj&&!isNaN(baseInfo.obj.getTime())
         ? Math.floor((now.getTime()-baseInfo.obj.getTime())/86400000) : null;
+      if(!depHold) depHold=getDepositHold_();
+      const clockDays=depositClockAgeDays_(row,now,depHold);   // 보류가 있었으면 until 부터 — L2 와 같은 시계
       depositWait.push({rowIndex:i+1,dateTime:d.slice(0,16),name:String(row[BOOKING_COL['고객명']]||''),
         deposit:formatEuroAmount_(getEffectiveBookingDeposit_(row)),
         ageDays:ageDays,warned:!!warnedAt,
+        heldUntil:depHold.active?depHold.until:'',
         // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)까지 남은 일수 — 사장님이 개입할 마지막 시점
-        daysToAutoCancel:(ageDays==null?null:Math.max(0,10-ageDays))});
+        daysToAutoCancel:(depHold.active||clockDays==null)?null:Math.max(0,10-clockDays)});
     }
     /* 미수 잔금 — 판정은 **결제수단 문구**('' 또는 미결제/offen)다. 잔금결제여부 플래그가 아니다.
        이 스튜디오의 운영 규칙: 현장 수납 후 결제수단(현금/카드/계좌이체)을 기록하는 것 자체가
@@ -18925,7 +18934,8 @@ function buildDailyBriefingEmailHtml_(b){
   b.depositWaiting.forEach(function(d){
     // 10일째 자동취소(캘린더 삭제 + 고객 취소메일)가 사장님 확인 없이 실행되므로, 남은 일수를 앞에 세운다
     const urgent=d.daysToAutoCancel!=null&&d.daysToAutoCancel<=3;
-    const tail=d.daysToAutoCancel==null?''
+    const tail=d.heldUntil?` · <b style="color:#64748b;">보류(${esc(d.heldUntil.slice(5).replace('-','/'))} 안내)</b>`
+      :d.daysToAutoCancel==null?''
       :(d.daysToAutoCancel<=0?' · <b style="color:#b91c1c;">오늘 자동취소 대상</b>'
         :` · <b style="color:${urgent?'#b91c1c':'#b45309'};">자동취소 D-${d.daysToAutoCancel}</b>`);
     actions.push(line(`💰 계약금 미입금 — <b>${esc(d.name)}</b>님 (${esc(d.dateTime.slice(5,16))} 촬영, ${esc(d.deposit)})`
@@ -33733,6 +33743,8 @@ function dailyTasks(e){
 
 
 function flagAndCancelOverdueDepositBookings_(){
+  const hold=getDepositHold_();   // 보류 중엔 시계가 until(미래)부터라 경과일이 음수 → 리마인더·자동취소 없음
+  if(hold.releaseDue) releaseDepositHold_({});   // until 이후 첫 실행: 보류분에 계좌 메일(행 표식으로 1회만)
   const {bookingSheet}=ensureSheets_();
   const rows=bookingSheet.getDataRange().getValues();
   const now=new Date();
@@ -33743,11 +33755,9 @@ function flagAndCancelOverdueDepositBookings_(){
     const depositPaid=String(row[BOOKING_COL['계약금입금여부']]||'')==='Y';
     if(deposit<=0 || depositPaid || isBookingDepositOnsiteException_(row) || isBookingCalendarInactiveStatus_(status)) return;
     if(!isBookingRevenueStatus_(status)) return;
-    // 기준: 예약 확정일시 우선, 없으면 동의시각 fallback
-    const baseDateInfo=getDepositDeadlineBaseDate_(row);
-    const bookedDate=baseDateInfo.obj;
-    if(isNaN(bookedDate.getTime())) return;
-    const ageDays=Math.floor((now.getTime()-bookedDate.getTime())/86400000);
+    // 기준: 예약 확정일시 우선, 없으면 동의시각 fallback — 보류가 있었으면 해제일(until)부터
+    const ageDays=depositClockAgeDays_(row,now,hold);
+    if(ageDays==null) return;
     const warnedAtRaw=String(row[BOOKING_COL['입금경고일시']]||'').trim();
     let warningJustSent=false;
     // 7일차: 입금 리마인더 메일 발송
@@ -33763,6 +33773,181 @@ function flagAndCancelOverdueDepositBookings_(){
       autoCancelBookingForMissingDeposit_(rowIndex, row);
     }
   });
+}
+
+/* 계약금 안내 보류 (일회성, 2026-09-30 사장님 결정) — 엘턴겔트 수급월 Lebensmonat 11(2026-10-21~11-20, '사업 완전 휴지' 신고)
+   안에 계약금이 들어오면 수급기간 소득(Zufluss)이 된다. 그래서 그 창엔 계좌를 내보내지 않고 until 에 한꺼번에 보낸다.
+   설정 deposit_hold_from / deposit_hold_until (YYYY-MM-DD), today ∈ [from,until) 이면 활성 · 빈칸 = 꺼짐. 조작은 erp-agent deposit-hold-*.
+   - 확정 메일(sendConfirmEmail_): 계좌 블록·.ics 계좌 줄 대신 "until 에 따로 보냄".
+   - L2(flagAndCancelOverdueDepositBookings_): 시계가 max(확정일, until)부터라 활성 중엔 리마인더·자동취소 없음. until 이후 첫 실행이 보류분에 계좌 메일을
+     보낸다(releaseDepositHold_, 행마다 [계약금안내] 감사줄 = 재발송 방지). 창 안에 들어온 입금은 평소 확인 경로 그대로.
+   - 설정은 해제 뒤에도 **지우지 않는다** — 계약금 시계를 max(확정일, until)로 재는 기준이다. 지우면 보류분이 전부
+     '확정 30일 경과'로 보여 다음 날 아침 일괄 자동취소된다. 보류분이 정리된 뒤(12월)에 비운다. */
+function getDepositHold_(){
+  const s=getSettingsMap_();
+  const from=String(s.deposit_hold_from||'').trim(), until=String(s.deposit_hold_until||'').trim();
+  const today=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const armed=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(until)&&from<until;
+  return {from:from,until:until,today:today,armed:armed,
+    started:armed&&today>=from,
+    active:armed&&today>=from&&today<until,
+    releaseDue:armed&&today>=until};
+}
+
+// 계약금 시계 경과일(7일 리마인더·10일 자동취소) — 확정일시(없으면 동의시각)부터, 보류가 시작됐으면 max(그 날, until)부터. 기준일 없으면 null.
+function depositClockAgeDays_(row,now,hold){
+  let start=getDepositDeadlineBaseDate_(row).obj;
+  if(isNaN(start.getTime())) return null;
+  if(hold&&hold.started){
+    const until=new Date(hold.until+'T00:00:00');
+    if(until.getTime()>start.getTime()) start=until;
+  }
+  return Math.floor((now.getTime()-start.getTime())/86400000);
+}
+
+// 보류분 = until 전에 확정된(확정일 없음 포함) 미입금 계약금 예약 · 확정됨 · 촬영 전 · 현장결제 예외 아님
+function depositHoldRows_(hold){
+  const rows=getDbSheet().getDataRange().getValues();
+  const untilMs=new Date(hold.until+'T00:00:00').getTime();
+  const out=[];
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    if(normalizeBookingStatus_(row[BOOKING_COL['상태']])!=='확정됨') continue;
+    const deposit=getEffectiveBookingDeposit_(row);
+    if(deposit<=0||isPaymentConfirmedValue_(row[BOOKING_COL['계약금입금여부']])||isBookingDepositOnsiteException_(row)) continue;
+    const shootAt=parseDateSafe_(row[BOOKING_COL['예약일시']]).str;
+    if(!shootAt||shootAt.slice(0,10)<hold.today) continue;
+    if(getDepositDeadlineBaseDate_(row).obj.getTime()>=untilMs) continue;   // until 이후 확정분은 확정 메일에 계좌가 이미 실렸다
+    out.push({rowIndex:i+1,name:String(row[BOOKING_COL['고객명']]||''),shootAt:shootAt,deposit:deposit,
+      lang:String(row[BOOKING_COL['언어']]||'ko').toLowerCase(),
+      released:String(row[BOOKING_COL['요청사항']]||'').indexOf('[계약금안내 ')>-1,row:row});
+  }
+  return out;
+}
+
+function depositHoldDateText_(ymd,lang){
+  const p=String(ymd||'').split('-').map(Number);
+  if(p.length!==3) return String(ymd||'');
+  if(lang==='de') return ('0'+p[2]).slice(-2)+'.'+('0'+p[1]).slice(-2)+'.'+p[0];
+  if(lang==='en') return p[2]+' '+['January','February','March','April','May','June','July','August','September','October','November','December'][p[1]-1]+' '+p[0];
+  return p[1]+'월 '+p[2]+'일';
+}
+
+// 확정 메일의 계좌 블록 자리에 들어가는 안내(보류 중)
+function depositHoldNoteHtml_(lang,until){
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const d='<b>'+depositHoldDateText_(until,L)+'</b>';
+  const t={
+    ko:{title:'💳 계약금 안내',body:'계약금 입금 계좌는 '+d+'에 별도 메일로 보내드립니다. 그 전에는 입금하지 않으셔도 되며, 예약은 확정된 상태로 유지됩니다.'},
+    en:{title:'💳 Deposit',body:'We will send you the bank details for the deposit separately on '+d+'. No payment is needed before then, and your booking remains confirmed.'},
+    de:{title:'💳 Anzahlung',body:'Die Zahlungsinformationen zur Anzahlung senden wir Ihnen am '+d+' separat zu. Bis dahin ist keine Zahlung nötig, Ihr Termin bleibt verbindlich bestätigt.'}
+  }[L];
+  return '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:13px;line-height:1.8;">'
+    +'<b style="color:#1d4ed8;">'+t.title+'</b><br>'+t.body+'</div>';
+}
+
+// 보류 해제 계좌 메일(until 에 발송) — 입금 기한 payBy 를 날짜로 못박는다
+function buildDepositHoldReleaseMail_(row,deposit,payBy){
+  const name=escapeHtml_(String(row[BOOKING_COL['고객명']]||''));
+  const lang=String(row[BOOKING_COL['언어']]||'ko').toLowerCase();
+  const L=(lang==='en'||lang==='de')?lang:'ko';
+  const product=escapeHtml_(String(row[BOOKING_COL['상품']]||''));
+  const shootAt=escapeHtml_(_formatBookingDate_(row[BOOKING_COL['예약일시']]));
+  const dep='€'+(Math.round(deposit*100)/100).toFixed(2);
+  const due='<b>'+depositHoldDateText_(payBy,L)+'</b>';
+  const m={
+    ko:{subject:'[Studio mean] 계약금 입금 안내',
+      html:`<p>안녕하세요, <b>${name}</b>님.</p>
+<p>예약하신 촬영의 계약금 입금 계좌를 안내해 드립니다.</p>
+<ul>
+  <li>상품: ${product}</li>
+  <li>촬영일시: ${shootAt}</li>
+  <li>계약금: <b>${dep}</b></li>
+  <li>입금 기한: ${due}까지</li>
+</ul>
+${_depositBankBlockHtml_('ko')}
+<p>기한까지 입금이 확인되지 않으면 예약이 자동 취소될 수 있습니다. 이미 입금하셨거나 현장 결제로 협의하신 경우에는 이 메일을 무시하셔도 됩니다.</p>`},
+    en:{subject:'[Studio mean] Deposit payment details',
+      html:`<p>Hello <b>${name}</b>,</p>
+<p>Here are the bank details for the deposit for your booked session.</p>
+<ul>
+  <li>Session: ${product}</li>
+  <li>Date/Time: ${shootAt}</li>
+  <li>Deposit: <b>${dep}</b></li>
+  <li>Please pay by: ${due}</li>
+</ul>
+${_depositBankBlockHtml_('en')}
+<p>If the deposit is not received by this date, the booking may be cancelled automatically. If you have already paid, or agreed to pay on site, please ignore this email.</p>`},
+    de:{subject:'[Studio mean] Zahlungsinformationen zur Anzahlung',
+      html:`<p>Guten Tag, <b>${name}</b>,</p>
+<p>hiermit erhalten Sie die Zahlungsinformationen zur Anzahlung für Ihren gebuchten Termin.</p>
+<ul>
+  <li>Paket: ${product}</li>
+  <li>Termin: ${shootAt}</li>
+  <li>Anzahlung: <b>${dep}</b></li>
+  <li>Zahlungsfrist: bis ${due}</li>
+</ul>
+${_depositBankBlockHtml_('de')}
+<p>Geht die Anzahlung nicht bis zu diesem Datum ein, kann die Buchung automatisch storniert werden. Falls Sie bereits überwiesen oder eine Zahlung vor Ort vereinbart haben, können Sie diese E-Mail ignorieren.</p>`}
+  }[L];
+  return {lang:L,subject:m.subject,html:m.html+getSignatureHtml_()};
+}
+
+/* 보류분 전체에 계좌 메일 → 행마다 [계약금안내] 감사줄. 이미 줄이 있는 행은 건너뛴다(재실행·매일 L2 호출 안전).
+   입금 기한 = until + 7일 — L2 시계(until 부터)의 7일 리마인더와 같은 날, 자동취소는 10일째. 설정은 지우지 않는다(위 주석). */
+function releaseDepositHold_(opts){
+  opts=opts||{};
+  const hold=getDepositHold_();
+  if(!hold.armed) throw new Error('계약금 보류 설정이 없습니다 (deposit_hold_from/until).');
+  const payBy=Utilities.formatDate(new Date(new Date(hold.until+'T12:00:00').getTime()+7*86400000),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const targets=depositHoldRows_(hold).filter(function(t){return !t.released;});
+  const brief=function(t){return {rowIndex:t.rowIndex,name:t.name,shootAt:t.shootAt,deposit:t.deposit,lang:t.lang};};
+  if(opts.dryRun){
+    const first=targets[0];
+    const sample=first?buildDepositHoldReleaseMail_(first.row,first.deposit,payBy):null;
+    return {dryRun:true,until:hold.until,payBy:payBy,count:targets.length,targets:targets.map(brief),
+      preview:sample?{rowIndex:first.rowIndex,lang:sample.lang,subject:sample.subject,
+        text:sample.html.replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|li|div)>/gi,'\n').replace(/<[^>]+>/g,'').replace(/\n{2,}/g,'\n').trim()}:null};
+  }
+  const sh=getDbSheet(), sent=[], skipped=[];
+  targets.forEach(function(t){
+    const email=String(t.row[BOOKING_COL['이메일']]||'').trim();
+    if(!email||email.indexOf('@')<0||email.indexOf('수기')>=0){ skipped.push(Object.assign(brief(t),{reason:'이메일 없음'})); return; }
+    const mail=buildDepositHoldReleaseMail_(t.row,t.deposit,payBy);
+    try{ sendTrackedEmail_({to:email,subject:mail.subject,htmlBody:mail.html},{type:'계약금안내',customerName:t.name,email:email}); }
+    catch(e){ skipped.push(Object.assign(brief(t),{reason:e.message})); return; }
+    const prev=String(t.row[BOOKING_COL['요청사항']]||'').trim();
+    const line='[계약금안내 '+hold.today+'] 보류 해제 · 계좌 메일 발송(기한 '+payBy+')';
+    sh.getRange(t.rowIndex,BOOKING_COL['요청사항']+1).setValue(prev?prev+'\n'+line:line);
+    sent.push(brief(t));
+  });
+  return {dryRun:false,until:hold.until,payBy:payBy,sent:sent,skipped:skipped};
+}
+
+// erp-agent deposit-hold-status | deposit-hold-set {from,until,dryRun=true} | deposit-hold-release {confirm:'SEND'} (⚠️외부발송)
+function depositHoldForAgent_(token,action,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  if(action==='deposit-hold-set'){
+    const from=String(payload.from==null?'':payload.from).trim(), until=String(payload.until==null?'':payload.until).trim();
+    const validYmd=function(v){const d=new Date(v+'T12:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(v)&&!isNaN(d.getTime())&&d.toISOString().slice(0,10)===v;};
+    if(from||until){   // 둘 다 빈칸 = 끄기
+      if(!validYmd(from)||!validYmd(until)) throw new Error('from/until 형식이 올바르지 않습니다 (YYYY-MM-DD).');
+      if(from>=until) throw new Error('from 은 until 보다 앞이어야 합니다 (until = 계좌 안내 발송일, 보류는 그 전날까지).');
+    }
+    const before=getDepositHold_();
+    const dryRun=payload.dryRun===undefined?true:agentBoolFlag_(payload.dryRun);
+    if(!dryRun){ upsertSetting_('deposit_hold_from',from); upsertSetting_('deposit_hold_until',until); }
+    const after=dryRun?null:getDepositHold_();
+    return {dryRun:dryRun,before:{from:before.from,until:before.until,active:before.active},
+      after:dryRun?{from:from,until:until}:{from:after.from,until:after.until,active:after.active}};
+  }
+  if(action==='deposit-hold-release'){
+    return releaseDepositHold_({dryRun:!(payload.confirm==='SEND'&&!agentBoolFlag_(payload.dryRun))});
+  }
+  const hold=getDepositHold_();
+  const held=hold.armed?depositHoldRows_(hold).map(function(t){return {rowIndex:t.rowIndex,name:t.name,shootAt:t.shootAt,deposit:t.deposit,lang:t.lang,released:t.released};}):[];
+  return {from:hold.from,until:hold.until,today:hold.today,active:hold.active,releaseDue:hold.releaseDue,count:held.length,held:held};
 }
 
 /* 계약금 계좌 블록. 2026-08-26 점검에서 **예약금 리마인더 메일에 계좌번호가 없던 것**을 발견해 신설.

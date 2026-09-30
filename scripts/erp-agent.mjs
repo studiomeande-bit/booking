@@ -65,6 +65,12 @@
  *   dryRun:true 면 MRT 판별·현재 잔금입금일만 돌려준다(쓰기 없음). 같은 날짜면 unchanged(재실행 안전).
  *   회귀 검사: node scripts/check-mrt-payout.mjs
  *
+ * deposit-hold-status | deposit-hold-set | deposit-hold-release: 계약금 안내 보류(엘턴겔트 수급월, 2026-10-21~11-20).
+ *   set 은 dryRun 기본 — 실제 기록은 "dryRun":false. 빈칸 둘 = 끄기(보류분 정리 전엔 비우지 말 것: 시계 기준).
+ *   node scripts/erp-agent.mjs deposit-hold-set --json '{"from":"2026-10-21","until":"2026-11-21","dryRun":false}'
+ *   release 는 until 아침 L2 가 자동 실행. 수동(⚠️외부발송)은 {"confirm":"SEND"} — 없으면 대상·메일 미리보기만.
+ *   회귀 검사: node scripts/check-deposit-hold.mjs [--show]
+ *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)
  */
