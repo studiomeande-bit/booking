@@ -64,6 +64,16 @@ Updated: 2026-09-30 Europe/Berlin
 
 ## Done Recently
 
+### 2026-10-01 · 홈페이지 문의 JS 경로도 상담 문항을 상담 라우트로 — 회사·예산·범위 유실 수리 (프런트 2950ea8 · GAS 변경 없음)
+
+문제: 문의 폼에서 웨딩·기업·영상을 고르면 상담 문항(company·budget·scope·deliverables)이 펼쳐지는데, 실제 방문자 대부분이 타는 `contact-lead.js`(GAS 직송)는 그 값을 싣지 않고 항상 `?api=portfolio-lead`(리드 시트)로만 보냈다 → 기업·웨딩 상담 문의의 회사·예산·범위가 사라졌다. `submit.php`(JS 미실행 폴백)만 상담 라우트로 보내고 있었다.
+
+- `contact-lead.js`: `submit.php` 의 `$isConsultation` 과 같은 규칙(scope·company 가 있거나, budget/deliverables 가 `미정/Not decided/Noch offen` 이 아님)이면 `?api=consultation` 으로 consultationType/typeLabel/budget/company/shootDate/answers{scope,deliverables} 를 싣는다. 상담 라우트는 snake_case `preferred_date` 를 안 읽어 `preferredDate` 도 함께 싣고, 상담 응답엔 `successPath` 가 없어서 언어별 성공 페이지(/en·/ko·/)는 JS 가 고른다. `client_check`·`formCheck` 그대로.
+- GAS: `assertPublicConsultationPayload_`(name/email/consultationType/privacyConsent)·`createConsultation_` 이 이미 이 payload 를 받는다 — 배포 없음.
+- 회귀 검사 `check-inquiry-spam` §7: 가짜 DOM 에서 contact-lead.js 를 실제로 돌려 라우트(상담/리드 7케이스)·성공 경로를 보고, 그 payload 를 진짜 `assertPublicConsultationPayload_`·`createConsultation_` 에 넣어 상담유형·회사·예산·언어·촬영예정일·설문JSON(scope·deliverables) 저장까지 확인. 옛 JS 로 결함 주입 시 7건 실패. `npm run stamp` → `contact-lead.js?v=a7b8f73860`(3개 언어). check-all 35/35.
+- 라이브(IONOS Actions 성공 후): 3개 페이지 새 해시 확인 → EN 폼에 사장님 주소로 Business/Event 제출 → `?api=consultation` 요청, `/en/contact/success/` 이동, 상담 시트 66행 CNS-261001-AAEA8B82(TEST GmbH · 1,000–2,000€ · custom{scope, deliverables}) 확인 후 **'종료'** 처리.
+- 남은 관찰(기존 동작, 이번 범위 밖): 상담 시트가 `2027-03` 같은 월 단위 희망시기를 날짜(2027-03-01)로 바꿔 저장한다 — PHP 경로도 같음.
+
 ### 2026-10-01 · 문의·상담 스팸 차단 + 블랙리스트 (메인 @1004 · 홈페이지 문의 폼)
 
 사장님 요청: "상담페이지로 자꾸 스팸이 들어와 — 상담등록 못하게 차단하거나 블랙리스트". 실태: 9/2~10/1 상담 시트 **48건이 전부 같은 봇** — 홈페이지 폼을 읽지 않고 `studio-mean.com/contact/submit.php` 에 바로 POST, 회사명 'google', 8로 시작하는 11자리 번호, tinyurl '에스코트' 피싱 링크. 그때마다 **고객 접수확인 메일이 봇이 적은 남의 주소로** 나갔다. 실제 홈페이지 문의(신경숙·김정음 등)는 전부 JS 경로(contact-lead.js → GAS 직송)로 들어와 리드 시트에 있었다.
