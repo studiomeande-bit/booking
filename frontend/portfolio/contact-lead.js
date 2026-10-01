@@ -49,12 +49,14 @@
 
   function buildPayload() {
     var fd = new FormData(form);
+    var projectType = String(fd.get('project_type') || '').trim();
+    var preferredDate = String(fd.get('preferred_date') || '').trim();
     return {
       name: String(fd.get('name') || '').trim(),
       email: String(fd.get('email') || '').trim(),
       phone: String(fd.get('phone') || '').trim(),
-      project_type: String(fd.get('project_type') || '').trim(),
-      preferred_date: String(fd.get('preferred_date') || '').trim(),
+      project_type: projectType,
+      preferred_date: preferredDate,
       location: String(fd.get('location') || '').trim(),
       message: String(fd.get('message') || '').trim(),
       privacy_consent: !!fd.get('privacy_consent'),
@@ -64,9 +66,32 @@
       sourceUrl: window.location.href,
       utm: collectUtm(),
       userAgent: navigator.userAgent || '',
-      formCheck: Math.max(0, Date.now() - loadedAt)
+      formCheck: Math.max(0, Date.now() - loadedAt),
+      // 상담 라우트가 쓰는 필드(submit.php 와 같은 모양) — 리드 라우트는 모르는 키라 무시한다.
+      // 상담 라우트는 snake_case preferred_date 를 안 읽으므로 preferredDate 로도 싣는다.
+      consultationType: projectType,
+      typeLabel: projectType,
+      preferredDate: preferredDate,
+      shootDate: preferredDate,
+      budget: String(fd.get('budget') || '').trim(),
+      company: String(fd.get('company') || '').trim(),
+      answers: {
+        scope: String(fd.get('scope') || '').trim(),
+        deliverables: String(fd.get('deliverables') || '').trim()
+      }
     };
   }
+
+  /* 웨딩·기업·영상 상담 문항(contact-consult.js 가 펼침)이 채워졌으면 상담 시트로 — submit.php $isConsultation 과 같은 규칙.
+     2026-10-01 까지 이 경로는 항상 리드 시트로만 보내 회사·예산·범위가 사라졌다. */
+  var UNDECIDED = ['미정', 'Not decided', 'Noch offen'];
+  function isConsultation(p) {
+    return p.answers.scope !== '' || p.company !== ''
+      || (p.budget !== '' && UNDECIDED.indexOf(p.budget) === -1)
+      || (p.answers.deliverables !== '' && UNDECIDED.indexOf(p.answers.deliverables) === -1);
+  }
+  // 상담 라우트 응답엔 successPath 가 없다 — 언어별 성공 페이지는 여기서 고른다
+  var SUCCESS_PATHS = { en: '/en/contact/success/', ko: '/ko/contact/success/' };
 
   function nativeFallback() {
     if (fallingBack) return;
@@ -91,10 +116,11 @@
       if (controller) controller.abort();
     }, TIMEOUT_MS);
 
-    fetch(API_BASE + '?api=portfolio-lead', {
+    var payload = buildPayload();
+    fetch(API_BASE + (isConsultation(payload) ? '?api=consultation' : '?api=portfolio-lead'), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ requestId: requestId(), data: buildPayload() }),
+      body: JSON.stringify({ requestId: requestId(), data: payload }),
       signal: controller ? controller.signal : undefined
     })
       .then(function (response) { return response.json(); })
@@ -102,7 +128,7 @@
         clearTimeout(timer);
         var data = result && (result.data || result);
         if (result && result.ok && data && data.ok !== false) {
-          window.location.href = (data.successPath || '/contact/success/');
+          window.location.href = (data.successPath || SUCCESS_PATHS[payload.site_language] || '/contact/success/');
           return;
         }
         throw new Error((result && result.message) || 'lead api rejected');

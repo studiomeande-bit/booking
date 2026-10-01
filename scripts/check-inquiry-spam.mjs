@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import vm from 'node:vm';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gs = readFileSync(join(ROOT, 'appscript', 'Code.gs'), 'utf8');
@@ -67,7 +68,7 @@ function _sendPortfolioLeadAdminEmail_(l){__MAILS__.push('lead-admin:'+l.email);
 function _sendPortfolioLeadCustomerEmail_(l){__MAILS__.push('lead-customer:'+l.email);}
 function _createConsultationCalendarEvent_(){ return 'evt'; }
 function assertAdmin_(){ return true; }
-module.exports={inquirySpamReason_,inquiryBlocklistHit_,createConsultation_,createPortfolioLead_,updateConsultationAdmin,updatePortfolioLeadStatusAdmin,
+module.exports={assertPublicConsultationPayload_,inquirySpamReason_,inquiryBlocklistHit_,createConsultation_,createPortfolioLead_,updateConsultationAdmin,updatePortfolioLeadStatusAdmin,
   addInquiryBlocklistEntry_,listInquirySpamLogForAgent_,getInquiryBlocklistFromText_,mergeInquiryBlocklistEdit_,__raw:function(){return __RAW_SET__;},getCustomerInitSettings_,LEAD_COL,CONSULTATION_COL,
   __set:function(o){__SET__=o;}, __sheets:function(){return __SHEETS__;}, __mails:function(){return __MAILS__;}, __reset:function(){__SHEETS__={};__MAILS__=[];}};`);
 const M = (await import(pathToFileURL(modPath).href)).default;
@@ -217,6 +218,50 @@ const R = (f) => { cacheStore.clear(); return M.inquirySpamReason_(f); };
     ok(html.includes(`/contact-lead.js?v=${leadHash}`), `${page}: 새 contact-lead.js 해시를 가리킨다(npm run stamp — 옛 스크립트가 1년 캐시되면 폴백 문의가 no-js 로 막힌다)`, (html.match(/contact-lead\.js\?v=[a-f0-9]+/) || [''])[0]);
   }
   ok(/el\.value = 'js\.' \+ Math\.max\(0, Date\.now\(\) - loadedAt\);/.test(leadJs) && /formCheck: Math\.max\(0, Date\.now\(\) - loadedAt\)/.test(leadJs), 'contact-lead.js: PHP 폴백·GAS 직송 둘 다 경과 시간');
+}
+
+// ── 7) contact-lead.js(실제 방문자 경로)가 상담 문항을 상담 라우트로 보낸다 — submit.php $isConsultation 과 같은 규칙 ──
+// 2026-10-01: JS 경로는 항상 portfolio-lead 로만 보내 웨딩·기업 문의의 회사·예산·범위가 사라졌다. 가짜 DOM 에서 스크립트를 실제로 돌린다.
+{
+  const runLead = async (lang, fields) => {
+    const sent = [];
+    let onSubmit, clock = 1e12;
+    const form = { addEventListener: (t, fn, capture) => { if (!capture) onSubmit = fn; }, querySelector: () => null, appendChild() {}, submit() { sent.push({ fallback: true }); } };
+    const win = { location: { href: `https://studio-mean.com/${lang === 'de' ? '' : lang + '/'}contact/`, search: '' } };
+    win.fetch = (url, opt) => { sent.push({ url, body: JSON.parse(opt.body) }); return Promise.resolve({ json: () => ({ ok: true, data: { ok: true, id: 'C1', rowIndex: 5 } }) }); };
+    const all = { name: '테스트', email: 'studio.mean.de@gmail.com', project_type: 'Wedding', preferred_date: '2027-05', message: '본식 문의', privacy_consent: 'on', site_language: lang, ...fields };
+    vm.runInNewContext(leadJs, { window: win, fetch: win.fetch, document: { querySelector: () => form }, navigator: {}, FormData: function () { return { get: (k) => (k in all ? all[k] : null) }; },
+      URLSearchParams, AbortController, setTimeout, clearTimeout, Date: { now: () => clock } });
+    clock += 60000;   // 사람이 1분 걸려 폼을 채운다(3초 미만이면 GAS 가 too-fast 로 버린다)
+    onSubmit({ preventDefault() {} });
+    await new Promise((r) => setTimeout(r, 0));
+    return { req: sent[0], href: win.location.href };
+  };
+  const route = (r) => (r.req && r.req.url.match(/\?api=([\w-]+)/) || [])[1];
+  const wed = await runLead('en', { budget: '1,000–2,000€', deliverables: 'Photo + Video', scope: '6h ceremony', company: '' });
+  ok(route(wed) === 'consultation', 'contact-lead.js: 상담 문항이 있으면 ?api=consultation', wed.req && wed.req.url);
+  ok(wed.href === '/en/contact/success/', 'contact-lead.js: 상담 응답엔 successPath 가 없어도 언어별 성공 페이지로', wed.href);
+  ok(route(await runLead('ko', { company: 'KOTRA', budget: '미정', deliverables: '미정', scope: '' })) === 'consultation', 'contact-lead.js: 회사명만 있어도 상담');
+  ok(route(await runLead('de', { budget: '2.000€ oder mehr', deliverables: 'Noch offen', scope: '', company: '' })) === 'consultation', 'contact-lead.js: 예산만 골라도 상담');
+  for (const [lang, und] of [['ko', '미정'], ['en', 'Not decided'], ['de', 'Noch offen']]) {
+    const r = await runLead(lang, { project_type: 'Portrait', budget: und, deliverables: und, scope: '', company: '' });
+    ok(route(r) === 'portfolio-lead', `contact-lead.js: 상담 문항이 기본값(${und})뿐이면 리드`, route(r));
+  }
+  ok(route(await runLead('de', {})) === 'portfolio-lead', 'contact-lead.js: 상담 칸이 없는 폼(옛 페이지)도 리드');
+  // 그 payload 를 진짜 GAS 상담 라우트에 넣는다 — 필수항목 검사 통과 + 회사·예산·범위가 시트에 남는다
+  M.__set({}); M.__reset(); cacheStore.clear();
+  const biz = await runLead('ko', { project_type: '기업 / 행사', budget: '1,000–2,000€', deliverables: '사진 + 영상', scope: '행사 반나절', company: 'KOTRA' });
+  let threw = '';
+  try { M.assertPublicConsultationPayload_(biz.req.body.data, biz.req.body); } catch (e) { threw = e.message; }
+  ok(threw === '', 'GAS assertPublicConsultationPayload_: JS payload 통과(name/email/consultationType/privacyConsent)', threw);
+  const cr = M.createConsultation_(biz.req.body.data, {});
+  const row = (M.__sheets()['상담'].rows[cr.rowIndex - 1] || []);
+  const C = M.CONSULTATION_COL;
+  ok(typeof biz.req.body.data.formCheck === 'number' && biz.req.body.data.formCheck >= 3000, 'contact-lead.js: 상담 라우트에도 formCheck(JS 실행 증거)', biz.req.body.data.formCheck);
+  ok(cr.rowIndex === 2 && row[C['상담유형']] === '기업 / 행사' && row[C['회사명']] === 'KOTRA' && row[C['예산']] === '1,000–2,000€' && row[C['언어']] === 'ko' && row[C['촬영예정일']] === '2027-05',
+    'GAS createConsultation_: 상담유형·회사·예산·언어·촬영예정일 저장', row);
+  const survey = JSON.parse(row[C['설문JSON']] || '{}');
+  ok(survey.custom && survey.custom.scope === '행사 반나절' && survey.custom.deliverables === '사진 + 영상', 'GAS createConsultation_: 범위·결과물이 설문JSON 에', survey);
 }
 
 if (fail) { console.error(`\n✗ 문의 스팸 차단 검사 실패 ${fail}건`); process.exit(1); }
