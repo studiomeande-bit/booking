@@ -4,6 +4,24 @@
 (function () {
   'use strict';
 
+  /* 스팸 차단(2026-10-01): 실제 방문자는 이 스크립트가 제출 직전 client_check='js.<페이지 연 뒤 ms>' 를 채운다.
+     폼을 읽지 않고 submit.php 에 바로 POST 하는 봇은 이 칸이 비어 있어 서버가 접수하지 않는다(9~10월 스팸 48건 전부 그 경로).
+     fetch 가 없는 옛 브라우저도 PHP 로 제출하므로 이 부분은 fetch 확인보다 앞에 둔다. */
+  var loadedAt = Date.now();
+  var checkForm = document.querySelector('form[name="portfolio-contact"]');
+  function stampClientCheck() {
+    if (!checkForm) return;
+    var el = checkForm.querySelector('input[name="client_check"]');
+    if (!el) {
+      el = document.createElement('input');
+      el.type = 'hidden';
+      el.name = 'client_check';
+      checkForm.appendChild(el);
+    }
+    el.value = 'js.' + Math.max(0, Date.now() - loadedAt);
+  }
+  if (checkForm) checkForm.addEventListener('submit', stampClientCheck, true);
+
   var API_BASE = 'https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
   var TIMEOUT_MS = 12000;
 
@@ -45,7 +63,8 @@
       source: 'portfolio-contact',
       sourceUrl: window.location.href,
       utm: collectUtm(),
-      userAgent: navigator.userAgent || ''
+      userAgent: navigator.userAgent || '',
+      formCheck: Math.max(0, Date.now() - loadedAt)
     };
   }
 

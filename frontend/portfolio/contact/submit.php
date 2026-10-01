@@ -38,6 +38,17 @@ function is_obvious_spam(string $email, string $name, string $message): bool
     return substr_count(strtolower($message), 'http') >= 4;
 }
 
+/* JS 실행 증거 — 실제 방문자는 contact-lead.js 가 제출 직전 client_check='js.<페이지 연 뒤 ms>' 를 채운다.
+ * 9~10월 상담 시트 스팸 48건은 전부 폼을 읽지 않고 이 파일에 바로 POST 한 봇이었다(칸이 비어 있음).
+ * 사람은 3초 안에 폼을 채우지 못한다. 막힌 제출은 ERP '스팸차단' 시트에 한 줄 남는다(되찾을 수 있게). */
+function client_check_reason(string $raw): string
+{
+    if (!preg_match('/^js\.(\d{1,9})$/', $raw, $m)) {
+        return 'no-js';
+    }
+    return ((int)$m[1] < 3000) ? 'too-fast' : '';
+}
+
 /* GAS portfolio-lead 라우트 호출. 성공하면 배열, 실패하면 null.
  * GAS /exec 은 302 로 googleusercontent 를 가리키므로 FOLLOWLOCATION 이 필수다
  * (리다이렉트를 GET 으로 따라가야 JSON 본문이 온다). */
@@ -216,10 +227,10 @@ $headers = [
     'Reply-To: ' . header_name($name) . ' <' . $email . '>',
 ];
 
-/* 스팸은 조용히 흘려보낸다 — 봇에게 차단 사실을 알리지 않는다 */
-if (is_obvious_spam($email, $name, $message)) {
-    redirect_for_language($language);
-}
+/* 스팸은 조용히 흘려보낸다 — 봇에게 차단 사실을 알리지 않는다. 사유는 ERP 가 차단 로그에만 남긴다. */
+$clientCheck = post_value('client_check');
+$spamReason = is_obvious_spam($email, $name, $message) ? 'junk' : client_check_reason($clientCheck);
+$formCheckMs = preg_match('/^js\.(\d{1,9})$/', $clientCheck, $cm) ? (int)$cm[1] : null;
 
 /* 1순위: ERP 로 넘긴다. 성공하면 리드 장부 기록 + 사장님 알림 + 고객 접수확인 메일이
    모두 GAS 쪽에서 처리되므로 아래 mail() 은 건너뛴다(중복 알림 방지). */
@@ -255,7 +266,17 @@ $erp = forward_to_erp([
     'company' => $company,
     'shootDate' => $preferredDate,
     'answers' => ['scope' => $scope, 'deliverables' => $deliverables],
+    'formCheck' => $formCheckMs,
+    'spamReason' => $spamReason,
 ], $isConsultation ? STUDIO_ERP_CONSULT_ENDPOINT : STUDIO_ERP_ENDPOINT);
+
+/* 스팸은 ERP 응답과 무관하게 성공 페이지로 — 폴백 메일도 보내지 않는다(그게 예전에 실제 문의를 묻었다) */
+if ($spamReason !== '') {
+    if ($spamReason !== 'junk' && !is_array($erp)) {
+        error_log('studio-mean inquiry blocked (' . $spamReason . ') and ERP forward failed: ' . $email);
+    }
+    redirect_for_language($language);
+}
 
 if (is_array($erp)) {
     $successPath = is_string($erp['successPath'] ?? null) ? $erp['successPath'] : '';

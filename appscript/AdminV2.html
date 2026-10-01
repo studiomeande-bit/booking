@@ -2310,6 +2310,11 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
       <div id="mrtApiKeyResult" style="margin-top:12px;font-size:13px;color:#475569;word-break:break-all;"></div>
     </div>
     <div class="card">
+      <div class="card-title">문의·상담 스팸 차단</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:10px;line-height:1.6;">홈페이지 문의·상담 폼에서 아래와 일치하는 제출은 접수하지 않습니다(행·알림·고객 메일 없음, '스팸차단' 시트에 기록만). 한 줄에 하나씩 — <b>@도메인</b>(예: @nolettersbox.com) · <b>이메일</b> · <b>IP</b> · 점이 든 <b>링크 도메인</b>(예: caredogbest.com — 내용에서도 찾음) · 그 밖의 <b>낱말</b>(이름·회사에서만, 낱말 단위, 3자 이상). 문의 목록에서 상태를 <b>스팸</b>으로 저장하면 그 이메일이 자동으로 추가됩니다.</div>
+      <div class="form-group"><textarea id="s_inquiry_blocklist" rows="5" style="width:100%;font-family:ui-monospace,monospace;font-size:12px;" placeholder="@nolettersbox.com&#10;spam@example.com&#10;freeb2bdata"></textarea></div>
+    </div>
+    <div class="card">
       <div class="card-title">당일 재촬영 할인</div>
       <div class="form-row"><div class="form-group"><label>급행 요금 (상품가의 %, 0 = 판매 중지)</label><input type="number" id="s_express_rate" min="0" max="100" placeholder="20"></div></div>
       <div class="form-row"><div class="form-group"><label>재촬영 할인율 (%)</label><input type="number" id="s_return_discount" min="0" max="50" placeholder="10"></div><div class="form-group"><label>여권 5인 이상 가족 할인율 (%)</label><input type="number" id="s_pass_family_discount" min="0" max="50" placeholder="10"></div></div>
@@ -5477,7 +5482,8 @@ function leadStatusBadge(status){
     '견적발송':['#ede9fe','#6d28d9'],
     '예약전환':['#ecfdf5','#047857'],
     '보류':['#f8fafc','#64748b'],
-    '종료':['#f1f5f9','#475569']
+    '종료':['#f1f5f9','#475569'],
+    '스팸':['#fef2f2','#b91c1c']
   };
   const c=colors[s]||colors['신규'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;background:${c[0]};color:${c[1]};font-size:11px;font-weight:800;">${escapeAdminHtml(s)}</span>`;
@@ -5639,7 +5645,7 @@ function renderPortfolioLeads(summary){
     body.innerHTML='<tr><td colspan="8" style="color:#94a3b8;">표시할 문의 리드가 없습니다.</td></tr>';
     return;
   }
-  const statusOptions=['신규','상담중','견적발송','예약전환','보류','종료'];
+  const statusOptions=['신규','상담중','견적발송','예약전환','보류','종료','스팸'];   // 스팸 = 닫고 보낸 이메일 차단
   body.innerHTML=rows.map(function(l){
     const rowId=Number(l.rowIndex||0);
     const safeEmail=l.email?`mailto:${encodeURIComponent(l.email)}?subject=${encodeURIComponent('[Studio mean] 문의 답변')}`:'#';
@@ -5664,11 +5670,25 @@ function renderPortfolioLeads(summary){
   }).join('');
 }
 
+/* 스팸 처리로 서버가 블랙리스트에 이메일을 올렸으면 설정 탭의 칸에도 바로 반영한다 —
+   안 그러면 같은 화면에서 설정을 저장할 때 예전 목록으로 덮어써 방금 막은 주소가 풀린다. */
+function syncBlocklistBox(item){
+  const box=document.getElementById('s_inquiry_blocklist');
+  const email=String(item&&item.email||'').trim().toLowerCase();
+  if(!box||!email||email.indexOf('@')<0||email==='studio.mean.de@gmail.com'||/@studio-mean\.com$/.test(email)) return;
+  const lines=String(box.value||'').split(/[\n,;]+/).map(function(x){return x.trim();}).filter(Boolean);
+  if(lines.map(function(x){return x.toLowerCase();}).indexOf(email)>-1) return;
+  lines.push(email);
+  box.value=lines.join('\n');
+  // 서버엔 이미 들어갔다 — base 에도 넣어야 나중에 칸에서 지우면 '삭제' 로 반영된다
+  if(window._inquiryBlocklistBase!=null) window._inquiryBlocklistBase=String(window._inquiryBlocklistBase||'')+(window._inquiryBlocklistBase?'\n':'')+email;
+}
+
 function savePortfolioLead(rowIndex){
   const status=document.getElementById('lead_status_'+rowIndex)?.value||'상담중';
   const note=document.getElementById('lead_note_'+rowIndex)?.value||'';
   google.script.run
-    .withSuccessHandler(function(){showToast('문의 리드 저장 완료','ok');loadPortfolioLeads(true);})
+    .withSuccessHandler(function(){if(status==='스팸') syncBlocklistBox((allLeads||[]).find(function(l){return Number(l.rowIndex)===Number(rowIndex);}));showToast(status==='스팸'?'스팸 처리 — 이 이메일은 다음부터 접수되지 않습니다':'문의 리드 저장 완료','ok');loadPortfolioLeads(true);})
     .withFailureHandler(handleApiError)
     .updatePortfolioLeadStatusAdmin(adminToken,rowIndex,status,note);
 }
@@ -5683,7 +5703,8 @@ function consultationStatusBadge(status){
     '견적발송':['#ede9fe','#6d28d9'],
     '예약전환':['#ecfdf5','#047857'],
     '보류':['#f8fafc','#64748b'],
-    '종료':['#f1f5f9','#475569']
+    '종료':['#f1f5f9','#475569'],
+    '스팸':['#fef2f2','#b91c1c']
   };
   const c=colors[s]||colors['신규'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;background:${c[0]};color:${c[1]};font-size:11px;font-weight:800;">${escapeAdminHtml(s)}</span>`;
@@ -5776,7 +5797,7 @@ function renderConsultations(summary){
     body.innerHTML='<tr><td colspan="8" style="color:#94a3b8;">표시할 상담 내역이 없습니다.</td></tr>';
     return;
   }
-  const statusOptions=['신규','상담예정','상담중','견적준비','견적발송','예약전환','보류','종료'];
+  const statusOptions=['신규','상담예정','상담중','견적준비','견적발송','예약전환','보류','종료','스팸'];   // 스팸 = 닫고 보낸 이메일 차단
   body.innerHTML=rows.map(function(c){
     const rowId=Number(c.rowIndex||0);
     const safeEmail=c.email?`mailto:${encodeURIComponent(c.email)}?subject=${encodeURIComponent('[Studio mean] 상담 관련 안내')}`:'#';
@@ -5814,7 +5835,7 @@ function saveConsultation(rowIndex){
   const status=document.getElementById('consult_status_'+rowIndex)?.value||'상담중';
   const note=document.getElementById('consult_note_'+rowIndex)?.value||'';
   google.script.run
-    .withSuccessHandler(function(){showToast('상담 저장 완료','ok');loadConsultations(true);})
+    .withSuccessHandler(function(){if(status==='스팸') syncBlocklistBox((allConsultations||[]).find(function(c){return Number(c.rowIndex)===Number(rowIndex);}));showToast(status==='스팸'?'스팸 처리 — 이 이메일은 다음부터 접수되지 않습니다':'상담 저장 완료','ok');loadConsultations(true);})
     .withFailureHandler(handleApiError)
     .updateConsultationAdmin(adminToken,rowIndex,status,note);
 }
@@ -9987,6 +10008,8 @@ function loadSettings(s){
   document.getElementById('s_return_discount').value=s.returnDiscount||'10';
   document.getElementById('s_pass_family_discount').value=s.passFamilyDiscount||'10';
   if(document.getElementById('s_express_rate')) document.getElementById('s_express_rate').value=(s.expressRate!=null&&s.expressRate!=='')?s.expressRate:'20';
+  if(document.getElementById('s_inquiry_blocklist')) document.getElementById('s_inquiry_blocklist').value=String(s.inquiryBlocklist||'');
+  window._inquiryBlocklistBase=String(s.inquiryBlocklist||'');   // 저장 때 이 화면이 처음 받은 목록 — 서버가 차이만 반영한다
   window._adminExpressRate=Number((s.expressRate!=null&&s.expressRate!=='')?s.expressRate:20);
   document.getElementById('s_weekday_hours').value=s.weekdayHours||'09:30-13:00,15:30-18:00';
   document.getElementById('s_saturday_hours').value=s.saturdayHours||'09:00-16:00';
@@ -10017,6 +10040,9 @@ function saveSettings(){
     returnDiscount:document.getElementById('s_return_discount').value||'10',
     passFamilyDiscount:document.getElementById('s_pass_family_discount').value||'10',
     expressRate:document.getElementById('s_express_rate')?.value??'',
+    // 블랙리스트 칸이 화면에 없을 때(구 화면)는 보내지 않는다 — 빈 값으로 보내면 목록이 지워진다
+    inquiryBlocklist:document.getElementById('s_inquiry_blocklist')?document.getElementById('s_inquiry_blocklist').value:undefined,
+    inquiryBlocklistBase:(document.getElementById('s_inquiry_blocklist')&&window._inquiryBlocklistBase!=null)?window._inquiryBlocklistBase:undefined,
     weekdayHours:document.getElementById('s_weekday_hours').value||'',
     saturdayHours:document.getElementById('s_saturday_hours').value||'',
     morningBlockRanges:document.getElementById('s_morning_block_ranges').value||'',

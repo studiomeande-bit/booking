@@ -2478,6 +2478,7 @@ function handlePublicApiRequest_(route,method,e){
         }
         // 상담 (B2B 파이프라인: 접수 → 견적 드래프트)
         if(action==='consult-list') return jsonOk_(listConsultationsAdmin(token,payload.limit||60));
+        if(action==='inquiry-spam-log') return jsonOk_(listInquirySpamLogForAgent_(token,payload));
         if(action==='consult-get'){
           const cIdx=parseInt(payload.rowIndex,10);
           if(!cIdx||cIdx<2) throw new Error('rowIndex가 필요합니다 (consult-list의 rowIndex).');
@@ -4593,6 +4594,119 @@ function _sendPortfolioLeadAdminEmail_(lead, rowIndex){
   }catch(e){Logger.log('portfolio lead admin mail failed: '+e.message);}
 }
 
+/* ===== 문의·상담 스팸 차단 (2026-10-01 사장님 요청: "스팸은 상담등록 못하게 차단하거나 블랙리스트") =====
+   9/2~10/1 상담 시트에 쌓인 48건이 전부 같은 봇이었다 — 홈페이지 폼을 읽지 않고 submit.php 에 바로 POST,
+   회사명 'google', 8로 시작하는 11자리 번호, tinyurl '에스코트' 피싱 링크. 그때마다 고객 접수확인 메일이
+   **봇이 적은 남의 주소로** 나갔다(발송 평판·메일 할당량이 같이 깎인다).
+   차단된 제출은 행·메일을 만들지 않고 '스팸차단' 시트에 한 줄만 남긴다 — 잘못 막힌 문의를 되찾을 수 있게.
+   봇에게는 성공처럼 응답한다(막혔다는 걸 알려 주면 우회한다). */
+const INQUIRY_SPAM_LOG_SHEET_='스팸차단';
+const INQUIRY_SPAM_LOG_HEADERS_=['일시','경로','사유','이름','이메일','연락처','IP','내용'];
+const INQUIRY_SPAM_SHORT_LINK_RE_=/\b(?:tinyurl\.com|cutt\.ly|is\.gd|rb\.gy|shorturl\.at|tiny\.cc)\//i;   // goo.gl(구글 지도 공유 maps.app.goo.gl)·bit.ly(인스타 링크)는 실제 고객도 쓴다 — 넣지 않는다
+const INQUIRY_SPAM_WORD_RE_=/\bescorts?\b|\bbacklinks?\b|freeb2bdata/i;   // casino 는 넣지 않는다 — 비스바덴 쿠어하우스 카지노는 실제 웨딩·행사 장소
+const INQUIRY_RATE_LIMIT_={ip:5,email:3};   // 1시간 안 같은 IP·같은 이메일 접수 상한
+
+/* 사장님 블랙리스트 — 설정 inquiry_blocklist(줄·쉼표 구분).
+   '@도메인' / 이메일 / IP(끝이 . 이면 앞자리 일치) / 점이 든 낱말 = 링크·도메인(이메일·내용 어디서든) /
+   그 밖의 낱말(3자 이상) = **이름·회사에서 낱말 단위로만** — 'google' 을 넣어도 "구글 지도에서 보고 연락드려요" 같은 내용은 막지 않는다. */
+function getInquiryBlocklistFromText_(text){
+  const seen={};
+  return String(text||'').split(/[\n,;]+/).map(function(x){return String(x||'').trim();}).filter(function(x){
+    const k=x.toLowerCase(); if(!x||seen[k]) return false; seen[k]=1; return true;
+  }).slice(0,500);
+}
+/* 어드민 저장 = 화면이 처음 받은 목록(base) 대비 추가·삭제만 현재 목록에 반영. base 가 없으면(구 화면) 통째로 교체. */
+function mergeInquiryBlocklistEdit_(nextText,baseText){
+  const next=getInquiryBlocklistFromText_(nextText);
+  if(baseText===undefined||baseText===null) return next;
+  const low=function(a){return a.map(function(x){return x.toLowerCase();});};
+  const base=low(getInquiryBlocklistFromText_(baseText)), nextL=low(next);
+  const removed=base.filter(function(x){return nextL.indexOf(x)<0;});
+  const added=next.filter(function(x){return base.indexOf(x.toLowerCase())<0;});
+  return getInquiryBlocklistFromText_(getInquiryBlocklist_().filter(function(x){return removed.indexOf(x.toLowerCase())<0;}).concat(added).join('\n'));
+}
+function getInquiryBlocklist_(){
+  return String(getSettingsMap_().inquiry_blocklist||'').split(/[\n,;]+/).map(function(x){return String(x||'').trim();}).filter(Boolean);
+}
+function inquiryBlocklistHit_(entries,f){
+  const email=String(f.email||'').trim().toLowerCase(), ip=String(f.ip||'').trim().toLowerCase();
+  const who=[f.name,f.company].map(function(x){return String(x||'');}).join('\n').toLowerCase();
+  const anywhere=[f.name,f.company,f.message,f.email].map(function(x){return String(x||'');}).join('\n').toLowerCase();
+  for(let i=0;i<(entries||[]).length;i++){
+    const e=String(entries[i]||'').trim().toLowerCase();
+    if(!e) continue;
+    if(e.indexOf('@')>-1){
+      if(e.charAt(0)==='@'?(email.length>e.length&&email.slice(-e.length)===e):email===e) return 'blocklist:'+e;
+    }else if(/^[0-9a-f:.]+$/.test(e)&&/[.:]/.test(e)){
+      if(ip&&(ip===e||(/[.:]$/.test(e)&&ip.indexOf(e)===0))) return 'blocklist:'+e;
+    }else if(e.indexOf('.')>-1&&!/\s/.test(e)){
+      if(anywhere.indexOf(e)>-1) return 'blocklist:'+e;   // freeb2bdata.org · caredogbest.com 같은 링크 도메인
+    }else if(e.length>=3){
+      const esc=e.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      if(new RegExp('(^|[^0-9a-z가-힣ä-üß])'+esc+'($|[^0-9a-z가-힣ä-üß])','i').test(who)) return 'blocklist:'+e;
+    }
+  }
+  return '';
+}
+/* 막을 이유(없으면 '') — f: {name,email,phone,company,message,location,ip,formCheck,preReason} */
+function inquirySpamReason_(f){
+  f=f||{};
+  if(String(f.preReason||'').trim()) return String(f.preReason).trim().slice(0,40);   // submit.php 가 먼저 판정(JS 미실행·함정칸·알려진 스팸 도메인)
+  const hit=inquiryBlocklistHit_(getInquiryBlocklist_(),f);
+  if(hit) return hit;
+  const all=[f.name,f.company,f.message,f.location].map(function(x){return String(x||'');}).join('\n');
+  if(INQUIRY_SPAM_SHORT_LINK_RE_.test(all)) return 'short-link';
+  if(INQUIRY_SPAM_WORD_RE_.test(all)) return 'spam-word';
+  const fc=f.formCheck;
+  if(fc!==undefined&&fc!==null&&String(fc).trim()!==''&&isFinite(Number(fc))&&Number(fc)<3000) return 'too-fast';   // 사람은 3초 안에 폼을 못 채운다
+  return inquiryRateLimitReason_(f);
+}
+function inquiryRateLimitReason_(f){
+  try{
+    const cache=CacheService.getScriptCache(), hour=Math.floor(Date.now()/3600000);
+    const keys=[];
+    const ip=String(f.ip||'').trim(), email=String(f.email||'').trim().toLowerCase();
+    if(ip) keys.push(['ip','inq_rl_ip_'+hour+'_'+ip.replace(/[^0-9a-f:.]/gi,'').slice(0,64)]);
+    if(email&&email!=='studio.mean.de@gmail.com'&&!/@studio-mean\.com$/.test(email)) keys.push(['email','inq_rl_em_'+hour+'_'+email.replace(/[^a-z0-9@._+-]/g,'').slice(0,120)]);
+    for(let i=0;i<keys.length;i++){
+      if((parseInt(cache.get(keys[i][1])||'0',10)||0)>=INQUIRY_RATE_LIMIT_[keys[i][0]]) return 'rate-'+keys[i][0];
+    }
+    keys.forEach(function(k){ cache.put(k[1],String((parseInt(cache.get(k[1])||'0',10)||0)+1),3700); });
+  }catch(e){}
+  return '';
+}
+function logInquirySpam_(kind,reason,f){
+  try{
+    const ss=ensureSheets_().ss;
+    let sh=ss.getSheetByName(INQUIRY_SPAM_LOG_SHEET_);
+    if(!sh){ sh=ss.insertSheet(INQUIRY_SPAM_LOG_SHEET_); sh.appendRow(INQUIRY_SPAM_LOG_HEADERS_); sh.setFrozenRows(1); }
+    sh.appendRow(neutralizeRow_([_nowStamp_(),kind,reason,String(f.name||'').slice(0,80),String(f.email||'').slice(0,120),
+      String(f.phone||'').slice(0,40),String(f.ip||'').slice(0,64),String(f.message||'').replace(/\s+/g,' ').slice(0,300)]));
+  }catch(e){ Logger.log('inquiry spam log failed: '+e.message); }
+}
+/* 사장님이 문의를 '스팸' 으로 바꾸면 보낸 이메일을 블랙리스트에 올린다 */
+function addInquiryBlocklistEntry_(entry){
+  const e=String(entry||'').trim().toLowerCase();
+  if(!e||e.indexOf('@')<0) return false;
+  if(e==='studio.mean.de@gmail.com'||/@studio-mean\.com$/.test(e)) return false;   // 우리 주소를 사칭한 스팸이라도 우리 주소는 막지 않는다
+  const list=getInquiryBlocklist_();
+  if(list.map(function(x){return x.toLowerCase();}).indexOf(e)>-1) return false;
+  list.push(e);
+  upsertSetting_('inquiry_blocklist',neutralizeFormula_(list.join('\n')));   // '=…@x' 같은 이메일이 수식이 되지 않게
+  return true;
+}
+function listInquirySpamLogForAgent_(token,payload){
+  assertAdmin_(token);
+  const sh=ensureSheets_().ss.getSheetByName(INQUIRY_SPAM_LOG_SHEET_);
+  const limit=Math.max(1,Math.min(200,parseInt((payload&&payload.limit)||50,10)||50));
+  if(!sh||sh.getLastRow()<2) return {ok:true,count:0,items:[],blocklist:getInquiryBlocklist_()};
+  const n=Math.min(limit,sh.getLastRow()-1);
+  const rows=sh.getRange(sh.getLastRow()-n+1,1,n,INQUIRY_SPAM_LOG_HEADERS_.length).getValues().reverse();
+  return {ok:true,count:sh.getLastRow()-1,items:rows.map(function(r){
+    return {at:String(r[0]),kind:String(r[1]),reason:String(r[2]),name:String(r[3]),email:String(r[4]),phone:String(r[5]),ip:String(r[6]),message:String(r[7])};
+  }),blocklist:getInquiryBlocklist_()};
+}
+
 function createPortfolioLead_(payload,e){
   const headers=e&&e.headers||{};
   const lead={
@@ -4612,6 +4726,9 @@ function createPortfolioLead_(payload,e){
     ip:_leadPayloadValue_(payload,['ip'])||String(headers['x-forwarded-for']||headers['X-Forwarded-For']||'').split(',')[0].trim(),
     userAgent:_leadPayloadValue_(payload,['userAgent'])||String(headers['user-agent']||headers['User-Agent']||'').trim()
   };
+  const leadSpam=inquirySpamReason_({name:lead.name,email:lead.email,phone:lead.phone,message:lead.message,location:lead.location,
+    ip:lead.ip,formCheck:payload&&payload.formCheck,preReason:payload&&payload.spamReason});
+  if(leadSpam){ logInquirySpam_('lead',leadSpam,lead); return {ok:true,rowIndex:0,successPath:_leadSuccessPath_(lead.lang)}; }
   const sh=ensureSheets_().leadSheet;
   const at=_nowStamp_();
   sh.appendRow(neutralizeRow_([
@@ -6037,9 +6154,10 @@ function updatePortfolioLeadStatusAdmin(token,rowIndex,status,note){
   const rIdx=parseInt(rowIndex,10);
   if(!rIdx||rIdx<2||rIdx>sh.getLastRow()) throw new Error('문의 리드 행을 찾을 수 없습니다.');
   const cleanStatus=String(status||'').trim()||'상담중';
-  const allowed=['신규','상담중','견적발송','예약전환','보류','종료'];
+  const allowed=['신규','상담중','견적발송','예약전환','보류','종료','스팸'];
   if(allowed.indexOf(cleanStatus)===-1) throw new Error('지원하지 않는 리드 상태입니다.');
   sh.getRange(rIdx,LEAD_COL['상태']+1).setValue(cleanStatus);
+  if(cleanStatus==='스팸') addInquiryBlocklistEntry_(sh.getRange(rIdx,LEAD_COL['이메일']+1).getValue());   // 같은 주소의 다음 문의는 접수하지 않는다
   sh.getRange(rIdx,LEAD_COL['최근관리일시']+1).setValue(_nowStamp_());
   if(note!==undefined){
     sh.getRange(rIdx,LEAD_COL['관리메모']+1).setValue(String(note||'').trim());
@@ -6392,7 +6510,10 @@ function createConsultation_(payload,e){
     userAgent:_leadPayloadValue_(payload,['userAgent'])||String(headers['user-agent']||headers['User-Agent']||'').trim(),
     answers:answers
   };
-  const appointment=_parseConsultationAppointment_(payload,c);
+  const appointment=_parseConsultationAppointment_(payload,c);   // 입력 오류(지난 시간 등)는 스팸 판정·횟수 세기 전에 돌려보낸다
+  const consultSpam=inquirySpamReason_({name:c.name,email:c.email,phone:c.phone,company:c.company,message:c.message,location:c.location,
+    ip:c.ip,formCheck:payload&&payload.formCheck,preReason:payload&&payload.spamReason});
+  if(consultSpam){ logInquirySpam_('consult',consultSpam,c); return {ok:true,id:'',rowIndex:0}; }
   c.appointmentAt=appointment.requested?appointment.at:'';
   c.appointmentDuration=appointment.requested?appointment.duration:'';
   c.appointmentEventId='';
@@ -6487,9 +6608,10 @@ function updateConsultationAdmin(token,rowIndex,status,memo){
   const rIdx=parseInt(rowIndex,10);
   if(!rIdx||rIdx<2||rIdx>sh.getLastRow()) throw new Error('상담 행을 찾을 수 없습니다.');
   const cleanStatus=String(status||'').trim()||'상담중';
-  const allowed=['신규','상담예정','상담중','견적준비','견적발송','예약전환','보류','종료'];
+  const allowed=['신규','상담예정','상담중','견적준비','견적발송','예약전환','보류','종료','스팸'];
   if(allowed.indexOf(cleanStatus)===-1) throw new Error('지원하지 않는 상담 상태입니다.');
   sh.getRange(rIdx,CONSULTATION_COL['상태']+1).setValue(cleanStatus);
+  if(cleanStatus==='스팸') addInquiryBlocklistEntry_(sh.getRange(rIdx,CONSULTATION_COL['이메일']+1).getValue());   // 같은 주소의 다음 상담은 접수하지 않는다
   sh.getRange(rIdx,CONSULTATION_COL['최근관리일시']+1).setValue(_nowStamp_());
   if(memo!==undefined) sh.getRange(rIdx,CONSULTATION_COL['관리메모']+1).setValue(String(memo||'').trim());
   return {ok:true};
@@ -9099,7 +9221,7 @@ function measureAdminInitForAgent_(){
   return {ms:ms,total:Date.now()-t0,bytes:json.length,customers:((dash&&dash.customers)||[]).length,dashboardParts:parts};
 }
 
-function getInitDataAdmin(token){assertAdmin_(token);const products=getCachedProducts_();return{dashboard:getDashboardData_(products),products:products,settings:getCustomerInitSettings_()};}   // 상품 캐시는 한 번만 읽어 대시보드에 넘긴다(전엔 요청당 3번)
+function getInitDataAdmin(token){assertAdmin_(token);const products=getCachedProducts_();return{dashboard:getDashboardData_(products),products:products,settings:Object.assign(getCustomerInitSettings_(),{inquiryBlocklist:getInquiryBlocklist_().join('\n')})};}   // 상품 캐시는 한 번만 읽어 대시보드에 넘긴다(전엔 요청당 3번)
 
 function isMarketingConsentYes_(value){
   const s=String(value||'').trim().toLowerCase();
@@ -9362,6 +9484,7 @@ function saveSiteSettings(token,s){
   upsertSetting_('morning_block_ranges',formatDateRangeListSetting_(parseDateRangeListSetting_(morningBlockRaw)));
   upsertSetting_('weekday_hours',normalizedWeekdayHours);upsertSetting_('saturday_hours',normalizedSaturdayHours);upsertSetting_('event_rate',s.eventRate||'');
   upsertSetting_('event_start',s.eventStart||'');upsertSetting_('event_end',s.eventEnd||'');upsertSetting_('return_discount',String(parsePercentSetting_(s.returnDiscount,10,50)));if(s.expressRate!==undefined&&String(s.expressRate).trim()!=='') upsertSetting_('express_rate',String(parsePercentSetting_(s.expressRate,20,100)));if(s.passFamilyDiscount!==undefined) upsertSetting_('pass_family_discount',String(parsePercentSetting_(s.passFamilyDiscount,10,50)));upsertSetting_('promo_enabled',s.promoEnabled?'Y':'N');
+  if(s.inquiryBlocklist!==undefined) upsertSetting_('inquiry_blocklist',neutralizeFormula_(mergeInquiryBlocklistEdit_(s.inquiryBlocklist,s.inquiryBlocklistBase).join('\n')));   // 블랙리스트 — 공개 init 에는 싣지 않는다
   upsertSetting_('promo_start',s.promoStart||PROMO_CONFIG.START);
   upsertSetting_('promo_end',s.promoEnd||PROMO_CONFIG.END);
   upsertSetting_('promo_content_json',JSON.stringify(s.promoContent||{}));
