@@ -5,7 +5,7 @@ Updated: 2026-09-30 Europe/Berlin
 ## Immediate
 
 1. ~~Booking end-to-end verification~~ → **완료 (2026-08-02, Update 4 릴리스 게이트)**: 라이브 합성 예약 1건으로 Netlify 제출→시트행→캘린더(버퍼 슬롯 차단 실증)→고객·관리자 메일까지 통과, 정리(booking-delete)·슬롯 원복까지 확인. 상세는 `docs/update-4-plan.md`
-- 잔여(오너): Apps Script 200버전 한도 정리 — **2026-09-30 현재 171/200**(@1003). 남은 슬롯 29. 삭제는 소유자만 가능(Apps Script 편집기 → 프로젝트 기록). clasp 에는 버전 삭제 명령이 없다.
+- 잔여(오너): Apps Script 200버전 한도 정리 — **2026-10-02 현재 175/200**(@1007). 남은 슬롯 25. 삭제는 소유자만 가능(Apps Script 편집기 → 프로젝트 기록). clasp 에는 버전 삭제 명령이 없다.
 
 2. ~~Lexware actual workflow validation~~ → 종결 (2026-07-16): Lexware 완전 은퇴(증빙 파이프라인으로 대체). 남은 운영 액션 1건: Lexware 계정 측 API 키 폐기
 
@@ -64,6 +64,19 @@ Updated: 2026-09-30 Europe/Berlin
 
 ## Done Recently
 
+### 2026-10-02 · 한글 Drive 폴더명 NFD 조회 수리 + 빈 보정본 발송 가드 (메인 @1006 일부 · @1007)
+
+사고(2026-09-29 신경숙 row 300): macOS 업로드 폴더 `재보정본` 이 **NFD(자모 분리)** 로 저장돼 있어 `getFoldersByName('재보정본')`(NFC, 바이트 정확일치)이 조용히 빈손 → `booking-final-send` 가 `RETOUCH_FOLDER_NOT_FOUND`. 사장님은 이미 올린 보정본을 다시 올리라는 안내를 받았다. 같은 자리에서 **빈 보정본 폴더는 그대로 통과**했고, `select-retouch-send` 는 보정본을 못 찾으면 **원본 폴더 링크로 조용히 대체**(링크가 없으면 빈 href)해 "보정본 완성" 메일을 보냈다.
+
+- **`findChildFolderByName_(parent,name,scanCap)`**: 정확일치 NFC → NFD → 하위 `scanCap`(기본 200)개를 NFC+trim 으로 접어 비교. `scanCap 0` = 스캔 생략(루트용).
+- **`resolveRetouchSubfolder_`**(최종본·보정본 발송 공용): 폴더 탐색 + `inspectSelectDeliveryFolder_` 로 사진 수 집계. **0장이면 `RETOUCH_FOLDER_EMPTY`**(override `allowEmptyRetouch:true`), 폴더를 못 읽으면 막지 않음. dryRun 응답에 `retouchPhotos`.
+- **`sendRetouchCompleteAdmin`**(어드민 보정본 발송·`select-retouch-send`): 원본 링크 무음 대체 제거 → 못 찾거나 비면 발송 거절. 예전 동작은 `allowMissingRetouch:true` 로만. 에이전트 라우트가 `retouchFolderName`·override 를 넘긴다(재보정본 발송 가능).
+- 같은 함정의 다른 자리: 셀렉 재발송의 고객 폴더(`YYMMDD_고객명`) 루트 조회(scanCap 0), `ensureExpenseEvidenceSubfolder_`(손으로 만든 NFD 월 폴더 옆에 중복 생성 방지). `findDriveFoldersForCustomerDate_` 는 정확일치가 빗나가도 `title contains` 폴백이 NFC 정규화로 잡는다 — 라이브 실측으로 확인, 무변경. `findSampleDriveFolder_` 는 기존 NFC/NFD 처리 유지.
+- 게이트 `scripts/check-drive-nfd-folder.mjs`(바이트 정확일치 가짜 Drive · 실측 NFD 바이트 고정). 결함주입: NFD 시도 제거·스캔 제거·빈 가드 제거·원본 링크 대체 복원 → 전부 빨강. check-all 37/37(--online).
+- 배포: @1006(ERP 운영 세션의 휴무 캘린더 배포)에 헬퍼·`sendFinalDeliveryAdmin` 이 먼저 실렸고, 나머지가 @1007.
+- **라이브 실측(@1007, dryRun — 발송·공유변경 없음)**: row 300 `retouchFolderName:"재보정본"`(NFC) → `retouchUrl …1ttcwVGUi0Ca…`, `retouchPhotos 5` (9/29 엔 NOT_FOUND). 기본 `보정본` → 정직한 NOT_FOUND(그 폴더엔 재보정본뿐). GAS V8 의 `String.prototype.normalize` 동작 확인.
+- ⚠️ 발견(미조치): Drive 에 `260929_신경숙` 폴더가 **두 개**(`19RCQB88…`, `1ttCFN3z…`) — 자동탐색이 `AMBIGUOUS_DRIVE_FOLDER` 를 낸다. 사장님 확인 대상(하나는 RAW 셀렉 동기화 사본일 수 있음).
+
 ### 2026-10-02 · 토요일 공휴일은 영업일 + 휴무일을 전용 캘린더 '스튜디오 휴무'(아이폰, 빨강)에 종일 일정으로 (메인 @1005 · @1006 · 셔틀 @26)
 
 사장님 요청 2건: "공휴일이 토요일이면 휴일지정해제" / "스튜디오 휴일지정도 애플캘린더에 띄워줘". 첫 사례가 바로 다음 날 10/3(토, 통일의 날).
@@ -72,7 +85,7 @@ Updated: 2026-09-30 Europe/Berlin
 - **휴무 → 캘린더 종일 일정**(@1005 는 메인 캘린더, @1006 부터 전용 캘린더 — 아래): 아이폰에 뜨는 캘린더에 `스튜디오 휴무`(일반 휴무) / `스튜디오 휴무 · <공휴일명>`(화~토 공휴일, 영업 처리일 제외) 종일 일정. 일·월 공휴일은 정기휴무라 싣지 않음. 창 = 오늘~내년 12/31. 설명란 표식 `[ERP 휴무동기화]` 붙은 것만 관리(사람 일정 불가침, 지난 일정은 이력). 알림 제거·회색. **종일 일정은 가용성·정합점검이 전부 `isAllDayEvent()` 로 건너뛰어 슬롯을 막지 않는다**(표시용 — 차단은 여전히 설정값). 실행: 휴무 설정 저장 직후 · `dailyTasks` H1(08:00) · 에이전트 `holiday-calendar-sync {dryRun}`.
 - **@1006 전용 캘린더(같은 날 "스튜디오 휴무는 다른 색상으로 표시")**: 아이폰 기본 캘린더는 구글의 **일정별 색(colorId)을 표시하지 않고 캘린더 단위 색만** 쓴다 → 휴무 일정을 전용 소유 캘린더 **'스튜디오 휴무'(빨강, `CalendarApp.Color.RED`)** 로 옮김. ID 는 스크립트 속성 `STUDIO_HOLIDAY_CALENDAR_ID`(없으면 같은 이름 소유 캘린더 → 없으면 생성, dryRun 은 생성 안 함). 이름이 CONFIG busy 목록에 없어 `getBusyCalendarMeta_` 가 읽지 않음(전체 캘린더 순회는 그 함수 하나뿐, 이름 필터). @1005 가 메인에 넣은 표식 일정은 매 동기화 때 치운다(`removedFromMain`). 일정별 색 지정 제거. **라이브**: dryRun(정리 47·생성 47·'새로 만들 예정') → 실행 1분 37초: 캘린더 생성·메인 47 삭제·새 47 생성·실패 0 → 재실행 kept 47·정리 0. 메인 12/24~27 일정 0, 새 캘린더 12/25 `스튜디오 휴무 · 1. Weihnachtstag`(알림 없음·색 지정 없음). 2027-05-06 wed OPEN/prof closed 유지. 게이트 결함 주입 +8(메인 정리·dryRun 무생성·사람 종일 일정 보호·일정별 색·캘린더 중복 생성·색 누락).
   - **와이프 공유 미설정**: 메인 캘린더는 와이프에게 직접 공유돼 있지만 새 캘린더는 아니다 → 사장님 승인 후 공유(ehda910@googlemail.com, 읽기).
-  - **공유 작업트리 사고(재발)**: NFD 수리 세션이 같은 트리의 Code.gs 를 편집 중이라 @1006 push(05:36:21Z)에 그쪽 **진행 중 코드 일부**(findChildFolderByName_·resolveRetouchSubfolder_ 정의, sendFinalDeliveryAdmin 보정본 조회)가 실렸다 — 정의·참조 일관, 파싱 확인. 나머지 NFD 변경은 그쪽 세션이 @1007 로 배포·커밋하기로 세션 간 메시지로 조율(Code.gs·AdminV2 커밋도 그쪽).
+  - **공유 작업트리 사고(재발)**: NFD 수리 세션이 같은 트리의 Code.gs 를 편집 중이라 @1006 push(05:36:21Z)에 그쪽 **진행 중 코드 일부**(findChildFolderByName_·resolveRetouchSubfolder_ 정의, sendFinalDeliveryAdmin 보정본 조회)가 실렸다 — 정의·참조 일관, 파싱 확인. 나머지 NFD 변경은 그쪽 세션이 @1007 로 배포·커밋하기로 세션 간 메시지로 조율(Code.gs·AdminV2 커밋도 그쪽). → **@1007 배포·라이브 확인 완료**(같은 날 'NFD 조회 수리' 항목).
 - **동시 실행 방지**: 저장 연타·저장과 08:00 이 겹치면 같은 날이 두 번 생긴다 → 캐시 표식으로 건너뛰고, 진행 중에 들어온 요청은 끝난 뒤 한 번 더. **스크립트 잠금은 안 씀** — 예약 제출 등 33곳이 waitLock 하는 공용 자원이라 수십 초짜리 첫 동기화가 잡으면 예약이 막힌다. 건별 생성 실패는 격리(`failed`, ok:false) · 150ms 간격.
 - **고객 문구**: 전달 예정일 안내 "일·월요일과 **평일** 공휴일을 피해" / "weekday public holidays" — 토요일 공휴일이 마감일이 될 수 있어서.
 - **배포 전 적대 검토**(가용성·캘린더 부작용·생성물 정합 + 반박 검증): 확정 2건(위 문구, 동시 실행 중복) 수리. 30분 슬롯 캐시는 배포 후 버전 올림으로 해결(코드 결함 아님).

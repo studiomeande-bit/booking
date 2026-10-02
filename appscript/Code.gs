@@ -2158,7 +2158,8 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_(spd);
         }
         if(action==='customer-print-order-status') return jsonOk_(setCustomerPrintOrderStatusForAgent_(token,payload||{}));
-        if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||'')}));
+        if(action==='select-retouch-send') return jsonOk_(sendRetouchCompleteAdmin(token,payload.bookingRowIndex,{extraMessage:String(payload.extraMessage||''),
+          retouchFolderName:payload.retouchFolderName,allowEmptyRetouch:agentBoolFlag_(payload.allowEmptyRetouch),allowMissingRetouch:agentBoolFlag_(payload.allowMissingRetouch)}));
         /* 촬영 직후 샘플 링크 메일 — 드라이브 'YYMMDD_고객명_샘플' 폴더를 찾아 공유 후 발송.
            dryRun:true 면 폴더·수신자만 확인하고 보내지 않는다(발송 전 점검용). */
         if(action==='booking-sample-send') return jsonOk_(sendBookingSampleAdmin(token,payload.rowIndex,payload));
@@ -2276,7 +2277,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-print-order-get') return jsonOk_(getSelectPrintOrderForAgent_(token,payload||{}));
         if(action==='select-extra-unpay') return jsonOk_(unmarkSelectExtraPaidAdmin(token,payload||{}));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
-        if(action==='holiday-calendar-sync') return jsonOk_(syncStudioHolidayCalendar_({dryRun:agentBoolFlag_(payload.dryRun)}));   // 휴무 → 메인 캘린더 종일 일정(dryRun:true = 계획만)
+        if(action==='holiday-calendar-sync') return jsonOk_(syncStudioHolidayCalendar_({dryRun:agentBoolFlag_(payload.dryRun)}));   // 휴무 → '스튜디오 휴무' 캘린더 종일 일정(dryRun:true = 계획만)
         if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token,{reconcile:payload.reconcile==null?true:agentBoolFlag_(payload.reconcile)}));   // reconcile:false = 화해 없이 보고만
         if(action==='studio-presence-schedule'){
           // ✏️ 재실 사전 예약 — 픽업 창 + pass/prof/stud 슬롯이 실제로 열린다
@@ -11351,13 +11352,28 @@ function isWeekendOrHolidayBlocked_(dateStr,itemGroup){
   return false;   // custom_holidays 는 위에서 이미 판정됨 (전 상품 공통)
 }
 
-/* ===== 스튜디오 휴무 → 메인 캘린더 종일 일정 (사장님 요청 2026-10-02 "휴일지정도 애플캘린더에 띄워줘") =====
-   메인 구글 캘린더는 사장님·와이프 아이폰 캘린더에 이미 떠 있다 — 여기 종일 일정을 두면 그대로 보인다.
-   종일 일정은 가용성(getEventsForRange_ 등)·정합점검이 전부 isAllDayEvent() 로 건너뛰므로 슬롯을 막지 않는다.
-   휴무 차단은 지금처럼 isWeekendOrHolidayBlocked_ 가 한다 — 캘린더는 표시용.
+/* ===== 스튜디오 휴무 → 전용 캘린더 '스튜디오 휴무' 종일 일정 (사장님 요청 2026-10-02) =====
+   "휴일지정도 애플캘린더에 띄워줘" → @1005 는 메인 캘린더에 넣었고, 이어서 "다른 색상으로 표시" —
+   아이폰 기본 캘린더는 구글의 일정별 색(colorId)을 보여 주지 않고 **캘린더 단위 색**만 쓴다 → 전용 캘린더(빨강).
+   이 캘린더는 이름이 CONFIG.TARGET/PERSONAL_CALENDAR_NAMES 에 없어 getBusyCalendarMeta_ 가 읽지 않고, 종일 일정은
+   어차피 가용성·정합점검이 isAllDayEvent() 로 건너뛴다 = 슬롯과 무관한 표시용. 휴무 차단은 isWeekendOrHolidayBlocked_.
+   캘린더 ID 는 스크립트 속성 STUDIO_HOLIDAY_CALENDAR_ID(이름을 바꿔도 유지) → 없으면 같은 이름의 소유 캘린더 → 없으면 만든다.
    대상: 일반 휴무(custom_holidays, 부재 — 요일 무관) + 화~토에 떨어진 공휴일(영업 처리한 날 제외).
    일·월 공휴일은 어차피 정기휴무라 싣지 않는다. 설명란 표식이 붙은 우리 일정만 관리하고, 오늘 이전 일정은 이력으로 둔다. */
 const STUDIO_HOLIDAY_EVENT_MARKER_='[ERP 휴무동기화]';
+const STUDIO_HOLIDAY_CALENDAR_NAME_='스튜디오 휴무';
+function getStudioHolidayCalendar_(create){
+  const props=PropertiesService.getScriptProperties();
+  const id=props.getProperty('STUDIO_HOLIDAY_CALENDAR_ID');
+  if(id){ try{ const c=CalendarApp.getCalendarById(id); if(c) return c; }catch(e){} }
+  let cal=CalendarApp.getOwnedCalendarsByName(STUDIO_HOLIDAY_CALENDAR_NAME_)[0]||null;
+  if(!cal&&create){
+    cal=CalendarApp.createCalendar(STUDIO_HOLIDAY_CALENDAR_NAME_,{color:CalendarApp.Color.RED,timeZone:CONFIG.TIMEZONE,
+      summary:'Studio mean 휴무일 — ERP 가 어드민 휴무일 설정에서 자동으로 채웁니다. 예약 가능 시간과는 무관한 표시용.'});
+  }
+  if(cal) props.setProperty('STUDIO_HOLIDAY_CALENDAR_ID',cal.getId());
+  return cal;
+}
 function buildStudioHolidayCalendarPlan_(fromYmd,toYmd){
   const settings=getSettingsMap_();
   const openDates=parseDateListSetting_(settings.public_holiday_open_dates||'');
@@ -11397,11 +11413,22 @@ function syncStudioHolidayCalendarOnce_(dryRun){
   const toYmd=(Number(fromYmd.slice(0,4))+1)+'-12-31';   // 올해+내년 — 매일 08:00 dailyTasks 가 앞으로 굴린다
   const plan=buildStudioHolidayCalendarPlan_(fromYmd,toYmd);
   const toDate=function(ymd){return new Date(Number(ymd.slice(0,4)),Number(ymd.slice(5,7))-1,Number(ymd.slice(8,10)));};
-  const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
-  const res={ok:true,dryRun:dryRun,from:fromYmd,to:toYmd,planned:Object.keys(plan).length,created:[],retitled:[],deleted:[],kept:0,failed:[]};
+  const cal=getStudioHolidayCalendar_(!dryRun);   // dryRun 은 캘린더를 만들지 않는다
+  const res={ok:true,dryRun:dryRun,calendar:cal?cal.getName():STUDIO_HOLIDAY_CALENDAR_NAME_+' (새로 만들 예정)',from:fromYmd,to:toYmd,
+    planned:Object.keys(plan).length,created:[],retitled:[],deleted:[],kept:0,removedFromMain:0,failed:[]};
+  const winS=toDate(fromYmd),winE=new Date(toDate(toYmd).getTime()+86400000);
+  const isOurs=function(ev){return ev.isAllDayEvent()&&String(ev.getDescription()||'').indexOf(STUDIO_HOLIDAY_EVENT_MARKER_)>=0;};
+  // @1005 는 메인 캘린더에 넣었다 — 거기 남은 우리 일정은 치운다(전용 캘린더에 다시 생긴다). 사람 일정·예약은 표식이 없어 무관.
+  const main=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID);
+  if(main&&(!cal||cal.getId()!==main.getId())) main.getEvents(winS,winE).forEach(function(ev){
+    if(!isOurs(ev)) return;
+    res.removedFromMain++;
+    if(dryRun) return;
+    try{ ev.deleteEvent(); Utilities.sleep(150); }catch(e){ res.failed.push('메인 정리: '+e.message); }
+  });
   const seen={};
-  cal.getEvents(toDate(fromYmd),new Date(toDate(toYmd).getTime()+86400000)).forEach(function(ev){
-    if(!ev.isAllDayEvent()||String(ev.getDescription()||'').indexOf(STUDIO_HOLIDAY_EVENT_MARKER_)<0) return;
+  (cal?cal.getEvents(winS,winE):[]).forEach(function(ev){
+    if(!isOurs(ev)) return;
     const ymd=Utilities.formatDate(ev.getAllDayStartDate(),tz,'yyyy-MM-dd');
     if(ymd<fromYmd) return;
     if(seen[ymd]||!plan[ymd]){                       // 중복이거나 더는 휴무가 아님(영업 처리·휴무 해제·토요일 공휴일)
@@ -11419,8 +11446,7 @@ function syncStudioHolidayCalendarOnce_(dryRun){
     if(dryRun){res.created.push(ymd);return;}
     try{
       const ev=cal.createAllDayEvent(plan[ymd],toDate(ymd),{description:STUDIO_HOLIDAY_EVENT_MARKER_+' 어드민 > 휴무일 설정에서 관리합니다. 여기서 지워도 다음 동기화 때 다시 생깁니다.'});
-      try{ev.removeAllReminders();}catch(e){}   // 휴무마다 전날 알림이 울리지 않게
-      try{ev.setColor(CalendarApp.EventColor.GRAY);}catch(e){}
+      try{ev.removeAllReminders();}catch(e){}   // 휴무마다 전날 알림이 울리지 않게 (색은 캘린더 색을 따른다 — 일정별 색 지정 금지)
       res.created.push(ymd);
       Utilities.sleep(150);   // 첫 동기화는 수십 건(2026-10 실측 47) — 연속 생성 속도 제한 회피
     }catch(e){ res.failed.push(ymd+': '+e.message); }   // 한 건 실패가 나머지를 막지 않게 — 다음 동기화가 이어 만든다
@@ -20972,8 +20998,7 @@ function ensureExpenseEvidenceRoot_(){
 function ensureExpenseEvidenceSubfolder_(name){
   const root=ensureExpenseEvidenceRoot_();
   const safe=String(name||'인박스').trim()||'인박스';
-  const it=root.getFoldersByName(safe);
-  return it.hasNext()?it.next():root.createFolder(safe);
+  return findChildFolderByName_(root,safe)||root.createFolder(safe);   // 손으로 만든(NFD) 월 폴더를 두고 중복 생성하지 않게
 }
 
 // 에이전트: 로컬 영수증 업로드 → Drive 저장 (기본 인박스, month 지정 시 해당 월 아카이브에 바로)
@@ -25571,6 +25596,50 @@ function normalizeDriveFolderSearchText_(value){
   let text=String(value||'').trim().toLowerCase();
   try{text=text.normalize('NFC');}catch(e){}
   return text.replace(/\s+/g,'').replace(/[._\-()［］\[\]{}]/g,'');
+}
+
+/* ⚠️ 한글 폴더명 NFD 함정 (2026-09-29 신경숙 row 300) — macOS 에서 올라간 폴더 이름은 **NFD(자모 분리)** 로 저장된다.
+   getFoldersByName 은 바이트 정확일치라 NFC 리터럴('보정본')로는 멀쩡히 있는 폴더를 조용히 못 찾고,
+   사장님은 "폴더가 없다"는 안내를 받아 이미 올린 파일을 다시 올리게 된다.
+   정확일치(NFC → NFD) 두 번 먼저, 그래도 없으면 하위를 scanCap 개까지 NFC 로 접어 비교한다(혼합 형태·앞뒤 공백).
+   scanCap=0 은 스캔 생략 — 자식이 수백 개인 루트에서 쓴다. */
+function findChildFolderByName_(parent,name,scanCap){
+  const want=String(name||'').trim().normalize('NFC');
+  if(!want) return null;
+  const tries=[want,want.normalize('NFD')];
+  for(let i=0;i<tries.length;i++){
+    const it=parent.getFoldersByName(tries[i]);
+    if(it.hasNext()) return it.next();
+  }
+  const cap=scanCap==null?200:scanCap;
+  const all=parent.getFolders();
+  for(let n=0;n<cap&&all.hasNext();n++){
+    const f=all.next();
+    if(String(f.getName()).trim().normalize('NFC')===want) return f;
+  }
+  return null;
+}
+
+/* 원본 폴더 안 보정본 서브폴더 — 최종본 발송(booking-final-send)·보정본 발송(select-retouch-send) 공용.
+   사진이 0장이면 막는다: 빈 폴더 링크가 "보정본 완성" 메일로 고객에게 나가면 안 된다(override: allowEmpty).
+   폴더를 못 읽어 장수를 모르면(photos:null) 막지 않는다 — 가드 실패로 정상 발송을 멈출 이유는 없다. */
+function resolveRetouchSubfolder_(parentRef,subName,opts){
+  opts=opts||{};
+  subName=String(subName||'보정본').trim();
+  const parentId=_extractDriveFolderId_(parentRef);
+  if(!parentId) return{ok:false,code:'RETOUCH_FOLDER_NOT_FOUND',message:'원본 Drive 폴더 링크가 없어 보정본 폴더를 찾을 수 없습니다.'};
+  let sub=null;
+  try{ sub=findChildFolderByName_(DriveApp.getFolderById(parentId),subName); }
+  catch(e){ return{ok:false,code:'RETOUCH_FOLDER_NOT_FOUND',message:'보정본 폴더 탐색 오류: '+e.message}; }
+  if(!sub) return{ok:false,code:'RETOUCH_FOLDER_NOT_FOUND',
+    message:`원본 폴더 안에 '${subName}' 폴더가 없습니다. 보정본을 넣은 뒤 다시 실행하거나, retouchFolderName 으로 폴더명을 지정해 주세요.`};
+  const stats=inspectSelectDeliveryFolder_(sub.getId());
+  const photos=stats&&stats.ok?stats.photos:null;
+  if(photos===0&&!stats.truncated&&opts.allowEmpty!==true){
+    return{ok:false,code:'RETOUCH_FOLDER_EMPTY',retouchUrl:sub.getUrl(),
+      message:`'${sub.getName().normalize('NFC')}' 폴더에 사진이 0장입니다. 보정본을 올린 뒤 다시 실행해 주세요(사진이 아닌 파일만 보낼 때는 allowEmptyRetouch:true).`};
+  }
+  return{ok:true,folder:sub,url:sub.getUrl(),name:sub.getName().normalize('NFC'),photos:photos};
 }
 
 function buildDriveFolderDateTokens_(dateStr){
@@ -30704,8 +30773,8 @@ function resendSelectLinkAdmin(token,bookingRowIndex){
         const yymmdd=data.dateStr.replace(/-/g,'').slice(2);
         const folderName=yymmdd+'_'+data.name;
         const root=DriveApp.getFolderById(DRIVE_ROOT_FOLDER_ID);
-        const it=root.getFoldersByName(folderName);
-        if(it.hasNext()){const f=it.next();f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);dLink=f.getUrl();}
+        const f=findChildFolderByName_(root,folderName,0);   // 고객명 폴더도 NFD — 루트는 자식이 수백 개라 스캔 생략
+        if(f){f.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);dLink=f.getUrl();}
       }catch(e){}
       const first=_makeSelectRow_({
         name:data.name,email:data.email,phone:data.phone,date:data.dateStr,itemGroup:data.itemGroup,
@@ -30896,21 +30965,18 @@ function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
     const extraMessageHtml=buildRetouchExtraMessageHtml_(extraMessage,lang);
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
 
-    // 보정본 서브폴더 링크 찾기
-    let retouchFolderLink=driveLink;
-    if(driveLink){
-      try{
-        const folderId=driveLink.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1];
-        if(folderId){
-          const folder=DriveApp.getFolderById(folderId);
-          const subIt=folder.getFoldersByName('보정본');
-          if(subIt.hasNext()){
-            const sub=subIt.next();
-            sub.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
-            retouchFolderLink=sub.getUrl();
-          }
-        }
-      }catch(e){Logger.log('보정본 폴더 탐색 오류:'+e.message);}
+    /* 보정본 서브폴더 — 못 찾거나 비었으면 멈춘다. 예전엔 조용히 원본 폴더 링크로 대체해(링크가 없으면 빈 href)
+       "보정본 완성" 메일에 원본이 실렸다. 원본 링크로 보내는 예전 동작은 allowMissingRetouch:true 로만. */
+    const p=payload||{};
+    const ret=resolveRetouchSubfolder_(driveLink,p.retouchFolderName,{allowEmpty:p.allowEmptyRetouch===true});
+    let retouchFolderLink='';
+    if(ret.ok){
+      ret.folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+      retouchFolderLink=ret.url;
+    }else if(p.allowMissingRetouch===true&&driveLink){
+      retouchFolderLink=driveLink;
+    }else{
+      return ret;
     }
 
     const sessionId=String(selRow[0]||'');
@@ -38173,32 +38239,24 @@ function sendFinalDeliveryAdmin(token,rowIndex,payload){
     const originalUrl=String(folderResult.url||'').trim();
 
     /* 2) 보정본 서브폴더 — sendRetouchCompleteAdmin 과 동일 규약('보정본' 이름) */
-    let retouchUrl='',retouchFolderName='';
-    const subName=String(payload.retouchFolderName||'보정본').trim();
-    try{
-      const folderId=originalUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
-      if(folderId&&folderId[1]){
-        const parent=DriveApp.getFolderById(folderId[1]);
-        const it=parent.getFoldersByName(subName);
-        if(it.hasNext()){
-          const sub=it.next();
-          if(payload.dryRun!==true)sub.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
-          retouchUrl=sub.getUrl();
-          retouchFolderName=sub.getName();
-        }
-      }
-    }catch(e){Logger.log('보정본 폴더 탐색 오류: '+e.message);}
-    /* 보정본이 없으면 멈춘다 — 원본만 보내놓고 "완성됐다"고 하면 안 된다.
+    let retouchUrl='',retouchFolderName='',retouchPhotos=null;
+    const ret=resolveRetouchSubfolder_(originalUrl,payload.retouchFolderName,{allowEmpty:payload.allowEmptyRetouch===true});
+    /* 보정본이 없거나 비었으면 멈춘다 — 원본만 보내놓고 "완성됐다"고 하면 안 된다.
        원본만 보내려면 booking-sample-send(샘플) 또는 select-create(셀렉)를 쓴다. */
-    if(!retouchUrl&&payload.allowMissingRetouch!==true){
-      return{ok:false,code:'RETOUCH_FOLDER_NOT_FOUND',
-        message:`원본 폴더 안에 '${subName}' 폴더가 없습니다. 보정본을 넣은 뒤 다시 실행하거나, retouchFolderName 으로 폴더명을 지정해 주세요.`,
-        originalUrl:originalUrl};
+    if(!ret.ok&&payload.allowMissingRetouch!==true){
+      ret.originalUrl=originalUrl;
+      return ret;
+    }
+    if(ret.ok){
+      if(payload.dryRun!==true)ret.folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+      retouchUrl=ret.url;
+      retouchFolderName=ret.name;
+      retouchPhotos=ret.photos;
     }
 
     if(payload.dryRun===true){
       return{ok:true,dryRun:true,to:email,lang:L,name:name,product:product,date:dateStr,
-        originalUrl:originalUrl,retouchUrl:retouchUrl,retouchFolderName:retouchFolderName,
+        originalUrl:originalUrl,retouchUrl:retouchUrl,retouchFolderName:retouchFolderName,retouchPhotos:retouchPhotos,
         note:'발송하지 않았습니다. 폴더와 수신자를 확인한 뒤 dryRun 없이 다시 실행하세요.'};
     }
 
