@@ -75,7 +75,7 @@ Updated: 2026-09-30 Europe/Berlin
 - 게이트 `scripts/check-drive-nfd-folder.mjs`(바이트 정확일치 가짜 Drive · 실측 NFD 바이트 고정). 결함주입: NFD 시도 제거·스캔 제거·빈 가드 제거·원본 링크 대체 복원 → 전부 빨강. check-all 37/37(--online).
 - 배포: @1006(ERP 운영 세션의 휴무 캘린더 배포)에 헬퍼·`sendFinalDeliveryAdmin` 이 먼저 실렸고, 나머지가 @1007.
 - **라이브 실측(@1007, dryRun — 발송·공유변경 없음)**: row 300 `retouchFolderName:"재보정본"`(NFC) → `retouchUrl …1ttcwVGUi0Ca…`, `retouchPhotos 5` (9/29 엔 NOT_FOUND). 기본 `보정본` → 정직한 NOT_FOUND(그 폴더엔 재보정본뿐). GAS V8 의 `String.prototype.normalize` 동작 확인.
-- ⚠️ 발견(미조치): Drive 에 `260929_신경숙` 폴더가 **두 개**(`19RCQB88…`, `1ttCFN3z…`) — 자동탐색이 `AMBIGUOUS_DRIVE_FOLDER` 를 낸다. 사장님 확인 대상(하나는 RAW 셀렉 동기화 사본일 수 있음).
+- ⚠️ 발견(미조치): Drive 에 `260929_신경숙` 폴더가 **두 개**(`19RCQB88…`, `1ttCFN3z…`) — 자동탐색이 `AMBIGUOUS_DRIVE_FOLDER` 를 낸다. 둘째(`1ttCFN3z…`)는 **KOTRA 공개 폴더 안**에 있고 **anyone:writer** — 9/29 사장님께 보고됨, 정리·권한 결정 대기(운영 세션 확인).
 
 ### 2026-10-02 · 토요일 공휴일은 영업일 + 휴무일을 전용 캘린더 '스튜디오 휴무'(아이폰, 빨강)에 종일 일정으로 (메인 @1005 · @1006 · 셔틀 @26)
 
