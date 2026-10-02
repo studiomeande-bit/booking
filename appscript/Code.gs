@@ -2276,6 +2276,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-print-order-get') return jsonOk_(getSelectPrintOrderForAgent_(token,payload||{}));
         if(action==='select-extra-unpay') return jsonOk_(unmarkSelectExtraPaidAdmin(token,payload||{}));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
+        if(action==='holiday-calendar-sync') return jsonOk_(syncStudioHolidayCalendar_({dryRun:agentBoolFlag_(payload.dryRun)}));   // 휴무 → 메인 캘린더 종일 일정(dryRun:true = 계획만)
         if(action==='calendar-audit') return jsonOk_(auditBookingCalendarConsistencyAdmin(token,{reconcile:payload.reconcile==null?true:agentBoolFlag_(payload.reconcile)}));   // reconcile:false = 화해 없이 보고만
         if(action==='studio-presence-schedule'){
           // ✏️ 재실 사전 예약 — 픽업 창 + pass/prof/stud 슬롯이 실제로 열린다
@@ -7585,14 +7586,14 @@ function buildDeliveryEstimateHtml_(est,lang,fee){
         :`보정본: 셀렉을 마치신 날로부터 2~3주 — 원본 받으신 날 바로 고르시면 <b>${d(est.retouchFrom||'')} ~ ${d(est.retouchTo||'')}</b>`,
       exp:est.express?'⚡ 급행 작업으로 예약되어 있습니다.'
         :(money?`⚡ 더 빨리 필요하시면 <b>급행(+${money})</b>으로 원본·보정본을 각각 3일 안에 전달해 드립니다. 이 메일에 회신해 주시면 추가해 드려요(셀렉 화면에서는 보정본만 급행으로 신청하실 수 있습니다).`:''),
-      note:'날짜는 일·월요일과 공휴일을 피해 잡았습니다.'},
+      note:'날짜는 일·월요일과 평일 공휴일을 피해 잡았습니다.'},
     en:{title:'📦 When you will receive your photos',
       orig:`All originals: <b>by ${d(est.originalBy)}</b>`,
       ret:est.express?`Retouched photos: <b>within 3 days</b> of your selection — if you choose on the day the originals arrive, <b>by ${d(est.retouchBy||'')}</b>`
         :`Retouched photos: 2–3 weeks after your selection — if you choose on the day the originals arrive, <b>${d(est.retouchFrom||'')} – ${d(est.retouchTo||'')}</b>`,
       exp:est.express?'⚡ Your booking includes express delivery.'
         :(money?`⚡ Need them sooner? <b>Express (+${money})</b> delivers originals and retouched photos within 3 days each — just reply to this email to add it. (On the selection page, express can be added for the retouched photos only.)`:''),
-      note:'Dates avoid Sundays, Mondays and public holidays.'},
+      note:'Dates avoid Sundays, Mondays and weekday public holidays.'},
     de:{title:'📦 Wann Sie Ihre Fotos erhalten',
       orig:`Alle Originale: <b>bis ${d(est.originalBy)}</b>`,
       ret:est.express?`Retuschierte Fotos: <b>innerhalb von 3 Tagen</b> nach Ihrer Auswahl — wählen Sie am Tag der Originale aus, <b>bis ${d(est.retouchBy||'')}</b>`
@@ -9495,7 +9496,9 @@ function saveSiteSettings(token,s){
   upsertSetting_('recommend_exclude_slots',String(s.recommendExcludeSlots||'').trim());
   if(s.newPassword) PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD_HASH',hashText_(s.newPassword));
   bumpCalCacheVer_();
-  return{ok:true};
+  let holidayCalendar=null;
+  try{ holidayCalendar=syncStudioHolidayCalendar_({}); }catch(e){ Logger.log('휴무 캘린더 동기화 실패: '+e.message); }   // 표시용이라 저장은 막지 않는다
+  return{ok:true,holidayCalendar:holidayCalendar};
 }
 
 /* ====== 견적 ====== */
@@ -11316,7 +11319,12 @@ function getCustomPublicHolidayDates_(){
 }
 function getPublicHolidayDatesForYear_(year){
   const seen={};
-  const dates=getHessenHolidays(year).concat(getCustomPublicHolidayDates_().filter(function(date){
+  /* 토요일에 떨어진 법정 공휴일은 휴무로 치지 않는다 — 토요일은 평소대로 영업(사장님 결정 2026-10-02, 첫 사례 10/3 통일의 날).
+     직접 등록한 공휴일(custom_public_holidays)은 사장님이 일부러 넣은 것이라 요일과 무관하게 존중한다.
+     토요일을 닫으려면 일반 휴무(custom_holidays)로 지정. 어드민 휴무 달력(getHessenHolidayItemsClient)도 같은 규칙. */
+  const dates=getHessenHolidays(year).filter(function(date){
+    return new Date(date+'T12:00:00Z').getUTCDay()!==6;
+  }).concat(getCustomPublicHolidayDates_().filter(function(date){
     return String(date).slice(0,4)===String(year);
   }));
   return dates.filter(function(date){
@@ -11341,6 +11349,84 @@ function isWeekendOrHolidayBlocked_(dateStr,itemGroup){
   if(day===0||day===1) return true;
   if(isPublicHoliday) return true;
   return false;   // custom_holidays 는 위에서 이미 판정됨 (전 상품 공통)
+}
+
+/* ===== 스튜디오 휴무 → 메인 캘린더 종일 일정 (사장님 요청 2026-10-02 "휴일지정도 애플캘린더에 띄워줘") =====
+   메인 구글 캘린더는 사장님·와이프 아이폰 캘린더에 이미 떠 있다 — 여기 종일 일정을 두면 그대로 보인다.
+   종일 일정은 가용성(getEventsForRange_ 등)·정합점검이 전부 isAllDayEvent() 로 건너뛰므로 슬롯을 막지 않는다.
+   휴무 차단은 지금처럼 isWeekendOrHolidayBlocked_ 가 한다 — 캘린더는 표시용.
+   대상: 일반 휴무(custom_holidays, 부재 — 요일 무관) + 화~토에 떨어진 공휴일(영업 처리한 날 제외).
+   일·월 공휴일은 어차피 정기휴무라 싣지 않는다. 설명란 표식이 붙은 우리 일정만 관리하고, 오늘 이전 일정은 이력으로 둔다. */
+const STUDIO_HOLIDAY_EVENT_MARKER_='[ERP 휴무동기화]';
+function buildStudioHolidayCalendarPlan_(fromYmd,toYmd){
+  const settings=getSettingsMap_();
+  const openDates=parseDateListSetting_(settings.public_holiday_open_dates||'');
+  const inRange=function(ymd){return ymd>=fromYmd&&ymd<=toYmd&&openDates.indexOf(ymd)<0;};
+  const plan={};
+  for(let y=Number(fromYmd.slice(0,4));y<=Number(toYmd.slice(0,4));y++){
+    const names={};
+    getHessenHolidayItems(y).forEach(function(it){names[it.date]=it.name;});
+    getPublicHolidayDatesForYear_(y).forEach(function(ymd){
+      const day=new Date(ymd+'T12:00:00Z').getUTCDay();
+      if(inRange(ymd)&&day!==0&&day!==1) plan[ymd]='스튜디오 휴무 · '+(names[ymd]||'공휴일');
+    });
+  }
+  parseDateListSetting_(settings.custom_holidays||'').forEach(function(ymd){
+    if(inRange(ymd)&&!plan[ymd]) plan[ymd]='스튜디오 휴무';
+  });
+  return plan;
+}
+function syncStudioHolidayCalendar_(opts){
+  const dryRun=!!(opts&&opts.dryRun===true);
+  if(dryRun) return syncStudioHolidayCalendarOnce_(true);
+  /* 동시 실행 방지 — 저장 연타·저장과 08:00 이 겹치면 둘 다 빈 캘린더를 보고 같은 날을 두 번 만든다.
+     스크립트 잠금은 예약 제출 등이 waitLock 으로 기다리는 공용 자원이라 수십 초짜리 첫 동기화가 잡으면 안 된다.
+     ponytail: get→put 사이는 원자적이지 않다(밀리초 창). 진행 중에 온 요청은 버리지 않고 끝난 뒤 한 번 더 돈다. */
+  const cache=CacheService.getScriptCache();
+  if(cache.get('holiday_sync_running')){ cache.put('holiday_sync_again','1',600); return {ok:true,skipped:'running'}; }
+  cache.put('holiday_sync_running','1',300);
+  try{
+    let res=syncStudioHolidayCalendarOnce_(false);
+    if(cache.get('holiday_sync_again')){ cache.remove('holiday_sync_again'); res=syncStudioHolidayCalendarOnce_(false); }
+    return res;
+  }finally{ cache.remove('holiday_sync_running'); }
+}
+function syncStudioHolidayCalendarOnce_(dryRun){
+  const tz=CONFIG.TIMEZONE;
+  const fromYmd=Utilities.formatDate(new Date(),tz,'yyyy-MM-dd');
+  const toYmd=(Number(fromYmd.slice(0,4))+1)+'-12-31';   // 올해+내년 — 매일 08:00 dailyTasks 가 앞으로 굴린다
+  const plan=buildStudioHolidayCalendarPlan_(fromYmd,toYmd);
+  const toDate=function(ymd){return new Date(Number(ymd.slice(0,4)),Number(ymd.slice(5,7))-1,Number(ymd.slice(8,10)));};
+  const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+  const res={ok:true,dryRun:dryRun,from:fromYmd,to:toYmd,planned:Object.keys(plan).length,created:[],retitled:[],deleted:[],kept:0,failed:[]};
+  const seen={};
+  cal.getEvents(toDate(fromYmd),new Date(toDate(toYmd).getTime()+86400000)).forEach(function(ev){
+    if(!ev.isAllDayEvent()||String(ev.getDescription()||'').indexOf(STUDIO_HOLIDAY_EVENT_MARKER_)<0) return;
+    const ymd=Utilities.formatDate(ev.getAllDayStartDate(),tz,'yyyy-MM-dd');
+    if(ymd<fromYmd) return;
+    if(seen[ymd]||!plan[ymd]){                       // 중복이거나 더는 휴무가 아님(영업 처리·휴무 해제·토요일 공휴일)
+      res.deleted.push(ymd);
+      if(!dryRun) ev.deleteEvent();
+      return;
+    }
+    seen[ymd]=true;
+    if(ev.getTitle()===plan[ymd]){res.kept++;return;}
+    res.retitled.push(ymd);
+    if(!dryRun) ev.setTitle(plan[ymd]);
+  });
+  Object.keys(plan).sort().forEach(function(ymd){
+    if(seen[ymd]) return;
+    if(dryRun){res.created.push(ymd);return;}
+    try{
+      const ev=cal.createAllDayEvent(plan[ymd],toDate(ymd),{description:STUDIO_HOLIDAY_EVENT_MARKER_+' 어드민 > 휴무일 설정에서 관리합니다. 여기서 지워도 다음 동기화 때 다시 생깁니다.'});
+      try{ev.removeAllReminders();}catch(e){}   // 휴무마다 전날 알림이 울리지 않게
+      try{ev.setColor(CalendarApp.EventColor.GRAY);}catch(e){}
+      res.created.push(ymd);
+      Utilities.sleep(150);   // 첫 동기화는 수십 건(2026-10 실측 47) — 연속 생성 속도 제한 회피
+    }catch(e){ res.failed.push(ymd+': '+e.message); }   // 한 건 실패가 나머지를 막지 않게 — 다음 동기화가 이어 만든다
+  });
+  res.ok=res.failed.length===0;
+  return res;
 }
 
 function parseTimeBlock_(raw){
@@ -33856,7 +33942,8 @@ function dailyTasks(e){
     ['T1 출장장부 동기화',syncTravelLedgerFromBookings_],
     ['D5 견적서 만료 처리',_expireStaleQuotes_],
     ['D6 견적 보류 팔로업',_quoteHoldDailyCheck_],
-    ['D8 경비 인보이스 메일 수집',collectInvoiceEmailsDaily_]
+    ['D8 경비 인보이스 메일 수집',collectInvoiceEmailsDaily_],
+    ['H1 휴무일 캘린더 동기화',syncStudioHolidayCalendar_]
   ];
   jobs.forEach(function(job){
     try{

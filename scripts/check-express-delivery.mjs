@@ -111,10 +111,12 @@ const q = (o) => M.calculateQuote_(o);
   const x = q({ itemId: 'sb', people: 2, date: '2026-10-09', optionKeys: ['express'] }).deliveryEstimate;
   ok(x.originalBy === '2026-10-13' && x.retouchBy === '2026-10-16', '급행: 10/12(월 휴무) → 원본 10/13(화) · 보정 10/16', x);
   ok(M.deliveryDueDate_('2026-10-08', 3) === '2026-10-13', '목+3 = 일요일 → 월 휴무 → 화 10/13', M.deliveryDueDate_('2026-10-08', 3));
-  ok(M.deliveryDueDate_('2026-09-30', 3) === '2026-10-06', '수+3 = 10/3(토, 독일 통일의 날) → 일·월 → 화 10/6', M.deliveryDueDate_('2026-09-30', 3));
-  ok(M.deliveryDueDate_('2026-12-19', 7) === '2026-12-29', '토 12/19+7 = 12/26(토, 둘째 성탄절) → 12/29(화)', M.deliveryDueDate_('2026-12-19', 7));
-  M.__setSettings__({ return_discount: '10', public_holiday_open_dates: '2026-10-03' });
-  ok(M.deliveryDueDate_('2026-09-30', 3) === '2026-10-03', '공휴일 영업 예외(public_holiday_open_dates) 존중', M.deliveryDueDate_('2026-09-30', 3));
+  // 토요일에 떨어진 법정 공휴일은 영업일(사장님 결정 2026-10-02) — 밀지 않는다
+  ok(M.deliveryDueDate_('2026-09-30', 3) === '2026-10-03', '수+3 = 10/3(토, 통일의 날) — 토요일 공휴일은 영업일', M.deliveryDueDate_('2026-09-30', 3));
+  ok(M.deliveryDueDate_('2026-12-19', 7) === '2026-12-26', '토 12/19+7 = 12/26(토, 둘째 성탄절) — 토요일 공휴일은 영업일', M.deliveryDueDate_('2026-12-19', 7));
+  ok(M.deliveryDueDate_('2026-12-22', 3) === '2026-12-26', '화+3 = 12/25(금, 성탄절) 휴무 → 12/26(토) 영업', M.deliveryDueDate_('2026-12-22', 3));
+  M.__setSettings__({ return_discount: '10', public_holiday_open_dates: '2026-12-25' });
+  ok(M.deliveryDueDate_('2026-12-22', 3) === '2026-12-25', '공휴일 영업 예외(public_holiday_open_dates) 존중', M.deliveryDueDate_('2026-12-22', 3));
   M.__setSettings__({ return_discount: '10', custom_holidays: '2026-10-16' });
   ok(M.deliveryDueDate_('2026-10-09', 7) === '2026-10-16', '사장님 부재일(custom_holidays)은 편집 불가가 아닐 수 있어 반영 안 함', M.deliveryDueDate_('2026-10-09', 7));
   M.__setSettings__({ return_discount: '10' });

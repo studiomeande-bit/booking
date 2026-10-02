@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-09-29T17:20:22.879Z
+ * 생성 시각: 2026-10-02T05:12:26.405Z
  * 포함 함수 195개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -114,7 +114,7 @@ const WEDDING_MARKETING_DISCOUNT_RATE = 5;
 
 const PARTNER_HEADERS=['id','분류','업체명','한줄설명KO','한줄설명EN','한줄설명DE','상담언어','지역','상담링크','인스타링크','적용그룹','노출위치','순서','활성','제휴메모'];
 
-const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end','deposit_hold_from','deposit_hold_until'];
 
 let SETTINGS_MAP_CACHE = null;
 
@@ -1611,7 +1611,12 @@ function getCustomPublicHolidayDates_(){
 
 function getPublicHolidayDatesForYear_(year){
   const seen={};
-  const dates=getHessenHolidays(year).concat(getCustomPublicHolidayDates_().filter(function(date){
+  /* 토요일에 떨어진 법정 공휴일은 휴무로 치지 않는다 — 토요일은 평소대로 영업(사장님 결정 2026-10-02, 첫 사례 10/3 통일의 날).
+     직접 등록한 공휴일(custom_public_holidays)은 사장님이 일부러 넣은 것이라 요일과 무관하게 존중한다.
+     토요일을 닫으려면 일반 휴무(custom_holidays)로 지정. 어드민 휴무 달력(getHessenHolidayItemsClient)도 같은 규칙. */
+  const dates=getHessenHolidays(year).filter(function(date){
+    return new Date(date+'T12:00:00Z').getUTCDay()!==6;
+  }).concat(getCustomPublicHolidayDates_().filter(function(date){
     return String(date).slice(0,4)===String(year);
   }));
   return dates.filter(function(date){
