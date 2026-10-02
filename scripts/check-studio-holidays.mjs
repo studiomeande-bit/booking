@@ -6,7 +6,8 @@
  *   ① "공휴일이 토요일이면 휴일지정 해제" — 토요일 법정 공휴일은 평소 토요일처럼 예약을 받는다.
  *      엔진(getPublicHolidayDatesForYear_)과 어드민 휴무 달력(getHessenHolidayItemsClient)이 따로 계산하므로
  *      한쪽만 바뀌면 화면은 '휴무'인데 예약은 열리는(또는 그 반대) 사고가 난다.
- *   ② "스튜디오 휴일지정도 애플캘린더에 띄워줘" — 휴무를 메인 캘린더 종일 일정으로 동기화.
+ *   ② "스튜디오 휴일지정도 애플캘린더에 띄워줘" + "다른 색상으로" — 휴무를 전용 캘린더 '스튜디오 휴무'(빨강)의
+ *      종일 일정으로 동기화(아이폰은 일정별 색을 안 보여 줘서 캘린더를 나눴다). @1005 때 메인에 넣은 건 치운다.
  *      실캘린더에 쓰는 코드라 멱등(두 번 돌려도 그대로)·사람이 만든 일정 불가침·해제 시 삭제가 깨지면 사고다.
  *
  * 어떻게: Code.gs 를 GAS 스텁과 함께 로드해 진짜 함수를 실행한다. 캘린더는 메모리 가짜(CalendarApp)로 대체.
@@ -31,26 +32,37 @@ const fmt = (d, tz, p) => {
 };
 
 const CACHE = { m: {}, get(k) { return this.m[k] ?? null; }, put(k, v) { this.m[k] = v; }, remove(k) { delete this.m[k]; } };
-// 메모리 캘린더 — 종일 일정과 시간 일정, 설명란, 삭제·제목변경
+// 메모리 캘린더 2개(메인 + 전용) — 종일 일정과 시간 일정, 설명란, 삭제·제목변경
+const MAIN_ID = 'studio.mean.de@gmail.com';
+const PROPS = {};
 let EVENTS = [];
 const mkEvent = (o) => ({
-  ...o, reminders: true,
+  cal: MAIN_ID, ...o, reminders: true,
   isAllDayEvent() { return !!this.allDay; }, getDescription() { return this.desc || ''; }, getTitle() { return this.title; },
   getAllDayStartDate() { return this.start; }, setTitle(t) { this.title = t; }, deleteEvent() { EVENTS = EVENTS.filter((e) => e !== this); },
   removeAllReminders() { this.reminders = false; }, setColor(c) { this.color = c; },
 });
-const fakeCal = {
-  getEvents(s, e) { return EVENTS.filter((ev) => ev.start < e && ev.end > s); },
+const mkCal = (id, name) => ({
+  id, name, getId() { return id; }, getName() { return name; },
+  getEvents(s, e) { return EVENTS.filter((ev) => ev.cal === id && ev.start < e && ev.end > s); },
   createAllDayEvent(title, date, opts) {
     const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const ev = mkEvent({ title, allDay: true, start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1), desc: opts && opts.description });
+    const ev = mkEvent({ cal: id, title, allDay: true, start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1), desc: opts && opts.description });
     EVENTS.push(ev); return ev;
   },
-};
+});
+const CALS = { [MAIN_ID]: mkCal(MAIN_ID, MAIN_ID) };
+let calCreates = 0;
+const hol = () => CALS[PROPS.STUDIO_HOLIDAY_CALENDAR_ID];
 Object.assign(globalThis, {
   Utilities: { formatDate: fmt, sleep() {} }, Logger: { log() {} }, Session: { getScriptTimeZone: () => 'Europe/Berlin' },
-  CalendarApp: { getCalendarById: () => fakeCal, getDefaultCalendar: () => fakeCal, EventColor: { GRAY: 'gray' } },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty() {} }) },
+  CalendarApp: {
+    getCalendarById: (id) => CALS[id] || null, getDefaultCalendar: () => CALS[MAIN_ID],
+    getOwnedCalendarsByName: (n) => Object.values(CALS).filter((c) => c.name === n),
+    createCalendar(n, o) { calCreates++; const id = `hol${calCreates}@group.calendar.google.com`; CALS[id] = mkCal(id, n); CALS[id].opts = o; return CALS[id]; },
+    Color: { RED: '#D06B64' }, EventColor: { GRAY: 'gray' },
+  },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => PROPS[k] ?? null, setProperty(k, v) { PROPS[k] = v; } }) },
   CacheService: { getScriptCache: () => CACHE },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   ScriptApp: { getService: () => ({ getUrl: () => 'stub' }) }, HtmlService: {}, MimeType: {},
@@ -140,31 +152,43 @@ const blocked = (d, g = 'stud') => M.isWeekendOrHolidayBlocked_(d, g);
   M.__setSettings__({ public_holiday_open_dates: karfreitag });
   ok(!M.buildStudioHolidayCalendarPlan_(`${N}-01-01`, `${N}-12-31`)[karfreitag], '영업 처리한 공휴일 → 싣지 않음');
 
-  // 동기화: 생성 → 멱등 → 해제 시 삭제 → 사람 일정 불가침 → 중복 정리 → 과거 이력 보존
+  // 메인 캘린더(@1005 위치): 사람 일정·예약·지난 이력 + @1005 가 넣은 우리 일정(앞으로 날짜) 2건
   const human = mkEvent({ title: '가족 여행', allDay: true, start: new Date(N, 2, 10), end: new Date(N, 2, 11), desc: '' });
   const timed = mkEvent({ title: '프로필 | 홍길동 | 1인 | 55€', allDay: false, start: new Date(N, 2, 10, 10), end: new Date(N, 2, 10, 11) });
   const past = mkEvent({ title: '스튜디오 휴무', allDay: true, start: new Date(Y - 1, 5, 1), end: new Date(Y - 1, 5, 2), desc: M.STUDIO_HOLIDAY_EVENT_MARKER_ });
-  EVENTS = [human, timed, past];
+  const v1a = mkEvent({ title: '스튜디오 휴무', allDay: true, start: new Date(N, 2, 10), end: new Date(N, 2, 11), desc: M.STUDIO_HOLIDAY_EVENT_MARKER_ + ' 메인' });
+  const v1b = mkEvent({ title: '스튜디오 휴무', allDay: true, start: new Date(N, 9, 20), end: new Date(N, 9, 21), desc: M.STUDIO_HOLIDAY_EVENT_MARKER_ + ' 메인' });
+  EVENTS = [human, timed, past, v1a, v1b];
   M.__setSettings__({ custom_holidays: `${N}-03-10,${N}-03-11` });
+  const d0 = M.syncStudioHolidayCalendar_({ dryRun: true });
+  ok(calCreates === 0 && !PROPS.STUDIO_HOLIDAY_CALENDAR_ID && EVENTS.length === 5 && d0.removedFromMain === 2 && /새로 만들 예정/.test(d0.calendar),
+    'dryRun — 캘린더를 만들지 않고 메인 정리 2건·생성 계획만 보고', d0);
   const r1 = M.syncStudioHolidayCalendar_({});
-  const ours = () => EVENTS.filter((e) => e.desc && e.desc.includes(M.STUDIO_HOLIDAY_EVENT_MARKER_) && e.start >= new Date(Y, today.getMonth(), today.getDate()));
-  ok(r1.ok && r1.created.length === r1.planned && ours().length === r1.planned, '첫 동기화 — 계획 수만큼 생성', r1);
-  ok(ours().every((e) => e.allDay && e.reminders === false), '전부 종일 일정 · 알림 없음');
+  const ours = () => EVENTS.filter((e) => e.cal === hol()?.id && e.desc && e.desc.includes(M.STUDIO_HOLIDAY_EVENT_MARKER_));
+  ok(calCreates === 1 && hol() && hol().name === '스튜디오 휴무' && hol().opts.color === '#D06B64', "전용 캘린더 '스튜디오 휴무'(빨강) 1개 생성 · ID 저장", hol() && hol().opts);
+  ok(r1.ok && r1.created.length === r1.planned && ours().length === r1.planned, '첫 동기화 — 전용 캘린더에 계획 수만큼 생성', r1);
+  ok(r1.removedFromMain === 2 && !EVENTS.includes(v1a) && !EVENTS.includes(v1b), '@1005 가 메인에 넣은 휴무 일정 정리', r1);
+  ok(EVENTS.filter((e) => e.cal === MAIN_ID && e.desc && e.desc.includes(M.STUDIO_HOLIDAY_EVENT_MARKER_) && e !== past).length === 0, '메인엔 우리 일정이 남지 않음(지난 이력 제외)');
+  ok(ours().every((e) => e.allDay && e.reminders === false && e.color === undefined), '전부 종일 일정 · 알림 없음 · 일정별 색 없음(캘린더 색을 따름)');
   const r2 = M.syncStudioHolidayCalendar_({});
-  ok(r2.created.length === 0 && r2.deleted.length === 0 && r2.retitled.length === 0 && r2.kept === r1.planned, '두 번째 동기화 — 변화 없음(멱등)', r2);
+  ok(r2.created.length === 0 && r2.deleted.length === 0 && r2.retitled.length === 0 && r2.kept === r1.planned && r2.removedFromMain === 0 && calCreates === 1,
+    '두 번째 동기화 — 변화 없음(멱등) · 캘린더 추가 생성 없음', r2);
+  const savedId = PROPS.STUDIO_HOLIDAY_CALENDAR_ID; delete PROPS.STUDIO_HOLIDAY_CALENDAR_ID;
+  M.syncStudioHolidayCalendar_({});
+  ok(calCreates === 1 && PROPS.STUDIO_HOLIDAY_CALENDAR_ID === savedId, '속성이 지워져도 같은 이름의 캘린더를 찾아 재사용(두 번 만들지 않음)');
   M.__setSettings__({ custom_holidays: `${N}-03-10` });
   const r3 = M.syncStudioHolidayCalendar_({});
   ok(r3.deleted.join() === `${N}-03-11` && !ours().some((e) => ymd(e.start) === `${N}-03-11`), '휴무 해제 → 그 일정 삭제', r3);
   ok(EVENTS.includes(human) && EVENTS.includes(timed) && EVENTS.includes(past), '사람이 만든 일정·예약 일정·지난 이력은 그대로');
-  fakeCal.createAllDayEvent('스튜디오 휴무', new Date(N, 2, 10), { description: M.STUDIO_HOLIDAY_EVENT_MARKER_ });   // 중복
+  hol().createAllDayEvent('스튜디오 휴무', new Date(N, 2, 10), { description: M.STUDIO_HOLIDAY_EVENT_MARKER_ });   // 중복
   const r4 = M.syncStudioHolidayCalendar_({});
   ok(r4.deleted.join() === `${N}-03-10` && ours().filter((e) => ymd(e.start) === `${N}-03-10`).length === 1, '같은 날 중복 → 하나만 남김', r4);
   // 생성 한 건이 실패해도 나머지는 만들고 실패를 보고(속도 제한 등) — 다음 동기화가 이어 만든다
   M.__setSettings__({ custom_holidays: `${N}-08-11,${N}-08-12` });   // 8월 = Hessen 공휴일 없음(부활절 계산 공휴일과 겹치지 않게)
-  const realCreate = fakeCal.createAllDayEvent;
-  fakeCal.createAllDayEvent = function (t, d, o) { if (d.getMonth() === 7 && d.getDate() === 11) throw new Error('rate limit'); return realCreate.call(this, t, d, o); };
+  const realCreate = hol().createAllDayEvent;
+  hol().createAllDayEvent = function (t, d, o) { if (d.getMonth() === 7 && d.getDate() === 11) throw new Error('rate limit'); return realCreate.call(this, t, d, o); };
   const r5 = M.syncStudioHolidayCalendar_({});
-  fakeCal.createAllDayEvent = realCreate;
+  hol().createAllDayEvent = realCreate;
   ok(!r5.ok && r5.failed.length === 1 && r5.created.includes(`${N}-08-12`), '생성 실패 1건 → 나머지 생성 · ok:false 보고', r5);
   const r6 = M.syncStudioHolidayCalendar_({});
   ok(r6.ok && r6.created.join() === `${N}-08-11`, '다음 동기화가 빠진 건만 이어 만듦', r6);
@@ -172,14 +196,14 @@ const blocked = (d, g = 'stud') => M.isWeekendOrHolidayBlocked_(d, g);
   M.syncStudioHolidayCalendar_({});
   // 동시 실행: 진행 중이면 건너뛰되 끝난 뒤 한 번 더(그 사이 바뀐 설정 반영) — 중복 생성 없음
   M.__setSettings__({ custom_holidays: `${N}-03-10` });
-  const realGet = fakeCal.getEvents;
+  const realGet = hol().getEvents;
   let inner = null;
-  fakeCal.getEvents = function (a, b) {
+  hol().getEvents = function (a, b) {
     if (!inner) { inner = M.syncStudioHolidayCalendar_({}); M.__setSettings__({ custom_holidays: `${N}-03-10,${N}-06-02` }); }
     return realGet.call(this, a, b);
   };
   const r7 = M.syncStudioHolidayCalendar_({});
-  fakeCal.getEvents = realGet;
+  hol().getEvents = realGet;
   ok(inner && inner.skipped === 'running', '진행 중 두 번째 요청 → 건너뜀', inner);
   ok(ours().filter((e) => ymd(e.start) === `${N}-06-02`).length === 1 && ours().filter((e) => ymd(e.start) === `${N}-03-10`).length === 1,
     '건너뛴 요청의 새 휴무(6/2)도 끝난 뒤 재실행으로 반영 · 중복 없음', r7);
@@ -196,4 +220,4 @@ const blocked = (d, g = 'stud') => M.isWeekendOrHolidayBlocked_(d, g);
 }
 
 if (fail) { console.error(`\n✗ 휴무 달력 검사 실패 ${fail}건`); process.exit(1); }
-console.log('✓ 휴무 달력 — 토요일 공휴일 영업·어드민=엔진=셔틀·캘린더 동기화(멱등·해제 삭제·사람 일정 불가침)');
+console.log('✓ 휴무 달력 — 토요일 공휴일 영업·어드민=엔진=셔틀·전용 캘린더 동기화(빨강·메인 정리·멱등·해제 삭제·사람 일정 불가침)');
