@@ -27,11 +27,25 @@
  *   booking-refund: 부분/전체 환불 이벤트 기록(상한=실수령, 장부에 지급일 음수 반영)
  *     node scripts/erp-agent.mjs booking-refund --json '{"rowIndex":218,"amount":50,"method":"bank","reason":"..."}'
  *   booking-refund-quote: 취소 환불 규정 제안액(실수령·기환불 포함) 조회
+ *   booking-confirm-balance: 잔금 수령 확인. 사후 경로가 둘이고 **섞으면 안 된다**:
+ *     · partial:true = **나누어 받았다**. 수령일별로 누적한다(잔금결제금액 = 누계, 잔금입금일 = 마지막 수령일).
+ *       완납 전이면 잔금결제여부를 굳히지 않고 메모에 [부분수납 …], 이미 Y 인 행에 더 받은 돈이면 Y 를
+ *       유지하고 [추가수령 …] 줄. amount 생략은 '남은 잔금'. 현금장부에는 **수령일마다** 파생행이 따로
+ *       잡힌다(id booking-balance-<행>, -2, -3 …) — 회차별 수단이 달라도 현금 회차만 들어간다.
+ *       node scripts/erp-agent.mjs booking-confirm-balance --json '{"rowIndex":274,"paidDate":"2026-09-11",
+ *         "amount":5,"payMethod":"현금","partial":true,"reason":"촬영당일 잔여 수령"}'
+ *     · force:true = **기록이 틀렸다**. 금액·입금일·수단을 덮어쓰고 수령 기록을 이 한 건으로 재설정한다.
+ *       expectName 필수 + 요청사항에 [잔금정정 이전값→새값] 스탬프.
+ *       node scripts/erp-agent.mjs booking-confirm-balance --json '{"rowIndex":273,"paidDate":"2026-09-09","amount":30,
+ *         "payMethod":"현금","force":true,"expectName":"나용민","reason":"부인 여권 €30 은 별도 행"}'
+ *     회귀 검사: node scripts/check-balance-correction.mjs
  *   booking-delete: 예약 행 삭제(expectName+confirm:'DELETE', 참조 보정 포함 — 합성행 전용, 실고객은 force)
  *
  * booking-set-amount: 예약 총결제액 정정(매출 소급 정정). 회계장부 gross는 총결제액에서 파생.
  *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'
  *   옵션: recomputeBalance(기본 true, 잔금=총결제액−계약금), expectName(행 고객명 안전확인).
+ *   ⚠️ 잔금이 이미 확인된 예약은 force:true 없이는 거부된다. 강제하면 감사줄에 차액이 남는데,
+ *      구제는 둘 중 하나다 — 기록 오기면 booking-confirm-balance force:true, 실제 과수령이면 booking-refund.
  *
  * booking-change-product: 예약 상품 교체 + 재견적(총액·계약금·잔금·소요시간·캘린더 자동 반영). 고객 메일 미발송.
  *   가격은 calculateQuote_(수기등록과 동일 엔진) 재사용 — 별도 계산 없음.

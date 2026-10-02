@@ -46,7 +46,7 @@ const CONFIG = {
   BUFFER_STUDIO_MIN: 15,
   BUFFER_PASSPORT_MIN: 0,
   OUTDOOR_TITLE_KEYWORDS: ['야외','스냅','웨딩','결혼식','암트','행사','이벤트','snap','Snap','wedding','Wedding','outdoor','Outdoor','event','Event','Standesamt','civil','Civil'],
-  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드','early_start_requested','캘린더동기화일시'],
+  BOOKING_HEADERS: ['예약일시','상태','고객명','연락처','이메일','언어','촬영종류','상품','옵션','인원','총결제액','계약금','잔금','결제수단','분위기','요청사항','캘린더ID','계약금수단','추가항목','재방문','잔금입금일','GDPR동의','마케팅동의','동의시각','변경요청','AI동의','고객주소','촬영후감사메일발송일시','돌촬영추천메일발송일시','계약금입금여부','계약금입금일','계약금입금금액','잔금결제여부','잔금결제금액','Lexware결제상태','Lexware동기화일시','확정일시','입금경고일시','자동취소일시','입금자명','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','굿샤인코드','굿샤인차감금액','적용전총액','적용후총액','굿샤인적용일시','굿샤인적용방식','추천시간상태','확정처리모드','빠른확정가능','인접예약거리분','추천기준예약','수동확인필요','contract_terms_version','contract_terms_accepted','privacy_terms_accepted','accepted_at','accepted_language','selected_service','shooting_date','shooting_time','shooting_location','total_price_brutto','deposit_price_brutto','balance_price_brutto','프로필나이','가족구성','결제연결유형','결제연결그룹','결제연결행','결제분할내역','결제메모','예약유형','기념일추천메일발송일시','환불내역JSON','환불누계금액','추가일정JSON','샘플링크','샘플발송일시','부가세모드','early_start_requested','캘린더동기화일시','잔금수령내역JSON'],
   WALKIN_HEADERS: ['접수일시','상태','고객명','연락처','이메일','언어','서비스분류','서비스표시명','고객주소','입금자명','아기이름','요청사항','GDPR동의','AI동의','마케팅동의','사업자송장필요','사업자명','사업자주소','사업자VAT번호','사업자송장이메일','사업자송장참조','접수경로','연결예약행','관리메모','예약내용','촬영장소','희망일정','보안검증'],
   /* ⚠ 새 열은 **맨 뒤**에만 붙인다. 중간 삽입 금지 — 레거시 판정이 colMap['매출날짜']===1 로
      헤더 위치를 보고, 읽기는 헤더 이름 기반 colMap 이라 뒤에 붙는 건 안전하다.
@@ -16917,13 +16917,24 @@ function setBookingAmountForAgent_(token,payload){
     sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(balanceTail?(newBalance+balanceTail):newBalance);
     if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
   }
+  /* 총액을 낮췄는데 **이미 확인된 잔금 수령액**이 새 잔금보다 크면 장부가 조용히 어긋난다 —
+     현금장부 파생이 잔금결제금액을 우선으로 보기 때문(2026-09-09 나용민 실사고: 총액 60→30 정정
+     후에도 잔금결제금액 60 이 남아 9/9 현금이 €185, 실물 €155). 자동으로 낮추지는 않는다 —
+     진짜 과수령(환불 대상)일 수도 있어 사람이 갈라야 한다. 대신 절대 조용히 넘어가지 않는다. */
+  const warnings=[];
+  const balancePaidAmt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
+  if(balancePaidAmt>0 && balancePaidAmt>newBalance+0.01){
+    warnings.push('잔금결제금액 €'+formatEuroAmount_(balancePaidAmt)+' 이 새 잔금 €'+formatEuroAmount_(newBalance)
+      +' 보다 큽니다 — 현금·매출 장부가 예전 금액으로 남습니다. 기록 오기면 booking-confirm-balance 에 '
+      +'force:true+expectName 으로 수령액을 정정하고, 실제 과수령이면 booking-refund 로 환불을 기록하세요.');
+  }
   // 감사메모 1줄 (요청사항 컬럼에 append)
   const reason=String(payload.reason||'').trim();
   const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const auditLine=`[금액정정 ${stamp}] ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€`
     +(recomputeBalance?` (잔금 ${formatEuroAmount_(prevBalance)}→${formatEuroAmount_(newBalance)}€)`:'')
     +(reason?` 사유: ${reason}`:'')+depositFolded
-    +(balanceSettled?(paidDelta<-0.005?` · 과수납 ${formatEuroAmount_(-paidDelta)}€ → 환불 경로`:paidDelta>0.005?` · 추가청구 ${formatEuroAmount_(paidDelta)}€`:''):'')
+    +(balanceSettled?(paidDelta<-0.005?` · 과수납 ${formatEuroAmount_(-paidDelta)}€ → 환불 또는 잔금정정`:paidDelta>0.005?` · 추가청구 ${formatEuroAmount_(paidDelta)}€`:''):'')
     +' (agent)';
   const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo,auditLine].filter(Boolean).join('\n'));
@@ -16941,7 +16952,8 @@ function setBookingAmountForAgent_(token,payload){
   bumpCalCacheVer_();
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
     previousTotal:prevTotal,newTotal:newTotal,
-    previousBalance:prevBalance,newBalance:newBalance,recomputeBalance:recomputeBalance,auditLine:auditLine};
+    previousBalance:prevBalance,newBalance:newBalance,recomputeBalance:recomputeBalance,auditLine:auditLine,
+    balancePaidAmount:balancePaidAmt,warnings:warnings};
 }
 
 /* 예약 상품 변경(재견적) — 어드민에서만 가능하던 프로필 Business→Professional 같은 상품 교체를 CLI로.
@@ -18312,7 +18324,12 @@ function confirmBookingBalanceForAgent_(token,payload){
     paidDate:String(payload.paidDate||''),
     amount:payload.amount,
     payMethod:String(payload.payMethod||'현금'),
-    partial:payload.partial   // 부분수납 — 래퍼가 떨어뜨려 CLI 로는 기록 자체가 막혔다(리뷰 2026-09-20)
+    partial:payload.partial,  // 부분수납 — 래퍼가 떨어뜨려 CLI 로는 기록 자체가 막혔다(리뷰 2026-09-20)
+    // 정정 모드 — 이미 확인된 수령의 금액·날짜·수단 덮어쓰기 (expectName 필수)
+    force:payload.force,
+    expectName:String(payload.expectName||''),
+    reason:String(payload.reason||''),
+    source:'agent'
   });
   const evidence=String(payload.evidenceStatus||'').trim();
   if(evidence){
@@ -19628,6 +19645,73 @@ function sendDepositConfirmationEmail_(bookingRowIndex,row,paidAmount,paidAt){
   }
 }
 
+/* ===== 잔금 수령 기록 — "한 번에 다 받는다" 가 아니라 수령 이벤트의 목록 ==================
+   잔금결제금액 셀은 현금장부 파생의 **우선 소스**라(getCashLedgerAdmin), 그 값이 낡으면 현금행이
+   그대로 낡는다 — 그런데 되돌릴 경로가 없었다(2026-09-09 나용민 워크인: 총액 60→30 으로
+   정정했는데 잔금결제금액 60 이 남아 9/9 현금장부가 €185 로 부풀음 — 실물 €155).
+   또 수령이 나뉘어 들어오는 일이 실제로 있다(같은 날 €30 선불 + 촬영당일 €5 잔여).
+   → 수령을 '잔금수령내역JSON' 에 이벤트로 쌓고(환불내역JSON 과 동일한 패턴), 잔금결제금액은
+   그 **합계**를 유지한다(매출장부의 실수령 계산은 합계만 보므로 종전과 동일). 현금파생행만
+   날짜별로 쪼개진다. 이벤트가 없는 기존 예약은 종전 단일 파생 그대로. ============================ */
+function parseBookingBalanceReceipts_(row){
+  if(BOOKING_COL['잔금수령내역JSON']==null) return [];
+  try{
+    const a=JSON.parse(String(row[BOOKING_COL['잔금수령내역JSON']]||'[]'));
+    return Array.isArray(a)?a:[];
+  }catch(e){ return []; }
+}
+// 장부 파생용 — 이벤트가 없으면 종전 단일 수령(잔금결제금액·잔금입금일·결제수단) 한 건으로 본다.
+function bookingBalanceReceipts_(row,fallbackDate){
+  const rowMethod=String(row[BOOKING_COL['결제수단']]||'');
+  const fb=String(fallbackDate||'').slice(0,10);
+  const events=parseBookingBalanceReceipts_(row).filter(function(e){return e&&roundCurrency_(Number(e.amount)||0)>0;});
+  if(events.length) return events.map(function(e){
+    return {date:String(e.paidDate||'').slice(0,10)||fb,
+            amount:roundCurrency_(Number(e.amount)||0),
+            payMethod:String(e.payMethod||rowMethod),
+            ts:String(e.ts||'')};
+  });
+  const total=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
+  const balanceBase=parseMoneyValue_(row[BOOKING_COL['잔금']]) || Math.max(0,total-getEffectiveBookingDeposit_(row));
+  const amount=parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]) || balanceBase;
+  return amount>0?[{date:fb,amount:roundCurrency_(amount),payMethod:rowMethod,ts:''}]:[];
+}
+/* 쓰기용 — 이벤트가 아직 없는 기확인 행은 현재 셀 값을 첫 이벤트로 씨앗으로 삼는다(합계 불변).
+   날짜는 종전 장부가 쓰던 값(잔금입금일 → 예약일)을 그대로 굳혀 반영행이 나중 날짜로 끌려가지 않게 한다. */
+function bookingBalanceReceiptsForWrite_(row){
+  const list=parseBookingBalanceReceipts_(row).filter(function(e){return e&&roundCurrency_(Number(e.amount)||0)>0;});
+  if(list.length) return list;
+  const amt=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
+  if(amt<=0) return [];
+  /* 라이브 부분수납 행은 메모의 [부분수납 날짜] 줄이 날짜별 정본이다(@994) — 그대로 이벤트로 옮긴다.
+     누적에서 그 합을 뺀 나머지는 잔금입금일(없으면 예약일)에 얹는다. 합계는 한 푼도 변하지 않는다. */
+  const seeded=_partialBalanceReceiptsFromMemo_(row[BOOKING_COL['요청사항']])
+    .filter(function(pp){return pp.amount>0.005;})
+    .map(function(pp){return {ts:'',paidDate:pp.date,amount:pp.amount,payMethod:pp.method,source:'memo'};});
+  const rest=roundCurrency_(amt-seeded.reduce(function(sum,e){return sum+e.amount;},0));
+  if(rest>0.005){
+    const seedDate=String(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str
+                          ||parseDateSafe_(row[BOOKING_COL['예약일시']]).str||'').slice(0,10);
+    seeded.push({ts:'',paidDate:seedDate,amount:rest,payMethod:String(row[BOOKING_COL['결제수단']]||''),source:'legacy'});
+  }
+  return seeded;
+}
+// 이벤트 목록을 쓰고 파생 셀(잔금결제금액=합계, 잔금입금일=마지막 수령일)을 맞춘다.
+function writeBookingBalanceReceipts_(sh,rIdx,list){
+  const clean=(list||[]).filter(function(e){return e&&roundCurrency_(Number(e.amount)||0)>0;})
+    .map(function(e){return {ts:String(e.ts||''),paidDate:String(e.paidDate||'').slice(0,10),
+                             amount:roundCurrency_(Number(e.amount)||0),payMethod:String(e.payMethod||''),
+                             memo:String(e.memo||'').slice(0,200),source:String(e.source||'')};});
+  const total=roundCurrency_(clean.reduce(function(s,e){return s+e.amount;},0));
+  const lastDate=clean.map(function(e){return e.paidDate;}).filter(Boolean).sort().pop()||'';
+  if(BOOKING_COL['잔금수령내역JSON']!=null){
+    sh.getRange(rIdx,BOOKING_COL['잔금수령내역JSON']+1).setValue(clean.length?JSON.stringify(clean):'');
+  }
+  sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(total);
+  if(lastDate&&BOOKING_COL['잔금입금일']!=null) sh.getRange(rIdx,BOOKING_COL['잔금입금일']+1).setValue(lastDate);
+  return {receipts:clean,balancePaidAmount:total,lastPaidDate:lastDate};
+}
+
 /* 메모의 [부분수납 yyyy-MM-dd] X€ 수단 줄 → [{date,amount,method}] (마감 대조가 날짜별로 센다) */
 function _partialBalanceReceiptsFromMemo_(memo){
   const out=[];
@@ -19639,6 +19723,11 @@ function _partialBalanceReceiptsFromMemo_(memo){
 }
 
 // 잔금 결제 확인 — 결제일 자유 지정 (촬영 당일 포함 과거/미래 모두 허용)
+// 두 개의 사후 경로가 있다 — 섞으면 안 된다:
+//   force:true   = **기록이 틀렸다**. 금액·입금일·수단을 덮어쓰고 수령 기록을 이 한 건으로 재설정
+//                  (expectName 필수 + 요청사항에 [잔금정정 …] 이전값→새값 감사 스탬프 1줄).
+//   partial:true = **나누어 받았다**. 수령일별 이벤트로 누적. 완납 전이면 Y 를 안 굳히고 [부분수납 …],
+//                  이미 Y 인 행에 더 받은 돈이면 Y 를 유지하고 [추가수령 …] 줄을 남긴다.
 function confirmBookingBalanceAdmin(token,rIdx,payload){
   assertAdmin_(token);
   // 오늘 보드가 즉시 반영되도록 (캐시 15초를 기다리지 않게)
@@ -19648,7 +19737,19 @@ function confirmBookingBalanceAdmin(token,rIdx,payload){
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   if(!row||!row[BOOKING_COL['고객명']]) throw new Error('예약 행을 찾을 수 없습니다.');
   if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약은 잔금 확인할 수 없습니다.');
-  if(String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y') throw new Error('이미 잔금 결제가 확인된 예약입니다.');
+  const alreadyConfirmed=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+  const force=agentBoolFlag_(payload.force);
+  const isPartial=agentBoolFlag_(payload.partial);
+  if(alreadyConfirmed&&!force&&!isPartial){
+    throw new Error('이미 잔금 결제가 확인된 예약입니다. 기록이 틀렸으면 force:true + expectName (수령 기록을 이 한 건으로 재설정), '
+      +'나누어 더 받은 돈이면 partial:true (수령일별로 누적)을 쓰세요.');
+  }
+  if(force){
+    if(!String(payload.expectName||'').trim()) throw new Error('정정(force)은 expectName 이 필수입니다 (행 밀림 사고 방지).');
+    assertBookingRowName_(rIdx,payload.expectName);
+  }else if(String(payload.expectName||'').trim()){
+    assertBookingRowName_(rIdx,payload.expectName);
+  }
   const paidDate=String(payload.paidDate||'').slice(0,10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) throw new Error('결제일 형식이 올바르지 않습니다 (YYYY-MM-DD).');
   const defaultBalance=roundCurrency_(parseMoneyValue_(String(row[BOOKING_COL['잔금']]||'').split('|')[0])||0);   // '35|CARD|날짜' 꼬리 제외
@@ -19664,28 +19765,71 @@ function confirmBookingBalanceAdmin(token,rIdx,payload){
      건드리지 않는다 — 브리핑 미수 목록이 '미결제' 문구로 판정하기 때문. */
   const partialPrev=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
   const remaining=roundCurrency_(Math.max(0,defaultBalance-partialPrev));
-  const isPartial=agentBoolFlag_(payload.partial);
-  if(remaining>0.005&&amount<remaining-0.005&&!isPartial)
-    throw new Error('받은 금액('+formatEuroAmount_(amount)+'€)이 잔금('+formatEuroAmount_(remaining)+'€)보다 적습니다 — 부분수납이면 partial:true 로 기록하세요.');
+  if(remaining>0.005&&amount<remaining-0.005&&!isPartial&&!force)
+    throw new Error('받은 금액('+formatEuroAmount_(amount)+'€)이 잔금('+formatEuroAmount_(remaining)+'€)보다 적습니다 — 부분수납이면 partial:true, 기록 정정이면 force:true 로 기록하세요.');
   const payMethod=String(payload.payMethod||'현금').trim()||'현금';
-  const cumulative=roundCurrency_(partialPrev+amount);
-  const settles=!isPartial||cumulative>=defaultBalance-0.005;
+  /* 정정(force)은 **기록을 이 한 건으로 재설정**한다 — 수령 이벤트·금액·입금일·수단을 덮어쓰고
+     이전값→새값 감사 스탬프를 남긴다. 누적(부분수납)은 아래 main 경로가 그대로 처리한다. */
+  const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss');
+  if(force){
+    const prevAmount=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
+    const prevDate=String(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||'').slice(0,10);
+    const prevMethod=String(row[BOOKING_COL['결제수단']]||'').trim();
+    const prevReceipts=parseBookingBalanceReceipts_(row).length;
+    sh.getRange(rIdx,BOOKING_COL['잔금결제여부']+1).setValue('Y');
+    writeBookingBalanceReceipts_(sh,rIdx,[{ts:now,paidDate:paidDate,amount:amount,payMethod:payMethod,
+                                           memo:String(payload.reason||''),source:String(payload.source||'admin')}]);
+    if(BOOKING_COL['결제수단']!=null) sh.getRange(rIdx,BOOKING_COL['결제수단']+1).setValue(payMethod);
+    // 이전값→새값 감사 스탬프 (booking-set-amount 의 [금액정정 …] 패턴과 동일)
+    const auditLine='[잔금정정 '+now.slice(0,10)+'] '+formatEuroAmount_(prevAmount)+'→'+formatEuroAmount_(amount)+'€'
+      +(prevDate!==paidDate?(' (입금일 '+(prevDate||'—')+'→'+paidDate+')'):'')
+      +(prevMethod&&prevMethod!==payMethod?(' (수단 '+prevMethod+'→'+payMethod+')'):'')
+      +(prevReceipts>1?(' ※ 수령기록 '+prevReceipts+'건→1건 재설정'):'')
+      +(String(payload.reason||'').trim()?(' 사유: '+String(payload.reason).trim()):'')+' (agent)';
+    const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
+    sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo,auditLine].filter(Boolean).join('\n'));
+    if(BOOKING_COL['Lexware결제상태']!=null){
+      const cur=String(row[BOOKING_COL['Lexware결제상태']]||'').trim();
+      if(!cur||cur==='unmatched'||cur==='pending') sh.getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue('manual_balance_confirmed');
+    }
+    return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod,
+            name:String(row[BOOKING_COL['고객명']]||''),
+            corrected:true,previousAmount:prevAmount,previousPaidDate:prevDate,
+            receiptCount:1,auditLine:auditLine};
+  }
+  /* 수령을 이벤트로도 남긴다 — 종전엔 누적 전액이 '마지막 입금일' 하루에 얹혀 현금장부가 실물과
+     어긋났다(€30 선불 9/9 + €5 당일 9/11 → 9/11 €35). 셀 값(누적·마지막 입금일)은 종전과 동일하게
+     맞춰지고, 날짜별로 갈리는 건 현금 파생행뿐. 메모의 [부분수납 …] 줄은 계속 남긴다(마감대조 정본). */
+  const receipts=bookingBalanceReceiptsForWrite_(row);
+  receipts.push({ts:now,paidDate:paidDate,amount:amount,payMethod:payMethod,
+                 memo:String(payload.reason||''),source:String(payload.source||'admin')});
+  const written=writeBookingBalanceReceipts_(sh,rIdx,receipts);
+  const cumulative=written.balancePaidAmount;
+  const settles=alreadyConfirmed||!isPartial||cumulative>=defaultBalance-0.005;
   if(settles) sh.getRange(rIdx,BOOKING_COL['잔금결제여부']+1).setValue('Y');
-  sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(partialPrev>0?cumulative:amount);
-  if(BOOKING_COL['잔금입금일']!=null) sh.getRange(rIdx,BOOKING_COL['잔금입금일']+1).setValue(paidDate);
   if(settles&&BOOKING_COL['결제수단']!=null) sh.getRange(rIdx,BOOKING_COL['결제수단']+1).setValue(payMethod);
+  if(alreadyConfirmed&&isPartial){
+    // 완납 확인 뒤 더 받은 돈 — 메모에 1줄 남긴다(현금 파생은 위 이벤트가 수령일별로 낸다)
+    const prevMemo2=String(row[BOOKING_COL['요청사항']]||'').trim();
+    const line2='[추가수령 '+paidDate+'] +'+formatEuroAmount_(amount)+'€ '+payMethod
+      +' (누계 '+formatEuroAmount_(partialPrev)+'→'+formatEuroAmount_(cumulative)+'€) (agent)';
+    sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(prevMemo2?prevMemo2+'\n'+line2:line2);
+  }
   if(!settles){
     const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
     const line='[부분수납 '+paidDate+'] '+formatEuroAmount_(amount)+'€ '+payMethod+' (누적 '+formatEuroAmount_(cumulative)+' / 잔금 '+formatEuroAmount_(defaultBalance)+'€)';
     sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(prevMemo?prevMemo+'\n'+line:line);
     try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
-    return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod,partial:true,cumulative:cumulative,remaining:roundCurrency_(defaultBalance-cumulative)};
+    return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod,partial:true,cumulative:cumulative,
+            remaining:roundCurrency_(defaultBalance-cumulative),receipts:written.receipts};
   }
   if(BOOKING_COL['Lexware결제상태']!=null){
     const current=String(row[BOOKING_COL['Lexware결제상태']]||'').trim();
     if(!current||current==='unmatched'||current==='pending') sh.getRange(rIdx,BOOKING_COL['Lexware결제상태']+1).setValue('manual_balance_confirmed');
   }
-  return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod};
+  return {ok:true,rowIndex:rIdx,paidDate,amount,payMethod,
+          name:String(row[BOOKING_COL['고객명']]||''),
+          cumulative:cumulative,receipts:written.receipts};
 }
 
 /* 현장수령 계약금은 '현금이냐 카드냐'가 장부를 가른다 — 계약금수단 열의 문자열이 곧 분류 기준이고
@@ -21233,6 +21377,36 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
     }
     const balancePaidAt=(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||bookingDate).slice(0,10);
     const balanceBase=parseMoneyValue_(row[BOOKING_COL['잔금']]) || Math.max(0,total-depositDue);
+    /* 잔금 현금 파생 — 두 갈래다.
+       ① '잔금수령내역JSON' 에 수령 이벤트가 있으면 그게 정본: 회차마다 **그 날짜·그 수단**으로 낸다.
+          첫 행 id 는 종전과 같은 'booking-balance-<행>', 두 번째부터 -2, -3 … (라이브 id 보존).
+       ② 이벤트가 없는 기존 예약은 라이브(@994)와 **한 줄도 다르지 않게** 돈다 — 메모의
+          [부분수납 …] 줄을 날짜별로 내고, 누적에서 그 합을 뺀 나머지만 잔금입금일에 얹는다.
+       ①이 ②를 대신하는 이유: 이벤트 목록은 부분수납분까지 전부 담고 있어 ②를 함께 돌리면 이중계상된다. */
+    const balanceReceiptEvents=parseBookingBalanceReceipts_(row);
+    if(balanceReceiptEvents.length){
+      const cashBalanceConfirmed=isPaymentConfirmedValue_(row[BOOKING_COL['잔금결제여부']])
+        || ['촬영완료','셀렉완료','작업완료'].indexOf(status)>-1;
+      if(cashBalanceConfirmed){
+        bookingBalanceReceipts_(row,balancePaidAt).forEach(function(rc,i){
+          if(!isCashPayMethod_(rc.payMethod) || !(rc.amount>0) || !inRange(rc.date)) return;
+          entries.push(makeCashLedgerEntry_({
+            id:'booking-balance-'+(r+1)+(i?'-'+(i+1):''),
+            date:rc.date,
+            type:'입금',
+            category:depositDue>0?'예약 잔금':'예약 결제',
+            counterparty:name,
+            description:(product?product+' · ':'')+(depositDue>0?'잔금 현금 수납':'현금 수납')
+              +(i?' (분할 '+(i+1)+'회차)':''),
+            cashIn:rc.amount,
+            source:'booking',
+            sourceLabel:'예약장부',
+            refRow:r+1,
+            memo:String(row[BOOKING_COL['요청사항']]||'')
+          }));
+        });
+      }
+    }else{
     /* 부분수납은 메모의 [부분수납 날짜] X€ 수단 줄이 정본 — 현금 회차는 그 날짜에 각각, 완납 회차는 누적에서 회차 합을 뺀 나머지만
        (리뷰 2026-09-20: 종전엔 누적 전액을 마지막 수단·날짜로 잡아 현금 회차가 현금장부에서 사라졌다). */
     const partialsCash=_partialBalanceReceiptsFromMemo_(row[BOOKING_COL['요청사항']]);
@@ -21269,6 +21443,7 @@ function getCashLedgerAdmin(token,startDate,endDate,options){
         refRow:r+1,
         memo:String(row[BOOKING_COL['요청사항']]||'')
       }));
+    }
     }
     // 현금 환불 — 환불 이벤트(method:'cash')를 지급일 날짜의 출금으로 파생
     bookingRefunds.forEach(function(ev){
