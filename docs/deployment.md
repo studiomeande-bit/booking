@@ -51,7 +51,7 @@ clasp deploy -i AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq
 ```
 
 - `-i` 없이 `clasp deploy` 금지 — 새 배포 ID가 생겨 /exec 은 그대로, 버전 슬롯(200 한도)만 소모. 트리거는 push 만으로 반영.
-- 이 배포 ID 하나가 유일한 라이브(프론트 `API_BASE_URL`·문서·메일 링크 전부 이것). 2026-10-01 현재 @1004, 버전 슬롯 172/200 사용 — 한도에 닿으면 Apps Script 편집기 프로젝트 기록에서 옛 버전 수동 삭제.
+- 이 배포 ID 하나가 유일한 라이브(프론트 `API_BASE_URL`·문서·메일 링크 전부 이것). 2026-10-05 현재 @1008, 버전 슬롯 176/200 사용 — 한도에 닿으면 Apps Script 편집기 프로젝트 기록에서 옛 버전 수동 삭제.
 - 배포 전 회귀 검증기·회귀 체크리스트는 `docs/ops-checklist.md` 가 정본 (여기서 중복 관리하지 않음).
 
 ### public-api (`appscript-public/`) — 예약 조회 셔틀

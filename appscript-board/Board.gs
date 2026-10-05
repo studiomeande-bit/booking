@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-29T14:21:20.310Z
+ * 생성 시각: 2026-10-05T07:15:00.762Z
  * 포함 함수 90개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -79,7 +79,7 @@ const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
 
-const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end','deposit_hold_from','deposit_hold_until'];
 
 let SETTINGS_MAP_CACHE = null;
 
@@ -885,7 +885,13 @@ function getBookingDurationMinFromRow_(row,fallbackMin){
      슬롯 계산의 타입 버퍼(B↔B 15분)와 **이중 가산**되어 30분 촬영이 45분 이벤트 + 15분 버퍼
      = 실효 60분 간격이 됐다(2026-08-16 사장님 지적). prep 은 슬롯/견적의 footprint 계산
      (booking.js·computeSlots_ 의 d+prep)에만 남긴다 — 그쪽은 새 예약이 차지할 창의 크기다. */
-  if(product) return Math.max(15,(Number(product.d||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
+  if(product){
+    /* 여권 상품은 **인원수**가 길이다(1인 15·2인 20·3인 30·4인 40, 5인+ 인당 +10 — getPassportComboDurationMin_, 온라인 견적과 같은 표).
+       전엔 상품 기본값 d=15 만 써서, 어드민 저장·확정·일정변경·정합 점검이 캘린더를 다시 쓸 때마다 3·4인 여권 블록이 15분으로
+       줄었고, 비는 15~25분을 온라인 엔진이 빈 슬롯으로 내줬다(2026-10-06 이도현 3인 16:30 ↔ JONGDEOK KIM 3인 16:45 겹침). */
+    if(product.t==='passport') return Math.max(15,getPassportComboDurationMin_(row[BOOKING_COL['인원']]));
+    return Math.max(15,(Number(product.d||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
+  }
   return Math.max(15,Number(fallbackMin||0)||60);
 }
 
