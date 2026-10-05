@@ -9735,7 +9735,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo'&&!isQuoteOnly;
   const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel,expressFee,expressFeeOffer,deliveryEstimate};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,shootDuration:duration+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel,expressFee,expressFeeOffer,deliveryEstimate};
 }
 
 function getBookingAgeGroupLabel_(ageGroup){
@@ -12534,9 +12534,9 @@ function _buildBookingExtraItem_(data, quote, surveyStr){
 function _bookingDetailLabels_(lang){
   const L=String(lang||'ko').toLowerCase();
   const labels={
-    ko:{title:'예약 세부내역',customer:'고객명',phone:'연락처',email:'이메일',service:'선택 서비스',product:'상품',dateTime:'예약일시',people:'인원',duration:'총소요시간',location:'촬영장소',target:'촬영대상',profileAge:'나이',familyMembers:'가족 구성',options:'옵션',mood:'분위기',background:'배경',passport:'여권/비자 국가',passportAddon:'여권 콤보',baby:'아기/돌 정보',business:'행사/상담 정보',request:'요청사항',price:'총금액',deposit:'계약금',balance:'잔금',discount:'할인/조정',payment:'결제',address:'고객주소',payer:'입금자명',invoice:'사업자 송장',consent:'동의',source:'예약 경로'},
-    en:{title:'Booking details',customer:'Name',phone:'Phone',email:'Email',service:'Selected service',product:'Session',dateTime:'Date and time',people:'People',duration:'Total duration',location:'Location',target:'Subject',profileAge:'Age',familyMembers:'Family members',options:'Options',mood:'Mood',background:'Background',passport:'Passport/Visa countries',passportAddon:'Passport add-on',baby:'Baby details',business:'Event / consultation details',request:'Request',price:'Total',deposit:'Deposit',balance:'Balance',discount:'Discounts / adjustments',payment:'Payment',address:'Customer address',payer:'Payer name',invoice:'Business invoice',consent:'Consent',source:'Booking source'},
-    de:{title:'Buchungsdetails',customer:'Name',phone:'Telefon',email:'E-Mail',service:'Ausgewählte Leistung',product:'Leistung',dateTime:'Termin',people:'Personen',duration:'Gesamtdauer',location:'Ort',target:'Zielgruppe',profileAge:'Alter',familyMembers:'Familienmitglieder',options:'Optionen',mood:'Stimmung',background:'Hintergrund',passport:'Passfoto/Visum Länder',passportAddon:'Passfoto-Kombi',baby:'Baby-Details',business:'Event-/Beratungsdetails',request:'Wunsch/Notiz',price:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restzahlung',discount:'Rabatte / Anpassungen',payment:'Zahlung',address:'Kundenadresse',payer:'Name für Überweisung',invoice:'Geschäftsrechnung',consent:'Einwilligungen',source:'Buchungsquelle'}
+    ko:{title:'예약 세부내역',customer:'고객명',phone:'연락처',email:'이메일',service:'선택 서비스',product:'상품',dateTime:'예약일시',people:'인원',duration:'촬영 시간',location:'촬영장소',target:'촬영대상',profileAge:'나이',familyMembers:'가족 구성',options:'옵션',mood:'분위기',background:'배경',passport:'여권/비자 국가',passportAddon:'여권 콤보',baby:'아기/돌 정보',business:'행사/상담 정보',request:'요청사항',price:'총금액',deposit:'계약금',balance:'잔금',discount:'할인/조정',payment:'결제',address:'고객주소',payer:'입금자명',invoice:'사업자 송장',consent:'동의',source:'예약 경로'},
+    en:{title:'Booking details',customer:'Name',phone:'Phone',email:'Email',service:'Selected service',product:'Session',dateTime:'Date and time',people:'People',duration:'Shoot time',location:'Location',target:'Subject',profileAge:'Age',familyMembers:'Family members',options:'Options',mood:'Mood',background:'Background',passport:'Passport/Visa countries',passportAddon:'Passport add-on',baby:'Baby details',business:'Event / consultation details',request:'Request',price:'Total',deposit:'Deposit',balance:'Balance',discount:'Discounts / adjustments',payment:'Payment',address:'Customer address',payer:'Payer name',invoice:'Business invoice',consent:'Consent',source:'Booking source'},
+    de:{title:'Buchungsdetails',customer:'Name',phone:'Telefon',email:'E-Mail',service:'Ausgewählte Leistung',product:'Leistung',dateTime:'Termin',people:'Personen',duration:'Aufnahmedauer',location:'Ort',target:'Zielgruppe',profileAge:'Alter',familyMembers:'Familienmitglieder',options:'Optionen',mood:'Stimmung',background:'Hintergrund',passport:'Passfoto/Visum Länder',passportAddon:'Passfoto-Kombi',baby:'Baby-Details',business:'Event-/Beratungsdetails',request:'Wunsch/Notiz',price:'Gesamtbetrag',deposit:'Anzahlung',balance:'Restzahlung',discount:'Rabatte / Anpassungen',payment:'Zahlung',address:'Kundenadresse',payer:'Name für Überweisung',invoice:'Geschäftsrechnung',consent:'Einwilligungen',source:'Buchungsquelle'}
   };
   return labels[L]||labels.ko;
 }
@@ -12591,7 +12591,10 @@ function buildBookingDetailsRows_(data,quote,opts){
   const dateText=[String(data.date||data.shooting_date||opts.date||'').slice(0,10),String(data.time||data.shooting_time||opts.time||'').trim()].filter(Boolean).join(' ');
   const locationText=String(data.location||data.shooting_location||opts.location||'').trim();
   const people=quote.people||data.people||opts.people||'';
-  const totalDuration=quote.totalDuration||opts.durationMin||data.duration||'';
+  /* 고객에게 보이는 시간은 **촬영시간만**. totalDuration 은 슬롯이 차지하는 창(촬영 + 준비 버퍼 prep 15분, 웨딩 60분)이라
+     그대로 실으면 30분 촬영이 "45분" 으로 안내됐다(2026-10-05 사장님 지적). 견적이 있으면 shootDuration, 없으면 prep 을 뺀다. */
+  const totalDuration=(quote.shootDuration!=null&&quote.shootDuration!=='')?quote.shootDuration
+    :(quote.totalDuration?Math.max(0,Number(quote.totalDuration)-(Number(quote.prep)||0)):(opts.durationMin||data.duration||''));
   const hideDuration=!!opts.hideDuration;
   const peopleUnit=lang==='en'?' people':(lang==='de'?' Pers.':'명');
   const minuteUnit=lang==='en'?' min':(lang==='de'?' Min.':'분');
@@ -15784,6 +15787,7 @@ function addManualBookingAdmin(token, data) {
       depositAmount:depositAmt,
       balanceAmount:balanceAmt,
       totalDuration:durationMin,
+      shootDuration:quote?quote.shootDuration:undefined,
       optionKeys:optionKeys
     });
     const manualBookingDetailText=buildBookingDetailsText_(manualDetailData,manualDetailQuote,{
@@ -15958,7 +15962,7 @@ function addManualBookingAdmin(token, data) {
           extraItem:extraItemToSave||optionsStr,
           optionKeys:optionKeys,
           extraDays:extraDaysSavedManual,
-          durationMin:durationMin,
+          durationMin:(quote&&quote.shootDuration)||durationMin,   // 고객 메일엔 촬영시간만(준비 버퍼 제외)
           phone:phone,
           address:String(data.address||'').trim(),
           payerName:String(data.payerName||'').trim(),
@@ -32929,6 +32933,7 @@ function buildInvoicePricingPreview_(payload){
       balanceAmount:quote.balanceAmount,
       duration:quote.duration,
       totalDuration:quote.totalDuration,
+      shootDuration:quote.shootDuration,
       itemGroup:quote.itemGroup,
       itemType:quote.itemType,
       people:quote.people,

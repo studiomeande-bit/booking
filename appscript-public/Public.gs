@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-10-02T05:12:26.405Z
+ * 생성 시각: 2026-10-05T08:35:22.335Z
  * 포함 함수 195개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -1036,7 +1036,7 @@ function calculateQuote_(request){
   if(passAddon)total+=passAddonPrice;
   const isDeposit=total>100&&item.g!=='pass'&&item.g!=='biz'&&item.g!=='promo'&&!isQuoteOnly;
   const depositAmount=total<=100?0:(item.g==='wed'?roundCurrency_(total*0.20):(isDeposit?50:0));
-  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel,expressFee,expressFeeOffer,deliveryEstimate};
+  return{itemId:item.id,itemGroup:item.g,itemType:item.t,people,totalPrice:roundCurrency_(Math.max(0,total)),duration,prep:item.prep,totalDuration:duration+item.prep+passAddonDur,shootDuration:duration+passAddonDur,isDeposit,depositAmount,balanceAmount:roundCurrency_(Math.max(0,total-depositAmount)),product:item,optionKeys,passCountries,passPersonCountries,otherCountry,totalCountries,productDiscount,returnDiscount,familyDiscount,eventDiscount,earlyBirdDiscount,marketingDiscount,weekendSurcharge,isQuoteOnly,isReturn:!!(request.isReturn&&isReturnDiscountEligibleItem_(item)),marketing:request.marketing||false,passAddon,passAddonPeople,passAddonDur,productLabelKo,productLabelEn,productLabelDe,businessMode,businessHours,businessVideoEdit,businessAddonKeys,ageGroup,kidsDiscount,seniorFree,seniorDiscApplied,seniorDiscount,seniorDiscountKind,seniorDiscountLabel,expressFee,expressFeeOffer,deliveryEstimate};
 }
 
 function isReturnDiscountEligibleItem_(item){
