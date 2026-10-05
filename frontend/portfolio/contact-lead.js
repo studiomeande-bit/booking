@@ -22,6 +22,26 @@
   }
   if (checkForm) checkForm.addEventListener('submit', stampClientCheck, true);
 
+  /* 모델 지원(2026-10-05, 컬러 프로필 모델 모집): 스토리 링크의 utm_campaign 에 'model' 이 있으면
+     SNS·마케팅 게시 동의 체크박스를 보이고 필수로 만든다. 동의는 리드 시트 '마케팅동의'(Y)와
+     메시지 앞머리의 버전 표기로 남는다 — 접수일시·IP·UA 와 함께 DSGVO Art. 7(1) 증빙.
+     동의서 문구를 고치면 MODEL_CONSENT_VERSION 과 ko/model-consent/ 페이지 버전을 같이 올릴 것.
+     fetch 없는 옛 브라우저(PHP 경로)도 체크박스는 보이도록 fetch 확인보다 앞에 둔다. */
+  var MODEL_CONSENT_VERSION = 'v1';
+  var isModelApply = /model/i.test((window.location.search.match(/[?&]utm_campaign=([^&]*)/i) || [])[1] || '');
+  if (checkForm && isModelApply) {
+    var consentLine = document.getElementById('contact-model-consent-line');
+    var consentBox = document.getElementById('contact-model-consent');
+    if (consentLine && consentBox) {
+      consentLine.hidden = false;
+      consentBox.required = true;
+    }
+    var typeSelect = checkForm.querySelector('select[name="project_type"]');
+    if (typeSelect && !typeSelect.value) typeSelect.value = '프로필';
+    var messageBox = checkForm.querySelector('textarea[name="message"]');
+    if (messageBox && !messageBox.value) messageBox.value = '인스타 계정: @\n가능한 요일: ';
+  }
+
   var API_BASE = 'https://script.google.com/macros/s/AKfycbxnHuB2u4-pDD23JDdFDpHB0ZIzGxLWm15Xgc7_-qkyOTctNpGlYDMIcQyq4KB7QC6X8w/exec';
   var TIMEOUT_MS = 12000;
 
@@ -51,6 +71,9 @@
     var fd = new FormData(form);
     var projectType = String(fd.get('project_type') || '').trim();
     var preferredDate = String(fd.get('preferred_date') || '').trim();
+    var modelConsent = isModelApply && !!fd.get('model_consent');
+    var message = String(fd.get('message') || '').trim();
+    if (modelConsent) message = '[SNS·마케팅 게시 동의서 ' + MODEL_CONSENT_VERSION + ' 동의]\n' + message;
     return {
       name: String(fd.get('name') || '').trim(),
       email: String(fd.get('email') || '').trim(),
@@ -58,8 +81,9 @@
       project_type: projectType,
       preferred_date: preferredDate,
       location: String(fd.get('location') || '').trim(),
-      message: String(fd.get('message') || '').trim(),
+      message: message,
       privacy_consent: !!fd.get('privacy_consent'),
+      marketingConsent: modelConsent, // 리드 시트 '마케팅동의' 칸 — 모델 지원 때만 Y
       site_language: String(fd.get('site_language') || '').trim(),
       'bot-field': String(fd.get('bot-field') || ''),
       source: 'portfolio-contact',

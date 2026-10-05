@@ -64,6 +64,17 @@ Updated: 2026-09-30 Europe/Berlin
 
 ## Done Recently
 
+### 2026-10-05 · 포트폴리오 문의폼 — 컬러 프로필 모델 지원 + SNS·마케팅 게시 동의 v1 (배포 대기: push → IONOS)
+
+인스타 스토리 「컬러 프로필 모델 모집」의 지원 경로. 사장님 결정: 지원할 때 게시 동의를 함께 받는다.
+
+- 링크: `https://studio-mean.com/ko/contact/?utm_source=instagram&utm_medium=story&utm_campaign=color-profile-model`
+- `utm_campaign` 에 `model` 이 들어 있으면 `contact-lead.js` 가 동의 체크박스(`#contact-model-consent-line`)를 보이고 **필수**로 바꾼다. 프로젝트 종류 '프로필'과 메시지 양식(인스타 계정 / 가능한 요일)도 자동으로 채운다. 일반 방문에는 아무 변화가 없다.
+- 동의 기록: 리드 시트 `마케팅동의=Y`(기존 `createPortfolioLead_` 의 `marketingConsent` — **백엔드 무변경**) + 메시지 앞머리 `[SNS·마케팅 게시 동의서 v1 동의]` + 접수일시·IP·UA → DSGVO Art. 7(1) 증빙.
+- 동의서 전문: `frontend/portfolio/ko/model-consent/` (한국어 번역 + 독일어 정본, noindex). 문구를 고치면 버전을 올리고 `contact-lead.js` 의 `MODEL_CONSENT_VERSION` 도 같이 바꾼다. 원본 초안: `스튜디오자료/2027_사업다각화/11_SNS마케팅_게시동의서_v1_초안.md`.
+- 검증: 스크래치패드 복사본 로컬 서버 + 내장 브라우저(전송은 fetch 가로채기). 모델 경로는 동의 없이 제출 차단, 동의 시 `marketingConsent=true`·메시지 태그 확인. 일반 경로는 체크박스 숨김, `marketingConsent=false`, 메시지 무변경. `npm run stamp` 로 contact-lead.js 해시 3페이지 갱신.
+- 한계: fetch 실패로 PHP 폴백(`submit.php`)을 타면 `model_consent` 가 기록되지 않는다 → 그 지원자는 촬영 전에 동의를 다시 받는다.
+
 ### 2026-10-05 · 10/6 여권 겹침 원인 — 행 기준 캘린더 재동기화가 여권 인원수를 무시(15분 고정) (메인 @1008 · 보드 @21)
 
 사장님 보고: "10월 6일 촬영 일정이 겹치게 예약됨 — 기존 예약은 건드리지 말고 원인 분석". **이도현 3인 16:30–17:00** 과 **JONGDEOK KIM 3인 16:45–17:15**(10/4 16:49 온라인) 15분 겹침.
