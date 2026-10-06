@@ -2407,6 +2407,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='tax-record-add') return jsonOk_(addTaxRecord_(payload||{}));
         if(action==='tax-record-list') return jsonOk_(Object.assign(listTaxLedger_(),{recon:(function(){const r=buildTaxReconciliation_();return {unpaid:r.unpaid,unlinked:r.unlinked,privateLinked:r.privateLinked};})()}));
         if(action==='booking-add-pass-country') return jsonOk_(addPassCountryForAgent_(token,payload||{}));
+        if(action==='booking-pass-countries-set') return jsonOk_(setPassCountriesForAgent_(token,payload||{}));   // 여권 1인당 국가 구성 편집(±, 수납 뒤 증가는 차액만 받을 돈)
         if(action==='products-list') return jsonOk_(listProductsForAgent_(token,payload||{}));
         if(action==='booking-change-product') return jsonOk_(changeBookingProductForAgent_(token,payload||{}));
         // ✏️변경계: 추가일정(이동일·다일차) 등록/교체. 같은 날짜의 기존 이벤트는 흡수(중복 생성 없음). 고객 메일 미발송.
@@ -5651,6 +5652,10 @@ function buildTodayBoard_(dateStr){
          이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
       dueOnSite:balancePaid?0:roundCurrency_(Math.max(0,balance-partialPaid)+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       balancePartialPaid:partialPaid,
+      /* 여권 1인당 국가(코드) — 보드 '국가 변경' 창이 사람별로 켜고 끈다(2026-10-06). 창구 등록(옵션 '국가 N개/인')은
+         국가명이 기록돼 있지 않아 수만 맞는 자리표시(fromOption) — 화면이 그렇게 알린다. */
+      passCountries:String(row[BOOKING_COL['촬영종류']]||'').trim()==='pass'
+        ?resolvePassPersonCountriesForRow_(row,Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1),true):null,   // 상속 = 총액을 매긴 기준(국가 변경 액션과 같은 값 — 보드 생성기는 주석의 함수명도 따라가므로 이름을 적지 않는다)
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
@@ -5843,7 +5848,10 @@ function buildDayClose_(dateStr){
 
     // ① 오늘 촬영 · 잔금 남음 · 아직 수납 안 됨
     if(!cancelled && dt.slice(0,10)===day){
-      const balance=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']]));
+      /* 부분수납(되돌린 완납 포함)은 누적을 뺀 나머지만 '받을 예정' — 전액으로 두면 '아직 안 받은 잔금 110€' 처럼 이미 받은 돈까지
+         미수로 보인다(적대 검토 2026-10-06). 보드 dueOnSite·현장정산과 같은 식. 잔금 셀의 '35|CARD|날짜' 꼬리는 첫 칸만 읽는다. */
+      const balance=roundCurrency_(Math.max(0,parseMoneyValue_(String(row[BOOKING_COL['잔금']]||'').split('|')[0])
+        -parseMoneyValue_(row[BOOKING_COL['잔금결제금액']])));
       if(balance>0.005 && !balancePaid){
         expected.push({rowIndex:rowIndex,name:name,time:dt.slice(11,16),
                        product:String(row[BOOKING_COL['상품']]||''),
@@ -16669,6 +16677,187 @@ function addPassCountryForAgent_(token,payload){
     groupPeople:groupPeople,unitPrice:fee,delta:delta,
     prevTotal:prevTotal,total:newTotal,prevBalance:prevBalance,balance:newBalance,
     countryLine:_formatPassCountryMemo_(_parsePassCountryMemo_(memo).groups)};
+}
+
+/* ===== 여권 국가 구성 편집 — 사람별 (사장님 요청 2026-10-06 "이런 수정내용을 오늘 촬영에서도 할 수 있도록") =====
+   '국가 추가'(위)는 한 그룹에 국가를 **더하기만** 한다(인원수로 그룹을 고르고, 맞는 그룹이 없으면 첫 그룹).
+   2026-10-06 두 건을 보드에서 못 했다:
+     김종덕 [1명:한국+독일, 1명:한국, 1명:한국] → 셋 다 독일 105€ 카드, 이어서 한 명 미국 +5€ 다른 카드
+     정진호 [4명:한국+독일] → 2명 독일만 · 2명 한국+독일 = 140→130€
+   이 액션은 **1인당 국가 배열 전체**를 받아 토큰을 다시 쓰고, 견적 엔진 전/후 차액(±)만 총액에 더한다 —
+   총액을 엔진 값으로 덮지 않는다(수기 할인·정정 보존, 국가 추가와 같은 원칙).
+   돈:
+     · 수납 전 — 총액·잔금만 바뀐다(줄어도 된다).
+     · 완납(Y) 뒤 늘면 — 받은 잔금을 원래 날짜·수단의 [부분수납] 한 줄로 되돌리고 플래그를 비운다 → 보드에
+       차액만 '잔금 수령'으로 뜬다. 마감대조·현금장부는 그 줄을 원래 날짜·수단으로, 차액은 완납일에 센다(부분수납 모델 @970).
+     · 받은 돈 아래로 줄면 거부 — 돌려줄 돈은 환불 경로(어드민).
+   인원은 바꾸지 않는다(상품·인원 창). 고객 메일 없음 — 손님이 앞에 있다. perPerson 없이 부르면 현재 구성만 돌려준다. */
+function setPassCountriesForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const expectName=String(payload.expectName||'').trim();
+  if(!expectName) throw new Error('expectName(고객명)이 필요합니다.');
+  const dryRun=agentBoolFlag_(payload.dryRun)||!Array.isArray(payload.perPerson);
+  // 더블탭·재시도가 같은 '전' 값을 읽고 차액을 두 번 더하지 않게 직렬화(쓰기만)
+  const lock=dryRun?null:LockService.getScriptLock();
+  if(lock&&!lock.tryLock(20000)) throw new Error('처리 중인 요청이 있습니다 — 잠시 후 다시 시도하세요.');
+  try{
+    const sh=getDbSheet();
+    if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+    const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+    const name=String(row[BOOKING_COL['고객명']]||'').trim();
+    if(name!==expectName) throw new Error('행 고객명 불일치: 행='+name+' / 기대='+expectName);
+    if(isBookingCancelledStatus_(row[BOOKING_COL['상태']])) throw new Error('취소된 예약은 수정할 수 없습니다.');
+    if(String(row[BOOKING_COL['촬영종류']]||'').trim()!=='pass')
+      throw new Error('여권/비자 예약에서만 국가를 바꿀 수 있습니다 (현재: '+row[BOOKING_COL['촬영종류']]+').');
+    const people=Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1);
+    /* 기준 구성은 **총액을 매긴 방식과 같아야** 한다 — 어드민 수정 모달·인보이스 동기화는 인원을 늘릴 때 토큰은 그대로 두고
+       늘어난 사람에게 마지막 그룹 구성을 상속해 가격을 냈다(buildInvoicePricingPreview_ inherit=true). 상속을 끄면 그 사람이
+       빈칸으로 보이고, 실제 구성을 넣는 순간 이미 받은 2번째 국가값이 한 번 더 붙는다(적대 검토 2026-10-06). 보드 응답도 같은 값. */
+    const cur=resolvePassPersonCountriesForRow_(row,people,true);
+    const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+    const res={ok:true,rowIndex:rIdx,name:name,people:people,fromOption:cur.fromOption,
+      prevPerPerson:cur.countries,prevTotal:prevTotal,total:prevTotal,delta:0,changed:false,dryRun:dryRun};
+    if(!Array.isArray(payload.perPerson)) return Object.assign(res,{perPerson:cur.countries});
+    if(payload.perPerson.length!==people)
+      throw new Error('사람 수('+payload.perPerson.length+'명)가 예약 인원('+people+'명)과 다릅니다 — 인원 변경은 상품·인원에서 하세요.');
+    const next=payload.perPerson.map(function(cs,i){
+      const codes=[];
+      (Array.isArray(cs)?cs:String(cs||'').split(/[,+|]/)).forEach(function(c){
+        const code=_passCountryCode_(c);
+        // OTHER 는 여러 개일 수 있다(베트남+태국 = 두 나라, 엔진도 둘로 센다) — 목록 국가만 중복 제거
+        if(code&&(code==='OTHER'||codes.indexOf(code)<0)) codes.push(code);
+      });
+      if(!codes.length) throw new Error((i+1)+'번째 사람의 국가가 비었습니다 — 한 나라 이상 골라 주세요.');
+      return codes;
+    });
+    res.perPerson=next;
+    if(payload.expectTotal!=null&&String(payload.expectTotal).trim()!==''
+       &&Math.abs(Number(payload.expectTotal)-prevTotal)>0.005)
+      throw new Error('장부 금액이 바뀌었습니다(지금 총액 '+formatEuroAmount_(prevTotal)+'€) — 새로고침 후 다시 하세요.');
+
+    const qDate=String((parseDateSafe_(row[BOOKING_COL['예약일시']])||{}).str||'').slice(0,10);
+    const qBiz=row[BOOKING_COL['사업자송장필요']];
+    const quote=function(pp){
+      return roundCurrency_(Number(calculateQuote_({itemId:'pass',people:people,date:qDate,
+        businessInvoiceNeeded:qBiz,passPersonCountries:pp}).totalPrice));
+    };
+    const delta=roundCurrency_(quote(next)-quote(cur.countries));
+    const sortKey=function(pp){return JSON.stringify(pp.map(function(cs){return cs.slice().sort();}));};
+    const memo0=String(row[BOOKING_COL['요청사항']]||'');
+    const parsed=_parsePassCountryMemo_(memo0);
+    // 같은 구성이면 아무것도 쓰지 않는다(창구 등록 자리표시는 실제 국가명으로 바꾸는 것 자체가 변경)
+    if(sortKey(next)===sortKey(cur.countries)&&!cur.fromOption) return res;
+
+    const newTotal=roundCurrency_(prevTotal+delta);
+    const pay=getEffectiveBookingPayment_(row);
+    const settled=String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y';
+    const balRecv=settled?roundCurrency_(pay.balancePaidAmount):roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
+    const received=roundCurrency_(pay.depositPaidAmount+balRecv);
+    if(newTotal<received-0.005)
+      throw new Error('이미 받은 금액('+formatEuroAmount_(received)+'€) 아래로 줄일 수 없습니다 — 돌려줄 돈은 어드민 환불로 처리하세요.');
+    const reopen=settled&&newTotal>received+0.005;
+    const todayYmd=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+    const paidYmd=String(parseDateSafe_(row[BOOKING_COL['잔금입금일']]).str||'').slice(0,10);
+    /* 장부(buildAccountingLedger_)는 총액 전체를 잔금입금일로 잡고, 차액을 받는 순간 confirmBookingBalanceAdmin 이 그 날짜를
+       덮는다 — 지난 날(마감된 달일 수 있다) 수납을 오늘 되돌리면 그날 매출이 통째로 오늘로 옮겨진다. 보드는 당일 현장용이다. */
+    if(reopen&&paidYmd&&paidYmd<todayYmd)
+      throw new Error('지난 날('+paidYmd+') 수납이 끝난 예약은 여기서 금액을 올릴 수 없습니다 — 어드민에서 추가청구로 처리하세요.');
+
+    // 계약금: 미입금이고 총액이 100€ 이하가 되면 잔금에 합친다(_depositAfterTotalChange_ 와 같은 규칙 — 쓰기는 아래에서)
+    const depositRaw=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']]));
+    const depositUnpaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()!=='Y';
+    const foldDeposit=depositUnpaid&&newTotal<=100&&depositRaw>0.005;
+    const depositAmt=foldDeposit?0:depositRaw;
+    const prevBalanceRaw=String(row[BOOKING_COL['잔금']]||'');
+    const balanceTail=prevBalanceRaw.indexOf('|')>-1?prevBalanceRaw.slice(prevBalanceRaw.indexOf('|')):'';
+    const newBalance=roundCurrency_(Math.max(0,newTotal-depositAmt));
+
+    /* 표기 보존: 화면은 코드(KR·DE·…·OTHER)로 보낸다. '베트남' 처럼 목록 밖 국가를 가진 사람의 OTHER 는 그 사람의
+       원래 표기로 되돌린다 — '기타' 로 뭉개지면 어느 나라 규격으로 인화할지가 메모에서 사라진다. 연속된 같은 구성은 한 그룹. */
+    const curLabels=[];
+    parsed.groups.forEach(function(g){ for(let k=0;k<g.people&&curLabels.length<people;k++) curLabels.push(g.countries.slice()); });
+    while(curLabels.length<people) curLabels.push((curLabels[curLabels.length-1]||[]).slice());   // 상속(기준 구성과 같게)
+    const labelGroups=[];
+    next.forEach(function(codes,i){
+      // 그 사람의 목록 밖 표기들을 순서대로 OTHER 자리에 되돌린다(베트남+태국 → 둘 다 유지)
+      const owns=(curLabels[i]||[]).filter(function(l){return _passCountryCode_(l)==='OTHER'&&l!=='기타';});
+      let k=0;
+      const labels=codes.map(function(c){return c==='OTHER'?(owns[k++]||'기타'):_passCountryLabel_(c);});
+      const key=labels.join('+'), last=labelGroups[labelGroups.length-1];
+      if(last&&last.key===key) last.people++; else labelGroups.push({key:key,people:1,countries:labels});
+    });
+    const token2=_formatPassCountryMemo_(labelGroups);
+    let memo=parsed.found?memo0.replace(parsed.raw,token2):[token2,memo0].filter(Boolean).join('\n');
+    const strip=function(t){return String(t||'').replace(/^\[국가별 신청\]\s*/,'');};
+    const beforeLine=parsed.found?strip(parsed.raw):(cur.fromOption?('국가 '+cur.optionCount+'개/인'):'(기록 없음)');
+    const note=String(payload.note||payload.memo||'').trim().replace(/\s+/g,' ').slice(0,120);
+    const bits=['국가 변경 '+beforeLine+' → '+strip(token2)];
+    if(Math.abs(delta)>0.005) bits.push((delta>0?'+':'-')+formatEuroAmount_(Math.abs(delta))+'€ → 총 '+formatEuroAmount_(newTotal)+'€');
+    if(reopen) bits.push('받은 '+formatEuroAmount_(received)+'€ 유지 · 차액 '+formatEuroAmount_(roundCurrency_(newTotal-received))+'€ 받을 돈');
+    if(note) bits.push(note);
+    /* 되돌림 줄은 **아직 줄로 적히지 않은 몫**만 — 누적(balRecv)에는 앞선 [부분수납] 줄들이 이미 들어 있다. 누적 전체를 다시 적으면
+       마감대조·현금장부가 그 회차를 두 번 센다(적대 검토 2026-10-06: 105→+미국→5→+일본 이면 카드 215 vs 실수령 115).
+       그 몫은 완납 회차 = 잔금입금일·결제수단(마감대조가 '누적 − 회차합' 으로 세던 것과 같은 돈). */
+    let reopenLine='';
+    const linedSum=roundCurrency_(_partialBalanceReceiptsFromMemo_(memo0).reduce(function(a,p){return a+p.amount;},0));
+    const reopenAmt=roundCurrency_(balRecv-linedSum);
+    if(reopen&&reopenAmt>0.005){
+      const pd=paidYmd||todayYmd;
+      const pm=String(row[BOOKING_COL['결제수단']]||'').trim().replace(/\s+/g,'')||'미상';
+      reopenLine='[부분수납 '+pd+'] '+formatEuroAmount_(reopenAmt)+'€ '+pm
+        +' (누적 '+formatEuroAmount_(balRecv)+' / 잔금 '+formatEuroAmount_(newBalance)+'€)';
+    }
+    const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'MM-dd HH:mm');
+    memo=[memo.trim(),reopenLine,'[현장추가 '+stamp+'] '+bits.join(' · ')].filter(Boolean).join('\n');
+
+    /* 창구 등록 옵션 '국가 N개/인' — 실제 국가명이 있으면 토큰이 이기지만(resolvePassPersonCountriesForRow_),
+       전원 '기타'뿐이면 다시 옵션 수로 떨어진다. 그때만 수를 새 구성에 맞춘다(옵션 열의 다른 값은 그대로). */
+    const opt0=String(row[BOOKING_COL['옵션']]||'');
+    const hasReal=next.some(function(cs){return cs.some(function(c){return c!=='OTHER';});});
+    const maxCount=next.reduce(function(m,cs){return Math.max(m,cs.length);},1);
+    const opt1=(!hasReal&&/국가\s*\d+\s*개\s*\/\s*인/.test(opt0))?opt0.replace(/국가\s*\d+\s*개\s*\/\s*인/,'국가 '+maxCount+'개/인'):opt0;
+
+    Object.assign(res,{changed:true,delta:delta,total:newTotal,balance:newBalance,received:received,
+      due:roundCurrency_(Math.max(0,newTotal-received)),reopened:reopen,
+      countryLine:token2,auditLine:'[현장추가 '+stamp+'] '+bits.join(' · ')});
+    if(dryRun) return res;
+
+    sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memo);
+    if(opt1!==opt0) sh.getRange(rIdx,BOOKING_COL['옵션']+1).setValue(opt1);
+    if(Math.abs(delta)>0.005||foldDeposit){
+      sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
+      if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
+      sh.getRange(rIdx,BOOKING_COL['잔금']+1).setValue(balanceTail?(newBalance+balanceTail):newBalance);
+      if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+    }
+    if(foldDeposit){
+      sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(0);
+      if(BOOKING_COL['deposit_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['deposit_price_brutto']+1).setValue(0);
+    }
+    if(reopen){
+      sh.getRange(rIdx,BOOKING_COL['잔금결제여부']+1).setValue('');
+      sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(balRecv>0.005?balRecv:'');
+      // 부분수납 동안 결제수단은 '미결제'(브리핑 미수 판정) — 받은 수단은 위 [부분수납] 줄이 보존한다
+      if(BOOKING_COL['결제수단']!=null) sh.getRange(rIdx,BOOKING_COL['결제수단']+1).setValue('미결제');
+    }
+    // 캘린더 제목의 금액 라벨(있으면)
+    if(Math.abs(delta)>0.005){
+      try{
+        const rowAfter=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+        const evId=String(rowAfter[BOOKING_COL['캘린더ID']]||'').trim();
+        if(evId){
+          const cal=CalendarApp.getCalendarById(CONFIG.MAIN_CALENDAR_ID)||CalendarApp.getDefaultCalendar();
+          const ev=cal.getEventById(evId);
+          if(ev) ev.setTitle(buildBookingCalendarTitleFromRow_(rowAfter));
+        }
+      }catch(e){Logger.log('setPassCountriesForAgent_ calendar title skipped: '+e.message);}
+    }
+    try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
+    return res;
+  }finally{ if(lock) lock.releaseLock(); }
 }
 
 /* 3회차 혜택 원탭 (2026-09-05, 사장님 승인 혜택 = €20 크레딧). 판정은 서버가 다시 한다

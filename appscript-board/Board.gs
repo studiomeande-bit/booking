@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-10-05T07:15:00.762Z
- * 포함 함수 90개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-10-06T19:07:08.510Z
+ * 포함 함수 95개 / 상수 27개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -609,6 +609,10 @@ function buildTodayBoard_(dateStr){
          이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
       dueOnSite:balancePaid?0:roundCurrency_(Math.max(0,balance-partialPaid)+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       balancePartialPaid:partialPaid,
+      /* 여권 1인당 국가(코드) — 보드 '국가 변경' 창이 사람별로 켜고 끈다(2026-10-06). 창구 등록(옵션 '국가 N개/인')은
+         국가명이 기록돼 있지 않아 수만 맞는 자리표시(fromOption) — 화면이 그렇게 알린다. */
+      passCountries:String(row[BOOKING_COL['촬영종류']]||'').trim()==='pass'
+        ?resolvePassPersonCountriesForRow_(row,Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1),true):null,   // 상속 = 총액을 매긴 기준(국가 변경 액션과 같은 값 — 보드 생성기는 주석의 함수명도 따라가므로 이름을 적지 않는다)
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
@@ -1343,6 +1347,53 @@ function _isExternalBookingItemGroup_(itemGroup){
   return group==='snap'||group==='wed'||group==='biz'||group==='마이리얼트립';
 }
 
+const PASS_COUNTRY_LABELS_={KR:'한국',DE:'독일',JP:'일본',CN:'중국',US:'미국',OTHER:'기타'};
+
+function _parsePassCountryMemo_(memo){
+  const m=String(memo||'').match(/\[국가별 신청\][^\n]*/);
+  if(!m) return {found:false,groups:[],raw:''};
+  const body=m[0].replace(/^\[국가별 신청\]\s*/,'');
+  const groups=body.split(',').map(function(seg){
+    const g=String(seg||'').trim().match(/^(\d+)\s*명\s*:\s*(.+)$/);
+    if(!g) return null;
+    return {people:Math.max(1,parseInt(g[1],10)||1),
+            countries:g[2].split('+').map(function(x){return x.trim();}).filter(Boolean)};
+  }).filter(Boolean);
+  return {found:true,groups:groups,raw:m[0]};
+}
+
+function _expandPassPersonCountries_(memo,people,inherit){
+  const groups=_parsePassCountryMemo_(memo).groups||[];
+  const out=[];
+  groups.forEach(function(g){
+    const codes=(g.countries||[]).map(_passCountryCode_).filter(Boolean);
+    for(let i=0;i<g.people&&out.length<people;i++) out.push(codes.slice());
+  });
+  const last=out.length?out[out.length-1]:[];
+  while(out.length<people) out.push(inherit===false?[]:last.slice());
+  return out.slice(0,people);
+}
+
+function resolvePassPersonCountriesForRow_(row,people,inherit){
+  const expanded=_expandPassPersonCountries_(String(row[BOOKING_COL['요청사항']]||''),people,inherit);
+  const hasReal=expanded.some(function(cs){
+    return (cs||[]).some(function(c){return c&&c!=='OTHER';});});
+  const optionCount=parseInt((String(row[BOOKING_COL['옵션']]||'')
+    .match(/국가\s*(\d+)\s*개\s*\/\s*인/)||[])[1],10)||0;
+  if(!hasReal&&optionCount>1){
+    return {countries:buildInvoicePassPersonCountries_(people,optionCount),fromOption:true,optionCount:optionCount};
+  }
+  return {countries:expanded,fromOption:false,optionCount:optionCount};
+}
+
+function _passCountryCode_(v){
+  const s=String(v||'').trim();
+  if(!s) return '';
+  if(/^[A-Za-z]{2,6}$/.test(s)&&PASS_COUNTRY_LABELS_[s.toUpperCase()]) return s.toUpperCase();
+  const hit=Object.keys(PASS_COUNTRY_LABELS_).filter(function(k){return PASS_COUNTRY_LABELS_[k]===s;})[0];
+  return hit||'OTHER';
+}
+
 function parseMoneyValue_(value){
   if(value===null || value===undefined || value==='') return 0;
   if(typeof value==='number') return isFinite(value) ? value : 0;
@@ -1401,6 +1452,16 @@ function isSelectHandoverOpen_(row){
   if(!handoverAt) return true;
   const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
   return !!(printAt&&printAt>handoverAt);
+}
+
+function buildInvoicePassPersonCountries_(people,countryCount){
+  const count=Math.max(1,parseInt(countryCount,10)||1);
+  const baseCodes=['KR','DE','US','JP','CN','FR','IT','ES','NL','CH'];
+  const countries=baseCodes.slice(0,count);
+  while(countries.length<count) countries.push('C'+(countries.length+1));
+  const out=[];
+  for(let i=0;i<Math.max(1,parseInt(people,10)||1);i++) out.push(countries.slice());
+  return out;
 }
 
 const TRAVEL_KM_TABLE_=[

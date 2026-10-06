@@ -807,6 +807,8 @@ const COPY = {
     passportTitle: '여권/비자 옵션',
     passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
+    // 2026-10-06 정진호: 자녀 2명 한국+독일 · 부모 2명 독일인데 '4명 한국+독일' 한 구성으로 예약(예상 140, 실제 130)
+    passportSplitHint: "사람마다 필요한 국가가 다르면 '구성 추가하기'로 나눠 주세요(예: 자녀 2명 한국+독일 / 부모 2명 독일).",
     passportFamilyHint: (rate, min) => `${min}인 이상 가족·단체는 ${rate}% 할인이 자동 적용됩니다(회사·기관 청구 건 제외).`,
     sameDayRebookNote: (rate) => `촬영 당일, 촬영을 마친 뒤 다음 촬영을 예약하시면 ${rate}% 할인이 자동 적용됩니다. 같은 이름과 연락처(전화 또는 이메일)로 예약해 주세요. 여권·비자 사진은 제외입니다.`,
     passportPeopleLabel: '인원수',
@@ -1045,6 +1047,7 @@ const COPY = {
     passportTitle: 'Passport / Visa options',
     passportCopy: 'Add each country and people combination to reflect the correct passport / visa quote.',
     passportHint: 'One country is included. Each additional country adds €5.',
+    passportSplitHint: "If people need different countries, split them with 'Add another configuration' (e.g. 2 children Korea + Germany / 2 parents Germany).",
     passportFamilyHint: (rate, min) => `Families and groups of ${min} or more get ${rate}% off automatically (not for company invoices).`,
     sameDayRebookNote: (rate) => `Book your next session on the day of a shoot, once it has finished, and ${rate}% off is applied automatically. Please use the same name and phone or email. Passport/visa photos are excluded.`,
     passportPeopleLabel: 'People',
@@ -1283,6 +1286,7 @@ const COPY = {
     passportTitle: 'Pass / Visum Optionen',
     passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
+    passportSplitHint: 'Brauchen Personen unterschiedliche Länder, teilen Sie sie mit „Weitere Konfiguration hinzufügen“ auf (z. B. 2 Kinder Korea + Deutschland / 2 Eltern Deutschland).',
     passportFamilyHint: (rate, min) => `Familien und Gruppen ab ${min} Personen erhalten automatisch ${rate} % Rabatt (nicht bei Firmenrechnung).`,
     sameDayRebookNote: (rate) => `Wenn Sie am Tag Ihres Shootings – nach dessen Ende – Ihren nächsten Termin buchen, erhalten Sie automatisch ${rate} % Rabatt. Bitte mit demselben Namen und derselben Telefonnummer oder E-Mail buchen. Ausgenommen sind Pass- und Visabilder.`,
     passportPeopleLabel: 'Personenzahl',
@@ -2370,7 +2374,7 @@ function renderPassportHint() {
   if (!els.passportHint) return;
   const copy = getCopy();
   const rate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
-  els.passportHint.textContent = `${copy.passportHint} ${copy.passportFamilyHint(rate, PASS_FAMILY_DISCOUNT_MIN_PEOPLE)}`;
+  els.passportHint.textContent = `${copy.passportHint} ${copy.passportSplitHint} ${copy.passportFamilyHint(rate, PASS_FAMILY_DISCOUNT_MIN_PEOPLE)}`;
 }
 
 /* 촬영 당일 다음 예약 할인(엔진의 재방문 할인) 사전 안내 — 대상은 여권·비자가 아닌 상품(엔진 isReturnDiscountEligibleItem_ 와 같은 규칙).
