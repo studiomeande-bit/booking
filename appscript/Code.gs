@@ -2398,6 +2398,7 @@ function handlePublicApiRequest_(route,method,e){
             note:'분류만 변경했습니다 — 금액·상품·일정은 그대로입니다. 슬롯 캐시 무효화됨.'});
         }
         if(action==='booking-set-amount') return jsonOk_(setBookingAmountForAgent_(token,payload||{}));
+        if(action==='booking-balance-paid-correct') return jsonOk_(correctBookingBalancePaidForAgent_(token,payload||{}));   // 완납 행의 받은 잔금액 정정(팁 분리 등)
         if(action==='booking-loyalty-credit') return jsonOk_(applyLoyaltyCreditForAgent_(token,payload||{}));   // 3회차 혜택 원탭(-20€)
         if(action==='booking-settle-onsite') return jsonOk_(settleBookingOnsiteForAgent_(token,payload||{}));   // 보드 현장 정산 원샷(할인·무료+계약금+잔금)
         if(action==='public-api-sync-props') return jsonOk_(syncPublicApiPropsForAgent_(key));   // ✏️ 셔틀에 iCloud/Apple 속성 복사(값은 응답에 없음)
@@ -17141,6 +17142,46 @@ function setBookingAmountForAgent_(token,payload){
   return {ok:true,rowIndex:rIdx,name:String(row[BOOKING_COL['고객명']]||''),
     previousTotal:prevTotal,newTotal:newTotal,
     previousBalance:prevBalance,newBalance:newBalance,recomputeBalance:recomputeBalance,auditLine:auditLine};
+}
+
+/* 받은 잔금액(잔금결제금액) 정정 — 완납 행에 받을 돈보다 많이 적힌 경우(2026-10-06 김민상: 여권 35 + 팁 5 를 카드 40 으로
+   받아 보드가 40 을 기록). 팁은 같은 이름의 'Trinkgeld' 행으로 따로 두고(7/11 최새진 선례, 결제대조는 settlement-mark-bundle)
+   여기서 원래 행을 받을 돈으로 내린다 — 안 내리면 마감대조가 원래 행 40 + 팁 행 5 = 45 로 세어 SumUp 40 과 어긋난다.
+   완납 행의 받은 금액을 고치는 경로가 에이전트·어드민 어디에도 없었다. 금액만 바꾼다(수납일·수단·완납 표시 그대로).
+   받을 잔금 아래·기존 [부분수납] 줄 합 아래로는 못 내린다(덜 받았으면 부분수납·환불 경로). 감사줄 [금액정정]. */
+function correctBookingBalancePaidForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const rIdx=parseInt(payload.rowIndex,10)||0;
+  if(rIdx<2) throw new Error('rowIndex가 필요합니다.');
+  const expectName=String(payload.expectName||'').trim();
+  if(!expectName) throw new Error('expectName(고객명)이 필요합니다.');
+  const reason=String(payload.reason||'').trim().replace(/\s+/g,' ').slice(0,160);
+  if(!reason) throw new Error('reason(사유)이 필요합니다.');
+  const amount=roundCurrency_(Number(String(payload.amount==null?'':payload.amount).replace(',','.')));
+  if(!(amount>0)) throw new Error('amount(정정할 받은 잔금액)가 필요합니다.');
+  const sh=getDbSheet();
+  if(rIdx>sh.getLastRow()) throw new Error('존재하지 않는 행입니다: '+rIdx);
+  const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+  const name=String(row[BOOKING_COL['고객명']]||'').trim();
+  if(name!==expectName) throw new Error('행 고객명 불일치: 행='+name+' / 기대='+expectName);
+  if(String(row[BOOKING_COL['잔금결제여부']]||'').trim()!=='Y')
+    throw new Error('완납(잔금결제여부 Y) 예약만 정정합니다 — 수납 전·부분수납은 booking-confirm-balance 로.');
+  const prev=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금결제금액']]));
+  const balanceDue=roundCurrency_(parseMoneyValue_(String(row[BOOKING_COL['잔금']]||'').split('|')[0]));
+  const memo0=String(row[BOOKING_COL['요청사항']]||'');
+  const lined=roundCurrency_(_partialBalanceReceiptsFromMemo_(memo0).reduce(function(a,p){return a+p.amount;},0));
+  if(amount<balanceDue-0.005) throw new Error('받을 잔금('+formatEuroAmount_(balanceDue)+'€) 아래로는 내릴 수 없습니다 — 덜 받았으면 부분수납·환불 경로로.');
+  if(amount<lined-0.005) throw new Error('이미 적힌 부분수납 합('+formatEuroAmount_(lined)+'€) 아래로는 내릴 수 없습니다.');
+  const res={ok:true,rowIndex:rIdx,name:name,previous:prev,amount:amount,changed:Math.abs(amount-prev)>0.005};
+  if(!res.changed) return res;
+  sh.getRange(rIdx,BOOKING_COL['잔금결제금액']+1).setValue(amount);
+  const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
+  const line='[금액정정 '+stamp+'] 받은 잔금 '+formatEuroAmount_(prev)+'→'+formatEuroAmount_(amount)+'€ 사유: '+reason+' (agent)';
+  sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([memo0.trim(),line].filter(Boolean).join('\n'));
+  try{ invalidateTodayBoardCache_(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')); }catch(e){}
+  res.auditLine=line;
+  return res;
 }
 
 /* 예약 상품 변경(재견적) — 어드민에서만 가능하던 프로필 Business→Professional 같은 상품 교체를 CLI로.

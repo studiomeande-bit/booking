@@ -59,7 +59,7 @@ var __DAY__=[];
 function ensureSheets_(){ return { bookingSheet:{ getLastRow:function(){return __DAY__.length+1;},
   getRange:function(r,c,n,w){ return { getValues:function(){ return __DAY__.map(function(i){return __ROWS__[i].slice(0,w);}); } }; } } }; }
 function __dayRows__(list){ __DAY__=list; }
-module.exports={setPassCountriesForAgent_,confirmBookingBalanceAdmin,_partialBalanceReceiptsFromMemo_,buildDayClose_,__setRow__,__get__,__dayRows__};`);
+module.exports={setPassCountriesForAgent_,correctBookingBalancePaidForAgent_,confirmBookingBalanceAdmin,_partialBalanceReceiptsFromMemo_,buildDayClose_,__setRow__,__get__,__dayRows__};`);
 const M = (await import(pathToFileURL(modPath).href)).default;
 rmSync(dir, { recursive: true, force: true });
 
@@ -215,6 +215,29 @@ const due = (r) => (String(M.__get__(r, '잔금결제여부')) === 'Y' ? 0
   const t = set(431, 'T', [['OTHER', 'OTHER'], ['DE', 'US']]);
   ok(t.delta === 5 && t.total === 70 && /\[국가별 신청\] 1명:베트남\+태국, 1명:독일\+미국/.test(memo(431)),
     '베트남+태국(목록 밖 두 나라) 유지 · 2번에 미국 +5 = 70', [t, memo(431)]);
+}
+
+// ── 4d) 팁 분리 — 완납 행의 받은 잔금 정정(booking-balance-paid-correct) ─────────────────────────
+{
+  // 김민상 10/6: 여권 35 + 팁 5 = 카드 40 을 보드가 40 으로 기록. 팁은 같은 이름의 Trinkgeld 행(최새진 7/11 선례)
+  M.__setRow__(440, { '고객명': '김민상', '촬영종류': 'pass', '인원': 1, '상태': '작업완료', '예약일시': `${TODAY} 09:30`,
+    '총결제액': 35, '잔금': 35, '결제수단': '카드', '잔금결제여부': 'Y', '잔금결제금액': 40, '잔금입금일': TODAY, '요청사항': '[국가별 신청] 1명:독일+한국' });
+  M.__setRow__(441, { '고객명': '김민상', '촬영종류': 'other', '상품': 'Trinkgeld (카드결제 팁)', '인원': 1, '상태': '작업완료', '예약일시': `${TODAY} 09:30`,
+    '총결제액': 5, '잔금': 5, '결제수단': '카드', '잔금결제여부': 'Y', '잔금결제금액': 5, '잔금입금일': TODAY, '요청사항': '행440 결제 시 팁' });
+  const sumDay = () => { M.__dayRows__([440, 441]); return M.buildDayClose_(TODAY).ledger.reduce((a, l) => a + l.amount, 0); };
+  ok(sumDay() === 45, '정정 전: 일마감 45(원래 행 40 + 팁 행 5) — SumUp 40 과 어긋남', sumDay());
+  const fix = (extra) => M.correctBookingBalancePaidForAgent_('t', { rowIndex: 440, expectName: '김민상', amount: 35, reason: '카드 40 중 5 는 팁', ...extra });
+  throws(() => fix({ reason: '' }), /reason/, '사유 없으면 거부');
+  throws(() => fix({ amount: 30 }), /받을 잔금\(35€\) 아래로는/, '받을 잔금 아래로는 거부');
+  throws(() => M.correctBookingBalancePaidForAgent_('t', { rowIndex: 440, expectName: '홍길동', amount: 35, reason: 'x' }), /고객명 불일치/, '고객명 불일치 거부');
+  const r = fix();
+  ok(r.changed && num(M.__get__(440, '잔금결제금액')) === 35 && M.__get__(440, '잔금결제여부') === 'Y' && M.__get__(440, '잔금입금일') === TODAY && M.__get__(440, '결제수단') === '카드',
+    '받은 잔금 40→35 · 완납·수납일·수단 그대로', r);
+  ok(/\[금액정정 [^\]]+\] 받은 잔금 40→35€ 사유: 카드 40 중 5 는 팁 \(agent\)/.test(memo(440)), '감사줄 [금액정정]', memo(440));
+  ok(sumDay() === 40, '정정 후: 일마감 35 + 팁 5 = 40 = SumUp', sumDay());
+  ok(!fix().changed, '같은 값 재실행 → 변화 없음');
+  M.__setRow__(442, { '고객명': 'U', '촬영종류': 'pass', '인원': 1, '상태': '확정됨', '예약일시': `${TODAY} 10:00`, '총결제액': 30, '잔금': 30, '결제수단': '미결제' });
+  throws(() => M.correctBookingBalancePaidForAgent_('t', { rowIndex: 442, expectName: 'U', amount: 30, reason: 'x' }), /완납\(잔금결제여부 Y\) 예약만/, '완납 전 행은 거부');
 }
 
 // ── 5) 앱 배선 — 보드 '국가 변경' 창이 새 액션을 쓰고, 정시 종료가 예정 종료 시각을 보낸다 ─────
