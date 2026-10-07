@@ -414,7 +414,13 @@ export const COPY = {
     submittingEdit: '수정 제출 중...',
     submitLabel: '제출',
     submitLabelEdit: '수정 제출',
-    warnEarlyStartRetouch: '유료 추가 보정을 주문하시려면 "철회기간 중 보정 시작 요청"에 체크해 주세요.',
+    warnEarlyStartRetouch: '유료 추가 보정을 주문하시려면 "철회기간 중 작업 시작 요청"에 체크해 주세요.',
+    /* 조기 이행 요청 — 왜 체크해야 하는지(법정 문장 위 한 줄). 급행만 산 손님에게 '추가 보정' 이라고 하면 엉뚱하게 읽힌다(2026-10-07) */
+    earlyStartWhyExpress: '급행은 셀렉 후 3일 안에 보정을 시작해야 해서, 법정 철회기간(14일)이 끝나기 전에 작업을 시작해도 된다는 요청이 필요합니다. 아래에 체크해 주세요. 요금이 더 붙지는 않습니다.',
+    earlyStartWhyRetouch: '유료 추가 보정은 법정 철회기간(14일)이 끝나기 전에 작업을 시작해도 된다는 요청이 있어야 바로 착수할 수 있습니다. 아래에 체크해 주세요. 요금이 더 붙지는 않습니다.',
+    earlyStartWhyBoth: '급행과 유료 추가 보정은 법정 철회기간(14일)이 끝나기 전에 작업을 시작해도 된다는 요청이 있어야 바로 착수할 수 있습니다. 아래에 체크해 주세요. 요금이 더 붙지는 않습니다.',
+    warnEarlyStartExpress: '급행을 신청하시려면 "철회기간 중 작업 시작 요청"에 체크해 주세요. 체크가 없으면 3일 안에 시작할 수 없습니다.',
+    warnEarlyStartBoth: '급행·유료 추가 보정을 주문하시려면 "철회기간 중 작업 시작 요청"에 체크해 주세요.',
     widerrufInfoLink: '철회 안내 전문 보기 (Widerrufsbelehrung)',
     submitFailed: (msg) => `셀렉 제출 실패: ${msg}`,
     /* 통신 오류 문구 — api-core 의 err.code 로 찾는다. 셀렉은 조회·제출이 같은 문구를 쓰므로 '예약'을 말하지 않는다. */
@@ -859,6 +865,11 @@ export const COPY = {
     submitLabel: 'Submit',
     submitLabelEdit: 'Submit changes',
     warnEarlyStartRetouch: 'To order paid additional retouching, please tick the request to start during the withdrawal period.',
+    earlyStartWhyExpress: 'Express means we start retouching within 3 days of your selection, so we need your request to begin before the statutory 14-day withdrawal period ends. Please tick the box below. There is no extra charge for this.',
+    earlyStartWhyRetouch: 'Paid additional retouching can only start right away if you ask us to begin before the statutory 14-day withdrawal period ends. Please tick the box below. There is no extra charge for this.',
+    earlyStartWhyBoth: 'Express and paid additional retouching can only start right away if you ask us to begin before the statutory 14-day withdrawal period ends. Please tick the box below. There is no extra charge for this.',
+    warnEarlyStartExpress: 'To order express, please tick the request to start during the withdrawal period — without it we cannot start within 3 days.',
+    warnEarlyStartBoth: 'To order express and paid additional retouching, please tick the request to start during the withdrawal period.',
     widerrufInfoLink: 'Full withdrawal instructions (Widerrufsbelehrung)',
     submitFailed: (msg) => `Submission failed: ${msg}`,
     apiError: {
@@ -1299,6 +1310,11 @@ export const COPY = {
     submitLabel: 'Absenden',
     submitLabelEdit: 'Änderungen absenden',
     warnEarlyStartRetouch: 'Für die kostenpflichtige Zusatzretusche bestätigen Sie bitte den Beginn vor Ablauf der Widerrufsfrist.',
+    earlyStartWhyExpress: 'Bei Express beginnen wir innerhalb von 3 Tagen nach Ihrer Auswahl mit der Retusche. Dafür brauchen wir Ihr Verlangen, vor Ablauf der gesetzlichen 14-tägigen Widerrufsfrist zu beginnen. Bitte setzen Sie unten das Häkchen. Zusätzliche Kosten entstehen dadurch nicht.',
+    earlyStartWhyRetouch: 'Kostenpflichtige Zusatzretusche können wir nur sofort beginnen, wenn Sie verlangen, dass wir vor Ablauf der gesetzlichen 14-tägigen Widerrufsfrist anfangen. Bitte setzen Sie unten das Häkchen. Zusätzliche Kosten entstehen dadurch nicht.',
+    earlyStartWhyBoth: 'Express und kostenpflichtige Zusatzretusche können wir nur sofort beginnen, wenn Sie verlangen, dass wir vor Ablauf der gesetzlichen 14-tägigen Widerrufsfrist anfangen. Bitte setzen Sie unten das Häkchen. Zusätzliche Kosten entstehen dadurch nicht.',
+    warnEarlyStartExpress: 'Für Express bestätigen Sie bitte den Beginn vor Ablauf der Widerrufsfrist — sonst können wir nicht innerhalb von 3 Tagen beginnen.',
+    warnEarlyStartBoth: 'Für Express und kostenpflichtige Zusatzretusche bestätigen Sie bitte den Beginn vor Ablauf der Widerrufsfrist.',
     widerrufInfoLink: 'Widerrufsbelehrung ansehen',
     submitFailed: (msg) => `Senden fehlgeschlagen: ${msg}`,
     apiError: {

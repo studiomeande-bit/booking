@@ -424,6 +424,7 @@ const els = {
   vatNote: document.getElementById('vatNote'),
   orderLegalBox: document.getElementById('orderLegalBox'),
   earlyStartRetouchRow: document.getElementById('earlyStartRetouchRow'),
+  earlyStartWhy: document.getElementById('earlyStartWhy'),
   earlyStartRetouchInput: document.getElementById('earlyStartRetouchInput'),
   expressBox: document.getElementById('expressBox'),
   expressRow: document.getElementById('expressRow'),
@@ -3700,6 +3701,12 @@ function legalCopy() {
   return legal ? (legal[state.lang] || legal.ko) : null;
 }
 function hasPaidRetouch() { return calcRetouchDiscount().raw > 0 || expressAmount() > 0; }   // 급행도 유료 서비스(조기 이행 요청 대상)
+/* 조기 이행 요청 문구는 산 것에 맞춘다 — 급행만 산 손님에게 '유료 추가 보정' 이라고 하면 왜 체크하라는지 알 수 없다 */
+function earlyStartKind() {
+  const r = calcRetouchDiscount().raw > 0, x = expressAmount() > 0;
+  return r && x ? 'Both' : x ? 'Express' : r ? 'Retouch' : '';
+}
+function earlyStartWarnText() { const k = earlyStartKind(); return copy()[`warnEarlyStart${k}`] || copy().warnEarlyStartRetouch; }
 function hasPaidPrints() { return calcPrintDiscount().raw > 0; }
 function submitButtonLabel() {
   const L = legalCopy();
@@ -3714,6 +3721,10 @@ function syncOrderLegal() {
   els.orderLegalBox?.classList.toggle('hidden', !(paidRetouch || paidPrints));
   els.earlyStartRetouchRow?.classList.toggle('hidden', !paidRetouch);
   if (els.earlyStartRetouchText) els.earlyStartRetouchText.textContent = paidRetouch ? L.earlyStartRetouch : '';
+  if (els.earlyStartWhy) {
+    els.earlyStartWhy.classList.toggle('hidden', !paidRetouch);
+    els.earlyStartWhy.textContent = paidRetouch ? (copy()[`earlyStartWhy${earlyStartKind()}`] || '') : '';
+  }
   // 유료 보정이 빠졌다가 다시 담기면 다시 명시적으로 체크해야 한다
   if (!paidRetouch && els.earlyStartRetouchInput) els.earlyStartRetouchInput.checked = false;
   els.printNoWiderrufNote?.classList.toggle('hidden', !paidPrints);
@@ -4197,7 +4208,7 @@ async function onSubmit() {
   if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
   // 유료 추가 보정 — 조기 이행 요청은 명시적 체크여야 한다(묶음 동의·자동 체크 없음)
   if (legalCopy() && hasPaidRetouch() && !els.earlyStartRetouchInput?.checked) {
-    setBanner(copy().warnEarlyStartRetouch, 'error');
+    setBanner(earlyStartWarnText(), 'error');
     els.orderLegalBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
