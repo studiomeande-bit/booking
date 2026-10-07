@@ -55,6 +55,22 @@
  *   allowConflict: 1일차와 동일 기준(checkBookingTimeConflict_)의 충돌 검사를 강행. dryRun: 계획만 확인.
  *   조회는 booking-get 의 extraDays 필드. 회귀 검사: node scripts/check-extra-days.mjs
  *
+ * booking-set-mrt-payout: 💶 마이리얼트립 **정산 지급일 → 잔금입금일** 정정(회계 귀속일). MRT 동기화는 잔금입금일을
+ *   선결제 **통지일**로 채우지만 §20 UStG(Ist-Versteuerung, 사장님 결정 2026-09-25) 수취시점은 **정산금이 신한계좌에 들어온 날**
+ *   (여행월 다음달 15일경 — 6월분 07-15 · 7월분 08-18). 장부(buildAccountingLedger_)는 잔금입금일을 그대로 쓰므로 이 칸만 고친다.
+ *   MRT 행만 허용 · 메일·캘린더 없음 · 요청사항에 '[MRT 정산 …]' 감사 한 줄. (booking-update 는 이 열 불가 · booking-confirm-balance 는 Y 행 거부)
+ *   node scripts/erp-agent.mjs booking-set-mrt-payout --json '{"rowIndex":187,"expectName":"유성현","payoutDate":"2026-07-15"}'
+ *   node scripts/erp-agent.mjs booking-set-mrt-payout --json '{"rowIndexes":[205,215],"payoutDate":"2026-08-18","memo":"7월 여행분 정산"}'
+ *   rowIndexes: 같은 지급일 여러 건 — 전부 검증한 뒤 기록(하나라도 막히면 아무 행도 안 바뀜). 미래 날짜 거부(지급 확인 후 기록).
+ *   dryRun:true 면 MRT 판별·현재 잔금입금일만 돌려준다(쓰기 없음). 같은 날짜면 unchanged(재실행 안전).
+ *   회귀 검사: node scripts/check-mrt-payout.mjs
+ *
+ * deposit-hold-status | deposit-hold-set | deposit-hold-release: 계약금 안내 보류(엘턴겔트 수급월, 2026-10-21~11-20).
+ *   set 은 dryRun 기본 — 실제 기록은 "dryRun":false. 빈칸 둘 = 끄기(보류분 정리 전엔 비우지 말 것: 시계 기준).
+ *   node scripts/erp-agent.mjs deposit-hold-set --json '{"from":"2026-10-21","until":"2026-11-21","dryRun":false}'
+ *   release 는 until 아침 L2 가 자동 실행. 수동(⚠️외부발송)은 {"confirm":"SEND"} — 없으면 대상·메일 미리보기만.
+ *   회귀 검사: node scripts/check-deposit-hold.mjs [--show]
+ *
  * 인증: reservation/.secrets/erp-automation-key 파일의 키 사용
  *   (어드민 → 설정 → 자동화 API 키에서 발급)
  */

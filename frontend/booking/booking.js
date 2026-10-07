@@ -523,8 +523,56 @@ const OPTION_META = {
   outfit: {
     groups: ['prof', 'stud', 'snap'],
     label: { ko: '의상 추가 (+€20)', en: 'Extra outfit (+€20)', de: 'Extra Outfit (+€20)' }
+  },
+  /* 급행(2026-09-29) — 요금은 상품마다 다르다(상품가 × expressRate%). 라벨의 금액은 optionLabelFor 가 붙인다.
+     서버 calculateQuote_ 가 정본이고, 판매 대상이 아니면 서버가 키를 지운다. */
+  express: {
+    groups: ['prof', 'stud', 'snap', 'wed'],
+    label: { ko: '⚡ 급행 — 원본 3일·보정 3일', en: '⚡ Express — originals & retouch in 3 days each', de: '⚡ Express — Originale & Retusche je in 3 Tagen' }
   }
 };
+
+/* 급행 요금 — 서버 getExpressFeeForItem_ 와 같은 식(상품 목록가 × 요율%, 할인 전). 0 이면 판매하지 않는다. */
+function getExpressFee(item) {
+  if (!item || !OPTION_META.express.groups.includes(item.g)) return 0;
+  const p = Number(item.p || 0);
+  if (!(p > 0) || item.t === 'custom' || isQuoteOnlyProduct(item)) return 0;
+  if (state.init?.settings?.expressRate == null) return 0;   // 급행을 모르는 서버(배포 전·폴백) — 팔면 요금 없이 키만 저장된다
+  const raw = String(state.init.settings.expressRate).trim();
+  const rate = raw === '' ? 20 : Number(raw);
+  if (!(rate > 0)) return 0;
+  return roundCurrency(p * rate / 100);
+}
+function ymdLabel(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const wd = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const W = { ko: ['일', '월', '화', '수', '목', '금', '토'], en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], de: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] };
+  if (state.lang === 'de') return `${W.de[wd]}, ${m[3]}.${m[2]}.`;
+  if (state.lang === 'en') return `${W.en[wd]} ${Number(m[3])}/${Number(m[2])}`;
+  return `${Number(m[2])}월 ${Number(m[3])}일(${W.ko[wd]})`;
+}
+function formatDeliveryEstimate(est) {
+  if (!est || !est.originalBy) return '';
+  const o = ymdLabel(est.originalBy);
+  if (est.express) {
+    const r = ymdLabel(est.retouchBy);
+    return state.lang === 'en' ? `⚡ Originals by ${o} · retouched within 3 days of your selection (e.g. by ${r})`
+      : state.lang === 'de' ? `⚡ Originale bis ${o} · Retusche innerhalb von 3 Tagen nach Auswahl (z. B. bis ${r})`
+        : `⚡ 원본 ${o}까지 · 보정본은 셀렉 후 3일 안에(예: ${r}까지)`;
+  }
+  const a = ymdLabel(est.retouchFrom), b = ymdLabel(est.retouchTo);
+  return state.lang === 'en' ? `Originals by ${o} · retouched 2–3 weeks after your selection (e.g. ${a}–${b})`
+    : state.lang === 'de' ? `Originale bis ${o} · Retusche 2–3 Wochen nach Auswahl (z. B. ${a}–${b})`
+      : `원본 ${o}까지 · 보정본은 셀렉 후 2~3주(예: ${a}~${b})`;
+}
+function optionLabelFor(key, item) {
+  const meta = OPTION_META[key];
+  const label = meta ? (meta.label[state.lang] || meta.label.ko) : key;
+  if (key !== 'express') return label;
+  const fee = getExpressFee(item);
+  return fee > 0 ? `${label} (+€${formatEuroAmount(fee)})` : label;
+}
 
 const BUSINESS_MODE_META = [
   { key: 'photo', label: { ko: '행사 사진', en: 'Event Photo', de: 'Event Foto' } },
@@ -691,7 +739,7 @@ const COPY = {
     noticeTitle: '공지사항',
     closureTitle: '한국 일정으로 잠시 쉬어갑니다',
     closureBody: '2026년 10월 21일(수)부터 11월 25일(수)까지는 한국 일정으로 스튜디오 촬영이 어렵습니다.',
-    closureMeta: '11월 26일(수)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
+    closureMeta: '11월 26일(목)부터 정상 촬영을 재개합니다. 그 이후 일정은 지금도 예약·문의하실 수 있어요.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -759,6 +807,10 @@ const COPY = {
     passportTitle: '여권/비자 옵션',
     passportCopy: '원하는 촬영국가와 인원 구성을 추가하면 국가별 추가 비용이 함께 반영됩니다.',
     passportHint: '기본 1개 국가는 포함되며, 추가 국가는 1개당 €5가 반영됩니다.',
+    // 2026-10-06 정진호: 자녀 2명 한국+독일 · 부모 2명 독일인데 '4명 한국+독일' 한 구성으로 예약(예상 140, 실제 130)
+    passportSplitHint: "사람마다 필요한 국가가 다르면 '구성 추가하기'로 나눠 주세요(예: 자녀 2명 한국+독일 / 부모 2명 독일).",
+    passportFamilyHint: (rate, min) => `${min}인 이상 가족·단체는 ${rate}% 할인이 자동 적용됩니다(회사·기관 청구 건 제외).`,
+    sameDayRebookNote: (rate) => `촬영 당일, 촬영을 마친 뒤 다음 촬영을 예약하시면 ${rate}% 할인이 자동 적용됩니다. 같은 이름과 연락처(전화 또는 이메일)로 예약해 주세요. 여권·비자 사진은 제외입니다.`,
     passportPeopleLabel: '인원수',
     peopleCustomPlaceholder: '6명 이상 직접입력',
     passportConfigLabel: '구성 {index}',
@@ -814,7 +866,7 @@ const COPY = {
     babyNameLabel: '아기 이름',
     babyNamePlaceholder: '백일/돌 촬영 아기 이름',
     otherCountryLabel: '기타 국가명',
-    otherCountryPlaceholder: '예: France, Canada',
+    otherCountryPlaceholder: '예: France',
     memoLabel: '요청사항',
     consentTitle: '표준 촬영 계약서 및 예약 조건',
     consentCopy: '예약을 완료하기 전 아래 표준 촬영 계약 조건을 확인해 주세요. 본 조건은 예약 시 선택 또는 입력한 촬영 상품, 일정, 장소, 비용, 납품 방식 및 별도 합의사항과 함께 적용됩니다.',
@@ -928,7 +980,7 @@ const COPY = {
     noticeTitle: 'Notice',
     closureTitle: 'Away Oct 21 – Nov 25, back on Nov 26',
     closureBody: 'From Wednesday 21 October to Wednesday 25 November 2026 we are in Korea, so no shoots take place at the studio.',
-    closureMeta: 'We are back for you from Wednesday 26 November. Dates after that can already be booked and enquired about today.',
+    closureMeta: 'We are back for you from Thursday 26 November. Dates after that can already be booked and enquired about today.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüte Portrait Event 2026',
     promoHighlightBody(names) {
@@ -995,6 +1047,9 @@ const COPY = {
     passportTitle: 'Passport / Visa options',
     passportCopy: 'Add each country and people combination to reflect the correct passport / visa quote.',
     passportHint: 'One country is included. Each additional country adds €5.',
+    passportSplitHint: "If people need different countries, split them with 'Add another configuration' (e.g. 2 children Korea + Germany / 2 parents Germany).",
+    passportFamilyHint: (rate, min) => `Families and groups of ${min} or more get ${rate}% off automatically (not for company invoices).`,
+    sameDayRebookNote: (rate) => `Book your next session on the day of a shoot, once it has finished, and ${rate}% off is applied automatically. Please use the same name and phone or email. Passport/visa photos are excluded.`,
     passportPeopleLabel: 'People',
     peopleCustomPlaceholder: '6+ people (enter manually)',
     passportConfigLabel: 'Configuration {index}',
@@ -1050,7 +1105,7 @@ const COPY = {
     babyNameLabel: 'Baby Name',
     babyNamePlaceholder: 'Baby name for baby / first birthday session',
     otherCountryLabel: 'Other Country',
-    otherCountryPlaceholder: 'e.g. France, Canada',
+    otherCountryPlaceholder: 'e.g. France',
     memoLabel: 'Notes',
     consentTitle: 'Standard photography contract and booking terms',
     consentCopy: 'Please read the standard contract terms below before completing your booking. They apply together with the shooting package, date, location, price, delivery method and any separate agreements selected or entered at booking.',
@@ -1164,7 +1219,7 @@ const COPY = {
     noticeTitle: 'Hinweis',
     closureTitle: '21.10.–25.11. keine Shootings, ab 26.11. wieder für euch da',
     closureBody: 'Von Mittwoch, 21. Oktober bis Mittwoch, 25. November 2026 sind wir in Korea – in dieser Zeit finden keine Shootings im Studio statt.',
-    closureMeta: 'Ab Mittwoch, 26. November sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
+    closureMeta: 'Ab Donnerstag, 26. November sind wir wieder für euch da. Termine danach könnt ihr schon jetzt buchen und anfragen.',
     promoHighlightEyebrow: 'Studio mean Schultüte Portrait Event 2026',
     promoHighlightTitle: 'Schultüten-Portraits zur Einschulung 2026',
     promoHighlightBody(names) {
@@ -1231,6 +1286,9 @@ const COPY = {
     passportTitle: 'Pass / Visum Optionen',
     passportCopy: 'Fügen Sie Land- und Personenkombinationen hinzu, damit das Angebot korrekt berechnet wird.',
     passportHint: 'Ein Land ist inklusive. Jedes weitere Land kostet €5 extra.',
+    passportSplitHint: 'Brauchen Personen unterschiedliche Länder, teilen Sie sie mit „Weitere Konfiguration hinzufügen“ auf (z. B. 2 Kinder Korea + Deutschland / 2 Eltern Deutschland).',
+    passportFamilyHint: (rate, min) => `Familien und Gruppen ab ${min} Personen erhalten automatisch ${rate} % Rabatt (nicht bei Firmenrechnung).`,
+    sameDayRebookNote: (rate) => `Wenn Sie am Tag Ihres Shootings – nach dessen Ende – Ihren nächsten Termin buchen, erhalten Sie automatisch ${rate} % Rabatt. Bitte mit demselben Namen und derselben Telefonnummer oder E-Mail buchen. Ausgenommen sind Pass- und Visabilder.`,
     passportPeopleLabel: 'Personenzahl',
     peopleCustomPlaceholder: 'Ab 6 Personen direkt eingeben',
     passportConfigLabel: 'Konfiguration {index}',
@@ -1286,7 +1344,7 @@ const COPY = {
     babyNameLabel: 'Babyname',
     babyNamePlaceholder: 'Babyname für Baby- / 1. Geburtstag-Shooting',
     otherCountryLabel: 'Anderes Land',
-    otherCountryPlaceholder: 'z. B. Frankreich, Kanada',
+    otherCountryPlaceholder: 'z. B. Frankreich',
     memoLabel: 'Hinweise',
     consentTitle: 'Standard-Fotovertrag und Buchungsbedingungen',
     consentCopy: 'Bitte prüfen Sie vor Abschluss der Buchung die folgenden Standard-Vertragsbedingungen. Diese Bedingungen gelten zusammen mit dem bei der Buchung ausgewählten oder eingegebenen Shooting-Paket, Termin, Ort, Preis, Lieferart und gesonderten Vereinbarungen.',
@@ -1596,6 +1654,7 @@ async function boot() {
 
 function renderInitData(initData) {
   state.init = normalizeInitData(initData);
+  renderPassportHint();   // 가족 할인 요율은 init 설정값
   syncSelectedProductWithInitData();
   const visibleProducts = getVisibleProductsForSelectedGroup();
   renderGroups();
@@ -2309,6 +2368,23 @@ function getBusinessInvoiceFormData(source = null) {
   };
 }
 
+/* 여권 안내 + 5인 이상 가족·단체 할인 — 요율·인원은 서버 설정과 같은 값(요약의 '가족 단체 할인 적용됨' 줄과 동일).
+   applyCopy 는 init 도착 전에도 돌아서, init 을 받은 뒤 renderInitData 에서 한 번 더 부른다. */
+function renderPassportHint() {
+  if (!els.passportHint) return;
+  const copy = getCopy();
+  const rate = Number(state.init?.settings?.passFamilyDiscount || 10) || 10;
+  els.passportHint.textContent = `${copy.passportHint} ${copy.passportSplitHint} ${copy.passportFamilyHint(rate, PASS_FAMILY_DISCOUNT_MIN_PEOPLE)}`;
+}
+
+/* 촬영 당일 다음 예약 할인(엔진의 재방문 할인) 사전 안내 — 대상은 여권·비자가 아닌 상품(엔진 isReturnDiscountEligibleItem_ 와 같은 규칙).
+   할인은 당일 촬영이 끝난 뒤 같은 이름 + 전화 또는 이메일이 맞을 때 서버가 판정한다(checkReturnCustomer_). */
+function getSameDayRebookNote(item) {
+  if (!item || item.g === 'pass' || item.t === 'passport') return '';
+  const rate = Number(state.init?.settings?.returnDiscount || 10) || 10;
+  return getCopy().sameDayRebookNote(rate);
+}
+
 function applyCopy() {
   const copy = getCopy();
   document.documentElement.lang = state.lang;
@@ -2404,7 +2480,7 @@ function applyCopy() {
   setText('gdprLabel', copy.gdprLabel);
   setText('gdprSub', copy.gdprSub);
   syncMarketingConsentCopy(copy);
-  els.passportHint.textContent = copy.passportHint;
+  renderPassportHint();
   els.prevMonthBtn.textContent = copy.monthPrev;
   els.nextMonthBtn.textContent = copy.monthNext;
   els.monthLabel.textContent = formatMonthLabel(state.calendarYear, state.calendarMonth, state.lang);
@@ -3791,8 +3867,10 @@ function getPreviewQuote() {
   }
 
   if (item.t === 'passport') {
+    // '기타'(OTHER)도 한 나라로 센다 — 서버 calculateQuote_ 와 같은 규칙(2026-09-25, 사장님 결정).
+    // 안내 문구 "추가 국가는 1개당 €5" 에 기타 예외가 없다. 화면과 청구가 갈리지 않게 서버와 동시에 바꾼다.
     total = passPersonCountries.reduce((sum, codes) => {
-      const extra = Math.max(0, (Array.isArray(codes) ? codes : []).filter((code) => code && code !== 'OTHER').length - 1) * 5;
+      const extra = Math.max(0, (Array.isArray(codes) ? codes : []).filter((code) => !!code).length - 1) * 5;
       return sum + Number(item.p || 0) + extra;
     }, 0);
     if (!passPersonCountries.length) total = item.p * people;
@@ -3852,6 +3930,9 @@ function getPreviewQuote() {
     marketingDiscount = roundCurrency(weddingDiscountBase * (WEDDING_MARKETING_DISCOUNT_RATE / 100));
   }
   if (item.g === 'wed') total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);
+  // 급행 — 서버 calculateQuote_ 와 같은 자리(할인 뒤·여권 콤보 전). 판매 대상이 아니면 0
+  const expressFee = optionKeys.includes('express') ? getExpressFee(item) : 0;
+  total = roundCurrency(total + expressFee);
   let passAddonDur = 0;
   let passAddonPrice = 0;
   const passAddon = (item.g === 'prof' || item.g === 'stud') && !!els.passAddonToggle?.checked;
@@ -3890,6 +3971,7 @@ function getPreviewQuote() {
     otherCountry,
     totalCountries,
     optionKeys,
+    expressFee,
     weekendSurcharge,
     isQuoteOnly: isQuoteOnlyProduct(item)
   };
@@ -5395,9 +5477,9 @@ function renderGeneralPanel() {
   renderBgChips();
   renderBusinessOptions();
   const optionMarkup = Object.entries(OPTION_META)
-    .filter(([, meta]) => meta.groups.includes(product.g))
-    .map(([key, meta]) => {
-      const label = meta.label[state.lang] || meta.label.ko;
+    .filter(([key, meta]) => meta.groups.includes(product.g) && (key !== 'express' || getExpressFee(product) > 0))
+    .map(([key]) => {
+      const label = optionLabelFor(key, product);
       const selected = state.optionKeys.includes(key) ? ' selected' : '';
       return `<button type="button" class="chip-btn toggle-chip${selected}" data-option="${key}">${escapeHtml(label)}</button>`;
     }).join('');
@@ -5925,6 +6007,7 @@ function renderProductDetail() {
     ` : `
       ${discountHtml}
       ${getProductPolicyNote(state.selectedProduct) ? `<div class="muted-copy" style="margin-top:10px;">${escapeHtml(getProductPolicyNote(state.selectedProduct))}</div>` : ''}
+      ${getSameDayRebookNote(state.selectedProduct) ? `<div class="muted-copy same-day-rebook-note" style="margin-top:8px;">${escapeHtml(getSameDayRebookNote(state.selectedProduct))}</div>` : ''}
       ${getSecondaryPriceNote() ? `<div class="muted-copy" style="margin-top:8px;">${escapeHtml(getSecondaryPriceNote())}</div>` : ''}
     `}
     ${weddingBenefitHtml}
@@ -6644,9 +6727,12 @@ function renderReview() {
   const babyName = needsBabyNameForBooking(state.selectedProduct) ? String(els.form.elements.babyName?.value || '').trim() : '';
   if (babyName) rows.push([state.lang === 'en' ? 'Baby Name' : state.lang === 'de' ? 'Babyname' : '아기 이름', babyName]);
   if (state.optionKeys.length) {
-    const optionLabels = state.optionKeys.map((key) => OPTION_META[key]?.label[state.lang] || OPTION_META[key]?.label.ko || key).join(', ');
+    const optionLabels = state.optionKeys.map((key) => optionLabelFor(key, state.selectedProduct)).join(', ');
     rows.push([copy.reviewOptions, optionLabels]);
   }
+  /* 사진 전달 예정(2026-09-29) — 날짜는 서버 견적(deliveryEstimate)이 휴무일까지 반영해 계산한다 */
+  const deliveryText = formatDeliveryEstimate(state.quote?.deliveryEstimate);
+  if (deliveryText) rows.push([state.lang === 'en' ? 'Photo delivery' : state.lang === 'de' ? 'Fotolieferung' : '사진 전달 예정', deliveryText]);
   if (state.surveyKeys.length) {
     const surveyLabels = state.surveyKeys
       .map((key) => SURVEY_META.find((item) => item.key === key))

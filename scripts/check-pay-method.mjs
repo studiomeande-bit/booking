@@ -30,7 +30,17 @@ function extractFn(name) {
     if (c === '/' && SRC[i + 1] === '/') { i = SRC.indexOf('\n', i); continue; }
     if (c === '/' && SRC[i + 1] === '*') { i = SRC.indexOf('*/', i) + 1; continue; }
     if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) return SRC.slice(start + 1, i + 1);
+    else if (c === '}' && --depth === 0) {
+      const body = SRC.slice(start + 1, i + 1);
+      /* 과잉 추출 가드: 이 복사본은 문자열·주석은 건너뛰지만 **정규식 리터럴**은 모른다 —
+         `/'/` 처럼 짝 없는 인용부호가 든 정규식을 만나면 문자열 스캔이 함수 끝을 넘어가
+         뒤따르는 함수 수백 개(최대 413KB)를 조용히 함께 삼킨다(2026-09-25 감사).
+         최상위 함수 본문에는 열 0 에서 시작하는 `function ` 이 있을 수 없으니, 있으면 과잉이다. */
+      if (body.indexOf('\nfunction ') !== -1) {
+        throw new Error(`추출 과잉: ${name} — 정규식 리터럴 때문에 뒤 함수까지 삼켰습니다(하네스 extractFn 수정 필요)`);
+      }
+      return body;
+    }
   }
   throw new Error(`중괄호 짝이 안 맞습니다: ${name}`);
 }
@@ -47,8 +57,14 @@ assert.equal(pmDefault(true, { payMethod: '현금' }, 0, false), '마이리얼�
 
 // ② 세부내역 표
 const ctx = vm.createContext({});
+/* buildBookingDetailsRows_ 는 요청사항을 customerVisibleMemo_ 로 걸러 싣는다(감사줄 유출 수리 2026-09-28).
+   접두어 목록 상수는 함수 밖 최상위라 extractFn 으로 안 잡힌다 — 원문에서 그대로 떠 온다(복제 금지). */
+const prefixConst = SRC.match(/const MEMO_AUDIT_PREFIXES_='[^']*';/);
+assert.ok(prefixConst, 'MEMO_AUDIT_PREFIXES_ 를 Code.gs 에서 찾지 못했다 — 이름이 바뀌었나요?');
+vm.runInContext(prefixConst[0], ctx);
 vm.runInContext([
-  'buildBookingDetailsRows_', '_bookingDetailLabels_', '_addBookingDetailRow_', 'getBookingAgeGroupLabel_',
+  'buildBookingDetailsRows_', 'customerVisibleMemo_',
+  '_bookingDetailLabels_', '_addBookingDetailRow_', 'getBookingAgeGroupLabel_',
   'getBookingAgeDiscountLabel_', '_bookingOptionText_', '_bookingSurveyText_', '_bookingList_',
   'getPassportFamilyDiscountLabel_', 'getBookingBabyTypeLabel_', '_bookingTruthyLabel_',
   'getPassportComboDurationMin_', 'formatEuroAmount_', 'parseMoneyValue_', 'isPublicTruthy_', 'roundCurrency_',
@@ -79,7 +95,7 @@ function run(rowPatch, data) {
     getDbSheet: () => ({ getLastRow: () => 300, getRange: () => ({ getValues: () => [row.slice()], setValue() {} }) }),
     updateBookingAdmin: (t, r, merged) => { c.captured = merged; return { ok: true, changeMail: { sent: false } }; },
   });
-  vm.runInContext(extractFn('preserveAuditMemoLines_') + '\n' + extractFn('updateBookingFieldsForAgent_'), c);
+  vm.runInContext(prefixConst[0] + '\n' + extractFn('preserveAuditMemoLines_') + '\n' + extractFn('updateBookingFieldsForAgent_'), c);
   c.updateBookingFieldsForAgent_('t', 290, data);
   return c.captured;
 }

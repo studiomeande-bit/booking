@@ -109,6 +109,10 @@ const MODULE = [
   `function assertAdmin_(){ return true; }`,
   extractFn(gs, 'listUnpaidSelectExtras_'),
   extractFn(gs, 'listUnpaidSelectExtrasAdmin'),
+  /* markSelectExtraPaidAdmin 의 4번째 줄이 부르는데 추출 목록에 없었다 — Code.gs 가 try/catch 로 감싸
+     ReferenceError 가 조용히 먹히고 있었다(2026-09-25 감사). 스파이로 두어 무효화가 실제로 일어나는지도 본다. */
+  `globalThis.__boardInvalidated=0;`,
+  `function invalidateTodayBoardCache_(){ globalThis.__boardInvalidated++; }`,
   extractFn(gs, 'markSelectExtraPaidAdmin'),
   extractLine(gs, "var PRINT_WAIVED_PAY_METHOD_="),
   extractLine(gs, "var PRINT_WAIVED_STATUS_="),

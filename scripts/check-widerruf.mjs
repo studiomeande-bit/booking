@@ -248,9 +248,15 @@ globalThis.__select = {
 };
 S.getParent = () => ({ getSheetByName: (n) => (n === M.SELECT_SHEET_NAME ? globalThis.__select : null) });
 const colEarly = SH.indexOf('추가보정조기이행요청');
-check('셀렉 시트 새 열은 맨 뒤', colEarly === SH.length - 1);
-check('유료 보정 + 체크 → 시각·문구 버전 기록', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 2, '2026-09-18 10:00') === '2026-09-18 10:00 | WB-2026-09'
-  && selData[1][colEarly] === '2026-09-18 10:00 | WB-2026-09');
+/* 의도는 "끝에 붙였다 = 기존 열 위치가 안 바뀐다" 이다(열은 인덱스로 읽는다 — 가운데 끼우면 기존 데이터가 한 칸씩 밀린다).
+   예전엔 '맨 끝인가' 로 적어, 뒤에 새 열이 붙을 때마다(2026-09-26 픽업전날알림) 거짓으로 빨개졌다. 도입 때 인덱스를 고정한다. */
+check('셀렉 시트 조기이행 열 위치 고정(59번째, 인덱스 58) — 앞에 열이 끼어들지 않았다', colEarly === 58);
+// 버전은 문구 정본(widerruf-text.js)에서 읽는다 — 문구를 고치고 버전을 올릴 때마다 여기 숫자를 따라 고치던 드리프트 제거(2026-09-29 WB-2026-10)
+const curVer = JSON.parse(feSrc.slice(feSrc.indexOf('{'), feSrc.lastIndexOf('}') + 1)).version;
+check(`유료 보정 + 체크 → 시각·문구 버전 기록(${curVer})`, M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 2, '2026-09-18 10:00') === '2026-09-18 10:00 | ' + curVer
+  && selData[1][colEarly] === '2026-09-18 10:00 | ' + curVer);
+// 급행도 유료 서비스 — 셀렉 때 급행만 사도(추가 보정 0) 조기 이행 요청을 기록해야 한다(제출부가 extraRetouch+1 로 넘긴다)
+check('급행만 주문 + 체크 → 조기 이행 요청 기록', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 0 + 1, '2026-09-29 10:00') === '2026-09-29 10:00 | ' + curVer);
 check('유료 보정 없음(수정으로 빠짐) → 지운다', M.recordSelectEarlyStart_(null, globalThis.__select, 2, { earlyStartRetouch: true }, 0, '2026-09-18 11:00') === '' && selData[1][colEarly] === '');
 check('체크 안 함 → 비움', M.recordSelectEarlyStart_(null, globalThis.__select, 2, {}, 3, '2026-09-18 12:00') === '');
 

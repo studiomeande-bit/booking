@@ -262,6 +262,20 @@ const TOTAL_STEPS = 5; // 0:welcome 1:gallery 2:retouch 3:print 4:review
 function isReprintSession() {
   return String(state.session?.itemGroup || '').trim().toLowerCase() === 'reprint';
 }
+/* ===== 출력 없는 세션(마이리얼트립) =====
+ * 사장님 확정(2026-09-29): 마이리얼트립 촬영은 출력(인화) 옵션이 없다 — 보정할 사진만 고른다.
+ * 정본은 서버 printsDisabled(셀렉 촬영종류·상품 + 예약 결제수단 — 결제수단만 MRT 인 snap 행이 있다).
+ * 서버가 그 값을 아직 안 보낼 때(셔틀 배포 전)만 이름으로 짐작한다. 서버도 제출을 막는다. */
+function isNoPrintSession() {
+  const session = state.session;
+  if (!session || isReprintSession()) return false;
+  if (Object.prototype.hasOwnProperty.call(session, 'printsDisabled')) return session.printsDisabled === true;
+  return /myrealtrip|my real trip|마이리얼트립/i.test(`${session.itemGroup || ''} ${session.product || ''}`);
+}
+/* 출력 없는 세션이면 'xxxNoPrint' 문구를 쓴다(없으면 원래 키) */
+function npKey(key) {
+  return isNoPrintSession() && copy()[`${key}NoPrint`] !== undefined ? `${key}NoPrint` : key;
+}
 const GALLERY_INITIAL_RENDER = 36;
 const GALLERY_RENDER_INCREMENT = 60;
 const GALLERY_BATCH_SIZE = 300;
@@ -280,6 +294,7 @@ function readStoredLang() {
 }
 
 const state = {
+  express: false,   // 급행(셀렉 때) 선택 — 판매 여부·요금은 session.express(서버 정본)
   sessionId: new URLSearchParams(globalThis.location.search).get('id') || '',
   lang: normalizeLang(new URLSearchParams(globalThis.location.search).get('lang')) || readStoredLang() || 'ko',
   /* true once the customer picks a language by hand — stops the session's
@@ -409,7 +424,13 @@ const els = {
   vatNote: document.getElementById('vatNote'),
   orderLegalBox: document.getElementById('orderLegalBox'),
   earlyStartRetouchRow: document.getElementById('earlyStartRetouchRow'),
+  earlyStartWhy: document.getElementById('earlyStartWhy'),
   earlyStartRetouchInput: document.getElementById('earlyStartRetouchInput'),
+  expressBox: document.getElementById('expressBox'),
+  expressRow: document.getElementById('expressRow'),
+  expressInput: document.getElementById('expressInput'),
+  expressLabel: document.getElementById('expressLabel'),
+  expressNote: document.getElementById('expressNote'),
   earlyStartRetouchText: document.getElementById('earlyStartRetouchText'),
   printNoWiderrufNote: document.getElementById('printNoWiderrufNote'),
   widerrufInfoLink: document.getElementById('widerrufInfoLink'),
@@ -689,6 +710,7 @@ function wireEvents() {
   });
   // 조기 이행 체크는 제출 payload 에 실린다 — 바뀌면 새 제출 시도(updateSubmitState 가 requestId 를 버린다)
   els.earlyStartRetouchInput?.addEventListener('change', updateSubmitState);
+  els.expressInput?.addEventListener('change', () => { state.express = !!els.expressInput.checked; updateReview(); });
   els.pickupPrevMonthBtn?.addEventListener('click', () => movePickupMonth(-1));
   els.pickupNextMonthBtn?.addEventListener('click', () => movePickupMonth(1));
 }
@@ -774,7 +796,9 @@ function hideLoading() {
 
 function hydrateSession(session) {
   state.session = session;
+  state.express = !!session?.express?.atSelect;
   applyReprintUi();   // 보정 단계가 없는 세션이면 화면 구조부터 바꾼다(문구·점·버튼)
+  applyNoPrintUi();   // 출력 단계가 없는 세션(마이리얼트립)도 같은 방식
   /* The customer booked in some language; open the page in it. An explicit
      ?lang= or a stored manual choice takes precedence. */
   if (!state.langChosen) {
@@ -815,6 +839,7 @@ function hydrateSession(session) {
     ? buildDecoupledPrintsFromExisting(existingPhotos, existingPrints)
     : [];
   state.photocard = normalizePhotocardSelection(session.existingPhotocard || extractPhotocardFromPrints(existingPrints));
+  if (isNoPrintSession()) { state.prints = []; state.photocard = normalizePhotocardSelection(null); }
   // 기존 수정 모드에서 이미 선택된 사진들은 갤러리 별점 5점으로 복원 (갤러리 로드 후 반영)
   if (session.bookingMarketing === 'Y') state.marketing = 'Y';
   syncMarketingBonusRows();
@@ -855,6 +880,7 @@ function getSelectablePrintOptions() {
 }
 
 function getSessionIncludedPrintQuota(session = state.session) {
+  if (isNoPrintSession()) return [];
   const validIds = new Set(PRINT_OPTIONS.map((option) => option.id));
   return getProductIncludedPrintQuota(getSessionProductInput(session))
     .filter((item) => validIds.has(item.id) && Number(item.qty) > 0)
@@ -878,6 +904,7 @@ function getIncludedPrintPresetTypes(session, count) {
 }
 
 function getIncludedPrintSummary(session = state.session) {
+  if (isNoPrintSession()) return '';   // 결제수단만 MRT 인 스냅 상품도 이름으로는 출력 포함 상품이다 — 정본은 printsDisabled
   return getProductIncludedPrintSummary(getSessionProductInput(session), state.lang);
 }
 
@@ -1008,6 +1035,7 @@ function normalizePhotocardSelection(value) {
 }
 
 function hasIncludedPhotocard() {
+  if (isNoPrintSession()) return false;
   if (state.session && state.session.hasPhotocard !== undefined) return state.session.hasPhotocard === true;
   if (state.session?.hasPhotocard === true) return true;
   const itemGroup = String(state.session?.itemGroup || '').toLowerCase().trim();
@@ -1047,7 +1075,7 @@ function hasRequestedDeliveryOutput() {
 function requiresDeliverySelection() {
   /* 재주문 v1 은 픽업 전용이다 — 수령방식을 묻지 않는다(사장님 확정 2026-09-10).
      우편을 열려면 배송비 실비 청구가 먼저 필요하고, A3 우편 요금이 아직 미실측이다. */
-  if (isReprintSession()) return false;
+  if (isReprintSession() || isNoPrintSession()) return false;
   return sessionHasIncludedDeliveryOutput() || hasRequestedDeliveryOutput();
 }
 
@@ -1177,7 +1205,7 @@ function renderPackageSummary() {
   const s = state.session;
   const input = getSessionProductInput(s);
   const includedSummary = getIncludedPrintSummary(s);
-  const hasFixedSpec = productHasFixedDeliverySpec(input);
+  const hasFixedSpec = !isNoPrintSession() && productHasFixedDeliverySpec(input);
   // 포함 인화의 등급명만 병기(설명 문장은 붙이지 않는다 — Step 3에서 안내한다).
   const includedTierSuffix = (() => {
     const names = [...new Set(getSessionIncludedPrintQuota(s).map((q) => getPrintTier(q.id)).filter(Boolean))]
@@ -1192,14 +1220,15 @@ function renderPackageSummary() {
       ? `<div class="guide-copy">${c.pkgIncludedNoneHtml}</div>`
       : '';
   const deliveryLines = getProductDeliveryLines(input, state.lang, { includeNoPrintLine: false })
-    .filter((line) => !/보정본|retouched|retusch/i.test(line));
+    .filter((line) => !/보정본|retouched|retusch/i.test(line))
+    .filter((line) => !isNoPrintSession() || !/^(출력물|Prints included|Drucke inklusive|No prints included|Keine Drucke)/i.test(line));
   const autoPrintNotice = includedSummary
     ? `<div class="guide-copy">${c.pkgAutoPrintHtml}</div>`
     : '';
   els.packageSummary.innerHTML = `
     <div class="detail-title">${escapeHtml(c.pkgTitle)}</div>
     <div class="guide-copy">${c.pkgBaseHtml(escapeHtml(s.baseRetouchCount || 0), escapeHtml(s.retouchPrice || 0))}</div>
-    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">${c.pkgServiceCutHtml(getServiceCutCount())}</div>` : ''}
+    ${getServiceCutCount() > 0 ? `<div class="guide-copy service-cut-inline">${c[npKey('pkgServiceCutHtml')](getServiceCutCount())}</div>` : ''}
     ${includedLine}
     ${autoPrintNotice}
     ${deliveryLines.length ? `<div class="guide-copy">${deliveryLines.map(escapeHtml).join(' · ')}</div>` : ''}
@@ -1416,7 +1445,7 @@ function renderServiceCutNotice() {
   if (count <= 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
   const c = copy();
-  box.innerHTML = `<div class="service-cut-title">${escapeHtml(c.serviceCutTitle(count))}</div><div class="service-cut-copy">${c.serviceCutCopyHtml}</div>`;
+  box.innerHTML = `<div class="service-cut-title">${escapeHtml(c.serviceCutTitle(count))}</div><div class="service-cut-copy">${c[npKey('serviceCutCopyHtml')]}</div>`;
 }
 
 function updateMarketingCopy() {
@@ -1635,10 +1664,22 @@ function calcPrintDiscount(annotations = computePrintAnnotations()) {
   return { units, raw, vd: computeVolumeDiscount('print', units, base) };
 }
 
+/* ── 급행(2026-09-29) — 서버 getSelectExpressInfo_/computeSelectExpressAmt_ 와 같은 규칙:
+   판매(offer: 대상 상품·예약 때 미구매) + 보정할 사진이 한 장 이상. 요금은 서버가 준 fee 그대로(볼륨 할인 밖). */
+function hasRetouchSelection() {
+  return state.photos.some((p) => String(p?.num || '').trim() || String(p?.note || '').trim());
+}
+function expressOffered() {
+  const x = state.session?.express;
+  return !!(x && x.offer && Number(x.fee) > 0 && hasRetouchSelection());
+}
+function expressAmount() {
+  return state.express && expressOffered() ? money2(Number(state.session.express.fee)) : 0;
+}
 function calcTotal() {
   const r = calcRetouchDiscount();
   const p = calcPrintDiscount();
-  return money2((r.raw - r.vd.discount) + (p.raw - p.vd.discount));
+  return money2((r.raw - r.vd.discount) + (p.raw - p.vd.discount) + expressAmount());
 }
 
 /* ========================================================================
@@ -2725,7 +2766,7 @@ function renderPrintPicker() {
   const titleEl = document.getElementById('printPickerTitleText');
   const hintEl = document.getElementById('printPickerHintText');
   const pickedCount = state.photos.filter((p) => !p.isBonus).length;
-  if (titleEl) titleEl.textContent = retouchMode ? c.retouchPickerTitle(pickedCount) : c.printPickerTitle;
+  if (titleEl) titleEl.textContent = retouchMode ? c.retouchPickerTitle(pickedCount) : printPickerMode === 'assign' ? c.assignPickerTitle : c.printPickerTitle;
   if (hintEl) hintEl.textContent = retouchMode ? c.retouchPickerHint : c.printPickerHint;
   const current = printNumKey(state.prints[printPickerTarget]?.photoNum);
   // 픽커는 전량 렌더하지 않고 상위 N + 더보기 (갤러리와 같은 예산 감각, 검색이 주 탐색 수단)
@@ -2963,7 +3004,7 @@ function personPickerHtml(photo, index) {
 
 function renderPhotos() {
   const c = copy();
-  const retouchIntro = `<div class="included-print-callout"><strong>${escapeHtml(c.retouchIntroTitle)}</strong><span>${escapeHtml(c.retouchIntroCopy)}</span></div>`;
+  const retouchIntro = `<div class="included-print-callout"><strong>${escapeHtml(c.retouchIntroTitle)}</strong><span>${escapeHtml(c[npKey('retouchIntroCopy')])}</span></div>`;
   if (!state.photos.length) {
     els.photoList.innerHTML = `${retouchIntro}<div class="empty-state">${escapeHtml(c.retouchEmpty)}</div>`;
     return;
@@ -3612,11 +3653,43 @@ function updateReview() {
   els.reviewMarketing.textContent = state.marketing === 'Y' ? c.marketingYes : c.marketingNo;
   syncDeliveryUi();
   if (els.reviewDelivery) els.reviewDelivery.textContent = requiresDeliverySelection() ? getDeliveryReviewText() : '';
+  renderExpressBox();
   const total = calcTotal();
   els.reviewTotal.textContent = total === 0 ? c.printFree : `€${total}`;
   syncOrderLegal();
   updateSubmitState();
   renderStepWarnings();
+}
+
+function ymdShort(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const wd = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const W = { ko: ['일', '월', '화', '수', '목', '금', '토'], en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], de: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] };
+  if (state.lang === 'de') return `${W.de[wd]}, ${m[3]}.${m[2]}.`;
+  if (state.lang === 'en') return `${W.en[wd]} ${Number(m[3])}/${Number(m[2])}`;
+  return `${Number(m[2])}월 ${Number(m[3])}일(${W.ko[wd]})`;
+}
+function renderExpressBox() {
+  if (!els.expressBox) return;
+  const x = state.session?.express;
+  const c = copy();
+  if (x?.atBooking && hasRetouchSelection()) {        // 예약 때 이미 산 급행 — 안내만, 다시 팔지 않는다
+    els.expressBox.classList.remove('hidden');
+    els.expressRow?.classList.add('hidden');
+    els.expressNote.textContent = c.expressAtBooking;
+    return;
+  }
+  const offered = expressOffered();
+  els.expressBox.classList.toggle('hidden', !offered);
+  els.expressRow?.classList.remove('hidden');
+  if (!offered) return;
+  if (els.expressInput) els.expressInput.checked = !!state.express;
+  els.expressLabel.textContent = c.expressLabel(money2(Number(x.fee)));
+  const est = x.estimate || {};
+  els.expressNote.textContent = state.express
+    ? (est.express?.retouchBy ? c.expressDueOn(ymdShort(est.express.retouchBy)) : '')
+    : (est.normal?.retouchFrom ? c.expressDueOff(ymdShort(est.normal.retouchFrom), ymdShort(est.normal.retouchTo)) : '');
 }
 
 /* ── 유료 추가 주문의 법정 안내 (docs/select-widerruf-plan.md, 2026-09-18) ──
@@ -3627,7 +3700,13 @@ function legalCopy() {
   const legal = state.session?.legal;
   return legal ? (legal[state.lang] || legal.ko) : null;
 }
-function hasPaidRetouch() { return calcRetouchDiscount().raw > 0; }
+function hasPaidRetouch() { return calcRetouchDiscount().raw > 0 || expressAmount() > 0; }   // 급행도 유료 서비스(조기 이행 요청 대상)
+/* 조기 이행 요청 문구는 산 것에 맞춘다 — 급행만 산 손님에게 '유료 추가 보정' 이라고 하면 왜 체크하라는지 알 수 없다 */
+function earlyStartKind() {
+  const r = calcRetouchDiscount().raw > 0, x = expressAmount() > 0;
+  return r && x ? 'Both' : x ? 'Express' : r ? 'Retouch' : '';
+}
+function earlyStartWarnText() { const k = earlyStartKind(); return copy()[`warnEarlyStart${k}`] || copy().warnEarlyStartRetouch; }
 function hasPaidPrints() { return calcPrintDiscount().raw > 0; }
 function submitButtonLabel() {
   const L = legalCopy();
@@ -3642,6 +3721,10 @@ function syncOrderLegal() {
   els.orderLegalBox?.classList.toggle('hidden', !(paidRetouch || paidPrints));
   els.earlyStartRetouchRow?.classList.toggle('hidden', !paidRetouch);
   if (els.earlyStartRetouchText) els.earlyStartRetouchText.textContent = paidRetouch ? L.earlyStartRetouch : '';
+  if (els.earlyStartWhy) {
+    els.earlyStartWhy.classList.toggle('hidden', !paidRetouch);
+    els.earlyStartWhy.textContent = paidRetouch ? (copy()[`earlyStartWhy${earlyStartKind()}`] || '') : '';
+  }
   // 유료 보정이 빠졌다가 다시 담기면 다시 명시적으로 체크해야 한다
   if (!paidRetouch && els.earlyStartRetouchInput) els.earlyStartRetouchInput.checked = false;
   els.printNoWiderrufNote?.classList.toggle('hidden', !paidPrints);
@@ -3720,7 +3803,7 @@ function validateStep2() {
 
 const MAIL_LATIN_RE = /^[\x20-\x7E\r\n\u00A0-\u024F€]*$/;
 function validateStep3() {
-  if (!isReprintSession() && !hasAnySelection()) { setBanner(copy().errNothingSelected, 'error'); return false; }
+  if (!isReprintSession() && !hasAnySelection()) { setBanner(copy()[npKey('errNothingSelected')], 'error'); return false; }
   const invalid = state.prints.findIndex((print) => !String(print.photoNum || '').trim());
   if (invalid >= 0) { setBanner(copy().errPrintRow(invalid + 1), 'error'); return false; }
   // 견적형은 희망 사이즈가 없으면 랩에 견적을 물어볼 수 없다 — 빈 채로 접수하면 되물어야 한다.
@@ -3774,7 +3857,7 @@ function collectStepProblems(step) {
   }
 
   if (step === 3) {
-    if (!isReprintSession() && !hasAnySelection()) push(c.errNothingSelected, pick('#addPrintBtn'));
+    if (!isReprintSession() && !hasAnySelection()) push(c[npKey('errNothingSelected')], pick(isNoPrintSession() ? '#pickRetouchBtn' : '#addPrintBtn'));
     state.prints.forEach((print, i) => {
       if (String(print.photoNum || '').trim()) return;
       push(c.errPrintRow(i + 1), pick(`[data-print-photo="${i}"]`) || pick('#printList'));
@@ -3866,6 +3949,28 @@ function applyReprintUi() {
   });
 }
 
+/* 출력 없는 세션(마이리얼트립) — 출력 단계의 흔적을 지운다. 라벨은 textContent 가 아니라 **i18n 키**를 바꾼다
+   (언어를 바꾸면 applyCopy 가 키로 다시 그리므로, 글자만 바꾸면 원래 '출력 선택으로 →' 가 되살아난다). */
+function applyNoPrintUi() {
+  if (!isNoPrintSession()) return;
+  document.body.classList.add('is-no-print');
+  els.stepDots[3]?.classList.add('hidden');
+  document.querySelector('[data-i18n-html="process3Html"]')?.classList.add('hidden');
+  els.reviewPrints?.closest('.review-block')?.classList.add('hidden');
+  const c = copy();
+  const swap = (el, attr, key) => {
+    if (!el) return;
+    el.dataset[attr] = key;
+    if (attr === 'i18nHtml') el.innerHTML = c[key]; else el.textContent = c[key];
+  };
+  swap(document.getElementById('step2NextBtn'), 'i18n', 'step3Next');
+  swap(document.querySelector('[data-i18n="heroLede"]'), 'i18n', 'heroLedeNoPrint');
+  swap(document.querySelector('[data-i18n="star3Desc"]'), 'i18n', 'star3DescNoPrint');
+  swap(document.querySelector('[data-i18n-html="s1CopyHtml"]'), 'i18nHtml', 's1CopyHtmlNoPrint');
+  swap(document.querySelector('[data-i18n-html="process4Html"]'), 'i18nHtml', 'process4HtmlNoPrint');
+  swap(document.querySelector('[data-i18n-html="s2CopyHtml"]'), 'i18nHtml', 's2CopyHtmlNoPrint');
+}
+
 /* 규격·잘림 안내 — print-tier-copy.js 의 PRINT_METHOD_POINTS 원문을 그대로 쓴다.
    🔴 그 파일 헤더가 "UWG 법률 검수를 통과한 원문, 임의로 다듬지 말 것" 이라 여기서 새로 쓰지 않는다.
    예약 페이지에는 있었는데 정작 인화를 주문하는 이 화면엔 없었다(2026-09-10). */
@@ -3880,6 +3985,13 @@ function goStep(step) {
   flushRatingsSave();   // 단계 이동 시 찜 저장 플러시(디바운스 대기분)
   // 재주문에는 보정 단계가 없다 — 어느 방향으로 들어와도 2번을 건너뛴다.
   if (step === 2 && isReprintSession()) return goStep(state.step > 2 ? 1 : 3);
+  /* 출력 없는 세션은 3번(출력 선택)을 건너뛴다. 앞으로 갈 때는 2단계 검사(보정 칸·포토카드)를 먼저 거쳐야 한다 —
+     바로 4로 보내면 validateStep2 가 안 돌아 반쯤 쓴 보정 칸이 최종 확인까지 간다. */
+  if (step === 3 && isNoPrintSession()) {
+    if (state.step > 3) return goStep(2);
+    if (!validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
+    return goStep(4);
+  }
   if (step === 2 && !validateStep1()) { showBlockedModal(collectStepProblems(1)); return; }
   if (step === 3 && !validateStep2()) { showBlockedModal(collectStepProblems(2)); return; }
   if (step === 4 && !validateStep3()) { showBlockedModal(collectStepProblems(3)); return; }
@@ -3889,9 +4001,10 @@ function goStep(step) {
   els.stepPanels.forEach((panel) => panel.classList.toggle('active', Number(panel.dataset.step) === step));
   els.stepPanels.forEach((panel) => panel.classList.remove('hidden'));
   const reprint = isReprintSession();
+  const noPrint = isNoPrintSession();
   els.stepDots.forEach((dot, index) => {
     // className 을 통째로 다시 쓰므로 재주문의 보정 점 숨김을 여기서 다시 붙여야 한다.
-    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}${reprint && index === 2 ? ' hidden' : ''}`;
+    dot.className = `step-dot${index === step ? ' active' : index < step ? ' done' : ''}${reprint && index === 2 ? ' hidden' : ''}${noPrint && index === 3 ? ' hidden' : ''}`;
   });
   if (step === 1 && !state.gallery.loaded && !state.gallery.loading) loadGallery();
   if (step === 3) {
@@ -3942,7 +4055,7 @@ function payloadSig() {
     state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '']),
     state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
     state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
-    state.photocard, !!els.earlyStartRetouchInput?.checked
+    state.photocard, !!els.earlyStartRetouchInput?.checked, expressAmount() > 0
   ]);
 }
 function updateSubmitState() {
@@ -3988,7 +4101,7 @@ function renderStepWarnings() {
   const step2Message = canProceedStep2()
     // 진행은 되지만 알려야 할 것: 보정 0장이면 원본 출력만 된다 / 서비스 컷은 안 쓰면 소멸(보너스와 달리 흡수 안 됨)
     ? (countCompleteRetouchRows() < 1
-      ? c.noteNoRetouch(Number(state.session?.baseRetouchCount || 0))
+      ? (isNoPrintSession() ? c.errNothingSelectedNoPrint : c.noteNoRetouch(Number(state.session?.baseRetouchCount || 0)))
       : unusedService > 0 ? c.noteServiceSlotsUnused(unusedService) : '')
     : getPhotocardWarning()
         ? getPhotocardWarning()
@@ -4000,7 +4113,7 @@ function renderStepWarnings() {
   const step4Message = canSubmit()
     ? ''
     : !requiresDeliverySelection()
-      ? c.warnReviewAgain
+      ? c[npKey('warnReviewAgain')]
       : !state.deliveryMethod
       ? c.warnDeliveryMethod
       : state.deliveryMethod === 'mail' && !getMailNameForSubmission()
@@ -4027,7 +4140,8 @@ const PREVIEW_MOCK_PRODUCTS = {
   stud: { product: '스튜디오 Basic', baseRetouchCount: 3 },
   prof: { product: '1인 프로필 Basic', baseRetouchCount: 1 },
   snap: { product: '야외 스냅 Basic', baseRetouchCount: 7 },
-  wed: { product: '프리웨딩 Plus', baseRetouchCount: 30 }
+  wed: { product: '프리웨딩 Plus', baseRetouchCount: 30 },
+  '마이리얼트립': { product: '1인스냅 60분', baseRetouchCount: 5, printsDisabled: true }
 };
 function buildMockSession() {
   const group = new URLSearchParams(globalThis.location.search).get('group') || 'stud';
@@ -4039,6 +4153,7 @@ function buildMockSession() {
     itemGroup: PREVIEW_MOCK_PRODUCTS[group] ? group : 'stud',
     product: mock.product,
     baseRetouchCount: mock.baseRetouchCount,
+    printsDisabled: !!mock.printsDisabled,
     retouchPrice: 10,
     marketingBonusCount: 2,
     serviceCutCount: 2,
@@ -4093,7 +4208,7 @@ async function onSubmit() {
   if (!validateDeliverySelection()) { showBlockedModal(collectStepProblems(4)); return; }
   // 유료 추가 보정 — 조기 이행 요청은 명시적 체크여야 한다(묶음 동의·자동 체크 없음)
   if (legalCopy() && hasPaidRetouch() && !els.earlyStartRetouchInput?.checked) {
-    setBanner(copy().warnEarlyStartRetouch, 'error');
+    setBanner(earlyStartWarnText(), 'error');
     els.orderLegalBox?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
@@ -4118,7 +4233,7 @@ async function onSubmit() {
     })),
     // 출력 리스트: 통합. 서버가 포함 쿼터/과금을 최종 판정하므로 price 는 참고용.
     prints: [
-      ...state.prints.map((print, index) => {
+      ...(isNoPrintSession() ? [] : state.prints).map((print, index) => {
         const ann = printAnnotations[index];
         return {
           photoNum: String(print.photoNum || ''),
@@ -4147,6 +4262,7 @@ async function onSubmit() {
     mailAddress: deliveryRequired && state.deliveryMethod === 'mail' ? getMailAddressForSubmission() : '',
     photocard: getPhotocardPayload(),
     earlyStartRetouch: !!(legalCopy() && hasPaidRetouch() && els.earlyStartRetouchInput?.checked),
+    express: expressAmount() > 0,   // 요금은 서버가 다시 계산한다(화면 금액은 안 보낸다)
     suppressCustomerEmail: state.testMode
   };
   try {
@@ -4208,7 +4324,9 @@ function renderSuccess(result) {
     : '';
   els.successGuide.innerHTML = `
     <div class="detail-title">${escapeHtml(c.successSummaryTitle)}</div>
-    <div class="guide-copy">${escapeHtml(c.successSummaryLine(state.photos.length, state.prints.length, state.marketing === 'Y' ? c.consentYes : c.consentNo))}</div>
+    <div class="guide-copy">${escapeHtml(isNoPrintSession()
+      ? c.successSummaryLineNoPrint(state.photos.length, state.marketing === 'Y' ? c.consentYes : c.consentNo)
+      : c.successSummaryLine(state.photos.length, state.prints.length, state.marketing === 'Y' ? c.consentYes : c.consentNo))}</div>
     ${deliverySummaryLine}
     ${result?.invoiceNumber ? `<div class="guide-copy">${c.successInvoiceHtml(escapeHtml(result.invoiceNumber))}</div>` : ''}
   `;

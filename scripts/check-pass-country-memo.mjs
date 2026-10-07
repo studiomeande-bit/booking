@@ -11,13 +11,15 @@
  * 검사 대상: appscript/Code.gs 의 _parsePassCountryMemo_ / _expandPassPersonCountries_ /
  *            _passCountriesToMemoToken_ / _passCountryCode_ / _passCountryLabel_ / _formatPassCountryMemo_
  *            를 그대로 떼어내 실행한다(복사본 아님 — 소스에서 추출).
- * 금액 공식은 calculateQuote_ 의 passport 블록과 같은 식을 여기서 한 번 더 쓴다(공식이 바뀌면 이 파일도 고칠 것).
+ * 금액은 **진짜 calculateQuote_** 를 GAS 스텁 위에서 돌려 계산한다(공식 복제 없음). 예약 화면 미리보기가
+ * 서버와 같은 규칙(기타 포함·요금 상수)인지도 함께 본다.
  *
  * 사용법:  node scripts/check-pass-country-memo.mjs       (불일치 시 exit 1)
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = readFileSync(join(ROOT, 'appscript', 'Code.gs'), 'utf8');
@@ -43,30 +45,40 @@ const fns = ['_passCountryLabel_', '_parsePassCountryMemo_', '_formatPassCountry
 const ctx = new Function(`const BOOKING_COL={'요청사항':0,'옵션':1};\n${labelsLine[0]}\n${fns.map(grab).join('\n')}\nreturn {${fns.join(',')}};`)();
 const row = (memo, option) => [memo || '', option || ''];
 
-/* 금액 상수는 **Code.gs 에서 읽는다**. 하드코딩했다가 2026-09-25 결함주입 실험에서 들켰다:
-   `PASS_EXTRA_COUNTRY_FEE_` 를 5→4 로, 가족할인 기본값을 10→12 로 바꿔도 이 게이트가 초록이었다
-   (하네스가 자기 숫자로 계산하니 Code.gs 와 어긋나도 모른다 — 헤더는 "금액 전부 일치" 라고 주장하면서).
-   BASE(1인 €30)만은 예외로 시나리오 입력이다 — 라이브 상품가는 Code.gs 가 아니라 '상품설정' 시트가 정본이라
-   여기서 단정할 수 없다(메모리 product-catalog-source-of-truth). 나머지는 소스가 바뀌면 이 게이트가 빨개진다. */
-const num = (re, what) => {
-  const m = src.match(re);
-  if (!m) throw new Error(`${what} 를 Code.gs 에서 찾지 못했습니다 — 상수명이 바뀌었나요? (${re})`);
-  return Number(m[1]);
-};
-const BASE = 30;
-const EXTRA = num(/const PASS_EXTRA_COUNTRY_FEE_=(\d+(?:\.\d+)?);/, 'PASS_EXTRA_COUNTRY_FEE_');
-const FAMILY_MIN = num(/const PASS_FAMILY_DISCOUNT_MIN_PEOPLE=(\d+);/, 'PASS_FAMILY_DISCOUNT_MIN_PEOPLE');
-// 설정 시트에 행이 없을 때의 기본 할인율 — getPassportFamilyDiscountRate_ 의 폴백 `return N;`
-const FAMILY_PCT = num(/function getPassportFamilyDiscountRate_\(\)\{[\s\S]*?String\(v\)\.trim\(\)===''\)\s*return (\d+(?:\.\d+)?);/, '가족할인 기본율');
-const round = (n) => Math.round(n * 100) / 100;
-/** calculateQuote_ passport 블록과 같은 식. */
+/* 금액은 **진짜 견적 엔진 calculateQuote_** 로 계산한다 — 하네스 안에 공식을 복제하지 않는다.
+   이력: ① 9/23 판은 요금·할인율을 하드코딩해 Code.gs 를 바꿔도 초록이었고 ② 9/25 오전 판은 상수를 소스에서
+   읽었지만, **엔진은 그 상수가 아니라 숫자 5 를 직접** 쓰고 있어 여전히 엔진을 지키지 못했다(결함주입으로 적발).
+   그래서 Code.gs 를 GAS 스텁과 함께 통째로 로드해 원본 함수를 부른다(check-contract-b2c 와 같은 방식).
+   시트에서 읽는 상품·설정만 스텁한다 — 여권 1인 기준가 €30 은 라이브에선 '상품설정' 시트가 정본이라
+   여기서는 시나리오 입력이다. 기대값(140€·157.50€ …)은 사업 사실로 독립 고정한다(엔진에서 뽑으면 순환). */
+const nope = (n) => new Proxy({}, { get: () => () => { throw new Error(`${n} 스텁 — 여권 견적은 시트·드라이브에 닿으면 안 된다`); } });
+Object.assign(globalThis, {
+  Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 10) },
+  SpreadsheetApp: nope('SpreadsheetApp'), DriveApp: nope('DriveApp'), CalendarApp: nope('CalendarApp'),
+  MailApp: nope('MailApp'), GmailApp: nope('GmailApp'), UrlFetchApp: nope('UrlFetchApp'),
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty() {} }) },
+  CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+  LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+  Session: { getScriptTimeZone: () => 'Europe/Berlin' }, Logger: { log() {} },
+  ScriptApp: { getService: () => ({ getUrl: () => 'stub' }) }, HtmlService: {}, MimeType: {},
+});
+const engineDir = mkdtempSync(join(tmpdir(), 'passq-'));
+const enginePath = join(engineDir, 'code.cjs');
+// 같은 이름 함수는 뒤 선언이 앞 선언을 덮는다(호이스팅) — 시트 조회 두 개만 스텁으로 바꾼다
+writeFileSync(enginePath, `${src}
+function getProductById_(id){ return {id:'pass',g:'pass',t:'passport',p:30,dur:15,prep:0,nameKo:'여권/비자',nameEn:'Passport',nameDe:'Passbild'}; }
+function getSettingsMap_(){ return {}; }
+var __ROWS__={};
+function getDbSheet(){ return { getLastRow:()=>999, getRange:(r)=>({ getValues:()=>[__ROWS__[r]] }) }; }
+function __setRow__(r,cells){ const row=new Array(CONFIG.BOOKING_HEADERS.length).fill('');
+  Object.keys(cells).forEach(function(k){ row[BOOKING_COL[k]]=cells[k]; }); __ROWS__[r]=row; }
+module.exports={calculateQuote_,buildInvoicePricingOptionText_,buildInvoicePricingPreview_,syncBookingFromInvoiceRecord_,__setRow__,BOOKING_COL,CONFIG};`);
+const ENGINE = (await import(pathToFileURL(enginePath).href)).default;
+rmSync(engineDir, { recursive: true, force: true });
+/** 진짜 엔진으로 계산한 총액. business=true 면 법인 송장 건(가족할인 제외). */
 function price(perPerson, people, business = false) {
-  const filled = perPerson.filter((cs) => cs.length);
-  let total = filled.reduce((sum, cs) =>
-    sum + BASE + Math.max(0, cs.filter((c) => c && c !== 'OTHER').length - 1) * EXTRA, 0);
-  total += BASE * Math.max(0, people - filled.length);
-  if (people >= FAMILY_MIN && !business) total = round(total - round(total * (FAMILY_PCT / 100)));
-  return round(total);
+  return ENGINE.calculateQuote_({ itemId: 'pass', people, date: '2026-10-06',
+    passPersonCountries: perPerson, businessInvoiceNeeded: business ? 'Y' : '' }).totalPrice;
 }
 
 let fail = 0;
@@ -110,7 +122,15 @@ ok(ctx._passCountriesToMemoToken_(ctx._expandPassPersonCountries_(memo4, 2, true
 // 6) 라벨↔코드 왕복. 미등록 국가는 OTHER 로 떨어지고 국가 수에서 빠진다(기본가)
 ok(ctx._passCountryCode_('한국') === 'KR' && ctx._passCountryCode_('KR') === 'KR', '라벨/코드 모두 KR');
 ok(ctx._passCountryCode_('Ruritania') === 'OTHER', '미등록 국가 = OTHER', ctx._passCountryCode_('Ruritania'));
-ok(price([['KR', 'OTHER']], 1) === 30, 'OTHER 는 추가요금 없음 = 30€', price([['KR', 'OTHER']], 1));
+// '기타'(OTHER)도 한 나라 — 사장님 결정 2026-09-25("받는 쪽"). 예약 화면 안내 "추가 국가는 1개당 €5" 에 예외가 없다.
+ok(price([['KR', 'OTHER']], 1) === 35, '한국+기타 = 35€ (기타도 2번째 국가면 €5)', price([['KR', 'OTHER']], 1));
+ok(price([['OTHER']], 1) === 30, '기타 한 나라만 = 30€ (국가 1개는 기본가)', price([['OTHER']], 1));
+ok(price([['OTHER', 'OTHER']], 1) === 35, '목록 밖 두 나라(예: 베트남+태국) = 35€', price([['OTHER', 'OTHER']], 1));
+ok(price(Array(5).fill(['KR', 'OTHER']), 5) === 157.5, '5명 한국+기타 = 157.50€ (가족할인 적용)', price(Array(5).fill(['KR', 'OTHER']), 5));
+{
+  const vn2 = ctx._expandPassPersonCountries_('[국가별 신청] 2명:한국+베트남', 2, true);
+  ok(price(vn2, 2) === 70, "메모 '2명:한국+베트남' = 70€ (베트남도 한 나라)", price(vn2, 2));
+}
 
 // 7) 토큰 없는 예약: 전원 기본가 (종전 동작 그대로)
 ok(price(ctx._expandPassPersonCountries_('사전 문의 메모만 있음', 3, true), 3) === 90, '토큰 없음 = 90€');
@@ -146,6 +166,76 @@ ok(price(ctx._expandPassPersonCountries_(memo4, 5, true), 5, true) === 175, '법
      '메모 토큰이 옵션보다 우선 = 80€', price(ctx.resolvePassPersonCountriesForRow_(both, 2, true).countries, 2));
   ok(ctx.resolvePassPersonCountriesForRow_(row('메모없음', '국가 1개/인'), 3, true).fromOption === false,
      '국가 1개/인 은 폴백 불필요');
+}
+
+// 10b) 인보이스 품목 문구 — 고객 문서에 찍히는 국가 수가 청구 근거와 같아야 한다(기타 포함)
+{
+  const label = (pc, people) => ENGINE.buildInvoicePricingOptionText_(
+    ENGINE.calculateQuote_({ itemId: 'pass', people, date: '2026-10-06', passPersonCountries: pc }), { people });
+  ok(/1인당 국가 2개/.test(label([['KR', 'OTHER']], 1)), "인보이스: 한국+기타 → '1인당 국가 2개'", label([['KR', 'OTHER']], 1));
+  ok(/1인당 국가 2개/.test(label(Array(4).fill(['KR', 'DE']), 4)), "인보이스: 4명 한국+독일 → '1인당 국가 2개'", label(Array(4).fill(['KR', 'DE']), 4));
+  ok(/국가 구성 2개\/2개\/1개/.test(label([['KR', 'DE'], ['KR', 'OTHER'], ['OTHER']], 3)),
+     "인보이스: 사람마다 다르면 '국가 구성 2개/2개/1개'", label([['KR', 'DE'], ['KR', 'OTHER'], ['OTHER']], 3));
+}
+
+// 10c) 어드민 '인보이스 발행' 가격 계산기 — 예약을 불러오면 국가 수 칸을 비우고(0) rowIndex 를 보낸다.
+//      2026-09-25 감사: 1 로 고정해 보내 한국+독일 €35 예약이 €30 으로 계산되고, '장부 자동 반영' 이 켜져 있으면
+//      총액까지 €30 으로 덮어썼다. 서버가 그 예약의 구성을 실제로 읽는지 진짜 buildInvoicePricingPreview_ 로 본다.
+{
+  ENGINE.__setRow__(301, { '요청사항': '[국가별 신청] 1명:한국+기타', '옵션': '' });
+  ENGINE.__setRow__(302, { '요청사항': '현장 접수', '옵션': 'dog | 국가 2개/인' });
+  const pv = (rowIndex, people, passCountryCount = 0) =>
+    ENGINE.buildInvoicePricingPreview_({ itemId: 'pass', people, date: '2026-10-06', rowIndex, passCountryCount });
+  const a = pv(301, 1);
+  ok(a.quote && a.quote.totalPrice === 35, '발행 계산기: 한국+기타 예약 → €35 (국가 1개 가정 금지)', a.quote && a.quote.totalPrice);
+  ok(/1인당 국가 2개/.test(a.optionText || ''), "발행 계산기 문구: '1인당 국가 2개'", a.optionText);
+  const w = pv(302, 3);
+  ok(w.quote && w.quote.totalPrice === 105, '발행 계산기: 창구 등록(국가 2개/인) 3명 → €105', w.quote && w.quote.totalPrice);
+  const manual = pv(301, 1, 1);
+  ok(manual.quote && manual.quote.totalPrice === 30, '직접 입력한 국가 수(1)는 그대로 우선', manual.quote && manual.quote.totalPrice);
+
+  const admin = readFileSync(join(ROOT, 'appscript', 'AdminV2.html'), 'utf8');
+  const payloadFn = admin.slice(admin.indexOf('function buildInvoicePricingPayload('), admin.indexOf('function setInvoiceCalcPreview('));
+  ok(/passCountryCount:parseInt\([^)]*inv_calcPassportCountryCount[^)]*\)\?\.value,10\)\|\|0,/.test(payloadFn.replace(/\s+/g, ''))
+     || /passCountryCount:\s*parseInt\(document\.getElementById\('inv_calcPassportCountryCount'\)\?\.value,10\)\|\|0,/.test(payloadFn),
+     "어드민 계산기: 빈칸을 1 로 강제하지 않는다(0 = 예약 기준)");
+  ok(/rowIndex:\s*parseInt\(document\.getElementById\('inv_rowIndex'\)/.test(payloadFn), '어드민 계산기: rowIndex 를 보낸다');
+  const upd = admin.slice(admin.indexOf('function buildInvoiceBookingUpdatePayload('));
+  ok(/passCountryCount:\(payload&&payload\.passCountryCount\)\|\|0,/.test(upd) && /rowIndex:\(payload&&payload\.rowIndex\)\|\|0,/.test(upd),
+     '발행 페이로드가 국가 수를 1 로 되돌리지 않고 rowIndex 를 싣는다');
+  // 발행 동기화를 **실제로 실행**해 옵션 열에 무엇이 써지는지 본다(선언 존재만 보는 단정은 되돌려도 초록이었다)
+  {
+    const C = ENGINE.BOOKING_COL;
+    const row = new Array(ENGINE.CONFIG.BOOKING_HEADERS.length).fill('');
+    row[C['고객명']] = '창구 손님'; row[C['촬영종류']] = 'pass'; row[C['인원']] = 2;
+    row[C['옵션']] = 'dog | 국가 2개/인'; row[C['요청사항']] = '현장 접수';
+    const writes = {};
+    const sheet = { getRange: (r, c) => ({
+      setValue: (v) => { writes[c - 1] = v; },
+      getValues: () => [row.map((x, i) => (i in writes ? writes[i] : x))] }) };
+    const res = ENGINE.syncBookingFromInvoiceRecord_(sheet, 302,
+      { number: 'STMIN-TEST', total: 105, items: [{ description: '여권/비자', qty: 1, unitGross: 105 }] },
+      { syncBooking: true, bookingUpdate: { itemId: 'pass', people: 3, optionText: '인원 3명 | 1인당 국가 2개' } });
+    ok(res && res.ok, '발행 동기화 실행됨', JSON.stringify(res));
+    ok(/국가 2개\/인/.test(String(writes[C['옵션']] || '')),
+       "발행 동기화 후에도 옵션 열에 '국가 2개/인' 이 남는다(창구 등록의 유일한 국가 기록)", writes[C['옵션']]);
+    ok(writes[C['총결제액']] === 105, '발행 동기화: 총결제액 = 인보이스 총액 €105', writes[C['총결제액']]);
+  }
+}
+
+// 11) 예약 화면 미리보기(frontend/booking/booking.js getPreviewQuote)가 서버와 같은 규칙인가.
+//     화면은 서버 견적을 기다리는 동안 자체 계산을 보여준다 — 한쪽만 바꾸면 "화면 €30 / 청구 €35" 분쟁이 난다.
+{
+  const fe = readFileSync(join(ROOT, 'frontend', 'booking', 'booking.js'), 'utf8');
+  const at = fe.indexOf("if (item.t === 'passport') {", fe.indexOf('function getPreviewQuote('));
+  const block = at > -1 ? fe.slice(at, fe.indexOf('\n  }', at)) : '';
+  ok(block.length > 0, '예약 화면 여권 미리보기 블록을 찾음');
+  ok(!/!==\s*'OTHER'/.test(block), "예약 화면도 '기타'를 한 나라로 센다 (OTHER 제외 없음)");
+  const fee = (block.match(/\.length\s*-\s*1\)\s*\*\s*(\d+(?:\.\d+)?)/) || [])[1];
+  const serverFee = (src.match(/const PASS_EXTRA_COUNTRY_FEE_=(\d+(?:\.\d+)?);/) || [])[1];
+  ok(fee !== undefined && fee === serverFee, `예약 화면 국가 요금 €${fee} = 서버 PASS_EXTRA_COUNTRY_FEE_ €${serverFee}`);
+  ok(/\)\s*\.length\s*-\s*1\)\s*\*\s*PASS_EXTRA_COUNTRY_FEE_/.test(src.slice(src.indexOf('function calculateQuote_('))),
+     '서버 엔진이 숫자 대신 PASS_EXTRA_COUNTRY_FEE_ 상수를 쓴다(창구 국가 추가와 같은 값)');
 }
 
 if (fail) { console.error(`\n✗ 여권 국가 메모 검사 실패 ${fail}건`); process.exit(1); }

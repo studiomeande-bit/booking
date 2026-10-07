@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-board-api.mjs
- * 생성 시각: 2026-09-21T11:28:08.990Z
- * 포함 함수 90개 / 상수 26개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-10-06T19:07:08.510Z
+ * 포함 함수 95개 / 상수 27개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -79,7 +79,7 @@ const SELECT_PICKUP_EVENT_PREFIX = '[픽업]';
 
 const STUDIO_ADDRESS = 'Holzweg-passage 3, 61440 Oberursel';
 
-const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end'];
+const DATE_SETTING_KEYS=['event_start','event_end','promo_start','promo_end','deposit_hold_from','deposit_hold_until'];
 
 let SETTINGS_MAP_CACHE = null;
 
@@ -609,6 +609,10 @@ function buildTodayBoard_(dateStr){
          이미 받은 건에 '잔금 수령' 버튼과 수납 예정액이 계속 남는다(2026-09-19 실측 3건). */
       dueOnSite:balancePaid?0:roundCurrency_(Math.max(0,balance-partialPaid)+(depositPaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])))),
       balancePartialPaid:partialPaid,
+      /* 여권 1인당 국가(코드) — 보드 '국가 변경' 창이 사람별로 켜고 끈다(2026-10-06). 창구 등록(옵션 '국가 N개/인')은
+         국가명이 기록돼 있지 않아 수만 맞는 자리표시(fromOption) — 화면이 그렇게 알린다. */
+      passCountries:String(row[BOOKING_COL['촬영종류']]||'').trim()==='pass'
+        ?resolvePassPersonCountriesForRow_(row,Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1),true):null,   // 상속 = 총액을 매긴 기준(국가 변경 액션과 같은 값 — 보드 생성기는 주석의 함수명도 따라가므로 이름을 적지 않는다)
       prep:_dashboardPrepLines_(row[BOOKING_COL['요청사항']]),
       loyaltyApplied:/\[3회차 ?혜택\]/.test(String(row[BOOKING_COL['요청사항']]||'')),   // 원탭 혜택 적용 여부(앱 버튼 숨김)
       /* 재방문 맥락 — prior = 오늘보다 앞선 비취소 예약 수. 0이면 첫 방문. */
@@ -885,7 +889,13 @@ function getBookingDurationMinFromRow_(row,fallbackMin){
      슬롯 계산의 타입 버퍼(B↔B 15분)와 **이중 가산**되어 30분 촬영이 45분 이벤트 + 15분 버퍼
      = 실효 60분 간격이 됐다(2026-08-16 사장님 지적). prep 은 슬롯/견적의 footprint 계산
      (booking.js·computeSlots_ 의 d+prep)에만 남긴다 — 그쪽은 새 예약이 차지할 창의 크기다. */
-  if(product) return Math.max(15,(Number(product.d||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
+  if(product){
+    /* 여권 상품은 **인원수**가 길이다(1인 15·2인 20·3인 30·4인 40, 5인+ 인당 +10 — getPassportComboDurationMin_, 온라인 견적과 같은 표).
+       전엔 상품 기본값 d=15 만 써서, 어드민 저장·확정·일정변경·정합 점검이 캘린더를 다시 쓸 때마다 3·4인 여권 블록이 15분으로
+       줄었고, 비는 15~25분을 온라인 엔진이 빈 슬롯으로 내줬다(2026-10-06 이도현 3인 16:30 ↔ JONGDEOK KIM 3인 16:45 겹침). */
+    if(product.t==='passport') return Math.max(15,getPassportComboDurationMin_(row[BOOKING_COL['인원']]));
+    return Math.max(15,(Number(product.d||0)+getBookingPassportComboDurationMinFromRow_(row))||60);
+  }
   return Math.max(15,Number(fallbackMin||0)||60);
 }
 
@@ -1337,6 +1347,53 @@ function _isExternalBookingItemGroup_(itemGroup){
   return group==='snap'||group==='wed'||group==='biz'||group==='마이리얼트립';
 }
 
+const PASS_COUNTRY_LABELS_={KR:'한국',DE:'독일',JP:'일본',CN:'중국',US:'미국',OTHER:'기타'};
+
+function _parsePassCountryMemo_(memo){
+  const m=String(memo||'').match(/\[국가별 신청\][^\n]*/);
+  if(!m) return {found:false,groups:[],raw:''};
+  const body=m[0].replace(/^\[국가별 신청\]\s*/,'');
+  const groups=body.split(',').map(function(seg){
+    const g=String(seg||'').trim().match(/^(\d+)\s*명\s*:\s*(.+)$/);
+    if(!g) return null;
+    return {people:Math.max(1,parseInt(g[1],10)||1),
+            countries:g[2].split('+').map(function(x){return x.trim();}).filter(Boolean)};
+  }).filter(Boolean);
+  return {found:true,groups:groups,raw:m[0]};
+}
+
+function _expandPassPersonCountries_(memo,people,inherit){
+  const groups=_parsePassCountryMemo_(memo).groups||[];
+  const out=[];
+  groups.forEach(function(g){
+    const codes=(g.countries||[]).map(_passCountryCode_).filter(Boolean);
+    for(let i=0;i<g.people&&out.length<people;i++) out.push(codes.slice());
+  });
+  const last=out.length?out[out.length-1]:[];
+  while(out.length<people) out.push(inherit===false?[]:last.slice());
+  return out.slice(0,people);
+}
+
+function resolvePassPersonCountriesForRow_(row,people,inherit){
+  const expanded=_expandPassPersonCountries_(String(row[BOOKING_COL['요청사항']]||''),people,inherit);
+  const hasReal=expanded.some(function(cs){
+    return (cs||[]).some(function(c){return c&&c!=='OTHER';});});
+  const optionCount=parseInt((String(row[BOOKING_COL['옵션']]||'')
+    .match(/국가\s*(\d+)\s*개\s*\/\s*인/)||[])[1],10)||0;
+  if(!hasReal&&optionCount>1){
+    return {countries:buildInvoicePassPersonCountries_(people,optionCount),fromOption:true,optionCount:optionCount};
+  }
+  return {countries:expanded,fromOption:false,optionCount:optionCount};
+}
+
+function _passCountryCode_(v){
+  const s=String(v||'').trim();
+  if(!s) return '';
+  if(/^[A-Za-z]{2,6}$/.test(s)&&PASS_COUNTRY_LABELS_[s.toUpperCase()]) return s.toUpperCase();
+  const hit=Object.keys(PASS_COUNTRY_LABELS_).filter(function(k){return PASS_COUNTRY_LABELS_[k]===s;})[0];
+  return hit||'OTHER';
+}
+
 function parseMoneyValue_(value){
   if(value===null || value===undefined || value==='') return 0;
   if(typeof value==='number') return isFinite(value) ? value : 0;
@@ -1375,7 +1432,7 @@ const PREP_COL=PREP_HEADERS.reduce(function(m,h,i){m[h]=i;return m;},{});
 
 const SELECT_SHEET_NAME='사진셀렉';
 
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
@@ -1395,6 +1452,16 @@ function isSelectHandoverOpen_(row){
   if(!handoverAt) return true;
   const printAt=SELECT_COL['출력완료일시']!=null?parseDateSafe_(row[SELECT_COL['출력완료일시']]).str.slice(0,16):'';
   return !!(printAt&&printAt>handoverAt);
+}
+
+function buildInvoicePassPersonCountries_(people,countryCount){
+  const count=Math.max(1,parseInt(countryCount,10)||1);
+  const baseCodes=['KR','DE','US','JP','CN','FR','IT','ES','NL','CH'];
+  const countries=baseCodes.slice(0,count);
+  while(countries.length<count) countries.push('C'+(countries.length+1));
+  const out=[];
+  for(let i=0;i<Math.max(1,parseInt(people,10)||1);i++) out.push(countries.slice());
+  return out;
 }
 
 const TRAVEL_KM_TABLE_=[
