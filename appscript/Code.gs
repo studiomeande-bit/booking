@@ -17123,7 +17123,8 @@ function setBookingAmountForAgent_(token,payload){
   const auditLine=`[금액정정 ${stamp}] ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€`
     +(recomputeBalance?` (잔금 ${formatEuroAmount_(prevBalance)}→${formatEuroAmount_(newBalance)}€)`:'')
     +(reason?` 사유: ${reason}`:'')+depositFolded
-    +(balanceSettled?(paidDelta<-0.005?` · 과수납 ${formatEuroAmount_(-paidDelta)}€ → 환불 경로`:paidDelta>0.005?` · 추가청구 ${formatEuroAmount_(paidDelta)}€`:''):'')
+    // 과수납의 구제는 둘이다 — 실제로 더 받았으면 환불, 받은 금액이 잘못 적혔으면 booking-balance-paid-correct(@1011)
+    +(balanceSettled?(paidDelta<-0.005?` · 과수납 ${formatEuroAmount_(-paidDelta)}€ → 환불 또는 받은잔금 정정`:paidDelta>0.005?` · 추가청구 ${formatEuroAmount_(paidDelta)}€`:''):'')
     +' (agent)';
   const curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue([curMemo,auditLine].filter(Boolean).join('\n'));
