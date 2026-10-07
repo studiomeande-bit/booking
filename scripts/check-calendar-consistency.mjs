@@ -505,6 +505,20 @@ async function runScenarios(M, rec) {
     rec('다일정: 복구 이벤트 제목 = 생성 규칙', cal2.events.map(e => String(e.t || '')).filter(x => /일차\)$/.test(x)), ['예약 | 휘슬러 (2/2일차)']);
     const savedJson = JSON.parse(String(sh7.rows[1][COL['추가일정JSON']] || '[]'));
     rec('다일정: JSON eventId 갱신', !!(savedJson[0] && savedJson[0].eventId && savedJson[0].eventId !== 'gone-x'), true);
+
+    /* 7d) 이동일(kind:'travel') 증발 복구 — 이동일 제목 규칙('[이동] ' 접두 · 일차번호 없음)을 못박는다.
+       이동일이 촬영 제목으로 복구되면 그 날 다른 촬영을 받아버리는 사고가 난다.
+       덤으로, buildExtraDayEventFields_ 의 travel 분기가 읽는 EXTRA_DAY_TRAVEL_NOTE_ 가
+       모듈에 실려 있는지도 여기서만 드러난다 — 빠지면 ReferenceError 가 Code.gs 복구부의
+       try 안에서 먹혀 healed 대신 missing 으로 조용히 떨어진다(그래서 missingCount 도 같이 본다). */
+    M.resetCals(); M.resetEnsure();
+    const cal3 = new FakeCalendar('main-cal'); __CALS__['main-cal'] = cal3;
+    cal3.events.push(new FakeEvent('d1', ms1, ms1 + 3600000, '행사 | 휘슬러'));
+    const sh7t = new FakeSheet(H, [mkRow({ 예약일시: t1, 상태: '확정됨', 고객명: '휘슬러', 캘린더ID: 'd1', 추가일정JSON: JSON.stringify([{ date: exDate, time: '09:00', durationMin: 480, kind: 'travel', eventId: 'gone-t' }]) })]);
+    M.setSheet(sh7t);
+    rep = M.auditBookingCalendarConsistency_();
+    rec('이동일: 증발 복구 healed (조용한 missing 아님)', [rep.healedCount, rep.missingCount], [1, 0]);
+    rec('이동일: 복구 제목 = [이동] 접두 · 일차번호 없음', cal3.events.map(e => String(e.t || '')).filter(x => x.indexOf('[이동]') === 0), ['[이동] 예약 | 휘슬러']);
   }
 
   // ── 9) 사진촬영 사본 일일 백필 — 확정인데 사본 없으면 자동 생성 ──
