@@ -1900,6 +1900,17 @@ function handlePublicApiRequest_(route,method,e){
           return jsonOk_(bulkConfirmAllPendingDepositsAdmin(token));
         }
         if(action==='invoice-preview') return jsonOk_(previewInvoicePricingAdmin(token,payload));
+        if(action==='invoice-items-preview'){
+          // 읽기 전용 — 예약 인보이스가 어떤 품목으로 나갈지(번호를 쓰지 않는다)
+          assertAdmin_(token);
+          const ipIdx=parseInt(payload.rowIndex,10);
+          if(!ipIdx||ipIdx<2||ipIdx>getDbSheet().getLastRow()) throw new Error('rowIndex가 필요합니다.');
+          const ipRow=getDbSheet().getRange(ipIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
+          const built=buildBookingInvoiceItems_(ipRow);
+          return jsonOk_(Object.assign({ok:true,rowIndex:ipIdx,name:String(ipRow[BOOKING_COL['고객명']]||''),
+            bookingTotal:roundCurrency_(parseMoneyValue_(ipRow[BOOKING_COL['총결제액']])),
+            itemsTotal:roundCurrency_(built.items.reduce(function(a,i){return a+i.qty*i.unitGross;},0))},built));
+        }
         if(action==='settlement-delete'){
           /* 결제대조 행 영구 삭제 — 중복/오파싱 잔재 정리용. expect 3종 + confirm 이중 가드.
              ⚠️ 은행은 같은 날 같은 금액의 **진짜 별개 거래**가 존재하므로, 호출 전에 반드시
@@ -9719,7 +9730,7 @@ function calculateQuote_(request){
   }
   const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
   if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
@@ -10051,7 +10062,7 @@ function repairReturnDiscountForBooking_(bookingRowIndex,reason){
   sh.getRange(bookingRowIndex,BOOKING_COL['재방문']+1).setValue('재방문');
   const prevMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
   const note='[재촬영할인 '+rate+'% 적용 '+nowStr+'] 기존 '+formatEuroAmount_(currentTotal)+'€ -> '+formatEuroAmount_(newTotal)+'€ (-'+formatEuroAmount_(discount)+'€)'+(reason?' · '+reason:'');
-  sh.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?prevMemo+' '+note:note);
+  sh.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?prevMemo+'\n'+note:note);   // 새 줄로 — 앞 줄([국가별 신청] 토큰) 끝에 붙으면 국가가 '기타'로 읽혔다(검토 2026-10-08)
   const eventId=String(row[BOOKING_COL['캘린더ID']]||'').trim();
   if(eventId){
     try{
@@ -10113,7 +10124,7 @@ function applyPassportAffiliateDiscountAdmin(token,bookingRowIndex,payload){
   sh.getRange(bookingRowIndex,BOOKING_COL['잔금']+1).setValue(newBalance);
   if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(bookingRowIndex,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
   if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(bookingRowIndex,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
-  sh.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?prevMemo+' '+note:note);
+  sh.getRange(bookingRowIndex,BOOKING_COL['요청사항']+1).setValue(prevMemo?prevMemo+'\n'+note:note);   // 새 줄로 — 앞 줄([국가별 신청] 토큰) 끝에 붙으면 국가가 '기타'로 읽혔다(검토 2026-10-08)
 
   try{
     const updatedRow=sh.getRange(bookingRowIndex,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
@@ -18004,7 +18015,7 @@ function parseBookingOptionKeysFromText_(text){
   const found=[];
   const add=function(key){ if(found.indexOf(key)===-1) found.push(key); };
   raw.split(/[|,\n]/).map(function(part){return String(part||'').trim();}).forEach(function(part){
-    if(part==='dog'||/반려동물|pet|haustier/i.test(part)) add('dog');
+    if(part==='dog'||/반려동물|\bpets?\b|haustier/i.test(part)) add('dog');   // \b — 고객 요청사항의 'Peter'·'competent' 가 반려동물 +15€ 로 읽혔다(2026-10-08 검토)
     if(part==='bg'||/추가\s*배경|extra\s*background|zus[aä]tzlicher?\s*hintergrund/i.test(part)) add('bg');
     if(part==='outfit'||/추가\s*의상|extra\s*outfit/i.test(part)) add('outfit');
     // 급행 — 키 그대로이거나 급행 라벨(발행 동기화가 옵션 열에 라벨을 되쓴다). 셀렉 요약('급행(셀렉)')·사업자 'Express-Lieferung' 은 매칭 안 됨
@@ -18025,7 +18036,10 @@ function parseBookingOptionKeysFromRow_(row){
   const opt=String(row[BOOKING_COL['옵션']]||'');
   /* 급행은 옵션 열에서만 — 추가항목엔 고객이 쓴 요청사항이 섞여 있어 "express delivery 가능한가요?" 같은 질문이
      '급행 구매' 로 읽혔다(어드민 수정 창이 체크된 채 열려 저장 한 번에 무료 급행이 됨, 2026-09-29 검토). */
-  const keys=parseBookingOptionKeysFromText_([opt,String(row[BOOKING_COL['추가항목']]||'')].join(' | '))
+  /* [예약 세부내역] 블록엔 고객 요청사항이 그대로 복사돼 있다 — "추가 배경도 가능할까요?" 가 산 옵션으로 읽혀 재견적·인보이스에
+     안 산 줄이 찍혔다(2026-10-08 검토). updateBookingAdmin 과 같은 식으로 잘라낸다. */
+  const extra=String(row[BOOKING_COL['추가항목']]||'').replace(/\n?\[예약 세부내역\][\s\S]*$/,'');
+  const keys=parseBookingOptionKeysFromText_([opt,extra].join(' | '))
     .filter(function(k){return k!=='express';});
   if(parseBookingOptionKeysFromText_(opt).indexOf('express')>-1) keys.push('express');
   return keys;
@@ -32628,7 +32642,8 @@ function getInvoiceItemUnitGross_(item, fallbackMode){
   const unitNet=roundCurrency_(parseMoneyValue_(item&&item.unitNet));
   const unitGross=roundCurrency_(parseMoneyValue_(item&&item.unitGross));
   if(mode==='netto'&&hasNet) return roundCurrency_(unitNet*1.19);
-  if(unitGross>0||!hasNet) return unitGross;
+  // 할인(음수) 줄도 저장된 브루토가 정본 — >0 만 보면 음수가 unitNet×1.19 로 되돌아가 1센트가 샌다(−16.00 → −16.01, 2026-10-08 검토)
+  if(unitGross!==0||!hasNet) return unitGross;
   return roundCurrency_(unitNet*1.19);
 }
 
@@ -33246,9 +33261,9 @@ function syncBookingFromInvoiceRecord_(bookingSheet,rowIndex,inv,payload){
       bookingUpdate.productName ||
       (preview&&preview.productName) ||
       (product&&(product.nameKo||product.nameEn||product.nameDe)) ||
-      firstItem.description ||
       inv.product ||
       row[BOOKING_COL['상품']] ||
+      firstItem.description ||
       ''
     ).trim();
     const people=Math.max(1,parseInt(bookingUpdate.people||row[BOOKING_COL['인원']]||1,10)||1);
@@ -33317,6 +33332,267 @@ function generateInvoiceNumber_(invSh){
   return 'STMIN-'+yy+String(nextNum).padStart(4,'0');
 }
 
+/* ===== 예약 → 인보이스 품목 분할 (사장님 규칙 2026-10-08 "여권 프로필 및 모든 내용은 분할해서 인보이스 발행") =====
+   보드 '인보이스'·에이전트 invoice-create 는 품목 없이 와서 '상품명 × 1 = 총액' 한 줄로 나갔다 — 정진호(row305) STMIN-260025
+   'Passfoto/Visum ×1 €130' 을 받은 고객이 "35×2 / 30×2 로 나눠 달라" 해 발행취소·260026 재발행.
+   예약행을 견적 엔진으로 다시 계산해 구매 항목·수량을 **독일어** 줄로 만든다(PDF 는 항상 de).
+     · 여권: 사람별 국가 구성 단위로 묶어 'Passfoto/Visum (Korea + Deutschland), pro Person ×N @단가' + 5인+ 가족할인 줄.
+       창구 등록(옵션 '국가 N개/인')은 국가명이 기록돼 있지 않아 'N Länder' 로만 적는다(자리표시 국가명을 찍지 않는다).
+     · 그 외: 기본가 + 추가 인원·토요일·옵션·급행·여권콤보, 할인은 음수 줄(isDiscount).
+     · 굿샤인 차감은 음수 줄 — 줄인 총액만 과세하던 기존 처리와 같다(SPV 판매 때 이미 과세).
+   합계는 **항상 예약 총액(총결제액)** — 수기 정정·현장할인·출장비 등 엔진 밖 차이는 메모 사유로 이름 붙인 한 줄.
+   엔진으로 못 나누는 상품(견적형·행사·MRT)은 견적서 품목(단가 포함)이 맞으면 그대로, 아니면 빈 배열(호출부가 한 줄 유지).
+   반환 {items, source:'engine'|'quote'|'none', residual}. unitGross 는 브루토. */
+const INVOICE_COUNTRY_DE_={KR:'Korea',DE:'Deutschland',JP:'Japan',CN:'China',US:'USA',OTHER:'weiteres Land'};
+const INVOICE_OPTION_LINE_DE_={dog:'Haustier im Shooting',bg:'Zusätzlicher Hintergrund',outfit:'Zusätzliches Outfit'};
+const INVOICE_OPTION_PRICE_={dog:15,bg:20,outfit:20};   // = calculateQuote_ 옵션가 — 어긋나면 아래 drift 줄이 드러낸다(게이트가 0 을 단언)
+function buildBookingInvoiceItems_(row){
+  const total=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  const lines=[];
+  const add=function(description,qty,unitGross,isDiscount,keepZero){
+    const u=roundCurrency_(Number(unitGross)||0);
+    if(Math.abs(u)<0.005&&!keepZero) return;
+    lines.push({description:String(description),qty:Math.max(1,parseInt(qty,10)||1),unitGross:u,priceInputMode:'brutto',isDiscount:!!isDiscount||u<0});
+  };
+  const sumOf=function(){return roundCurrency_(lines.reduce(function(a,i){return a+i.qty*i.unitGross;},0));};
+  const gs=BOOKING_COL['굿샤인차감금액']!=null?roundCurrency_(parseMoneyValue_(row[BOOKING_COL['굿샤인차감금액']])):0;
+  const addGutschein=function(){
+    if(gs<=0.005) return;
+    const code=BOOKING_COL['굿샤인코드']!=null?String(row[BOOKING_COL['굿샤인코드']]||'').trim():'';
+    add('Gutschein'+(code?' '+code:'')+' eingelöst',1,-gs,true);
+  };
+  const adj=_invoiceRecordedAdjustments_(row);
+  const adjSum=roundCurrency_(adj.reduce(function(a,x){return a+x.delta;},0));
+  /* 견적 전환 예약은 견적서 품목이 정본 — 상품명이 카탈로그와 겹쳐도(스튜디오 Basic 등) 엔진보다 먼저 본다(검토 2026-10-08:
+     500€ 견적이 'Basic 170 + Zusatzleistung 330' 으로 나옴). €0 줄('Anfahrt (inklusive)')도 견적서 그대로 남긴다.
+     견적 뒤 굿샤인·[금액정정](현장할인 등)이 차이를 정확히 설명하면 견적 줄 + 그 줄들, 아니면 엔진으로. */
+  const quoteLines=_bookingQuoteInvoiceItems_(row);
+  if(quoteLines.length){
+    quoteLines.forEach(function(i){add(i.description,i.qty,i.unitGross,false,true);});
+    addGutschein();
+    const rq=roundCurrency_(total-sumOf());
+    if(Math.abs(rq)<0.01) return {items:lines,source:'quote',residual:0};
+    if(adj.length&&Math.abs(rq-adjSum)<0.005){
+      adj.forEach(function(a){add(a.label,1,a.delta,a.delta<0);});
+      return {items:lines,source:'quote',residual:0};
+    }
+    lines.length=0;
+  }
+  const item=getBookingProductForRow_(row);
+  let quoteTotal=null;
+  // 결제수단만 MRT 인 행(187 유성현)은 카탈로그 상품이어도 플랫폼 가격 — 스튜디오 정가로 나누면 없는 할증·할인이 생긴다
+  if(item&&item.t!=='custom'&&Number(item.p)>0&&!isMyRealTripProduct_(item)&&!isGenericBusinessProduct_(item)
+     &&String(row[BOOKING_COL['결제수단']]||'').indexOf('마이리얼트립')<0){
+    try{ quoteTotal=_appendEngineInvoiceLines_(row,item,add); }
+    catch(e){ Logger.log('buildBookingInvoiceItems_ engine skipped: '+e.message); quoteTotal=null; }
+  }
+  if(quoteTotal==null) return {items:[],source:'none',residual:0};
+  // 엔진 줄 합 ≠ 엔진 총액이면 줄 계산이 엔진과 어긋난 것(옵션가 변경 등) — 숨기지 말고 드러낸다
+  const drift=roundCurrency_(quoteTotal-sumOf());
+  if(Math.abs(drift)>0.005) add('Preisanpassung',1,drift,drift<0);
+  addGutschein();
+  /* 엔진 밖 차이 — 검토 1~4회(2026-10-08)를 거쳐 보수적으로 정리:
+     ① 메모에 사유가 남은 총액 변경(현장할인·무료·3회차·재촬영·제휴사·인화·출장 등)은 기록된 금액 그대로 사유마다 한 줄.
+     ② 남은 차이 r(사유 없는 정정 + 기록 없는 차이):
+        r>0 — 엔진 할인 줄 묶음과 유일하게 맞으면 그 할인을 뺀다: 안 받은 할인(행 154 '미적용', 171 가족할인 도입 전,
+              상품변경 뒤 옛 키즈·재방문). 사유를 적은 정정('+30 야외 장소 추가')이면 빼지 않는다.
+        r<0 — 그 품목이 메모에 이름으로 남았을 때만 그 줄을 뺀다('배경 무료', 상품변경 뒤 '여권콤보 취소' — 행 314). 산 품목을 함부로 지우지 않는다.
+        못 빼면 'Rabatt'/'Zusatzleistung' 한 줄(기록이 전혀 없으면 메모 태그로 이름). 기본가 줄·굿샤인 줄·①의 줄은 빼지 않는다. */
+  const plain=function(label){return /^(Rabatt|Zusatzleistung)$/.test(label);};
+  const NEG_ITEM=[[/^Samstagszuschlag$/,/토요|주말|samstag|wochenend/i],[/^Expressbearbeitung$/,/급행|express/i],
+    [/^Haustier im Shooting$/,/반려|haustier|\bpets?\b/i],[/^Zusätzlicher Hintergrund$/,/배경|hintergrund|background/i],
+    [/^Zusätzliches Outfit$/,/의상|outfit/i]];
+  const cancel=function(r,limit,hint,changed){   // 줄 합을 r 만큼 바꾸는 줄 묶음 — 가장 작고 유일해야 뺀다(동률이면 안 뺀다)
+    const idx=[];
+    for(let i=1;i<limit&&idx.length<10;i++){
+      const l=lines[i];
+      if(r>0){ if(l.qty===1&&l.isDiscount&&!/^Gutschein /.test(l.description)) idx.push(i); }
+      else if(/ \(Kombi\), pro Person$/.test(l.description)){ if(changed||/콤보|여권/.test(hint)) idx.push(i); }
+      else if(l.qty===1&&NEG_ITEM.some(function(p){return p[0].test(l.description)&&p[1].test(hint);})) idx.push(i);
+    }
+    let best=null,tie=false;
+    for(let m=1;m<(1<<idx.length);m++){
+      const pick=idx.filter(function(_,b){return m&(1<<b);});
+      if(Math.abs(pick.reduce(function(a,i){return a+lines[i].qty*lines[i].unitGross;},0)+r)>=0.005) continue;
+      if(!best||pick.length<best.length){best=pick;tie=false;} else if(pick.length===best.length) tie=true;
+    }
+    if(!best||tie) return false;
+    best.sort(function(a,b){return b-a;}).forEach(function(i){lines.splice(i,1);});
+    return true;
+  };
+  const offEngine=roundCurrency_(total-sumOf());
+  const engineCount=lines.length;
+  const named=adj.filter(function(a){return !plain(a.label);});
+  const plainAdj=adj.filter(function(a){return plain(a.label);})[0]||null;
+  named.forEach(function(a){add(a.label,1,a.delta,a.delta<0);});
+  const rest=roundCurrency_(total-sumOf());
+  if(Math.abs(rest)>0.005){
+    const memoAll=String(row[BOOKING_COL['요청사항']]||'');
+    const pcAt=memoAll.lastIndexOf('[상품변경 ');
+    const hint=plainAdj?plainAdj.text:(pcAt>-1?memoAll.slice(pcAt):'');
+    const done=(rest>0&&plainAdj&&!plainAdj.bare)?false:cancel(rest,engineCount,hint,pcAt>-1);
+    if(!done) add((named.length||plainAdj)?(rest<0?'Rabatt':'Zusatzleistung'):_invoiceResidualLabel_(row,rest),1,rest,rest<0);
+  }
+  return {items:lines,source:'engine',residual:offEngine};
+}
+/* 예약행 입력으로 견적 엔진을 다시 돌려 줄을 add 한다 — 반환값은 엔진 총액(quote.totalPrice). 견적형이면 null.
+   줄은 calculateQuote_ 의 가감 순서를 그대로 따른다: 기본가(여권은 사람별 국가 묶음+가족할인) → 토요일 → 옵션 → 연령 → 이벤트 →
+   재방문 → 웨딩 얼리버드·마케팅 → 급행 → 여권콤보. 여권도 옵션·이벤트·급행을 엔진이 더하므로 공통 줄로 내려간다(검토 2026-10-08). */
+function _appendEngineInvoiceLines_(row,item,add){
+  const people=Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1);
+  const date=String((parseDateSafe_(row[BOOKING_COL['예약일시']])||{}).str||'').slice(0,10);
+  const memo=String(row[BOOKING_COL['요청사항']]||'');
+  const isPass=item.t==='passport';
+  const passResolved=isPass?resolvePassPersonCountriesForRow_(row,people,true):{countries:[],fromOption:false};
+  // 온라인 예약은 요청사항 토큰, 어드민 수기 등록은 추가항목 '여권콤보: N명 / 추가 M분' 에만 남긴다(검토 2026-10-08)
+  const combo=memo.match(/\[여권콤보:\s*(\d+)\s*명\]/)||String(row[BOOKING_COL['추가항목']]||'').match(/여권콤보\s*[:=]\s*(\d+)\s*명/);
+  // 얼리버드는 '예약한 때' 기준 — 발행 시점으로 다시 재면 이미 받은 할인이 사유 없는 'Rabatt' 로 바뀐다
+  const bookedAt=['동의시각','accepted_at','확정일시'].map(function(h){
+    return BOOKING_COL[h]!=null?(parseDateSafe_(row[BOOKING_COL[h]])||{}).obj:null;
+  }).find(function(d){return d instanceof Date&&!isNaN(d.getTime());});
+  const q=calculateQuote_({itemId:item.id,people:people,date:date,
+    optionKeys:parseBookingOptionKeysFromRow_(row),
+    ageGroup:parseBookingAgeGroupFromRow_(row),
+    isReturn:BOOKING_COL['재방문']!=null&&String(row[BOOKING_COL['재방문']]||'').trim()==='재방문',
+    marketing:BOOKING_COL['마케팅동의']!=null&&String(row[BOOKING_COL['마케팅동의']]||'').trim().toUpperCase()==='Y',
+    businessInvoiceNeeded:isPublicTruthy_(row[BOOKING_COL['사업자송장필요']]),
+    passPersonCountries:passResolved.countries,
+    passAddon:!!combo,passAddonPeople:combo?parseInt(combo[1],10):1,
+    asOf:bookedAt});
+  if(q.isQuoteOnly) return null;
+  const name=String(item.nameDe||item.nameEn||item.nameKo||item.id).trim();
+  const base=Number(item.p)||0;
+  if(item.g==='promo'){ add(name+' (Aktionspaket)',1,q.totalPrice); return q.totalPrice; }   // 프로모 부가요금은 엔진 안에서만 계산된다 — 한 줄
+  if(isPass){
+    const groups=[], byKey={};
+    for(let i=0;i<people;i++){
+      const codes=((passResolved.countries[i])||[]).filter(Boolean);
+      const key=codes.slice().sort().join('+');
+      if(!byKey[key]){ byKey[key]={codes:codes,n:0}; groups.push(byKey[key]); }
+      byKey[key].n++;
+    }
+    groups.forEach(function(g){
+      const k=Math.max(1,g.codes.length);
+      const label=!g.codes.length?''
+        :(passResolved.fromOption?(k>1?k+' Länder':'')
+          :g.codes.map(function(c){return INVOICE_COUNTRY_DE_[c]||c;}).join(' + '));
+      add(name+(label?' ('+label+')':'')+', pro Person',g.n,base+(k-1)*PASS_EXTRA_COUNTRY_FEE_);
+    });
+    if(q.familyDiscount>0) add('Familien-/Gruppenrabatt ab '+PASS_FAMILY_DISCOUNT_MIN_PEOPLE+' Personen ('+getPassportFamilyDiscountRate_()+' %)',1,-q.familyDiscount,true);
+  }else{
+    const perTwo=item.t==='group'||item.t==='snap';
+    add(name+(perTwo?' – inkl. 2 Personen':' – Grundpreis'),1,base);
+    if(perTwo&&people>2) add('Zusätzliche Person',people-2,30);
+    if(item.t==='snap'&&people===1) add('Einzelperson (Preisnachlass)',1,-30,true);
+  }
+  if(q.weekendSurcharge>0) add('Samstagszuschlag',1,q.weekendSurcharge);
+  (q.optionKeys||[]).forEach(function(k){ if(INVOICE_OPTION_PRICE_[k]) add(INVOICE_OPTION_LINE_DE_[k],1,INVOICE_OPTION_PRICE_[k]); });
+  if(q.kidsDiscount>0) add('Kinderrabatt',1,-q.kidsDiscount,true);
+  if(q.seniorDiscount>0) add('Seniorenrabatt',1,-q.seniorDiscount,true);
+  if(q.eventDiscount>0) add('Aktionsrabatt',1,-q.eventDiscount,true);
+  if(q.returnDiscount>0) add('Stammkundenrabatt ('+getReturnDiscountRate_()+' %)',1,-q.returnDiscount,true);
+  if(q.earlyBirdDiscount>0) add('Frühbucherrabatt',1,-q.earlyBirdDiscount,true);
+  if(q.marketingDiscount>0) add('Rabatt für Marketing-Einwilligung',1,-q.marketingDiscount,true);
+  if(q.expressFee>0) add('Expressbearbeitung',1,q.expressFee);
+  if(q.passAddon){
+    const passItem=getCachedProducts_().find(function(x){return x.g==='pass';});
+    if(passItem) add(String(passItem.nameDe||'Passfoto/Visum')+' (Kombi), pro Person',q.passAddonPeople||1,passItem.p);
+  }
+  return q.totalPrice;
+}
+/* 엔진 밖 차이(수기 정정 등) 한 줄의 이름 — 메모 감사줄 사유에서. 여러 사유가 섞이면 첫 일치. */
+function _invoiceResidualLabel_(row,residual){
+  return _invoiceResidualLabelFromText_(String(row[BOOKING_COL['요청사항']]||''),residual);
+}
+function _invoiceResidualLabelFromText_(memo,residual){
+  if(residual<0){
+    if(/\[3회차 ?혜택\]/.test(memo)) return 'Treuerabatt (3. Besuch)';
+    if(/\[무료처리\]/.test(memo)) return 'Kulanz (kostenfrei)';
+    if(/\[현장할인\]/.test(memo)) return 'Rabatt (vor Ort)';
+    if(/\[제휴사할인/.test(memo)) return 'Partnerrabatt';
+    if(/\[재촬영할인/.test(memo)) return 'Rabatt (Nachshooting)';
+    return 'Rabatt';
+  }
+  if(/출장|anfahrt|travel/i.test(memo)) return 'Anfahrtspauschale';
+  if(/인화|출력|프린트|print|ausdruck/i.test(memo)) return 'Zusätzliche Ausdrucke';
+  return 'Zusatzleistung';
+}
+/* 메모에 남은 총액 변경(엔진 밖) — 마지막 [상품변경] 뒤만(상품변경이 총액을 엔진값으로 다시 쓴다).
+   [금액정정 d] A→B€ … 사유: <태그>(현장할인·무료·3회차·set-amount), [재촬영할인/제휴사할인 …] 기존 A€ -> B€.
+   옛 행은 재촬영·제휴사 메모가 앞 줄 끝에 붙어 있다(행 197) — 태그 앞에서도 자른다. 같은 태그 사본(국가 토큰에 복사된 것)은 한 번만.
+   '받은 잔금 A→B' 정정·0 변화 줄은 제외. 사유 없는 정정(Rabatt/Zusatzleistung)이 앞의 변경을 정확히 되돌리면 둘 다 지우고,
+   사유 없는 정정끼리는 한 덩어리로 합친다(+10 뒤 −10 은 0 → 없음). 반환 [{delta,label,text,bare}] —
+   bare: 사유가 없거나 '미적용' 정정(안 받은 할인을 되돌린 것)이라 엔진 할인 줄을 빼도 되는 정정. */
+function _invoiceRecordedAdjustments_(row){
+  let memo=String(row[BOOKING_COL['요청사항']]||'');
+  const pc=memo.lastIndexOf('[상품변경 ');
+  if(pc>-1) memo=memo.slice(pc).replace(/^[^\n]*\n?/,'');
+  const isPlain=function(label){return /^(Rabatt|Zusatzleistung)$/.test(label);};
+  const out=[], seen={};
+  memo.split(/\n|\s(?=\[(?:금액정정|재촬영할인|제휴사할인)[\s\]])/).forEach(function(seg){
+    const m=seg.match(/^\s*\[금액정정 [^\]]*\]\s*(\d+(?:\.\d+)?)→(\d+(?:\.\d+)?)€/)
+      ||seg.match(/^\s*\[(?:재촬영할인|제휴사할인)[^\]]*\].*?기존\s*(\d+(?:\.\d+)?)€\s*->\s*(\d+(?:\.\d+)?)€/);
+    if(!m||seen[m[0]]) return;
+    seen[m[0]]=1;
+    const delta=roundCurrency_(Number(m[2])-Number(m[1]));
+    if(Math.abs(delta)<0.005) return;
+    const label=_invoiceResidualLabelFromText_(seg,delta);
+    if(isPlain(label)){
+      const undo=out.findIndex(function(x){return Math.abs(x.delta+delta)<0.005;});
+      if(undo>-1){ out.splice(undo,1); return; }
+    }
+    const key=isPlain(label)?'':label;
+    const bare=!/사유\s*:/.test(seg)||/미적용|미반영/.test(seg);
+    const same=out.find(function(x){return x.key===key;});
+    if(same){ same.delta=roundCurrency_(same.delta+delta); same.text+='\n'+seg; same.bare=same.bare&&bare; }
+    else out.push({key:key,delta:delta,label:label,text:seg,bare:bare});
+  });
+  return out.filter(function(x){return Math.abs(x.delta)>0.005;}).map(function(x){
+    return {delta:x.delta,label:x.key||(x.delta<0?'Rabatt':'Zusatzleistung'),text:x.text,bare:x.bare};
+  });
+}
+/* 견적 전환 예약(추가항목 '[견적: AN-…]')의 견적서 품목 — 단가(브루토) 포함 */
+function _bookingQuoteInvoiceItems_(row){
+  const no=extractInvoiceQuoteNumberFromText_(String(row[BOOKING_COL['추가항목']]||''));
+  if(!no) return [];
+  try{
+    const quoteSheet=ensureSheets_().quoteSheet;
+    const found=_findQuoteRow_(quoteSheet,no);
+    if(found.rowIndex===-1) return [];
+    /* 다국어 견적('항목 // 한국어')은 독일어 부분만 — 인보이스 PDF 는 항상 독일어(견적 PDF 의 DE 쪽과 같은 _pickQuoteLangText_).
+       견적 머리 할인(할인(€))은 품목 밖 필드라 빠지면 합이 안 맞아 엔진 줄로 떨어졌다 — 할인 줄로 붙인다(검토 2026-10-08). */
+    const qo=quoteRowToObject_(found.row,found.rowIndex);
+    const deIdx=Math.max(0,_quoteLangList_(qo.lang).indexOf('de'));
+    const out=(qo.items||[]).map(function(it){
+      return {description:_pickQuoteLangText_(String(it&&it.description||''),deIdx),qty:Math.max(1,parseInt(it&&it.qty,10)||1),
+        unitGross:getInvoiceItemUnitGross_(it)};
+    }).filter(function(it){return it.description;});
+    const disc=roundCurrency_(Number(qo.discount)||0);
+    if(out.length&&disc>0.005) out.push({description:'Rabatt',qty:1,unitGross:-disc});
+    return out;
+  }catch(e){ Logger.log('_bookingQuoteInvoiceItems_ failed: '+e.message); return []; }
+}
+/* 예약 총액 전체를 한 줄로 뭉친 품목인가 — 상품명 그대로(일반 문구)거나 어드민 계산기의 '상품 | 인원 N명 | …' 한 줄 */
+function _isInvoiceLumpBookingLine_(item,row){
+  const total=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
+  if(Math.abs(roundCurrency_((item.qty||1)*(Number(item.unitGross)||0))-total)>0.005) return false;
+  if(isGenericInvoiceItemDescription_(item,{product:String(row[BOOKING_COL['상품']]||''),itemGroup:String(row[BOOKING_COL['촬영종류']]||'')})) return true;
+  return /\|\s*인원\s*\d+\s*명/.test(String(item.description||''));
+}
+
+/* 어드민 계산기에서 값이 같은 다른 구성으로 바꿨나(배경 €20 → 의상 €20) — 그러면 예약행은 아직 옛 구성이라 그 행으로 나누면
+   인보이스가 동기화 뒤 예약과 어긋난다. 이때는 어드민 줄을 그대로 둔다(검토 2026-10-08). 값에 안 닿는 차이(영유아 등)는 무시. */
+function _invoiceBookingUpdateChangesComposition_(bu,row){
+  if(!bu||!bu.itemId) return false;
+  const item=getBookingProductForRow_(row);
+  if(!item||String(item.id)!==String(bu.itemId)) return true;
+  if((parseInt(bu.people,10)||1)!==Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1)) return true;
+  const priced=function(keys){return (keys||[]).map(String).filter(function(k){return ['dog','bg','outfit','express'].indexOf(k)>-1;}).sort().join(',');};
+  if(priced(bu.optionKeys)!==priced(parseBookingOptionKeysFromRow_(row))) return true;
+  const age=function(a){a=String(a||'');return a==='kids'||a==='senior'?a:'adult';};
+  return age(bu.ageGroup)!==age(parseBookingAgeGroupFromRow_(row));
+}
+
 function createInvoiceRecord_(payload){
   const lock=LockService.getScriptLock();
   try{lock.waitLock(15000);}
@@ -33357,7 +33633,30 @@ function _createInvoiceRecordCore_(payload){
     .map(item=>normalizeInvoiceItemForStorage_(item,priceInputMode))
     .filter(item=>item.description&&(item.unitGross>=0||item.isDiscount===true));
   const dateStr=normalizeInvoiceDateTimeText_(payload.dateStr||payload.shootDate||(row?row[0]:''));
-  if(row){
+  /* 품목 분할(사장님 규칙 2026-10-08) — 예약 인보이스에 품목이 없거나(보드·에이전트) 총액 한 줄뿐이면(어드민 기본값·계산기)
+     예약행에서 구매 항목·수량을 다시 만든다. 사람이 직접 나눈 품목·셀렉추가금·금액 지정 발행은 그대로 둔다. */
+  let autoItems=false, itemSource='';
+  if(row&&requestedType!=='셀렉추가금'&&payload.itemize!==false
+     &&!(payload.customAmount!=null&&payload.customAmount!=='')
+     &&(!items.length||(items.length===1&&_isInvoiceLumpBookingLine_(items[0],row)))
+     &&!_invoiceBookingUpdateChangesComposition_(payload.bookingUpdate,row)){
+    const built=buildBookingInvoiceItems_(row);
+    if(built.items.length){
+      items=built.items.map(function(it){return normalizeInvoiceItemForStorage_(it,'brutto');});
+      /* 줄별 순액 반올림 끝전 — 순액 합을 총액/1.19 에 맞춘다. 굿샤인 전액(총 0)이 'Netto 0.01 / MwSt −0.01' 로 찍혔다(검토 2026-10-08).
+         수량 1 줄(할인 줄 우선)의 순액에 싣는다 — 브루토는 저장값이 정본이라 금액은 그대로. */
+      const grossSum=roundCurrency_(items.reduce(function(a,i){return a+i.qty*i.unitGross;},0));
+      const netGap=roundCurrency_(roundCurrency_(grossSum/1.19)-getInvoiceItemsNetTotal_(items));
+      if(Math.abs(netGap)>0.005){
+        const one=items.map(function(i){return i.qty===1&&Math.abs(i.unitGross)>0.005;});   // €0 줄('Anfahrt (inklusive)')에 실으면 브루토가 0.01 로 되살아난다(검토 3회)
+        let k=items.map(function(i,ix){return one[ix]&&i.unitGross<0;}).lastIndexOf(true);
+        if(k<0) k=one.lastIndexOf(true);
+        if(k>-1) items[k].unitNet=roundCurrency_(items[k].unitNet+netGap);
+      }
+      autoItems=true; itemSource=built.source;
+    }
+  }
+  if(row&&!autoItems){
     items=applyBookingDetailDescriptionsToInvoiceItems_(items,{
       bookingRowIndex:linkedBookingRow,
       product:row?String(row[BOOKING_COL['상품']]||''):'',
@@ -33453,7 +33752,18 @@ function _createInvoiceRecordCore_(payload){
     }
     return {ok:false,invoiceNumber:invNo,pdfUrl:'',mailSentAt:'',mailSubject,mailBody,mailResult:{requested:!!payload.sendMail,sent:false,recipientEmail:'',sentAt:'',error:pdfErrMsg},error:pdfErrMsg};
   }
-  const bookingSync=syncBookingFromInvoiceRecord_(bookingSheet,linkedBookingRow,inv,payload);
+  /* 예약에서 만든 품목이면 예약으로 되돌려 쓸 것이 없다 — 동기화는 첫 줄 문구로 상품명을 덮고 계약금을 규칙값으로 다시 써서
+     오히려 망가뜨린다(합계는 이미 총결제액과 같다). 어드민이 상품 변경(bookingUpdate)을 함께 보낸 경우만 동기화. */
+  const bookingSync=(autoItems&&!(payload&&payload.bookingUpdate))
+    ? {requested:false,ok:true,message:'예약에서 만든 품목 — 예약 반영 안함'}
+    : syncBookingFromInvoiceRecord_(bookingSheet,linkedBookingRow,inv,payload);
+  /* 동기화를 건너뛰어도 사업자 송장 표시는 예약에 남긴다 — 셀렉 추가금 자동 인보이스·여권 가족할인 제외가 예약의 이 열을 본다(검토 2026-10-08) */
+  if(autoItems&&!(payload&&payload.bookingUpdate)&&inv.businessInvoiceNeeded&&!getBookingBusinessInvoiceMeta_(row).needed){
+    [['사업자송장필요','Y'],['사업자명',inv.businessCompanyName],['사업자VAT번호',inv.businessVatId],
+     ['사업자송장이메일',inv.businessInvoiceEmail],['사업자송장참조',inv.businessInvoiceRef]].forEach(function(kv){
+      if(BOOKING_COL[kv[0]]!=null) bookingSheet.getRange(linkedBookingRow,BOOKING_COL[kv[0]]+1).setValue(kv[1]||'');
+    });
+  }
   let mailSentAt='';
   let mailResult={
     requested:!!payload.sendMail,
@@ -33485,7 +33795,8 @@ function _createInvoiceRecordCore_(payload){
       try{invoiceSheet.getRange(newRowIndex,INVOICE_COL['메일발송일시']+1).setValue('ERROR: '+mailResult.error.slice(0,100));}catch(e){}
     }
   }
-  return {ok:true, invoiceNumber:invNo, pdfUrl:pdf.url, mailSentAt, mailSubject, mailBody, mailResult, bookingSync};
+  return {ok:true, invoiceNumber:invNo, pdfUrl:pdf.url, mailSentAt, mailSubject, mailBody, mailResult, bookingSync,
+    itemized:autoItems, itemSource:itemSource, itemCount:items.length};
 }
 
 /* 중복 가드에서 '없는 인보이스'로 치는 상태. 발행취소(Storno)는 결번으로 남지만 효력이 없으므로

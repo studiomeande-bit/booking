@@ -6712,7 +6712,7 @@ function normalizeEditOptionKeys(keys){
   const out=[];
   input.map(v=>String(v||'').trim()).forEach(v=>{
     if(allowed.has(v)&&!out.includes(v)) out.push(v);
-    if(/반려동물|pet|haustier/i.test(v)&&!out.includes('dog')) out.push('dog');
+    if(/반려동물|\bpets?\b|haustier/i.test(v)&&!out.includes('dog')) out.push('dog');
     if(/추가\s*배경|extra\s*background/i.test(v)&&!out.includes('bg')) out.push('bg');
     if(/추가\s*의상|extra\s*outfit/i.test(v)&&!out.includes('outfit')) out.push('outfit');
     if(/급행\s*작업|express\s*delivery|express-bearbeitung/i.test(v)&&!out.includes('express')) out.push('express');
@@ -12287,7 +12287,7 @@ function invoiceItemUnitGross(item){
   const unitNet=roundInvoiceMoney(item&&item.unitNet);
   const unitGross=roundInvoiceMoney(item&&item.unitGross);
   if(mode==='netto'&&hasNet) return roundInvoiceMoney(unitNet*INVOICE_VAT_MULTIPLIER);
-  if(unitGross>0||!hasNet) return unitGross;
+  if(unitGross!==0||!hasNet) return unitGross;   // 할인(음수) 줄도 저장된 브루토가 정본 — 서버 getInvoiceItemUnitGross_ 와 같은 규칙
   return roundInvoiceMoney(unitNet*INVOICE_VAT_MULTIPLIER);
 }
 function invoiceItemUnitNet(item){
@@ -13144,9 +13144,10 @@ function buildXRechnungInvoiceXml(inv,info){
   const vat=Math.round((gross-net)*100)/100;
   const noteXml=inv.memo?`\n  <cbc:Note>${escapeXmlText(inv.memo)}</cbc:Note>`:'';
   const lineXml=ready.items.map((item,idx)=>{
-    const qty=item.qty;
-    const unitGross=item.unitGross;
-    const unitNet=item.unitNet;
+    // 할인(음수) 줄: EN16931 BR-27 은 PriceAmount 음수를 금지 — 수량을 음수로, 단가는 양수로(줄 합계는 그대로 음수)
+    const neg=item.unitNet<0;
+    const qty=neg?-item.qty:item.qty;
+    const unitNet=Math.abs(item.unitNet);
     const lineNet=roundInvoiceMoney(qty*unitNet);
     return `  <cac:InvoiceLine>
     <cbc:ID>${idx+1}</cbc:ID>
@@ -13220,7 +13221,19 @@ function buildXRechnungCreditNoteXml(inv,info){
   const referencedInvoice=findReferencedInvoiceForCreditNote(inv);
   const gross=Math.round(Math.max(0,Number(inv.refund||inv.total||0))*100)/100;
   if(gross<=0) throw new Error('환불 금액이 있어야 CreditNote를 만들 수 있습니다.');
-  const net=Math.round((gross/INVOICE_VAT_MULTIPLIER)*100)/100;
+  /* 줄별 환불액 — 비율로 나누고 반올림 끝전은 마지막 양수 줄에 실어 줄 합 = 환불 총액. 헤더 순액은 줄 순액의 합(BR-CO-10),
+     할인(음수) 줄은 음수 수량·양수 단가(BR-27). 2026-10-08: 인보이스가 품목별로 나뉘며 여러 줄 CreditNote 가 생겼다. */
+  const sourceTotal=Math.max(0,Number(inv.total)||0);
+  const ratio=sourceTotal>0 ? gross/sourceTotal : 1;
+  const creditLines=ready.items.map(item=>({item,adjustedGross:Math.round(item.qty*item.unitGross*ratio*100)/100}));
+  const lastPos=creditLines.map(l=>l.adjustedGross>0).lastIndexOf(true);
+  if(lastPos>-1) creditLines[lastPos].adjustedGross=Math.round((creditLines[lastPos].adjustedGross+gross-creditLines.reduce((s,l)=>s+l.adjustedGross,0))*100)/100;
+  creditLines.forEach(l=>{
+    l.lineNet=Math.round((l.adjustedGross/INVOICE_VAT_MULTIPLIER)*100)/100;
+    l.qty=l.adjustedGross<0?-l.item.qty:l.item.qty;
+    l.price=Math.round(Math.abs(l.lineNet)/l.item.qty*100)/100;
+  });
+  const net=creditLines.length?Math.round(creditLines.reduce((s,l)=>s+l.lineNet,0)*100)/100:Math.round((gross/INVOICE_VAT_MULTIPLIER)*100)/100;
   const vat=Math.round((gross-net)*100)/100;
   const reasonText=String(inv.memo||'취소/환불 Credit Note').trim();
   const billingReferenceXml=referencedInvoice
@@ -13231,14 +13244,7 @@ function buildXRechnungCreditNoteXml(inv,info){
       <cbc:IssueDate>${escapeXmlText(String(referencedInvoice.issuedAt).slice(0,10))}</cbc:IssueDate>`:''}
     </cac:InvoiceDocumentReference>
   </cac:BillingReference>`:'';
-  const lineXml=ready.items.map((item,idx)=>{
-    const qty=item.qty;
-    const baseGross=Math.round(qty*item.unitGross*100)/100;
-    const sourceTotal=Math.max(0,Number(inv.total)||0);
-    const ratio=sourceTotal>0 ? gross/sourceTotal : 1;
-    const adjustedGross=Math.round(baseGross*ratio*100)/100;
-    const unitNet=item.unitNet;
-    const lineNet=Math.round((adjustedGross/INVOICE_VAT_MULTIPLIER)*100)/100;
+  const lineXml=creditLines.map(({item,qty,lineNet,price},idx)=>{
     return `  <cac:CreditNoteLine>
     <cbc:ID>${idx+1}</cbc:ID>
     <cbc:CreditedQuantity unitCode="C62">${qty}</cbc:CreditedQuantity>
@@ -13255,7 +13261,7 @@ function buildXRechnungCreditNoteXml(inv,info){
       </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
-      <cbc:PriceAmount currencyID="EUR">${unitNet.toFixed(2)}</cbc:PriceAmount>
+      <cbc:PriceAmount currencyID="EUR">${price.toFixed(2)}</cbc:PriceAmount>
       <cbc:BaseQuantity unitCode="C62">1</cbc:BaseQuantity>
     </cac:Price>
   </cac:CreditNoteLine>`;

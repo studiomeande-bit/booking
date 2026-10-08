@@ -1,6 +1,6 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-10-05T08:35:22.335Z
+ * 생성 시각: 2026-10-08T11:23:50.330Z
  * 포함 함수 195개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
@@ -1011,7 +1011,7 @@ function calculateQuote_(request){
   }
   const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
   if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
@@ -2411,7 +2411,7 @@ function parseBookingOptionKeysFromText_(text){
   const found=[];
   const add=function(key){ if(found.indexOf(key)===-1) found.push(key); };
   raw.split(/[|,\n]/).map(function(part){return String(part||'').trim();}).forEach(function(part){
-    if(part==='dog'||/반려동물|pet|haustier/i.test(part)) add('dog');
+    if(part==='dog'||/반려동물|\bpets?\b|haustier/i.test(part)) add('dog');   // \b — 고객 요청사항의 'Peter'·'competent' 가 반려동물 +15€ 로 읽혔다(2026-10-08 검토)
     if(part==='bg'||/추가\s*배경|extra\s*background|zus[aä]tzlicher?\s*hintergrund/i.test(part)) add('bg');
     if(part==='outfit'||/추가\s*의상|extra\s*outfit/i.test(part)) add('outfit');
     // 급행 — 키 그대로이거나 급행 라벨(발행 동기화가 옵션 열에 라벨을 되쓴다). 셀렉 요약('급행(셀렉)')·사업자 'Express-Lieferung' 은 매칭 안 됨
