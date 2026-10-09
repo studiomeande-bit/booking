@@ -17238,6 +17238,22 @@ function listProductsForAgent_(token,payload){
                    {key:'outfit',label:'의상 추가',price:20}]};
 }
 
+/* 예약행이 견적 엔진에 넘겨야 하는 고객 맥락 — 상품변경 재견적과 인보이스 품목이 같은 값을 본다.
+   상품변경이 이것 없이 재견적해 키즈·재방문·웨딩 할인이 조용히 사라졌다(2026-10-08 검토: 키즈+재방문 Basic 40.5 → Business 95, 정답 76.5). */
+function _bookingQuoteContextFromRow_(row){
+  // 얼리버드는 '예약한 때' 기준 — 지금 시각으로 다시 재면 이미 받은 할인이 사라진다
+  const asOf=['동의시각','accepted_at','확정일시'].map(function(h){
+    return BOOKING_COL[h]!=null?(parseDateSafe_(row[BOOKING_COL[h]])||{}).obj:null;
+  }).find(function(d){return d instanceof Date&&!isNaN(d.getTime());});
+  return {
+    ageGroup:parseBookingAgeGroupFromRow_(row),
+    isReturn:BOOKING_COL['재방문']!=null&&String(row[BOOKING_COL['재방문']]||'').trim()==='재방문',
+    marketing:BOOKING_COL['마케팅동의']!=null&&String(row[BOOKING_COL['마케팅동의']]||'').trim().toUpperCase()==='Y',
+    businessInvoiceNeeded:isPublicTruthy_(row[BOOKING_COL['사업자송장필요']]),
+    asOf:asOf
+  };
+}
+
 function changeBookingProductForAgent_(token,payload){
   assertAdmin_(token);
   payload=payload||{};
@@ -17284,23 +17300,32 @@ function changeBookingProductForAgent_(token,payload){
             return (Array.isArray(cs)?cs:String(cs||'').split('+')).map(_passCountryCode_).filter(Boolean);
           })
         : passResolved.countries);
-  const quote=calculateQuote_({
+  const ctx=_bookingQuoteContextFromRow_(row);
+  const quote=calculateQuote_(Object.assign({
     itemId:itemId, people:peopleForQuote, date:dateStr, optionKeys:optionKeys,
     passAddon:passAddon, passAddonPeople:passAddonPeople,
-    passPersonCountries:passPersonCountries,
-    businessInvoiceNeeded:isPublicTruthy_(row[BOOKING_COL['사업자송장필요']])
-  });
+    passPersonCountries:passPersonCountries
+  },ctx));
   // 포트폴리오 협업(TFP)은 정당한 €0 상품이다 — 견적형 가드에서 예외(2026-09-13 배지현 전환). 총액·계약금·잔금이 0 으로 내려간다.
+  // 시니어 평일 Basic 무료도 정당한 €0 — 연령을 넘기면서 생긴 경우라 같이 통과시킨다.
   const isTfpTarget=quote.itemGroup==='tfp';
-  if(!isTfpTarget&&(quote.isQuoteOnly||!(quote.totalPrice>0))){
+  if(!isTfpTarget&&(quote.isQuoteOnly||!(quote.totalPrice>0||quote.seniorFree))){
     throw new Error('상담견적/커스텀(총액 0) 상품은 이 액션으로 바꿀 수 없습니다. 금액은 booking-set-amount 로 정정하세요.');
+  }
+  /* 이미 적용된 굿샤인은 새 총액에서도 뺀다 — 안 빼면 굿샤인 €55 로 0 이 된 Basic 이 Business 로 바뀌며 €95 를 다 청구했다(정답 40).
+     계약금은 굿샤인 적용(_previewGutscheinApplyCore_)과 같은 규칙: 차감 뒤 €100 이하 + 미입금이면 0, 아니면 총액을 넘지 않게. */
+  const gsDiscount=BOOKING_COL['굿샤인차감금액']!=null?roundCurrency_(parseMoneyValue_(row[BOOKING_COL['굿샤인차감금액']])):0;
+  if(gsDiscount>quote.totalPrice+0.005){
+    throw new Error('적용된 굿샤인 €'+formatEuroAmount_(gsDiscount)+' 이 새 상품 총액 €'+formatEuroAmount_(quote.totalPrice)
+      +' 보다 큽니다 — 차액이 사라지므로 이 액션으로 바꿀 수 없습니다(굿샤인 잔액 처리 필요).');
   }
   const prevProduct=String(row[BOOKING_COL['상품']]||'').trim();
   const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
   const newProduct=String(quote.productLabelKo||'').trim();
-  const newTotal=roundCurrency_(quote.totalPrice);
-  const newDeposit=roundCurrency_(quote.depositAmount);
-  const newBalance=roundCurrency_(quote.balanceAmount);
+  const newTotal=roundCurrency_(Math.max(0,quote.totalPrice-gsDiscount));
+  const depositUnpaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()!=='Y';
+  const newDeposit=(newTotal<=100&&depositUnpaid)?0:roundCurrency_(Math.min(Number(quote.depositAmount)||0,newTotal));
+  const newBalance=roundCurrency_(Math.max(0,newTotal-newDeposit));
 
   /* 미리보기 — 아무것도 쓰지 않고 변경 전/후만 돌려준다.
      현장 앱에서 "€170 → €220, 잔금 €120 → €170" 을 먼저 보여주고 확인받기 위한 것.
@@ -17320,6 +17345,7 @@ function changeBookingProductForAgent_(token,payload){
         :(passCountryFromOption?`국가 ${optionCountryCount}개/인 · ${peopleForQuote}명 (창구 등록 — 국가명은 기록되지 않음)`
                                :_passCountriesToMemoToken_(passPersonCountries,String(row[BOOKING_COL['요청사항']]||''))),
       familyDiscount:roundCurrency_(Number(quote.familyDiscount)||0),
+      gutscheinDiscount:gsDiscount,
       depositPaid:String(row[BOOKING_COL['계약금입금여부']]||'').trim()==='Y',
       balancePaid:String(row[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'};
   }
@@ -17332,9 +17358,13 @@ function changeBookingProductForAgent_(token,payload){
      옵션 키만 덮어쓰면 그 국가 수가 지워져 다음 견적이 전원 기본가로 떨어진다 — 여권이면 국가 표기를 보존한다. */
   if(BOOKING_COL['옵션']!=null){
     const keepCountryText=(isPassTarget&&optionCountryCount>0)?`국가 ${optionCountryCount}개/인`:'';
+    // 어드민 수정은 연령을 옵션 열에만 적는다(updateBookingAdmin 포맷) — 덮어쓰면 다음 재견적·인보이스가 키즈·시니어 할인을 잃는다
+    const ageLabel=getBookingAgeGroupLabel_(ctx.ageGroup);
+    const ageDiscountLabel=getBookingAgeDiscountLabel_(quote);
     // 엔진이 거른 키를 쓴다 — 급행 대상이 아닌 새 상품(여권 등)·요율 0 이면 요금과 함께 키도 빠진다(키만 남으면 공짜 급행 약속)
     sh.getRange(rIdx,BOOKING_COL['옵션']+1)
-      .setValue([(quote.optionKeys||optionKeys).join('|'),keepCountryText].filter(Boolean).join(' | '));
+      .setValue([(quote.optionKeys||optionKeys).join('|'),keepCountryText,
+        ageLabel?'촬영대상: '+ageLabel:'',ageDiscountLabel?'할인: '+ageDiscountLabel:''].filter(Boolean).join(' | '));
   }
   sh.getRange(rIdx,BOOKING_COL['총결제액']+1).setValue(newTotal);
   sh.getRange(rIdx,BOOKING_COL['계약금']+1).setValue(formatInvoiceBookingDepositCell_(row,newDeposit)); // 입금여부 보존
@@ -17342,13 +17372,18 @@ function changeBookingProductForAgent_(token,payload){
   if(BOOKING_COL['total_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['total_price_brutto']+1).setValue(newTotal);
   if(BOOKING_COL['deposit_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['deposit_price_brutto']+1).setValue(newDeposit);
   if(BOOKING_COL['balance_price_brutto']!=null) sh.getRange(rIdx,BOOKING_COL['balance_price_brutto']+1).setValue(newBalance);
+  // 굿샤인 적용 전/후 총액(어드민 상세 표시)도 새 상품 기준으로 — 차감액·코드·굿샤인 시트 사용 기록은 그대로
+  if(gsDiscount>0){
+    if(BOOKING_COL['적용전총액']!=null) sh.getRange(rIdx,BOOKING_COL['적용전총액']+1).setValue(roundCurrency_(quote.totalPrice));
+    if(BOOKING_COL['적용후총액']!=null) sh.getRange(rIdx,BOOKING_COL['적용후총액']+1).setValue(newTotal);
+  }
 
   // 여권콤보 소요시간 근거 — 예약 생성부와 동일한 [여권콤보:N명] 토큰을 요청사항에 남긴다.
   // getBookingDurationMinFromRow_ 가 이 토큰을 읽어 캘린더 duration 에 콤보분을 합산한다(인보이스도 동일 토큰).
   // ponytail: 콤보 해제(passAddon 미지정) 시 기존 토큰은 그대로 남는다 — 필요 시 사장님이 요청사항에서 제거.
   const stamp=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd');
   const passMarker=passAddon?`[여권콤보:${passAddonPeople}명]`:'';
-  const auditLine=`[상품변경 ${stamp}] ${prevProduct||'?'}→${newProduct}, ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€ (agent)`;
+  const auditLine=`[상품변경 ${stamp}] ${prevProduct||'?'}→${newProduct}, ${formatEuroAmount_(prevTotal)}→${formatEuroAmount_(newTotal)}€ (agent${gsDiscount>0?', 굿샤인 −'+formatEuroAmount_(gsDiscount)+'€ 반영':''})`;
   let curMemo=String(row[BOOKING_COL['요청사항']]||'').trim();
   /* 인원이 바뀌면 `[국가별 신청]` 토큰도 새 인원으로 갱신한다 — 갱신하지 않으면 다음 견적이 옛 인원으로 계산되고,
      보드의 국가 추가(addPassCountryForAgent_)도 옛 그룹에 붙는다. 구성이 사람마다 다르면 그룹별로 다시 쓴다. */
@@ -17382,7 +17417,7 @@ function changeBookingProductForAgent_(token,payload){
     product:newProduct,itemGroup:quote.itemGroup,itemId:quote.itemId,
     previousProduct:prevProduct,previousTotal:prevTotal,
     total:newTotal,deposit:newDeposit,balance:newBalance,
-    durationMin:quote.totalDuration,passAddon:passAddon,
+    durationMin:quote.totalDuration,passAddon:passAddon,gutscheinDiscount:gsDiscount,
     mailSent:!!changeMail.sent,changeMail:changeMail,auditLine:auditLine};
 }
 

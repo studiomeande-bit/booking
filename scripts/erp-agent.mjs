@@ -33,7 +33,8 @@
  *   node scripts/erp-agent.mjs booking-set-amount --json '{"rowIndex":218,"total":35,"reason":"여권 인화옵션 €5 누락분 반영"}'
  *   옵션: recomputeBalance(기본 true, 잔금=총결제액−계약금), expectName(행 고객명 안전확인).
  *
- * booking-change-product: 예약 상품 교체 + 재견적(총액·계약금·잔금·소요시간·캘린더 자동 반영). 고객 메일 미발송.
+ * booking-change-product: 예약 상품 교체 + 재견적(총액·계약금·잔금·소요시간·캘린더 자동 반영). 예약행의 연령·재방문·웨딩 할인·사업자 송장·
+ *   적용된 굿샤인 차감을 그대로 반영. 변경 안내 메일 기본 발송 — 억제는 notify:false.
  *   가격은 calculateQuote_(수기등록과 동일 엔진) 재사용 — 별도 계산 없음.
  *   node scripts/erp-agent.mjs booking-change-product --json '{"rowIndex":218,"itemId":"pp","passAddon":true}'
  *   payload: itemId(필수), passAddon/passAddonPeople, people, optionKeys[], expectName(안전확인).
