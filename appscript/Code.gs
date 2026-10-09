@@ -17323,8 +17323,18 @@ function changeBookingProductForAgent_(token,payload){
   const prevTotal=roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']]));
   const newProduct=String(quote.productLabelKo||'').trim();
   const newTotal=roundCurrency_(Math.max(0,quote.totalPrice-gsDiscount));
+  /* 입금된 계약금은 받은 돈이다 — 새 상품의 규칙값으로 덮으면 안 된다(2026-10-09). 종전엔 늘 quote.depositAmount 로 덮어써
+     Studio Basic(€50 입금) → Profile Basic 55 가 계약금 0·잔금 55(€50 이중 청구), 웨딩 Plus(€130 입금) → Premium 이 계약금 220·잔금 880(€90 누락).
+     받은 금액(계약금입금금액, 없으면 계약금 셀)을 그대로 두고 잔금 = 새 총액 − 그 금액. 받은 계약금이 새 총액보다 크면 거부 —
+     현장 할인(settleBookingOnsiteForAgent_)과 같은 규칙, 차액은 어드민 환불 경로로(사장님 결정 2026-10-09). */
   const depositUnpaid=String(row[BOOKING_COL['계약금입금여부']]||'').trim()!=='Y';
-  const newDeposit=(newTotal<=100&&depositUnpaid)?0:roundCurrency_(Math.min(Number(quote.depositAmount)||0,newTotal));
+  const paidDeposit=depositUnpaid?0:roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금입금금액']])||parseMoneyValue_(row[BOOKING_COL['계약금']]));
+  if(paidDeposit>newTotal+0.005){
+    throw new Error('이미 받은 계약금 €'+formatEuroAmount_(paidDeposit)+' 이 새 상품 총액 €'+formatEuroAmount_(newTotal)
+      +' 보다 큽니다 — 차액 환불이 필요하므로 이 액션으로 바꿀 수 없습니다(어드민에서 환불·금액 정정).');
+  }
+  const newDeposit=!depositUnpaid?paidDeposit
+    :newTotal<=100?0:roundCurrency_(Math.min(Number(quote.depositAmount)||0,newTotal));
   const newBalance=roundCurrency_(Math.max(0,newTotal-newDeposit));
 
   /* 미리보기 — 아무것도 쓰지 않고 변경 전/후만 돌려준다.
