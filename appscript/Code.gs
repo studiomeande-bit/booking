@@ -33303,13 +33303,23 @@ function syncBookingFromInvoiceRecord_(bookingSheet,rowIndex,inv,payload){
     ).trim();
     const people=Math.max(1,parseInt(bookingUpdate.people||row[BOOKING_COL['인원']]||1,10)||1);
     const total=roundCurrency_(inv.total||bookingUpdate.invoiceTotal||0);
+    /* 예약을 바꾸지 않은 발행은 돈 열을 다시 쓰지 않는다(2026-10-08) — 어드민은 늘 bookingUpdate 를 보내는데 계산기 총액이
+       인보이스 총액과 다르면(굿샤인 예약: 총결제액 120·계약금 0) 계약금이 규칙값 €50(웨딩 20%)으로 되살아나고 잔금이 바뀌었다.
+       같은 상품·인원·총액이면 계약금·잔금은 예약의 값이 정본, 가격 붙는 옵션까지 같으면 상품·옵션 문구도 그대로 둔다.
+       메모 반영 줄·사업자 열은 늘 쓴다. 상품·인원·총액을 실제로 바꾼 발행은 예전대로 다시 계산한다. */
+    const rowProduct=bookingUpdate.itemId?getBookingProductForRow_(row):null;
+    const keepMoney=(!bookingUpdate.itemId||!!(rowProduct&&String(rowProduct.id)===String(bookingUpdate.itemId)))
+      &&people===Math.max(1,parseInt(row[BOOKING_COL['인원']],10)||1)
+      &&Math.abs(total-roundCurrency_(parseMoneyValue_(row[BOOKING_COL['총결제액']])))<0.01;
+    const pricedKeys=function(keys){return (keys||[]).map(String).filter(function(k){return ['dog','bg','outfit','express'].indexOf(k)>-1;}).sort().join(',');};
+    const keepComposition=keepMoney&&(!bookingUpdate.itemId||pricedKeys(bookingUpdate.optionKeys)===pricedKeys(parseBookingOptionKeysFromRow_(row)));
     const calculatedTotal=roundCurrency_(bookingUpdate.calculatedTotal||0);
     const explicitDeposit=(calculatedTotal&&Math.abs(calculatedTotal-total)<0.01)?bookingUpdate.depositAmount:'';
-    const depositAmount=getInvoiceBookingSyncDepositAmount_(group,total,row,explicitDeposit);
-    const balanceAmount=roundCurrency_(Math.max(0,total-depositAmount));
-    const optionText=buildInvoiceBookingSyncOptionText_(bookingUpdate,preview);
-    if(group) bookingSheet.getRange(rowIndex,BOOKING_COL['촬영종류']+1).setValue(group);
-    if(productName) bookingSheet.getRange(rowIndex,BOOKING_COL['상품']+1).setValue(productName);
+    const depositAmount=keepMoney?roundCurrency_(parseMoneyValue_(row[BOOKING_COL['계약금']])):getInvoiceBookingSyncDepositAmount_(group,total,row,explicitDeposit);
+    const balanceAmount=keepMoney?roundCurrency_(parseMoneyValue_(row[BOOKING_COL['잔금']])):roundCurrency_(Math.max(0,total-depositAmount));
+    const optionText=keepComposition?'':buildInvoiceBookingSyncOptionText_(bookingUpdate,preview);
+    if(group&&!keepComposition) bookingSheet.getRange(rowIndex,BOOKING_COL['촬영종류']+1).setValue(group);
+    if(productName&&!keepComposition) bookingSheet.getRange(rowIndex,BOOKING_COL['상품']+1).setValue(productName);
     /* 창구 수기등록은 여권 국가 수를 옵션 열의 '국가 N개/인' 에만 남긴다(메모 토큰 없음). 발행 동기화가 옵션 열을
        '인원 3명 | 1인당 국가 2개' 같은 문구로 통째로 바꾸면 그 기록이 사라져, 다음 재견적이 전원 기본가로 떨어진다
        (2026-09-25 감사 — 9/23 에 상품·인원 변경 경로에서 막은 것과 같은 소실). 새 문구에 없으면 붙여 보존한다. */
@@ -33319,10 +33329,12 @@ function syncBookingFromInvoiceRecord_(bookingSheet,rowIndex,inv,payload){
     /* 옵션 정보를 안 보낸 발행(보드 앱 인보이스 버튼·계산기 미선택)은 옵션 열을 건드리지 않는다 — 빈 문자열로 덮으면
        이미 받은 급행이 '안 산 것' 이 되어 셀렉에서 또 팔렸다(2026-09-29 검토). 계산기 문구는 늘 '인원 N명' 을 담아 비지 않는다. */
     if(optionText) bookingSheet.getRange(rowIndex,BOOKING_COL['옵션']+1).setValue(optionToWrite);
-    bookingSheet.getRange(rowIndex,BOOKING_COL['인원']+1).setValue(people);
-    bookingSheet.getRange(rowIndex,BOOKING_COL['총결제액']+1).setValue(total);
-    bookingSheet.getRange(rowIndex,BOOKING_COL['계약금']+1).setValue(formatInvoiceBookingDepositCell_(row,depositAmount));
-    bookingSheet.getRange(rowIndex,BOOKING_COL['잔금']+1).setValue(balanceAmount);
+    if(!keepMoney){
+      bookingSheet.getRange(rowIndex,BOOKING_COL['인원']+1).setValue(people);
+      bookingSheet.getRange(rowIndex,BOOKING_COL['총결제액']+1).setValue(total);
+      bookingSheet.getRange(rowIndex,BOOKING_COL['계약금']+1).setValue(formatInvoiceBookingDepositCell_(row,depositAmount));
+      bookingSheet.getRange(rowIndex,BOOKING_COL['잔금']+1).setValue(balanceAmount);
+    }
     if(BOOKING_COL['사업자송장필요']!=null) bookingSheet.getRange(rowIndex,BOOKING_COL['사업자송장필요']+1).setValue(inv.businessInvoiceNeeded?'Y':'');
     if(BOOKING_COL['사업자명']!=null) bookingSheet.getRange(rowIndex,BOOKING_COL['사업자명']+1).setValue(inv.businessCompanyName||'');
     if(BOOKING_COL['사업자VAT번호']!=null) bookingSheet.getRange(rowIndex,BOOKING_COL['사업자VAT번호']+1).setValue(inv.businessVatId||'');
