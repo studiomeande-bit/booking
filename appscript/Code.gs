@@ -20669,9 +20669,14 @@ function isPaymentConfirmedValue_(value){
   return /^(y|yes|true|1|완료|입금완료|결제완료|paid|fully_paid|bezahlt)$/.test(s);
 }
 
+/* €100 이하 → 계약금 0 은 '청구' 규칙이다. 이미 입금된 계약금(입금여부 'Y')은 실제 돈이라 그대로 —
+   굿샤인 적용·상품변경(@1016)으로 총액이 100 이하가 된 행(Studio Basic 50 입금 → Profile Basic 55 = 계약금 50·잔금 5).
+   예전엔 여기서 0 이 나와 cleanupBookingDepositFlags_ 가 입금 표시를 지우고, force 재확인이 거부되고,
+   장부·결제검토가 받은 계약금을 잔금으로 다시 셌다(2026-10-09). 'Y' 엄격 비교 — 미입금 경로(독촉·자동취소·보류)가
+   전부 'Y' 를 입금으로 보므로 여기서 새로 0 이 아니게 되는 행은 그 경로를 절대 타지 않는다. */
 function getEffectiveBookingDeposit_(row){
   const total=parseMoneyValue_(row[BOOKING_COL['총결제액']]);
-  if(total<=100) return 0;
+  if(total<=100&&String(row[BOOKING_COL['계약금입금여부']]||'').trim()!=='Y') return 0;
   return parseMoneyValue_(row[BOOKING_COL['계약금']]);
 }
 
