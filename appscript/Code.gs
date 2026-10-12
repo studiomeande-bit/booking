@@ -14447,9 +14447,23 @@ function createBookingRowActionRef_(rowIndex,row){
 }
 // 현행 + 구 산식 전부와 대조 — 이미 고객 메일함에 있는 옛 링크를 최대한 살린다
 function bookingRowActionTokenMatches_(row,token){
-  return bookingRowActionToken_(row)===token
-      || bookingRowActionTokenV1_(row)===token
-      || bookingRowActionTokenLegacy_(row)===token;
+  const hit=function(r){
+    return bookingRowActionToken_(r)===token
+        || bookingRowActionTokenV1_(r)===token
+        || bookingRowActionTokenLegacy_(r)===token;
+  };
+  if(hit(row)) return true;
+  /* 연락처 표기 폴백 — 공개 예약폼은 연락처를 붙여 쓴 꼴('+4915734412072')로 저장하는데,
+     updateBookingAdmin(어드민 저장·booking-update)이 normalizePhoneForLedger_ 로 '+49 157 344 120 72' 로 다시 쓴다.
+     시드에는 연락처 문자열이 그대로 들어가, 번호는 같은데 저장 한 번에 이미 발송된 링크가 전부 죽었다
+     (2026-10-11 이승호 행 281: 9/13 확정메일 링크 → 같은 날 메모 저장 뒤 BOOKING_NOT_FOUND).
+     접수 시점 꼴(공백·하이픈 제거, processForm_ 의 cleanPhone 과 같은 규칙)로도 대조한다. */
+  const phone=String(row[BOOKING_COL['연락처']]==null?'':row[BOOKING_COL['연락처']]);
+  const compact=phone.replace(/[\s\-]/g,'');
+  if(compact===phone) return false;
+  const alt=row.slice();
+  alt[BOOKING_COL['연락처']]=compact;
+  return hit(alt);
 }
 function findBookingRowByActionRef_(ref){
   const safeRef=String(ref||'').trim();
@@ -24245,6 +24259,14 @@ function matchSettlementTransaction_(tx,entries,existingSettlements,options){
     // 이미 다른 거래가 가져간 장부 건은 후보에서 뺀다 — 없으면 같은 금액 카드결제 2건이 같은 예약을
     // 동시에 물어 대사가 맞는 것처럼 보인다(2026-07 실측: 7/03·7/04 €30 이 둘 다 예약행 180 김나윤)
     if(claimedEntries && claimedEntries[settlementEntryKey_(entry)]) return false;
+    /* 카드결제는 현장 결제다 — 3일 넘게 지난 예약, 또는 다른 날 결제가 이미 기록된 예약은 이 거래가 아니다.
+       2026-10-06 실측: 정진호 €130(행 305 가 아직 €140)이 9/19 완납된 오세호 행 276 에 금액+카드 60점만으로 붙었다.
+       matchSumupBookingPayment_ 의 8/29 가드(이미결제+결제일≠거래일)와 같은 규칙 — 장부 엔트리 date 는 잔금입금일||촬영일.
+       수동·force 매칭(applySettlementBookingMatchAdmin)은 이 경로를 타지 않는다. */
+    if(tx.source==='sumup' && entry.source==='booking'){
+      const gap=daysBetweenDates_(tx.date,entry.date);
+      if(gap>3 || (String(entry.balancePaid||'').trim()==='Y' && String(entry.balancePaidAt||'').trim() && gap!==0)) return false;
+    }
     const gross=Math.abs(Number(entry.gross||0));
     const deposit=Math.abs(parseMoneyValue_(entry.depositPaidAmount));
     const balance=Math.abs(parseMoneyValue_(entry.balancePaidAmount));
@@ -27217,10 +27239,12 @@ function enrichSelectPhoto_(photo){
   const raw=photo||{};
   const printType=String(raw.printType||'print_none').replace(/_(r|e)$/,'').trim()||'print_none';
   const info=getPrintInfo_(printType);
+  const marks=normalizeSelectMarks_(raw.marks);
   return {
     ...raw,
     num:String(raw.num||''),
-    note:String(raw.note||''),
+    note:selectNoteWithMarks_(raw.note,marks),   // 메모 끝에 '◎① 글 (위치)' — 메일·어드민·작업지시서가 그대로 읽는다
+    marks:marks,
     persons:normalizeSelectPersons_(raw.persons),
     printType,
     printTypeLabel:String(raw.printTypeLabel||info.label||'')
@@ -27236,6 +27260,29 @@ function enrichSelectPhoto_(photo){
  * 인원은 고객 신고값이다 — 서버가 상한(3)만 강제하고 합계는 서버가 다시 센다. */
 function isSelectPerPersonRetouchGroup_(itemGroup){
   return String(itemGroup||'').trim().toLowerCase()==='prof';
+}
+/* ===== 보정 위치 표시(동그라미) — 사장님 확정 2026-10-12 =====
+   고객이 셀렉 화면에서 사진 위에 그린 동그라미. 좌표·반지름은 사진 가로 기준 %(화면 크기 무관), 한 장 최대 12개, 글 120자.
+   저장은 선택사진 JSON 의 photo.marks 그대로 + 메모 끝에 '◎① 글 (위치)' 줄 — 메일·어드민·작업지시서는 메모만 읽어도 된다.
+   화면은 그 줄을 떼고(MARK_LINE_RE) marks 로 다시 그리므로, 여기서도 옛 줄을 먼저 떼야 수정 제출마다 겹쳐 쌓이지 않는다. */
+const SELECT_MARK_MAX_=12;
+const SELECT_MARK_NUMS_='①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
+const SELECT_MARK_POS_=['왼쪽 위','위','오른쪽 위','왼쪽','가운데','오른쪽','왼쪽 아래','아래','오른쪽 아래'];
+function normalizeSelectMarks_(raw){
+  if(!Array.isArray(raw)) return [];
+  const clamp=function(v,lo,hi,d){ const n=Number(v); return isFinite(n)?Math.min(hi,Math.max(lo,n)):d; };
+  return raw.slice(0,SELECT_MARK_MAX_).filter(function(m){return m&&typeof m==='object';}).map(function(m){
+    return {x:Math.round(clamp(m.x,0,100,0)*10)/10,y:Math.round(clamp(m.y,0,100,0)*10)/10,r:Math.round(clamp(m.r,1,50,5)*10)/10,t:String(m.t||'').replace(/\s+/g,' ').trim().slice(0,120)};
+  });
+}
+function selectMarkPosLabel_(m){
+  const col=m.x<33?0:m.x>67?2:1, row=m.y<33?0:m.y>67?2:1;
+  return SELECT_MARK_POS_[row*3+col];
+}
+function selectNoteWithMarks_(note,marks){
+  const base=String(note||'').split('\n').filter(function(l){return !/^◎[①-⑫]/.test(l.trim());}).join('\n').trim();
+  const lines=(marks||[]).map(function(m,i){ return '◎'+(SELECT_MARK_NUMS_[i]||(i+1))+(m.t?' '+m.t:'')+' ('+selectMarkPosLabel_(m)+')'; });
+  return [base].concat(lines).filter(Boolean).join('\n');
 }
 function normalizeSelectPersons_(value){
   const n=parseInt(value,10);

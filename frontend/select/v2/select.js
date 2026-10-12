@@ -586,6 +586,7 @@ queueMicrotask(boot);
 
 async function boot() {
   wireEvents();
+  wireMarkEditor();
   wireLanguageSwitcher();
   applyCopy();
   if (state.previewMode) {
@@ -916,13 +917,45 @@ function normalizePhoto(photo) {
   const source = photo?.source || (isService ? 'service' : isBonus ? 'bonus' : 'manual');
   return {
     num: String(photo?.num || ''),
-    note: String(photo?.note || ''),
+    note: stripMarkLines(String(photo?.note || '')),   // 서버가 메모 끝에 붙인 '◎①…' 표시 줄은 화면에서 떼고, 제출 때 다시 만든다
+    marks: normalizeMarks(photo?.marks),
     persons: normalizePersons(photo?.persons),
     printType: normalizePrintTypeId(photo?.printType),
     isBonus,
     isService,
     source
   };
+}
+
+/* ===== 보정 위치 표시(동그라미) — 사장님 확정 2026-10-12 =====
+ * 한 장에 동그라미 최대 12개. 좌표·반지름은 사진 가로 기준 % 라 화면 크기와 무관하다.
+ * 서버(normalizeSelectMarks_)가 같은 규칙으로 다시 자르고, 메모 끝에 '◎① 글 (위치)' 줄을 붙여
+ * 메일·어드민·작업지시서가 그대로 읽는다. 화면은 그 줄을 떼고 marks 로 다시 그린다. */
+const MARK_MAX = 12;
+const MARK_LINE_RE = /^◎[①-⑫]/;
+function normalizeMarks(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, MARK_MAX).map((m) => ({
+    x: Math.min(100, Math.max(0, Number(m?.x) || 0)),
+    y: Math.min(100, Math.max(0, Number(m?.y) || 0)),
+    r: Math.min(50, Math.max(1, Number(m?.r) || 5)),
+    t: String(m?.t || '').trim().slice(0, 120)
+  }));
+}
+function stripMarkLines(note) {
+  return String(note || '').split('\n').filter((l) => !MARK_LINE_RE.test(l.trim())).join('\n').trim();
+}
+const MARK_NUMS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
+function markPosLabel(m) {
+  const col = m.x < 33 ? 0 : m.x > 67 ? 2 : 1, row = m.y < 33 ? 0 : m.y > 67 ? 2 : 1;
+  return (copy().markPos || [])[row * 3 + col] || '';
+}
+function markSummaryText(photo) {
+  return (photo?.marks || []).map((m, i) => `${MARK_NUMS[i] || (i + 1)} ${m.t || markPosLabel(m)}`).join(' · ');
+}
+/* 표시가 있는 행은 요청사항 칸이 비어도 완성으로 본다(동그라미 글이 곧 요청) */
+function photoHasRequest(photo) {
+  return !!String(photo?.note || '').trim() || (photo?.marks || []).some((m) => String(m.t || '').trim());
 }
 
 /* ===== 다인 컷 보정 슬롯 (사장님 확정 2026-09-23) ==========================================
@@ -2667,6 +2700,129 @@ function openPrintPicker(index) {
    기본 필터는 '별점만'(찜에서 고르는 게 모델), 찜이 없으면 전체. */
 /* 사진번호 입력란용 — 찜 썸네일에서 골라 그 행의 번호를 채운다(단일 선택 후 닫힘).
    타이핑 대신 눈으로 고르게 해 달라는 요청(2026-08-25 사장님). */
+/* ===== 동그라미 편집기 ===== */
+let markEdit = { index: -1, active: -1, drag: null };
+function markEls() {
+  return { root: document.getElementById('markEditor'), img: document.getElementById('markImg'), layer: document.getElementById('markLayer'),
+    list: document.getElementById('markList'), title: document.getElementById('markTitle'), hint: document.getElementById('markHint'),
+    done: document.getElementById('markDone'), clear: document.getElementById('markClearAll'), close: document.getElementById('markClose'), canvas: document.getElementById('markCanvas') };
+}
+function openMarkEditor(photoIndex) {
+  const photo = state.photos[photoIndex];
+  const key = stripExt(photo?.num || '');
+  const p = key ? state.gallery.byKey.get(key) : null;
+  if (!p) { setBanner(copy().markNeedPhoto, 'error'); return; }
+  const E = markEls();
+  if (!E.root) return;
+  markEdit = { index: photoIndex, active: -1, drag: null };
+  photo.marks = normalizeMarks(photo.marks);
+  const c = copy();
+  E.title.textContent = c.markTitle(key);
+  E.hint.textContent = c.markHint;
+  E.done.textContent = c.markDone;
+  E.clear.textContent = c.markClearAll;
+  E.img.src = p.full || p.thumb;
+  E.img.alt = p.name || key;
+  renderMarks();
+  E.root.classList.add('open');
+  E.root.setAttribute('aria-hidden', 'false');
+  fitMarkImage();
+}
+/* 사진은 스테이지 안에 다 보여야 한다 — 잘리면 잘린 부분엔 표시를 못 한다. 스테이지 실제 높이에 맞춘다(패널이 뷰포트로 눌리면 68vh 보다 작다). */
+function fitMarkImage() {
+  const E = markEls();
+  if (!E.root || !E.root.classList.contains('open')) return;
+  requestAnimationFrame(() => {
+    const stage = document.getElementById('markStage');
+    if (stage && E.img) E.img.style.maxHeight = Math.max(160, stage.clientHeight - 8) + 'px';
+  });
+}
+function closeMarkEditor() {
+  const E = markEls();
+  if (!E.root) return;
+  E.root.classList.remove('open');
+  E.root.setAttribute('aria-hidden', 'true');
+  const i = markEdit.index;
+  markEdit = { index: -1, active: -1, drag: null };
+  if (i >= 0) { renderPhotos(); updatePhotoCounter(); updateReview(); }
+}
+function currentMarks() { const ph = state.photos[markEdit.index]; return ph ? (ph.marks = normalizeMarks(ph.marks)) : []; }
+function renderMarks() {
+  const E = markEls();
+  const marks = currentMarks();
+  const c = copy();
+  E.layer.innerHTML = marks.map((m, i) => `<div class="mark-circle${i === markEdit.active ? ' active' : ''}" data-mark-i="${i}" style="left:${m.x}%;top:${m.y}%;width:${m.r * 2}%;"><span class="mark-no">${MARK_NUMS[i] || (i + 1)}</span></div>`).join('');
+  E.list.innerHTML = marks.length
+    ? marks.map((m, i) => `<div class="mark-item${i === markEdit.active ? ' active' : ''}" data-mark-item="${i}"><span class="mark-idx">${MARK_NUMS[i] || (i + 1)}</span><input data-mark-text="${i}" value="${escapeHtml(m.t)}" maxlength="120" placeholder="${escapeHtml(c.markTextPlaceholder)}"><button type="button" class="mark-del" data-mark-del="${i}" aria-label="${escapeHtml(c.markDelete)}" title="${escapeHtml(c.markDelete)}">✕</button></div>`).join('')
+    : `<div class="mark-empty">${escapeHtml(c.markEmpty)}</div>`;
+  E.list.querySelectorAll('[data-mark-text]').forEach((input) => {
+    input.addEventListener('input', () => { const m = currentMarks()[Number(input.dataset.markText)]; if (m) m.t = input.value.slice(0, 120); });
+    input.addEventListener('focus', () => { markEdit.active = Number(input.dataset.markText); E.layer.querySelectorAll('.mark-circle').forEach((el) => el.classList.toggle('active', Number(el.dataset.markI) === markEdit.active)); E.list.querySelectorAll('.mark-item').forEach((el) => el.classList.toggle('active', Number(el.dataset.markItem) === markEdit.active)); });
+  });
+  E.list.querySelectorAll('[data-mark-del]').forEach((btn) => btn.addEventListener('click', () => { currentMarks().splice(Number(btn.dataset.markDel), 1); markEdit.active = -1; renderMarks(); }));
+}
+function markPointPct(ev) {
+  const r = markEls().layer.getBoundingClientRect();
+  return { x: Math.min(100, Math.max(0, ((ev.clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((ev.clientY - r.top) / r.height) * 100)), w: r.width, h: r.height };
+}
+function wireMarkEditor() {
+  const E = markEls();
+  if (!E.root) return;
+  E.close.addEventListener('click', closeMarkEditor);
+  window.addEventListener('resize', fitMarkImage);
+  E.img.addEventListener('load', fitMarkImage);
+  E.done.addEventListener('click', closeMarkEditor);
+  E.clear.addEventListener('click', () => { const ph = state.photos[markEdit.index]; if (ph) ph.marks = []; markEdit.active = -1; renderMarks(); });
+  E.root.addEventListener('click', (ev) => { if (ev.target === E.root) closeMarkEditor(); });
+  E.layer.addEventListener('pointerdown', (ev) => {
+    if (markEdit.index < 0) return;
+    ev.preventDefault();
+    E.layer.setPointerCapture(ev.pointerId);
+    const pt = markPointPct(ev);
+    const circle = ev.target.closest('.mark-circle');
+    if (circle) {
+      const i = Number(circle.dataset.markI); const m = currentMarks()[i];
+      markEdit.active = i; markEdit.drag = { kind: 'move', i, dx: m.x - pt.x, dy: m.y - pt.y };
+      renderMarks();
+      return;
+    }
+    if (currentMarks().length >= MARK_MAX) return;
+    markEdit.drag = { kind: 'draw', x0: pt.x, y0: pt.y, el: null };
+    const el = document.createElement('div'); el.className = 'mark-circle drawing'; el.style.left = pt.x + '%'; el.style.top = pt.y + '%'; el.style.width = '0%';
+    E.layer.appendChild(el); markEdit.drag.el = el;
+  });
+  E.layer.addEventListener('pointermove', (ev) => {
+    const d = markEdit.drag; if (!d) return;
+    const pt = markPointPct(ev);
+    if (d.kind === 'move') {
+      const m = currentMarks()[d.i]; if (!m) return;
+      m.x = Math.min(100, Math.max(0, pt.x + d.dx)); m.y = Math.min(100, Math.max(0, pt.y + d.dy));
+      const el = E.layer.querySelector(`.mark-circle[data-mark-i="${d.i}"]`); if (el) { el.style.left = m.x + '%'; el.style.top = m.y + '%'; }
+      return;
+    }
+    // 그리기: 시작점이 중심, 끌어낸 거리가 반지름(사진 가로 % — 세로 거리도 가로 기준으로 환산해 원이 찌그러지지 않게)
+    const dx = pt.x - d.x0, dy = (pt.y - d.y0) * (pt.h / pt.w);
+    d.r = Math.min(50, Math.sqrt(dx * dx + dy * dy));
+    if (d.el) d.el.style.width = (d.r * 2) + '%';
+  });
+  const finish = (ev) => {
+    const d = markEdit.drag; if (!d) return;
+    markEdit.drag = null;
+    if (d.kind === 'draw') {
+      if (d.el) d.el.remove();
+      const r = Math.max(4, Number(d.r) || 0);          // 탭만 하면 4% 원
+      const marks = currentMarks();
+      marks.push({ x: d.x0, y: d.y0, r: Math.min(50, r), t: '' });
+      markEdit.active = marks.length - 1;
+      renderMarks();
+      const input = E.list.querySelector(`[data-mark-text="${markEdit.active}"]`); if (input) input.focus();
+    }
+    try { E.layer.releasePointerCapture(ev.pointerId); } catch (_) {}
+  };
+  E.layer.addEventListener('pointerup', finish);
+  E.layer.addEventListener('pointercancel', finish);
+}
+
 function openAssignPicker(photoIndex) {
   printPickerMode = 'assign';
   printPickerTarget = Number(photoIndex);
@@ -3041,6 +3197,10 @@ function renderPhotos() {
           <div class="field-full">
             <label>${escapeHtml(c.entryNoteLabel)} <small style="color:#8e6235;">${escapeHtml(c.entryNoteHint)}</small></label>
             <textarea data-photo-note="${index}" placeholder="${escapeHtml(retouchNotePlaceholder())}">${escapeHtml(photo.note || '')}</textarea>
+            <div class="entry-mark-row">
+              <button type="button" class="entry-mark-btn" data-mark-photo="${index}">◎ ${escapeHtml((photo.marks || []).length ? c.markBtnCount((photo.marks || []).length) : c.markBtn)}</button>
+              ${(photo.marks || []).length ? `<span class="entry-mark-summary">${escapeHtml(markSummaryText(photo))}</span>` : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -3069,6 +3229,9 @@ function renderPhotos() {
       if (state.prints.length) renderPrints(); // 보정본/원본 단가 판정이 바뀔 수 있음
       updateReview();
     });
+  });
+  els.photoList.querySelectorAll('[data-mark-photo]').forEach((button) => {
+    button.addEventListener('click', () => openMarkEditor(Number(button.dataset.markPhoto)));
   });
   els.photoList.querySelectorAll('[data-photo-persons]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -3587,7 +3750,7 @@ function updateReview() {
           <div class="review-item">
             <div>
               <strong>${escapeHtml(photo.num || c.reviewPhotoFallback(index + 1))}</strong>${isPerPersonRetouchSession() && normalizePersons(photo.persons) > 1 ? ` <span class="person-chip">${escapeHtml(c.personOpt(normalizePersons(photo.persons)))}</span>` : ''}
-              <div class="review-note">${escapeHtml(photo.note || '')}</div>
+              <div class="review-note">${escapeHtml(photo.note || '')}${(photo.marks || []).length ? `<br>◎ ${escapeHtml(markSummaryText(photo))}` : ''}</div>
             </div>
             <div style="text-align:right;">
               <div class="review-note">${extra}</div>
@@ -3761,10 +3924,10 @@ function validateStep1() {
    버튼조차 없어 빠져나갈 길도 없었다. → 완전히 빈 무료 슬롯은 진행을 막지 않는다.
    단 '반쯤 채운' 행(번호만/요청만)은 실수이므로 계속 막는다. */
 function isRetouchRowComplete(photo) {
-  return !!String(photo?.num || '').trim() && !!String(photo?.note || '').trim();
+  return !!String(photo?.num || '').trim() && photoHasRequest(photo);
 }
 function isRetouchRowEmpty(photo) {
-  return !String(photo?.num || '').trim() && !String(photo?.note || '').trim();
+  return !String(photo?.num || '').trim() && !photoHasRequest(photo);
 }
 function findIncompleteRetouchIndex() {
   return state.photos.findIndex((photo) => {
@@ -4052,7 +4215,7 @@ function markStepBtn(btn, ready) {
 /* 제출 payload 에 실리는 입력의 지문 — onSubmit 의 payload 와 같은 필드. 값이 같으면 같은 제출 시도다. */
 function payloadSig() {
   return JSON.stringify([
-    state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '']),
+    state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '', JSON.stringify(p.marks || [])]),
     state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
     state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
     state.photocard, !!els.earlyStartRetouchInput?.checked, expressAmount() > 0
@@ -4226,6 +4389,7 @@ async function onSubmit() {
     photos: state.photos.map((photo) => ({
       num: String(photo.num || ''),
       note: String(photo.note || ''),
+      marks: normalizeMarks(photo.marks),         // 동그라미 — 서버가 다시 자르고 메모 끝에 글 줄을 붙인다
       persons: normalizePersons(photo.persons),   // 서버가 상한(3)과 합계를 다시 계산한다
       isBonus: !!photo.isBonus,
       isService: !!photo.isService,
