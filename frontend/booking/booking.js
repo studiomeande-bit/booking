@@ -3399,6 +3399,8 @@ function renderWeekdayHeader() {
 function syncStepPanels() {
   const maxStep = getMaxUnlockedStep();
   if (state.activeStep > maxStep) state.activeStep = maxStep;
+  /* 단계 전환은 여러 곳에서 activeStep 을 직접 바꾼 뒤 전부 여기를 지난다 — 퍼널 '상품선택'은 여기서 센다. */
+  if (state.activeStep >= 2) pingFunnelOnce('start');
   Object.entries(els.stepPanels).forEach(([key, panel]) => {
     const step = Number(key.replace('step', ''));
     if (!panel) return;
@@ -3591,7 +3593,6 @@ function goToStep(step) {
   const next = Math.max(1, Math.min(5, step));
   const maxStep = getMaxUnlockedStep();
   state.activeStep = Math.min(next, maxStep);
-  if (state.activeStep >= 2) pingFunnelOnce('start');
   syncStepPanels();
   scrollToStepTop(state.activeStep);
 }
