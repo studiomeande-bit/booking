@@ -73,7 +73,7 @@ Updated: 2026-09-30 Europe/Berlin
   - 공개 쓰기 방어: 종류 허용 목록 · 대상 id 형식 · `neutralizeRow_` · 분당 60건 상한(넘으면 버림). 자동화 브라우저·봇 UA 는 프런트가 보내지 않는다.
   - 점검은 주소에 `?smoke=1`(출처 smoke) 또는 직접 호출 `s=verify` — `readSiteEvents_` 가 verify/test/smoke 출처를 통계에서 뺀다.
 - 조회: `site-funnel-stats --json '{"days":30}'`(방문·상품선택·접수·전환율, 일자·언어·상품군별, `trackingSince`) · `partner-click-stats` 에 `views`·`viewsBySource`·`ctrPct`·`byDate` 추가 · 주간 KPI 메일에 "예약사이트 전환" 한 줄과 협력업체 "노출 N".
-- 보조: 접수 완료 시 GA4 `booking_complete` 이벤트(동의자 한정 — 채널별 전환을 GA 에서 보기 위함). GA4 관리 화면에서 주요 이벤트로 표시하는 것은 사장님 액션.
+- 보조: 접수 완료 시 GA4 `booking_complete` 이벤트(동의자 한정 — 채널별 전환을 GA 에서 보기 위함). GA4 관리 화면에서 `booking_complete` 를 주요 이벤트로 등록함(2026-10-12, 이벤트당 한 번 집계).
 - 읽는 법: 전환율은 2026-10-12 이후분만 의미가 있다. 방문은 새로고침을 다시 세므로 "사람 수"가 아니라 "페이지 로드 수". 협력업체 `ctrPct` 는 메일 한 통에 링크가 둘이라 100%를 넘을 수 있고, 10-12 이전 클릭에는 짝이 되는 노출이 없다.
 - 참고: 9/11 하루 17클릭(세 업체에 메신저 8·인스타 8)은 `byDate` 로 날짜가 확정됐다. 메일 보안 스캐너의 자동 링크 검사로 추정 — `/go/` 는 사람과 스캐너를 구분하지 못한다(미해결).
 - 게이트 `scripts/check-site-events.mjs`. 라이브 확인: `s=verify` 핑 3행 기록·통계 제외, `api=init` 정상. 시트에 verify 행 3건이 남아 있다(통계 무영향).
