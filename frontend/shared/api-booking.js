@@ -22,6 +22,22 @@ export function pingPartnerClick({ partnerId, source, lang, itemGroup, linkKind 
   } catch { /* ignore */ }
 }
 
+/* 예약 퍼널·협력업체 노출 집계 — pingPartnerClick 과 같은 원칙(기다리지 않음 · 실패 무시 · 개인정보 없음).
+   kind: visit | start | submit | partner_view(targets=업체 id 배열).
+   주소에 ?smoke=1 이 있으면 출처를 smoke 로 보내 통계에서 빠진다(배포 점검용). 자동화 브라우저·봇은 보내지 않는다. */
+export function pingSiteEvent(kind, { targets, lang, itemGroup } = {}) {
+  try {
+    if (navigator.webdriver || /bot|crawl|spider|headless|lighthouse/i.test(navigator.userAgent || '')) return;
+    const source = /[?&]smoke=1/.test(window.location.search) ? 'smoke' : 'web';
+    fetch(buildUrl('site-event', { k: kind, t: (targets || []).join(','), s: source, lang: lang || '', g: itemGroup || '' }), {
+      method: 'GET',
+      keepalive: true,
+      cache: 'no-store',
+      mode: 'no-cors'
+    }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
 export function fetchPartners() {
   return requestJson(buildUrl('partners'), READ);
 }

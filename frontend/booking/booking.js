@@ -1,4 +1,4 @@
-import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, fetchSlotsMonth, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, submitBooking } from '../shared/api-booking.js';
+import { buildGutscheinReleaseUrl, fetchCalendarBatch, fetchInitData, fetchQuote, fetchReturnEligibility, fetchSlots, fetchSlotsMonth, holdGutschein, joinWaitlist, lookupAddress, lookupContact, pingPartnerClick, pingSiteEvent, submitBooking } from '../shared/api-booking.js';
 import { getProductDeliveryLines, getProductIncludedPrintQuota, productHasFixedDeliverySpec } from '../shared/product-delivery.js';
 import { groupPrintCatalogByGrade, printCatalogGradeLabel, printCatalogName } from '../shared/print-catalog.js';
 import { PRINT_METHOD_POINTS, PRINT_TIERS, getPrintMicrocopy, getPrintTier } from '../shared/print-tier-copy.js';
@@ -1632,6 +1632,7 @@ const els = {
 async function boot() {
   wireEvents();
   applyCopy();
+  pingFunnelOnce('visit');
   const cachedInit = readInitDataCache();
   if (cachedInit) {
     renderInitData(cachedInit);
@@ -3590,6 +3591,7 @@ function goToStep(step) {
   const next = Math.max(1, Math.min(5, step));
   const maxStep = getMaxUnlockedStep();
   state.activeStep = Math.min(next, maxStep);
+  if (state.activeStep >= 2) pingFunnelOnce('start');
   syncStepPanels();
   scrollToStepTop(state.activeStep);
 }
@@ -7368,6 +7370,15 @@ function buildPartnerSectionHtml(payload) {
   `;
 }
 
+/* 예약 퍼널 집계(방문 → 상품선택 → 접수)와 협력업체 블록 노출 — 페이지 로드당 종류별 1회.
+   기기에는 아무것도 저장하지 않는다(쿠키·스토리지 없음). 조회는 erp-agent site-funnel-stats. */
+const funnelSent = new Set();
+function pingFunnelOnce(kind, extra = {}) {
+  if (funnelSent.has(kind)) return;
+  funnelSent.add(kind);
+  pingSiteEvent(kind, { lang: state.lang || '', itemGroup: state.selectedProduct?.g || '', ...extra });
+}
+
 /* 클릭 집계는 위임으로 한 번만 건다. 링크는 target=_blank 로 바로 열리고, 핑은 뒤따라간다 —
    기다리지 않으므로 체감 지연이 없다. */
 document.addEventListener('click', (event) => {
@@ -7613,6 +7624,12 @@ function renderSubmitResult(payload, result) {
   const quoteOnly = !!result?.quote?.isQuoteOnly || !!state.quote?.isQuoteOnly || isQuoteOnlyProduct(state.selectedProduct);
   const returnNote = result?.isReturn ? `<div class="result-note">${escapeHtml(copy.submitCardReturn)}</div>` : '';
   const successGuideHtml = getSuccessGuideHtml(payload);
+  /* 접수 완료 화면 = 퍼널의 끝. 같은 화면에 실린 협력업체 블록도 노출 1회로 센다(재렌더는 다시 세지 않는다).
+     GA4 이벤트는 동의한 방문자에게서만 나간다 — 채널별 전환을 GA 에서도 보기 위한 보조. */
+  if (!funnelSent.has('submit')) window.gtag?.('event', 'booking_complete', { item_group: state.selectedProduct?.g || '' });
+  pingFunnelOnce('submit');
+  const shownPartnerIds = getPartnersForSuccess(payload).map((p) => p.id);
+  if (shownPartnerIds.length) pingFunnelOnce('partner_view', { targets: shownPartnerIds });
   els.hero?.classList.add('hidden-step');
   Object.values(els.stepPanels).forEach((panel) => panel?.classList.add('hidden-step'));
   els.successPanel?.classList.remove('hidden-step');
