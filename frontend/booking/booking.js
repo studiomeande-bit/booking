@@ -7377,7 +7377,7 @@ const funnelSent = new Set();
 function pingFunnelOnce(kind, extra = {}) {
   if (funnelSent.has(kind)) return;
   funnelSent.add(kind);
-  pingSiteEvent(kind, { lang: state.lang || '', itemGroup: state.selectedProduct?.g || '', ...extra });
+  pingSiteEvent(kind, { lang: state.lang || '', itemGroup: state.selectedProduct?.g || state.selectedGroup || '', ...extra });
 }
 
 /* 클릭 집계는 위임으로 한 번만 건다. 링크는 target=_blank 로 바로 열리고, 핑은 뒤따라간다 —
