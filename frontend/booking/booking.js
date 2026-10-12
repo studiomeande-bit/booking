@@ -65,11 +65,25 @@ function readStoredLang() {
     return urlLang;
   }
   try {
-    const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY) || 'ko';
-    return SUPPORTED_LANGS.has(saved) ? saved : 'ko';
+    const saved = globalThis.localStorage?.getItem(LANG_STORAGE_KEY);
+    return SUPPORTED_LANGS.has(saved) ? saved : detectBrowserLang();
   } catch {
-    return 'ko';
+    return detectBrowserLang();
   }
+}
+
+/* 주소(?lang)도 저장값도 없으면 브라우저 언어를 따른다. 예전에는 한국어 고정이라, 구글 프로필의
+   예약 버튼·검색 결과처럼 언어 표시 없는 주소로 들어온 독일어·영어권 방문자가 한국어 화면을 봤다
+   (2026-10-12 지표 점검). 선호 언어 목록에 ko/en/de 가 하나도 없으면 영어. */
+function detectBrowserLang() {
+  try {
+    const prefs = globalThis.navigator?.languages?.length ? globalThis.navigator.languages : [globalThis.navigator?.language];
+    for (const pref of prefs) {
+      const lang = normalizeLang(pref);
+      if (lang) return lang;
+    }
+  } catch { /* ignore */ }
+  return 'en';
 }
 
 function readUrlLang() {
@@ -1629,6 +1643,20 @@ const els = {
    선언된 모듈 최상위 const 들이 아직 TDZ 라 ReferenceError 로 죽는다(실측: FAMEVT_PRODUCT_IDS,
    booking.js:2917 → getGroupProducts → renderGroups). 캐시가 없을 땐 await 뒤에 렌더해서 안 터졌기에
    "같은 탭에서 5분 내 새로고침한 고객만 로딩 화면에서 멈추는" 형태로 오래 숨어 있었다. */
+/* 서비스 페이지에서 넘어온 방문은 촬영 종류가 이미 정해져 있다 — ?g=prof 처럼 타일 키(GROUP_META)를 받으면
+   1단계를 건너뛴다. 상품 목록이 있어야 selectGroup 이 동작하므로 init 렌더 뒤에, 페이지 로드당 한 번만. */
+let deepLinkGroupDone = false;
+function applyDeepLinkGroup() {
+  if (deepLinkGroupDone || !hasUsableProductData(state.init)) return;
+  deepLinkGroupDone = true;
+  try {
+    const key = String(new URLSearchParams(window.location.search).get('g') || '').trim().toLowerCase();
+    if (key && Object.prototype.hasOwnProperty.call(GROUP_META, key) && !state.selectedGroup) selectGroup(key);
+  } catch (error) {
+    console.error(error);   // 편의 기능 — 실패해도 1단계부터 그대로 진행된다
+  }
+}
+
 async function boot() {
   wireEvents();
   applyCopy();
@@ -1636,6 +1664,7 @@ async function boot() {
   const cachedInit = readInitDataCache();
   if (cachedInit) {
     renderInitData(cachedInit);
+    applyDeepLinkGroup();
     setBanner(getCopy().initSuccess, 'success');
     hideLoadingScreen();
   }
@@ -1644,6 +1673,7 @@ async function boot() {
     const normalizedInitData = normalizeInitData(initData);
     if (hasUsableProductData(normalizedInitData)) writeInitDataCache(normalizedInitData);
     renderInitData(normalizedInitData);
+    applyDeepLinkGroup();
     setBanner(getCopy().initSuccess, 'success');
   } catch (error) {
     console.error(error);
