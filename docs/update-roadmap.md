@@ -64,6 +64,19 @@ Updated: 2026-09-30 Europe/Berlin
 
 ## Done Recently
 
+### 2026-10-12 · 홈페이지 서비스 페이지 개정 — 커플 촬영·여권사진·이력서사진 3개 언어 9쪽 (e6305e9 · IONOS 배포)
+
+- 근거: 서치콘솔 20일(9/20~10/9). 독일어 `/frankfurt-snap/` 131 노출·14위·0클릭("paarshooting frankfurt"), `/passport-photo/` 65 노출·12.3위("passbilder oberursel"·"in der Nähe"), `/bewerbungsfoto/` 14.6위, 영어 여권 페이지 117 노출·클릭 1("us visa photo frankfurt" 4위).
+- 커플: 독일어 title·H1 에 Paarshooting, 영어 title 에 Couple Photoshoot. FAQ 3개 추가(가격 150 €~·장소와 30km 무료 출장·프리웨딩 650 €~).
+- 여권: 독일어 title 을 Frankfurt → **Oberursel**(E-Passbild mit QR-Code, Baby & Visum). 새 섹션 3개(E-Passbild 진행 방식 · 대상 · 오시는 길과 시간). 규격 칩에 크기 표기(독일 35×45mm·QR, 한국 35×45mm·인화 8매, 미국 2×2인치).
+  - ⚠️ **가격 문구 정정**(사장님 확인 2026-10-12): 기존 "인화 옵션 +€5"는 틀린 안내였다. 정본은 **1개국 €30 · 국가 추가 시 +€5 · 한국 여권은 인화 8매 포함 · 독일은 QR 코드 출력물 · 그 외 국가는 나라별**. 카드·가격 상자·FAQ·Offer JSON-LD 3개 언어 전부 교체.
+  - 당일 예약 가능(사장님 확인) — meta description·가격 상자·FAQ·오시는 길에 표기.
+  - 도보 시간은 구글 지도 기준: U3 Oberursel Stadtmitte 7분(450m), Oberursel (Taunus) Bahnhof(S5·U3) 11분.
+- 이력서사진: 독일어 title 에 Bad Homburg·"ab 55 €", 영어는 headshots. 급행 섹션 추가 — **원본·보정 각 영업일 3일, 패키지가의 20%, Profil Basic 포함 전 패키지**(사장님 확인). 납기 FAQ 답변에 급행 안내를 이어 붙임(가격·납기·링크드인 질문은 기존에 있어 신설 안 함).
+- 규칙 준수: FAQ 화면 문구 = FAQPage JSON-LD 9쪽 대조 통과(적용 스크립트가 양쪽을 같은 문자열로 쓴다), 전 JSON-LD 파싱 확인, `check-portfolio-contrast` 통과, sitemap lastmod 갱신.
+- 보류: 인도·중국·영국·캐나다 여권/비자 규격은 사장님이 실제 취급 여부를 확정하지 않아 넣지 않음. 예약 화면 급행 라벨은 여전히 "3 Tagen / 3 days"(영업일 표기 아님). 가족사진 페이지의 "Familienfotos draußen in Frankfurt" 소제목.
+- 다음: 서치콘솔에서 바뀐 9쪽 + 미색인 9쪽(`/ko/passport-photo/` 등) 색인 요청, 3~4주 뒤 같은 검색어 순위·클릭 비교. 수정안·적용 결과 문서: https://claude.ai/artifact/JkS6PoJ49R1s4X9qBAmiL5
+
 ### 2026-10-12 · 예약 화면 — 언어 표시 없는 주소는 브라우저 언어로 + 촬영 종류 딥링크 `?g=` (예약 프런트 · 홈페이지 9쪽)
 
 - 왜: `?lang` 도 저장값도 없으면 **한국어 고정**이었다. 구글 비즈니스 프로필의 "Termine" 버튼이 `http://booking.studio-mean.com/`(언어 표시 없음)로 걸려 있어, 지도에서 예약을 누른 독일 고객이 한국어 화면을 봤다(지표 리포트 2026-10-12 — 독일어 고객 90일 6건).
