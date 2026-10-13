@@ -16,6 +16,8 @@ FOLDERS = {
     "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT": ("키즈", "kids", "Kids"),
     "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws": ("프로필", "portrait", "Portrait"),
 }
+# 게시하지 않는 파일(이름 접두어, 소문자). Drive 폴더에 남아 있어도 데이터에 넣지 않는다.
+EXCLUDE_NAME_PREFIXES = ("sejin_",)
 
 
 def decode_ivd(text: str):
@@ -53,6 +55,8 @@ def build_payload(source_dir: pathlib.Path):
             if not file_id or not mime.startswith("image/"):
                 continue
             if not file_name or file_name.startswith(".") or file_name.startswith("\\"):
+                continue
+            if file_name.lower().startswith(EXCLUDE_NAME_PREFIXES):
                 continue
             raw_photos.append(
                 {
