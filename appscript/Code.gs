@@ -27251,6 +27251,36 @@ function enrichSelectPhoto_(photo){
   };
 }
 
+/* ===== 동그라미 표시를 사장님이 바로 보게 (2026-10-14) ====================================
+ * 표시가 있는 컷에만 Drive 파일 ID 를 붙인다 — 어드민은 사진 위에 동그라미를 다시 그리고, 알림 메일은 썸네일을 싣는다.
+ * ID 는 클라이언트를 믿지 않고 세션 폴더 목록(고객 화면이 방금 읽어 보통 캐시)에서 사진번호=파일명(확장자 제외)으로 찾는다.
+ * 표시가 하나도 없으면 Drive 를 건드리지 않는다(제출 경로는 스크립트 락 안이라 8초 예산). */
+const SELECT_FILE_ID_RE_=/^[\w-]{10,}$/;
+function selectPhotoStem_(name){ return String(name||'').trim().replace(/\.[a-zA-Z0-9]{2,5}$/,''); }
+function attachSelectMarkFileIds_(photos,sessionId){
+  const list=Array.isArray(photos)?photos:[];
+  list.forEach(function(p){ if(p&&typeof p==='object') delete p.fileId; });   // 클라이언트가 보낸 값은 버린다
+  const need=list.filter(function(p){return p&&Array.isArray(p.marks)&&p.marks.length&&selectPhotoStem_(p.num);});
+  if(!need.length) return list;
+  const byStem={}; const deadline=Date.now()+8000;
+  const missing=function(){ return need.some(function(p){return !byStem[selectPhotoStem_(p.num)];}); };
+  try{
+    let cursor='';
+    do{
+      const out=listSelectPhotosPublic_(sessionId,{limit:SELECT_PHOTO_LIST_MAX_LIMIT,recursive:true,cursor:cursor,timeBudgetMs:Math.max(3000,deadline-Date.now())});
+      if(!out||out.ok===false) break;
+      (out.photos||[]).forEach(function(f){ const k=selectPhotoStem_(f.name); if(k&&!byStem[k]&&SELECT_FILE_ID_RE_.test(String(f.id||''))) byStem[k]=String(f.id); });
+      cursor=String(out.nextCursor||'');
+    }while(cursor&&missing()&&Date.now()<deadline);
+  }catch(e){ Logger.log('attachSelectMarkFileIds_ '+(e&&e.message||e)); }
+  need.forEach(function(p){ const id=byStem[selectPhotoStem_(p.num)]; if(id) p.fileId=id; });
+  return list;
+}
+function selectMarkThumbUrl_(photo,width){
+  const id=String((photo&&photo.fileId)||'');
+  return SELECT_FILE_ID_RE_.test(id)?_buildDriveThumbnailUrl_(id,width||480):'';
+}
+
 /* ===== 다인 컷 보정 슬롯 (사장님 확정 2026-09-23) ==========================================
  * 프로필(prof)은 **1인 기준 가격**이다(pb 1장 / pbus 2장 / pp 3장). 한 컷에 여러 사람이 나오면
  * 보정 작업도 인원수만큼이라 포함 슬롯을 인원수만큼 쓴다 — 1인=1, 2인=2, 3인 이상=3.
@@ -27721,7 +27751,11 @@ function buildSelectPhotoLineHtml_(photo,scopeLimited,lang){
   const personFlag=persons>1
     ? ` <span style="background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:700;">${personText}</span>`
     : '';
-  return `<li style="margin-bottom:6px;"><b>${num}번</b>${personFlag}${scopeFlag}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}</li>`;
+  /* 동그라미 표시가 있는 컷은 썸네일을 함께 — 메일은 겹쳐 그리기(position)를 지원하지 않으니 사진+◎ 줄로 읽고,
+     동그라미 그 자체는 ERP 에서 본다(관리자 알림 상단 링크). */
+  const thumb=(Array.isArray(photo&&photo.marks)&&photo.marks.length)?selectMarkThumbUrl_(photo,480):'';
+  const thumbHtml=thumb?`<br><a href="https://drive.google.com/file/d/${encodeURIComponent(String(photo.fileId))}/view" target="_blank"><img src="${thumb}" alt="" width="320" style="display:block;max-width:100%;width:320px;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0;"></a>`:'';
+  return `<li style="margin-bottom:6px;"><b>${num}번</b>${personFlag}${scopeFlag}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}${thumbHtml}</li>`;
 }
 
 /* 관리자 알림의 '보정선택' 칸 — 제출·수정 알림이 같은 문구를 써야 해서 한 곳에 둔다.
@@ -30117,6 +30151,7 @@ function submitPhotoSelection(sessionId,sub){
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
     const decoupled=isDecoupledSelectSubmission_(sub);
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
+    attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
@@ -30337,8 +30372,10 @@ function sendSelectSubmitAlert_(row,photos,prints,extraRetouch,extraRetouchAmt,e
   const alertMeta=buildSelectAlertMeta_(row,photos,prints,printUpgradeItems,photocard,deliveryText);
   const captureOneText=buildSelectCaptureOneSearchText_(photos);
   const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
+  const markedCount=(photos||[]).filter(function(p){return p&&Array.isArray(p.marks)&&p.marks.length;}).length;
+  const marksLinkHtml=markedCount?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;">◎ 사진 위 동그라미 표시 <b>${markedCount}컷</b> — <a href="${escapeHtml_(ScriptApp.getService().getUrl())}?p=admin&sel=${encodeURIComponent(String(row[SELECT_COL['예약장부행']]||''))}" style="color:#b45309;font-weight:700;">ERP에서 사진 위에 보기 →</a></div>`:'';
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(Number(ex.amt)>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,ex)}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(Number(ex.amt)>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,ex)}${alertMeta.resendRow}</table>${marksLinkHtml}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉]${(Number(ex.amt)>0||ex.atBooking)?' ⚡급행':''} ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html},{public:true,bucket:'select',type:'셀렉제출'});
 }
 
@@ -30511,6 +30548,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const now=Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm');
     const decoupled=isDecoupledSelectSubmission_(sub);
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
+    attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;

@@ -10322,6 +10322,7 @@ function sendDailyPaymentReviewUi(){
 }
 
 /* ===== 사진셀렉 ===== */
+let pendingSelectView=null;   // 메일 링크 ?sel=<예약행> — 셀렉 목록이 로드되면 그 제출 모달을 연다
 let allSelectDashboard=[], currentSelectRowIndex=null, selectedFolderData=null, selectedRelinkFolderData=null, currentSelectCaptureOneText='';
 let confirmMailInProgress={}, selectSendInProgress=false, selectResendInProgress={};
 
@@ -10842,6 +10843,7 @@ function loadSelectHistory(){
   if(typeof refreshUnpaidExtrasBadge==='function') refreshUnpaidExtrasBadge();
   google.script.run.withSuccessHandler(function(res){
     allSelectDashboard=Array.isArray(res)?res:[];
+    if(pendingSelectView){ const want=pendingSelectView; pendingSelectView=null; if(allSelectDashboard.some(function(x){return x.rowIndex===want;})){ switchTab('select'); setTimeout(function(){viewSubmission(want);},0); } }
     if(allSelectDashboard.length===0){
       document.getElementById('selectHistoryBody').innerHTML='<tr><td colspan="16" style="text-align:center;color:#f59e0b;padding:20px;">빈 결과 (res타입:'+typeof res+' 값:'+JSON.stringify(res).slice(0,60)+')</td></tr>';
       if(typeof renderAdminOpsCenter==='function') renderAdminOpsCenter();
@@ -11673,6 +11675,21 @@ function switchTab(id){
   if(id==='gutschein') loadGutscheinList();
   if(id==='logs') loadOperationsLogFull();
 }
+/* 셀렉 동그라미를 사진 위에 — marks 는 사진 가로 기준 %(x,y 중심 · r 반지름), 번호는 ◎ 줄과 같은 ①②… 순서.
+   fileId 는 서버가 세션 폴더에서 찾아 저장한 값만 쓴다(없으면 ◎ 줄만 보인다).
+   referrerpolicy=no-referrer 필수 — Drive 썸네일은 구글 외 Referer 가 붙으면 429(셀렉 화면과 같은 회피). */
+function renderSelectMarksOverlay(photo){
+  const marks=Array.isArray(photo&&photo.marks)?photo.marks:[];
+  const fileId=String((photo&&photo.fileId)||'');
+  if(!marks.length||!/^[\w-]{10,}$/.test(fileId)) return '';
+  const nums='①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
+  const id=encodeURIComponent(fileId);
+  const circles=marks.slice(0,12).map(function(m,i){
+    const x=Math.min(100,Math.max(0,Number(m.x)||0)), y=Math.min(100,Math.max(0,Number(m.y)||0)), r=Math.min(50,Math.max(1,Number(m.r)||5));
+    return `<span title="${escHtml(m.t||'')}" style="position:absolute;left:${x}%;top:${y}%;width:${r*2}%;aspect-ratio:1/1;transform:translate(-50%,-50%);border:3px solid #ffd166;border-radius:50%;box-shadow:0 0 0 1.5px rgba(0,0,0,.55),inset 0 0 0 1.5px rgba(0,0,0,.45);"><span style="position:absolute;left:50%;top:0;transform:translate(-50%,-115%);background:#ffd166;color:#1b1916;font-weight:800;font-size:12px;line-height:1;padding:3px 6px;border-radius:999px;white-space:nowrap;">${nums[i]||(i+1)}</span></span>`;
+  }).join('');
+  return `<a href="https://drive.google.com/file/d/${id}/view" target="_blank" rel="noopener" style="position:relative;display:block;width:min(100%,420px);margin-top:4px;line-height:0;" title="원본 열기"><img src="https://drive.google.com/thumbnail?id=${id}&sz=w960" alt="" loading="lazy" referrerpolicy="no-referrer" style="display:block;width:100%;border-radius:8px;border:1px solid #e2e8f0;">${circles}</a>`;
+}
 function viewSubmission(rowIndex){
   const r=allSelectDashboard.find(x=>x.rowIndex===rowIndex);
   if(!r||!r.sel||!r.sel.submittedAt){alert('아직 제출된 회신이 없습니다.');return;}
@@ -11721,7 +11738,8 @@ function viewSubmission(rowIndex){
            을 한눈에 봐야 하므로 사진번호 옆에 붙인다. 1인은 기본값이라 표시하지 않는다. */
         const persons=Math.min(3,Math.max(1,parseInt(p&&p.persons,10)||1));
         const personChip=persons>1?`<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${persons>=3?'3인 이상':persons+'인'}</span>`:'';
-        return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${num}번</span>${personChip}<div style="display:flex;flex-direction:column;gap:4px;"><span style="display:inline-block;font-size:11px;font-weight:700;color:#7c5a12;background:#fef3c7;border-radius:999px;padding:2px 8px;width:max-content;">${printLabel}</span>${note?`<span style="font-size:12px;color:#475569;white-space:pre-line;">${note}</span>`:'<span style="font-size:11px;color:#94a3b8;">요청사항 없음</span>'}</div></div>`;
+        const marksHtml=renderSelectMarksOverlay(p);   // 고객이 사진 위에 그린 동그라미(2026-10-14) — 셀렉 화면과 같은 % 좌표로 다시 그린다
+        return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${num}번</span>${personChip}<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><span style="display:inline-block;font-size:11px;font-weight:700;color:#7c5a12;background:#fef3c7;border-radius:999px;padding:2px 8px;width:max-content;">${printLabel}</span>${note?`<span style="font-size:12px;color:#475569;white-space:pre-line;">${note}</span>`:'<span style="font-size:11px;color:#94a3b8;">요청사항 없음</span>'}${marksHtml}</div></div>`;
       }).join('')}</div>`
     :'<div style="color:#94a3b8;font-size:13px;">보정 요청 없음 — 출력만(원본)</div>';
   const revisionNote=String(sel.revisionNote||'').trim();
@@ -12185,6 +12203,8 @@ function setupContactInputHelpers(){
 }
 
 window.onload=function(){
+  // 메일 '동그라미 보기' 링크(?sel=<예약행>) — 셀렉 목록은 onInitAdmin 이 로드하므로 여기선 기억만 한다
+  try{ google.script.url.getLocation(function(loc){ const want=parseInt((loc&&loc.parameter||{}).sel,10); if(want>0) pendingSelectView=want; }); }catch(e){}
   buildManualTimeSlots();
   initManualBackgroundChoices();
   setupContactInputHelpers();
