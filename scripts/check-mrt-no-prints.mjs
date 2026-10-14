@@ -49,8 +49,11 @@ function getSettingsMap_(){return {};}
 function getCachedProducts_(){return [];}
 function getPromoProducts_(){return [];}
 function sendTrackedEmail_(m){__SENT__.push(m);return true;}
-module.exports={selectRowIsMyRealTrip_,sendSelectLinkEmail_,selectMrtNoPrintsMsg_,SELECT_HEADERS,SELECT_COL,
-  __pay:function(v){__PAY__=v;},__sent:function(){return __SENT__;}};`);
+var __SEL__=null,__BK__=null;
+function ensureSheets_(){return {ss:{},bookingSheet:__BK__};}
+function ensureSelectSheet_(){return __SEL__;}
+module.exports={selectRowIsMyRealTrip_,sendSelectLinkEmail_,selectMrtNoPrintsMsg_,approveRetouch_,SELECT_HEADERS,SELECT_COL,BOOKING_COL,
+  __pay:function(v){__PAY__=v;},__sent:function(){return __SENT__;},__sheets:function(sel,bk){__SEL__=sel;__BK__=bk;}};`);
 const M = (await import(pathToFileURL(modPath).href)).default;
 rmSync(dir, { recursive: true, force: true });
 
@@ -154,5 +157,28 @@ const body = (src, name) => { const i = src.indexOf(`function ${name}(`); return
   ok(i18nSrc.includes('successSummaryLineNoPrint: (photos, consent) =>'), '성공 요약: 출력 건수 없는 형태');
 }
 
+// ── 6) 보정본 최종 승인 — MRT 는 인화가 없어 승인 즉시 최종작업완료·예약 작업완료(사장님 2026-10-14) ──
+{
+  const C = M.SELECT_COL, B = M.BOOKING_COL;
+  globalThis.HtmlService.createHtmlOutput = (h) => ({ html: h });
+  const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
+    getRange: (r, c) => ({ getValue: () => rows[r - 1][c - 1], setValue: (v) => { rows[r - 1][c - 1] = v; } }) });
+  const run = (group, product, bookingStatus) => {
+    const sel = [new Array(M.SELECT_HEADERS.length).fill('h'), new Array(M.SELECT_HEADERS.length).fill('')];
+    Object.assign(sel[1], { [C['세션ID']]: 'S1', [C['고객명']]: '테스트', [C['촬영종류']]: group, [C['상품']]: product, [C['상태']]: '보정본발송', [C['예약장부행']]: 2 });
+    const bk = [[], new Array(40).fill('')]; bk[1][B['상태']] = bookingStatus;
+    M.__sheets(sheet(sel), sheet(bk)); M.__pay('');
+    const before = M.__sent().length, out = M.approveRetouch_('S1', {});
+    return { sel: sel[1][C['상태']], bk: bk[1][B['상태']], mail: (M.__sent()[before] || {}).htmlBody || '', html: out.html };
+  };
+  const a = run('마이리얼트립', '2인스냅 45분', '셀렉완료');
+  ok(a.sel === '최종작업완료' && a.bk === '작업완료', 'MRT 승인 → 셀렉 최종작업완료 + 예약 작업완료', a);
+  ok(/자동 처리/.test(a.mail) && /보정본 전달을 마쳤습니다/.test(a.html), 'MRT 승인 → 사장님 알림에 자동 처리 명시, 고객 페이지는 전달 완료 문구', a.mail);
+  const b = run('stud', '스튜디오 Basic', '셀렉완료');
+  ok(b.sel === '보정본확인완료' && b.bk === '셀렉완료', '일반 상품 승인 → 보정본확인완료, 예약 상태 그대로(인화 단계 남음)', b);
+  const c = run('마이리얼트립', '2인스냅 45분', '취소됨');
+  ok(c.sel === '최종작업완료' && c.bk === '취소됨', '취소된 예약은 작업완료로 덮어쓰지 않는다', c);
+}
+
 if (fail) { console.error(`\n✗ 마이리얼트립 출력 없음 검사 실패 ${fail}건`); process.exit(1); }
-console.log('✓ 마이리얼트립 출력 없음 — 판정·서버 거절·세션 플래그(셔틀 포함)·화면·메일·승인 페이지 전부 일치');
+console.log('✓ 마이리얼트립 출력 없음 — 판정·서버 거절·세션 플래그(셔틀 포함)·화면·메일·승인 페이지·승인 즉시 작업완료 전부 일치');

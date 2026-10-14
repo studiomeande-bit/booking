@@ -15332,9 +15332,16 @@ function approveRetouch_(sessionId,p){
     const alreadyApproved=isSelectApprovedStatus_(row[SELECT_COL['상태']]);
     if(!alreadyApproved){
       const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
-      selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue('보정본확인완료');
+      // 마이리얼트립은 인화가 없어 승인이 마지막 단계 — 승인 즉시 최종작업완료·예약 작업완료(사장님 2026-10-14)
+      const mrtDone=selectRowIsMyRealTrip_(row);
+      selSh.getRange(idx+2,SELECT_COL['상태']+1).setValue(mrtDone?'최종작업완료':'보정본확인완료');
       reopenBookingIfSelectUnlocked_(selSh,idx+2,prevStatusForReopen);
-      try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. ${selectRowIsMyRealTrip_(row)?'마이리얼트립 — 인화 없음(보정본 전달로 끝).':'인화 작업을 진행해 주세요.'}<br>상품: ${row[7]}</p>`});}catch(e){}
+      if(mrtDone){
+        const bri=parseInt(row[SELECT_COL['예약장부행']],10)||0;
+        const bSh=ensureSheets_().bookingSheet;
+        if(bri>1&&!isBookingCancelledStatus_(bSh.getRange(bri,BOOKING_COL['상태']+1).getValue())) bSh.getRange(bri,BOOKING_COL['상태']+1).setValue('작업완료');
+      }
+      try{sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉] ${row[2]}님 최종 승인 완료`,htmlBody:`<p><b>${row[2]}</b>님이 보정본을 최종 승인했습니다. ${mrtDone?'마이리얼트립 — 인화 없음, 최종작업완료·예약 작업완료로 자동 처리했습니다.':'인화 작업을 진행해 주세요.'}<br>상품: ${row[7]}</p>`});}catch(e){}
     }
     const msgs=selectRowIsMyRealTrip_(row)
       ? {ko:'<h2 style="color:#10b981;">✅ 최종 승인이 완료되었습니다!</h2><p>보정본 전달을 마쳤습니다. Studio mean을 찾아 주셔서 감사합니다.</p>',en:'<h2 style="color:#10b981;">✅ Final Approval Complete!</h2><p>Your retouched photos have been delivered. Thank you for choosing Studio mean!</p>',de:'<h2 style="color:#10b981;">✅ Endgültige Bestätigung abgeschlossen!</h2><p>Ihre retuschierten Bilder wurden übergeben. Vielen Dank, dass Sie sich für Studio mean entschieden haben!</p>'}
