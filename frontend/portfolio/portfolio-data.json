@@ -1,6 +1,5 @@
 {
   "generatedAt": "2026-04-28T21:20:20.660583+00:00",
-  "sourceFolder": "1OPRMHbnh6ctci8jmLjlOb7dlHMReG1jT",
   "total": 171,
   "dedupedRemoved": 8,
   "categories": [
@@ -35,841 +34,934 @@
   ],
   "photos": [
     {
-      "id": "1YWKY6cGTp2QDd4QZW4ttB66tfBbp4PgC",
+      "id": "sm_260714_7c1861_01",
       "name": "sm_260714_7c1861_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064636962
+      "timestamp": 1792064636962,
+      "w": 949,
+      "h": 1440
     },
     {
-      "id": "1PMOzkCv0JZ2AV5ueL5tMfcn0me0BJ7yQ",
+      "id": "sm_260714_7c1861_02",
       "name": "sm_260714_7c1861_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064637927
+      "timestamp": 1792064637927,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1KMyCxYd6blxlgeMms-R99KsqP7qkBZbw",
+      "id": "sm_260714_7c1861_03",
       "name": "sm_260714_7c1861_03.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064639325
+      "timestamp": 1792064639325,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "15qcdk1hSdxjI1eiN-4Bd8xJ4eJEovlO6",
+      "id": "sm_260714_7c1861_04",
       "name": "sm_260714_7c1861_04.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064640564
+      "timestamp": 1792064640564,
+      "w": 948,
+      "h": 1440
     },
     {
-      "id": "1P4qHA0ESV5MqGbeCBlwl68MHTLeqKXDY",
+      "id": "sm_260815_5141d3_01",
       "name": "sm_260815_5141d3_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064641206
+      "timestamp": 1792064641206,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1e6GVqBTSDZLp8mpB9d-UQ-wVZzbro_rG",
+      "id": "sm_260815_5141d3_02",
       "name": "sm_260815_5141d3_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064642017
+      "timestamp": 1792064642017,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1nkSNyOj_wibTh2O3pDnmLRNR1qspzB-R",
+      "id": "sm_260815_5141d3_03",
       "name": "sm_260815_5141d3_03.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064642852
+      "timestamp": 1792064642852,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1n0k3Z7twXKQERYlRqQU8N53c7_WEFLi7",
+      "id": "sm_260815_5141d3_04",
       "name": "sm_260815_5141d3_04.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064643695
+      "timestamp": 1792064643695,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1kclno0kvKAcUkaPC8mDtjq-1aTLxlSe1",
+      "id": "sm_260905_da32cf_01",
       "name": "sm_260905_da32cf_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064644601
+      "timestamp": 1792064644601,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1YWuNQbmIrSBt4pmHGw9pMVDEBCht4j9y",
+      "id": "sm_260905_da32cf_02",
       "name": "sm_260905_da32cf_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064645364
+      "timestamp": 1792064645364,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1MboW8css6xf8bNtRZeWjhr8PWXzOCmxl",
+      "id": "sm_260905_da32cf_03",
       "name": "sm_260905_da32cf_03.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064646057
+      "timestamp": 1792064646057,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1zHIrpK3u9TBfibsFmDG3U-nwxkYHwEBq",
+      "id": "sm_260905_da32cf_04",
       "name": "sm_260905_da32cf_04.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064646841
+      "timestamp": 1792064646841,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1uoMkpNBIDnv2zeWCeQjYGX1UIln9J7Ne",
+      "id": "sm_260923_45f98c_01",
       "name": "sm_260923_45f98c_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064647762
+      "timestamp": 1792064647762,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1O3Z0iszMiK9qe24JJ1zRPgJMBrfDhwIM",
+      "id": "sm_260923_45f98c_02",
       "name": "sm_260923_45f98c_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064648696
+      "timestamp": 1792064648696,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1r0sleIzLKOjeT7sgpAMIhMhZZuPD1jKd",
+      "id": "sm_260923_45f98c_03",
       "name": "sm_260923_45f98c_03.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064649348
+      "timestamp": 1792064649348,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1eURntbf0Ios60PQbIvWI-2BRYdVMUKij",
+      "id": "sm_260923_45f98c_04",
       "name": "sm_260923_45f98c_04.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064649964
+      "timestamp": 1792064649964,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "11IymoOTKUUz-Zy5rQv6kuzBsTC9w2ZIc",
+      "id": "sm_260625_8e2d87_01",
       "name": "sm_260625_8e2d87_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064612363
+      "timestamp": 1792064612363,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1Tz0EsALgEkwfe27BrgYFL1UTMV4hR5kD",
+      "id": "sm_260625_8e2d87_02",
       "name": "sm_260625_8e2d87_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064613335
+      "timestamp": 1792064613335,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1wk6FLgQ7rfbptiBA50_iq0wS5pBu6T9j",
+      "id": "sm_260625_8e2d87_03",
       "name": "sm_260625_8e2d87_03.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064614090
+      "timestamp": 1792064614090,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1BxTqjtcys91EdjlH0WYusUO-whwxUIhm",
+      "id": "sm_260625_8e2d87_04",
       "name": "sm_260625_8e2d87_04.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064614877
+      "timestamp": 1792064614877,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1k_49TvJ6b9P9TxVWi3_H1xQh3sv2S9QW",
+      "id": "sm_260617_f3f0d0_01",
       "name": "sm_260617_f3f0d0_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064615357
+      "timestamp": 1792064615357,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1cO84Zoepa0FDM0VoZdMkgDFmX4C2Vm21",
+      "id": "sm_260617_f3f0d0_02",
       "name": "sm_260617_f3f0d0_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064616064
+      "timestamp": 1792064616064,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1IplhBNV7lqqRnF40guWc2SlJio9EqMeA",
+      "id": "sm_260617_f3f0d0_03",
       "name": "sm_260617_f3f0d0_03.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064616813
+      "timestamp": 1792064616813,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1i5bj3WdOHv1BRCmnvUHD_MmqIXr74FpM",
+      "id": "sm_260617_f3f0d0_04",
       "name": "sm_260617_f3f0d0_04.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064617661
+      "timestamp": 1792064617661,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1doPUVm0AzJHiGFBsre86HDGA4TtH3Dkp",
+      "id": "sm_260530_0b9a01_01",
       "name": "sm_260530_0b9a01_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064618502
+      "timestamp": 1792064618502,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1RPtS9PmlbD1mpfHOvnSyc3fg7b5R-_ia",
+      "id": "sm_260530_0b9a01_02",
       "name": "sm_260530_0b9a01_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064619442
+      "timestamp": 1792064619442,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1F_0egefoXlgAUHkMmUV1Na4nZAFmFT3p",
+      "id": "sm_260530_0b9a01_03",
       "name": "sm_260530_0b9a01_03.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064620471
+      "timestamp": 1792064620471,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1WvUld4a9qZ7xFzpOLBC8wHrvatYW9lAi",
+      "id": "sm_260530_0b9a01_04",
       "name": "sm_260530_0b9a01_04.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064621181
+      "timestamp": 1792064621181,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1bl3IiGzKYcMjJgjXBlSbLBcX3hAR159g",
+      "id": "sm_260706_6d7a3d_01",
       "name": "sm_260706_6d7a3d_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064621934
+      "timestamp": 1792064621934,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "17NEUo4ANGP0o1mIEiIcsZI5_A8h3Opax",
+      "id": "sm_260706_6d7a3d_02",
       "name": "sm_260706_6d7a3d_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064622620
+      "timestamp": 1792064622620,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "16N-y4q1wn9sON_kzuLAdUdGiJyA6fckr",
+      "id": "sm_260706_6d7a3d_03",
       "name": "sm_260706_6d7a3d_03.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064623199
+      "timestamp": 1792064623199,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1i4uUZJctcW2rnyd0sNcD6ZN3PCVL5TgI",
+      "id": "sm_260706_6d7a3d_04",
       "name": "sm_260706_6d7a3d_04.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1792064623797
+      "timestamp": 1792064623797,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1pWI-8wSRrcd4DPRU0yIBRloVn8mNT3KQ",
+      "id": "sm_260711_eca744_01",
       "name": "sm_260711_eca744_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064624895
+      "timestamp": 1792064624895,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1joqvzZ9-UyOpXX5gOt64ZxdgzKs1rYH0",
+      "id": "sm_260711_eca744_02",
       "name": "sm_260711_eca744_02.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064626145
+      "timestamp": 1792064626145,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1gjPq2SbHEnW6Nd8tZuGxIeeK7up6t8ik",
+      "id": "sm_260711_eca744_03",
       "name": "sm_260711_eca744_03.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064627047
+      "timestamp": 1792064627047,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1cBu7DUkHQcAKpVXGbJE80qPmzVBKne1h",
+      "id": "sm_260711_eca744_04",
       "name": "sm_260711_eca744_04.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064628430
+      "timestamp": 1792064628430,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1REtHDTjW4bjenD0mtBd6P2DIZnYoDaN9",
+      "id": "sm_260331_41c673_01",
       "name": "sm_260331_41c673_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064629169
+      "timestamp": 1792064629169,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1tqLtrMK9xI5wctnqxj8dketODwol5WIU",
+      "id": "sm_260331_41c673_02",
       "name": "sm_260331_41c673_02.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064630289
+      "timestamp": 1792064630289,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1Vv8VzCv0noBgYNOPBzPSTduN4m1QD5Su",
+      "id": "sm_260331_41c673_03",
       "name": "sm_260331_41c673_03.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1792064631136
+      "timestamp": 1792064631136,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "17b4oyfrv3gT1WIPPz4YPUXs00VeYEpL9",
+      "id": "sm_260724_1a5419_01",
       "name": "sm_260724_1a5419_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064632303
+      "timestamp": 1792064632303,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1SckIoIOt2C-oFzIUeg-poY9ljwKyYfyV",
+      "id": "sm_260724_1a5419_02",
       "name": "sm_260724_1a5419_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064633695
+      "timestamp": 1792064633695,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1KYdE302oiEOtwZpOCJShnTMHoGWQtsFz",
+      "id": "sm_260724_1a5419_03",
       "name": "sm_260724_1a5419_03.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064634888
+      "timestamp": 1792064634888,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "1URCW8ejMO6YvkgCqhRyd8iMyGp57-81V",
+      "id": "sm_260724_1a5419_04",
       "name": "sm_260724_1a5419_04.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1792064636268
+      "timestamp": 1792064636268,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "17DJL0g9LVNMFuADw_oTPuuU6pFywsVhB",
-      "name": "250502_임예지_무용프로필0379.jpg",
+      "id": "sm_250502_77d7aa_01",
+      "name": "sm_250502_77d7aa_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413420355
+      "timestamp": 1756413420355,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1r7Ze6fo15XzP-xCKwqeEY3uhzpSAcJl_",
-      "name": "_DS15139.jpg",
+      "id": "sm_000000_4d28f4_01",
+      "name": "sm_000000_4d28f4_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413168162
+      "timestamp": 1756413168162,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1eu-LsRy3k_y88v-n_zvl6hywZNyDb5bT",
-      "name": "240316_상곤혜련4946 (1).jpg",
+      "id": "sm_240316_7c9161_01",
+      "name": "sm_240316_7c9161_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756413658513
+      "timestamp": 1756413658513,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1pekNy5Vq6RiKywpDTnNkNVE7o--1i54x",
-      "name": "250823_정보경0366_(2).jpg",
+      "id": "sm_250823_c66b51_01",
+      "name": "sm_250823_c66b51_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756413521725
+      "timestamp": 1756413521725,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1SZYgAOYQVkUUpYc6a63TJ9pIix1fG0J9",
-      "name": "250607_베리네1000.jpg",
+      "id": "sm_250607_aed345_01",
+      "name": "sm_250607_aed345_01.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756452770790
+      "timestamp": 1756452770790,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1dZFu_PK7NTYM5gh2t2Pv16YgabxHs7E4",
-      "name": "_DSF1651.jpg",
+      "id": "sm_000000_db4d80_01",
+      "name": "sm_000000_db4d80_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412577571
+      "timestamp": 1756412577571,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "17cHdcUmNxq61j2szZ2oPoZBVgOpqL7dX",
-      "name": "240408_이수현1338 copy.jpg",
+      "id": "sm_240408_3ff26b_01",
+      "name": "sm_240408_3ff26b_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413405379
+      "timestamp": 1756413405379,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "13CAEEGVkOhwS-wlNOd_17-BaLHax5MeA",
-      "name": "_DS12319.jpg",
+      "id": "sm_000000_4d28f4_02",
+      "name": "sm_000000_4d28f4_02.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413153133
+      "timestamp": 1756413153133,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1TO_LRJEa4FuwG21oSJX2_4vNbSmtlFiS",
-      "name": "240316_이아람_가족사진 +여권5158.jpg",
+      "id": "sm_240316_2fec6b_01",
+      "name": "sm_240316_2fec6b_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756413602599
+      "timestamp": 1756413602599,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1ucm_jWwByb3DbQNrsM0mKD8-TpFKMvM2",
-      "name": "250823_정보경0291_(2).jpg",
+      "id": "sm_250823_481b78_01",
+      "name": "sm_250823_481b78_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756413503324
+      "timestamp": 1756413503324,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1NofFv-P_qwRKttpy2vRJpdpR_QChsfKb",
-      "name": "250607_베리네1033.jpg",
+      "id": "sm_250607_aed345_02",
+      "name": "sm_250607_aed345_02.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756452761157
+      "timestamp": 1756452761157,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1uVgPKlERJV8ga2nK9RzUIspm34S-6EFX",
-      "name": "_DSF3640.jpg",
+      "id": "sm_000000_db4d80_02",
+      "name": "sm_000000_db4d80_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412573614
+      "timestamp": 1756412573614,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1NgtKCwGrHMtYUpcsZ9kep4dgzS_Ch0dw",
-      "name": "250502_임예지_무용프로필0544.jpg",
+      "id": "sm_250502_77d7aa_02",
+      "name": "sm_250502_77d7aa_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413397635
+      "timestamp": 1756413397635,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "10vsX3XK06y_LlzL1lgJeEB6LYVCE4EQx",
-      "name": "_DF26534.jpg",
+      "id": "sm_000000_91549c_01",
+      "name": "sm_000000_91549c_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413140031
+      "timestamp": 1756413140031,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "146w8mLy28LPXW-FQu5xrfTzK-XZvnUkN",
-      "name": "240316_이아람_가족사진 +여권5145.jpg",
+      "id": "sm_240316_2fec6b_02",
+      "name": "sm_240316_2fec6b_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756413590780
+      "timestamp": 1756413590780,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1hF2ZvXCuMyNxqHuCx6nNISp4aeYKQTN-",
-      "name": "250823_정보경0366_(2) copy.jpg",
+      "id": "sm_250823_c66b51_02",
+      "name": "sm_250823_c66b51_02.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756413492755
+      "timestamp": 1756413492755,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1vjG2YtNjnH2Qsy9Bk_CyTbUMdAp5JimN",
-      "name": "250607_베리네0730_(2).jpg",
+      "id": "sm_250607_d9bd88_01",
+      "name": "sm_250607_d9bd88_01.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756452659945
+      "timestamp": 1756452659945,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1HBp3xSNkwIxYd1QeFWervNiG9EPs6-Jj",
-      "name": "20240813004759-DSCF5171.jpg",
+      "id": "sm_202408_62eca3_01",
+      "name": "sm_202408_62eca3_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412560331
+      "timestamp": 1756412560331,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1ABhxOmICERMHzXAhJnnEJLBgsvvU8cW8",
-      "name": "240408_이수현1431.jpg",
+      "id": "sm_240408_3ff26b_02",
+      "name": "sm_240408_3ff26b_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413370544
+      "timestamp": 1756413370544,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1P6psFtZC7Luh9nkBCO2-JZL3l_JWpSpi",
-      "name": "_DF26657.jpg",
+      "id": "sm_000000_91549c_02",
+      "name": "sm_000000_91549c_02.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413125424
+      "timestamp": 1756413125424,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1JU_Vr1DDFEO4anHJfdwZZ2sc_Sx2MpFB",
-      "name": "250517_최미라4405.jpg",
+      "id": "sm_250517_a0b5d1_01",
+      "name": "sm_250517_a0b5d1_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756413459754
+      "timestamp": 1756413459754,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1xJDDfyC5Y0LJImxZOsDRu9V_SIR6emIi",
-      "name": "250823_정보경0291_(2) copy.jpg",
+      "id": "sm_250823_481b78_02",
+      "name": "sm_250823_481b78_02.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756413481505
+      "timestamp": 1756413481505,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1yJnGgTcbP9tIdKWWeCQe30RT84gjrXXP",
-      "name": "240316_이벤트 장주연0467.jpg",
+      "id": "sm_240316_ca156c_01",
+      "name": "sm_240316_ca156c_01.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756413545309
+      "timestamp": 1756413545309,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1IsAeqNQWsbjKqNxW98iG5dPcSvsSOmfo",
-      "name": "_DS16227.jpg",
+      "id": "sm_000000_5884aa_01",
+      "name": "sm_000000_5884aa_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412544636
+      "timestamp": 1756412544636,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1S5TC-9cTPRkBDlSScjdwJbWUkKBCsupz",
-      "name": "250521_원상선4848.jpg",
+      "id": "sm_250521_71ca44_01",
+      "name": "sm_250521_71ca44_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413308982
+      "timestamp": 1756413308982,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "16g01SXhPu7YpkaXyMu0ziFdz0ZFPKJVf",
-      "name": "250502_정서영_웨딩포트폴리오0500.jpg",
+      "id": "sm_250502_a22cee_01",
+      "name": "sm_250502_a22cee_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413114845
+      "timestamp": 1756413114845,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1x7m5dWKCnE-CQlbMeqYcGUe-DNx-27R2",
-      "name": "250517_최미라4479.jpg",
+      "id": "sm_250517_a0b5d1_02",
+      "name": "sm_250517_a0b5d1_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756413446650
+      "timestamp": 1756413446650,
+      "w": 1440,
+      "h": 960
     },
     {
-      "id": "18UWBhAlDm8LR6xwWshouuQ6wL8dHqjRL",
-      "name": "250823_정보경0231_(2) copy.jpg",
+      "id": "sm_250823_5a4e70_01",
+      "name": "sm_250823_5a4e70_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756413470611
+      "timestamp": 1756413470611,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1UhiD9VClJ5UBwItGi4EJWa48Xe3XtEfD",
-      "name": "240427_도은지원3655.jpg",
+      "id": "sm_240427_d90364_01",
+      "name": "sm_240427_d90364_01.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756412329984
+      "timestamp": 1756412329984,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1dgYapC4ExCtMT5mvskcNn28TNm0Y04ah",
-      "name": "_DS16514.jpg",
+      "id": "sm_000000_5884aa_02",
+      "name": "sm_000000_5884aa_02.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412514675
+      "timestamp": 1756412514675,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1dg869UEXcXcccp1K_pTa6OuqFqDkfB1L",
-      "name": "250108_백하람0911.jpg",
+      "id": "sm_250108_35304f_01",
+      "name": "sm_250108_35304f_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413268431
+      "timestamp": 1756413268431,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1VInNpVPIxHAHhqOUHLb4rwCxGg2undm6",
-      "name": "_DSF5744.jpg",
+      "id": "sm_000000_162586_01",
+      "name": "sm_000000_162586_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413069809
+      "timestamp": 1756413069809,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1T9YQvFuKELKLHjsK1H6nXnWFUbq41gAh",
-      "name": "250130_김영구목사님2049.jpg",
+      "id": "sm_250130_7d5d56_01",
+      "name": "sm_250130_7d5d56_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756412429208
+      "timestamp": 1756412429208,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1gejh8bzgXjIzh9GTusXwaJZW1NbqV-iD",
-      "name": "250324_이안4340 copy.jpg",
+      "id": "sm_250324_1aaba1_01",
+      "name": "sm_250324_1aaba1_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756412276923
+      "timestamp": 1756412276923,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1lF0-JUk_vjWfwAHHnlefbwR3iUglMkOO",
-      "name": "240427_도은지원3946.jpg",
+      "id": "sm_240427_d90364_02",
+      "name": "sm_240427_d90364_02.jpg",
       "category": "maternity",
       "categoryLabel": "Maternity",
-      "folderId": "1YE5NfObgc_8FFOBcdAgfAziUOLLuk8V6",
       "folderName": "만삭",
-      "timestamp": 1756412311534
+      "timestamp": 1756412311534,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1CyxZF5-3Ae4wDVI8r1xITQBz8Ts9BYr-",
-      "name": "20240813005608-_DSF6656.jpg",
+      "id": "sm_202408_ef916e_01",
+      "name": "sm_202408_ef916e_01.jpg",
       "category": "snap",
       "categoryLabel": "Snap",
-      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
       "folderName": "스냅",
-      "timestamp": 1756412483124
+      "timestamp": 1756412483124,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1YWKom4wItGAMFAbqEMM62f3unC3bVJv7",
-      "name": "240827_이한은_프로필_여권1852.jpg",
+      "id": "sm_240827_014a80_01",
+      "name": "sm_240827_014a80_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413249883
+      "timestamp": 1756413249883,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "15D4Wld1RxxO9tnKYJbzTmmdoq89nHo13",
-      "name": "0180.jpg",
+      "id": "sm_000000_c17800_01",
+      "name": "sm_000000_c17800_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756413019690
+      "timestamp": 1756413019690,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1nApvN5pAMxsgOeRTrbsEQOUDfAWt9PHg",
-      "name": "240827_강이엘_100일1722.jpg",
+      "id": "sm_240827_c6263a_01",
+      "name": "sm_240827_c6263a_01.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756412411139
+      "timestamp": 1756412411139,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1DbgI_FBcc7UmIsyIN2nAIXocqhcBpDRy",
-      "name": "250510_한태오0909 copy.jpg",
+      "id": "sm_250510_46b264_01",
+      "name": "sm_250510_46b264_01.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756412267364
+      "timestamp": 1756412267364,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1wHrCwcwOa1zk_apF9ovYfc-Dnvp2WrP0",
-      "name": "250108_백하람0796 copy.jpg",
+      "id": "sm_250108_35304f_02",
+      "name": "sm_250108_35304f_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413238284
+      "timestamp": 1756413238284,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1vkUtnAqGdGCyRPXlUEmK6WBklsO89y1G",
-      "name": "240827_강이엘_100일1734.jpg",
+      "id": "sm_240827_c6263a_02",
+      "name": "sm_240827_c6263a_02.jpg",
       "category": "family",
       "categoryLabel": "Family",
-      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
       "folderName": "가족사진",
-      "timestamp": 1756412397718
+      "timestamp": 1756412397718,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1vd_q4IwwYushBUBRwxcp5XYeX5IKiciw",
-      "name": "250510_한태오0678 copy.jpg",
+      "id": "sm_250510_46b264_02",
+      "name": "sm_250510_46b264_02.jpg",
       "category": "kids",
       "categoryLabel": "Kids",
-      "folderId": "1kOF4NvB887x7bXbngcyPE-64NL3vLmiT",
       "folderName": "키즈",
-      "timestamp": 1756412255723
+      "timestamp": 1756412255723,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1yA2oEQSAuOvalW1bsiCQJPyuIXpdBsY8",
-      "name": "23_10_11_세빈0275.jpg",
+      "id": "sm_000000_b608b4_01",
+      "name": "sm_000000_b608b4_01.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413224832
+      "timestamp": 1756413224832,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1QRvcywj4-TGRpst7VHXLpCAXSDOFMyrV",
-      "name": "DSCF4629.jpg",
+      "id": "sm_000000_6cc04c_01",
+      "name": "sm_000000_6cc04c_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756412961650
+      "timestamp": 1756412961650,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "15Sx42fgwl5sIr1jXY36RX7Rdg9EMW6qS",
-      "name": "250521_원상선4837.jpg",
+      "id": "sm_250521_71ca44_02",
+      "name": "sm_250521_71ca44_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413209003
+      "timestamp": 1756413209003,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1W4tGu_lwSs7MD9v_BqHLJbVUyOasPyTf",
-      "name": "250425_송다연0059.jpg",
+      "id": "sm_250425_b72092_01",
+      "name": "sm_250425_b72092_01.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756412940749
+      "timestamp": 1756412940749,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1GinABSnGvpGrSfiBpZjSseu-_6uRSB2F",
-      "name": "240827_이한은_프로필_여권1945.jpg",
+      "id": "sm_240827_014a80_02",
+      "name": "sm_240827_014a80_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413197524
+      "timestamp": 1756413197524,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1XQUfJLC946iuGcLLE9hMaCZ-aOSbWFVn",
-      "name": "23_10_11_세빈0304.jpg",
+      "id": "sm_000000_b608b4_02",
+      "name": "sm_000000_b608b4_02.jpg",
       "category": "portrait",
       "categoryLabel": "Portrait",
-      "folderId": "17Lcj2wb107iLpvn1UMEu_wb0gJiv0lws",
       "folderName": "프로필",
-      "timestamp": 1756413187185
+      "timestamp": 1756413187185,
+      "w": 960,
+      "h": 1440
     },
     {
-      "id": "1f31rxvl63JOeMSoTnUjqEobrDfXwyPFL",
-      "name": "250502_정서영_웨딩포트폴리오0203.jpg",
+      "id": "sm_250502_a22cee_02",
+      "name": "sm_250502_a22cee_02.jpg",
       "category": "wedding",
       "categoryLabel": "Wedding",
-      "folderId": "1xtUATMeWyZi47wf5zgT25459urlnU_hi",
       "folderName": "웨딩",
-      "timestamp": 1756412897338
+      "timestamp": 1756412897338,
+      "w": 960,
+      "h": 1440
     }
   ],
   "curated": true,
