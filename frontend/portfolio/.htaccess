@@ -27,4 +27,5 @@ AddDefaultCharset UTF-8
   ExpiresByType text/javascript "access plus 1 year"
   ExpiresByType image/svg+xml "access plus 30 days"
   ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
 </IfModule>
