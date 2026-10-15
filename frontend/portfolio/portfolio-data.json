@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-04-28T21:20:20.660583+00:00",
   "sourceFolder": "1OPRMHbnh6ctci8jmLjlOb7dlHMReG1jT",
-  "total": 155,
+  "total": 171,
   "dedupedRemoved": 8,
   "categories": [
     {
@@ -34,6 +34,150 @@
     }
   ],
   "photos": [
+    {
+      "id": "1YWKY6cGTp2QDd4QZW4ttB66tfBbp4PgC",
+      "name": "sm_260714_7c1861_01.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064636962
+    },
+    {
+      "id": "1PMOzkCv0JZ2AV5ueL5tMfcn0me0BJ7yQ",
+      "name": "sm_260714_7c1861_02.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064637927
+    },
+    {
+      "id": "1KMyCxYd6blxlgeMms-R99KsqP7qkBZbw",
+      "name": "sm_260714_7c1861_03.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064639325
+    },
+    {
+      "id": "15qcdk1hSdxjI1eiN-4Bd8xJ4eJEovlO6",
+      "name": "sm_260714_7c1861_04.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064640564
+    },
+    {
+      "id": "1P4qHA0ESV5MqGbeCBlwl68MHTLeqKXDY",
+      "name": "sm_260815_5141d3_01.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064641206
+    },
+    {
+      "id": "1e6GVqBTSDZLp8mpB9d-UQ-wVZzbro_rG",
+      "name": "sm_260815_5141d3_02.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064642017
+    },
+    {
+      "id": "1nkSNyOj_wibTh2O3pDnmLRNR1qspzB-R",
+      "name": "sm_260815_5141d3_03.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064642852
+    },
+    {
+      "id": "1n0k3Z7twXKQERYlRqQU8N53c7_WEFLi7",
+      "name": "sm_260815_5141d3_04.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064643695
+    },
+    {
+      "id": "1kclno0kvKAcUkaPC8mDtjq-1aTLxlSe1",
+      "name": "sm_260905_da32cf_01.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064644601
+    },
+    {
+      "id": "1YWuNQbmIrSBt4pmHGw9pMVDEBCht4j9y",
+      "name": "sm_260905_da32cf_02.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064645364
+    },
+    {
+      "id": "1MboW8css6xf8bNtRZeWjhr8PWXzOCmxl",
+      "name": "sm_260905_da32cf_03.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064646057
+    },
+    {
+      "id": "1zHIrpK3u9TBfibsFmDG3U-nwxkYHwEBq",
+      "name": "sm_260905_da32cf_04.jpg",
+      "category": "family",
+      "categoryLabel": "Family",
+      "folderId": "15K1jTxDEqRBAvJEgFV4c2wQXw4g1_C-b",
+      "folderName": "가족사진",
+      "timestamp": 1792064646841
+    },
+    {
+      "id": "1uoMkpNBIDnv2zeWCeQjYGX1UIln9J7Ne",
+      "name": "sm_260923_45f98c_01.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064647762
+    },
+    {
+      "id": "1O3Z0iszMiK9qe24JJ1zRPgJMBrfDhwIM",
+      "name": "sm_260923_45f98c_02.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064648696
+    },
+    {
+      "id": "1r0sleIzLKOjeT7sgpAMIhMhZZuPD1jKd",
+      "name": "sm_260923_45f98c_03.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064649348
+    },
+    {
+      "id": "1eURntbf0Ios60PQbIvWI-2BRYdVMUKij",
+      "name": "sm_260923_45f98c_04.jpg",
+      "category": "snap",
+      "categoryLabel": "Snap",
+      "folderId": "1WuXFBBepxPLbr0L0eBVX4Y5ysRb8mq3N",
+      "folderName": "스냅",
+      "timestamp": 1792064649964
+    },
     {
       "id": "11IymoOTKUUz-Zy5rQv6kuzBsTC9w2ZIc",
       "name": "sm_260625_8e2d87_01.jpg",
