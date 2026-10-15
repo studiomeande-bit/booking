@@ -326,6 +326,7 @@ const state = {
   printsSeeded: false,
   step: 0,
   submitted: false,
+  survey: { skin: 3, face: 3, body: 3, tone: 3, keep: [], note: '' },   // 보정 방향 설문(1~5, 3=표준) — 2026-10-15
   gallery: {
     loaded: false,
     loading: false,
@@ -483,6 +484,7 @@ function applyCopy() {
   const c = copy();
   document.documentElement.lang = state.lang;
   document.title = c.docTitle;
+  renderSurvey();   // 설문 행 글은 i18n 에서 그린다 — 언어 전환 때 다시
   /* site-analytics.js renders the cookie prompt before the session language is
      known, so tell it to re-apply its copy. */
   document.dispatchEvent(new CustomEvent('studiomean:langchange'));
@@ -587,6 +589,8 @@ queueMicrotask(boot);
 async function boot() {
   wireEvents();
   wireMarkEditor();
+  wireSurvey();
+  renderSurvey();
   wireLanguageSwitcher();
   applyCopy();
   if (state.previewMode) {
@@ -834,6 +838,8 @@ function hydrateSession(session) {
   state.mailAddress = normalizeMailAddressText(session.existingMailAddress || session.bookingAddress || '');
   const existingPhotos = Array.isArray(session.existingPhotos) ? session.existingPhotos : [];
   state.photos = state.editMode ? existingPhotos.map(normalizePhoto) : [];
+  state.survey = normalizeSurvey(state.editMode ? session.existingSurvey : null);   // 보정 방향 설문 복원(수정 모드)
+  renderSurvey();
   state.studioA4Dismissed = false;
   const existingPrints = Array.isArray(session.existingPrints) ? session.existingPrints : [];
   state.prints = state.editMode
@@ -2702,6 +2708,100 @@ function openPrintPicker(index) {
    타이핑 대신 눈으로 고르게 해 달라는 요청(2026-08-25 사장님). */
 /* ===== 동그라미 편집기 ===== */
 let markEdit = { index: -1, active: -1, drag: null };
+/* ===== 보정 방향 설문(세션당 1회, 1~5 · 3=스튜디오 표준) — 2026-10-15 =====
+   축 skin·face·body·tone, keep = 지켜 달라는 것, note = 한마디(120자). 서버 normalizeSelectSurvey_ 와 같은 규칙.
+   전부 3이고 keep·note 가 비면 '표준 보정' — 서버는 빈 칸으로 저장한다. */
+const SURVEY_AXES = ['skin', 'face', 'body', 'tone'];
+const SURVEY_KEEP = ['moles', 'scars', 'dimples', 'gray', 'glasses'];
+function normalizeSurvey(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  SURVEY_AXES.forEach((k) => { const n = parseInt(r[k], 10); out[k] = n >= 1 && n <= 5 ? n : 3; });
+  out.keep = Array.isArray(r.keep) ? r.keep.map(String).filter((k, i, a) => SURVEY_KEEP.includes(k) && a.indexOf(k) === i) : [];
+  out.note = String(r.note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return out;
+}
+function surveyIsDefault(s) { const n = normalizeSurvey(s); return SURVEY_AXES.every((k) => n[k] === 3) && !n.keep.length && !n.note; }
+function surveyText(s, c) {
+  const n = normalizeSurvey(s);
+  const parts = SURVEY_AXES.map((k) => `${c.surveyAxes[k].label} ${n[k]}`);
+  if (n.keep.length) parts.push(`${c.surveyKeepLabel}: ${n.keep.map((k) => c.surveyKeep[k] || k).join(', ')}`);
+  if (n.note) parts.push(n.note);
+  return parts.join(' · ');
+}
+function renderSurvey() {
+  const box = document.getElementById('surveyBox');
+  if (!box) return;
+  box.classList.toggle('hidden', isReprintSession());   // 재주문엔 보정이 없다
+  const c = copy();
+  const sv = (state.survey = normalizeSurvey(state.survey));
+  document.getElementById('surveyAxes').innerHTML = SURVEY_AXES.map((k) => {
+    const a = c.surveyAxes[k]; const v = sv[k];
+    return `<div class="survey-row" data-axis="${k}"><div class="survey-row-head"><span class="survey-row-label">${escapeHtml(a.label)}</span><span class="survey-row-pick">${v === 3 ? escapeHtml(c.surveyStd) : v}</span></div>`
+      + `<div class="survey-scale">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="survey-btn${n === 3 ? ' std' : ''}" data-axis="${k}" data-val="${n}" aria-pressed="${n === v}">${n}</button>`).join('')}</div>`
+      + `<div class="survey-ends"><span>1 · ${escapeHtml(a.lo)}</span><span>5 · ${escapeHtml(a.hi)}</span></div></div>`;
+  }).join('');
+  document.getElementById('surveyKeep').innerHTML = SURVEY_KEEP.map((k) => `<button type="button" class="survey-chip" data-keep="${k}" aria-pressed="${sv.keep.includes(k)}">${escapeHtml(c.surveyKeep[k] || k)}</button>`).join('');
+  const note = document.getElementById('surveyNote');
+  if (note) { note.placeholder = c.surveyNotePlaceholder; if (note.value.trim() !== sv.note) note.value = sv.note; }
+}
+function wireSurvey() {
+  const box = document.getElementById('surveyBox');
+  if (!box) return;
+  box.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.survey-btn'); const chip = ev.target.closest('.survey-chip');
+    if (btn) state.survey[btn.dataset.axis] = Number(btn.dataset.val);
+    else if (chip) { const i = state.survey.keep.indexOf(chip.dataset.keep); if (i >= 0) state.survey.keep.splice(i, 1); else state.survey.keep.push(chip.dataset.keep); }
+    else return;
+    renderSurvey(); updateSubmitState();
+  });
+  document.getElementById('surveyNote')?.addEventListener('input', (ev) => { state.survey.note = String(ev.target.value || '').slice(0, 120); updateSubmitState(); });
+}
+
+/* ===== 동그라미 구운 사진(메일용) — 2026-10-15 =====
+   메일은 겹쳐 그리기를 못 하므로 제출 직전에 사진 위에 동그라미를 캔버스로 구워 JPEG 로 보낸다(서버가 세션 폴더/보정표시 에 저장).
+   lh3 는 CORS 허용(ACAO *)이라 crossOrigin 로 그릴 수 있다. 실패하면 빈 값 — 서버는 원본 썸네일로 대신하고 ERP 는 겹쳐 그린다. */
+const MARK_IMAGE_W = 720;
+function markImageSig(photo) { return JSON.stringify(normalizeMarks(photo.marks)); }
+function loadCorsImage(url, ms = 8000) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(); img.crossOrigin = 'anonymous'; img.referrerPolicy = 'no-referrer';
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    img.onload = () => { clearTimeout(t); resolve(img); };
+    img.onerror = () => { clearTimeout(t); reject(new Error('load')); };
+    img.src = url;
+  });
+}
+async function buildMarkImage(photo) {
+  const key = stripExt(photo?.num || '');
+  const p = key ? state.gallery.byKey.get(key) : null;
+  if (!p || !p.id) return '';
+  const img = await loadCorsImage(`https://lh3.googleusercontent.com/d/${encodeURIComponent(p.id)}=w${MARK_IMAGE_W}`);
+  const W = Math.min(MARK_IMAGE_W, img.naturalWidth || MARK_IMAGE_W);
+  const H = Math.max(1, Math.round(W * (img.naturalHeight || 1) / (img.naturalWidth || 1)));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'); g.drawImage(img, 0, 0, W, H);
+  normalizeMarks(photo.marks).forEach((m, i) => {
+    const cx = m.x / 100 * W, cy = m.y / 100 * H, r = Math.max(6, m.r / 100 * W);   // r 은 사진 가로 기준 %(화면과 동일)
+    g.lineWidth = Math.max(5, W / 150); g.strokeStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = Math.max(3, W / 260); g.strokeStyle = '#ffd166'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    const br = Math.max(11, W / 60); const by = Math.max(br + 2, cy - r - br - 4);
+    g.fillStyle = '#ffd166'; g.beginPath(); g.arc(cx, by, br, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1b1916'; g.font = `bold ${Math.round(br * 1.3)}px -apple-system, "Noto Sans KR", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(i + 1), cx, by + 1);
+  });
+  return cv.toDataURL('image/jpeg', 0.8);
+}
+async function buildMarkImages() {
+  for (const photo of state.photos) {
+    if (!photo?.marks?.length) { photo._markImage = ''; photo._markSig = ''; continue; }
+    const sig = markImageSig(photo);
+    if (photo._markImage && photo._markSig === sig) continue;
+    try { photo._markImage = await buildMarkImage(photo); photo._markSig = sig; }
+    catch (e) { console.warn('mark image skipped', photo.num, e); photo._markImage = ''; photo._markSig = ''; }
+  }
+}
+
 function markEls() {
   return { root: document.getElementById('markEditor'), img: document.getElementById('markImg'), layer: document.getElementById('markLayer'),
     list: document.getElementById('markList'), title: document.getElementById('markTitle'), hint: document.getElementById('markHint'),
@@ -3728,6 +3828,8 @@ function validateDeliverySelection() {
  * ====================================================================== */
 function updateReview() {
   const c = copy();
+  const rs = document.getElementById('reviewSurvey');
+  if (rs) rs.textContent = `${c.reviewSurvey}: ${surveyIsDefault(state.survey) ? c.surveyDefaultText : surveyText(state.survey, c)}`;
   const base = Number(state.session?.baseRetouchCount || 0);
   const retouchPrice = Number(state.session?.retouchPrice || 0);
 
@@ -4218,7 +4320,8 @@ function payloadSig() {
     state.photos.map((p) => [String(p.num || ''), String(p.note || ''), !!p.isBonus, !!p.isService, p.source || '', JSON.stringify(p.marks || [])]),
     state.prints.map((p) => [String(p.photoNum || ''), p.printId, Number(p.qty) || 1, p.finish, String(p.note || '')]),
     state.marketing, state.deliveryMethod, state.mailName, state.mailAddress,
-    state.photocard, !!els.earlyStartRetouchInput?.checked, expressAmount() > 0
+    state.photocard, !!els.earlyStartRetouchInput?.checked, expressAmount() > 0,
+    JSON.stringify(normalizeSurvey(state.survey))
   ]);
 }
 function updateSubmitState() {
@@ -4383,13 +4486,16 @@ async function onSubmit() {
   els.submitBtn.textContent = state.editMode ? copy().submittingEdit : copy().submitting;
   const deliveryRequired = requiresDeliverySelection();
   const printAnnotations = computePrintAnnotations();
+  await buildMarkImages();   // 동그라미 구운 JPEG(메일용) — 실패해도 제출은 계속
   const payload = {
     selectPrintModel: SELECT_PRINT_MODEL,
+    survey: normalizeSurvey(state.survey),       // 보정 방향(1~5) — 서버가 다시 자르고 '보정설문JSON' 에 저장
     // 보정 리스트는 출력 정보를 담지 않는다 (분리형)
     photos: state.photos.map((photo) => ({
       num: String(photo.num || ''),
       note: String(photo.note || ''),
       marks: normalizeMarks(photo.marks),         // 동그라미 — 서버가 다시 자르고 메모 끝에 글 줄을 붙인다
+      markImage: photo.marks?.length ? (photo._markImage || '') : '',   // 구운 JPEG(data URL) — 서버가 Drive 에 저장하고 JSON 에선 뗀다
       persons: normalizePersons(photo.persons),   // 서버가 상한(3)과 합계를 다시 계산한다
       isBonus: !!photo.isBonus,
       isService: !!photo.isService,

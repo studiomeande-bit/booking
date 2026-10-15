@@ -234,7 +234,7 @@ const q = (o) => M.calculateQuote_(o);
   ok(iWed > -1 && iExp > iWed && iPass > iExp, '화면 미리보기: 급행은 할인 뒤·여권 콤보 전(서버와 같은 자리)', [iWed, iExp, iPass]);
   ok(/money2\(\(r\.raw - r\.vd\.discount\) \+ \(p\.raw - p\.vd\.discount\) \+ expressAmount\(\)\)/.test(selectJs), '셀렉 화면 합계에 급행 포함(볼륨 할인 밖)');
   ok(/function hasPaidRetouch\(\) \{ return calcRetouchDiscount\(\)\.raw > 0 \|\| expressAmount\(\) > 0; \}/.test(selectJs), '셀렉 화면: 급행도 조기 이행 체크 대상');
-  ok(/express: expressAmount\(\) > 0,/.test(selectJs) && /expressAmount\(\) > 0\n  \]\);/.test(selectJs), '셀렉 제출 payload·요청 서명에 급행');
+  ok(/express: expressAmount\(\) > 0,/.test(selectJs) && /expressAmount\(\) > 0,?\n(?:    [^\n]*\n)*?  \]\);/.test(selectJs) && /function payloadSig\(\) \{[\s\S]*?expressAmount\(\) > 0[\s\S]*?\]\);/.test(selectJs), '셀렉 제출 payload·요청 서명에 급행');
   ok(/state\.express = !!session\?\.express\?\.atSelect;/.test(selectJs), '수정 제출: 셀렉 때 산 급행이 켜진 채로 열린다');
   ok(/\{key:'express',label:/.test(adminHtml), '어드민 예약 수정 창에 급행(없으면 저장이 급행을 뺀다)');
   const man = adminHtml.slice(adminHtml.indexOf('function calcManualPrice('), adminHtml.indexOf('\n}', adminHtml.indexOf('function calcManualPrice(')));

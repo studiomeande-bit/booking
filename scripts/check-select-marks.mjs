@@ -62,7 +62,7 @@ ok(M.selectMarkThumbUrl_({ fileId: 'abcdefghij12' }, 480) === 'https://drive.goo
 const marked = M.enrichSelectPhoto_({ num: '0031', note: '', marks: [{ x: 50, y: 40, r: 10, t: '턱선' }] }); marked.fileId = 'abcdefghij12';
 ok(/<img src="https:\/\/drive\.google\.com\/thumbnail\?id=abcdefghij12&sz=w480"/.test(M.buildSelectPhotoLineHtml_(marked, true, 'ko')), '메일 사진 줄: 표시 컷은 썸네일을 싣는다');
 ok(!/<img/.test(M.buildSelectPhotoLineHtml_(p, true, 'ko')), '파일 ID 없으면(옛 제출) 썸네일 없이 ◎ 줄만');
-ok(/\$\{marksLinkHtml\}\$\{captureOneHtml\}/.test(gs) && /\?p=admin&sel=\$\{encodeURIComponent\(String\(row\[SELECT_COL\['예약장부행'\]\]/.test(gs), '관리자 알림: 표시 컷 있으면 ERP 딥링크(?sel=예약행)');
+ok(/\$\{marksLinkHtml\}\$\{surveyHtml\}\$\{captureOneHtml\}/.test(gs) && /const marksLinkHtml=selectMarksLinkHtml_\(row,photos\);/.test(gs) && /\?p=admin&sel=\$\{encodeURIComponent\(String\(row\[SELECT_COL\['예약장부행'\]\]/.test(gs), '관리자 알림: 표시 컷 있으면 ERP 딥링크(?sel=예약행)');
 ok((gs.match(/attachSelectMarkFileIds_\(photos,sessionId\);/g) || []).length === 2, '제출·수정 두 경로 모두 파일 ID 를 붙인다');
 
 // 어드민: 사진 위에 동그라미(셀렉 화면과 같은 % 좌표)

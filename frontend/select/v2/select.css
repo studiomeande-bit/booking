@@ -2650,3 +2650,23 @@ strong.quote{ color: var(--sm-warn); font-weight: 700; }
 .entry-mark-btn { border: 1px solid #d9d2c5; background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #2d2a26; }
 .entry-mark-btn:hover { border-color: #b54c2d; color: #b54c2d; }
 .entry-mark-summary { font-size: 12.5px; color: #6a655f; line-height: 1.5; }
+
+/* 보정 방향 설문(1~5) — 2026-10-15 */
+.survey-box { margin-bottom: 14px; }
+.survey-copy { font-size: 13.5px; color: #5c564f; line-height: 1.55; margin: 4px 0 12px; }
+.survey-axes { display: flex; flex-direction: column; gap: 10px; }
+.survey-row { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px 12px; background: #fff; border: 1px solid #e8e0d2; border-radius: 12px; }
+.survey-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.survey-row-label { font-weight: 700; font-size: 14.5px; color: #2d2a26; }
+.survey-row-pick { font-size: 12.5px; color: #8a8378; }
+.survey-scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.survey-btn { border: 1px solid #d9d2c5; background: #fff; border-radius: 10px; padding: 10px 0; font-size: 15px; font-weight: 700; color: #4a4540; cursor: pointer; touch-action: manipulation; }
+.survey-btn[aria-pressed="true"] { background: #2d2a26; border-color: #2d2a26; color: #fff; }
+.survey-btn.std[aria-pressed="false"] { border-style: dashed; }
+.survey-ends { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #8a8378; }
+.survey-label { font-weight: 700; font-size: 13.5px; color: #2d2a26; margin: 14px 0 6px; }
+.survey-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.survey-chip { border: 1px solid #d9d2c5; background: #fff; border-radius: 999px; padding: 7px 12px; font-size: 13px; color: #2d2a26; cursor: pointer; }
+.survey-chip[aria-pressed="true"] { background: #b54c2d; border-color: #b54c2d; color: #fff; }
+.survey-note { width: 100%; margin-top: 10px; border: 1px solid #d9d2c5; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.review-survey { font-size: 13.5px; color: #4a4540; line-height: 1.55; padding: 8px 10px; background: #f6f1e9; border-radius: 10px; margin-bottom: 8px; }

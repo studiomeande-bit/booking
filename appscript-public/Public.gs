@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-10-08T11:23:50.330Z
- * 포함 함수 195개 / 상수 39개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-10-15T19:28:22.720Z
+ * 포함 함수 197개 / 상수 41개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -24,6 +24,7 @@ const CONFIG = {
   THREAD_SHEET: '문의스레드',
   PARTNER_SHEET: '협력업체',
   PARTNER_CLICK_SHEET: '협력업체클릭',
+  SITE_EVENT_SHEET: '사이트집계',
   INVOICE_FOLDER_NAME: 'Studio mean Invoices',
   QUOTE_SHEET: '견적서',
   QUOTE_FOLDER_NAME: 'Studio mean Angebote',
@@ -2428,7 +2429,7 @@ function _ffmAddDays_(ymd,n){
 
 const SELECT_SHEET_NAME='사진셀렉';
 
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행','보정설문JSON'];
 
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 
@@ -2763,6 +2764,7 @@ function getSelectSession(sessionId){
       extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(row[SELECT_COL['페이지버전']]),
       existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
+      existingSurvey:parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),   // 보정 방향 설문(수정 모드 복원)
       existingPickupAt:parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16), // 시트 Date 자동변환 정규화
 
       existingMailName:existingMail.mailName,
@@ -2825,6 +2827,21 @@ function getSelectSession(sessionId){
     return{ok:true,...base};
   }catch(e){return{ok:false,message:e.message};}
 }
+
+const SELECT_SURVEY_AXES_=['skin','face','body','tone'];
+
+const SELECT_SURVEY_KEEP_=['moles','scars','dimples','gray','glasses'];
+
+function normalizeSelectSurvey_(raw){
+  const r=(raw&&typeof raw==='object')?raw:{};
+  const out={};
+  SELECT_SURVEY_AXES_.forEach(function(k){ const n=parseInt(r[k],10); out[k]=(n>=1&&n<=5)?n:3; });
+  out.keep=Array.isArray(r.keep)?r.keep.map(String).filter(function(k,i,a){return SELECT_SURVEY_KEEP_.indexOf(k)>=0&&a.indexOf(k)===i;}):[];
+  out.note=String(r.note||'').replace(/\s+/g,' ').trim().slice(0,120);
+  return out;
+}
+
+function parseSelectSurveyCell_(cell){ const t=String(cell||'').trim(); if(!t) return null; try{ return normalizeSelectSurvey_(JSON.parse(t)); }catch(e){ return null; } }
 
 const SELECT_VOLUME_TIER_DEFAULTS_={retouch:'5:10,10:15,20:20',print:'5:10,10:15,20:20'};
 

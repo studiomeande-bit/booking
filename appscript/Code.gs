@@ -106,6 +106,7 @@ const PROMO_CONFIG = {
   ITEM_IDS: ['promo_schultuete_mini_2026', 'promo_schultuete_classic_2026', 'promo_schultuete_family_2026']
 };
 const MYREALTRIP_REVIEW_URL = 'https://experiences.myrealtrip.com/products/3886587';
+const GOOGLE_REVIEW_URL = 'https://g.page/r/CU6TKh4BQLJYEBM/review';   // 구글 비즈니스 프로필 공식 '리뷰 작성' 링크(10/15). 옛 share.google 링크는 옛 상호를 hl=ko 검색으로 열었다. 스크립트 속성 GOOGLE_REVIEW_URL 이 있으면 그게 우선
 const MYREALTRIP_IMPORT_LABEL = 'StudioMean-MRT-Imported';
 const MYREALTRIP_IMPORT_DEFAULT_QUERY = 'newer_than:30d (마이리얼트립 OR MyRealTrip OR myrealtrip OR "my real trip") (예약 OR 예약확정 OR booking OR reservation) -from:' + CONFIG.ADMIN_EMAIL + ' -label:' + MYREALTRIP_IMPORT_LABEL;
 const DEFAULT_BOOKING_HOURS = {
@@ -310,8 +311,19 @@ function inferBookingClientTypeFromData_(data){
   return '개인';
 }
 
+/* 고객명 칸에 회사 상호를 적은 행('Atomy Europe GmbH'·'SOLUM Europe GmbH'). 낱말 단위로만 본다 — 사람 이름 오탐 방지.
+   SE 는 대문자 한국 이름('PARK SE HEE')과 겹쳐 뺐다. */
+function hasCompanyLegalSuffix_(name){
+  return String(name||'').split(/[\s(),\/&]+/).some(function(t){
+    return /^gg?mbh$/i.test(t)||/^(mbH|AG|UG|KG|KGaA|OHG|GbR|e\.V\.?|Ltd\.?|Inc\.?|LLC|SAS|B\.V\.)$/.test(t);
+  });
+}
+
 function inferBookingClientTypeFromRow_(row){
   if(!row) return '개인';
+  /* 상호가 법인 형태면 예약유형 '개인'보다 앞선다 — '개인'은 생성 기본값(어드민 라디오 기본 체크·inferBookingClientTypeFromData_ 끝줄)이라
+     선택이 아니다. 2026-10-02 Atomy Europe GmbH(행307·'개인')에 촬영 후 감사메일·구글 리뷰 요청이 나갔다. */
+  if(hasCompanyLegalSuffix_(row[BOOKING_COL['고객명']])) return '기업';
   const explicit=BOOKING_COL['예약유형']!=null ? normalizeBookingClientType_(row[BOOKING_COL['예약유형']]) : '';
   if(explicit) return explicit;
   return isCorporateBookingRowBySignals_(row) ? '기업' : '개인';
@@ -19419,6 +19431,29 @@ function _buildDailyBriefingData_(){
       if(!lastSaved||lastSaved<cutoff) invoiceMailGap={orderCount:orderThreads.length,lastSaved:lastSaved||''};
     }
   }catch(e){Logger.log('briefing invoiceMailGap fail: '+e.message);_briefFail_(sectionFailures,'인보이스 메일',e);}
+  /* 새 구글 리뷰 (2026-10-15) — 앞으로 들어오는 리뷰엔 답글을 단다(밀린 리뷰는 두기로 사장님 결정).
+     구글 알림 메일은 업데이트 탭에 묻혀 안 읽혔다(10/14 진단: 59건 중 답글 1건). 별점은 제목이 아니라
+     본문에만 있다 — 한 건 '별 5개 리뷰가 새로 등록…', 묶음 '별 5개 리뷰 2건'. 같은 발신자의 월간
+     '실적 보고서'는 제목에 '리뷰'가 없어 걸러진다. 읽음 처리·본 목록 관리 없음: 24시간 창이라 하루 한 번만 뜬다. */
+  let googleReviews=null;
+  try{
+    const since=now.getTime()-24*3600*1000;
+    const items=[];
+    GmailApp.search('from:businessprofile-noreply@google.com newer_than:1d',0,10).forEach(function(t){
+      t.getMessages().forEach(function(m){
+        const subject=String(m.getSubject()||'').trim();
+        if(m.getDate().getTime()<since||subject.indexOf('리뷰')<0) return;
+        const stars=[];
+        String(m.getPlainBody()||'').replace(/별\s*(\d)\s*개\s*리뷰(?:\s*(\d+)\s*건)?/g,function(_,s,n){
+          for(let i=0;i<Number(n||1);i++) stars.push(Number(s));
+        });
+        items.push({subject:subject,at:Utilities.formatDate(m.getDate(),tz,'MM-dd HH:mm'),stars:stars,
+          low:stars.some(function(s){return s<=3;})});
+      });
+    });
+    if(items.length) googleReviews={items:items,low:items.some(function(x){return x.low;}),
+      count:items.reduce(function(s,x){return s+(x.stars.length||1);},0)};
+  }catch(e){Logger.log('briefing googleReviews fail: '+e.message);_briefFail_(sectionFailures,'구글 리뷰',e);}
   /* 지난달 회계 마감 — 마감 기록이 없으면 리마인드. 분기 마감(ELSTER) 리마인더는 분기당 한 번뿐이라
      그 사이 달들은 아무도 챙기지 않았다. 마감 시트만 읽어 판정하므로 장부 재계산 없음(비용 0에 가까움).
      창은 5~25일 — 1~4일은 아직 정산이 덜 들어오고, 26일 이후는 분기 리마인더와 겹친다. */
@@ -19524,7 +19559,7 @@ function _buildDailyBriefingData_(){
       .map(function(r){ return {name:String(r['작업명']||r['작업']||r['이름']||''),at:String(r['종료일시']||r['시작일시']||''),error:String(r['오류']||r['에러']||'').slice(0,160)}; })
       .slice(0,8);
   }catch(e){ Logger.log('briefing automationFailures skipped: '+e.message); }
-  return {ok:true,date:today,automationFailures:automationFailures,flowGaps:flowGaps,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
+  return {ok:true,date:today,automationFailures:automationFailures,flowGaps:flowGaps,selectDeadline:selectDeadline,prepPending:prepPending,inquiries:inquiries,dataQuality:dataQuality,backupHealth:backupHealth,monthCloseDue:monthCloseDue,invoiceMailGap:invoiceMailGap,googleReviews:googleReviews,upcomingBookings:upcoming,pendingBookingCount:pendingCount,depositWaiting:depositWait,unpaidBalances:unpaidBalances,quotes:quotes,select:select,printPending:printPending,selectNotSent:selectNotSent,handoverPending:handoverPending,extrasUnbilled:extrasUnbilled,extrasUnpaid:extrasUnpaid,settlementReview:settlementReview,calendarAudit:calendarAudit,evidenceInboxCount:evidenceInbox,consultations:consultations,marketing:marketing,quarterClose:qtr,contractPending:contractPending,bankGap:bankGap,locationBlockers:locationBlockers,travelFeeGaps:travelFeeGaps,sectionFailures:sectionFailures};
 }
 
 // D7: 아침 브리핑 메일 — 하루 요약을 어드민에게 자동 발송
@@ -19551,6 +19586,20 @@ function buildDailyBriefingEmailHtml_(b){
       b.automationFailures.map(function(f){
         return line(`<b style="color:#b91c1c;">${esc(f.name)}</b> <span style="color:#94a3b8;">${esc(f.at)}</span><br>&nbsp;&nbsp;${esc(f.error||'(오류 메시지 없음)')} — 자동화 로그 확인 후 재실행`);
       }).join('')));
+  }
+  /* 새 구글 리뷰 — 답글은 Claude 초안 → 사장님 건별 승인 → 게시. 별 3개 이하가 끼면 맨 위, 아니면 액션 필요 다음. */
+  let reviewSection='';
+  if(b.googleReviews&&b.googleReviews.items.length){
+    const gr=b.googleReviews;
+    reviewSection=section(`${gr.low?'🚨':'⭐'} 새 구글 리뷰 ${gr.count}건 — 답글 달기`,
+      gr.items.map(function(r){
+        const st=r.stars.map(function(s){return '★'+s;}).join(' ');
+        return line(`${r.low?badge('별 3개 이하','#fee2e2','#b91c1c')+' ':''}<b>${esc(r.subject)}</b>`
+          +`${st?` · <b style="color:${r.low?'#b91c1c':'#b45309'};">${st}</b>`:''} <span style="color:#94a3b8;">${esc(r.at)}</span>`);
+      }).join('')
+      +line(`<a href="https://business.google.com/n/4612328559874303019/reviews" style="color:#2563eb;">리뷰 화면 열기</a>`
+        +` — Claude에게 <b>“새 구글 리뷰 답글 초안”</b>을 요청하면 원문을 읽고 초안을 드립니다(승인 후 게시).`));
+    if(gr.low) parts.push(reviewSection);
   }
   // 1) 이번 주 일정
   parts.push(section('📅 이번 주 촬영 (7일)',
@@ -19762,6 +19811,7 @@ function buildDailyBriefingEmailHtml_(b){
     if(inq.open>8) actions.push(line(`&nbsp;&nbsp;외 ${inq.open-8}건 — Claude에게 "문의 목록 보여줘"`));
   }
   parts.push(section('⚡ 액션 필요',actions.length?actions.join(''):line('<span style="color:#94a3b8;">오늘 처리할 항목이 없습니다. 👍</span>')));
+  if(reviewSection&&!b.googleReviews.low) parts.push(reviewSection);
   // 3) 미수 잔금
   if(b.unpaidBalances.length){
     const totalUnpaid=b.unpaidBalances.reduce(function(s,u){return s+u.balance;},0);
@@ -25364,7 +25414,7 @@ function appendPrepSummaryToCalendar_(row,summary,links){
 }
 
 const SELECT_SHEET_NAME='사진셀렉';
-const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행'];
+const SELECT_HEADERS=['세션ID','생성일시','고객명','이메일','연락처','촬영일','촬영종류','상품','기본보정수','리터칭단가','언어','드라이브링크','예약장부행','제출일시','선택사진','추가보정수','추가보정금액','추가인화','추가인화금액','마케팅동의','총추가금액','상태','재발송횟수','재발송일시','어드민알림','보정본발송일시','셀렉마감일','1차알림일','2차알림일','3차알림일','최종알림단계','재수정요청횟수','추가금인보이스번호','보정후안내메일발송일시','수령방식','픽업일시','우편주소','픽업캘린더ID','페이지버전','재수정요청메모','재수정요청이력JSON','포토카드선택','마케팅보너스수','서비스컷수','고객출력주문JSON','고객출력주문일시','고객출력주문상태','출력완료일시','출력완료매수','픽업안내메일발송일시','수령완료일시','수령방법','수령메모','픽업리마인드발송일시','픽업리마인드횟수','수령직전상태','별점JSON','압축본링크','추가보정조기이행요청','픽업전날알림','급행','보정설문JSON'];
 const SELECT_COL=SELECT_HEADERS.reduce((acc,h,i)=>{acc[h]=i;return acc;},{});
 // 상태 흐름: 대기중→제출완료→보정본발송→보정본확인완료→출력→우편발송→최종작업완료
 // ⚠ SELECT_HEADERS 는 append-only. 중간 삽입은 SELECT_COL 이 상수에서 파생되므로 기존 전 행이 조용히 어긋난다.
@@ -27138,6 +27188,7 @@ function getSelectSession(sessionId){
       extraInvoiceNumber:String(row[SELECT_COL['추가금인보이스번호']]||''),
       pageVersion:normalizeSelectPageVersion_(row[SELECT_COL['페이지버전']]),
       existingDeliveryMethod:String(row[SELECT_COL['수령방식']]||''),
+      existingSurvey:parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),   // 보정 방향 설문(수정 모드 복원)
       existingPickupAt:parseDateSafe_(row[SELECT_COL['픽업일시']]).str.slice(0,16), // 시트 Date 자동변환 정규화
 
       existingMailName:existingMail.mailName,
@@ -27286,6 +27337,83 @@ function attachSelectMarkFileIds_(photos,sessionId){
 function selectMarkThumbUrl_(photo,width){
   const id=String((photo&&photo.fileId)||'');
   return SELECT_FILE_ID_RE_.test(id)?_buildDriveThumbnailUrl_(id,width||480):'';
+}
+/* 동그라미를 구워 넣은 사진(2026-10-15) — 메일은 겹쳐 그리기(position)를 못 하므로 고객 화면이 캔버스로 합성한 JPEG 를
+ * 세션 폴더/보정표시/ 에 저장하고 그 썸네일을 싣는다. 어드민도 이 파일이 있으면 그대로 보여 준다.
+ * 클라이언트가 보낸 markImageId 는 버린다(임의 파일을 메일에 싣게 두지 않는다). 표시 없는 컷의 이미지는 받지 않는다. */
+const SELECT_MARK_IMAGE_MAX_B64_=1600000;   // ≈1.2MB/장
+const SELECT_MARK_IMAGE_FOLDER_='보정표시';
+function selectMarkImageId_(photo){ const id=String((photo&&photo.markImageId)||''); return SELECT_FILE_ID_RE_.test(id)?id:''; }
+function saveSelectMarkImages_(photos,row){
+  const list=Array.isArray(photos)?photos:[];
+  const marked=function(p){ return p&&typeof p==='object'&&Array.isArray(p.marks)&&p.marks.length>0; };
+  list.forEach(function(p){ if(p&&typeof p==='object') delete p.markImageId; });
+  const want=list.filter(function(p){ return marked(p)&&typeof p.markImage==='string'&&p.markImage; });
+  let folder=null;
+  if(want.length){
+    try{
+      const fid=_extractDriveFolderId_(String(row[SELECT_COL['드라이브링크']]||''));
+      const parent=fid?DriveApp.getFolderById(fid):null;
+      if(parent) folder=findChildFolderByName_(parent,SELECT_MARK_IMAGE_FOLDER_)||parent.createFolder(SELECT_MARK_IMAGE_FOLDER_);
+    }catch(e){ Logger.log('saveSelectMarkImages_ folder: '+(e&&e.message||e)); }
+  }
+  want.forEach(function(p){
+    const m=/^data:image\/jpeg;base64,([A-Za-z0-9+\/=]+)$/.exec(p.markImage);
+    if(!folder||!m||m[1].length>SELECT_MARK_IMAGE_MAX_B64_) return;
+    try{
+      const name=selectPhotoStem_(p.num).replace(/[\\\/:*?"<>|]/g,'_')+'_표시.jpg';
+      const old=folder.getFilesByName(name); while(old.hasNext()) old.next().setTrashed(true);
+      p.markImageId=folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[1]),'image/jpeg',name)).getId();
+    }catch(e){ Logger.log('saveSelectMarkImages_ '+p.num+': '+(e&&e.message||e)); }
+  });
+  list.forEach(function(p){ if(p&&typeof p==='object') delete p.markImage; });   // base64 는 시트에 절대 안 들어간다(셀 5만 자)
+  return list;
+}
+/* 관리자 알림 상단 — 표시 컷이 있으면 ERP 딥링크(?sel=예약행 → 그 제출 모달 자동 열림). 제출·수정 알림이 같이 쓴다. */
+function selectMarksLinkHtml_(row,photos){
+  const n=(photos||[]).filter(function(p){return p&&Array.isArray(p.marks)&&p.marks.length;}).length;
+  if(!n) return '';
+  return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;">◎ 사진 위 동그라미 표시 <b>${n}컷</b> — <a href="${escapeHtml_(ScriptApp.getService().getUrl())}?p=admin&sel=${encodeURIComponent(String(row[SELECT_COL['예약장부행']]||''))}" style="color:#b45309;font-weight:700;">ERP에서 사진 위에 보기 →</a></div>`;
+}
+
+/* ===== 보정 방향 설문(세션당 1회, 1~5) — 사장님 확정 2026-10-15 ==================================
+ * 축 4개: skin(피부) · face(얼굴형·눈) · body(체형) · tone(톤). 1~5, **3 = 스튜디오 표준**. keep = 지켜 달라는 것, note = 한마디(120자).
+ * 저장은 '보정설문JSON' 열. 전부 3이고 keep·note 가 비면 빈 문자열(= 표준 보정, 메일·어드민에 줄 없음).
+ * 숫자→Evoto: 1=0%(결점 제거만) · 2=50% · 3=100% · 4=120% · 5=140%(상한 95). 아이는 skin 만 반영, face·body 는 늘 0. */
+const SELECT_SURVEY_AXES_=['skin','face','body','tone'];
+const SELECT_SURVEY_KEEP_=['moles','scars','dimples','gray','glasses'];
+const SELECT_SURVEY_LABELS_={
+  ko:{title:'보정 방향',skin:'피부',face:'얼굴형·눈',body:'체형',tone:'톤',keep:'지켜 주세요',note:'한마디',
+      keepItems:{moles:'점·주근깨',scars:'흉터·자국',dimples:'보조개·웃음주름',gray:'새치',glasses:'안경·반사'}},
+  en:{title:'Retouch direction',skin:'Skin',face:'Face & eyes',body:'Body',tone:'Tone',keep:'Please keep',note:'Note',
+      keepItems:{moles:'moles/freckles',scars:'scars/marks',dimples:'dimples/smile lines',gray:'gray hair',glasses:'glasses/reflections'}},
+  de:{title:'Retusche-Richtung',skin:'Haut',face:'Gesicht & Augen',body:'Figur',tone:'Ton',keep:'Bitte erhalten',note:'Hinweis',
+      keepItems:{moles:'Muttermale/Sommersprossen',scars:'Narben/Male',dimples:'Grübchen/Lachfalten',gray:'graue Haare',glasses:'Brille/Reflexe'}}
+};
+function normalizeSelectSurvey_(raw){
+  const r=(raw&&typeof raw==='object')?raw:{};
+  const out={};
+  SELECT_SURVEY_AXES_.forEach(function(k){ const n=parseInt(r[k],10); out[k]=(n>=1&&n<=5)?n:3; });
+  out.keep=Array.isArray(r.keep)?r.keep.map(String).filter(function(k,i,a){return SELECT_SURVEY_KEEP_.indexOf(k)>=0&&a.indexOf(k)===i;}):[];
+  out.note=String(r.note||'').replace(/\s+/g,' ').trim().slice(0,120);
+  return out;
+}
+function selectSurveyIsDefault_(s){ return SELECT_SURVEY_AXES_.every(function(k){return s[k]===3;})&&!s.keep.length&&!s.note; }
+function selectSurveyCell_(raw){ if(raw==null) return ''; const s=normalizeSelectSurvey_(raw); return selectSurveyIsDefault_(s)?'':JSON.stringify(s); }
+function parseSelectSurveyCell_(cell){ const t=String(cell||'').trim(); if(!t) return null; try{ return normalizeSelectSurvey_(JSON.parse(t)); }catch(e){ return null; } }
+function selectSurveyText_(survey,lang){
+  if(!survey||typeof survey!=='object') return '';
+  const s=normalizeSelectSurvey_(survey);
+  const L=SELECT_SURVEY_LABELS_[String(lang||'ko')]||SELECT_SURVEY_LABELS_.ko;
+  const parts=SELECT_SURVEY_AXES_.map(function(k){return L[k]+' '+s[k];});
+  if(s.keep.length) parts.push(L.keep+': '+s.keep.map(function(k){return L.keepItems[k]||k;}).join(', '));
+  if(s.note) parts.push(L.note+': '+s.note);
+  return parts.join(' · ');
+}
+function selectSurveyHtml_(survey,lang){
+  const text=selectSurveyText_(survey,lang); if(!text) return '';
+  const L=SELECT_SURVEY_LABELS_[String(lang||'ko')]||SELECT_SURVEY_LABELS_.ko;
+  return `<div style="background:#f1f5f9;border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:13px;"><b>${L.title}:</b> ${escapeHtml_(text)}</div>`;
 }
 
 /* ===== 다인 컷 보정 슬롯 (사장님 확정 2026-09-23) ==========================================
@@ -27760,8 +27888,8 @@ function buildSelectPhotoLineHtml_(photo,scopeLimited,lang){
     : '';
   /* 동그라미 표시가 있는 컷은 썸네일을 함께 — 메일은 겹쳐 그리기(position)를 지원하지 않으니 사진+◎ 줄로 읽고,
      동그라미 그 자체는 ERP 에서 본다(관리자 알림 상단 링크). */
-  const thumb=(Array.isArray(photo&&photo.marks)&&photo.marks.length)?selectMarkThumbUrl_(photo,480):'';
-  const thumbHtml=thumb?`<br><a href="https://drive.google.com/file/d/${encodeURIComponent(String(photo.fileId))}/view" target="_blank"><img src="${thumb}" alt="" width="320" style="display:block;max-width:100%;width:320px;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0;"></a>`:'';
+  const imgId=(Array.isArray(photo&&photo.marks)&&photo.marks.length)?(selectMarkImageId_(photo)||(SELECT_FILE_ID_RE_.test(String(photo.fileId||''))?String(photo.fileId):'')):'';   // 구운 사진 우선, 없으면 원본 썸네일
+  const thumbHtml=imgId?`<br><a href="https://drive.google.com/file/d/${encodeURIComponent(imgId)}/view" target="_blank"><img src="${_buildDriveThumbnailUrl_(imgId,480)}" alt="" width="320" style="display:block;max-width:100%;width:320px;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0;"></a>`:'';
   return `<li style="margin-bottom:6px;"><b>${num}번</b>${personFlag}${scopeFlag}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}${thumbHtml}</li>`;
 }
 
@@ -30159,6 +30287,7 @@ function submitPhotoSelection(sessionId,sub){
     const decoupled=isDecoupledSelectSubmission_(sub);
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
+    saveSelectMarkImages_(photos,row);              // 동그라미 구운 JPEG → 세션 폴더/보정표시 (메일·어드민용)
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
@@ -30198,6 +30327,7 @@ function submitPhotoSelection(sessionId,sub){
     const selectMarketing=normalizeMarketingConsentValue_(sub.marketing);
     selSh.getRange(rowNum,SELECT_COL['제출일시']+1,1,9).setValues([[now,JSON.stringify(photos),extraRetouch,extraRetouchAmt,JSON.stringify(printsToStore),extraPrintsAmt,selectMarketing,totalExtra,submittedStatus]]);
     if(SELECT_COL['급행']!=null) selSh.getRange(rowNum,SELECT_COL['급행']+1).setValue(buildSelectExpressCell_(expressInfo,expressAmt,now));
+    if(SELECT_COL['보정설문JSON']!=null){ const _sv=selectSurveyCell_(sub.survey); selSh.getRange(rowNum,SELECT_COL['보정설문JSON']+1).setValue(_sv); row[SELECT_COL['보정설문JSON']]=_sv; }   // 메일은 메모리 row 에서 읽는다
     selSh.getRange(rowNum,SELECT_COL['어드민알림']+1).setValue('');
     selSh.getRange(rowNum,SELECT_COL['포토카드선택']+1).setValue(photocard?JSON.stringify(photocard):'');
     selSh.getRange(rowNum,SELECT_COL['수령방식']+1,1,4).setValues([[
@@ -30379,10 +30509,10 @@ function sendSelectSubmitAlert_(row,photos,prints,extraRetouch,extraRetouchAmt,e
   const alertMeta=buildSelectAlertMeta_(row,photos,prints,printUpgradeItems,photocard,deliveryText);
   const captureOneText=buildSelectCaptureOneSearchText_(photos);
   const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
-  const markedCount=(photos||[]).filter(function(p){return p&&Array.isArray(p.marks)&&p.marks.length;}).length;
-  const marksLinkHtml=markedCount?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;">◎ 사진 위 동그라미 표시 <b>${markedCount}컷</b> — <a href="${escapeHtml_(ScriptApp.getService().getUrl())}?p=admin&sel=${encodeURIComponent(String(row[SELECT_COL['예약장부행']]||''))}" style="color:#b45309;font-weight:700;">ERP에서 사진 위에 보기 →</a></div>`:'';
+  const marksLinkHtml=selectMarksLinkHtml_(row,photos);
+  const surveyHtml=selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko');
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(Number(ex.amt)>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,ex)}${alertMeta.resendRow}</table>${marksLinkHtml}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(Number(ex.amt)>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,ex)}${alertMeta.resendRow}</table>${marksLinkHtml}${surveyHtml}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉]${(Number(ex.amt)>0||ex.atBooking)?' ⚡급행':''} ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html},{public:true,bucket:'select',type:'셀렉제출'});
 }
 
@@ -30449,7 +30579,7 @@ function sendCustomerSelectReceipt_(row,photos,prints,extraRetouch,extraRetouchA
     en:'We will be in touch about collection or delivery once your prints are ready. Questions: studio.mean.de@gmail.com',
     de:'Sobald Ihre Abzüge fertig sind, melden wir uns wegen Abholung bzw. Versand. Fragen: studio.mean.de@gmail.com'
   };
-  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}${Number(ex.amt)>0?`<div style="margin:-6px 0 14px;font-size:13px;">⚡ ${lang==='en'?'Express processing':lang==='de'?'Express-Bearbeitung':'급행 작업'}: <b>+${formatEuroDe_(ex.amt)}</b></div>`:''}${realPhotos.length?`<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}`:''}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}${legalHtml}<br><br><p style="font-size:12px;color:#94a3b8;">${footer[lang]||footer.ko}</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
+  const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#2D2A26;padding:20px 25px;text-align:center;"><h2 style="margin:0;color:#fff;font-size:18px;">📷 Studio mean</h2><p style="margin:4px 0 0;color:rgba(255,255,255,.7);font-size:13px;">${row[7]||''}</p></div><div style="padding:24px 25px;">${greet[lang]}<br><br>${intro[lang]}${summaryHtml}${Number(ex.amt)>0?`<div style="margin:-6px 0 14px;font-size:13px;">⚡ ${lang==='en'?'Express processing':lang==='de'?'Express-Bearbeitung':'급행 작업'}: <b>+${formatEuroDe_(ex.amt)}</b></div>`:''}${selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),lang)}${realPhotos.length?`<b>${lang==='de'?'Ausgewählte Fotos':lang==='en'?'Selected Photos':'선택 사진 목록'}</b>${photoListHtml}`:''}${photocard?`<br><b>${lang==='de'?'Fotokarte':lang==='en'?'Photocard':'포토카드'}</b>${photocardListHtml}`:''}${printChargeItems.length?`<br><b>${lang==='de'?'Zusätzliche Drucke':lang==='en'?'Additional Print Items':'출력물 목록'}</b>${printListHtml}`:''}${legalHtml}<br><br><p style="font-size:12px;color:#94a3b8;">${footer[lang]||footer.ko}</p></div><div style="background:#f8fafc;padding:12px 25px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">Studio mean · studio.mean.de@gmail.com</div></div>`;
   sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:html});
 }
 
@@ -30556,6 +30686,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const decoupled=isDecoupledSelectSubmission_(sub);
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
+    saveSelectMarkImages_(photos,row);              // 동그라미 구운 JPEG → 세션 폴더/보정표시 (메일·어드민용)
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
@@ -30595,6 +30726,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const selectMarketing=normalizeMarketingConsentValue_(sub.marketing);
     selSh.getRange(rowNum,SELECT_COL['제출일시']+1,1,9).setValues([[now,JSON.stringify(photos),extraRetouch,extraRetouchAmt,JSON.stringify(printsToStore),extraPrintsAmt,selectMarketing,totalExtra,submittedStatus]]);
     if(SELECT_COL['급행']!=null) selSh.getRange(rowNum,SELECT_COL['급행']+1).setValue(buildSelectExpressCell_(expressInfo,expressAmt,now));
+    if(SELECT_COL['보정설문JSON']!=null){ const _sv=selectSurveyCell_(sub.survey); selSh.getRange(rowNum,SELECT_COL['보정설문JSON']+1).setValue(_sv); row[SELECT_COL['보정설문JSON']]=_sv; }   // 메일은 메모리 row 에서 읽는다
     selSh.getRange(rowNum,SELECT_COL['어드민알림']+1).setValue(`수정제출확인필요 ${now}`);
     selSh.getRange(rowNum,SELECT_COL['보정본발송일시']+1).setValue('');
     selSh.getRange(rowNum,SELECT_COL['포토카드선택']+1).setValue(photocard?JSON.stringify(photocard):'');
@@ -30632,7 +30764,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const captureOneText=buildSelectCaptureOneSearchText_(photos);
     const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
     const printChargeItems=displayPrints||[];
-    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(expressAmt>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,{amt:expressAmt,atBooking:expressInfo.boughtAtBooking,submittedAt:now})}${alertMeta.resendRow}</table>${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(expressAmt>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,{amt:expressAmt,atBooking:expressInfo.boughtAtBooking,submittedAt:now})}${alertMeta.resendRow}</table>${selectMarksLinkHtml_(row,photos)}${selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko')}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
     sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정]${(expressAmt>0||expressInfo.boughtAtBooking)?' ⚡급행':''} ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html},{public:true,bucket:'select',type:'셀렉수정'});
     /* 수정 제출에도 고객 확인 메일 — 종전엔 관리자만 알고 고객은 무통지였다(2026-08-31).
        금액이 바뀌는 행동이라 최종 기준이 어느 쪽인지 고객에게도 남아야 한다. */
@@ -30741,6 +30873,7 @@ function getSelectDashboard(token){
               handoverAt:SELECT_COL['수령완료일시']!=null?parseDateSafe_(sr[SELECT_COL['수령완료일시']]).str.slice(0,16):'',
               handoverMethod:SELECT_COL['수령방법']!=null?String(sr[SELECT_COL['수령방법']]||''):'',
               handoverMemo:SELECT_COL['수령메모']!=null?String(sr[SELECT_COL['수령메모']]||''):'',
+              retouchSurvey:SELECT_COL['보정설문JSON']!=null?String(sr[SELECT_COL['보정설문JSON']]||''):'',
               selectedPhotos:String(sr[SELECT_COL['선택사진']]||'[]'),
               extraPrintsData:String(sr[SELECT_COL['추가인화']]||'[]')
             };
@@ -35256,7 +35389,7 @@ function sendBookingReminders_(){
 function _getReviewLinks_(){
   const props=PropertiesService.getScriptProperties();
   return {
-    google: String(props.getProperty('GOOGLE_REVIEW_URL')||'https://share.google/xUvG9EqOgJFsfqfLl').trim(),
+    google: String(props.getProperty('GOOGLE_REVIEW_URL')||GOOGLE_REVIEW_URL).trim(),
     myrealtrip: String(props.getProperty('MYREALTRIP_REVIEW_URL')||MYREALTRIP_REVIEW_URL).trim(),
     instagram: 'https://www.instagram.com/studio_mean/'
   };
@@ -35359,6 +35492,13 @@ function _passportCrossSellHtml_(lang,row){
       ? `Neben Pass- und Visafotos bieten wir auch <b>Bewerbungs- und Porträtfotos sowie Familien- und Kindershootings</b> an. Wenn es für Sie passt, finden Sie alles auf unserer ${a('Buchungsseite')}.`
       : `여권·비자 사진 외에도 <b>프로필 · 가족 · 아이 촬영</b>을 하고 있습니다. 필요하실 때 ${a('예약 페이지')}에서 편하게 살펴보세요.`)+'<br><br>';
 }
+/* 행의 상품명을 메일 언어로 — 행엔 nameKo 가 들어 있어 DE/EN 메일에 '여권/비자'가 그대로 섞였다. 카탈로그에 없는 수기 상품명은 그대로 둔다. */
+function _rowProductNamesByLang_(row){
+  const raw=String(row[BOOKING_COL['상품']]||'');
+  const p=raw?findInvoiceProductMatch_(null,{product:raw}):null;
+  const n=function(L){return p?getLocalizedInvoiceProductName_(p,L,raw):raw;};
+  return {ko:n('ko'),en:n('en'),de:n('de')};
+}
 function sendPostShootFollowupEmails_(){
   const sh=ensureSheets_().bookingSheet;
   const lastRow=sh.getLastRow();
@@ -35369,6 +35509,12 @@ function sendPostShootFollowupEmails_(){
     const status=String(row[1]||'').trim();
     if(status!=='작업완료') return;
     if(isCorporateBookingRow_(row)) return;
+    /* 촬영이 아닌 장부 행은 감사·리뷰 요청 대상이 아니다(2026-10-14 진단: 노유경 우편발송비·김민상 팁·배지현 TFP에 발송).
+       'other' = 카탈로그 밖 수기 줄(팁·우편발송비·추가 보정 후속·B2B 용역), 'tfp' = 무페이 협업 모델(리뷰 요청은 구글 정책상 회색지대).
+       €0 행도 뺀다 — 단 굿샤인으로 0 이 된 촬영(이아현 행255 €185 차감)은 진짜 손님이다. */
+    const group=String(row[BOOKING_COL['촬영종류']]||'').trim();
+    if(group==='other'||group==='tfp') return;
+    if(!(parseMoneyValue_(row[BOOKING_COL['총결제액']])>0)&&!(parseMoneyValue_(row[BOOKING_COL['굿샤인차감금액']])>0)) return;
     if(String(row[BOOKING_COL['촬영후감사메일발송일시']]||'').trim()) return;
     const shootInfo=parseDateSafe_(row[0]);
     const shootDate=shootInfo.str.slice(0,10);
@@ -35379,16 +35525,16 @@ function sendPostShootFollowupEmails_(){
     if(!email || !email.includes('@') || email.includes('수기')) return;
     const lang=String(row[5]||'ko').toLowerCase().trim();
     const name=String(row[2]||'');
-    const product=String(row[7]||'');
+    const product=_rowProductNamesByLang_(row);
     const subj={
       ko:`[Studio mean] 촬영 후 감사 인사 — ${name}님`,
       en:`[Studio mean] Thank you for visiting us — ${name}`,
       de:`[Studio mean] Vielen Dank für Ihren Besuch — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_passportCrossSellHtml_('ko',row)}${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_passportCrossSellHtml_('en',row)}${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_passportCrossSellHtml_('de',row)}${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product.ko}</b> 촬영에 Studio mean을 선택해 주셔서 진심으로 감사드립니다. 촬영부터 최종 작업까지 함께한 시간이 편안하고 만족스러운 기억으로 남으셨기를 바랍니다.<br><br>받아보신 결과물과 관련해 확인이 필요하시거나 추가로 남기고 싶은 말씀이 있으시면 이 메일로 편하게 회신해 주세요.<br><br>${_passportCrossSellHtml_('ko',row)}${_followupCommonHtml_('ko',row)}<br><br>앞으로도 좋은 순간을 함께 기록할 수 있기를 바랍니다.<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>Thank you for choosing Studio mean for your recent <b>${product.en}</b> session. We hope the whole experience, from the session through to the final delivery, feels calm and memorable for you.<br><br>If there is anything you would like to ask or share after receiving your photos, feel free to reply to this email.<br><br>${_passportCrossSellHtml_('en',row)}${_followupCommonHtml_('en',row)}<br><br>We look forward to documenting more meaningful moments with you in the future.<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>vielen Dank, dass Sie sich für Ihr <b>${product.de}</b>-Shooting für Studio mean entschieden haben. Wir hoffen, dass Ihnen die gesamte Erfahrung vom Termin bis zur finalen Übergabe in guter Erinnerung bleibt.<br><br>Wenn Sie nach Erhalt der Bilder noch eine Frage oder Anmerkung haben, antworten Sie gerne direkt auf diese E-Mail.<br><br>${_passportCrossSellHtml_('de',row)}${_followupCommonHtml_('de',row)}<br><br>Wir freuen uns darauf, auch zukünftig schöne Momente mit Ihnen festzuhalten.<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['촬영후감사메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));
@@ -35451,16 +35597,16 @@ function sendAnniversaryRecommendationEmails_(){
     if(diffDays<350||diffDays>400) return;                   // 촬영 후 약 1년
     const lang=String(row[5]||'ko').toLowerCase().trim();
     const name=String(row[2]||'');
-    const product=String(row[7]||'');
+    const product=_rowProductNamesByLang_(row);
     const subj={
       ko:`[Studio mean] 벌써 1년, 다시 담아볼 시기예요 — ${name}님`,
       en:`[Studio mean] A year already — time for the next session, ${name}`,
       de:`[Studio mean] Schon ein Jahr — Zeit für das nächste Shooting, ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product}</b> 촬영이 벌써 1년 전이 되었네요. 그사이 아이도, 가족의 모습도 조금씩 달라지셨을 텐데요. 매년 같은 시기에 한 장씩 남겨두면 시간이 지날수록 더 특별한 기록이 됩니다.<br><br>비슷한 구성으로 다시, 또는 새로운 컨셉으로도 편하게 상의드릴 수 있어요. 일정이 궁금하시면 이 메일에 회신 주시거나 예약 페이지에서 확인해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>It has already been a year since your <b>${product}</b> session. Children and families change so much in that time — keeping one frame each year makes the record more meaningful as the years pass.<br><br>We're happy to do a similar setup again, or something new. If you'd like to talk about dates, just reply to this email or check the booking page.<br><br>${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>Ihr <b>${product}</b>-Shooting ist bereits ein Jahr her. Kinder und Familien verändern sich in dieser Zeit sehr — ein Bild pro Jahr wird mit den Jahren zu einer besonderen Erinnerung.<br><br>Gerne wieder in ähnlicher Gestaltung oder mit einem neuen Konzept. Für Termine antworten Sie einfach auf diese E-Mail oder schauen Sie auf der Buchungsseite.<br><br>${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 <b>${product.ko}</b> 촬영이 벌써 1년 전이 되었네요. 그사이 아이도, 가족의 모습도 조금씩 달라지셨을 텐데요. 매년 같은 시기에 한 장씩 남겨두면 시간이 지날수록 더 특별한 기록이 됩니다.<br><br>비슷한 구성으로 다시, 또는 새로운 컨셉으로도 편하게 상의드릴 수 있어요. 일정이 궁금하시면 이 메일에 회신 주시거나 예약 페이지에서 확인해 주세요.<br><br>${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>It has already been a year since your <b>${product.en}</b> session. Children and families change so much in that time — keeping one frame each year makes the record more meaningful as the years pass.<br><br>We're happy to do a similar setup again, or something new. If you'd like to talk about dates, just reply to this email or check the booking page.<br><br>${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>Ihr <b>${product.de}</b>-Shooting ist bereits ein Jahr her. Kinder und Familien verändern sich in dieser Zeit sehr — ein Bild pro Jahr wird mit den Jahren zu einer besonderen Erinnerung.<br><br>Gerne wieder in ähnlicher Gestaltung oder mit einem neuen Konzept. Für Termine antworten Sie einfach auf diese E-Mail oder schauen Sie auf der Buchungsseite.<br><br>${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,col+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));

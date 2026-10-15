@@ -13,14 +13,14 @@
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
-  <link rel="preload" href="./select.min.css?v=e0000d450f" as="style">
+  <link rel="preload" href="./select.min.css?v=25da33de3d" as="style">
   <link rel="icon" href="../studio-mean-logo.svg" type="image/svg+xml">
   <meta name="description" content="Studio mean - Photo selection and print order page for delivered shoots.">
   <meta property="og:title" content="Studio mean Select">
   <meta property="og:description" content="Retouch and print selection for your Studio mean shoot">
   <meta property="og:image" content="https://booking.studio-mean.com/studio-mean-logo.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="./select.min.css?v=e0000d450f">
+  <link rel="stylesheet" href="./select.min.css?v=25da33de3d">
   <script src="/site-analytics.js?v=91301f4520"></script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-YHP3VVZ6GN"></script>
 </head>
@@ -235,6 +235,15 @@
           </div>
         </div>
 
+        <!-- 보정 방향 설문(세션당 1회, 1~5 · 3=표준) — 2026-10-15. 축·선택지는 i18n 에서, 행은 renderSurvey 가 그린다 -->
+        <div id="surveyBox" class="detail-box survey-box">
+          <div class="detail-title" data-i18n="surveyTitle">보정 방향 (전체에 한 번)</div>
+          <p class="survey-copy" data-i18n="surveyCopy">숫자 하나로 전체 방향을 알려 주세요. 3이 스튜디오 표준입니다. 사진별 세부 요청은 아래 목록에 적고, 위치는 사진에 표시해 주세요.</p>
+          <div id="surveyAxes" class="survey-axes"></div>
+          <div class="survey-label" data-i18n="surveyKeepTitle">지켜 주셨으면 하는 것 (선택)</div>
+          <div id="surveyKeep" class="survey-chips"></div>
+          <input id="surveyNote" class="survey-note" type="text" maxlength="120" autocomplete="off">
+        </div>
         <div id="serviceCutBox" class="service-cut-box hidden"></div>
         <div id="retouchScopeBox2" class="retouch-scope-box hidden"></div>
         <div id="photoList" class="list-wrap"></div>
@@ -279,6 +288,7 @@
         </div>
         <div class="review-block" id="reviewRetouchBlock">
           <div class="review-title" data-i18n="reviewRetouch">보정 선택</div>
+          <div id="reviewSurvey" class="review-survey"></div>
           <div id="reviewPhotos" class="review-list"></div>
         </div>
         <div id="reviewPhotocardBlock" class="review-block hidden">
@@ -518,6 +528,6 @@
     <img class="lightbox-img" id="lb-img" src="" alt="">
     <button type="button" class="lightbox-nav lightbox-next" id="lb-next" data-i18n-attr="aria-label:lbNext" aria-label="다음">›</button>
   </div>
-  <script src="./select.min.js?v=d26b4f36d2"></script>
+  <script src="./select.min.js?v=f291b0f92f"></script>
 </body>
 </html>
