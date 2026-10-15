@@ -116,12 +116,12 @@ const els = {
   lightboxNext: document.getElementById('lightboxNext')
 };
 
-function buildThumb(id, width = 1800) {
-  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
-}
-
-function buildLightbox(id, width = 2600) {
-  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(id)}=w${width}`;
+/* 갤러리 사진은 사이트가 직접 서빙한다(assets/gallery/{1440,640}/, 긴 변 기준). 새 사진은
+   automation/homepage_share.py 가 넣는다. 예전엔 공개 Drive 썸네일이었는데 구글이 몰린 요청을 가끔 거절했고
+   (2026-10-15 한 번 로드에서 18장 중 15장 실패), 공개 JSON 에 Drive ID·고객 이름 파일명이 실렸다.
+   점검 주의: srcset 이미지의 naturalWidth 는 픽셀 수가 아니라 칸 너비로 환산된 값이다(512 가 나와도 정상). */
+function buildGalleryUrl(name, edge) {
+  return `${ASSET_BASE}assets/gallery/${edge}/${encodeURIComponent(name)}`;
 }
 
 function normalizePhotos(items = []) {
@@ -132,6 +132,10 @@ function normalizePhotos(items = []) {
       const name = String(item.name || '').trim();
       const category = String(item.category || 'portrait').trim();
       const categoryLabel = resolveCategoryLabel(String(item.category || 'portrait').trim(), item);
+      const width = Number(item.w) || 1440;
+      const smallWidth = Math.round((640 * width) / Math.max(width, Number(item.h) || width));
+      const large = buildGalleryUrl(name, 1440);
+      const small = buildGalleryUrl(name, 640);
       return {
         id,
         name,
@@ -141,10 +145,10 @@ function normalizePhotos(items = []) {
         seriesKey: buildSeriesKey({ id, name, category, folderName: item.folderName }),
         folderName: String(item.folderName || '').trim(),
         timestamp: Number(item.timestamp || 0),
-        thumb: buildThumb(id, 1800),
-        thumbSet: `${buildThumb(id, 960)} 960w, ${buildThumb(id, 1440)} 1440w, ${buildThumb(id, 2200)} 2200w`,
-        full: buildLightbox(id, 2600),
-        fallback: buildThumb(id, 2200)
+        thumb: large,
+        thumbSet: `${small} ${smallWidth}w, ${large} ${width}w`,
+        full: large,
+        fallback: small
       };
     });
 }

@@ -76,9 +76,11 @@ jobs:
             --exclude-glob node_modules/ \
             --exclude README.md \
             --exclude netlify.toml \
-            --exclude generate-portfolio-data.py \
-            --exclude refresh-drive-data.sh \
             frontend/portfolio/ ${DEST}
+          # 갤러리 사진만 서버에서도 지운다(사진 내리기 = 레포에서 삭제). 사이트 전체에 --delete 를 걸면
+          # 레포 밖에서 올린 서버 파일까지 지워지므로 이 폴더로 한정한다.
+          mirror --reverse ${DRYFLAG} --verbose --only-newer --delete \
+            frontend/portfolio/assets/gallery/ ${DEST}assets/gallery/
           bye
           LFTPEOF
           echo "✅ SFTP 배포 완료 (DEST=${DEST})"

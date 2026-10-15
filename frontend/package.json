@@ -20,7 +20,6 @@
     "build:css:portfolio": "esbuild portfolio/portfolio.css --bundle --minify --outfile=portfolio/portfolio.min.css",
     "build:css:tfp": "esbuild booking/portfolio/portfolio.css --bundle --minify --outfile=booking/portfolio/portfolio.min.css",
     "build:css:promo": "esbuild booking/promo/promo.css --bundle --minify --outfile=booking/promo/promo.min.css",
-    "refresh:portfolio-data": "zsh portfolio/refresh-drive-data.sh",
     "build:booking-site": "npm run build:booking && npm run build:gutschein && npm run build:walkin && npm run build:consultation && npm run build:promo && npm run build:tfp && npm run build:css:booking && npm run build:css:gutschein && npm run build:css:walkin && npm run build:css:consultation && npm run build:css:promo && npm run build:css:tfp && npm run build:css:status && npm run stamp",
     "build:select-site": "npm run build:select:v2 && npm run build:css:select:v2 && npm run stamp",
     "build:portfolio-site": "npm run build:portfolio && npm run build:css:portfolio && npm run stamp",

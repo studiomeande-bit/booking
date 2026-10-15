@@ -12,41 +12,28 @@
 - `robots.txt`, `sitemap.xml` — 검색엔진 크롤링/인덱싱용 파일
 - `portfolio.css` — 블랙/그레이/화이트 기반 에디토리얼 UI
 - `portfolio.js` — 정적 JSON 기반 갤러리 렌더링
-- `portfolio-data.json` — Google Drive 공개 폴더에서 생성한 이미지 데이터
+- `portfolio-data.json` — 갤러리 목록(파일명·분야·크기). 고객 이름은 넣지 않는다
+- `assets/gallery/{1440,640}/` — 갤러리 사진(긴 변 1440·640px JPG, EXIF 제거)
 - `studio-mean-logo.svg` — 공식 로고
 - `contact/submit.php` — 문의 폼 메일 처리
 - `.htaccess` — IONOS/Apache용 보안 헤더 및 캐시 설정
 - `netlify.toml` — 별도 정적 사이트 배포 설정(보조용)
 
-## 이미지 소스
-- 루트 폴더: `1OPRMHbnh6ctci8jmLjlOb7dlHMReG1jT`
-- 현재 사용하는 하위 폴더:
-  - 가족사진
-  - 만삭
-  - 스냅
-  - 웨딩
-  - 키즈
-  - 프로필
+## 갤러리 사진
+사진은 사이트가 직접 서빙한다(`assets/gallery/1440/<name>`, `assets/gallery/640/<name>`).
+2026-10-15 까지는 공개 Google Drive 썸네일을 불러왔는데, 구글이 몰린 요청을 가끔 거절해 빈 칸이 생겼고
+(한 번 로드에서 18장 중 15장 실패), 공개 JSON 에 Drive ID 와 고객 이름 파일명이 그대로 실렸다. 그래서 옮겼다.
+점검할 때: srcset 이미지의 `naturalWidth` 는 픽셀 수가 아니라 칸 너비로 환산된 값이다(512 가 나와도 정상).
+깨진 그림은 `img.decode()` 실패로 본다. 앱 브라우저 창이 숨겨져 있으면 스크린샷에 사진이 안 그려진다.
 
-## Drive 데이터 새로고침
-포트폴리오에 새 사진을 반영할 때:
-
-```bash
-cd frontend
-npm run refresh:portfolio-data
-npm run build:portfolio-site
-```
-
-이 스크립트는 공개 Drive 폴더 HTML을 다시 내려받아 `portfolio-data.json`을 갱신합니다.
-중복처럼 보이는 `copy`, `(1)`, `(2)`, `final` 류 파일명은 보수적으로 1장만 남기도록 정리합니다.
-
-> **2026-10-15 현재 위 새로고침은 쓰지 않는다.** 구글이 폴더 HTML 에 목록을 더 이상 싣지 않아 0장이 나오고,
-> `portfolio-data.json` 은 2026-04 큐레이션 50장(`curated: true`)이라 다시 만들면 큐레이션이 사라진다.
-> 새 사진은 `~/Desktop/Studio_mean/automation/homepage_share.py` 가 덧붙인다 — 인스타에 게시된 마케팅 동의 건의
-> 보정본을 공개 Drive 폴더에 올리고 JSON 맨 앞에 추가해 main 에 푸시(매일 09:00). 내릴 때는 JSON 항목·Drive 파일을 지운다.
-
-## 공유 이미지 (og:image)
-`assets/og/og-{de,en,ko}.jpg` 1200×627 — SNS 는 SVG 를 못 읽는다. 다시 만들 때 `python3 scripts/make-og-images.py`.
+- 지금 갤러리: 2026-04 큐레이션 50장 + 2026-10-15 소급 43장. **다시 만들지 않는다**(예전 Drive 긁기 스크립트는 삭제됨).
+- 새 사진: `~/Desktop/Studio_mean/automation/homepage_share.py` 가 인스타에 게시된 마케팅 동의 건의 보정본을
+  `sm_<촬영일>_<해시>_<NN>.jpg` 로 넣고 `portfolio-data.json` 맨 앞에 덧붙여 main 에 푸시한다.
+- 파일명·JSON 에 고객 이름을 넣지 않는다(공개 URL 이다). `portfolio.js` 는 이름 앞부분으로 같은 촬영을 묶는다.
+- 내리기: JSON 항목과 `assets/gallery/{1440,640}/` 의 파일을 지워 main 에 푸시한다. 배포가 서버의
+  `assets/gallery/` 에서도 지운다(이 폴더만 `--delete` 미러). 서비스 페이지가 그 파일을 쓰면
+  (`grep -r <name> --include=index.html`) 그 사진도 바꾼다.
+- 서비스 페이지(familienfotos 등)의 사진도 같은 파일(`assets/gallery/1440/`)을 쓴다.
 
 ## Kontakt 폼 메일 연결
 문의 폼은 `contact/submit.php`를 통해 `studio.mean.de@gmail.com`으로 메일을 보냅니다.
