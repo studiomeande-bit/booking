@@ -40,6 +40,14 @@ npm run build:portfolio-site
 이 스크립트는 공개 Drive 폴더 HTML을 다시 내려받아 `portfolio-data.json`을 갱신합니다.
 중복처럼 보이는 `copy`, `(1)`, `(2)`, `final` 류 파일명은 보수적으로 1장만 남기도록 정리합니다.
 
+> **2026-10-15 현재 위 새로고침은 쓰지 않는다.** 구글이 폴더 HTML 에 목록을 더 이상 싣지 않아 0장이 나오고,
+> `portfolio-data.json` 은 2026-04 큐레이션 50장(`curated: true`)이라 다시 만들면 큐레이션이 사라진다.
+> 새 사진은 `~/Desktop/Studio_mean/automation/homepage_share.py` 가 덧붙인다 — 인스타에 게시된 마케팅 동의 건의
+> 보정본을 공개 Drive 폴더에 올리고 JSON 맨 앞에 추가해 main 에 푸시(매일 09:00). 내릴 때는 JSON 항목·Drive 파일을 지운다.
+
+## 공유 이미지 (og:image)
+`assets/og/og-{de,en,ko}.jpg` 1200×627 — SNS 는 SVG 를 못 읽는다. 다시 만들 때 `python3 scripts/make-og-images.py`.
+
 ## Kontakt 폼 메일 연결
 문의 폼은 `contact/submit.php`를 통해 `studio.mean.de@gmail.com`으로 메일을 보냅니다.
 
