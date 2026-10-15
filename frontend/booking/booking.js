@@ -4814,9 +4814,9 @@ function getVisitGuideList(product) {
   if (!product) return [];
   if (product.g === 'pass' || product.g === 'prof' || product.g === 'stud') {
     return state.lang === 'en'
-      ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'The studio is on the 2nd floor under the ALIN / Das Boots sign.', 'There is no dedicated parking lot, so nearby street parking or Parkhaus options are recommended.']
+      ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'The studio is on the 1st floor (one flight up) under the ALIN / Das Boots sign.', 'There is no dedicated parking lot, so nearby street parking or Parkhaus options are recommended.']
       : state.lang === 'de'
-        ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Das Studio befindet sich im 2. Stock unter dem Schild ALIN / Das Boots.', 'Es gibt keinen eigenen Parkplatz. Straßenrand oder nahe Parkhäuser werden empfohlen.']
+        ? ['Studio mean, Holzwegpassage 3, 61440 Oberursel', 'Das Studio befindet sich im 1. Stock unter dem Schild ALIN / Das Boots.', 'Es gibt keinen eigenen Parkplatz. Straßenrand oder nahe Parkhäuser werden empfohlen.']
         : ['Studio mean, Holzweg-passage 3, 61440 Oberursel', '도착하시면 ALIN / Das Boots 간판 밑 문으로 들어오셔서 2층으로 올라오시면 됩니다.', '전용 주차장은 없으며 주변 길가 또는 파크하우스 이용을 추천드립니다.'];
   }
   return state.lang === 'en'
@@ -7631,7 +7631,7 @@ function getSuccessGuideHtml(payload) {
           </ul>
         ` : `
           <p>Holzweg-passage 3, 61440 Oberursel<br><a href="https://maps.app.goo.gl/pVtCh1R4WWGUMfD67?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">Open in Google Maps</a></p>
-          <p>The studio is on the 2nd floor under the ALIN / Das Boots sign. If it is hard to find, please contact us and we can guide you.</p>
+          <p>The studio is on the 1st floor (one flight up) under the ALIN / Das Boots sign. If it is hard to find, please contact us and we can guide you.</p>
           <p><b>Parking</b><br>There is no dedicated parking lot. We recommend nearby street parking or one of the parking options below.</p>
           <ul>
             <li><a href="https://maps.app.goo.gl/6JTrYv5p7cSSy5oY7?g_st=com.google.maps.preview.copy" target="_blank" rel="noreferrer">City Parkhaus</a></li>
