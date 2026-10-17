@@ -31578,6 +31578,18 @@ function sendBookingSampleAdmin(token,rowIndex,options){
     folder:folder,photoCount:photoCount,resent:!!sentAt,message:message,mail:mail};
 }
 
+/* 납품 폴더 링크 공유(보기) — 2026-10-17 수리. @954 이전 세션 폴더엔 '링크 있는 누구나 편집'이 직접 걸려 있고, 그 안의 보정본 폴더는
+   그걸 상속한다. Drive 는 상속받은 권한을 하위에서 낮추지 못해 setSharing(VIEW) 가 'Access denied: DriveApp' 로 던졌고
+   보정본 발송 전체가 멈췄다(연예진 10/17). 이미 링크로 열려 있으면 고객은 열 수 있으니 발송을 계속한다.
+   상위 폴더 권한을 여기서 낮추지 않는다 — 일괄 하향(drive-link-editor-downgrade)은 사장님 승인 건. */
+function shareFolderViewByLink_(folder){
+  try{ folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW); return 'view'; }
+  catch(e){
+    let access=null; try{ access=folder.getSharingAccess(); }catch(_){}
+    if(access===DriveApp.Access.ANYONE_WITH_LINK){ Logger.log('shareFolderViewByLink_: 상속 권한으로 VIEW 하향 불가, 링크 공개 상태라 계속 — '+(e&&e.message||e)); return 'inherited'; }
+    throw e;
+  }
+}
 function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
   try{
     assertAdmin_(token);
@@ -31610,7 +31622,7 @@ function sendRetouchCompleteAdmin(token,bookingRowIndex,payload){
     const ret=resolveRetouchSubfolder_(driveLink,p.retouchFolderName,{allowEmpty:p.allowEmptyRetouch===true});
     let retouchFolderLink='';
     if(ret.ok){
-      ret.folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+      shareFolderViewByLink_(ret.folder);
       retouchFolderLink=ret.url;
     }else if(p.allowMissingRetouch===true&&driveLink){
       retouchFolderLink=driveLink;
@@ -39225,7 +39237,7 @@ function sendFinalDeliveryAdmin(token,rowIndex,payload){
       return ret;
     }
     if(ret.ok){
-      if(payload.dryRun!==true)ret.folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+      if(payload.dryRun!==true)shareFolderViewByLink_(ret.folder);
       retouchUrl=ret.url;
       retouchFolderName=ret.name;
       retouchPhotos=ret.photos;
