@@ -2342,6 +2342,7 @@ function handlePublicApiRequest_(route,method,e){
         if(action==='select-extra-unpaid') return jsonOk_(listUnpaidSelectExtrasAdmin(token,payload));
         if(action==='select-pickup-set') return jsonOk_(setSelectPickupTimeAdmin(token,payload));
         if(action==='select-extra-paid') return jsonOk_(markSelectExtraPaidAdmin(token,payload));
+        if(action==='select-extra-amount-set') return jsonOk_(setSelectExtraAmountForAgent_(token,payload||{}));   // 미결제 셀렉 추가금 금액 정정(인화장부+셀렉 행, 감사줄, 메일 없음)
         if(action==='select-print-order-get') return jsonOk_(getSelectPrintOrderForAgent_(token,payload||{}));
         if(action==='select-extra-unpay') return jsonOk_(unmarkSelectExtraPaidAdmin(token,payload||{}));
         if(action==='print-row-delete') return jsonOk_(deletePrintRowForAgent_(token,payload));
@@ -28313,6 +28314,52 @@ function markSelectExtraPaidAdmin(token,payload){
   sh.getRange(rowIdx,colMap['메모']+1).setValue(memoCell?memoCell+' '+stamp:stamp);
   return{ok:true,rowIndex:rowIdx,name:String(n.name||''),amount:rowAmount,
          payMethod:payMethod,statusWritten:raiseStatus?'완료':st};
+}
+
+/* 셀렉 추가금 금액 정정 — 미결제 건만(2026-10-18 노송희: '추가 보정 사진마다 시그니처 10×15 1장 포함'이 엔진에 없어 43.50→36).
+   인화장부 세션 행 금액과 사진셀렉 총추가금액을 같이 맞추고(추가인화금액은 차액만큼) 두 곳에 감사줄. 고객 메일 없음. */
+function setSelectExtraAmountForAgent_(token,payload){
+  assertAdmin_(token);
+  payload=payload||{};
+  const sid=String(payload.sessionId||'').trim();
+  if(!sid) throw new Error('sessionId 가 필요합니다.');
+  if(payload.amount==null||String(payload.amount).trim()===''||!isFinite(Number(payload.amount))) throw new Error('amount(새 추가금)가 필요합니다.');
+  const amount=roundCurrency_(Number(payload.amount));
+  if(amount<0) throw new Error('amount 는 0 이상이어야 합니다.');
+  const sheets=ensureSheets_();
+  const sh=sheets.printSheet;
+  const colMap=getPrintSheetColMap_(sh);
+  const rowIdx=findSelectPrintOrderRow_(sh,sid);
+  if(!rowIdx) throw new Error('해당 세션의 추가금 행을 찾을 수 없습니다: '+sid);
+  const rows=sh.getDataRange().getValues();
+  const n=normalizePrintRow_(rows[rowIdx-1],rowIdx,colMap);
+  const expectName=String(payload.expectName||'').trim();
+  if(expectName&&String(n.name||'').trim()!==expectName) throw new Error('행 고객명 불일치: 행="'+n.name+'" / 기대="'+expectName+'"');
+  const prev=roundCurrency_(Number(n.total)||0);
+  if(payload.expectAmount!=null&&String(payload.expectAmount).trim()!==''&&Math.abs(roundCurrency_(Number(payload.expectAmount)||0)-prev)>0.005)
+    throw new Error('행 금액 불일치: 행=€'+prev.toFixed(2)+' / 기대=€'+roundCurrency_(Number(payload.expectAmount)||0).toFixed(2));
+  if(!isPrintRowUnpaid_(n)) throw new Error('이미 수납된 추가금입니다 — 정정은 환불 경로로 처리하세요.');
+  const reason=String(payload.reason||'').trim();
+  const stamp='[금액정정 '+Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+'] '+formatEuroAmount_(prev)+'→'+formatEuroAmount_(amount)+'€'+(reason?' 사유: '+reason:'')+' (agent)';
+  if(payload.dryRun===true) return{ok:true,dryRun:true,printRowIndex:rowIdx,name:String(n.name||''),previousAmount:prev,newAmount:amount,auditLine:stamp};
+  sh.getRange(rowIdx,colMap['금액']+1).setValue(amount);
+  const memoCell=String(rows[rowIdx-1][colMap['메모']]||'').trim();
+  sh.getRange(rowIdx,colMap['메모']+1).setValue(memoCell?memoCell+' '+stamp:stamp);
+  let selectRowIndex=0;
+  const selSh=ensureSelectSheet_(sheets.ss);
+  const sRows=selSh.getDataRange().getValues();
+  for(let i=1;i<sRows.length;i++){
+    if(String(sRows[i][SELECT_COL['세션ID']]||'').trim()!==sid) continue;
+    selectRowIndex=i+1;
+    const tot=roundCurrency_(parseMoneyValue_(sRows[i][SELECT_COL['총추가금액']]));
+    const pr=roundCurrency_(parseMoneyValue_(sRows[i][SELECT_COL['추가인화금액']]));
+    selSh.getRange(selectRowIndex,SELECT_COL['총추가금액']+1).setValue(amount);
+    selSh.getRange(selectRowIndex,SELECT_COL['추가인화금액']+1).setValue(Math.max(0,roundCurrency_(pr+amount-tot)));
+    const note=String(sRows[i][SELECT_COL['어드민알림']]||'').trim();
+    selSh.getRange(selectRowIndex,SELECT_COL['어드민알림']+1).setValue(note?note+' '+stamp:stamp);
+    break;
+  }
+  return{ok:true,printRowIndex:rowIdx,selectRowIndex:selectRowIndex,name:String(n.name||''),previousAmount:prev,newAmount:amount,auditLine:stamp};
 }
 
 function normalizeSelectMailAddress_(value){
