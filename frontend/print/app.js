@@ -173,28 +173,29 @@ const COLLAGE_PRESETS=[
   {"key":"filmstrip-travel","name":"필름스트립 여행 (가로)","cat":"스크랩북·여행","orient":"landscape","bg":"#e8dcc0","tone":"warm","texture":"kraft","frame":{"on":false,"w":0,"color":"#fff","radius":0},"slots":[{"x":0.04,"y":0.3,"w":0.21,"h":0.4,"rot":0,"frame":"film"},{"x":0.27,"y":0.3,"w":0.21,"h":0.4,"rot":0,"frame":"film"},{"x":0.5,"y":0.3,"w":0.21,"h":0.4,"rot":0,"frame":"film"},{"x":0.73,"y":0.3,"w":0.21,"h":0.4,"rot":0,"frame":"film"},{"x":0.6,"y":0.72,"w":0.24,"h":0.22,"rot":5,"frame":"polaroid"}],"texts":[{"x":0.04,"y":0.07,"text":"summer trip","font":"caveat","size":9,"color":"#3a3128","align":"left"},{"x":0.04,"y":0.2,"text":"EAST COAST — 12.19 KM","font":"archivo","size":3,"color":"#5a4e3a","align":"left","tracking":0.32}],"decos":[{"type":"arrow","x":0.3,"y":0.15,"size":0.08,"rot":15,"color":"#2b2b2b"},{"type":"star","x":0.9,"y":0.1,"size":0.05,"color":"#e0a92e"},{"type":"dot","x":0.52,"y":0.1,"size":0.03,"color":"#e07a3a"}]},
   {"key":"minimal-zine","name":"미니멀 필름 (여백)","cat":"미니멀·카드","orient":"portrait","bg":"#f2efe7","tone":"film","texture":"paper","frame":{"on":false,"w":0,"color":"#fff","radius":0},"slots":[{"x":0.3,"y":0.32,"w":0.4,"h":0.42,"rot":0,"frame":"sketch"}],"texts":[{"x":0.5,"y":0.13,"text":"A Quiet Day","font":"fraunces","size":9,"color":"#33302b","align":"center"},{"x":0.5,"y":0.84,"text":"STUDIO MEAN — 2026","font":"archivo","size":3,"color":"#7a7264","align":"center","tracking":0.4}],"decos":[{"type":"rule","x":0.4,"y":0.815,"size":0.2,"ar":0.008,"rot":0,"color":"#bcb3a2"}]}
 ];
+// 인화지 선택은 헬퍼의 드라이버 Media Type 매핑용 라벨일 뿐, 픽셀은 건드리지 않는다(전부 "none").
+// 2026-10-16: 예전 saturate/contrast "근사 보정"은 드라이버 ICC·APF 와 중복돼 Photo+ 와 색이 달라지는 원인이었다. 색은 드라이버가 담당.
 const MEDIA = {
   "표준 (보정 없음)":"none",
-  "고급 광택지 Glossy":"saturate(1.06) contrast(1.04)",
-  "반광택 Luster/Satin":"saturate(1.03) contrast(1.02)",
-  "무광지 Matte":"saturate(1.12) contrast(1.08) brightness(1.01)",
-  "일반 용지 Plain":"saturate(1.15) contrast(1.10) brightness(1.02)",
-  "프리미엄 인화지":"saturate(1.04) contrast(1.03)",
-  // Epson 정품 용지 — 근사 보정 프리셋(진짜 색은 드라이버 ICC)
-  "Epson 프리미엄 광택 (Premium Glossy)":"saturate(1.05) contrast(1.04)",
-  "Epson 프리미엄 반광택 (Premium Semigloss)":"saturate(1.04) contrast(1.03)",
-  "Epson 프리미엄 러스터 (Premium Luster)":"saturate(1.03) contrast(1.03)",
-  "Epson 울트라 광택 (Ultra Premium Glossy)":"saturate(1.07) contrast(1.05)",
-  "Epson 포토 광택 (Photo Paper Glossy)":"saturate(1.08) contrast(1.05) brightness(1.01)",
-  "Epson 매트 헤비웨이트 (Matte Heavyweight)":"saturate(1.12) contrast(1.09) brightness(1.02)",
-  "Epson 아카이벌 매트 (Archival Matte)":"saturate(1.13) contrast(1.10) brightness(1.02)",
-  "Epson 벨벳 파인아트 (Velvet Fine Art)":"saturate(1.15) contrast(1.12) brightness(1.03)",
-  "Epson 수채화지 (Watercolor Radiant White)":"saturate(1.16) contrast(1.12) brightness(1.03)",
-  "Epson 메탈릭 광택 (Metallic Glossy)":"saturate(1.02) contrast(1.06)"
+  "고급 광택지 Glossy":"none",
+  "반광택 Luster/Satin":"none",
+  "무광지 Matte":"none",
+  "일반 용지 Plain":"none",
+  "프리미엄 인화지":"none",
+  "Epson 프리미엄 광택 (Premium Glossy)":"none",
+  "Epson 프리미엄 반광택 (Premium Semigloss)":"none",
+  "Epson 프리미엄 러스터 (Premium Luster)":"none",
+  "Epson 울트라 광택 (Ultra Premium Glossy)":"none",
+  "Epson 포토 광택 (Photo Paper Glossy)":"none",
+  "Epson 매트 헤비웨이트 (Matte Heavyweight)":"none",
+  "Epson 아카이벌 매트 (Archival Matte)":"none",
+  "Epson 벨벳 파인아트 (Velvet Fine Art)":"none",
+  "Epson 수채화지 (Watercolor Radiant White)":"none",
+  "Epson 메탈릭 광택 (Metallic Glossy)":"none",
 };
 const MEDIA_GROUPS = {
   "기본":["표준 (보정 없음)","고급 광택지 Glossy","반광택 Luster/Satin","무광지 Matte","일반 용지 Plain","프리미엄 인화지"],
-  "Epson 정품 용지 · 근사 프리셋":["Epson 프리미엄 광택 (Premium Glossy)","Epson 프리미엄 반광택 (Premium Semigloss)","Epson 프리미엄 러스터 (Premium Luster)","Epson 울트라 광택 (Ultra Premium Glossy)","Epson 포토 광택 (Photo Paper Glossy)","Epson 매트 헤비웨이트 (Matte Heavyweight)","Epson 아카이벌 매트 (Archival Matte)","Epson 벨벳 파인아트 (Velvet Fine Art)","Epson 수채화지 (Watercolor Radiant White)","Epson 메탈릭 광택 (Metallic Glossy)"]
+  "Epson 정품 용지":["Epson 프리미엄 광택 (Premium Glossy)","Epson 프리미엄 반광택 (Premium Semigloss)","Epson 프리미엄 러스터 (Premium Luster)","Epson 울트라 광택 (Ultra Premium Glossy)","Epson 포토 광택 (Photo Paper Glossy)","Epson 매트 헤비웨이트 (Matte Heavyweight)","Epson 아카이벌 매트 (Archival Matte)","Epson 벨벳 파인아트 (Velvet Fine Art)","Epson 수채화지 (Watercolor Radiant White)","Epson 메탈릭 광택 (Metallic Glossy)"]
 };
 // 각 Epson 용지 → 드라이버 Media Type 권장값(안내용)
 const EPSON_DRIVER = {
@@ -1626,7 +1627,7 @@ $("#orient").addEventListener("click",e=>{const b=e.target.closest("button");if(
 $("#borderless").addEventListener("change",e=>{state.borderless=e.target.checked;$("#marginWrap").style.display=e.target.checked?"none":"block";render();});
 $("#margin").addEventListener("input",e=>{state.margin=+e.target.value||0;render();});
 function updateMediaNote(){const n=$("#mediaNote");if(!n)return;const dv=EPSON_DRIVER[state.media];
-  n.innerHTML=dv?`Epson 드라이버에서 <b>Media Type: ${dv}</b> 선택 권장. 정확한 색은 드라이버의 <b>Epson ICC 프로파일</b>로 관리하세요(앱 프리셋은 화면 근사).`:"";}
+  n.innerHTML=dv?`자동출력 시 드라이버 <b>Media Type: ${dv}</b> 로 보냅니다. 색은 드라이버가 Photo+ 와 같은 설정(고화질·APF 자동보정·Vivid)으로 처리하고, 앱은 픽셀을 바꾸지 않습니다.`:"";}
 $("#media").addEventListener("change",e=>{state.media=e.target.value;updateMediaNote();applyPageSize();});
 $("#dpi").addEventListener("change",e=>{state.dpi=+e.target.value;renderProps();});
 $("#bg").addEventListener("input",e=>{state.bg=e.target.value;render();});
