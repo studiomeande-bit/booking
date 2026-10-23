@@ -12527,10 +12527,11 @@ function _guideSurveyKeys_(surveyKeys,babyType,ageGroup){
   return keys;
 }
 /* 돌상/백일상 무료 셋팅 포함 여부 — 성공 화면(buildDolTableGuideHtml)과 같은 규칙:
-   스튜디오·스냅 전 상품 포함, 프로필은 프로페셔널(pp)만. true/false, 판정 불가면 null. */
+   스튜디오 전 상품 포함, 프로필은 프로페셔널(pp)만, 스냅은 미포함(사장님 확인 2026-10-23). true/false, 판정 불가면 null. */
 function _dolIncluded_(itemGroup,product,productName){
   const g=String(itemGroup||'').trim();
-  if(g==='stud'||g==='snap') return true;
+  if(g==='stud') return true;
+  if(g==='snap') return false;
   if(g!=='prof') return null;
   const id=String((product&&product.id)||'').trim();
   if(id==='pp') return true;
@@ -12547,14 +12548,14 @@ function getGuideHtml_(itemGroup,lang,surveyKeys,quote){
   const pEn=String((quote&&quote.product&&quote.product.nameEn)||pKo).trim();
   const pDe=String((quote&&quote.product&&quote.product.nameDe)||pKo).trim();
   const dolKo=dolInc===false
-    ? `• ⚠️ 돌상/백일상 셋팅은 선택하신 상품${pKo?'('+pKo+')':''}에는 <b>포함되지 않습니다</b> — 프로필 프로페셔널(€130) 이상에서 무료로 제공됩니다. 원하시면 회신으로 상품 변경을 요청해 주세요`
-    : `• ⭐ 돌상/백일상 무료 셋팅 (기본 구성 · 스튜디오/스냅 전 상품, 프로필은 프로페셔널 €130 이상)`;
+    ? `• ⚠️ 돌상/백일상 셋팅은 선택하신 상품${pKo?'('+pKo+')':''}에는 <b>포함되지 않습니다</b> — 스튜디오 상품과 프로필 프로페셔널(€130)에서 무료로 제공됩니다. 원하시면 회신으로 상품 변경을 요청해 주세요`
+    : `• ⭐ 돌상/백일상 무료 셋팅 (기본 구성 · 스튜디오 전 상품, 프로필은 프로페셔널 €130)`;
   const dolEn=dolInc===false
-    ? `• ⚠️ The dol / 100-day table is <b>not included</b> in your selected product${pEn?' ('+pEn+')':''} — it is free from Profile Professional (€130) and up. Reply to this email if you would like to switch`
-    : `• ⭐ Free dol / 100-day table (basic set · all studio/snap products, Profile from Professional €130)`;
+    ? `• ⚠️ The dol / 100-day table is <b>not included</b> in your selected product${pEn?' ('+pEn+')':''} — it is free with Studio packages and Profile Professional (€130). Reply to this email if you would like to switch`
+    : `• ⭐ Free dol / 100-day table (basic set · all studio products, Profile Professional €130)`;
   const dolDe=dolInc===false
-    ? `• ⚠️ Der Dol-/100-Tage-Tisch ist in Ihrem gewählten Produkt${pDe?' ('+pDe+')':''} <b>nicht enthalten</b> — kostenlos ab Profil Professional (€130). Antworten Sie auf diese E-Mail, wenn Sie wechseln möchten`
-    : `• ⭐ Kostenloser Dol-/100-Tage-Tisch (Basis-Set · alle Studio-/Snap-Produkte, Profil ab Professional €130)`;
+    ? `• ⚠️ Der Dol-/100-Tage-Tisch ist in Ihrem gewählten Produkt${pDe?' ('+pDe+')':''} <b>nicht enthalten</b> — kostenlos in den Studio-Paketen und in Profil Professional (€130). Antworten Sie auf diese E-Mail, wenn Sie wechseln möchten`
+    : `• ⭐ Kostenloser Dol-/100-Tage-Tisch (Basis-Set · alle Studio-Produkte, Profil Professional €130)`;
   if(itemGroup==='pass'){
     if(L==='en')return isBaby
       ? `<b>📸 Infant Passport / Visa Photo Guide</b><br>• Infants are photographed lying down on a bright plain background.<br>• Eyes should stay open and no caregiver hands, clothes, or shadows may appear in the frame.<br>• White outfits, hats, glasses, and hair accessories are not recommended.<br>• Korean passport and German visa standards are handled in the same shoot.`
@@ -35627,9 +35628,9 @@ function sendDolRecommendationEmails_(){
       de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>프로필 프로페셔널(€130) 이상</b> 상품에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>스튜디오 상품과 프로필 프로페셔널(€130)</b>에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>With <b>Studio packages and Profile Professional (€130)</b>, the birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>In den <b>Studio-Paketen und in Profil Professional (€130)</b> beinhaltet das Geburtstagsshooting ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));

@@ -7181,21 +7181,21 @@ function resetBookingFlow() {
 // 독일어 성공 가이드 — 그룹별 핵심 안내 (한/영 상세 가이드의 컴팩트 독일어판)
 /* 돌상·백일상 + 아기 한복 안내. ko/en/de 한 곳에서 만든다 — 예전엔 한국어만 상세하고
    영어는 한 줄, 독일어는 아예 없었다(독일어 성공화면이 별도 함수라 이 블록이 안 붙었다).
-   무료 범위: 돌상은 프로필 프로페셔널(€130)부터, 스튜디오/스냅은 전 상품.
+   무료 범위: 스튜디오 전 상품 + 프로필 프로페셔널(€130). 스냅·프로필 Basic/Business 는 미포함(사장님 확인 2026-10-23).
    한복은 아기 촬영 전부 무료 대여지만 **스튜디오 내 착용만** — 외부 반출이 안 되므로
    야외·홈 스냅은 고객이 직접 준비해야 한다. */
 function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
   const g = String(product?.g || '');
   if (!hasBabyBirthday || !(g === 'stud' || g === 'snap' || g === 'prof')) return '';
-  const dolFree = g !== 'prof' || product.id === 'pp';
+  const dolFree = g === 'stud' || product.id === 'pp';
   const hanbokFree = g === 'stud' || g === 'prof';   // 스튜디오 촬영에서만 대여 가능
   const L = lang === 'de' ? 'de' : lang === 'en' ? 'en' : 'ko';
   const T = {
     ko: {
       title: dolFree ? '🎂 돌상/백일상 무료 셋팅 안내' : '🎂 돌상/백일상 셋팅 안내',
-      lead: (dolFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>프로필 프로페셔널(€130) 이상</b> 상품부터 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 프로페셔널 이상으로 예약해 주세요.') + ' 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.',
+      lead: (dolFree ? '돌상/백일상은 기본 구성으로 무료 셋팅해 드립니다.' : '무료 돌상/백일상 셋팅은 <b>스튜디오 상품과 프로필 프로페셔널(€130)</b>에서 제공됩니다. 현재 선택하신 상품에는 포함되지 않으니, 돌상/백일상을 원하시면 스튜디오 상품이나 프로필 프로페셔널로 예약해 주세요.') + ' 기본 셋팅은 촬영용 연출 목적이며 음식 제공이나 식사 형태의 돌잔치는 포함되지 않습니다.',
       incT: '포함 항목',
-      inc: ['돌상 테이블 기본 구성 및 소품 연출', '배경과 톤에 맞춘 기본 배치']
+      inc: (dolFree ? ['돌상 테이블 기본 구성 및 소품 연출', '배경과 톤에 맞춘 기본 배치'] : [])
         .concat(hanbokFree ? ['<b>아기 한복 무료 대여</b> — 스튜디오 안에서 착용하며, 외부 반출은 어렵습니다'] : []),
       brgT: '준비해 오시면 좋은 항목',
       brg: (hanbokFree
@@ -7207,9 +7207,9 @@ function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
     },
     en: {
       title: dolFree ? '🎂 Dol / 100-Day Table — included' : '🎂 Dol / 100-Day Table Setup',
-      lead: (dolFree ? 'A dol / 100-day table setup is included at no extra cost.' : 'The free dol / 100-day table setup is included from <b>Profile Professional (€130)</b> upwards. It is not part of the package you selected — please book Professional or above if you would like it.') + ' The setup is styled for photography; catering or a full birthday banquet is not included.',
+      lead: (dolFree ? 'A dol / 100-day table setup is included at no extra cost.' : 'The free dol / 100-day table setup is included with <b>Studio packages and Profile Professional (€130)</b>. It is not part of the package you selected — please book a Studio package or Profile Professional if you would like it.') + ' The setup is styled for photography; catering or a full birthday banquet is not included.',
       incT: 'Included',
-      inc: ['Table setup with basic props and styling', 'Arrangement matched to the backdrop and tone']
+      inc: (dolFree ? ['Table setup with basic props and styling', 'Arrangement matched to the backdrop and tone'] : [])
         .concat(hanbokFree ? ['<b>Baby hanbok rental, free of charge</b> — worn at the studio; it cannot be taken off site'] : []),
       brgT: 'Good to bring',
       brg: (hanbokFree
@@ -7221,9 +7221,9 @@ function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
     },
     de: {
       title: dolFree ? '🎂 Dol- / 100-Tage-Tisch — inklusive' : '🎂 Dol- / 100-Tage-Tisch',
-      lead: (dolFree ? 'Die Dekoration für den Dol- bzw. 100-Tage-Tisch ist ohne Aufpreis enthalten.' : 'Der kostenlose Dol- / 100-Tage-Tisch ist ab <b>Profil Professional (€130)</b> enthalten. In Ihrem gewählten Paket ist er nicht dabei — bitte buchen Sie Professional oder höher, wenn Sie ihn möchten.') + ' Die Dekoration dient der Aufnahme; Catering oder ein vollständiges Festessen sind nicht enthalten.',
+      lead: (dolFree ? 'Die Dekoration für den Dol- bzw. 100-Tage-Tisch ist ohne Aufpreis enthalten.' : 'Der kostenlose Dol- / 100-Tage-Tisch ist in den <b>Studio-Paketen und in Profil Professional (€130)</b> enthalten. In Ihrem gewählten Paket ist er nicht dabei — bitte buchen Sie ein Studio-Paket oder Profil Professional, wenn Sie ihn möchten.') + ' Die Dekoration dient der Aufnahme; Catering oder ein vollständiges Festessen sind nicht enthalten.',
       incT: 'Enthalten',
-      inc: ['Tischdekoration mit Grundausstattung und Requisiten', 'Abstimmung auf Hintergrund und Bildton']
+      inc: (dolFree ? ['Tischdekoration mit Grundausstattung und Requisiten', 'Abstimmung auf Hintergrund und Bildton'] : [])
         .concat(hanbokFree ? ['<b>Kostenloser Hanbok-Verleih für das Kind</b> — Tragen im Studio; eine Mitnahme nach außen ist nicht möglich'] : []),
       brgT: 'Bitte mitbringen',
       brg: (hanbokFree
@@ -7240,7 +7240,7 @@ function buildDolTableGuideHtml(product, lang, hasBabyBirthday) {
       <h4 class="result-guide-title">${T.title}</h4>
       <div class="result-guide-body">
         <p>${T.lead}</p>
-        <h5>${T.incT}</h5>${ul(T.inc)}
+        ${T.inc.length ? `<h5>${T.incT}</h5>${ul(T.inc)}` : ''}
         <h5>${T.brgT}</h5>${ul(T.brg)}
         <h5>${T.noteT}</h5>${ul(T.note)}
       </div>
@@ -7333,14 +7333,15 @@ function getPartnersForSuccess(payload) {
 /* 상품 상세의 한 줄 안내 — "드레스·메이크업이 포함인가요?" 문의를 줄이는 목적.
    여기는 아직 **결정 단계**라 링크를 걸지 않는다(예약을 방해하지 않는다). 실제 소개는
    예약을 마친 뒤 성공 화면과 메일에서 한다. */
-/* 프로필 Basic/Business 상세의 한 줄 — 돌상/백일상 셋팅은 프로페셔널부터라는 것을 **고르는 단계**에서 알린다.
-   성공 화면·메일과 같은 규칙(사장님 확인 2026-09-05). 상품설정 시트 문구는 안 건드린다. */
+/* 프로필 Basic/Business·스냅 상세의 한 줄 — 무료 돌상/백일상은 스튜디오 상품과 프로페셔널만이라는 것을 **고르는 단계**에서 알린다.
+   성공 화면·메일과 같은 규칙(사장님 확인 2026-09-05, 스냅 제외 2026-10-23). 상품설정 시트 문구는 안 건드린다. */
 function getDolHintHtml(product) {
-  if (!product || String(product.g || '') !== 'prof' || product.id === 'pp') return '';
+  const g = String(product?.g || '');
+  if (!product || !(g === 'snap' || (g === 'prof' && product.id !== 'pp'))) return '';
   const copy = {
-    ko: '돌상/백일상 셋팅은 프로필 프로페셔널(€130)부터 무료로 제공됩니다. 이 상품에는 포함되지 않습니다.',
-    en: 'The dol / 100-day table is included free from Profile Professional (€130) and up. It is not included in this product.',
-    de: 'Der Dol-/100-Tage-Tisch ist ab Profil Professional (€130) kostenlos enthalten. In diesem Produkt ist er nicht enthalten.'
+    ko: '돌상/백일상 셋팅은 스튜디오 상품과 프로필 프로페셔널(€130)에서 무료로 제공됩니다. 이 상품에는 포함되지 않습니다.',
+    en: 'The dol / 100-day table is included free with Studio packages and Profile Professional (€130). It is not included in this product.',
+    de: 'Der Dol-/100-Tage-Tisch ist in den Studio-Paketen und in Profil Professional (€130) kostenlos enthalten. In diesem Produkt ist er nicht enthalten.'
   };
   const lang = state.lang === 'en' || state.lang === 'de' ? state.lang : 'ko';
   return `<div class="detail-copy partner-hint">${escapeHtml(copy[lang])}</div>`;
