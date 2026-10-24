@@ -20627,6 +20627,12 @@ function updateBookingAdmin(token,rIdx,d){
     ? d.optionKeys.map(function(k){return String(k||'').trim();}).filter(function(k){return ['dog','bg','outfit','express'].indexOf(k)!==-1;})   /* express 빠지면 어드민 저장이 급행비를 조용히 지운다 */
     : parseBookingOptionKeysFromRow_(rowBefore);
   const ageGroup=String(d.ageGroup||parseBookingAgeGroupFromRow_(rowBefore)||'adult').trim()||'adult';
+  /* 여권 콤보(프로필·스튜디오에 붙는 여권촬영) — 수정 모달이 보내면 그 값, 아니면 행의 [여권콤보:N명]/추가항목 표기.
+     전엔 견적·세부내역 재생성에 콤보가 빠져, 어드민 저장만 해도 세부내역의 '여권 콤보' 줄이 사라졌다. */
+  const comboInRow=String(rowBefore[BOOKING_COL['요청사항']]||'').match(/\[여권콤보:\s*(\d+)\s*명\]/)
+    ||String(rowBefore[BOOKING_COL['추가항목']]||'').match(/여권\s?콤보\s*[:=]\s*(\d+)\s*명/);
+  const passAddon=d.passAddon!==undefined?!!d.passAddon:!!comboInRow;
+  const passAddonPeople=Math.max(1,Math.min(10,parseInt(d.passAddon!==undefined?d.passAddonPeople:(comboInRow&&comboInRow[1]),10)||1));
   const peopleValue=Math.max(1,parseInt(d.people||rowBefore[BOOKING_COL['인원']]||1,10)||1);
   const itemId=String(d.itemId||'').trim();
   const dateForQuote=String(d.date||parseDateSafe_(rowBefore[BOOKING_COL['예약일시']]).str.slice(0,10)||'').slice(0,10);
@@ -20641,6 +20647,8 @@ function updateBookingAdmin(token,rIdx,d){
         date:dateForQuote,
         optionKeys:cleanOptionKeys,
         ageGroup:ageGroup,
+        passAddon:passAddon,
+        passAddonPeople:passAddonPeople,
         marketing:String(d.marketingConsent||rowBefore[BOOKING_COL['마케팅동의']]||'').trim()==='Y',
         isReturn:!!d.isReturn
       });
@@ -20681,11 +20689,18 @@ function updateBookingAdmin(token,rIdx,d){
     if(ageDiscountLabel) optionParts.push('할인: '+ageDiscountLabel);
     w(BOOKING_COL['옵션']+1, optionParts.join(' | '));
   }
-  const memoToSave=d.location!==undefined
+  let memoToSave=d.location!==undefined
     ? (nextLocation&&!isStudioLocation_(nextLocation)
       ? ('[촬영장소:'+nextLocation+'] '+String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'')).trim()
       : String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'').trim())
     : d.memo;
+  // 콤보 근거 토큰 — 캘린더 길이(getBookingPassportComboDurationMinFromRow_)·인보이스 품목이 이 토큰을 읽는다
+  if(d.passAddon!==undefined){
+    const m=String((memoToSave==null?rowBefore[BOOKING_COL['요청사항']]:memoToSave)||'');
+    memoToSave=passAddon
+      ?(/\[여권콤보:\s*\d+\s*명\]/.test(m)?rewriteBookingPassComboLabels_(m,passAddonPeople):[m.trim(),'[여권콤보:'+passAddonPeople+'명]'].filter(Boolean).join(' '))
+      :m.replace(/\s*\[여권콤보:\s*\d+\s*명\]/g,'').trim();
+  }
   /* 완납 뒤 금액 편집은 과수납·추가청구를 어디에도 남기지 않는다(감사 2026-09-20) — force 없이는 거부.
      잔금 셀의 '|수단|날짜' 꼬리는 보존한다(booking-set-amount 와 같은 규칙 — 2026-08-20 4건에서 실제로 지워졌다). */
   if(String(rowBefore[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'&&d.price!==undefined&&String(d.price).trim()!==''&&!d.force
@@ -20709,7 +20724,11 @@ function updateBookingAdmin(token,rIdx,d){
   }
   w(14,d.payMethod); w(16,memoToSave); w(18,d.depPayMethod);
   let extraItemToSave=String(d.extraItem||'').replace(/\n?\[예약 세부내역\][\s\S]*$/,'').trim();
-  if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined){
+  if(d.passAddon!==undefined){
+    extraItemToSave=passAddon?rewriteBookingPassComboLabels_(extraItemToSave,passAddonPeople)
+      :extraItemToSave.replace(/\s*\|?\s*여권\s?콤보\s*[:=]\s*\d+\s*명\s*\/\s*추가\s*\d+\s*분/g,'').replace(/^\s*\|\s*/,'').trim();
+  }
+  if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined||d.passAddon!==undefined){
     const productName=String(d.product||rowBefore[BOOKING_COL['상품']]||'').trim();
     const quoteForDetails=Object.assign({},quoteForEdit||{},{
       itemGroup:String(d.itemGroup||rowBefore[BOOKING_COL['촬영종류']]||'').trim(),
@@ -33624,6 +33643,8 @@ function buildInvoicePricingPreview_(payload){
     businessAddonKeys:(payload.businessAddonKeys||[]).filter(Boolean),
     marketing:!!payload.marketing,
     isReturn:!!payload.isReturn,
+    passAddon:!!payload.passAddon,
+    passAddonPeople:payload.passAddonPeople,
     // 5인 이상 가족할인은 법인 송장 건에서 제외된다(calculateQuote_) — 안 넘기면 기업 여권 건이 10% 싸게 미리보기된다
     businessInvoiceNeeded:payload.businessInvoiceNeeded
   };

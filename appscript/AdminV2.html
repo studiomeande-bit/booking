@@ -2962,6 +2962,10 @@ label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:5
         <div class="form-group"><label>인원</label><input type="number" id="edit_people" min="1" step="1" oninput="markEditPricingDirty()"></div>
         <div class="form-group"><label>촬영 대상</label><select id="edit_ageGroup" onchange="markEditPricingDirty()"><option value="adult">일반</option><option value="kids">키즈</option><option value="senior">시니어</option><option value="baby">영유아</option></select></div>
       </div>
+      <div class="form-row" id="edit_passAddonRow">
+        <div class="form-group"><label style="display:flex;align-items:center;gap:8px;margin-top:28px;"><input type="checkbox" id="edit_passAddon" style="width:auto;margin:0;" onchange="markEditPricingDirty()"> 여권 콤보 추가촬영</label></div>
+        <div class="form-group"><label>여권 콤보 인원</label><input type="number" id="edit_passAddonPeople" min="1" max="10" value="1" oninput="markEditPricingDirty()"></div>
+      </div>
       <div class="form-group" id="edit_optionKeysWrap"><label>추가 옵션</label><div id="edit_optionKeys" style="display:flex;gap:8px;flex-wrap:wrap;"></div></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#475569;margin:0 0 10px;"><input type="checkbox" id="edit_isReturn" style="width:auto;margin:0;" onchange="markEditPricingDirty()"> 재촬영 할인 반영</label>
       <div id="edit_productMeta" class="modal-note" style="margin-bottom:10px;">상품을 선택하면 기본 가격과 소요 시간을 확인할 수 있습니다.</div>
@@ -6732,6 +6736,13 @@ function renderEditOptionKeys(keys){
 function getEditOptionKeys(){
   return Array.from(document.querySelectorAll('.edit-option-key:checked')).map(el=>el.value).filter(Boolean);
 }
+/* 여권 콤보는 프로필·스튜디오만(엔진 규칙). 칸이 숨겨진 상품이면 undefined — 서버가 행 값을 그대로 둔다 */
+function getEditPassAddon(){
+  const row=document.getElementById('edit_passAddonRow');
+  if(!row||row.style.display==='none') return {};
+  return {passAddon:!!document.getElementById('edit_passAddon')?.checked,
+    passAddonPeople:Math.min(10,Math.max(1,parseInt(document.getElementById('edit_passAddonPeople')?.value,10)||1))};
+}
 function getEditAgeGroup(){
   return String(document.getElementById('edit_ageGroup')?.value||'adult').trim()||'adult';
 }
@@ -6745,6 +6756,7 @@ function getEditPricingPayload(){
     date,
     optionKeys:getEditOptionKeys(),
     ageGroup:getEditAgeGroup(),
+    ...getEditPassAddon(),
     isReturn:!!document.getElementById('edit_isReturn')?.checked,
     marketing:String(editCurrentBooking&&editCurrentBooking.marketingConsent||'')==='Y',
     /* 여권은 1인당 국가 구성(요청사항 토큰 / 옵션의 `국가 N개/인`)이 금액을 바꾸고, 법인 송장 건은 가족할인 제외다.
@@ -6781,6 +6793,11 @@ function calculateProductPresetPrice(product, people){
   return {price:total,deposit,balance:Math.max(0,total-deposit)};
 }
 function updateEditProductMeta(){
+  const comboRow=document.getElementById('edit_passAddonRow');
+  if(comboRow){
+    const g=String(document.getElementById('edit_itemGroup')?.value||'');
+    comboRow.style.display=(g==='prof'||g==='stud')?'':'none';
+  }
   const meta=document.getElementById('edit_productMeta');
   if(!meta) return;
   const product=getSelectedEditProductMeta();
@@ -7070,6 +7087,11 @@ function openEdit(rowIndex){
   populateEditProductOptions(c.itemGroup||'', c.product||'');
   if(document.getElementById('edit_ageGroup')) document.getElementById('edit_ageGroup').value=c.ageGroup||'adult';
   if(document.getElementById('edit_isReturn')) document.getElementById('edit_isReturn').checked=!!c.isReturn;
+  {
+    const combo=String(c.memo||'').match(/\[여권콤보:\s*(\d+)\s*명\]/)||String(c.extraItem||'').match(/여권\s?콤보\s*[:=]\s*(\d+)\s*명/);
+    if(document.getElementById('edit_passAddon')) document.getElementById('edit_passAddon').checked=!!combo;
+    if(document.getElementById('edit_passAddonPeople')) document.getElementById('edit_passAddonPeople').value=combo?combo[1]:'1';
+  }
   renderEditOptionKeys(c.optionKeys||c.optionStr||'');
   updateEditProductMeta();
   // 변경요청 알림
@@ -7161,6 +7183,7 @@ function saveEdit(){
   d.people=Math.max(1,parseInt(document.getElementById('edit_people')?.value||'1',10)||1);
   d.optionKeys=getEditOptionKeys();
   d.ageGroup=getEditAgeGroup();
+  Object.assign(d,getEditPassAddon());
   d.isReturn=!!document.getElementById('edit_isReturn')?.checked;
   d.bookingType=getBookingTypeToggle('edit_bookingType');
   d.marketingConsent=String(editCurrentBooking&&editCurrentBooking.marketingConsent||'');

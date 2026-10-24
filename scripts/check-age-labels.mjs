@@ -34,4 +34,10 @@ t('dog|bg | 국가 2개/인', 'dog|bg | 국가 2개/인');
 
 assert.equal(f.rewriteBookingPassComboLabels_('[여권콤보:4명] x | 여권콤보: 4명 / 추가 40분\n여권 콤보: 4명 / 추가 40분', 2),
   '[여권콤보:2명] x | 여권콤보: 2명 / 추가 20분\n여권 콤보: 2명 / 추가 20분');
-console.log('✅ check-age-labels: 명시 표기 우선 · 표기/여권콤보 갈아끼우기');
+// 어드민 수정 모달 여권 콤보(10/24): 견적·세부내역에 콤보가 실려야 저장 때 '여권 콤보' 줄이 안 사라진다
+const upd = pick('updateBookingAdmin');
+assert(/passAddon:passAddon,\s*passAddonPeople:passAddonPeople/.test(upd), 'updateBookingAdmin 견적에 passAddon 누락');
+assert(/d\.passAddon!==undefined\)\{/.test(upd) && upd.includes("'[여권콤보:'+passAddonPeople+'명]'"), '콤보 토큰 쓰기 누락');
+const admin = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'appscript', 'AdminV2.html'), 'utf8');
+assert(admin.includes('id="edit_passAddon"') && admin.includes('Object.assign(d,getEditPassAddon())'), '수정 모달 콤보 칸/저장 누락');
+console.log('✅ check-age-labels: 명시 표기 우선 · 표기/여권콤보 갈아끼우기 · 수정 모달 콤보');
