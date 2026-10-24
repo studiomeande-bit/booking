@@ -17549,8 +17549,14 @@ function changeBookingProductForAgent_(token,payload){
       return (cs||[]).some(function(c){return c&&c!=='OTHER';});});
     if(token&&(parsed.found||hasReal)) curMemo=parsed.found?curMemo.replace(parsed.raw,token):[token,curMemo].filter(Boolean).join('\n');
   }
+  if(passMarker) curMemo=rewriteBookingPassComboLabels_(curMemo,passAddonPeople);
   const memoParts=[curMemo];
   if(passMarker && curMemo.indexOf('여권콤보')===-1) memoParts.push(passMarker);
+  // 소요시간은 추가항목 '여권콤보: N명 / 추가 M분' 을 먼저 읽는다 — 같이 갈아끼우지 않으면 캘린더가 옛 인원 길이로 남는다(박민아 10/24)
+  if(passMarker&&BOOKING_COL['추가항목']!=null){
+    const ex=String(row[BOOKING_COL['추가항목']]||''),ex2=rewriteBookingPassComboLabels_(ex,passAddonPeople);
+    if(ex2!==ex) sh.getRange(rIdx,BOOKING_COL['추가항목']+1).setValue(ex2);
+  }
   memoParts.push(auditLine);
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memoParts.filter(Boolean).join('\n'));
 
@@ -18240,10 +18246,36 @@ function parseBookingAgeGroupFromRow_(row){
     String(row[BOOKING_COL['추가항목']]||''),
     String(row[BOOKING_COL['요청사항']]||'')
   ].join(' | ');
-  if(/ageGroup\s*[:=]\s*senior|촬영대상\s*[:=]\s*시니어|시니어/.test(text)) return 'senior';
-  if(/ageGroup\s*[:=]\s*kids|촬영대상\s*[:=]\s*키즈|키즈/.test(text)) return 'kids';
-  if(/ageGroup\s*[:=]\s*baby|촬영대상\s*[:=]\s*영유아|영유아|아기|백일|돌촬영/.test(text)) return 'baby';
+  if(/ageGroup\s*[:=]\s*senior|촬영대상\s*[:=]\s*시니어/.test(text)) return 'senior';
+  if(/ageGroup\s*[:=]\s*kids|촬영대상\s*[:=]\s*키즈/.test(text)) return 'kids';
+  if(/ageGroup\s*[:=]\s*baby|촬영대상\s*[:=]\s*영유아/.test(text)) return 'baby';
+  /* 명시 표기가 없을 때만 낱말로 추정 — 고객 메모 "영유아가 없어 키즈로 선택했는데" 가 촬영대상 표기를 이기면
+     영유아로 고친 예약이 재견적마다 키즈 할인으로 되돌아간다(박민아 2026-10-24). */
+  if(/시니어/.test(text)) return 'senior';
+  if(/키즈/.test(text)) return 'kids';
+  if(/영유아|아기|백일|돌촬영/.test(text)) return 'baby';
   return 'adult';
+}
+
+/* 예약행 표기 갱신 — 옵션·추가항목·요청사항 문자열 안의 연령·여권콤보 표기를 새 값으로 바꾼다(없으면 그대로).
+   ageGroup: 'baby'|'kids'|'senior'|'adult'(adult 는 표기 삭제). 연령 할인 문구는 새 연령 기준으로 지운다. */
+function rewriteBookingAgeLabels_(text,ageGroup){
+  const label=getBookingAgeGroupLabel_(ageGroup);
+  let s=String(text||'');
+  s=s.replace(/촬영대상\s*([:=])\s*(키즈|시니어|영유아)/g,function(m,sep){return label?'촬영대상'+(sep==='='?'=':': ')+label:'';});
+  if(ageGroup!=='kids') s=s.replace(/키즈 할인 -[\d.,]+€ 적용/g,'');
+  if(ageGroup!=='senior') s=s.replace(/시니어[^|\n]*할인[^|\n]*적용/g,'');
+  // 비워진 칸 정리: 요약줄 '할인: '(단일 항목)은 항목째, 세부내역 '할인/조정: | 재촬영…'은 남은 할인만 남긴다
+  return s.replace(/할인\/조정:\s*\|\s*/g,'할인/조정: ').replace(/^할인\/조정:\s*$\n?/gm,'')
+    .replace(/(^|\s*\|\s*)할인:\s*(?=\s*\||\n|$)/gm,'$1').replace(/^\s*\|\s*/gm,'')
+    .replace(/(\s*\|\s*)+(?=\n|$)/g,'').replace(/(\s*\|\s*){2,}/g,' | ');
+}
+
+function rewriteBookingPassComboLabels_(text,people){
+  const n=Math.max(1,parseInt(people,10)||1),dur=getPassportComboDurationMin_(n);
+  return String(text||'')
+    .replace(/\[여권콤보:\s*\d+\s*명\]/g,'[여권콤보:'+n+'명]')
+    .replace(/(여권\s?콤보\s*[:=]\s*)\d+\s*명\s*\/\s*추가\s*\d+\s*분/g,'$1'+n+'명 / 추가 '+dur+'분');
 }
 
 function getDashboardData_(productsArg){
@@ -20764,7 +20796,8 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','payMethod','notify'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','payMethod','notify','ageGroup'];
+  if(d.ageGroup!==undefined&&['baby','kids','senior','adult'].indexOf(String(d.ageGroup))===-1) throw new Error("ageGroup 은 baby/kids/senior/adult 중 하나입니다.");
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   /* 결제수단 라벨 정정(수납 기록 아님) — 수기등록 기본값 오류를 고치는 용도라 '미결제'/'계좌이체'만.
@@ -20809,6 +20842,18 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   // 빈 인원(값 없음)일 땐 시드하지 않아 1로 바뀌는 부작용을 피한다.
   if(merged.people===undefined && row[9]!=='' && row[9]!=null) merged.people=row[9];
   const res=updateBookingAdmin(token,rIdx,merged);
+  // 촬영대상 표기 정정 — 행 재작성 **후에** 옵션·추가항목 문자열만 고친다(금액 불변, 감사줄은 결제메모)
+  if(d.ageGroup!==undefined){
+    ['옵션','추가항목'].forEach(function(col){
+      if(BOOKING_COL[col]==null) return;
+      const cell=sh.getRange(rIdx,BOOKING_COL[col]+1),v=String(cell.getValue()||''),nv=rewriteBookingAgeLabels_(v,String(d.ageGroup));
+      if(nv!==v) cell.setValue(nv);
+    });
+    if(BOOKING_COL['결제메모']!=null){
+      const pm=sh.getRange(rIdx,BOOKING_COL['결제메모']+1);
+      pm.setValue([String(pm.getValue()||'').trim(),'[정정] 촬영대상→'+(getBookingAgeGroupLabel_(d.ageGroup)||'성인')+' '+Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+' (booking-update)'].filter(Boolean).join('\n'));
+    }
+  }
   // 부가세 모드는 updateBookingAdmin 이 모르는 칸이라 행 재작성 **후에** 직접 쓴다(선반영 시 덮어써짐)
   if(d.vatMode!==undefined&&BOOKING_COL['부가세모드']!=null){
     sh.getRange(rIdx,BOOKING_COL['부가세모드']+1).setValue(normalizeVatMode_(d.vatMode));
