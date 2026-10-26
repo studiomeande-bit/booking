@@ -4668,6 +4668,20 @@ function _leadSuccessPath_(lang){
   return '/contact/success/';
 }
 
+/* 홈페이지 문의 접수확인에 예약 링크(사장님 2026-10-26 "기본적으로 접수답변 + 예약링크 안내").
+   개인 촬영은 대부분 예약 페이지에서 바로 날짜·상품을 고를 수 있어 답장을 기다릴 필요가 없다. 링크는 문의 언어로 연다. */
+function _leadBookingLinkHtml_(lang){
+  const L=_leadLanguage_(lang);
+  const url=getBookingSiteBaseUrl_()+'/?lang='+L;
+  const t={
+    ko:{lead:'원하시는 날짜와 상품이 정해져 있다면, 답변을 기다리지 않고 온라인 예약 페이지에서 바로 예약하실 수 있습니다. 예약 가능한 시간이 실시간으로 표시됩니다.',btn:'온라인 예약하기'},
+    en:{lead:'If you already know the date and package, you can book right away on our online booking page without waiting for our reply. Available times are shown live.',btn:'Book online'},
+    de:{lead:'Wenn Termin und Paket schon feststehen, können Sie direkt auf unserer Online-Buchungsseite buchen, ohne auf unsere Antwort zu warten. Freie Zeiten werden live angezeigt.',btn:'Online buchen'}
+  }[L];
+  return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:4px 0 6px;">'+escapeHtml_(t.lead)+
+    '<div style="margin-top:12px;"><a href="'+escapeHtml_(url)+'" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:8px;">'+escapeHtml_(t.btn)+' →</a></div>'+
+    '<div style="margin-top:8px;font-size:12px;color:#64748b;">'+escapeHtml_(url.replace(/\/\?lang=.*$/,''))+'</div></div>';
+}
 function _sendPortfolioLeadCustomerEmail_(lead){
   const L=_leadLanguage_(lead.lang);
   const subject={
@@ -4676,9 +4690,9 @@ function _sendPortfolioLeadCustomerEmail_(lead){
     de:'[Studio mean] Ihre Anfrage ist angekommen'
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
-    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
-    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`
+    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_leadBookingLinkHtml_('ko')}${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
+    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_leadBookingLinkHtml_('en')}${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
+    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_leadBookingLinkHtml_('de')}${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`
   };
   try{
     sendTrackedEmail_({to:lead.email,subject:subject[L],htmlBody:body[L]},{public:true,
