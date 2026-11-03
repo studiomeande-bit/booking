@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-04-28T21:20:20.660583+00:00",
-  "total": 171,
+  "total": 176,
   "dedupedRemoved": 8,
   "categories": [
     {
@@ -33,6 +33,56 @@
     }
   ],
   "photos": [
+    {
+      "id": "sm_261014_b2f07f_01",
+      "name": "sm_261014_b2f07f_01.jpg",
+      "category": "portrait",
+      "categoryLabel": "Portrait",
+      "folderName": "프로필",
+      "timestamp": 1792182629793,
+      "w": 960,
+      "h": 1440
+    },
+    {
+      "id": "sm_261014_b2f07f_02",
+      "name": "sm_261014_b2f07f_02.jpg",
+      "category": "portrait",
+      "categoryLabel": "Portrait",
+      "folderName": "프로필",
+      "timestamp": 1792182556908,
+      "w": 960,
+      "h": 1440
+    },
+    {
+      "id": "sm_261014_b2f07f_03",
+      "name": "sm_261014_b2f07f_03.jpg",
+      "category": "portrait",
+      "categoryLabel": "Portrait",
+      "folderName": "프로필",
+      "timestamp": 1792182656390,
+      "w": 960,
+      "h": 1440
+    },
+    {
+      "id": "sm_261017_73b99d_01",
+      "name": "sm_261017_73b99d_01.jpg",
+      "category": "kids",
+      "categoryLabel": "Kids",
+      "folderName": "키즈",
+      "timestamp": 1792347595763,
+      "w": 960,
+      "h": 1440
+    },
+    {
+      "id": "sm_261017_73b99d_02",
+      "name": "sm_261017_73b99d_02.jpg",
+      "category": "kids",
+      "categoryLabel": "Kids",
+      "folderName": "키즈",
+      "timestamp": 1792270435826,
+      "w": 960,
+      "h": 1440
+    },
     {
       "id": "sm_260714_7c1861_01",
       "name": "sm_260714_7c1861_01.jpg",
