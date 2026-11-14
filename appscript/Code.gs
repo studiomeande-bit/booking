@@ -98,7 +98,7 @@ const PUBLIC_API_CONFIG = {
   WALKIN_TOKEN_TTL_SEC: 60 * 30,
   WALKIN_MIN_ELAPSED_MS: 2500,
   HONEYPOT_FIELD: 'website',
-  MAX_BOOKING_DATE_STR: '2027-06-30'   // 2026-09-17 사장님 지시로 연장 (구: 2027-03-31, 그 전 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
+  MAX_BOOKING_DATE_STR: '2027-12-31'   // 2026-11-05 사장님 지시로 연장 — 웨딩 얼리 예약(촬영일 6개월 전 10%)이 2027년 하반기에도 온라인으로 되게 (구: 2027-06-30, 2027-03-31, 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
 };
 const PROMO_CONFIG = {
   START: '2026-06-23',
@@ -9865,12 +9865,15 @@ function calculateQuote_(request){
     returnDiscount=roundCurrency_(total*(rate/100));
     total=roundCurrency_(total-returnDiscount);
   }
-  const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
+  // 얼리 예약 10% 대상: 프리웨딩(wed 그룹) + 암트 결혼식(amt*) — 사장님 2026-11-05. 본식은 상담 견적이라 견적서에서 적용.
+  // 암트+본식을 한 계약으로 맡기면 견적서에서 5% 추가(합계 상한 WEDDING_TOTAL_MAX_DISCOUNT_RATE 15%).
+  const weddingEarlyItem=item.g==='wed'||/^amt/.test(String(item.id||''));
+  const weddingDiscountBase=weddingEarlyItem?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  if(weddingEarlyItem&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
-  if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
+  if(weddingEarlyItem) total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
   /* 급행(유료) — **할인 뒤에** 더한다: 재방문·이벤트·얼리버드 할인이 급행비를 깎지 않게(요금 = 상품가의 N%).
      판매 대상이 아니면 키를 지운다 — 요금 0 인데 '급행' 라벨만 장부·메일에 남는 일을 막는다.
      계약금 규칙(>100 → €50, 웨딩 20%)보다 먼저라 급행이 계약금 산정에 들어간다. */
@@ -35707,9 +35710,9 @@ function sendDolRecommendationEmails_(){
       de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>프로필 프로페셔널(€130) 이상</b> 상품에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 가구를 잡고 일어서기 시작하는 <b>생후 11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>프로필 프로페셔널(€130) 이상</b> 상품에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>11 months — when your little one starts pulling up to stand</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>The birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 11. Monat, wenn sich das Kind zum Stehen hochzieht</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>Das Geburtstagsshooting beinhaltet ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));

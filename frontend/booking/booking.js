@@ -3951,9 +3951,11 @@ function getPreviewQuote() {
     }
   }
 
-  const weddingDiscountBase = item.g === 'wed' ? roundCurrency(Math.max(0, total)) : 0;
+  // 얼리 예약 10%: 프리웨딩(wed) + 암트 결혼식(amt*) — 서버 calculateQuote_ 와 같은 규칙 (2026-11-05)
+  const weddingEarlyItem = item.g === 'wed' || /^amt/.test(String(item.id || ''));
+  const weddingDiscountBase = weddingEarlyItem ? roundCurrency(Math.max(0, total)) : 0;
   let earlyBirdDiscount = 0;
-  if (item.g === 'wed' && state.selectedDate && isWeddingEarlyBookingEligible(state.selectedDate)) {
+  if (weddingEarlyItem && state.selectedDate && isWeddingEarlyBookingEligible(state.selectedDate)) {
     earlyBirdDiscount = roundCurrency(weddingDiscountBase * (WEDDING_EARLY_BOOKING_DISCOUNT_RATE / 100));
   }
 
@@ -3962,7 +3964,7 @@ function getPreviewQuote() {
   if (item.g === 'wed' && marketing) {
     marketingDiscount = roundCurrency(weddingDiscountBase * (WEDDING_MARKETING_DISCOUNT_RATE / 100));
   }
-  if (item.g === 'wed') total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);
+  if (weddingEarlyItem) total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);
   // 급행 — 서버 calculateQuote_ 와 같은 자리(할인 뒤·여권 콤보 전). 판매 대상이 아니면 0
   const expressFee = optionKeys.includes('express') ? getExpressFee(item) : 0;
   total = roundCurrency(total + expressFee);
@@ -4915,7 +4917,7 @@ function getAppliedDiscountLines() {
         ? 'Solo-Outdoor-Rabatt -30€ angewendet.'
         : '야외 1인 촬영 할인 -€30이 적용되었습니다.');
   }
-  if (item.g === 'wed' && state.quote.earlyBirdDiscount > 0) {
+  if (state.quote.earlyBirdDiscount > 0) {
     lines.push(state.lang === 'en'
       ? `Early booking discount ${WEDDING_EARLY_BOOKING_DISCOUNT_RATE}% (-€${formatEuroAmount(state.quote.earlyBirdDiscount)}) applied.`
       : state.lang === 'de'

@@ -1,7 +1,7 @@
 /* ⚠️ 생성 파일 — 직접 수정 금지.
  * 정본: appscript/Code.gs. 재생성: node scripts/build-public-api.mjs
- * 생성 시각: 2026-10-15T19:28:22.720Z
- * 포함 함수 197개 / 상수 41개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
+ * 생성 시각: 2026-11-14T10:43:17.405Z
+ * 포함 함수 197개 / 상수 42개. 라우팅·인증·시트 해석은 Shim.gs 에 있다. */
 const CONFIG = {
   APP_TITLE: 'Studio mean',
   TIMEZONE: 'Europe/Berlin',
@@ -77,7 +77,7 @@ const PUBLIC_API_CONFIG = {
   WALKIN_TOKEN_TTL_SEC: 60 * 30,
   WALKIN_MIN_ELAPSED_MS: 2500,
   HONEYPOT_FIELD: 'website',
-  MAX_BOOKING_DATE_STR: '2027-06-30'   // 2026-09-17 사장님 지시로 연장 (구: 2027-03-31, 그 전 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
+  MAX_BOOKING_DATE_STR: '2027-12-31'   // 2026-11-05 사장님 지시로 연장 — 웨딩 얼리 예약(촬영일 6개월 전 10%)이 2027년 하반기에도 온라인으로 되게 (구: 2027-06-30, 2027-03-31, 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
 };
 
 const PROMO_CONFIG = {
@@ -112,6 +112,8 @@ const WEDDING_EARLY_BOOKING_MONTHS = 6;
 const WEDDING_EARLY_BOOKING_DISCOUNT_RATE = 10;
 
 const WEDDING_MARKETING_DISCOUNT_RATE = 5;
+
+const WEDDING_TOTAL_MAX_DISCOUNT_RATE = WEDDING_EARLY_BOOKING_DISCOUNT_RATE + WEDDING_MARKETING_DISCOUNT_RATE;
 
 const PARTNER_HEADERS=['id','분류','업체명','한줄설명KO','한줄설명EN','한줄설명DE','상담언어','지역','상담링크','인스타링크','적용그룹','노출위치','순서','활성','제휴메모'];
 
@@ -1010,12 +1012,15 @@ function calculateQuote_(request){
     returnDiscount=roundCurrency_(total*(rate/100));
     total=roundCurrency_(total-returnDiscount);
   }
-  const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
+  // 얼리 예약 10% 대상: 프리웨딩(wed 그룹) + 암트 결혼식(amt*) — 사장님 2026-11-05. 본식은 상담 견적이라 견적서에서 적용.
+  // 암트+본식을 한 계약으로 맡기면 견적서에서 5% 추가(합계 상한 WEDDING_TOTAL_MAX_DISCOUNT_RATE 15%).
+  const weddingEarlyItem=item.g==='wed'||/^amt/.test(String(item.id||''));
+  const weddingDiscountBase=weddingEarlyItem?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  if(weddingEarlyItem&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
-  if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
+  if(weddingEarlyItem) total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
   /* 급행(유료) — **할인 뒤에** 더한다: 재방문·이벤트·얼리버드 할인이 급행비를 깎지 않게(요금 = 상품가의 N%).
      판매 대상이 아니면 키를 지운다 — 요금 0 인데 '급행' 라벨만 장부·메일에 남는 일을 막는다.
      계약금 규칙(>100 → €50, 웨딩 20%)보다 먼저라 급행이 계약금 산정에 들어간다. */
