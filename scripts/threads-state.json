@@ -33,6 +33,18 @@
     "sm_250823_5a4e70",
     "sm_250823_c66b51"
   ],
-  "counters": {},
-  "sessions": {}
+  "counters": {
+    "family": 1
+  },
+  "sessions": {
+    "sm_260724_1a5419": {
+      "category": "family",
+      "variant": "family-1",
+      "en": {
+        "id": "18103370669407934",
+        "permalink": "https://www.threads.com/@studio_mean/post/DgIB6ECHLc-",
+        "postedAt": "2026-11-24T13:09:32.635Z"
+      }
+    }
+  }
 }
