@@ -106,6 +106,12 @@ async function main() {
     return;
   }
 
+  if (!process.env.THREADS_ACCESS_TOKEN) {
+    // 아직 Meta 토큰을 등록하기 전 — 하루 두 번 실패 메일이 가지 않게 건너뛴다(만료된 토큰은 API 가 거절해 실패로 뜬다)
+    summary(`⚠️ THREADS_ACCESS_TOKEN 시크릿이 없어 건너뜁니다. 등록하면 다음 실행부터 게시합니다 (docs/threads-autopost.md).\n\n다음 차례: ${head}`);
+    return;
+  }
+
   const bad = await unreachableImages(images);
   if (bad.length) {
     // 배포가 아직 안 끝난 경우 — 실패가 아니라 다음 실행으로 미룬다
