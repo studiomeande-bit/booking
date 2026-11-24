@@ -228,7 +228,7 @@ const q = (o) => M.calculateQuote_(o);
   ok(/raw === '' \? 20 : Number\(raw\)/.test(bookingJs), '화면: 요율 빈칸 → 20(서버와 같음)');
   ok(/if \(state\.init\?\.settings\?\.expressRate == null\) return 0;/.test(bookingJs), '화면: 급행을 모르는 서버(요율 미전송)면 급행을 팔지 않는다');
   const prev = bookingJs.slice(bookingJs.indexOf('function getPreviewQuote('), bookingJs.indexOf('function renderBabyTypeChips('));
-  const iWed = prev.indexOf("if (item.g === 'wed') total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);");
+  const iWed = prev.indexOf("if (weddingEarlyItem) total = roundCurrency(total - earlyBirdDiscount - marketingDiscount);");   // 2026-11-05 암트도 얼리 예약 대상
   const iExp = prev.indexOf("const expressFee = optionKeys.includes('express') ? getExpressFee(item) : 0;");
   const iPass = prev.indexOf('let passAddonDur = 0;');
   ok(iWed > -1 && iExp > iWed && iPass > iExp, '화면 미리보기: 급행은 할인 뒤·여권 콤보 전(서버와 같은 자리)', [iWed, iExp, iPass]);

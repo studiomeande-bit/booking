@@ -98,7 +98,7 @@ const PUBLIC_API_CONFIG = {
   WALKIN_TOKEN_TTL_SEC: 60 * 30,
   WALKIN_MIN_ELAPSED_MS: 2500,
   HONEYPOT_FIELD: 'website',
-  MAX_BOOKING_DATE_STR: '2027-06-30'   // 2026-09-17 사장님 지시로 연장 (구: 2027-03-31, 그 전 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
+  MAX_BOOKING_DATE_STR: '2027-12-31'   // 2026-11-05 사장님 지시로 연장 — 웨딩 얼리 예약(촬영일 6개월 전 10%)이 2027년 하반기에도 온라인으로 되게 (구: 2027-06-30, 2027-03-31, 2026-12-31) — 예약 페이지는 /api/init settings.maxBookingDate 로 이 값을 읽는다
 };
 const PROMO_CONFIG = {
   START: '2026-06-23',
@@ -4668,6 +4668,20 @@ function _leadSuccessPath_(lang){
   return '/contact/success/';
 }
 
+/* 홈페이지 문의 접수확인에 예약 링크(사장님 2026-10-26 "기본적으로 접수답변 + 예약링크 안내").
+   개인 촬영은 대부분 예약 페이지에서 바로 날짜·상품을 고를 수 있어 답장을 기다릴 필요가 없다. 링크는 문의 언어로 연다. */
+function _leadBookingLinkHtml_(lang){
+  const L=_leadLanguage_(lang);
+  const url=getBookingSiteBaseUrl_()+'/?lang='+L;
+  const t={
+    ko:{lead:'원하시는 날짜와 상품이 정해져 있다면, 답변을 기다리지 않고 온라인 예약 페이지에서 바로 예약하실 수 있습니다. 예약 가능한 시간이 실시간으로 표시됩니다.',btn:'온라인 예약하기'},
+    en:{lead:'If you already know the date and package, you can book right away on our online booking page without waiting for our reply. Available times are shown live.',btn:'Book online'},
+    de:{lead:'Wenn Termin und Paket schon feststehen, können Sie direkt auf unserer Online-Buchungsseite buchen, ohne auf unsere Antwort zu warten. Freie Zeiten werden live angezeigt.',btn:'Online buchen'}
+  }[L];
+  return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:4px 0 6px;">'+escapeHtml_(t.lead)+
+    '<div style="margin-top:12px;"><a href="'+escapeHtml_(url)+'" style="display:inline-block;background:#2D2A26;color:#fff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:8px;">'+escapeHtml_(t.btn)+' →</a></div>'+
+    '<div style="margin-top:8px;font-size:12px;color:#64748b;">'+escapeHtml_(url.replace(/\/\?lang=.*$/,''))+'</div></div>';
+}
 function _sendPortfolioLeadCustomerEmail_(lead){
   const L=_leadLanguage_(lead.lang);
   const subject={
@@ -4676,9 +4690,9 @@ function _sendPortfolioLeadCustomerEmail_(lead){
     de:'[Studio mean] Ihre Anfrage ist angekommen'
   };
   const body={
-    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
-    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
-    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`
+    ko:`안녕하세요, ${escapeHtml_(lead.name)}님.<br><br>Studio mean으로 보내주신 문의가 정상적으로 접수되었습니다. 일정, 장소, 촬영 범위를 확인한 뒤 보통 1-2 영업일 안에 답변드리겠습니다.<br><br>${_leadBookingLinkHtml_('ko')}${_inquiryEchoBlockHtml_('ko',[['문의 종류',lead.projectType],['희망 일정',lead.preferredDate],['촬영 장소',lead.location],['연락처',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
+    en:`Hello ${escapeHtml_(lead.name)},<br><br>Thank you for contacting Studio mean. Your inquiry has been received. We will review the timing, location and scope, then reply within 1-2 business days whenever possible.<br><br>${_leadBookingLinkHtml_('en')}${_inquiryEchoBlockHtml_('en',[['Project',lead.projectType],['Preferred timing',lead.preferredDate],['Location',lead.location],['Phone',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`,
+    de:`Guten Tag, ${escapeHtml_(lead.name)},<br><br>vielen Dank für Ihre Anfrage bei Studio mean. Wir prüfen Termin, Ort und Umfang und melden uns in der Regel innerhalb von 1-2 Werktagen zurück.<br><br>${_leadBookingLinkHtml_('de')}${_inquiryEchoBlockHtml_('de',[['Projektart',lead.projectType],['Wunschtermin',lead.preferredDate],['Ort',lead.location],['Telefon',lead.phone]],lead.message)}<br>${getSignatureHtml_()}`
   };
   try{
     sendTrackedEmail_({to:lead.email,subject:subject[L],htmlBody:body[L]},{public:true,
@@ -9851,12 +9865,15 @@ function calculateQuote_(request){
     returnDiscount=roundCurrency_(total*(rate/100));
     total=roundCurrency_(total-returnDiscount);
   }
-  const weddingDiscountBase=item.g==='wed'?roundCurrency_(Math.max(0,total)):0;
+  // 얼리 예약 10% 대상: 프리웨딩(wed 그룹) + 암트 결혼식(amt*) — 사장님 2026-11-05. 본식은 상담 견적이라 견적서에서 적용.
+  // 암트+본식을 한 계약으로 맡기면 견적서에서 5% 추가(합계 상한 WEDDING_TOTAL_MAX_DISCOUNT_RATE 15%).
+  const weddingEarlyItem=item.g==='wed'||/^amt/.test(String(item.id||''));
+  const weddingDiscountBase=weddingEarlyItem?roundCurrency_(Math.max(0,total)):0;
   let earlyBirdDiscount=0;
-  if(item.g==='wed'&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
+  if(weddingEarlyItem&&request.date&&isWeddingEarlyBookingEligible_(request.date,(request.asOf instanceof Date&&!isNaN(request.asOf.getTime()))?request.asOf:new Date())){earlyBirdDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_EARLY_BOOKING_DISCOUNT_RATE/100));}
   let marketingDiscount=0;
   if(item.g==='wed'&&request.marketing){marketingDiscount=roundCurrency_(weddingDiscountBase*(WEDDING_MARKETING_DISCOUNT_RATE/100));}
-  if(item.g==='wed') total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
+  if(weddingEarlyItem) total=roundCurrency_(total-earlyBirdDiscount-marketingDiscount);
   /* 급행(유료) — **할인 뒤에** 더한다: 재방문·이벤트·얼리버드 할인이 급행비를 깎지 않게(요금 = 상품가의 N%).
      판매 대상이 아니면 키를 지운다 — 요금 0 인데 '급행' 라벨만 장부·메일에 남는 일을 막는다.
      계약금 규칙(>100 → €50, 웨딩 20%)보다 먼저라 급행이 계약금 산정에 들어간다. */
@@ -17550,8 +17567,14 @@ function changeBookingProductForAgent_(token,payload){
       return (cs||[]).some(function(c){return c&&c!=='OTHER';});});
     if(token&&(parsed.found||hasReal)) curMemo=parsed.found?curMemo.replace(parsed.raw,token):[token,curMemo].filter(Boolean).join('\n');
   }
+  if(passMarker) curMemo=rewriteBookingPassComboLabels_(curMemo,passAddonPeople);
   const memoParts=[curMemo];
   if(passMarker && curMemo.indexOf('여권콤보')===-1) memoParts.push(passMarker);
+  // 소요시간은 추가항목 '여권콤보: N명 / 추가 M분' 을 먼저 읽는다 — 같이 갈아끼우지 않으면 캘린더가 옛 인원 길이로 남는다(박민아 10/24)
+  if(passMarker&&BOOKING_COL['추가항목']!=null){
+    const ex=String(row[BOOKING_COL['추가항목']]||''),ex2=rewriteBookingPassComboLabels_(ex,passAddonPeople);
+    if(ex2!==ex) sh.getRange(rIdx,BOOKING_COL['추가항목']+1).setValue(ex2);
+  }
   memoParts.push(auditLine);
   sh.getRange(rIdx,BOOKING_COL['요청사항']+1).setValue(memoParts.filter(Boolean).join('\n'));
 
@@ -18241,10 +18264,36 @@ function parseBookingAgeGroupFromRow_(row){
     String(row[BOOKING_COL['추가항목']]||''),
     String(row[BOOKING_COL['요청사항']]||'')
   ].join(' | ');
-  if(/ageGroup\s*[:=]\s*senior|촬영대상\s*[:=]\s*시니어|시니어/.test(text)) return 'senior';
-  if(/ageGroup\s*[:=]\s*kids|촬영대상\s*[:=]\s*키즈|키즈/.test(text)) return 'kids';
-  if(/ageGroup\s*[:=]\s*baby|촬영대상\s*[:=]\s*영유아|영유아|아기|백일|돌촬영/.test(text)) return 'baby';
+  if(/ageGroup\s*[:=]\s*senior|촬영대상\s*[:=]\s*시니어/.test(text)) return 'senior';
+  if(/ageGroup\s*[:=]\s*kids|촬영대상\s*[:=]\s*키즈/.test(text)) return 'kids';
+  if(/ageGroup\s*[:=]\s*baby|촬영대상\s*[:=]\s*영유아/.test(text)) return 'baby';
+  /* 명시 표기가 없을 때만 낱말로 추정 — 고객 메모 "영유아가 없어 키즈로 선택했는데" 가 촬영대상 표기를 이기면
+     영유아로 고친 예약이 재견적마다 키즈 할인으로 되돌아간다(박민아 2026-10-24). */
+  if(/시니어/.test(text)) return 'senior';
+  if(/키즈/.test(text)) return 'kids';
+  if(/영유아|아기|백일|돌촬영/.test(text)) return 'baby';
   return 'adult';
+}
+
+/* 예약행 표기 갱신 — 옵션·추가항목·요청사항 문자열 안의 연령·여권콤보 표기를 새 값으로 바꾼다(없으면 그대로).
+   ageGroup: 'baby'|'kids'|'senior'|'adult'(adult 는 표기 삭제). 연령 할인 문구는 새 연령 기준으로 지운다. */
+function rewriteBookingAgeLabels_(text,ageGroup){
+  const label=getBookingAgeGroupLabel_(ageGroup);
+  let s=String(text||'');
+  s=s.replace(/촬영대상\s*([:=])\s*(키즈|시니어|영유아)/g,function(m,sep){return label?'촬영대상'+(sep==='='?'=':': ')+label:'';});
+  if(ageGroup!=='kids') s=s.replace(/키즈 할인 -[\d.,]+€ 적용/g,'');
+  if(ageGroup!=='senior') s=s.replace(/시니어[^|\n]*할인[^|\n]*적용/g,'');
+  // 비워진 칸 정리: 요약줄 '할인: '(단일 항목)은 항목째, 세부내역 '할인/조정: | 재촬영…'은 남은 할인만 남긴다
+  return s.replace(/할인\/조정:\s*\|\s*/g,'할인/조정: ').replace(/^할인\/조정:\s*$\n?/gm,'')
+    .replace(/(^|\s*\|\s*)할인:\s*(?=\s*\||\n|$)/gm,'$1').replace(/^\s*\|\s*/gm,'')
+    .replace(/(\s*\|\s*)+(?=\n|$)/g,'').replace(/(\s*\|\s*){2,}/g,' | ');
+}
+
+function rewriteBookingPassComboLabels_(text,people){
+  const n=Math.max(1,parseInt(people,10)||1),dur=getPassportComboDurationMin_(n);
+  return String(text||'')
+    .replace(/\[여권콤보:\s*\d+\s*명\]/g,'[여권콤보:'+n+'명]')
+    .replace(/(여권\s?콤보\s*[:=]\s*)\d+\s*명\s*\/\s*추가\s*\d+\s*분/g,'$1'+n+'명 / 추가 '+dur+'분');
 }
 
 function getDashboardData_(productsArg){
@@ -20596,6 +20645,12 @@ function updateBookingAdmin(token,rIdx,d){
     ? d.optionKeys.map(function(k){return String(k||'').trim();}).filter(function(k){return ['dog','bg','outfit','express'].indexOf(k)!==-1;})   /* express 빠지면 어드민 저장이 급행비를 조용히 지운다 */
     : parseBookingOptionKeysFromRow_(rowBefore);
   const ageGroup=String(d.ageGroup||parseBookingAgeGroupFromRow_(rowBefore)||'adult').trim()||'adult';
+  /* 여권 콤보(프로필·스튜디오에 붙는 여권촬영) — 수정 모달이 보내면 그 값, 아니면 행의 [여권콤보:N명]/추가항목 표기.
+     전엔 견적·세부내역 재생성에 콤보가 빠져, 어드민 저장만 해도 세부내역의 '여권 콤보' 줄이 사라졌다. */
+  const comboInRow=String(rowBefore[BOOKING_COL['요청사항']]||'').match(/\[여권콤보:\s*(\d+)\s*명\]/)
+    ||String(rowBefore[BOOKING_COL['추가항목']]||'').match(/여권\s?콤보\s*[:=]\s*(\d+)\s*명/);
+  const passAddon=d.passAddon!==undefined?!!d.passAddon:!!comboInRow;
+  const passAddonPeople=Math.max(1,Math.min(10,parseInt(d.passAddon!==undefined?d.passAddonPeople:(comboInRow&&comboInRow[1]),10)||1));
   const peopleValue=Math.max(1,parseInt(d.people||rowBefore[BOOKING_COL['인원']]||1,10)||1);
   const itemId=String(d.itemId||'').trim();
   const dateForQuote=String(d.date||parseDateSafe_(rowBefore[BOOKING_COL['예약일시']]).str.slice(0,10)||'').slice(0,10);
@@ -20610,6 +20665,8 @@ function updateBookingAdmin(token,rIdx,d){
         date:dateForQuote,
         optionKeys:cleanOptionKeys,
         ageGroup:ageGroup,
+        passAddon:passAddon,
+        passAddonPeople:passAddonPeople,
         marketing:String(d.marketingConsent||rowBefore[BOOKING_COL['마케팅동의']]||'').trim()==='Y',
         isReturn:!!d.isReturn
       });
@@ -20650,11 +20707,18 @@ function updateBookingAdmin(token,rIdx,d){
     if(ageDiscountLabel) optionParts.push('할인: '+ageDiscountLabel);
     w(BOOKING_COL['옵션']+1, optionParts.join(' | '));
   }
-  const memoToSave=d.location!==undefined
+  let memoToSave=d.location!==undefined
     ? (nextLocation&&!isStudioLocation_(nextLocation)
       ? ('[촬영장소:'+nextLocation+'] '+String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'')).trim()
       : String(d.memo||'').replace(/\[촬영장소:[^\]]+\]\s*/g,'').trim())
     : d.memo;
+  // 콤보 근거 토큰 — 캘린더 길이(getBookingPassportComboDurationMinFromRow_)·인보이스 품목이 이 토큰을 읽는다
+  if(d.passAddon!==undefined){
+    const m=String((memoToSave==null?rowBefore[BOOKING_COL['요청사항']]:memoToSave)||'');
+    memoToSave=passAddon
+      ?(/\[여권콤보:\s*\d+\s*명\]/.test(m)?rewriteBookingPassComboLabels_(m,passAddonPeople):[m.trim(),'[여권콤보:'+passAddonPeople+'명]'].filter(Boolean).join(' '))
+      :m.replace(/\s*\[여권콤보:\s*\d+\s*명\]/g,'').trim();
+  }
   /* 완납 뒤 금액 편집은 과수납·추가청구를 어디에도 남기지 않는다(감사 2026-09-20) — force 없이는 거부.
      잔금 셀의 '|수단|날짜' 꼬리는 보존한다(booking-set-amount 와 같은 규칙 — 2026-08-20 4건에서 실제로 지워졌다). */
   if(String(rowBefore[BOOKING_COL['잔금결제여부']]||'').trim()==='Y'&&d.price!==undefined&&String(d.price).trim()!==''&&!d.force
@@ -20678,7 +20742,11 @@ function updateBookingAdmin(token,rIdx,d){
   }
   w(14,d.payMethod); w(16,memoToSave); w(18,d.depPayMethod);
   let extraItemToSave=String(d.extraItem||'').replace(/\n?\[예약 세부내역\][\s\S]*$/,'').trim();
-  if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined){
+  if(d.passAddon!==undefined){
+    extraItemToSave=passAddon?rewriteBookingPassComboLabels_(extraItemToSave,passAddonPeople)
+      :extraItemToSave.replace(/\s*\|?\s*여권\s?콤보\s*[:=]\s*\d+\s*명\s*\/\s*추가\s*\d+\s*분/g,'').replace(/^\s*\|\s*/,'').trim();
+  }
+  if(d.optionKeys!==undefined||d.ageGroup!==undefined||d.people!==undefined||d.itemId!==undefined||d.location!==undefined||d.passAddon!==undefined){
     const productName=String(d.product||rowBefore[BOOKING_COL['상품']]||'').trim();
     const quoteForDetails=Object.assign({},quoteForEdit||{},{
       itemGroup:String(d.itemGroup||rowBefore[BOOKING_COL['촬영종류']]||'').trim(),
@@ -20765,7 +20833,8 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   if(rIdx>sh.getLastRow()) throw new Error('예약 행을 찾을 수 없습니다: '+rIdx);
   const row=sh.getRange(rIdx,1,1,CONFIG.BOOKING_HEADERS.length).getValues()[0];
   const d=data||{};
-  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','payMethod','notify'];
+  const ALLOWED=['location','memo','name','phone','email','people','date','time','address','vatMode','payMethod','notify','ageGroup'];
+  if(d.ageGroup!==undefined&&['baby','kids','senior','adult'].indexOf(String(d.ageGroup))===-1) throw new Error("ageGroup 은 baby/kids/senior/adult 중 하나입니다.");
   const unknown=Object.keys(d).filter(function(k){return ALLOWED.indexOf(k)===-1;});
   if(unknown.length) throw new Error('허용되지 않은 필드: '+unknown.join(', ')+'. 이 액션은 '+ALLOWED.join('/')+' 만 수정합니다. 상태/금액 변경은 booking-update-status·booking-set-amount 등 전용 액션을 사용하세요.');
   /* 결제수단 라벨 정정(수납 기록 아님) — 수기등록 기본값 오류를 고치는 용도라 '미결제'/'계좌이체'만.
@@ -20810,6 +20879,18 @@ function updateBookingFieldsForAgent_(token,rIdx,data){
   // 빈 인원(값 없음)일 땐 시드하지 않아 1로 바뀌는 부작용을 피한다.
   if(merged.people===undefined && row[9]!=='' && row[9]!=null) merged.people=row[9];
   const res=updateBookingAdmin(token,rIdx,merged);
+  // 촬영대상 표기 정정 — 행 재작성 **후에** 옵션·추가항목 문자열만 고친다(금액 불변, 감사줄은 결제메모)
+  if(d.ageGroup!==undefined){
+    ['옵션','추가항목'].forEach(function(col){
+      if(BOOKING_COL[col]==null) return;
+      const cell=sh.getRange(rIdx,BOOKING_COL[col]+1),v=String(cell.getValue()||''),nv=rewriteBookingAgeLabels_(v,String(d.ageGroup));
+      if(nv!==v) cell.setValue(nv);
+    });
+    if(BOOKING_COL['결제메모']!=null){
+      const pm=sh.getRange(rIdx,BOOKING_COL['결제메모']+1);
+      pm.setValue([String(pm.getValue()||'').trim(),'[정정] 촬영대상→'+(getBookingAgeGroupLabel_(d.ageGroup)||'성인')+' '+Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd')+' (booking-update)'].filter(Boolean).join('\n'));
+    }
+  }
   // 부가세 모드는 updateBookingAdmin 이 모르는 칸이라 행 재작성 **후에** 직접 쓴다(선반영 시 덮어써짐)
   if(d.vatMode!==undefined&&BOOKING_COL['부가세모드']!=null){
     sh.getRange(rIdx,BOOKING_COL['부가세모드']+1).setValue(normalizeVatMode_(d.vatMode));
@@ -33580,6 +33661,8 @@ function buildInvoicePricingPreview_(payload){
     businessAddonKeys:(payload.businessAddonKeys||[]).filter(Boolean),
     marketing:!!payload.marketing,
     isReturn:!!payload.isReturn,
+    passAddon:!!payload.passAddon,
+    passAddonPeople:payload.passAddonPeople,
     // 5인 이상 가족할인은 법인 송장 건에서 제외된다(calculateQuote_) — 안 넘기면 기업 여권 건이 10% 싸게 미리보기된다
     businessInvoiceNeeded:payload.businessInvoiceNeeded
   };
@@ -35628,9 +35711,9 @@ function sendDolRecommendationEmails_(){
       de:`[Studio mean] Frühzeitige Planung für das 1. Geburtstagsshooting — ${name}`
     };
     const body={
-      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 안정적으로 걷기 시작하기 전인 <b>생후 10~11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>스튜디오 상품과 프로필 프로페셔널(€130)</b>에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
-      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>10 to 11 months — just before steady walking begins</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>With <b>Studio packages and Profile Professional (€130)</b>, the birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
-      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 10. bis 11. Monat, kurz bevor das Kind sicher läuft</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>In den <b>Studio-Paketen und in Profil Professional (€130)</b> beinhaltet das Geburtstagsshooting ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
+      ko:`안녕하세요, ${name}님.<br><br>지난 백일 촬영이 엊그제 같은데 벌써 다음 촬영을 생각할 시기가 다가오고 있습니다. 경험상 아이가 가구를 잡고 일어서기 시작하는 <b>생후 11개월 무렵</b>이 표정과 움직임을 가장 자연스럽게 담을 수 있는 시기여서, 미리 일정을 조율해 두시기를 권해 드립니다.<br><br>돌촬영은 <b>스튜디오 상품과 프로필 프로페셔널(€130)</b>에서 기본 돌상 셋팅을 무료로 제공하며, 가족 구성이나 원하시는 분위기에 맞춰 세부 구성을 함께 상의드릴 수 있습니다. 일정이나 구성에 대해 궁금하신 점이 있으시면 이 메일에 편하게 회신해 주세요.<br><br>${dolPartnerHtml}${_followupCommonHtml_('ko',row)}<br><br>${getSignatureHtml_()}`,
+      en:`Hello ${name},<br><br>It feels as if your little one's 100-day session was just the other day, and yet the timing for the first birthday shoot is already approaching. From our experience, the window around <b>11 months — when your little one starts pulling up to stand</b> — captures expressions and small movements most naturally, so we recommend reserving a date a little in advance.<br><br>With <b>Studio packages and Profile Professional (€130)</b>, the birthday session includes a complimentary basic dol-table setup, and we are happy to tailor the styling or family composition to the atmosphere you have in mind. If you would like to talk through possible dates or setups, simply reply to this email.<br><br>${dolPartnerHtml}${_followupCommonHtml_('en',row)}<br><br>${getSignatureHtml_()}`,
+      de:`Guten Tag, ${name},<br><br>das 100-Tage-Shooting Ihres Kindes liegt gefühlt erst kurz zurück – und dennoch rückt die Zeit für das erste Geburtstagsshooting bereits näher. Erfahrungsgemäß ist der Zeitraum <b>rund um den 11. Monat, wenn sich das Kind zum Stehen hochzieht</b>, ideal, um Ausdruck und kleine Bewegungen besonders natürlich festzuhalten. Wir empfehlen daher, den Termin rechtzeitig einzuplanen.<br><br>In den <b>Studio-Paketen und in Profil Professional (€130)</b> beinhaltet das Geburtstagsshooting ein kostenloses Basic-Dol-Table-Setup, und wir stimmen die Gestaltung gern auf die gewünschte Atmosphäre oder die anwesende Familie ab. Wenn Sie über mögliche Termine oder die Gestaltung sprechen möchten, antworten Sie einfach auf diese E-Mail.<br><br>${dolPartnerHtml}${_followupCommonHtml_('de',row)}<br><br>${getSignatureHtml_()}`
     };
     sendTrackedEmail_({to:email,subject:subj[lang]||subj.ko,htmlBody:body[lang]||body.ko});
     sh.getRange(idx+2,BOOKING_COL['돌촬영추천메일발송일시']+1).setValue(Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'));

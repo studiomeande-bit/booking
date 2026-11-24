@@ -29,7 +29,7 @@ Updated: 2026-09-20 Europe/Berlin (@969 · board-api @11 기준). **변경 이�
 
 ## Deployment
 
-- 메인 GAS: 레포 루트에서 `clasp push -f` 후 **라이브 배포 ID로 `clasp deploy -i AKfycbxnHuB2u4-...`** (push만으론 /exec 미반영, 트리거는 push만으로 반영). 버전 200개 한도 — 2026-09-20 현재 **136/200 사용**.
+- 메인 GAS: 레포 루트에서 `clasp push -f` 후 **라이브 배포 ID로 `clasp deploy -i AKfycbxnHuB2u4-...`** (push만으론 /exec 미반영, 트리거는 push만으로 반영). 버전 200개 한도 — 2026-11-03 실측 **198/200**(정리는 소유자만, 편집기 → 프로젝트 기록). 사용량은 `check-all --online` 의 `gas-versions` 게이트가 센다(190 이상이면 빨강).
 - board-api: `node scripts/build-board-api.mjs` 재생성 후 `appscript-board/` 에서 push + 위의 -i 규칙 필수(현재 @11).
 - 프론트: main push → Netlify 자체 빌드. 수동 `?v=` 캐시버스팅 금지.
 - 상세: `docs/deployment.md`, 운영 점검: `docs/ops-checklist.md` + `erp-agent ops-checklist` 액션.

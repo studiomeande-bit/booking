@@ -9,7 +9,7 @@
  *
  * 사용법
  *   node scripts/check-all.mjs                 # 전부(오프라인). 하나라도 실패하면 exit 1
- *   node scripts/check-all.mjs --online        # verify-release-gate 의 라이브 항목까지 포함
+ *   node scripts/check-all.mjs --online        # verify-release-gate 의 라이브 항목 + 배포 버전 수(200 한도)까지 포함
  *   node scripts/check-all.mjs --future 120    # 시계를 120일 앞으로 — 날짜 픽스처 부패 조기 발견
  *   node scripts/check-all.mjs --only select   # 이름에 'select' 가 든 게이트만
  *   node scripts/check-all.mjs --quiet         # 실패한 게이트 출력만
@@ -42,6 +42,10 @@ const gates = readdirSync(HERE)
 // 릴리스 게이트는 라이브 API 도 본다 — 기본은 --offline(네트워크 없는 곳에서도 돌아가게)
 if (existsSync(join(HERE, 'verify-release-gate.mjs'))) {
   gates.push({ name: 'release-gate', file: join(HERE, 'verify-release-gate.mjs'), args: ONLINE ? [] : ['--offline'] });
+}
+// 배포 버전 수(한도 200)는 clasp·네트워크가 필요해 --online 때만 — 2026-11-03 198/200 까지 아무도 몰랐다
+if (ONLINE && existsSync(join(HERE, 'verify-gas-versions.mjs'))) {
+  gates.push({ name: 'gas-versions', file: join(HERE, 'verify-gas-versions.mjs'), args: [] });
 }
 const targets = ONLY ? gates.filter((g) => g.name.includes(ONLY)) : gates;
 if (!targets.length) {
@@ -124,7 +128,7 @@ console.log(`\n${failed.length ? '❌' : '✅'} 게이트 ${results.length}개 �
 /* 오프라인 기본값 때문에 "전부 통과" 가 라이브 항목까지 봤다는 뜻으로 읽히면 안 된다(2026-09-25 적발:
    내부 단가 노출·select 루트 301 검사가 배포 흐름에서 한 번도 돌지 않았다). 배포 전에는 --online. */
 if (!ONLINE && targets.some((g) => g.name === 'release-gate')) {
-  console.log('⏭️ 라이브 항목 미검사(release-gate --offline): 내부 단가 노출 · 상품군 생존 · select 루트 301.'
+  console.log('⏭️ 라이브 항목 미검사(release-gate --offline): 내부 단가 노출 · 상품군 생존 · select 루트 301 · 배포 버전 수.'
     + ' **배포 전에는 `node scripts/check-all.mjs --online`**');
 }
 if (failed.length) {
