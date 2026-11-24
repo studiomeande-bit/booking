@@ -1,0 +1,85 @@
+# 포트폴리오 새 세션 → Threads 자동 게시 (scripts/threads-post.mjs)
+# - 하루 두 번(베를린 오전·저녁) 한 번에 글 하나: 새 세션 영어 글 → 20시간 뒤 같은 세션 독일어 글
+# - 무엇을 올렸는지 scripts/threads-state.json 에 기록해 main 에 커밋한다(포트폴리오 배포는 안 건드림)
+# - Actions 탭에서 수동 실행: 세션 지정·언어 지정·dry_run(기본 켜짐)
+# - 필요 시크릿: THREADS_ACCESS_TOKEN (필수, 60일마다 갱신), THREADS_USER_ID (선택)
+# - 설정 순서·토큰 갱신: docs/threads-autopost.md
+name: Threads auto post
+
+on:
+  schedule:
+    # UTC 기준. 겨울 09:23/17:23, 여름 10:23/18:23 (베를린)
+    - cron: '23 8 * * *'
+    - cron: '23 16 * * *'
+  workflow_dispatch:
+    inputs:
+      session:
+        description: '세션 ID (예: 1a5419). 비우면 대기열 순서대로'
+        required: false
+        default: ''
+      lang:
+        description: '언어 (auto = 아직 안 올린 언어)'
+        type: choice
+        options: [auto, en, de]
+        default: auto
+      dry_run:
+        description: '테스트 실행 (올리지 않고 문구·사진만 확인)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Post next session
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          SESSION: ${{ github.event_name == 'workflow_dispatch' && inputs.session || '' }}
+          POST_LANG: ${{ github.event_name == 'workflow_dispatch' && inputs.lang || 'auto' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${SESSION}" ]; then args+=(--session "${SESSION}"); fi
+          if [ "${POST_LANG}" != "auto" ]; then args+=(--lang "${POST_LANG}"); fi
+          if [ "${DRY_RUN}" = "true" ]; then args+=(--dry-run); fi
+          node scripts/threads-post.mjs "${args[@]}"
+
+      # 게시 뒤 다른 단계가 실패해도 기록은 남겨야 다음 실행이 같은 글을 또 올리지 않는다
+      - name: Save state
+        if: always()
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- scripts/threads-state.json; then
+            echo "상태 변경 없음"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add scripts/threads-state.json
+          git commit -m "chore(threads): 게시 기록"
+          for i in 1 2 3 4; do
+            if git pull --rebase origin main && git push origin HEAD:main; then exit 0; fi
+            sleep $((i * 5))
+          done
+          echo "::error::threads-state.json 을 main 에 푸시하지 못했습니다. 다음 실행은 최근 24시간 글과 비교해 중복 게시를 막습니다."
+          exit 1
