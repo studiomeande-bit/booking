@@ -34,7 +34,8 @@
     "sm_250823_c66b51"
   ],
   "counters": {
-    "family": 1
+    "family": 1,
+    "kids": 1
   },
   "sessions": {
     "sm_260724_1a5419": {
@@ -44,6 +45,15 @@
         "id": "18103370669407934",
         "permalink": "https://www.threads.com/@studio_mean/post/DgIB6ECHLc-",
         "postedAt": "2026-11-24T13:09:32.635Z"
+      }
+    },
+    "sm_260331_41c673": {
+      "category": "kids",
+      "variant": "kids-1",
+      "en": {
+        "id": "17991726311877404",
+        "permalink": "https://www.threads.com/@studio_mean/post/DgJSUj8Gznh",
+        "postedAt": "2026-11-25T00:52:19.591Z"
       }
     }
   }
