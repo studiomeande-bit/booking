@@ -35,7 +35,8 @@
   ],
   "counters": {
     "family": 1,
-    "kids": 2
+    "kids": 2,
+    "snap": 1
   },
   "sessions": {
     "sm_260724_1a5419": {
@@ -73,6 +74,15 @@
         "id": "17919071121541941",
         "permalink": "https://www.threads.com/@studio_mean/post/DgOahJblId1",
         "postedAt": "2026-11-27T00:40:08.506Z"
+      }
+    },
+    "sm_260706_6d7a3d": {
+      "category": "snap",
+      "variant": "snap-1",
+      "en": {
+        "id": "17876537781602123",
+        "permalink": "https://www.threads.com/@studio_mean/post/DgQTgWXiToI",
+        "postedAt": "2026-11-27T18:17:16.869Z"
       }
     }
   }
