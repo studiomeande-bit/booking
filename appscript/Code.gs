@@ -15466,6 +15466,44 @@ function _retouchRevisionSuccessPage_(rowLang,count){
   const msgs={ko:`<h2 style="color:#f59e0b;">✏️ 재수정 요청이 접수되었습니다 (${count}/2회)</h2><p>Studio mean에서 수정 후 다시 보내드리겠습니다. 감사합니다.</p>`,en:`<h2 style="color:#f59e0b;">✏️ Revision Request Received (${count}/2)</h2><p>Studio mean will revise and resend your photos. Thank you!</p>`,de:`<h2 style="color:#f59e0b;">✏️ Überarbeitungsanfrage erhalten (${count}/2)</h2><p>Studio mean wird die Fotos überarbeiten und erneut zusenden.</p>`};
   return HtmlService.createHtmlOutput(`<div style="font-family:sans-serif;text-align:center;padding:40px;">${msgs[rowLang]||msgs.ko}</div>`);
 }
+/* ===== 외국어 요청 → 사장님용 한국어 번역 (사장님 2026-11-28) =====================================
+ * 보정 요청·설문 한마디·재수정 요청이 한국어가 아니면 사장님 알림 메일과 ERP 에 한국어 번역을 같이 보여 준다.
+ * Apps Script 내장 LanguageApp(권한·키 불필요). 한글 비율 ≥ 50% 면 번역하지 않는다. 실패·시간 초과면 빈 값 — 원문은 늘 그대로 남는다.
+ * 번역은 사장님 참고용이다: 고객 메일·고객 화면에는 절대 싣지 않는다. */
+function textNeedsKoTranslation_(text){
+  const t=String(text||'').replace(/◎[①-⑫][^\n]*/g,'');            // 서버가 붙인 '◎① 글 (위치)' 의 위치 낱말은 한국어라 비율 계산에서 뺀다
+  const letters=(t.match(/[A-Za-zÀ-ÿ\u0100-\u024F\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7A3]/g)||[]).length;
+  if(letters<2) return false;
+  const hangul=(t.match(/[\uAC00-\uD7A3]/g)||[]).length;
+  return hangul/letters<0.5;
+}
+function translateToKo_(text){
+  const src=String(text||'').trim();
+  if(!src||!textNeedsKoTranslation_(src)) return '';
+  try{
+    const out=String(LanguageApp.translate(src.slice(0,4000),'','ko')||'').trim();
+    return (out&&out!==src)?out:'';
+  }catch(e){ Logger.log('translateToKo_: '+(e&&e.message||e)); return ''; }
+}
+/* 셀렉 사진 메모 번역을 photo.noteKo 로 — 제출·수정 경로(락 안)라 6초 예산, 같은 메모는 한 번만 */
+function attachSelectNoteTranslations_(photos){
+  const list=Array.isArray(photos)?photos:[];
+  const deadline=Date.now()+6000; const memo={};
+  list.forEach(function(p){
+    if(!p||typeof p!=='object') return;
+    delete p.noteKo;
+    const note=String(p.note||'').trim();
+    if(!note||!textNeedsKoTranslation_(note)||Date.now()>deadline) return;
+    if(!(note in memo)) memo[note]=translateToKo_(note);
+    if(memo[note]) p.noteKo=memo[note];
+  });
+  return list;
+}
+function koTranslationHtml_(ko){
+  const t=String(ko||'').trim();
+  return t?'<div style="margin-top:6px;padding:8px 12px;background:#eef2ff;border-radius:8px;color:#3730a3;font-size:13px;white-space:pre-wrap;"><b>🇰🇷 번역</b> '+escapeHtml_(t)+'</div>':'';
+}
+
 function reviseRetouch_(sessionId,p){
   try{
     const selSh=ensureSelectSheet_(ensureSheets_().ss);
@@ -15521,10 +15559,12 @@ function reviseRetouch_(sessionId,p){
         const existingNote=String(row[SELECT_COL['재수정요청메모']]||'').trim();
         if(existingNote) history.push({count:revCount,requestedAt:'',note:existingNote});
       }
+      const noteKoAdd=translateToKo_(note);   // 외국어면 사장님용 번역(이력·메일·ERP)
       history.push({
         count:revCount,
         requestedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
         note:note,
+        noteKo:noteKoAdd||undefined,
         addendum:true
       });
       const prevMemo=String(row[SELECT_COL['재수정요청메모']]||'').trim();
@@ -15533,7 +15573,7 @@ function reviseRetouch_(sessionId,p){
       SpreadsheetApp.flush();
       try{
         const customerName=String(row[SELECT_COL['고객명']]||'');
-        sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[재수정요청 추가코멘트] ${customerName}님 (${revCount}/2)`,htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;"><h2 style="margin:0 0 12px;color:#b45309;">재수정 요청 추가 코멘트</h2><p><b>${escapeHtml_(customerName)}</b>님이 진행 중인 재수정 요청(${revCount}/2)에 코멘트를 추가했습니다. 횟수는 추가로 소진되지 않았습니다.</p><div style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;color:#7c2d12;">${escapeHtml_(note)}</div></div>`});
+        sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[재수정요청 추가코멘트] ${customerName}님 (${revCount}/2)`,htmlBody:`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;font-size:14px;line-height:1.65;"><h2 style="margin:0 0 12px;color:#b45309;">재수정 요청 추가 코멘트</h2><p><b>${escapeHtml_(customerName)}</b>님이 진행 중인 재수정 요청(${revCount}/2)에 코멘트를 추가했습니다. 횟수는 추가로 소진되지 않았습니다.</p><div style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;color:#7c2d12;">${escapeHtml_(note)}</div>${koTranslationHtml_(noteKoAdd)}</div>`});
       }catch(addMailErr){Logger.log('retouch addendum admin mail error: '+addMailErr.message);}
       return _retouchRevisionSuccessPage_(rowLang,revCount);
     }
@@ -15543,10 +15583,12 @@ function reviseRetouch_(sessionId,p){
       const existingNote=String(row[SELECT_COL['재수정요청메모']]||'').trim();
       if(existingNote && revCount>0) history.push({count:revCount,requestedAt:'',note:existingNote});
     }
+    const noteKo=translateToKo_(note);   // 외국어면 사장님용 번역(이력·메일·ERP)
     history.push({
       count:newCount,
       requestedAt:Utilities.formatDate(new Date(),CONFIG.TIMEZONE,'yyyy-MM-dd HH:mm:ss'),
-      note:note
+      note:note,
+      noteKo:noteKo||undefined
     });
     const prevStatusForReopen=String(row[SELECT_COL['상태']]||'').trim();
     selSh.getRange(rowNum,SELECT_COL['상태']+1).setValue('재수정요청');
@@ -15573,6 +15615,7 @@ function reviseRetouch_(sessionId,p){
         </table>
         <div style="font-weight:700;margin-bottom:6px;">재수정 내용</div>
         <div style="white-space:pre-wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;color:#7c2d12;">${escapeHtml_(note)}</div>
+        ${koTranslationHtml_(noteKo)}
         <p style="margin:14px 0 0;font-size:13px;color:#64748b;">
           ${driveLink?`Drive: <a href="${escapeHtml_(driveLink)}">${escapeHtml_(driveLink)}</a><br>`:''}
           어드민 사진셀렉 탭에서 상태가 <b>재수정요청</b>으로 표시됩니다. ${adminUrl?`<a href="${escapeHtml_(adminUrl)}">어드민 열기</a>`:''}
@@ -25560,7 +25603,9 @@ function parseRevisionHistory_(raw){
       return {
         count:parseInt(item&&item.count,10)||0,
         requestedAt:String(item&&item.requestedAt||'').trim(),
-        note:String(item&&item.note||'').trim()
+        note:String(item&&item.note||'').trim(),
+        noteKo:String(item&&item.noteKo||'').trim()||undefined,   // 외국어 요청의 사장님용 번역 — 다시 쓸 때 잃지 않게
+        addendum:item&&item.addendum===true?true:undefined
       };
     }).filter(function(item){ return item.note; });
   }catch(e){
@@ -27492,10 +27537,11 @@ function selectSurveyText_(survey,lang){
   if(s.note) parts.push(L.note+': '+s.note);
   return parts.join(' · ');
 }
-function selectSurveyHtml_(survey,lang){
+function selectSurveyHtml_(survey,lang,forAdmin){
   const text=selectSurveyText_(survey,lang); if(!text) return '';
   const L=SELECT_SURVEY_LABELS_[String(lang||'ko')]||SELECT_SURVEY_LABELS_.ko;
-  return `<div style="background:#f1f5f9;border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:13px;"><b>${L.title}:</b> ${escapeHtml_(text)}</div>`;
+  const ko=forAdmin&&survey&&survey.note?translateToKo_(survey.note):'';   // 한마디가 외국어면 사장님 알림에 번역
+  return `<div style="background:#f1f5f9;border-radius:8px;padding:8px 12px;margin:0 0 10px;font-size:13px;"><b>${L.title}:</b> ${escapeHtml_(text)}${koTranslationHtml_(ko)}</div>`;
 }
 
 /* ===== 다인 컷 보정 슬롯 (사장님 확정 2026-09-23) ==========================================
@@ -27972,7 +28018,8 @@ function buildSelectPhotoLineHtml_(photo,scopeLimited,lang){
      동그라미 그 자체는 ERP 에서 본다(관리자 알림 상단 링크). */
   const imgId=(Array.isArray(photo&&photo.marks)&&photo.marks.length)?(selectMarkImageId_(photo)||(SELECT_FILE_ID_RE_.test(String(photo.fileId||''))?String(photo.fileId):'')):'';   // 구운 사진 우선, 없으면 원본 썸네일
   const thumbHtml=imgId?`<br><a href="https://drive.google.com/file/d/${encodeURIComponent(imgId)}/view" target="_blank"><img src="${_buildDriveThumbnailUrl_(imgId,480)}" alt="" width="320" style="display:block;max-width:100%;width:320px;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0;"></a>`:'';
-  return `<li style="margin-bottom:6px;"><b>${num}번</b>${personFlag}${scopeFlag}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}${thumbHtml}</li>`;
+  const koHtml=(lang==null&&photo&&photo.noteKo)?koTranslationHtml_(photo.noteKo):'';   // 사장님 알림에만(고객 영수증은 lang 을 넘긴다)
+  return `<li style="margin-bottom:6px;"><b>${num}번</b>${personFlag}${scopeFlag}${note?'<br><span style="color:#475569;font-size:12px;">'+note.replace(/\n/g,'<br>')+'</span>':''}${koHtml}${thumbHtml}</li>`;
 }
 
 /* 관리자 알림의 '보정선택' 칸 — 제출·수정 알림이 같은 문구를 써야 해서 한 곳에 둔다.
@@ -30416,6 +30463,7 @@ function submitPhotoSelection(sessionId,sub){
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
     saveSelectMarkImages_(photos,row);              // 동그라미 구운 JPEG → 세션 폴더/보정표시 (메일·어드민용)
+    attachSelectNoteTranslations_(photos);          // 외국어 요청 → photo.noteKo (사장님 메일·ERP 전용)
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
@@ -30638,7 +30686,7 @@ function sendSelectSubmitAlert_(row,photos,prints,extraRetouch,extraRetouchAmt,e
   const captureOneText=buildSelectCaptureOneSearchText_(photos);
   const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
   const marksLinkHtml=selectMarksLinkHtml_(row,photos);
-  const surveyHtml=selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko');
+  const surveyHtml=selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko',true);
   const printChargeItems=(printUpgradeItems||[]).concat(prints||[]);
   const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#2D2A26;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">📷 사진 셀렉 제출됨</h2></div><div style="padding:20px;"><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',marketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(Number(ex.amt)>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,ex)}${alertMeta.resendRow}</table>${marksLinkHtml}${surveyHtml}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
   sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[사진셀렉]${(Number(ex.amt)>0||ex.atBooking)?' ⚡급행':''} ${row[2]}님 제출 — 추가금액 ${totalExtra}€`,htmlBody:html},{public:true,bucket:'select',type:'셀렉제출'});
@@ -30815,6 +30863,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const photos=(sub.photos||[]).map(enrichSelectPhoto_);
     attachSelectMarkFileIds_(photos,sessionId);   // 동그라미 컷의 Drive 파일 ID — 어드민·메일이 사진을 보여준다
     saveSelectMarkImages_(photos,row);              // 동그라미 구운 JPEG → 세션 폴더/보정표시 (메일·어드민용)
+    attachSelectNoteTranslations_(photos);          // 외국어 요청 → photo.noteKo (사장님 메일·ERP 전용)
     const submittedStatus=selectSubmittedStatus_(photos);
     const photocard=normalizeSelectPhotocard_(sub.photocard,row);
     const baseCount=parseInt(row[SELECT_COL['기본보정수']])||0;
@@ -30892,7 +30941,7 @@ function updatePhotoSelection(sessionId,sub,lock){   // lock: submitPhotoSelecti
     const captureOneText=buildSelectCaptureOneSearchText_(photos);
     const captureOneHtml=captureOneText?`<div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px;margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:6px;">Capture One 검색용</div><code style="font-family:Menlo,Consolas,monospace;font-size:13px;color:#0f172a;white-space:normal;word-break:break-word;">${escapeHtml_(captureOneText)}</code></div>`:'';
     const printChargeItems=displayPrints||[];
-    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(expressAmt>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,{amt:expressAmt,atBooking:expressInfo.boughtAtBooking,submittedAt:now})}${alertMeta.resendRow}</table>${selectMarksLinkHtml_(row,photos)}${selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko')}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
+    const html=`<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;"><div style="background:#f59e0b;padding:16px 20px;"><h2 style="margin:0;color:#fff;font-size:16px;">✏️ 사진 셀렉 수정됨</h2></div><div style="padding:20px;"><p style="color:#92400e;background:#fef3c7;padding:10px;border-radius:8px;font-size:13px;margin-bottom:14px;">⚠️ ${row[2]}님이 기존 셀렉 내용을 수정했습니다.</p><table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:16px;">${td('고객명',`<b>${row[2]}</b>`)}${td('상품',row[7])}${td('보정선택',buildSelectRetouchSummaryHtml_(row,photos,extraRetouch,extraRetouchAmt))}${td('포토카드',photocard?escapeHtml_(buildSelectPhotocardText_(photocard)):'없음')}${td('출력물',`${alertMeta.printCell}${alertMeta.chargeCount?` (${extraPrintsAmt}€)`:''}`)}${td('수령방식',alertMeta.deliveryCell)}${td('마케팅',selectMarketing==='Y'?'✅ 동의':'미동의')}${td('추가금액',`<b style="color:#10b981;">${totalExtra}€</b>`)}${selectEarlyStartAlertRow_(td,extraRetouch+(expressAmt>0?1:0),earlyStartVal)+buildSelectExpressAlertRow_(td,{amt:expressAmt,atBooking:expressInfo.boughtAtBooking,submittedAt:now})}${alertMeta.resendRow}</table>${selectMarksLinkHtml_(row,photos)}${selectSurveyHtml_(parseSelectSurveyCell_(SELECT_COL['보정설문JSON']!=null?row[SELECT_COL['보정설문JSON']]:''),'ko',true)}${captureOneHtml}<b>보정 요청:</b><ul style="margin:6px 0;">${selectRealRetouchPhotos_(photos).map(function(p){return buildSelectPhotoLineHtml_(p,isSelectRetouchScopeLimitedGroup_(row[6])===true);}).join('')||'<li>없음 — 보정 없이 출력만 진행</li>'}</ul>${photocard?'<b>포토카드:</b>'+buildSelectPhotocardHtml_(photocard):''}<b>출력 작업 지시서:</b><ul style="margin:6px 0;">${alertMeta.workItems.length?alertMeta.workItems.map(formatSelectPrintItemHtml_).join(''):'<li>없음</li>'}</ul></div></div>`;
     sendTrackedEmail_({to:CONFIG.ADMIN_EMAIL,subject:`[셀렉수정]${(expressAmt>0||expressInfo.boughtAtBooking)?' ⚡급행':''} ${row[2]}님 — 추가금액 ${totalExtra}€`,htmlBody:html},{public:true,bucket:'select',type:'셀렉수정'});
     /* 수정 제출에도 고객 확인 메일 — 종전엔 관리자만 알고 고객은 무통지였다(2026-08-31).
        금액이 바뀌는 행동이라 최종 기준이 어느 쪽인지 고객에게도 남아야 한다. */

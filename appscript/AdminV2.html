@@ -11775,7 +11775,7 @@ function viewSubmission(rowIndex){
         const persons=Math.min(3,Math.max(1,parseInt(p&&p.persons,10)||1));
         const personChip=persons>1?`<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${persons>=3?'3인 이상':persons+'인'}</span>`:'';
         const marksHtml=renderSelectMarksOverlay(p);   // 고객이 사진 위에 그린 동그라미(2026-10-14) — 셀렉 화면과 같은 % 좌표로 다시 그린다
-        return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${num}번</span>${personChip}<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><span style="display:inline-block;font-size:11px;font-weight:700;color:#7c5a12;background:#fef3c7;border-radius:999px;padding:2px 8px;width:max-content;">${printLabel}</span>${note?`<span style="font-size:12px;color:#475569;white-space:pre-line;">${note}</span>`:'<span style="font-size:11px;color:#94a3b8;">요청사항 없음</span>'}${marksHtml}</div></div>`;
+        return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;">${num}번</span>${personChip}<div style="display:flex;flex-direction:column;gap:4px;min-width:0;"><span style="display:inline-block;font-size:11px;font-weight:700;color:#7c5a12;background:#fef3c7;border-radius:999px;padding:2px 8px;width:max-content;">${printLabel}</span>${note?`<span style="font-size:12px;color:#475569;white-space:pre-line;">${note}</span>`:'<span style="font-size:11px;color:#94a3b8;">요청사항 없음</span>'}${p&&p.noteKo?`<span style="font-size:12px;color:#3730a3;background:#eef2ff;border-radius:6px;padding:4px 8px;white-space:pre-line;"><b>🇰🇷 번역</b> ${escHtml(p.noteKo)}</span>`:''}${marksHtml}</div></div>`;
       }).join('')}</div>`
     :'<div style="color:#94a3b8;font-size:13px;">보정 요청 없음 — 출력만(원본)</div>';
   const revisionNote=String(sel.revisionNote||'').trim();
@@ -11792,6 +11792,7 @@ function viewSubmission(rowIndex){
           return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;background:#fffaf0;font-size:13px;line-height:1.7;color:#7c2d12;">
             <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a3412;margin-bottom:6px;">${escHtml(countLabel)}${timeLabel}</div>
             <div style="white-space:pre-line;">${escHtml(item.note)}</div>
+            ${item.noteKo?`<div style="white-space:pre-line;margin-top:6px;padding:6px 10px;background:#eef2ff;border-radius:6px;color:#3730a3;"><b>🇰🇷 번역</b> ${escHtml(item.noteKo)}</div>`:''}
           </div>`;
         }).join('')}
       </div>`
